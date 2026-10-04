@@ -8,8 +8,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
 import java.awt.event.WindowEvent;
-import java.nio.file.Path;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
@@ -20,16 +20,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.*;
 
+import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
 import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
-import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -149,7 +149,8 @@ class PlatformModelsWindowTest {
                 assertEquals(1, fixture.calls.get());
                 onEdt(() -> {
                     ((JButton) named(frame, "security.lock")).doClick(0);
-                    assertFalse(frame.getContentPane().isVisible());
+                    assertTrue(frame.getContentPane().isVisible());
+                    assertTrue(frame.getGlassPane().isVisible());
                     return null;
                 });
                 assertThrows(RuntimeException.class, service::listAiConfigurations);
@@ -205,7 +206,7 @@ class PlatformModelsWindowTest {
                 });
                 await(() -> ((JComboBox<?>) named(frame, "models.checks")).getItemCount() == 0);
                 assertEquals(TaskState.ENDED, original.snapshot().state());
-                assertEquals(Outcome.FAILED, original.snapshot().outcome().orElseThrow());
+                assertEquals(TaskResult.FAILED, original.snapshot().outcome().orElseThrow());
                 assertEquals(0, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + original.id() + "'"));
                 assertEquals(1, count(runtime.persistence().database(),
@@ -303,18 +304,18 @@ class PlatformModelsWindowTest {
                 });
                 PauseModelRelease.released.countDown();
                 var failed = original.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
-                assertEquals(Outcome.FAILED, failed.outcome());
+                assertEquals(TaskResult.FAILED, failed.outcome());
                 assertEquals("AI_HTTP_REJECTED", failed.problem().orElseThrow().eventCode());
                 await(() -> !editor.isDisplayable());
                 assertEquals(TaskState.ENDED, original.snapshot().state());
-                assertEquals(Outcome.FAILED, original.snapshot().outcome().orElseThrow());
+                assertEquals(TaskResult.FAILED, original.snapshot().outcome().orElseThrow());
                 assertTrue(service.checks().isEmpty());
                 assertEquals(0, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 assertEquals(1, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM runtime_log WHERE event_code='PLATFORM_TASK_FAILED' AND task_id='"
                         + original.id() + "'"));
-                await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor.hasActiveTasks());
+                await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
                 assertEquals(1, service.listAiConfigurations().size(), "Failed/cancelled probes preserve the independently saved configuration");
                 assertEquals(2, fixture.calls.get(), "Closing must not resubmit either failed probe");
             } finally {
@@ -334,7 +335,7 @@ class PlatformModelsWindowTest {
 
     @Test
     void pureVoiceEditorSeparatesSaveFromActualVerificationAndRejectsUnsavedDraft() throws Exception {
-        try (var endpoint = new VoiceConfigurationTest.Endpoint();
+        try (var endpoint = new VoiceConfigTest.Endpoint();
              var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var service = PlatformModelServiceTest.setup(runtime);
             var sample = root.resolve("voice-check.wav");

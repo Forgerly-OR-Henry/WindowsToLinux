@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.ui.task;
 
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import java.awt.*;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -10,12 +8,13 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 
-import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.task.TaskManagement.Entry;
 import gold.debug.windowstolinux.app.service.task.TaskManagement.RecoveryState;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 
 /** Retained-task inspection and explicit original cancellation or reconciliation. / 保留任务检查及明确原任务取消或核对。 */
 public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
@@ -54,7 +53,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
      * @param components themed controls / 主题控件
      * @param messages localized feedback / 本地化反馈
      * @param history opens the existing log view containing completed task summaries / 打开含已结束任务摘要的现有日志界面 */
-    public TaskRecoveryPane(TaskManagement service, DesktopComponentFactory components, PageMessagePresenter messages,
+    public TaskRecoveryPane(TaskManagement service, DesktopPartFactory components, PageMessagePresenter messages,
                             Runnable history) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
@@ -116,14 +115,12 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         display(java.util.List.of(), null);
     }
 
-    /** Clears private observations and invalidates old decisions on every lock transition. / 每次锁定切换清空私有观察并使旧决定失效。
+    /** Preserves loaded observations and invalidates old decisions on every lock transition. / 每次锁定切换保留已加载观察并使旧决定失效。
      * @param value actual desktop lock state / 实际桌面锁定状态 */
     public void setLocked(boolean value) {
         epoch++;
         locked = value;
         dismissConfirmation();
-        display(java.util.List.of(), null);
-        status.setText("");
         if (!value)
             refresh();
     }
@@ -166,7 +163,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
     private void continueWaiting() {
         var entry = selected();
         if (entry == null || locked || busy || closed || entry.snapshot().state()
-            != gold.debug.windowstolinux.appapi.task.TaskState.WAITING)
+            != gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING)
             return;
         work(() -> new ActionResult(service.continueWaiting(entry.snapshot().id()), service.list()), result -> {
             display(result.entries(), entry.snapshot().id());
@@ -218,7 +215,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         busy = true;
         controls();
         status.setText(messages.text("tasks.working"));
-        DesktopTaskExecutor.run(operation, result -> {
+        DesktopTaskRunner.run(operation, result -> {
             if (!returned(observed))
                 return;
             success.accept(result);
@@ -320,7 +317,7 @@ public final class TaskRecoveryPane extends JPanel implements AutoCloseable {
         table.setEnabled(available);
         cancel.setEnabled(available && entry != null && entry.cancellable());
         continueTask.setEnabled(available && entry != null && entry.snapshot().state()
-            == gold.debug.windowstolinux.appapi.task.TaskState.WAITING);
+            == gold.debug.windowstolinux.appapi.task.model.TaskState.WAITING);
         reconcile.setEnabled(available && entry != null && recoverable(entry));
         messages.bind(reconcile,
             entry != null && entry.recovery() == RecoveryState.ARCHIVE_ONLY ? "tasks.archive" : "tasks.reconcile");

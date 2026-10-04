@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.InvocationTargetException;
@@ -22,9 +13,27 @@ import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.server.LinuxDistroType;
@@ -37,12 +46,12 @@ class DeploymentCapabilityCollectionTest extends DeploymentRuntimeFixture {
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No transfer during collection");
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken cancellation) {
                 throw new AssertionError("No transfer during collection");
             }
@@ -81,8 +90,8 @@ class DeploymentCapabilityCollectionTest extends DeploymentRuntimeFixture {
             var closes = new AtomicInteger();
             var originalTask = new AtomicReference<UUID>();
             LinuxService remote = new LinuxService() {
-                public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
-                    assertEquals(new ServerRef("server"), server);
+                public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
+                    assertEquals(new ServerId("server"), server);
                     assertEquals(originalTask.get(), task.id());
                     connects.incrementAndGet();
                     var lease = task.retain("controlled_ssh", "capability-read-" + task.id(),
@@ -105,7 +114,7 @@ class DeploymentCapabilityCollectionTest extends DeploymentRuntimeFixture {
                                     assertArrayEquals(new byte[0], request.stdin());
                                     assertEquals(Duration.ofSeconds(120), request.timeout());
                                     assertEquals(65536, request.outputLimitBytes());
-                                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new CommandResult(
+                                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(
                                         Optional.of(0),
                                         "DISTRO_ID=ubuntu\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\nCPU_LEVEL=x86-64-v3\nSECURITY_MODULE=apparmor\nSECURITY_STATE=enabled\nFIREWALL=ufw\nFIREWALL_STATE=active\n",
                                         "", false)), Optional.empty());
@@ -135,14 +144,14 @@ class DeploymentCapabilityCollectionTest extends DeploymentRuntimeFixture {
                 new TaskRequest("capability_read", "Collect original capability evidence", List.of("server"), true),
                 task -> {
                     assertTrue(originalTask.compareAndSet(null, task.id()));
-                    try (var session = bound.linux().connect(new ServerRef("server"), task)) {
-                        return new DeploymentCandidateChannel(session, bound.interaction(), new ServerRef("server"),
+                    try (var session = bound.linux().connect(new ServerId("server"), task)) {
+                        return new DeploymentCandidateChannel(session, bound.interaction(), new ServerId("server"),
                             task, "a".repeat(64), new DeploymentBuildBudget(120)).hostFacts();
                     }
                 });
             OperationResult<DeploymentLinuxCapabilityFacts> result = handle.completion().toCompletableFuture().get(20,
                 TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(handle.id(), originalTask.get());
             assertEquals(1, connects.get());

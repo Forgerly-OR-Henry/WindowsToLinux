@@ -33,10 +33,10 @@ public record ThemePalette(Color pageBackground, Color cardBackground, Color car
      * @return the operation result / 操作结果
      */
     public static ThemePalette light() {
-        return new ThemePalette(new Color(245, 247, 251), Color.WHITE, new Color(228, 233, 241),
-            new Color(248, 250, 253), new Color(44, 56, 76), new Color(229, 238, 255), new Color(48, 103, 219),
-            new Color(45, 86, 174), new Color(104, 117, 139), new Color(228, 234, 244), new Color(44, 56, 76),
-            new Color(234, 240, 250), new Color(218, 226, 238));
+        return new ThemePalette(new Color(242, 243, 245), Color.WHITE, new Color(218, 220, 224),
+            new Color(242, 243, 245), new Color(48, 50, 56), new Color(212, 226, 255), new Color(53, 116, 240),
+            new Color(42, 93, 192), new Color(108, 112, 126), new Color(228, 230, 234), new Color(48, 50, 56),
+            new Color(229, 237, 252), new Color(187, 190, 197));
     }
 
     /**
@@ -46,9 +46,9 @@ public record ThemePalette(Color pageBackground, Color cardBackground, Color car
      * @return the operation result / 操作结果
      */
     public static ThemePalette dark() {
-        return new ThemePalette(new Color(20, 25, 34), new Color(28, 35, 47), new Color(45, 55, 71),
-            new Color(23, 29, 40), new Color(221, 228, 239), new Color(40, 61, 92), new Color(65, 123, 232),
-            new Color(159, 194, 255), new Color(155, 169, 191), new Color(49, 62, 82), new Color(221, 228, 239),
-            new Color(38, 56, 82), new Color(57, 71, 94));
+        return new ThemePalette(new Color(43, 45, 48), new Color(30, 31, 34), new Color(67, 69, 74),
+            new Color(43, 45, 48), new Color(223, 225, 229), new Color(46, 67, 110), new Color(53, 116, 240),
+            new Color(84, 138, 247), new Color(157, 160, 168), new Color(57, 59, 64), new Color(223, 225, 229),
+            new Color(49, 59, 79), new Color(90, 93, 99));
     }
 }

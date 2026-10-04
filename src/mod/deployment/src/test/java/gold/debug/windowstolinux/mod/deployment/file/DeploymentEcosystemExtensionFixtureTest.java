@@ -9,7 +9,7 @@ import java.util.stream.Stream;
 
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentEcosystemExtensionFixture.ArchitectureType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,12 +20,12 @@ class DeploymentEcosystemExtensionFixtureTest {
 
     @Test
     void materializesHealthyAndRejectedHealthSourcesForEveryArchitecture() throws Exception {
-        DeploymentAnalysisCoordinator analyzer = new DeploymentAnalysisCoordinator();
+        DeploymentAnalysisFlow analyzer = new DeploymentAnalysisFlow();
         for (ArchitectureType architecture : ArchitectureType.values()) {
             String runtime = runtimeVersion(architecture, "3.12");
             Path root = DeploymentEcosystemExtensionFixture.create(temporaryDirectory, architecture,
                 "fixture-" + architecture.key(), runtime, toolVersion(architecture), "fixture-marker", false);
-            var assessment = analyzer.analyze(root, architecture.projectType());
+            var assessment = analyzer.analyze(root, architecture.projectType(), (root).getFileName().toString());
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(), assessment.toString());
             assertEquals(architecture.buildTool(), assessment.facts().orElseThrow().buildTool());
             assertEquals("fixture-" + architecture.key(), assessment.facts().orElseThrow().applicationId());
@@ -41,12 +41,12 @@ class DeploymentEcosystemExtensionFixtureTest {
 
     @Test
     void materializesEveryPythonArchitectureForTheEnterpriseNineRuntime() throws Exception {
-        DeploymentAnalysisCoordinator analyzer = new DeploymentAnalysisCoordinator();
+        DeploymentAnalysisFlow analyzer = new DeploymentAnalysisFlow();
         for (ArchitectureType architecture : new ArchitectureType[]{ArchitectureType.PYTHON_PIP,
             ArchitectureType.PYTHON_PIPENV, ArchitectureType.PYTHON_POETRY, ArchitectureType.PYTHON_UV}) {
             Path root = DeploymentEcosystemExtensionFixture.create(temporaryDirectory, architecture,
                 "fixture-311-" + architecture.key(), "3.11", toolVersion(architecture), "python-311", true);
-            var assessment = analyzer.analyze(root, architecture.projectType());
+            var assessment = analyzer.analyze(root, architecture.projectType(), (root).getFileName().toString());
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(), assessment.toString());
             assertEquals(architecture.buildTool(), assessment.facts().orElseThrow().buildTool());
             assertEquals("fixture-311-" + architecture.key(), assessment.facts().orElseThrow().applicationId());

@@ -1,27 +1,28 @@
 package gold.debug.windowstolinux.app.db.mod;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import java.io.IOException;
-import java.nio.file.*;
-import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.log.LogRecordCodec;
+import gold.debug.windowstolinux.app.db.log.LogStore;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.app.db.security.SecretRefStore;
+import gold.debug.windowstolinux.app.db.setting.ModNavigationPreferences;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Persists exact installed-release or whole-Mod deletion before unregistering verified cleanup. / 持久化精确安装版本或整 Mod 删除，核验清理后才注销。
- * File removal belongs to the installer; this ledger independently proves the registered directory is absent. / 文件由安装服务移除；本账本独立证明登记目录已不存在。 */
+ * The installer supplies physical checks; this ledger requires them at its original transaction boundaries. / 安装层提供物理核验；本账本在原事务边界主动要求核验。 */
 public final class ModDeletionLedger {
     /** Existing-state responsibility collaborator. / 既有状态职责协作者。 */
     private final DeletionEvidence evidence = new DeletionEvidence();
@@ -32,14 +33,30 @@ public final class ModDeletionLedger {
     /** Trusted application home, never a caller-supplied deletion target. / 可信程序根，不接收调用方任意删除目标。 */
     private final Path home;
 
+    /** Host-owned physical verifier, without a dependency on installation implementations. / 宿主所属物理核验器，不依赖安装实现。 */
+    private final FileEvidence files;
+
+    /** Read-only verification required before durable deletion progress. / 持久删除推进前必需的只读核验。 */
+    public interface FileEvidence {
+        /** Verifies the exact trusted application home without following redirected ancestors. / 不跟随重定向祖先地核验精确可信程序根。
+         * @param home original normalized application root / 原规范化程序根
+         * @throws SQLException if the root cannot be verified / 无法核验程序根时 */
+        void verifyHome(Path home) throws SQLException;
+
+        /** Proves an original ledger-derived target is absent; access failure is not absence. / 证明账本推导的原目标不存在，访问失败不代表不存在。
+         * @param path original program, private-data or emergency-log target / 原程序、私有数据或应急日志目标
+         * @throws SQLException if present, redirected or unobservable / 存在、重定向或无法观察时 */
+        void verifyAbsent(Path path) throws SQLException;
+    }
+
     /** Shared admission transactions. / 共用准入事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Standard atomic archive writer. / 标准原子归档写入器。 */
-    private final LogRepository logs;
+    private final LogStore logs;
 
     /** Fixed platform operation category. / 固定平台操作类别。 */
-    private final LogRepository.Target archive;
+    private final LogStore.Target archive;
 
     /** Strict bounded recovery decoder. / 严格有界恢复解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
@@ -54,14 +71,16 @@ public final class ModDeletionLedger {
     /** Binds ordinary installed packages to their original application home. / 将普通安装包绑定到原程序根。
      * @param database owned engine / 所属引擎
      * @param home trusted JAR or APP home / 可信 JAR 或 APP 程序根
+     * @param files original host physical verifier / 原宿主物理核验器
      * @throws SQLException if home or archive registration cannot be verified / 无法核验程序根或归档登记时 */
-    public ModDeletionLedger(PlatformDatabase database, Path home) throws SQLException {
+    public ModDeletionLedger(PlatformDatabase database, Path home, FileEvidence files) throws SQLException {
         this.database = Objects.requireNonNull(database);
         require(home.isAbsolute() && home.normalize().equals(home), "Application home must be absolute and normalized");
         this.home = home;
-        ordinaryAncestors(home);
-        connections = new RepositoryConnections(database::openConnection);
-        logs = new LogRepository(database);
+        this.files = Objects.requireNonNull(files);
+        files.verifyHome(home);
+        connections = new StoreConnections(database::openConnection);
+        logs = new LogStore(database);
         archive = logs.register("app", Optional.empty(),
             new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
@@ -112,7 +131,7 @@ public final class ModDeletionLedger {
 
         /** Lists exact category identities whose emergency files must be removed by the host. / 列出其应急文件须由宿主移除的精确类别身份。
          * @return original owned categories; empty for a version-only request / 原自有类别，单版本请求为空 */
-        public List<LogRepository.Target> logTargets() {
+        public List<LogStore.Target> logTargets() {
             return request.targets();
         }
 
@@ -236,7 +255,7 @@ public final class ModDeletionLedger {
      * @param versions exact requested installed releases / 精确请求安装版本
      * @param targets original owned diagnostic categories / 原自有诊断类别 */
     public record Execution(UUID operation, String owner, String version, Path program, String phase, String state,
-                            String files, List<String> versions, List<LogRepository.Target> targets) {
+                            String files, List<String> versions, List<LogStore.Target> targets) {
     }
 
     /** Reads original evidence without granting permission to replay completed work. / 读取原证据，不授予重放已完成工作的权限。
@@ -378,7 +397,7 @@ public final class ModDeletionLedger {
                         "mod_operation", LogLevel.INFO,
                         row.request().version() == null ? "MOD_DELETED" : "MOD_VERSION_DELETED",
                         "Installed Mod deletion was verified", null, row.request().owner(),
-                        row.request().version(), null, operation, Outcome.SUCCEEDED, false)),
+                        row.request().version(), null, operation, TaskResult.SUCCEEDED, false)),
                     100);
                 update(c, "DELETE FROM mod_operation WHERE operation_id=?", operation);
                 return true;
@@ -471,41 +490,7 @@ public final class ModDeletionLedger {
      * @throws SQLException if the program exists or any ancestor is unsafe / 程序存在或任一祖先不安全时 */
     private void absentProgram(Request request) throws SQLException {
         Path path = request.program();
-        absent(path);
-    }
-
-    /** Proves a bounded original path is absent. / 证明有界原路径不存在。
-     * @param path trusted exact path / 可信精确路径
-     * @throws SQLException if present or inaccessible / 存在或不可访问时 */
-    private static void absent(Path path) throws SQLException {
-        ordinaryAncestors(path.getParent());
-        try {
-            Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-            throw new SQLException("Original installed program still exists");
-        } catch (NoSuchFileException absent) {
-            // A missing program is evidence for this phase only. / 程序缺失仅是本阶段的证据。
-        } catch (IOException failure) {
-            throw new SQLException("Program absence cannot be verified", failure);
-        }
-    }
-
-    /** Checks every existing absolute ancestor without resolving links into another tree. / 检查每个已存在绝对祖先，不将链接解析到其他目录树。
-     * @param path bounded absolute path / 有界绝对路径
-     * @throws SQLException if attributes are unsafe or unavailable / 属性不安全或不可用时 */
-    private static void ordinaryAncestors(Path path) throws SQLException {
-        Path current = path.getRoot();
-        for (Path part : path) {
-            current = current.resolve(part);
-            try {
-                var attrs = Files.readAttributes(current, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-                require(attrs.isDirectory() && !attrs.isSymbolicLink() && !attrs.isOther(),
-                    "Installed ancestor is not an ordinary directory");
-            } catch (NoSuchFileException absent) {
-                return;
-            } catch (IOException failure) {
-                throw new SQLException("Installed ancestor cannot be verified", failure);
-            }
-        }
+        files.verifyAbsent(path);
     }
 
     /** Proves exact physical ownership and absence of owner or reader sessions/privileges. / 证明精确物理归属及无所有者或读取会话与额外权限。
@@ -617,10 +602,10 @@ public final class ModDeletionLedger {
     private void absentOwnedFiles(Request request) throws SQLException {
         if (request.version() != null)
             return;
-        absent(database.root().resolve("mod").resolve(request.owner()));
+        files.verifyAbsent(database.root().resolve("mod").resolve(request.owner()));
         for (var target : request.targets())
             for (String extension : List.of(".log", ".pending"))
-                absent(database.root().resolve("log").resolve("emergency").resolve(target.key() + extension));
+                files.verifyAbsent(database.root().resolve("log").resolve("emergency").resolve(target.key() + extension));
     }
 
     /** Proves exact owner references are gone while preserving shared resources and platform history. / 证明精确所有者引用已清除，保留共享资源及平台历史。
@@ -703,7 +688,7 @@ public final class ModDeletionLedger {
         var result = new AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 require(count(c,
                     "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state='RUNNING'",
                     database.bootId()) == 1, "Deletion requires the original running platform boot");
@@ -791,7 +776,7 @@ public final class ModDeletionLedger {
      * @param secrets original owned credentials and shared-resource protection / 原自有凭据及共享资源保护
      * @param files original host physical scope / 原宿主物理范围 */
     private record Request(int format, String home, String owner, String version, Owner ownerState,
-                           List<Release> versions, List<Schema> schemas, List<LogRepository.Target> targets,
+                           List<Release> versions, List<Schema> schemas, List<LogStore.Target> targets,
                            List<ModNavigationPreferences.PagePin> pins, List<Secret> secrets, String files) {
         /** Determines membership without allowing partial whole-owner cleanup. / 判断成员归属，不允许部分整所有者清理。
          * @param release original retained release / 原保留版本
@@ -917,7 +902,7 @@ public final class ModDeletionLedger {
                 if (referencesGone) {
                     require(noOwnerReferences(c, request.owner()), "Owned references reappeared");
                     require(request.secrets().stream().filter(Secret::shared).map(Secret::id).toList()
-                            .equals(CredentialReferenceRepository.ownedIdentities(c, request.owner())),
+                            .equals(SecretRefStore.ownedIdentities(c, request.owner())),
                         "Owned credential cleanup changed");
                 } else
                     require(request.secrets().equals(secrets(c, request.owner())),
@@ -1008,8 +993,8 @@ public final class ModDeletionLedger {
          * @param owner exact owner / 精确所有者
          * @return ordered registered targets / 有序登记目标
          * @throws SQLException if identities are corrupt or exceed bounds / 身份损坏或超限时 */
-        private static List<LogRepository.Target> targets(Connection c, String owner) throws SQLException {
-            var values = new ArrayList<LogRepository.Target>();
+        private static List<LogStore.Target> targets(Connection c, String owner) throws SQLException {
+            var values = new ArrayList<LogStore.Target>();
             try (var p = c
                 .prepareStatement("SELECT * FROM log_category WHERE owner_id=? ORDER BY logical_schema,category")) {
                 p.setString(1, owner);
@@ -1017,7 +1002,7 @@ public final class ModDeletionLedger {
                     while (r.next()) {
                         require(values.size() < 4096 && r.getInt("format_version") == 1,
                             "Owned log catalog is invalid");
-                        values.add(new LogRepository.Target(r.getObject("target_key", UUID.class), owner,
+                        values.add(new LogStore.Target(r.getObject("target_key", UUID.class), owner,
                             r.getString("logical_schema"), r.getObject("schema_generation", UUID.class),
                             r.getString("physical_schema"), r.getString("category"), r.getString("target_table"),
                             r.getString("display_name")));
@@ -1046,7 +1031,7 @@ public final class ModDeletionLedger {
          * @throws SQLException if ownership cannot be verified / 无法核验归属时 */
         private static List<Secret> secrets(Connection c, String owner) throws SQLException {
             var result = new ArrayList<Secret>();
-            for (String id : CredentialReferenceRepository.ownedIdentities(c, owner))
+            for (String id : SecretRefStore.ownedIdentities(c, owner))
                 result.add(new Secret(id, sharedSecret(c, owner, id)));
             return List.copyOf(result);
         }
@@ -1117,7 +1102,7 @@ public final class ModDeletionLedger {
                 }
                 require(whole || request.schemas().size() <= 1 && request.targets().isEmpty()
                     && request.pins().isEmpty() && request.secrets().isEmpty(), "Invalid version-only range");
-                require(request.targets().stream().map(LogRepository.Target::key).distinct().count() == request
+                require(request.targets().stream().map(LogStore.Target::key).distinct().count() == request
                         .targets().size() && new HashSet<>(request.pins()).size() == request.pins().size(),
                     "Duplicate owned references");
                 for (var target : request.targets()) {
@@ -1137,7 +1122,7 @@ public final class ModDeletionLedger {
                     "Foreign navigation preference");
                 require(request.secrets().stream().map(Secret::id).distinct().count() == request.secrets().size()
                         && request.secrets().stream()
-                        .allMatch(v -> CredentialReferenceRepository.ownedIdentity(request.owner(), v.id())),
+                        .allMatch(v -> SecretRefStore.ownedIdentity(request.owner(), v.id())),
                     "Invalid owned credential identities");
             } catch (IllegalArgumentException | NullPointerException invalid) {
                 throw new SQLException("Invalid original deletion evidence", invalid);

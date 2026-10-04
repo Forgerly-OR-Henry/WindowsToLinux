@@ -1,18 +1,17 @@
 package gold.debug.windowstolinux.app.db.sshrecover;
 
-import gold.debug.windowstolinux.appapi.task.LogEvent;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Archives rescue state only inside its original central task transaction. / 仅在原中央任务事务内归档救援状态。 */
 public final class BrowserRecoveryArchival {
@@ -58,7 +57,7 @@ public final class BrowserRecoveryArchival {
      * @param archive original central archive identity / 原中央归档身份
      * @param task original fully drained known result / 原完全排空的已知结果
      * @throws SQLException if ownership, summary or cleanup cannot be confirmed / 归属、摘要或清理无法确认时 */
-    public static void archive(PlatformDatabase database, Connection c, LogRepository.Target target, UUID archive,
+    public static void archive(PlatformDatabase database, Connection c, LogStore.Target target, UUID archive,
                                TaskSnapshot task) throws SQLException {
         if (c.getAutoCommit() || task.state() != TaskState.ENDED)
             throw new SQLException("Rescue archival requires the original terminal transaction");
@@ -107,12 +106,12 @@ public final class BrowserRecoveryArchival {
                     var fixed = UUID
                         .nameUUIDFromBytes(("WTL-BROWSER-ARCHIVE-1:" + archive).getBytes(StandardCharsets.UTF_8));
                     var record = LogRecordCodec.createSummary(target, task.ownerVersion(),
-                        new LogEvent(outcome == Outcome.FAILED ? LogLevel.ERROR : LogLevel.INFO,
+                        new LogEvent(outcome == TaskResult.FAILED ? LogLevel.ERROR : LogLevel.INFO,
                             "BROWSER_RECOVERY_" + outcome, "Browser recovery task finished: " + outcome,
                             Optional.of(details), Optional.of(task.id()), Optional.empty(),
                             Optional.of(outcome)),
                         fixed, task.endedAt().orElseThrow().toEpochMilli(), null);
-                    new LogRepository(database).store(c, target, List.of(record), 100);
+                    new LogStore(database).store(c, target, List.of(record), 100);
                 } catch (java.io.IOException | IllegalArgumentException invalid) {
                     throw new SQLException("Original rescue summary cannot be encoded", invalid);
                 }

@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.db.TaskArchivalLedgerTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,12 +8,16 @@ import java.sql.SQLException;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryRepository;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryArchival;
-
+import gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryStore;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,8 +25,8 @@ class BrowserRecoveryArchivalTest {
     @TempDir
     Path root;
 
-    static BrowserRecoveryRepository journal(PlatformDatabase db) {
-        return new BrowserRecoveryRepository(new RepositoryConnections(db::openConnection));
+    static BrowserRecoveryStore journal(PlatformDatabase db) {
+        return new BrowserRecoveryStore(new StoreConnections(db::openConnection));
     }
 
     static UUID queue(TaskLedger ledger, String owner) throws Exception {
@@ -38,7 +36,7 @@ class BrowserRecoveryArchivalTest {
                 new TaskResource("SERVER", "server", owner, true)));
     }
 
-    static LogRepository.Target target(LogRepository logs, String category) throws Exception {
+    static LogStore.Target target(LogStore logs, String category) throws Exception {
         return logs.targets().stream().filter(t -> t.category().equals(category)).findFirst().orElseThrow();
     }
 
@@ -61,19 +59,19 @@ class BrowserRecoveryArchivalTest {
                 assertTrue(r.next());
                 original = r.getString(1);
             }
-            assertEquals(TaskState.ENDED, ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+            assertEquals(TaskState.ENDED, ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
             }).state());
             for (var table : List.of("browser_recovery_task", "browser_recovery_event", "platform_task",
                 "platform_task_resource"))
                 assertEquals(0, count(db, "SELECT COUNT(*) FROM " + table));
-            var logs = new LogRepository(db);
+            var logs = new LogStore(db);
             var summary = logs.read(target(logs, "browser_recovery")).getFirst();
             assertEquals(
                 UUID.nameUUIDFromBytes(
                     ("WTL-BROWSER-ARCHIVE-1:" + original).getBytes(java.nio.charset.StandardCharsets.UTF_8)),
                 summary.id());
             assertEquals(id, summary.taskId());
-            assertEquals(Outcome.SUCCEEDED, summary.outcome());
+            assertEquals(TaskResult.SUCCEEDED, summary.outcome());
             assertNull(summary.subjectMod());
             var details = new ObjectMapper().readTree(summary.details());
             assertEquals("RECOVERED", details.path("lastObservedState").asText());
@@ -97,7 +95,7 @@ class BrowserRecoveryArchivalTest {
             event(db, id);
             sql(db, "ALTER TABLE runtime_log ADD CONSTRAINT rescue_archive_fixture CHECK(category<>'browser_recovery')");
             original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.FAILED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.FAILED, "{}", false, () -> {
                 })).finalization();
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log"));
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
@@ -133,7 +131,7 @@ class BrowserRecoveryArchivalTest {
             sql(db, "CREATE TABLE rescue_reference_fixture(task_id VARCHAR REFERENCES browser_recovery_task(task_id))");
             sql(db, "INSERT INTO rescue_reference_fixture VALUES('" + id + "')");
             var original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                 })).finalization();
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log"));
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_task"));
@@ -154,18 +152,18 @@ class BrowserRecoveryArchivalTest {
             assertTrue(ledger.tryStart(id));
             event(db, id);
             var lease = ledger.retain(id, new TaskResource("PROCESS", "browser", "@platform", false));
-            assertEquals(TaskState.UNKNOWN, ledger.completeAndArchive(id, Outcome.UNKNOWN, "{}", false, () -> {
+            assertEquals(TaskState.UNKNOWN, ledger.completeAndArchive(id, TaskResult.UNKNOWN, "{}", false, () -> {
             }).state());
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
-            assertEquals(TaskState.FINISHING, ledger.completeAndArchive(id, Outcome.FAILED, "{}", true, () -> {
+            assertEquals(TaskState.FINISHING, ledger.completeAndArchive(id, TaskResult.FAILED, "{}", true, () -> {
             }).state());
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log"));
             ledger.release(id, lease);
-            ledger.completeAndArchive(id, Outcome.FAILED, "{}", true, () -> {
+            ledger.completeAndArchive(id, TaskResult.FAILED, "{}", true, () -> {
             });
-            var logs = new LogRepository(db);
+            var logs = new LogStore(db);
             var summary = logs.read(target(logs, "browser_recovery")).getFirst();
-            assertEquals(Outcome.FAILED, summary.outcome());
+            assertEquals(TaskResult.FAILED, summary.outcome());
             assertEquals("EXECUTING",
                 new ObjectMapper().readTree(summary.details()).path("lastObservedState").asText());
             assertEquals(0, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
@@ -183,7 +181,7 @@ class BrowserRecoveryArchivalTest {
                     mismatch.equals("protocol") ? "wrong" : BrowserRecoveryArchival.TASK_TYPE, "RECOVERED", "",
                     "recovered");
                 assertThrows(TaskLedger.FinalizationException.class,
-                    () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                    () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                     }));
                 assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_task"));
                 assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
@@ -201,7 +199,7 @@ class BrowserRecoveryArchivalTest {
             var ledger = new TaskLedger(db);
             var id = queue(ledger, "@platform");
             assertTrue(ledger.tryStart(id));
-            ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+            ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
             });
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_task"));
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
@@ -221,7 +219,7 @@ class BrowserRecoveryArchivalTest {
             event(db, id);
             assertEquals(1, count(db, "SELECT COUNT(*) FROM browser_recovery_event"));
             var foreign = queue(ledger, "example.mod");
-            ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+            ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
             });
             assertTrue(ledger.tryStart(foreign));
             assertThrows(SQLException.class, () -> event(db, foreign));

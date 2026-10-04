@@ -67,14 +67,14 @@ public final class DeploymentNativeDatabaseFacts {
      * @param instances observed instances / 已观察实例
      * @param candidate available package / 可用软件包
      * @param conflicts actual conflicts / 实际冲突 */
-    public record Inventory(DeploymentDatabaseEngineType engine, List<Instance> instances,
-                            Optional<Candidate> candidate, List<String> conflicts) {
+    public record InstanceList(DeploymentDatabaseEngineType engine, List<Instance> instances,
+                               Optional<Candidate> candidate, List<String> conflicts) {
         /** Copies bounded inventory without inferring a selection. / 复制有界库存而不推断选择。
          * @param engine selected family / 选定数据库族
          * @param instances observed instances / 已观察实例
          * @param candidate available package / 可用软件包
          * @param conflicts actual conflicts / 实际冲突 */
-        public Inventory {
+        public InstanceList {
             engine = Objects.requireNonNull(engine);
             instances = List.copyOf(instances);
             candidate = Objects.requireNonNull(candidate);

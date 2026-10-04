@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -14,7 +8,11 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -55,12 +53,12 @@ class TaskLedgerTest {
             assertEquals(TaskState.QUEUED, ledger.queries().snapshot(combined).state());
             var independent = queue(ledger, "three", "B");
             assertTrue(ledger.tryStart(independent));
-            assertTrue(ledger.complete(first, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(first, TaskResult.SUCCEEDED, "{}", false));
             assertFalse(ledger.tryStart(combined));
-            assertTrue(ledger.complete(independent, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(independent, TaskResult.SUCCEEDED, "{}", false));
             assertTrue(ledger.tryStart(combined));
             assertEquals(3, active(db, combined));
-            assertTrue(ledger.complete(combined, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(combined, TaskResult.SUCCEEDED, "{}", false));
             assertEquals(List.of(), ledger.queries().unfinished());
         }
     }
@@ -95,7 +93,7 @@ class TaskLedgerTest {
             assertTrue(ledger.tryStart(first));
             var lease = ledger.retain(first, new TaskResource("CONNECTION", "physical-1", "one", false));
             var waiting = queue(ledger, "two", "A");
-            assertFalse(ledger.complete(first, Outcome.SUCCEEDED, "{\"operation\":\"observed\"}", false));
+            assertFalse(ledger.complete(first, TaskResult.SUCCEEDED, "{\"operation\":\"observed\"}", false));
             assertEquals(TaskState.FINISHING, ledger.queries().snapshot(first).state());
             assertTrue(ledger.queries().snapshot(first).outcome().isEmpty());
             assertEquals(1, ledger.queries().snapshot(first).blockers().size());
@@ -104,7 +102,7 @@ class TaskLedgerTest {
             assertEquals(3, active(db, first));
             ledger.release(first, lease);
             ledger.release(first, lease);
-            assertTrue(ledger.complete(first, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(first, TaskResult.SUCCEEDED, "{}", false));
             assertTrue(ledger.queries().snapshot(first).endedAt().isPresent());
             assertEquals(0, active(db, first));
             assertTrue(ledger.tryStart(waiting));
@@ -120,8 +118,8 @@ class TaskLedgerTest {
             var ledger = new TaskLedger(db);
             unknown = queue(ledger, "one", "A");
             assertTrue(ledger.tryStart(unknown));
-            assertFalse(ledger.complete(unknown, Outcome.UNKNOWN, "{\"event\":\"lost_acknowledgement\"}", false));
-            assertThrows(SQLException.class, () -> ledger.complete(unknown, Outcome.FAILED, "{}", false));
+            assertFalse(ledger.complete(unknown, TaskResult.UNKNOWN, "{\"event\":\"lost_acknowledgement\"}", false));
+            assertThrows(SQLException.class, () -> ledger.complete(unknown, TaskResult.FAILED, "{}", false));
             assertEquals(2, active(db, unknown));
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
@@ -131,7 +129,7 @@ class TaskLedgerTest {
             assertThrows(SQLException.class, () -> ledger.tryStart(unknown));
             var waiting = queue(ledger, "two", "A");
             assertFalse(ledger.tryStart(waiting));
-            assertTrue(ledger.complete(unknown, Outcome.SUCCEEDED, "{\"observed\":true}", true));
+            assertTrue(ledger.complete(unknown, TaskResult.SUCCEEDED, "{\"observed\":true}", true));
             assertTrue(ledger.tryStart(waiting));
         }
     }
@@ -147,10 +145,10 @@ class TaskLedgerTest {
             assertEquals(2, active(db, running));
             var queued = queue(ledger, "two", "A");
             assertTrue(ledger.cancel(queued));
-            assertEquals(Outcome.CANCELLED, ledger.queries().snapshot(queued).outcome().orElseThrow());
+            assertEquals(TaskResult.CANCELLED, ledger.queries().snapshot(queued).outcome().orElseThrow());
             assertFalse(ledger.tryStart(queued));
             assertEquals(0, active(db, queued));
-            assertTrue(ledger.complete(running, Outcome.CANCELLED, "{}", false));
+            assertTrue(ledger.complete(running, TaskResult.CANCELLED, "{}", false));
             assertEquals(0, active(db, running));
         }
     }

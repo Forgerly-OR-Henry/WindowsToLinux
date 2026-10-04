@@ -1,26 +1,29 @@
 package gold.debug.windowstolinux.app.service.mod;
 
-import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import java.lang.reflect.*;
 import java.sql.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
-import gold.debug.windowstolinux.app.mod.service.ServiceSnapshot;
+import gold.debug.windowstolinux.app.mod.service.ServiceValueCopier;
 import gold.debug.windowstolinux.app.service.task.*;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.mod.service.ModServices;
+import gold.debug.windowstolinux.appapi.mod.service.ServiceCall;
+import gold.debug.windowstolinux.appapi.mod.service.ServiceHandle;
+import gold.debug.windowstolinux.appapi.mod.service.ServiceRegistration;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Shared actual service registry, with activation publication and per-call task ownership. / 具有启用发布及逐调用任务归属的共用实际服务登记器。 */
 public final class PlatformModServices implements AutoCloseable {
@@ -101,7 +104,7 @@ public final class PlatformModServices implements AutoCloseable {
         /** Cleanup captured from this activation's actual host context before publication. / 发布前从此启用实际宿主上下文捕获的收尾。 */
         private RecoveryCleanup recoveryCleanup;
 
-        /** Publication and permanent admission state. / 发布及永久准入状态。 */
+        /** Publish and permanent admission state. / 发布及永久准入状态。 */
         private boolean published, stopping, detached;
 
         /** Captures exact metadata and selected generation. / 捕获精确元数据及选定代次。
@@ -252,6 +255,15 @@ public final class PlatformModServices implements AutoCloseable {
         }
     }
 
+    /** Keeps fatal provider errors outside service-call contract rejections. / 不将致命提供方错误转为服务调用合同拒绝。
+     * @param failure original provider error / 原提供方错误 */
+    private static void rethrowFatal(Throwable failure) {
+        if (failure instanceof VirtualMachineError fatal)
+            throw fatal;
+        if (failure instanceof ThreadDeath fatal)
+            throw fatal;
+    }
+
     /** One exact registered provider implementation. / 一个精确登记的提供方实现。
      * @param <T> public interface / 公开接口 */
     private final class Registration<T> implements ServiceRegistration {
@@ -335,62 +347,80 @@ public final class PlatformModServices implements AutoCloseable {
                 active++;
                 registration.active++;
             }
+            var diagnosed = new java.util.concurrent.atomic.AtomicReference<Problem>();
             try {
                 return tasks.callbacks().dependencyCall(task, caller.owner(), caller.version(), provider.owner(),
                     provider.version(), provider.schema, caller.mode == ModLaunchMode.RECOVERY,
                     connection -> claims(connection, provider, task), () -> {
-                        if (tasks.reconciling(task)) {
-                            if (provider.recoveryCleanup == null)
-                                throw error(ProblemCode.UNAVAILABLE, "SERVICE_RECOVERY_CLEANUP_MISSING",
-                                    "The original provider's host cleanup is not bound");
-                            provider.recoveryCleanup.close(task);
-                        }
-                        var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
-                        Thread thread = Thread.currentThread();
-                        var publicType = (java.util.function.Predicate<Class<?>>) type -> provider.exported(type)
-                            || caller.exported(type)
-                            || type.getName().startsWith("gold.debug.windowstolinux.appapi.")
-                            && type.getClassLoader() == ModServices.class.getClassLoader();
-                        @SuppressWarnings("unchecked")
-                        T guarded = (T) Proxy.newProxyInstance(registration.contract.getClassLoader(),
-                            new Class<?>[]{registration.contract}, (proxy, method, args) -> {
-                                if (!valid.get() || thread != Thread.currentThread())
-                                    throw error(ProblemCode.ACCESS_DENIED, "SERVICE_SCOPE_ENDED",
-                                        "Provider proxy is outside its original synchronous call");
-                                tasks.requireExecuting(task, provider.owner(), provider.version());
-                                if (method.getDeclaringClass() == Object.class)
-                                    return switch (method.getName()) {
-                                        case "toString" -> "Service(" + provider.owner() + ")";
-                                        case "hashCode" -> System.identityHashCode(proxy);
-                                        case "equals" -> proxy == args[0];
-                                        default -> throw new IllegalArgumentException("Unsupported Object method");
-                                    };
-                                var values = args == null ? new Object[0] : args.clone();
-                                for (int i = 0; i < values.length; i++)
-                                    if (values[i] != task)
-                                        values[i] = ServiceSnapshot.copy(values[i], publicType);
-                                Object result;
-                                try {
-                                    result = method.invoke(registration.implementation, values);
-                                } catch (InvocationTargetException failure) {
-                                    throw failure.getCause();
-                                }
-                                return ServiceSnapshot.copy(result, publicType);
-                            });
                         try {
+                            if (tasks.reconciling(task)) {
+                                if (provider.recoveryCleanup == null)
+                                    throw error(ProblemCode.UNAVAILABLE, "SERVICE_RECOVERY_CLEANUP_MISSING",
+                                        "The original provider's host cleanup is not bound");
+                                provider.recoveryCleanup.close(task);
+                            }
+                            var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+                            Thread thread = Thread.currentThread();
+                            var publicType = (java.util.function.Predicate<Class<?>>) type -> provider.exported(type)
+                                || caller.exported(type)
+                                || type.getName().startsWith("gold.debug.windowstolinux.appapi.")
+                                && type.getClassLoader() == ModServices.class.getClassLoader();
                             @SuppressWarnings("unchecked")
-                            R copied = (R) ServiceSnapshot.copy(call.invoke(guarded), publicType);
-                            return copied;
-                        } finally {
-                            valid.set(false);
+                            T guarded = (T) Proxy.newProxyInstance(registration.contract.getClassLoader(),
+                                new Class<?>[]{registration.contract}, (proxy, method, args) -> {
+                                    if (!valid.get() || thread != Thread.currentThread())
+                                        throw error(ProblemCode.ACCESS_DENIED, "SERVICE_SCOPE_ENDED",
+                                            "Provider proxy is outside its original synchronous call");
+                                    tasks.requireExecuting(task, provider.owner(), provider.version());
+                                    if (method.getDeclaringClass() == Object.class)
+                                        return switch (method.getName()) {
+                                            case "toString" -> "Service(" + provider.owner() + ")";
+                                            case "hashCode" -> System.identityHashCode(proxy);
+                                            case "equals" -> proxy == args[0];
+                                            default -> throw new IllegalArgumentException("Unsupported Object method");
+                                        };
+                                    var values = args == null ? new Object[0] : args.clone();
+                                    for (int i = 0; i < values.length; i++)
+                                        if (values[i] != task)
+                                            values[i] = ServiceValueCopier.copy(values[i], publicType);
+                                    Object result;
+                                    try {
+                                        result = method.invoke(registration.implementation, values);
+                                    } catch (InvocationTargetException failure) {
+                                        throw failure.getCause();
+                                    }
+                                    return ServiceValueCopier.copy(result, publicType);
+                                });
+                            try {
+                                @SuppressWarnings("unchecked")
+                                R copied = (R) ServiceValueCopier.copy(call.invoke(guarded), publicType);
+                                return copied;
+                            } finally {
+                                valid.set(false);
+                            }
+                        } catch (ApiException failure) {
+                            throw failure;
+                        } catch (Exception | Error failure) {
+                            rethrowFatal(failure);
+                            diagnosed.set(tasks.callbacks().recordFailure(task, failure, ProblemCode.CONTRACT_VIOLATION,
+                                "SERVICE_CALL_FAILED", "Synchronous service call or value contract failed"));
+                            throw failure;
                         }
                     });
             } catch (ApiException failure) {
+                var recorded = diagnosed.get();
+                if (recorded != null && recorded.diagnosticId().isPresent()) {
+                    var original = failure.problem();
+                    throw new ApiException(new Problem(original.code(), original.eventCode(), original.message(),
+                        original.context(), recorded.diagnosticId()));
+                }
                 throw failure;
-            } catch (Exception | LinkageError | AssertionError failure) {
+            } catch (Exception | Error failure) {
+                rethrowFatal(failure);
                 tasks.reportUncertainEffect(task);
-                throw error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_FAILED",
-                    "Synchronous service call or value contract failed");
+                var recorded = diagnosed.get();
+                throw new ApiException(recorded != null ? recorded : tasks.callbacks().recordFailure(task, failure,
+                    ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_FAILED", "Synchronous service call or value contract failed"));
             } finally {
                 synchronized (PlatformModServices.this) {
                     active--;

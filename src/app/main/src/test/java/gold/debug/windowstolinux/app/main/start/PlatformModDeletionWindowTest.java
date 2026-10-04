@@ -9,7 +9,7 @@ import java.nio.file.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,7 +33,7 @@ class PlatformModDeletionWindowTest {
 
     Path installed() throws Exception {
         var original = ui.fixture.original("one.wtlmod", "1.0.0", "one");
-        assertEquals(Outcome.SUCCEEDED, ui.installer.install(ui.installer.review(original)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, ui.installer.install(ui.installer.review(original)).outcome());
         acknowledged(ui.runtime);
         return original;
     }

@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -15,14 +10,18 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.app.db.mod.*;
-
-import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.*;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -108,7 +107,7 @@ class PlatformModRestartTest {
                 archive(runtime, operation, archive, "SUCCEEDED");
                 assertFalse(ledger.applied(operation));
                 assertEquals(1, entry.getField("instances").getInt(null));
-                assertEquals(Outcome.SUCCEEDED, context.tasks().submit(work(), t -> success("actual")).completion()
+                assertEquals(TaskResult.SUCCEEDED, context.tasks().submit(work(), t -> success("actual")).completion()
                     .toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                 assertEquals("1", text(runtime, "SELECT revision FROM mod_registry"));
                 assertNull(text(runtime, "SELECT disable_ack_revision FROM mod_registry"));
@@ -193,7 +192,7 @@ class PlatformModRestartTest {
                     new TaskResource("MOD", OWNER, "other.mod", false)));
             assertTrue(tasks.tryStart(task));
             assertThrows(SQLException.class, () -> ledger.begin(operation));
-            assertTrue(tasks.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(tasks.complete(task, TaskResult.SUCCEEDED, "{}", false));
             ledger.begin(operation);
             sql(db, "UPDATE mod_registry SET revision=revision+1");
             assertThrows(SQLException.class, () -> ledger.applied(operation));

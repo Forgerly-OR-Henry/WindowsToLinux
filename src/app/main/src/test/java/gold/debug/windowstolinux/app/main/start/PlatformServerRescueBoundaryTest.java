@@ -10,18 +10,27 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
+
 import javax.swing.*;
 
+import gold.debug.windowstolinux.app.linux.ssh.recover.*;
 import gold.debug.windowstolinux.app.service.server.*;
-import gold.debug.windowstolinux.app.service.sshrecover.*;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -126,13 +135,13 @@ class PlatformServerRescueBoundaryTest {
             servers.saveServerProfile(original, "fixture-secret".toCharArray());
             var edited = PlatformServerServiceTest.profile("server", second.port());
             servers.saveServerProfile(edited, new char[0]);
-            var session = runtime.recovery().start(original);
+            var session = runtime.recovery().start(new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.Server(original.id(), original.host(), original.sshPort(), original.username(), original.credentialKey(), original.displayName()));
             var handle = (TaskHandle<?>) PlatformRecoveryServiceTest.field(session, "handle");
             try {
                 await(() -> handle.snapshot().state() == TaskState.ENDED || handle.snapshot().state() == TaskState.UNKNOWN);
                 assertEquals(TaskState.ENDED, handle.snapshot().state(), "A known pre-transport profile rejection must end");
                 var result = handle.completion().toCompletableFuture().get(6, TimeUnit.SECONDS);
-                assertEquals(Outcome.FAILED, result.outcome());
+                assertEquals(TaskResult.FAILED, result.outcome());
                 assertEquals("RESCUE_SERVER_CHANGED", result.problem().orElseThrow().eventCode());
                 assertEquals(0, first.authentications.get());
                 assertEquals(0, second.connections.get());
@@ -295,7 +304,7 @@ class PlatformServerRescueBoundaryTest {
         }
 
         @Override
-        public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+        public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
             runtime.tasks().requireExecuting(task, "@platform", runtime.version());
             contexts.put(server.id(), task);
             try {

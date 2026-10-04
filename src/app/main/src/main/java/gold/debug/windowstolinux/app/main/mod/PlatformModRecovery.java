@@ -1,23 +1,23 @@
 package gold.debug.windowstolinux.app.main.mod;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.net.URL;
 import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
 import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.mod.PlatformModPrograms;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Owns isolated original-release recovery groups before normal boot assembly. / 在普通启动装配前持有隔离的原发布恢复组。 */
 final class PlatformModRecovery {

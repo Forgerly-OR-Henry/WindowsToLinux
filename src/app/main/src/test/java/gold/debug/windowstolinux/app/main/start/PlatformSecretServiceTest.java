@@ -1,14 +1,7 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.callbackReturned;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.completed;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.callbackReturned;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.completed;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -24,10 +17,18 @@ import javax.swing.SwingUtilities;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.secret.*;
-import gold.debug.windowstolinux.appapi.server.*;
-
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.secret.ref.SecretRef;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefState;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -82,7 +83,7 @@ class PlatformSecretServiceTest {
 
     @Test
     void protectedIdentityAndPurposeRemainUsableAfterARealDatabaseRestart() throws Exception {
-        SecretRef saved;
+        SecretId saved;
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.empty());
@@ -124,7 +125,7 @@ class PlatformSecretServiceTest {
             var saved = completed(binding.submit(request(), task -> {
                 captured.set(task);
                 var own = secrets.create("purpose", new byte[]{1}, task);
-                for (var candidate : List.of(new SecretRef("credential", "purpose"), new SecretRef(own.id(), "changed"),
+                for (var candidate : List.of(new SecretId("credential", "purpose"), new SecretId(own.id(), "changed"),
                     foreign)) {
                     assertEquals(ProblemCode.ACCESS_DENIED,
                         assertThrows(ApiException.class,
@@ -175,7 +176,7 @@ class PlatformSecretServiceTest {
             var reference = completed(binding.submit(request(), task -> {
                 var secret = secrets.create("deploy/env", new byte[]{1, -1}, task);
                 var reserved = secrets.reserve(secret, "application/42", task);
-                assertEquals(ReferenceState.RESERVED, reserved.state());
+                assertEquals(ResourceRefState.RESERVED, reserved.state());
                 assertEquals(reserved.id(), secrets.reserve(secret, "application/42", task).id());
                 assertThrows(SQLException.class, () -> runtime.persistence().security().delete(secret.id()));
                 try (var connection = business.openConnection(task); var statement = connection.createStatement()) {
@@ -187,7 +188,7 @@ class PlatformSecretServiceTest {
                     }
                     connection.commit();
                 }
-                secrets.resolve(reserved.id(), ReferenceResolution.REFERENCED, task);
+                secrets.resolve(reserved.id(), ResourceRefResult.REFERENCED, task);
                 return success(reserved);
             }));
             sql(db, "UPDATE mod_registry SET enabled=FALSE WHERE mod_id=?", OWNER);
@@ -199,8 +200,8 @@ class PlatformSecretServiceTest {
             var next = runtime.capabilities().secrets(OWNER, "1.0.1", Optional.of(schema));
             completed(runtime.tasks().bind(OWNER, "1.0.1", false).submit(request(), task -> {
                 assertEquals(reference.id(), next.reserve(reference.secret(), "application/42", task).id());
-                next.resolve(reference.id(), ReferenceResolution.UNKNOWN, task);
-                assertEquals(ReferenceState.UNKNOWN, next.reserve(reference.secret(), "application/42", task).state());
+                next.resolve(reference.id(), ResourceRefResult.UNKNOWN, task);
+                assertEquals(ResourceRefState.UNKNOWN, next.reserve(reference.secret(), "application/42", task).state());
                 assertThrows(SQLException.class,
                     () -> runtime.persistence().security().delete(reference.secret().id()));
                 try (var connection = business.openConnection(task); var statement = connection.createStatement()) {
@@ -208,8 +209,8 @@ class PlatformSecretServiceTest {
                     assertEquals(1, statement.executeUpdate("DELETE FROM secrets WHERE id=42"));
                     connection.commit();
                 }
-                next.resolve(reference.id(), ReferenceResolution.NOT_REFERENCED, task);
-                next.resolve(reference.id(), ReferenceResolution.NOT_REFERENCED, task);
+                next.resolve(reference.id(), ResourceRefResult.NOT_REFERENCED, task);
+                next.resolve(reference.id(), ResourceRefResult.NOT_REFERENCED, task);
                 return success(null);
             }));
             assertTrue(runtime.persistence().security().delete(reference.secret().id()));
@@ -233,12 +234,12 @@ class PlatformSecretServiceTest {
                 var foreign = runtime.persistence().credentialReferences().reserve(otherSchema, secret, "other-schema");
                 assertEquals(ProblemCode.ACCESS_DENIED,
                     assertThrows(ApiException.class,
-                        () -> secrets.resolve(foreign.id(), ReferenceResolution.NOT_REFERENCED, task)).problem()
+                        () -> secrets.resolve(foreign.id(), ResourceRefResult.NOT_REFERENCED, task)).problem()
                         .code());
                 assertTrue(secrets.findReference(secret, "other-schema", task).isEmpty());
                 var owned = secrets.reserve(secret, "other-schema", task);
                 assertEquals(owned, secrets.findReference(secret, "other-schema", task).orElseThrow());
-                secrets.resolve(owned.id(), ReferenceResolution.NOT_REFERENCED, task);
+                secrets.resolve(owned.id(), ResourceRefResult.NOT_REFERENCED, task);
                 var wrong = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(otherSchema));
                 assertEquals(ProblemCode.ACCESS_DENIED,
                     assertThrows(ApiException.class, () -> wrong.reserve(secret, "wrong-claim", task)).problem()
@@ -247,7 +248,7 @@ class PlatformSecretServiceTest {
             }));
             assertThrows(SQLException.class, () -> runtime.persistence().security().delete(retained.secret().id()));
             runtime.persistence().credentialReferences().resolve(otherSchema, retained.id(),
-                ReferenceResolution.NOT_REFERENCED);
+                ResourceRefResult.NOT_REFERENCED);
             assertTrue(runtime.persistence().security().delete(retained.secret().id()));
         }
     }
@@ -276,12 +277,12 @@ class PlatformSecretServiceTest {
                         .problem().code());
                 assertEquals(reference, secrets.findReference(secret, "draft", task).orElseThrow());
                 assertTrue(secrets.findReference(secret, "missing", task).isEmpty());
-                secrets.resolve(reference.id(), ReferenceResolution.NOT_REFERENCED, task);
-                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                secrets.resolve(reference.id(), ResourceRefResult.NOT_REFERENCED, task);
+                return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             assertTrue(ready.await(8, TimeUnit.SECONDS));
             handle.requestCancel();
-            assertEquals(Outcome.CANCELLED,
+            assertEquals(TaskResult.CANCELLED,
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_credential_reference"));
         }
@@ -294,7 +295,7 @@ class PlatformSecretServiceTest {
             var db = runtime.persistence().database();
             var secrets = runtime.capabilities().secrets(OWNER, VERSION, Optional.of(schema));
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
-            var reference = new AtomicReference<SecretReference>();
+            var reference = new AtomicReference<SecretRef>();
             var original = new AtomicReference<TaskContext>();
             sql(db, "ALTER TABLE mod_credential_reference ADD CONSTRAINT fixture_secret_state CHECK(state<>'ACTIVE')");
             var handle = binding.submit(request(), task -> {
@@ -302,9 +303,9 @@ class PlatformSecretServiceTest {
                 reference.set(secrets.reserve(secrets.create("unknown", new byte[]{7}, task), "draft", task));
                 assertEquals(ProblemCode.UNKNOWN,
                     assertThrows(ApiException.class,
-                        () -> secrets.resolve(reference.get().id(), ReferenceResolution.REFERENCED, task))
+                        () -> secrets.resolve(reference.get().id(), ResourceRefResult.REFERENCED, task))
                         .problem().code());
-                secrets.resolve(reference.get().id(), ReferenceResolution.UNKNOWN, task);
+                secrets.resolve(reference.get().id(), ResourceRefResult.UNKNOWN, task);
                 return success(null);
             });
             state(handle, TaskState.UNKNOWN);
@@ -312,7 +313,7 @@ class PlatformSecretServiceTest {
             assertEquals(1, count(db, "SELECT COUNT(*) FROM mod_credential_reference WHERE state='UNKNOWN'"));
             sql(db, "ALTER TABLE mod_credential_reference DROP CONSTRAINT fixture_secret_state");
             try (var registration = binding.registerRecovery("fixture", (previous, task) -> {
-                secrets.resolve(reference.get().id(), ReferenceResolution.REFERENCED, task);
+                secrets.resolve(reference.get().id(), ResourceRefResult.REFERENCED, task);
                 return success(null);
             })) {
                 assertEquals(TaskState.ENDED,

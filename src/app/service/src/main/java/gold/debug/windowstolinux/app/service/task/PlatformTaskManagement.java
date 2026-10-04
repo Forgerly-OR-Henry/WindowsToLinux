@@ -1,16 +1,15 @@
 package gold.debug.windowstolinux.app.service.task;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.util.*;
 import java.util.concurrent.CompletionStage;
 
-import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Routes explicit desktop actions to original tasks and the host rescue confirmation boundary. / 将明确桌面操作路由到原任务及宿主救援确认边界。 */
 public final class PlatformTaskManagement implements TaskManagement {

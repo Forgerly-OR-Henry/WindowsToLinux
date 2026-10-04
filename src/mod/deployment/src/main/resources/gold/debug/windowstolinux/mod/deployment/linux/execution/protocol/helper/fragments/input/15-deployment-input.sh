@@ -78,16 +78,12 @@ normalize_secret_environment_name() {
     printf 'WINDOWSTOLINUX_SECRET_%s_FILE' "$(printf '%s' "$1" | tr '[:lower:].-' '[:upper:]__')"
 }
 parse_deployment_inputs() {
-    [ "$#" -ge 2 ] || reject deployment-input-arguments
+    [ "$#" -ge 5 ] || reject deployment-input-arguments
     [ "$1" = identity-v2 ] || reject unsupported-runtime-format
-    [ "$1" = identity-v2 ] || reject unsupported-runtime-format
-    if [ "$1" = identity-v2 ]; then
-        [ "$#" -ge 4 ] || reject runtime-identity-arguments
-        runtime_identity_policy="$2"
-        parse_application_payload "$3"
-        shift 3
-        case "$runtime_identity_policy" in SYSTEMD_STATIC | CONTAINER_NON_ROOT) ;; *) reject runtime-identity-policy ;; esac
-    fi
+    runtime_identity_policy="$2"
+    parse_application_payload "$3"
+    shift 3
+    case "$runtime_identity_policy" in SYSTEMD_STATIC | CONTAINER_NON_ROOT) ;; *) reject runtime-identity-policy ;; esac
     deployment_configuration_digest="$1"
     shift
     require_digest "$deployment_configuration_digest"

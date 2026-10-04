@@ -7,18 +7,18 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.PagePin;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.ui.control.DesktopIcons;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
-import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.*;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
-/** Shows only explicitly pinned and currently published page identities. / 仅展示明确固定且当前已发布的页面身份。 */
+/** Shows each published root once, without constructing author views. / 每个已发布根仅显示一次，不构造作者视图。 */
 public final class ModNavigationPane extends JPanel implements AutoCloseable {
     /** Original persistence and management authorization. / 原持久化及管理授权。 */
     private final PlatformModIntents service;
@@ -30,7 +30,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
     private final PageMessagePresenter messages;
 
     /** Themed navigation controls. / 主题导航控件。 */
-    private final DesktopComponentFactory components;
+    private final DesktopPartFactory components;
 
     /** Main navigation entries, never author components. / 主导航入口，不持有作者组件。 */
     private final JPanel entries = new JPanel();
@@ -42,7 +42,10 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
     private List<PagePin> pins = List.of();
 
     /** Current immutable published metadata. / 当前不可变发布元数据。 */
-    private List<PageContribution> published = List.of();
+    private volatile List<PageContribution> published = List.of();
+
+    /** Current visible root selection, independent of retained instances. / 当前可见根选择，独立于保留实例。 */
+    private PageKey selected;
 
     /** Host metadata subscription removed with this view. / 随视图移除的宿主元数据订阅。 */
     private final AutoCloseable subscription;
@@ -74,7 +77,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
      * @param components themed controls / 主题控件
      * @param messages safe messages / 安全消息
      * @throws ApiException if publication observation cannot be registered / 无法登记发布观察时 */
-    public ModNavigationPane(PlatformModIntents service, ModPageRegistry pages, DesktopComponentFactory components,
+    public ModNavigationPane(PlatformModIntents service, ModPageRegistry pages, DesktopPartFactory components,
                              PageMessagePresenter messages) throws ApiException {
         super();
         this.service = service;
@@ -118,13 +121,61 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         return !locked && !closed && !busy;
     }
 
-    /** Opens through the original scope, rechecking publication and lock at the actual call. / 经原作用域打开，在实际调用时重查发布与锁定。
+    /** Projects saved identities to published pins without opening author views. / 将已存身份投影到已发布固定项，不打开作者视图。
+     * @param saved complete preference / 完整偏好
+     * @return visible subset / 可见子集 */
+    public List<PagePin> visiblePins(List<PagePin> saved) {
+        var roots = roots();
+        return closed ? List.of() : PagePin.workspaceOrder(saved, roots).stream()
+            .filter(roots::contains).toList();
+    }
+
+    /** Reads and normalizes root order on a worker through original authorization. / 在工作线程经原授权读取并归并根顺序。
+     * @return confirmed complete order / 已确认完整顺序
+     * @throws ApiException if persistence is unavailable / 持久化不可用时 */
+    public List<PagePin> savedWorkspaces() throws ApiException {
+        return service.workspacePins(roots());
+    }
+
+    /** Captures metadata only; settings never contribute a root. / 仅捕获元数据；设置不贡献根。
+     * @return published root identities / 已发布根身份 */
+    private List<PagePin> roots() {
+        return published.stream().filter(page -> !page.spec().settingsPage())
+            .map(page -> new PagePin(page.key().ownerId(), page.key().pageId())).toList();
+    }
+
+    /** Highlights only the currently displayed root. / 仅突出当前显示的根。
+     * @param key visible root, or null on a platform page / 可见根，平台页时为空 */
+    public void selected(PageKey key) {
+        if (Objects.equals(selected, key)) return;
+        selected = key;
+        render();
+    }
+
+    /** Returns published display text with stable identity fallback. / 返回发布展示文字，以稳定身份为后备。
+     * @param pin exact pin / 精确固定项
+     * @return display label / 展示标签 */
+    public String pinTitle(PagePin pin) {
+        return published.stream().filter(page -> page.key().ownerId().equals(pin.ownerId())
+                && page.key().pageId().equals(pin.pageId())).map(page -> page.spec().defaultTitle() + " · " + pin.ownerId())
+            .findFirst().orElse(pin.ownerId() + "/" + pin.pageId());
+    }
+
+    /** Applies confirmed ordering without repeating persistence. / 应用已确认顺序，不重复持久化。
+     * @param saved complete confirmed pins / 完整已确认固定项 */
+    public void confirmedOrder(List<PagePin> saved) {
+        if (!available() || pins.equals(saved)) return;
+        pins = List.copyOf(saved);
+        render();
+    }
+
+    /** Navigates through the host, retaining the locked page environment. / 经宿主导航，保留页面的锁定环境。
      * @param key exact selected page / 精确已选页面 */
     public void open(PageKey key) {
-        if (!available())
+        if (closed)
             return;
         try {
-            pages.openView(key);
+            pages.navigateView(key);
             LocaleBinding.unbind(status);
             status.setText("");
         } catch (ApiException failure) {
@@ -134,36 +185,17 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         }
     }
 
-    /** Saves a user-requested pin after rechecking current publication. / 重查当前发布后保存用户请求的固定项。
-     * @param key exact selected page / 精确已选页面
-     * @param value requested preference / 请求偏好 */
-    public void pin(PageKey key, boolean value) {
-        if (!available())
-            return;
-        try {
-            if (value && pages.contributions().stream().noneMatch(p -> p.key().equals(key))) {
-                messages.bind(status, "mods.pageUnavailable");
-                publicationChanged();
-                return;
-            }
-            load(() -> service.pin(new PagePin(key.ownerId(), key.pageId()), value), true);
-        } catch (ApiException failure) {
-            LocaleBinding.unbind(status);
-            status.setText(messages.safe(failure));
-        }
-    }
-
-    /** Clears visible metadata across lock boundaries and reloads preferences after unlock. / 跨锁定边界清空可见元数据，解锁后重读偏好。
+    /** Preserves navigation across lock boundaries and reloads preferences after unlock. / 跨锁定边界保留导航，解锁后重读偏好。
      * @param value current lock state / 当前锁定状态 */
     public void setLocked(boolean value) {
         epoch++;
         locked = value;
-        pins = List.of();
+        if (value) busy = false;
         LocaleBinding.unbind(status);
         status.setText("");
         publicationChanged();
-        if (!locked)
-            load(service::pins, false);
+        if (!locked && !busy)
+            load(this::savedWorkspaces, false);
     }
 
     /** Reloads preferences after host-owned cleanup, invalidating older in-flight observations. / 宿主所属清理后重读偏好，使较早的在途观察失效。 */
@@ -173,7 +205,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         epoch++;
         pins = List.of();
         publicationChanged();
-        load(service::pins, false);
+        load(this::savedWorkspaces, false);
     }
 
     /** Reloads publication metadata without opening or pinning new registrations. / 重读发布元数据，不打开或固定新登记。 */
@@ -181,7 +213,13 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         if (closed)
             return;
         try {
-            published = locked ? List.of() : pages.contributions();
+            var previous = published;
+            published = pages.contributions();
+            if (!published.equals(previous)) epoch++;
+            if (!locked && !busy && !published.equals(previous)) {
+                load(this::savedWorkspaces, false);
+                return;
+            }
         } catch (ApiException failure) {
             published = List.of();
             LocaleBinding.unbind(status);
@@ -193,8 +231,8 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
     /** Renders the intersection of saved preferences and current published identities. / 渲染已存偏好与当前发布身份的交集。 */
     private void render() {
         entries.removeAll();
-        if (!locked && !closed)
-            for (var pin : pins) {
+        if (!closed)
+            for (var pin : visiblePins(pins)) {
                 var page = published.stream()
                     .filter(p -> p.key().ownerId().equals(pin.ownerId()) && p.key().pageId().equals(pin.pageId()))
                     .findFirst();
@@ -202,13 +240,13 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                     continue;
                 var entry = page.get();
                 var button = components.secondaryButton(collapsed ? "" : entry.spec().defaultTitle());
-                button.setIcon(DesktopIcons.icon("panels-top-left", 19, button::getForeground));
+                button.setIcon(DesktopIcons.icon("navigation/panels-top-left", 19, button::getForeground));
                 button.putClientProperty("JComponent.minimumWidth", 0);
-                button.setMinimumSize(new java.awt.Dimension(0, com.formdev.flatlaf.util.UIScale.scale(43)));
+                button.setMinimumSize(new java.awt.Dimension(0, com.formdev.flatlaf.util.UIScale.scale(38)));
                 button.setMaximumSize(
-                    new java.awt.Dimension(Integer.MAX_VALUE, com.formdev.flatlaf.util.UIScale.scale(43)));
+                    new java.awt.Dimension(Integer.MAX_VALUE, com.formdev.flatlaf.util.UIScale.scale(38)));
                 button.setPreferredSize(new java.awt.Dimension(com.formdev.flatlaf.util.UIScale.scale(140),
-                    com.formdev.flatlaf.util.UIScale.scale(43)));
+                    com.formdev.flatlaf.util.UIScale.scale(38)));
                 button.setMargin(new java.awt.Insets(8, collapsed ? 3 : 10, 8, collapsed ? 3 : 10));
                 button.setHorizontalAlignment(collapsed ? SwingConstants.CENTER : SwingConstants.LEFT);
                 button.getAccessibleContext().setAccessibleName(entry.spec().defaultTitle());
@@ -216,7 +254,17 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 button.putClientProperty("mod.pageKey", entry.key());
                 button.setName("mods.pinned." + entries.getComponentCount());
                 button.setToolTipText(entry.spec().defaultTitle() + " · " + pin.ownerId());
-                button.setEnabled(available());
+                button.putClientProperty("desktop.navigation", true);
+                button.setBorderPainted(false);
+                button.putClientProperty("JButton.buttonType", null);
+                boolean active = entry.key().equals(selected);
+                var background = UIManager.getColor(active ? "List.selectionBackground" : "Panel.background");
+                button.setBackground(background);
+                if (active) button.setForeground(UIManager.getColor("List.selectionForeground"));
+                button.putClientProperty("FlatLaf.style", java.util.Map.of("arc", 8,
+                    "hoverBackground", active ? background : UIManager.getColor("Button.background"),
+                    "pressedBackground", UIManager.getColor("List.selectionBackground")));
+                button.setEnabled(!closed);
                 button.addActionListener(event -> open(entry.key()));
                 entries.add(button);
             }
@@ -235,12 +283,12 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
         busy = true;
         long original = epoch;
         render();
-        DesktopTaskExecutor.run(action, value -> {
+        DesktopTaskRunner.run(action, value -> {
             busy = false;
             if (closed || locked)
                 return;
             if (epoch != original) {
-                load(service::pins, false);
+                load(this::savedWorkspaces, false);
                 return;
             }
             pins = value;
@@ -248,7 +296,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
                 LocaleBinding.unbind(status);
                 status.setText("");
             }
-            publicationChanged();
+            render();
         }, failure -> {
             busy = false;
             if (closed || locked)
@@ -257,7 +305,7 @@ public final class ModNavigationPane extends JPanel implements AutoCloseable {
             status.setText(messages.safe(failure));
             render();
             if (mutation || epoch != original)
-                load(service::pins, false);
+                load(this::savedWorkspaces, false);
         });
     }
 

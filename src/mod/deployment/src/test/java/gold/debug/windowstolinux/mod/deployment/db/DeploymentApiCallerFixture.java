@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -10,15 +8,20 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.util.*;
+
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 /** Real CLASS caller and production provider, with distinct PF4J loaders and the exported contract. / 真实 CLASS 调用方及生产提供方，使用独立 PF4J 加载器与公开合同。 */
 final class DeploymentApiCallerFixture {
@@ -58,8 +61,8 @@ final class DeploymentApiCallerFixture {
 
     /** Copies the actual provider build and generates both official CLASS descriptions before the preparation boot. / 在准备启动前复制实际提供方构建并生成两个官方 CLASS 描述。 */
     static Path prepareWorkspace(Path workspace, Path temporary) throws Exception {
-        workspace = DevelopmentDescriptor.workspace(workspace);
-        var descriptor = DevelopmentDescriptor.read(workspace,
+        workspace = DevelopmentInfo.workspace(workspace);
+        var descriptor = DevelopmentInfo.read(workspace,
             workspace.resolve("src/mod/deployment/target/wtlmod-development.json"));
         assertEquals(PROVIDER, descriptor.manifest().id());
         assertEquals(VERSION, descriptor.manifest().version().toString());
@@ -87,10 +90,10 @@ final class DeploymentApiCallerFixture {
             copyVerified(library, copied);
             libraries.add(copied);
         }
-        assertEquals(descriptor, DevelopmentDescriptor.read(workspace,
+        assertEquals(descriptor, DevelopmentInfo.read(workspace,
             workspace.resolve("src/mod/deployment/target/wtlmod-development.json")), "Actual provider provenance changed while copying");
-        Path providerDescription = DevelopmentDescriptor.generate(callerWorkspace, providerManifest, providerClasses, authors, inputs, libraries);
-        var copiedProvider = DevelopmentDescriptor.read(callerWorkspace, providerDescription);
+        Path providerDescription = DevelopmentInfo.generate(callerWorkspace, providerManifest, providerClasses, authors, inputs, libraries);
+        var copiedProvider = DevelopmentInfo.read(callerWorkspace, providerDescription);
         assertEquals(descriptor.manifest().json(), copiedProvider.manifest().json());
         Path module = callerWorkspace.resolve("src/mod/caller");
         Files.createDirectories(module);
@@ -110,9 +113,9 @@ final class DeploymentApiCallerFixture {
             <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-mod-deployment</artifactId>
             <version>1.1.0-dev.1</version><scope>provided</scope></dependency></dependencies></project>
             """);
-        Path callerDescription = DevelopmentDescriptor.generate(callerWorkspace, module.resolve("mod.json"), classes, List.of(),
+        Path callerDescription = DevelopmentInfo.generate(callerWorkspace, module.resolve("mod.json"), classes, List.of(),
             List.of(callerWorkspace.resolve("pom.xml"), callerWorkspace.resolve("src/mod/pom.xml"), module.resolve("pom.xml")), List.of());
-        assertEquals(CALLER, DevelopmentDescriptor.read(callerWorkspace, callerDescription).manifest().id());
+        assertEquals(CALLER, DevelopmentInfo.read(callerWorkspace, callerDescription).manifest().id());
         return callerWorkspace;
     }
 
@@ -231,9 +234,9 @@ final class DeploymentApiCallerFixture {
         import java.util.*;
         import java.nio.file.*;
         import java.time.Instant;
-        import gold.debug.windowstolinux.appapi.mod.*;
-        import gold.debug.windowstolinux.appapi.task.*;
-        import gold.debug.windowstolinux.appapi.server.*;
+        import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.service.ServiceCall; import gold.debug.windowstolinux.appapi.mod.service.ServiceHandle; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+        import gold.debug.windowstolinux.appapi.task.result.ApiException; import gold.debug.windowstolinux.appapi.task.run.CancelToken; import gold.debug.windowstolinux.appapi.task.result.OperationResult; import gold.debug.windowstolinux.appapi.task.result.Problem; import gold.debug.windowstolinux.appapi.task.result.ProblemCode; import gold.debug.windowstolinux.appapi.task.run.ResourceLease; import gold.debug.windowstolinux.appapi.task.run.TaskContext; import gold.debug.windowstolinux.appapi.task.run.TaskHandle; import gold.debug.windowstolinux.appapi.task.model.TaskRequest; import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+        import gold.debug.windowstolinux.appapi.server.model.ServerId;
         import gold.debug.windowstolinux.mod.deployment.api.*;
         public final class Mod implements ModEntrypoint {
             public static ModContext context;
@@ -257,9 +260,9 @@ final class DeploymentApiCallerFixture {
                     String payload=original.snapshot().payload();
                     UUID saved=UUID.fromString(payload.substring(payload.indexOf(':')+2,payload.length()-2));
                     var restored=api.call(task,p->p.finishCollection(saved,task));
-                    if(restored.outcome()!=Outcome.SUCCEEDED || restored.value().orElseThrow().state()!=DeploymentHandoffState.FINISHED)
+                    if(restored.outcome()!=TaskResult.SUCCEEDED || restored.value().orElseThrow().state()!=DeploymentHandoffState.FINISHED)
                         return uncertain();
-                    original.close(); return new OperationResult<Void>(Outcome.FAILED,Optional.empty(),Optional.of(new Problem(ProblemCode.IO_FAILURE,"CALLER_COLLECTION_ABORTED","Original incomplete collection was restored and released",Map.of(),Optional.empty())));
+                    original.close(); return new OperationResult<Void>(TaskResult.FAILED,Optional.empty(),Optional.of(new Problem(ProblemCode.IO_FAILURE,"CALLER_COLLECTION_ABORTED","Original incomplete collection was restored and released",Map.of(),Optional.empty())));
                 });
                 context.tasks().registerRecovery("api-boundary",(before,task)->ok());
                 context.tasks().registerRecovery("api-occupancy",(before,task)-> {
@@ -267,7 +270,7 @@ final class DeploymentApiCallerFixture {
                     var identity=context.tasks().inspect(task);
                     check(identity.id().equals(before.id()) && identity.ownerId().equals("example.deploymentcaller"),"Original retained occupancy identity changed");
                     check(root.snapshot().payload().equals(String.format("{%creadOnly%c:true}",34,34)),"Original read-only call did not return");
-                    root.close(); return new OperationResult<Void>(Outcome.CANCELLED,Optional.empty(),Optional.empty());
+                    root.close(); return new OperationResult<Void>(TaskResult.CANCELLED,Optional.empty(),Optional.empty());
                 });
                 context.tasks().registerRecovery("api-restore",(before,task)-> {
                     try {
@@ -275,12 +278,12 @@ final class DeploymentApiCallerFixture {
                         String payload=root.snapshot().payload();
                         UUID saved=UUID.fromString(payload.substring(payload.indexOf(':')+2,payload.length()-2));
                         var observed=restoreCall("restore-reconcile",task,p->p.reconcile(saved,task));
-                        if(observed.outcome()!=Outcome.SUCCEEDED)return uncertain();
+                        if(observed.outcome()!=TaskResult.SUCCEEDED)return uncertain();
                         var original=observed.value().orElseThrow();check(original.id().equals(saved),"Reconciliation changed original handoff");
                         if(original.state()==DeploymentHandoffState.ACTIVE) {
                             var completed=restoreCall("restore-finish-active",task,p->p.activate(saved,task));
-                            if(completed.outcome()==Outcome.UNKNOWN)return uncertain();
-                            check(completed.outcome()==Outcome.SUCCEEDED && completed.value().orElseThrow().handoff().id().equals(saved)
+                            if(completed.outcome()==TaskResult.UNKNOWN)return uncertain();
+                            check(completed.outcome()==TaskResult.SUCCEEDED && completed.value().orElseThrow().handoff().id().equals(saved)
                                     && completed.value().orElseThrow().handoff().state()==DeploymentHandoffState.FINISHED,completed.toString());
                         } else if(original.state()!=DeploymentHandoffState.FINISHED)return uncertain();
                         check(!root.snapshot().released(),"Provider reconciliation released caller checkpoint");
@@ -300,44 +303,44 @@ final class DeploymentApiCallerFixture {
                             try { return p.prepareRestore(different,task); }
                             catch(ApiException denied) {
                                 check(denied.problem().eventCode().equals("DEPLOYMENT_HANDOFF_REQUEST_CHANGED"),denied.problem().toString());
-                                return new OperationResult<DeploymentHandoff>(Outcome.FAILED,Optional.empty(),Optional.of(denied.problem()));
+                                return new OperationResult<DeploymentHandoff>(TaskResult.FAILED,Optional.empty(),Optional.of(denied.problem()));
                             }
                         });
-                        check(rejected.outcome()==Outcome.FAILED && rejected.value().isEmpty(),"Different request recovered an original handoff");
+                        check(rejected.outcome()==TaskResult.FAILED && rejected.value().isEmpty(),"Different request recovered an original handoff");
                         var found=restoreCall("original-request-lookup",task,p->p.prepareRestore(reliableRequest,task));
                         check(found.value().isPresent(),"Original request did not return its durable handoff");
                         var original=found.value().orElseThrow();
                         if(handoff!=null)check(handoff.equals(original.id()),"Original handoff ID changed");
                         handoff=original.id();
-                        check(found.outcome()==(recoverPrepared?Outcome.SUCCEEDED:Outcome.UNKNOWN),found.toString());
+                        check(found.outcome()==(recoverPrepared?TaskResult.SUCCEEDED:TaskResult.UNKNOWN),found.toString());
                         check(original.state()==(recoverPrepared?DeploymentHandoffState.PREPARED:DeploymentHandoffState.UNKNOWN),original.toString());
                         lookupAssertion.run();
                         root.advance(root.snapshot(),String.format("{%chandoff%c:%c%s%c}",34,34,34,handoff,34));
                         var observed=restoreCall("lost-prepare-reconcile",task,p->p.reconcile(handoff,task));
                         if(recoverPrepared) {
-                            if(observed.outcome()==Outcome.UNKNOWN)return uncertain();
-                            check(observed.outcome()==Outcome.SUCCEEDED && observed.value().orElseThrow().id().equals(handoff),observed.toString());
+                            if(observed.outcome()==TaskResult.UNKNOWN)return uncertain();
+                            check(observed.outcome()==TaskResult.SUCCEEDED && observed.value().orElseThrow().id().equals(handoff),observed.toString());
                             var phase=observed.value().orElseThrow().state();
                             if(phase==DeploymentHandoffState.FINISHED) { root.close();return ok(); }
                             check(phase==DeploymentHandoffState.PREPARED || phase==DeploymentHandoffState.ACTIVE,observed.toString());
                             var activated=restoreCall("lost-prepare-activate",task,p->p.activate(handoff,task));
-                            if(activated.outcome()==Outcome.UNKNOWN)return uncertain();
-                            check(activated.outcome()==Outcome.SUCCEEDED && activated.value().orElseThrow().handoff().id().equals(handoff)
+                            if(activated.outcome()==TaskResult.UNKNOWN)return uncertain();
+                            check(activated.outcome()==TaskResult.SUCCEEDED && activated.value().orElseThrow().handoff().id().equals(handoff)
                                     && activated.value().orElseThrow().handoff().state()==DeploymentHandoffState.FINISHED,activated.toString());
                             root.close();return ok();
                         }
-                        check(observed.outcome()==Outcome.UNKNOWN,"Pending original upload unexpectedly resolved");
+                        check(observed.outcome()==TaskResult.UNKNOWN,"Pending original upload unexpectedly resolved");
                         var discarded=restoreCall("lost-prepare-discard",task,p->p.discard(handoff,task));
-                        if(discarded.outcome()==Outcome.UNKNOWN)return uncertain();
-                        check(discarded.outcome()==Outcome.SUCCEEDED && discarded.value().orElseThrow().state()==DeploymentHandoffState.FINISHED,discarded.toString());
+                        if(discarded.outcome()==TaskResult.UNKNOWN)return uncertain();
+                        check(discarded.outcome()==TaskResult.SUCCEEDED && discarded.value().orElseThrow().state()==DeploymentHandoffState.FINISHED,discarded.toString());
                         check(!root.snapshot().released(),"Provider discarded caller root checkpoint");
-                        root.close();return new OperationResult<Void>(Outcome.CANCELLED,Optional.empty(),Optional.empty());
+                        root.close();return new OperationResult<Void>(TaskResult.CANCELLED,Optional.empty(),Optional.empty());
                     } catch(Exception|AssertionError failure) { assertion=failure;throw failure; }
                 });
             }
             public void stop(StopContext reason) throws Exception { api.close(); }
-            private static OperationResult<Void> ok() { return new OperationResult<>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()); }
-            private static OperationResult<Void> uncertain() { return new OperationResult<>(Outcome.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"CALLER_RETAINED","Original handoff retained",Map.of(),Optional.empty()))); }
+            private static OperationResult<Void> ok() { return new OperationResult<>(TaskResult.SUCCEEDED,Optional.empty(),Optional.empty()); }
+            private static OperationResult<Void> uncertain() { return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"CALLER_RETAINED","Original handoff retained",Map.of(),Optional.empty()))); }
             private static void check(boolean value,String reason) { if(!value)throw new AssertionError(reason); }
             public static TaskHandle<?> occupancy(Runnable retained) throws Exception {
                 return context.tasks().submit(new TaskRequest("api-occupancy","Actual retained CLASS caller",List.of(),false),task->{
@@ -357,17 +360,17 @@ final class DeploymentApiCallerFixture {
                         originalTask=task;
                         var identity=context.tasks().inspect(task);
                         check(identity.ownerId().equals("example.deploymentcaller") && identity.ownerVersion().equals("1.1.0-dev.1"),"Original root identity changed");
-                        var reviewed=api.call(task,p->p.reviewCollection(new DeploymentCollectionRequest(new DeploymentApplicationRef(application,new ServerRef("server")),revision,bindings),task));
-                        check(reviewed.outcome()==Outcome.SUCCEEDED,reviewed.toString()); handoff=reviewed.value().orElseThrow().id();
+                        var reviewed=api.call(task,p->p.reviewCollection(new DeploymentCollectionRequest(new DeploymentApplicationId(application,new ServerId("server")),revision,bindings),task));
+                        check(reviewed.outcome()==TaskResult.SUCCEEDED,reviewed.toString()); handoff=reviewed.value().orElseThrow().id();
                         root.advance(root.snapshot(),"{\\"handoff\\":\\""+handoff+"\\"}");
                         between.run();
                         var collected=api.call(task,p->p.collect(handoff,task));
-                        if(collected.outcome()==Outcome.UNKNOWN)return uncertain();
-                        check(collected.outcome()==Outcome.SUCCEEDED,collected.toString());
+                        if(collected.outcome()==TaskResult.UNKNOWN)return uncertain();
+                        check(collected.outcome()==TaskResult.SUCCEEDED,collected.toString());
                         check(collected.value().orElseThrow().artifacts().stream().anyMatch(a->a.bindingId().equals("worker:uploads")),"Qualified worker binding absent");
                         check(collected.value().orElseThrow().artifacts().stream().noneMatch(a->a.bindingId().equals("web:uploads")),"Unselected same-name web binding leaked");
                         var finished=api.call(task,p->p.finishCollection(handoff,task));
-                        check(finished.outcome()==Outcome.SUCCEEDED && finished.value().orElseThrow().state()==DeploymentHandoffState.FINISHED,finished.toString());
+                        check(finished.outcome()==TaskResult.SUCCEEDED && finished.value().orElseThrow().state()==DeploymentHandoffState.FINISHED,finished.toString());
                         root.close(); return ok();
                     } catch(Exception|AssertionError failure) { assertion=failure; throw failure; }
                 });
@@ -406,7 +409,7 @@ final class DeploymentApiCallerFixture {
                             Map<?,?> value=(Map<?,?>)element;
                             bindings.add(new DeploymentBinding((String)value.get("id"),(String)value.get("component"),(String)value.get("kind"),(String)value.get("path"),(String)value.get("engine"),(Boolean)value.get("quiescence"),Optional.empty()));
                         }
-                        var snapshot=new DeploymentApplicationSnapshot(new DeploymentApplicationRef((String)archive.get("application"),new ServerRef((String)archive.get("source"))),
+                        var snapshot=new DeploymentApplicationSnapshot(new DeploymentApplicationId((String)archive.get("application"),new ServerId((String)archive.get("source"))),
                                 (String)archive.get("display"),(String)archive.get("revision"),(String)archive.get("ownership"),ApplicationRunState.valueOf((String)archive.get("state")),
                                 Instant.parse((String)archive.get("observed")),new VersionedRuntime((Integer)archive.get("format"),(byte[])archive.get("runtime")),bindings,(String)archive.get("health"));
                         var inputs=new ArrayList<RestoreFile>();
@@ -416,14 +419,14 @@ final class DeploymentApiCallerFixture {
                             inputs.add(new RestoreFile(id,file,bytes.length,HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))));
                         }
                         String digest=(String)archive.get("archiveSha");
-                        var review=api.call(task,p->p.reviewRestoreTarget(snapshot,new ServerRef("target"),digest,task));
-                        check(review.outcome()==Outcome.SUCCEEDED,review.toString());reviewed.run();
-                        var request=new DeploymentRestoreRequest(snapshot,new ServerRef("target"),inputs,digest,review.value().orElseThrow());
+                        var review=api.call(task,p->p.reviewRestoreTarget(snapshot,new ServerId("target"),digest,task));
+                        check(review.outcome()==TaskResult.SUCCEEDED,review.toString());reviewed.run();
+                        var request=new DeploymentRestoreRequest(snapshot,new ServerId("target"),inputs,digest,review.value().orElseThrow());
                         var refused=api.call(task,p->{
                             try { return p.prepareRestore(request,task); }
-                            catch(ApiException failure) { return new OperationResult<DeploymentHandoff>(Outcome.FAILED,Optional.empty(),Optional.of(failure.problem())); }
+                            catch(ApiException failure) { return new OperationResult<DeploymentHandoff>(TaskResult.FAILED,Optional.empty(),Optional.of(failure.problem())); }
                         });
-                        check(refused.outcome()==Outcome.FAILED && refused.value().isEmpty(),refused.toString());
+                        check(refused.outcome()==TaskResult.FAILED && refused.value().isEmpty(),refused.toString());
                         var problem=refused.problem().orElseThrow();check(problem.code().name().equals(code) && problem.eventCode().equals(event),problem.toString());
                         check(!root.snapshot().released(),"Provider released rejection root checkpoint");root.close();return ok();
                     } catch(Exception|AssertionError failure) { assertion=failure;throw failure; }
@@ -438,7 +441,7 @@ final class DeploymentApiCallerFixture {
                             Map<?,?> value=(Map<?,?>)element;
                             bindings.add(new DeploymentBinding((String)value.get("id"),(String)value.get("component"),(String)value.get("kind"),(String)value.get("path"),(String)value.get("engine"),(Boolean)value.get("quiescence"),Optional.empty()));
                         }
-                        var snapshot=new DeploymentApplicationSnapshot(new DeploymentApplicationRef((String)archive.get("application"),new ServerRef((String)archive.get("source"))),
+                        var snapshot=new DeploymentApplicationSnapshot(new DeploymentApplicationId((String)archive.get("application"),new ServerId((String)archive.get("source"))),
                                 (String)archive.get("display"),(String)archive.get("revision"),(String)archive.get("ownership"),ApplicationRunState.valueOf((String)archive.get("state")),
                                 Instant.parse((String)archive.get("observed")),new VersionedRuntime((Integer)archive.get("format"),(byte[])archive.get("runtime")),bindings,(String)archive.get("health"));
                         var inputs=new ArrayList<RestoreFile>();
@@ -448,17 +451,17 @@ final class DeploymentApiCallerFixture {
                             inputs.add(new RestoreFile(id,file,bytes.length,HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))));
                         }
                         String archiveDigest=(String)archive.get("archiveSha");
-                        var reviewed=api.call(task,p->p.reviewRestoreTarget(snapshot,new ServerRef("target"),archiveDigest,task));
-                        check(reviewed.outcome()==Outcome.SUCCEEDED,reviewed.toString());
-                        var request=new DeploymentRestoreRequest(snapshot,new ServerRef("target"),inputs,archiveDigest,reviewed.value().orElseThrow());
+                        var reviewed=api.call(task,p->p.reviewRestoreTarget(snapshot,new ServerId("target"),archiveDigest,task));
+                        check(reviewed.outcome()==TaskResult.SUCCEEDED,reviewed.toString());
+                        var request=new DeploymentRestoreRequest(snapshot,new ServerId("target"),inputs,archiveDigest,reviewed.value().orElseThrow());
                         var candidate=restoreCall("first-prepare",task,p->prepareWithEvidence(p,request,task));
-                        check(candidate.outcome()==Outcome.SUCCEEDED && candidate.value().orElseThrow().state()==DeploymentHandoffState.PREPARED,candidate.toString());
+                        check(candidate.outcome()==TaskResult.SUCCEEDED && candidate.value().orElseThrow().state()==DeploymentHandoffState.PREPARED,candidate.toString());
                         handoff=candidate.value().orElseThrow().id(); checkpoint.advance(checkpoint.snapshot(),"{\\"handoff\\":\\""+handoff+"\\"}");
                         prepared.run();
                         check(!checkpoint.snapshot().released(),"Provider prepare released caller root checkpoint");
                         var activated=restoreCall("first-activate",task,p->p.activate(handoff,task));
-                        if(activated.outcome()==Outcome.UNKNOWN)return uncertain();
-                        check(activated.outcome()==Outcome.SUCCEEDED && activated.value().orElseThrow().handoff().state()==DeploymentHandoffState.FINISHED,activated.toString());
+                        if(activated.outcome()==TaskResult.UNKNOWN)return uncertain();
+                        check(activated.outcome()==TaskResult.SUCCEEDED && activated.value().orElseThrow().handoff().state()==DeploymentHandoffState.FINISHED,activated.toString());
                         check(!checkpoint.snapshot().released(),"Provider activation released caller root checkpoint");
                         checkpoint.close(); return ok();
                     } catch(Exception|AssertionError failure) { assertion=failure;throw failure; }
@@ -513,7 +516,7 @@ final class DeploymentApiCallerFixture {
                     Map<?,?> value=(Map<?,?>)element;
                     bindings.add(new DeploymentBinding((String)value.get("id"),(String)value.get("component"),(String)value.get("kind"),(String)value.get("path"),(String)value.get("engine"),(Boolean)value.get("quiescence"),Optional.empty()));
                 }
-                return new DeploymentApplicationSnapshot(new DeploymentApplicationRef((String)archive.get("application"),new ServerRef((String)archive.get("source"))),
+                return new DeploymentApplicationSnapshot(new DeploymentApplicationId((String)archive.get("application"),new ServerId((String)archive.get("source"))),
                         (String)archive.get("display"),(String)archive.get("revision"),(String)archive.get("ownership"),ApplicationRunState.valueOf((String)archive.get("state")),
                         Instant.parse((String)archive.get("observed")),new VersionedRuntime((Integer)archive.get("format"),bytes),bindings,(String)archive.get("health"));
             }
@@ -523,8 +526,8 @@ final class DeploymentApiCallerFixture {
                         originalTask=task;recoverPrepared=prepared;lookupAssertion=lookup;
                         var root=context.tasks().beginCheckpoint(task,"lost-restore",String.format("{%crequestSha%c:%c%s%c}",34,34,34,archive.get("archiveSha"),34));
                         var invalid=archived(archive,(byte[])archive.get("malformedRuntime"));
-                        var rejected=api.call(task,p->p.reviewRestoreTarget(invalid,new ServerRef("target"),(String)archive.get("archiveSha"),task));
-                        check(rejected.outcome()==Outcome.FAILED && rejected.value().isEmpty(),"Fractional archive metadata reached target preparation");
+                        var rejected=api.call(task,p->p.reviewRestoreTarget(invalid,new ServerId("target"),(String)archive.get("archiveSha"),task));
+                        check(rejected.outcome()==TaskResult.FAILED && rejected.value().isEmpty(),"Fractional archive metadata reached target preparation");
                         malformed.run();
                         var snapshot=archived(archive,(byte[])archive.get("runtime"));
                         var inputs=new ArrayList<RestoreFile>();
@@ -533,9 +536,9 @@ final class DeploymentApiCallerFixture {
                             Path file=files.resolve(id.replace(':','-')+".pax");byte[] bytes=Files.readAllBytes(file);
                             inputs.add(new RestoreFile(id,file,bytes.length,HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))));
                         }
-                        var reviewed=api.call(task,p->p.reviewRestoreTarget(snapshot,new ServerRef("target"),(String)archive.get("archiveSha"),task));
-                        check(reviewed.outcome()==Outcome.SUCCEEDED,reviewed.toString());
-                        reliableRequest=new DeploymentRestoreRequest(snapshot,new ServerRef("target"),inputs,(String)archive.get("archiveSha"),reviewed.value().orElseThrow());
+                        var reviewed=api.call(task,p->p.reviewRestoreTarget(snapshot,new ServerId("target"),(String)archive.get("archiveSha"),task));
+                        check(reviewed.outcome()==TaskResult.SUCCEEDED,reviewed.toString());
+                        reliableRequest=new DeploymentRestoreRequest(snapshot,new ServerId("target"),inputs,(String)archive.get("archiveSha"),reviewed.value().orElseThrow());
                         fault.run();
                         try {
                             restoreCall("lost-first-prepare",task,p->{

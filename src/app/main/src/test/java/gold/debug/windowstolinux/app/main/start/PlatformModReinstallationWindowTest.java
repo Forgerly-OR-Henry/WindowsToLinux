@@ -14,7 +14,7 @@ import javax.swing.*;
 
 import com.sun.jna.platform.win32.*;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -128,7 +128,7 @@ class PlatformModReinstallationWindowTest {
     void acknowledgedRestartIsRequiredAndRepairingADraftVersionDoesNotChangeTheSavedSelection() throws Exception {
         fixture.installed();
         var second = ui.fixture.original("two.wtlmod", "2.0.0", "two");
-        assertEquals(Outcome.SUCCEEDED, ui.installer.install(ui.installer.review(second)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, ui.installer.install(ui.installer.review(second)).outcome());
         sql(ui.runtime, "UPDATE mod_registry SET disable_ack_revision=NULL");
         fixture.window();
         assertFalse(ui.runtime.modIntents().list().getFirst().stopAcknowledged());
@@ -215,11 +215,11 @@ class PlatformModReinstallationWindowTest {
     void explicitRestorationUsesOriginalRepairVersionAndReportsFailedRepair() throws Exception {
         fixture.installed();
         var second = ui.fixture.original("two.wtlmod", "2.0.0", "two");
-        assertEquals(Outcome.SUCCEEDED, ui.installer.install(ui.installer.review(second)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, ui.installer.install(ui.installer.review(second)).outcome());
         String old = WindowsFileIdentity.read(ui.fixture.target("2.0.0"));
         trap(ui.runtime, "phase<>'REGISTERED'");
         var review = ui.installer.reinstallation().review(OWNER, "2.0.0", second);
-        assertEquals(Outcome.UNKNOWN, ui.installer.reinstallation().reinstall(review).outcome());
+        assertEquals(TaskResult.UNKNOWN, ui.installer.reinstallation().reinstall(review).outcome());
         untrap(ui.runtime);
         Files.writeString(ui.fixture.target("2.0.0").resolve("main/fixture.jar"), "damaged new bytes");
         fixture.window();
@@ -285,10 +285,10 @@ class PlatformModReinstallationWindowTest {
         Path original = fixture.installed();
         trap(ui.runtime, "phase<>'REGISTERED'");
         var review = ui.installer.reinstallation().review(OWNER, "1.0.0", original);
-        assertEquals(Outcome.UNKNOWN, ui.installer.reinstallation().reinstall(review).outcome());
+        assertEquals(TaskResult.UNKNOWN, ui.installer.reinstallation().reinstall(review).outcome());
         untrap(ui.runtime);
         trap(ui.runtime, "phase<>'RESTORED'");
-        assertEquals(Outcome.UNKNOWN, ui.installer.reinstallation()
+        assertEquals(TaskResult.UNKNOWN, ui.installer.reinstallation()
             .restore(ui.installer.reinstallation().reviewRestore(review.id())).outcome());
         untrap(ui.runtime);
         fixture.window();

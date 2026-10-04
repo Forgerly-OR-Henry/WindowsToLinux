@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.mod.run;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -13,6 +9,11 @@ import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.load.ModEntryFactory;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Activates one prepared Mod and preserves partial-stop ownership until actual cleanup. / 启用一个已准备的 Mod，并保留部分停止归属直至实际清理。 */
 public final class ModRuntimeSession {
@@ -26,7 +27,7 @@ public final class ModRuntimeSession {
     private final SemanticVersion platformApi;
 
     /** Mandatory host journal, separate from author-owned context cleanup. / 必需的宿主状态记录器，独立于作者上下文清理。 */
-    private final Journal journal;
+    private final ActionLog journal;
 
     /** Prevents concurrent lifecycle callbacks without holding a monitor across author code. / 不跨作者代码持有监视器的生命周期回调互斥标记。 */
     private final AtomicBoolean operation = new AtomicBoolean();
@@ -62,7 +63,7 @@ public final class ModRuntimeSession {
      * @param platformApi actual host API release / 实际宿主 API 版本
      * @param journal actual host lifecycle persistence / 实际宿主生命周期持久化
      */
-    public ModRuntimeSession(ModClassLoader loader, ContextLease lease, SemanticVersion platformApi, Journal journal) {
+    public ModRuntimeSession(ModClassLoader loader, ContextLease lease, SemanticVersion platformApi, ActionLog journal) {
         this.loader = Objects.requireNonNull(loader);
         this.lease = Objects.requireNonNull(lease);
         this.platformApi = Objects.requireNonNull(platformApi);
@@ -96,13 +97,16 @@ public final class ModRuntimeSession {
                 lease.commit();
                 journal.record(SessionState.RUNNING, Optional.empty(), false);
                 state = SessionState.RUNNING;
-            } catch (Exception | LinkageError | AssertionError failure) {
+            } catch (Exception | Error failure) {
                 state = SessionState.FAILED;
                 startupFailure = Optional.of(problem(failure, "MOD_START_FAILED", "Mod startup could not complete"));
+                rethrowFatal(failure);
                 try {
                     drain(StopReason.START_FAILURE);
-                } catch (Exception | LinkageError | AssertionError cleanup) {
-                    failure.addSuppressed(cleanup);
+                } catch (Exception | Error cleanup) {
+                    rethrowFatal(cleanup);
+                    if (cleanup != failure)
+                        failure.addSuppressed(cleanup);
                     retain(cleanup, failure);
                 }
                 throw failure;
@@ -127,10 +131,11 @@ public final class ModRuntimeSession {
             try {
                 drain(reason);
                 state = startupFailure.isPresent() ? SessionState.FAILED : SessionState.STOPPED;
-            } catch (Exception | LinkageError | AssertionError failure) {
+            } catch (Exception | Error failure) {
                 state = failure instanceof ApiException api && api.problem().code() == ProblemCode.BUSY
                     ? SessionState.STOPPING
                     : SessionState.FAILED;
+                rethrowFatal(failure);
                 retain(failure, failure);
                 throw failure;
             }
@@ -187,9 +192,23 @@ public final class ModRuntimeSession {
                 .orElseGet(() -> problem(failure, "MOD_STOP_FAILED", "Mod cleanup is incomplete"));
             boolean busy = failure instanceof ApiException api && api.problem().code() == ProblemCode.BUSY;
             journal.record(busy ? SessionState.STOPPING : SessionState.FAILED, Optional.of(evidence), false);
-        } catch (Exception | LinkageError | AssertionError journalFailure) {
-            original.addSuppressed(journalFailure);
+        } catch (Exception | Error journalFailure) {
+            rethrowFatal(original);
+            rethrowFatal(journalFailure);
+            if (journalFailure != original)
+                original.addSuppressed(journalFailure);
         }
+    }
+
+    /** Propagates fatal JVM errors, including reflective author construction. / 传播致命 JVM 错误，包括反射作者构造失败。
+     * @param failure original callback failure / 原回调失败 */
+    private static void rethrowFatal(Throwable failure) {
+        if (failure instanceof java.lang.reflect.InvocationTargetException invocation)
+            failure = invocation.getCause();
+        if (failure instanceof VirtualMachineError fatal)
+            throw fatal;
+        if (failure instanceof ThreadDeath fatal)
+            throw fatal;
     }
 
     /** Keeps public evidence, otherwise uses a constant host explanation without author exception text. / 保留公开证据，否则使用宿主固定说明，不包含作者异常文本。
@@ -233,7 +252,7 @@ public final class ModRuntimeSession {
 
     /** Host lifecycle persistence that never invokes author code. / 不调用作者代码的宿主生命周期持久化。 */
     @FunctionalInterface
-    public interface Journal {
+    public interface ActionLog {
         /** Records proven state while retaining failed final acknowledgements for retry. / 记录已证明状态，并保留失败的最终确认以便重试。
          * @param state observed lifecycle state / 已观察生命周期状态
          * @param failure safe original failure / 原安全失败

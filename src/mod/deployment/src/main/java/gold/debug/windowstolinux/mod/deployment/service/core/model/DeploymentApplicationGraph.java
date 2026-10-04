@@ -8,7 +8,7 @@ import java.util.*;
  * @param healthCheck independently reviewed application probe / 独立审阅的应用探测
  * @param components complete reviewed component graph / 完整审阅组件图 */
 public record DeploymentApplicationGraph(String applicationId, String healthComponentId,
-                                         DeploymentHealthCheck healthCheck, List<Component> components) {
+                                         DeploymentHealthCheck healthCheck, List<Part> components) {
     /** Validates the original bounded, single-server acyclic graph. / 校验原有界、单服务器无环图。
      * @param applicationId stable application identity / 稳定应用身份
      * @param healthComponentId owner of the whole-application probe / 整应用探测所属组件
@@ -18,7 +18,7 @@ public record DeploymentApplicationGraph(String applicationId, String healthComp
         applicationId = identifier(applicationId);
         healthComponentId = identifier(healthComponentId);
         Objects.requireNonNull(healthCheck, "healthCheck");
-        components = List.copyOf(components).stream().sorted(Comparator.comparing(Component::componentId)).toList();
+        components = List.copyOf(components).stream().sorted(Comparator.comparing(Part::componentId)).toList();
         if (components.isEmpty() || components.size() > 64)
             throw new IllegalArgumentException("Application graph requires 1..64 components");
         Set<String> ids = new HashSet<>();
@@ -26,7 +26,7 @@ public record DeploymentApplicationGraph(String applicationId, String healthComp
         var server = components.getFirst().unit().server();
         for (var component : components) {
             if (!ids.add(component.componentId()) || !units.add(component.unit().id()))
-                throw new IllegalArgumentException("Component and unit identities must be unique");
+                throw new IllegalArgumentException("Part and unit identities must be unique");
             if (!server.equals(component.unit().server()))
                 throw new IllegalArgumentException("Application graph must belong to one server");
         }
@@ -51,9 +51,9 @@ public record DeploymentApplicationGraph(String applicationId, String healthComp
      * @param reviewedRuntime original reviewed runtime definition / 原审阅运行定义
      * @param dataPaths original reviewed paths / 原审阅路径
      * @param resources original reviewed resource bindings / 原审阅资源绑定 */
-    public record Component(String componentId, DeploymentUnitIdentity unit, DeploymentUnitRuntimeConfiguration runtime,
-                            List<String> dependencies, DeploymentRuntimeDefinition reviewedRuntime,
-                            List<DeploymentStoragePath> dataPaths, DeploymentResourceBindings resources) {
+    public record Part(String componentId, DeploymentUnitIdentity unit, DeploymentUnitRuntimeConfig runtime,
+                       List<String> dependencies, DeploymentRuntimeDefinition reviewedRuntime,
+                       List<DeploymentStoragePath> dataPaths, DeploymentResourceBindings resources) {
         /** Validates exact health and path-binding coverage. / 校验精确健康及路径绑定覆盖。
          * @param componentId component identity within its application / 应用内组件身份
          * @param unit exact owned deployment unit / 精确所属部署单元
@@ -62,7 +62,7 @@ public record DeploymentApplicationGraph(String applicationId, String healthComp
          * @param reviewedRuntime original reviewed runtime definition / 原审阅运行定义
          * @param dataPaths original reviewed paths / 原审阅路径
          * @param resources original reviewed resource bindings / 原审阅资源绑定 */
-        public Component {
+        public Part {
             componentId = identifier(componentId);
             Objects.requireNonNull(unit, "unit");
             Objects.requireNonNull(runtime, "runtime");

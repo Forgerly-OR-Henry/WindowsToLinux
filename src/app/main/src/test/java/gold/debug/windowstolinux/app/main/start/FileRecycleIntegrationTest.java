@@ -1,19 +1,33 @@
 package gold.debug.windowstolinux.app.main.start;
 
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.app.file.LocalFileBackend;
 import gold.debug.windowstolinux.app.windows.file.WindowsLinks;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.action.FileOperation;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -59,10 +73,10 @@ class FileRecycleIntegrationTest {
                         var grant = remote.interaction().approve(FileActions.delete(info, true, DeleteEffect.RECYCLE), task).value().orElseThrow();
                         assertEquals(1, humans.get());
                         var report = file.deleteLink(path, task, grant);
-                        assertEquals(Outcome.SUCCEEDED, report.outcome(), report.toString());
+                        assertEquals(TaskResult.SUCCEEDED, report.outcome(), report.toString());
                         assertFalse(Files.exists(link, LinkOption.NOFOLLOW_LINKS));
                         var operation = file.operations(task).stream().filter(item -> item.id().equals(report.operationId())).findFirst().orElseThrow();
-                        assertEquals(Outcome.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
+                        assertEquals(TaskResult.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
                         restoreOwnedReceipt(operation, link);
                         assertEquals(missing.toString(), WindowsLinks.target(link).orElseThrow());
                         assertFalse(Files.exists(missing, LinkOption.NOFOLLOW_LINKS));
@@ -114,11 +128,11 @@ class FileRecycleIntegrationTest {
                             for (Path source : List.of(ordinary, directory, link)) {
                                 FilePath path = FilePath.local(source);
                                 var report = source.equals(link) ? file.deleteLink(path, task) : file.deleteFile(path, task);
-                                assertEquals(Outcome.SUCCEEDED, report.outcome(), report.toString());
+                                assertEquals(TaskResult.SUCCEEDED, report.outcome(), report.toString());
                                 assertFalse(Files.exists(source, LinkOption.NOFOLLOW_LINKS));
                                 FileOperation operation = file.operations(task).stream().filter(item -> item.id().equals(report.operationId())).findFirst().orElseThrow();
                                 assertEquals("COMPLETE", operation.phase());
-                                assertEquals(Outcome.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
+                                assertEquals(TaskResult.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
                                 restoreOwnedReceipt(operation, source);
                             }
                             assertEquals(3, confirmations.get());
@@ -155,16 +169,16 @@ class FileRecycleIntegrationTest {
                     callbackContext.set(task);
                     try {
                         var report = file.deleteFile(FilePath.local(original), task);
-                        assertEquals(Outcome.SUCCEEDED, report.outcome());
+                        assertEquals(TaskResult.SUCCEEDED, report.outcome());
                         FileOperation operation = file.operations(task).stream().filter(item -> item.id().equals(report.operationId())).findFirst().orElseThrow();
                         var receipt = operation.steps().stream().filter(step -> step.phase().equals("RECYCLED_ITEM")).findFirst().orElseThrow();
                         var metadata = operation.steps().stream().filter(step -> step.phase().equals("RECYCLE_METADATA")).findFirst().orElseThrow();
-                        assertEquals(Outcome.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
+                        assertEquals(TaskResult.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
                         var backend = new LocalFileBackend();
                         Path information = Path.of(metadata.target().orElseThrow().path());
                         assertEquals(metadata.detail(), backend.stat(FilePath.local(information)).orElseThrow().identity());
                         Files.delete(information);
-                        assertEquals(Outcome.UNKNOWN, file.checkOperation(operation.id(), task).outcome());
+                        assertEquals(TaskResult.UNKNOWN, file.checkOperation(operation.id(), task).outcome());
                         assertThrows(ApiException.class, () -> file.continueOperation(operation.id(), task));
                         Path recycled = Path.of(receipt.target().orElseThrow().path());
                         assertEquals(receipt.detail(), backend.stat(FilePath.local(recycled)).orElseThrow().identity());
@@ -186,13 +200,13 @@ class FileRecycleIntegrationTest {
             Thread.sleep(5);
         if (handle.snapshot().state() == TaskState.UNKNOWN) {
             callbackReturned(runtime, callbackContext.get());
-            try (var recovery = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture", (before, task) -> new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_PRESERVED_RECEIPT_FAILURE", "Owned receipt failure preserved for diagnosis", Map.of(), Optional.empty()))))) {
+            try (var recovery = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture", (before, task) -> new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_PRESERVED_RECEIPT_FAILURE", "Owned receipt failure preserved for diagnosis", Map.of(), Optional.empty()))))) {
                 assertEquals(TaskState.ENDED, runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(10, TimeUnit.SECONDS).state());
             }
         }
         if (callbackFailure.get() != null)
             throw new AssertionError("Actual recycle callback failed", callbackFailure.get());
-        assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+        assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
     }
 
     // Native shell restoration is tested in app/windows; this cleanup moves only this task's proven object and paired metadata.

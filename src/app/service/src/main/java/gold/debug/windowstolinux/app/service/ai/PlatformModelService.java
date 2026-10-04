@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
@@ -20,31 +7,43 @@ import java.util.concurrent.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.ai.model.ModelCapabilityProbe;
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderConfiguration;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
-import gold.debug.windowstolinux.app.service.ai.AiInventoryAccess;
-import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.app.service.task.*;
-
-import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityCheck;
-import gold.debug.windowstolinux.app.ai.model.AiCapabilityStateType;
-import gold.debug.windowstolinux.appapi.ai.VoiceRequest;
-import gold.debug.windowstolinux.appapi.ai.VoiceOptions;
-import gold.debug.windowstolinux.appapi.ai.VoiceResponse;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityStatus;
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.ai.model.ModelCapabilityProbe;
+import gold.debug.windowstolinux.app.ai.vision.VisionCapabilityProbe;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelInfo;
+import gold.debug.windowstolinux.app.service.ai.AiModelInfo;
+import gold.debug.windowstolinux.app.service.ai.AiModelListAccess;
+import gold.debug.windowstolinux.app.service.ai.AiModelProfile;
+import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.task.*;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.recover.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 
 /** Owns verified model configuration and explicit purpose selection. / 持有已验证模型配置及明确用途选择。 */
-public final class PlatformModelService implements AiInventoryAccess, AutoCloseable {
+public final class PlatformModelService implements AiModelListAccess, AutoCloseable {
     /** Stable host probe protocol without business actions. / 不含业务动作的稳定宿主探测协议。 */
     private static final String PROBE_TYPE = "platform.ai.probe.v1";
 
     /** Actual platform repositories. / 实际平台仓库。 */
-    private final PlatformPersistence persistence;
+    private final PlatformStorage persistence;
 
     /** Current-user and original-task credentials. / 当前用户及原任务凭据。 */
     private final DesktopSecurityService security;
@@ -74,7 +73,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param version actual application version / 实际应用版本
      * @param ai host-owned transport / 宿主持有的传输
      * @throws ApiException if recovery registration fails / 恢复登记失败时 */
-    public PlatformModelService(PlatformPersistence persistence, DesktopSecurityService security,
+    public PlatformModelService(PlatformStorage persistence, DesktopSecurityService security,
                                 PlatformTaskRuntime runtime, String version, PlatformAiService ai) throws ApiException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
@@ -91,7 +90,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                         if (!HostTaskRecovery.releasePreviousProcess(persistence.database(), previous,
                             Map.of("CONNECTION", "ai-", "CUSTOM", "ai-access-")))
                             ai.closeTaskResources(task);
-                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                             ProblemCode.UNKNOWN, "MODEL_PROBE_INTERRUPTED",
                             "The interrupted probe is closed without replay; reload saved configuration before a new probe",
                             Map.of(), Optional.empty())));
@@ -110,10 +109,10 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @return ordered inventory / 有序清单
      * @throws SQLException if storage is unavailable / 存储不可用时 */
     @Override
-    public List<AiProviderSummary> listAiConfigurations() throws SQLException {
+    public List<AiModelInfo> listAiConfigurations() throws SQLException {
         settings();
         return persistence.aiProfiles().listConfigured().stream()
-            .map(value -> new AiProviderSummary(AiProviderProfile.fromStored(value.profile()), value.name(),
+            .map(value -> new AiModelInfo(AiModelProfile.fromStored(value.profile()), value.name(),
                 value.priority(), value.revision(), value.textVerifiedAt(), value.visionVerifiedAt(),
                 value.fileVoiceVerifiedAt(), value.realtimeVoiceVerifiedAt(), value.checks()))
             .toList();
@@ -167,7 +166,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param suppliedKey replacement key or empty to retain, always cleared / 替换密钥或空以保留，始终清零
      * @param outputLimit positive text output ceiling / 正的文字输出上限
      * @throws Exception if validation or atomic protected storage fails / 校验或受保护原子存储失败时 */
-    public void save(AiProviderProfile profile, String name, char[] suppliedKey, int outputLimit) throws Exception {
+    public void save(AiModelProfile profile, String name, char[] suppliedKey, int outputLimit) throws Exception {
         Objects.requireNonNull(suppliedKey);
         try {
             settings();
@@ -183,7 +182,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                     String credential = previous.map(v -> v.profile().credentialKey())
                         .orElseGet(() -> "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID());
                     if (suppliedKey.length != 0) store.save(credential, suppliedKey);
-                    var candidate = new AiProviderProfile(profile.id(), profile.chatCompletionsEndpoint(), profile.model(),
+                    var candidate = new AiModelProfile(profile.id(), profile.chatCompletionsEndpoint(), profile.model(),
                         credential, profile.fileTranscriptionEndpoint(), profile.realtimeTranscriptionEndpoint());
                     persistence.aiProfiles().saveConfiguration(candidate.stored(), name);
                     persistence.aiProfiles().saveOutputLimit(profile.id(), outputLimit);
@@ -228,7 +227,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                 task -> {
                     try {
                         OperationResult<Void> result = probe(observed, capability, audio, expected, ceiling, key, task);
-                        if (result.outcome() == Outcome.CANCELLED) return result;
+                        if (result.outcome() == TaskResult.CANCELLED) return result;
                         var check = classify(result);
                         try {
                             persistence.aiProfiles().recordVerification(profile, observed.revision(), capability, check);
@@ -264,13 +263,19 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param key captured protected key / 已捕获受保护密钥
      * @param task original executing task / 原执行任务
      * @return actual classified outcome / 实际分类结果 */
-    private OperationResult<Void> probe(StoredAiProviderConfiguration observed, AiCapabilityType capability,
+    private OperationResult<Void> probe(StoredAiModelInfo observed, AiCapabilityType capability,
                                         VoiceRequest audio, String expected, int ceiling, char[] key, TaskContext task) {
         try {
             if (capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION) {
-                var challenge = ModelCapabilityProbe.create(capability == AiCapabilityType.VISION, ceiling);
+                ModelCapabilityProbe challenge;
+                if (capability == AiCapabilityType.VISION) {
+                    var visual = VisionCapabilityProbe.create(ceiling);
+                    challenge = new ModelCapabilityProbe(visual.request(), visual.expected());
+                } else {
+                    challenge = ModelCapabilityProbe.create(ceiling);
+                }
                 var result = ai.probe(observed.profile(), key, challenge.request(), task);
-                if (result.outcome() != Outcome.SUCCEEDED)
+                if (result.outcome() != TaskResult.SUCCEEDED)
                     return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
                 if (!challenge.accepts(result.value().orElseThrow()))
                     return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The model did not answer the generated capability challenge");
@@ -287,15 +292,15 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
                         Arrays.fill(pcm, (byte) 0);
                     }
                 }
-                if (result.outcome() != Outcome.SUCCEEDED)
+                if (result.outcome() != TaskResult.SUCCEEDED)
                     return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
                 if (!normalized(expected).equalsIgnoreCase(normalized(result.value().orElseThrow().text())))
                     return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_PROBE_ANSWER", "The transcript did not match the reviewed expected text");
             }
-            return task.cancelToken().requested() ? new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty())
-                : new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            return task.cancelToken().requested() ? new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty())
+                : new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
         } catch (ApiException failure) {
-            return new OperationResult<>(failure.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+            return new OperationResult<>(failure.problem().code() == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED,
                 Optional.empty(), Optional.of(failure.problem()));
         } catch (java.io.IOException failure) {
             return failed(ProblemCode.IO_FAILURE, "MODEL_PROBE_INPUT", "The local capability challenge could not be generated");
@@ -313,8 +318,8 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param result actual probe outcome / 实际验证结果
      * @return independent safe evidence / 独立安全证据 */
     private static AiCapabilityCheck classify(OperationResult<Void> result) {
-        if (result.outcome() == Outcome.SUCCEEDED)
-            return new AiCapabilityCheck(AiCapabilityStateType.AVAILABLE, "", Optional.of(Instant.now()));
+        if (result.outcome() == TaskResult.SUCCEEDED)
+            return new AiCapabilityCheck(AiCapabilityStatus.AVAILABLE, "", Optional.of(Instant.now()));
         var problem = result.problem().orElseThrow();
         boolean unsupported = problem.code() == ProblemCode.INCOMPATIBLE || problem.eventCode().equals("VOICE_UNSUPPORTED");
         String reason = unsupported ? "MODEL_PROBE_UNSUPPORTED" : switch (problem.code()) {
@@ -324,7 +329,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
             default -> "MODEL_PROBE_NETWORK";
         };
         if (problem.eventCode().equals("MODEL_PROBE_ANSWER")) reason = "MODEL_PROBE_ANSWER";
-        return new AiCapabilityCheck(unsupported ? AiCapabilityStateType.UNSUPPORTED : AiCapabilityStateType.FAILED,
+        return new AiCapabilityCheck(unsupported ? AiCapabilityStatus.UNSUPPORTED : AiCapabilityStatus.FAILED,
             reason, Optional.of(Instant.now()));
     }
 
@@ -332,7 +337,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param id exact model / 精确模型
      * @return current row or absent / 当前行或缺失
      * @throws SQLException if storage fails / 存储失败时 */
-    private Optional<StoredAiProviderConfiguration> current(String id) throws SQLException {
+    private Optional<StoredAiModelInfo> current(String id) throws SQLException {
         return persistence.aiProfiles().listConfigured().stream().filter(value -> value.profile().id().equals(id))
             .findFirst();
     }
@@ -390,7 +395,7 @@ public final class PlatformModelService implements AiInventoryAccess, AutoClosea
      * @param message non-secret explanation / 非秘密说明
      * @return failed operation / 失败操作 */
     private static OperationResult<Void> failed(ProblemCode code, String event, String message) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(code, event, message, Map.of(), Optional.empty())));
     }
 }

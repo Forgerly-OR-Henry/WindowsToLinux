@@ -13,21 +13,21 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteActions;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Bounded native DB helper framing and exact reviewed remote transport. / 有界原生数据库 helper 帧及精确审核远端传输。 */
 public final class DeploymentNativeDatabaseWire {
@@ -56,7 +56,7 @@ public final class DeploymentNativeDatabaseWire {
     private final InteractionService interaction;
 
     /** Original admitted server. / 原已准入服务器。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Original task. / 原任务。 */
     private final TaskContext task;
@@ -74,7 +74,7 @@ public final class DeploymentNativeDatabaseWire {
      * @param interaction host review / 宿主审核
      * @param server admitted server / 已准入服务器
      * @param task original task / 原任务 */
-    public DeploymentNativeDatabaseWire(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentNativeDatabaseWire(RemoteSession session, InteractionService interaction, ServerId server,
                                         TaskContext task) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -104,10 +104,10 @@ public final class DeploymentNativeDatabaseWire {
                 .withSemantics(new ActionSemantics("deployment.native-db." + action + ".v1",
                     Set.of(new ActionTarget(server.id(), "native-database", target))));
             var grant = interaction.approve(intent, task);
-            if (grant.outcome() != Outcome.SUCCEEDED)
+            if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), java.util.Optional.empty(), grant.problem());
             if (task.cancelToken().requested())
-                return new OperationResult<>(Outcome.CANCELLED, java.util.Optional.empty(),
+                return new OperationResult<>(TaskResult.CANCELLED, java.util.Optional.empty(),
                     java.util.Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_NATIVE_DB_UNSENT",
                         "Native database operation was not sent", Map.of(), java.util.Optional.empty())));
             beforeExecute.run();

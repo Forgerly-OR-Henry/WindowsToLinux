@@ -1,25 +1,24 @@
 package gold.debug.windowstolinux.app.service.task;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import java.sql.SQLException;
 import java.util.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 
 /** Owns persisted permission preference and ephemeral scopes for host-launched workflows. / 持有持久权限偏好及宿主启动流程的临时作用域。 */
 public final class PlatformAuthorizationService implements AutoCloseable {
@@ -27,7 +26,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
     private static final String MODE_KEY = "platform_authorization_mode";
 
     /** Actual platform preference store. / 实际平台偏好存储。 */
-    private final PlatformPersistence persistence;
+    private final PlatformStorage persistence;
 
     /** Current-user preference authorization. / 当前用户偏好授权。 */
     private final DesktopSecurityService security;
@@ -45,7 +44,7 @@ public final class PlatformAuthorizationService implements AutoCloseable {
      * @param persistence platform preference owner / 平台偏好所有者
      * @param security current-user boundary / 当前用户边界
      * @param tasks original task authority / 原任务授权方 */
-    public PlatformAuthorizationService(PlatformPersistence persistence, DesktopSecurityService security,
+    public PlatformAuthorizationService(PlatformStorage persistence, DesktopSecurityService security,
                                         PlatformTaskRuntime tasks) {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);

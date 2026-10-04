@@ -50,7 +50,7 @@
 | 现有 API 重载补齐 | 优先补上传/下载及指定目录，补进度和第一页便利重载；停滞策略按需，已有重载保留 | 规格已确认；实施及验证见 S1、S3 | `appapi`、平台文件/任务/服务器/AI 服务及受影响调用方 |
 | SSH 与 SFTP 分工 | 正常连接及救援归 `linux/ssh`；远端文件协议归 `linux/sftp`，复用受管 SSH 会话 | 规格已确认；实施及验证见 S1、S3 | `app/linux` 及其平台调用方；仍为同一 Maven 模块 |
 | 手动连接测试转入救援 | 服务器列表检查 SSH 失败后，从失败结果直接进入同一服务器的救援流程 | 规格已确认；实施及验证见 S2 | 平台服务器页、连接检查和现有救援服务；不依赖业务 Mod |
-| SSH 救援代码整理 | Linux 使用 `ssh/recover`，其他相关模块使用单层 `sshrecover` 收纳专属代码 | 规格已确认；实施及验证见 S1、S2 | `app/linux`、`app/service`、`app/ui`、`app/ai`、`app/db` |
+| SSH 救援代码整理 | Linux 救援归 `ssh/recover` 及职责子包，DB 保留 `sshrecover`，对话框归 `ui/server` | 规格已确认；实施及验证见 S1、S2 | `app/linux`、`app/service`、`app/ui`、`app/ai`、`app/db` |
 | 语音模型平台能力 | 仅语音转文字；Java 原生接入 OpenAI 文件转写和实时转写协议，两种方式本期均实现；同一模型记录可配置不同协议地址，分别验证后由用户加入用途列表 | 规格已确认；实施及验证见 S4 | `app/ai`、`appapi/ai`、`app/service/ai`、模型配置存储及 `app/ui/ai`；沿用现有模块 |
 | 开发数据库重建 | 直接更新建库结构，清理旧本机开发库后重新初始化，不保留旧开发版本兼容链 | 规格已确认；实施及验证见 S5 | APP 本机开发数据库及配对访问材料、仅用于旧结构兼容的代码与验证；远端业务库不在清理范围 |
 | 原生接口与可选封装 | 全部公开 API 保持基础能力定位；Mod 作者负责业务数据和界面，高层复用由后续 SQL、Swing 两个可选 Mod 提供 | 规格已确认；实施及验证见 S1、S6 | `appapi` 及平台受管边界；本期不新增封装 Mod 或其依赖 |
@@ -300,7 +300,7 @@ deleteLink(link, task, permit);  // 链接本身：校验前置许可后执行
 
 - 后续以独立 Mod 提供资源管理器式的本机/远端文件浏览与操作界面，复用主 APP 的文件 API，不重复实现通用文件操作、SSH 认证和 SFTP 传输。
 - 1.2 不开发该 Mod，不创建空模块或占位界面，也不以其交付作为文件 API 的验收条件；通过接口测试和现有实际调用方验证平台能力。
-- 1.3 或 1.4 是可能安排，尚未确定版本和具体界面范围。后续排期时再敲定，不将候选版本写成发布承诺或加入本期 S0～S6 必做任务。
+- 后续已明确纳入 [1.3 期开发范围](PHASE-1.3.md#file-explorer)，具体界面与验收范围由该文维护；它仍不属于 1.2 的 S0～S6，也不改变本期验收状态。
 
 #### 文件能力的历史代码基线
 
@@ -308,8 +308,8 @@ deleteLink(link, task, permit);  // 链接本身：校验前置许可后执行
 
 - [SourceService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 已提供用户选目录、有界读取和列举、受管工作目录、冻结快照及任务资源清理。
 - `app/source` 当前主要实现选定目录边界、受管工作目录和冻结快照；任务授权、资源登记与公开接口适配由 `app/service/source/PlatformSourceAccess` 负责。
-- [SourceSnapshot](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileSnapshot.java) 与 `SourceWorkspace` 暴露本机 `Path`。调用方取得目录后，仍有自行实现读取限额、路径检查、摘要和输出校验的情况。
-- [RemoteSession](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/RemoteSession.java) 已提供上传、下载、续传和暂存丢弃；实际 SFTP 位于 `app/linux/ssh`，已有冲突处理、摘要校验、暂存发布和恢复机制。
+- [SourceSnapshot](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/snapshot/FileSnapshot.java) 与 `SourceWorkspace` 暴露本机 `Path`。调用方取得目录后，仍有自行实现读取限额、路径检查、摘要和输出校验的情况。
+- [RemoteSession](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/session/RemoteSession.java) 已提供上传、下载、续传和暂存丢弃；实际 SFTP 位于 `app/linux/ssh`，已有冲突处理、摘要校验、暂存发布和恢复机制。
 - `app/windows/filesystem` 提供 Windows 文件身份与原生发布操作。部署 Mod 的来源准备、归档及分析流程已部分复用平台能力，同时保留文件访问代码与部署业务规则。
 
 当时的缺口是统一能力覆盖和使用方式不完整，并非各模块都从头实现了一套文件系统或 SSH。当前统一文件能力及实际调用接线的验收见 S3。
@@ -327,7 +327,7 @@ deleteLink(link, task, permit);  // 链接本身：校验前置许可后执行
 | `app/windows` | 复用本机文件管理所需的平台能力，如文件身份、原生重命名与发布；不另做一套通用规则 |
 | `app/service` 的文件功能 | 衔接原任务、授权、资源登记与恢复，协调文件模块和本机/远端实现；位置为 `app/service/file` |
 | 业务 Mod | 决定使用哪些资源、如何解释内容及何时执行业务动作，通过公开合同使用平台能力 |
-| 后续资源管理器 Mod | 通过公开文件 API 提供可视化浏览和操作界面；1.2 不开发，候选版本见上文 |
+| 后续资源管理器 Mod | 通过公开文件 API 提供可视化浏览和操作界面；1.2 不开发，后续范围见 [1.3 文档](PHASE-1.3.md#file-explorer) |
 
 统一能力归属不表示所有代码都搬入 `file`，也不预先决定新的 Maven 依赖边；按既有服务协调和模块边界接线。Windows 通过本机能力执行，Linux 经 SSH 上的 SFTP 操作。讨论中口头使用的“FTP”已澄清为 SFTP，本期没有提出独立传统 FTP/FTPS 支持需求。
 
@@ -370,27 +370,23 @@ SSH 命令通道与 SFTP 文件通道各自承担自己的操作和收尾；底�
 app/
 ├─ linux/
 │  ├─ ssh/
-│  │  ├─ connect/     # 正常连接、认证、会话及命令执行
-│  │  └─ recover/     # SSH 故障救援与恢复复核
-│  └─ sftp/           # 远端文件协议实现，复用 SSH 会话
-├─ service/
-│  └─ sshrecover/     # 救援服务、会话接口与任务衔接
+│  │  ├─ connect/       # 正常连接、认证、会话及命令执行
+│  │  └─ recover/       # SSH 救援状态、会话与原任务恢复
+│  │     ├─ ai/         # 救援专用模型、提示及响应协议
+│  │     ├─ browser/    # 浏览器、终端及所属进程控制
+│  │     └─ model/      # 共享目标、动作、探测与终端观测值
+│  └─ sftp/             # 远端文件协议实现，复用 SSH 会话
 ├─ ui/
-│  ├─ server/         # 服务器列表、连接测试及救援入口
-│  └─ sshrecover/     # SSH 救援窗口与专属交互
-├─ ai/
-│  └─ sshrecover/     # SSH 救援提示、模型建议协议及解析
+│  └─ server/           # 服务器配置、连接检查及救援对话框
 └─ db/
-   └─ sshrecover/     # SSH 救援记录、查询及归档
+   └─ sshrecover/       # SSH 救援记录、查询及归档
 ```
 
-- Linux 下由 `ssh` 聚合正常连接与故障救援两个流程，增加这一层具有明确用途，符合“按实际需要增加子包”。`sftp` 与 `ssh` 在目录上并列，运行时仍使用 SSH 会话；均属于原 Linux Maven 模块。
-- `ssh/recover` 的父包已经标明 SSH，不重复命名。其他相关模块采用全小写、单目录的 `sshrecover`，直接表达 SSH 救援职责，不再为目录对称套一层 `ssh`。
-- 救援通过浏览器访问网页终端，再复核 SSH 是否恢复；“救援连接”不是另一条要求正常 SSH 已可用的连接。救援可调用正常连接能力复核，由上层服务衔接流程，正常连接不反向接管救援。
-- 救援会话接口、快照和终端信息已随救援服务归入 `service/sshrecover`；计划编制时分散于 `service/contract` 和 `contract/definition` 的专属类型已迁移。数据库专属仓库及归档已归入 `db/sshrecover`。
-- `sshrecover` 只收纳 SSH 救援专属代码。通用任务恢复、凭据、任务调度、普通 SSH 和 Windows 窗口保护仍归各自功能；当前 `ui/task/TaskRecoveryPane` 是通用任务恢复页面，不随 SSH 救援窗口一并改入 `sshrecover`。
-
-各包内部默认直接放类，不重新套用 `contract`、`execution`、`persistence` 等模板。迁移前仍需检查可见性、资源定位和依赖方向，不能仅凭类型名含 `Recovery` 就移动。
+- Linux 下由 `ssh` 聚合正常连接与故障救援两个流程；`sftp` 与 `ssh` 并列，运行时仍使用 SSH 会话，均属于原 Linux Maven 模块。
+- 救援通过浏览器访问网页终端，再复核 SSH 是否恢复，不要求另一条正常 SSH 连接已可用；正常连接不反向接管救援。
+- 完整救援归 `app/linux/ssh/recover` 及上述职责子包；Service 和通用 AI 模块不保存专属救援包。数据库仓库及归档留在 `db/sshrecover`，平台能力由启动层注入，救援对话框归 `ui/server`。
+- 通用任务恢复、凭据、任务调度、普通 SSH 和 Windows 窗口保护保持各自归属；`ui/task/TaskRecoveryPane` 继续是通用任务恢复页面。
+- 子包依据实际职责确定，类型数量只触发检查，不为数量或目录对称增删包；迁移保持包内合作及可见性，资源定位与依赖方向均需核对。
 
 <a id="ssh-rescue-entry"></a>
 
@@ -476,15 +472,15 @@ Mod 的上述边界适用于官方和第三方作者。第一层之后不要求�
 | `bootstrap` | `init` | 初始化；保留与程序启动的职责区别 |
 | `loader` | `load` | 加载相关功能 |
 | `recovery`（通用恢复职责） | `recover`，或直接归所属功能包 | 独立恢复包使用 `recover`；当前 `TaskRecoveryPane` 按下方清单归入 `ui/task`，不为一个任务恢复页面额外建包 |
-| SSH 专属 `recovery` 及散落类型 | `ssh/recover` 或 `sshrecover` | Linux 内归 `ssh/recover`；service、ui、ai、db 采用单层 `sshrecover`；详见第 3.2 节 |
+| SSH 专属 `recovery` 及散落类型 | `ssh/recover`、`db/sshrecover`、`ui/server` | Linux 专属模型、浏览器和共享值归职责子包；Service 与通用 AI 不保留救援包；详见第 3.2 节 |
 | `failure`、`diagnostic` | `error` | 错误定义、处理或报告；数据库错误、启动故障和界面呈现仍分属原模块，不因统一用词合并实现 |
 | `filesystem` | `file` | Windows 文件系统操作；与资源模块分别表达平台原语和通用受管能力 |
 | `database` | `db` | 数据库相关功能；例如 APP 服务模块内的数据库功能包 |
 | `i18n` | `language` | 界面语言、翻译和本地化消息 |
-| `ai/transport` 与 `execution/protocol` 中的请求编解码 | `ai/http` | 当前模型 HTTP 调用及请求响应编解码；能力检查归 `model`，不整体搬入通信包 |
+| `ai/transport` 与 `execution/protocol` 中的请求编解码 | `ai/model`、`ai/http`、`ai/vision` | 模型调用及共用消息协议归 `model`，公共网络边界归 `http`，图像专属校验和编码归 `vision`；不整体搬入通信包 |
 | `validation` | `check` | 合法性检查，作为 APP 职责词表的用词 |
 | `policy` | `rule` | 允许、禁止、支持等规则，作为 APP 职责词表的用词 |
-| `ai/catalog` 与模型能力检查 | `ai/model` | 模型能力、用途与能力检查；当前 `ModelCapabilityProbe` 可直接归入此包 |
+| `ai/catalog` 与模型能力检查 | `ai/model`、`ai/vision` | 模型能力、用途、文字挑战和共用答案核验归 `model`；视觉挑战归 `vision` |
 | `mod/development` | `mod/dev` | 本地开发模式及源码发现 |
 | `mod/execution/lifecycle` | `mod/run` | Mod 启动顺序、运行与停止 |
 | `mod/manifest` | `mod/config` | Mod 声明配置及读取；清单文件名、格式和公开合同不因内部包改名而变化 |
@@ -498,6 +494,14 @@ Mod 的上述边界适用于官方和第三方作者。第一层之后不要求�
 `ai`、`db`、`server`、`task`、`log`、`security`、`setting`、`process`、`version`、`update`、`uninstall` 等现有清晰名称继续使用。`schema`、`crypto` 等含义明确的专业词保留并配中文职责说明，不仅为缩短而改成含义更宽的词。上方具体分包词表用于 APP 内部；平台公开 API 采用同样重视易读性的命名原则，具体规则如下。
 
 本轮命名范围包括已确认的模块、包及平台公开 API，不由此扩展为全仓库私有类、字段和方法的缩名任务，也不强制第三方 Mod 改造自己的命名。
+
+#### AI 通用能力按功能归包（1.2 交付后调整）
+
+通用 AI 代码采用 `model`、`vision`、`voice`、`http` 四个职责包：`model` 保存模型能力、用途、常规文字调用及共用消息协议；`vision` 保存图像格式/大小/整请求数量校验、视觉消息编码和视觉能力挑战；`voice` 保存完整音频转写、实时转写协议及会话；`http` 保存各调用共用的精确端点校验与有界响应读取。常规文字不另建 `text` 包，视觉继续复用共用模型调用，语音继续使用独立转写协议。SSH 救援的提示及结果解析归 `app/linux/ssh/recover/ai`，不并入通用能力包。
+
+本次只调整内部职责和引用，不变更 `appapi` 合同、模型配置、数据库、请求载荷、调用预算和未知结果处理规则。实际目录与逐文件归属同步维护于 File.md 和 AllFile.md；本次回归结果与 1.2 原交付验收分别记录。
+
+本次归包回归（2026-10-03）：JDK 21 下两批共 14 个不同测试类、110 项相关检查全部通过，零失败、错误或跳过；覆盖文字/视觉请求、跨消息图片数量上限、模型验证与路由、HTTP/WebSocket 音频转写、语音配置和公开服务、SSH 救援及结构门禁。12 个受变 Java 文件的 IDEA 格式检查、生产 AST/双语注释与 JDK 21 doclint 通过；AllFile 的 871 个生产 Java 路径与实际文件集合一致，冻结归档及其 Git blob 校验通过。视觉挑战由服务层适配到共用答案核验，包依赖无循环；验证进程使用既有仓库 `target` 临时目录约定，首次默认临时目录的 JDK 内部连接失败不计入通过结果。本次未重跑完整根测试，不增加真实模型提供方或远端验收结论。
 
 <a id="public-api-names"></a>
 
@@ -532,7 +536,7 @@ Mod 的上述边界适用于官方和第三方作者。第一层之后不要求�
 5. 合并目录前核对包可见成员、类型重名、资源定位和依赖；对外接口、纯规则与 I/O、数据库访问与业务编排等边界仍需保留。不能把取消目录模板理解为取消职责约束。
 6. 功能已交给 Mod 实现的，APP 不为其保留空目录或预设业务细分；平台继续提供通用能力和受管边界。
 
-Linux 的 `ssh/connect` 与 `ssh/recover` 已确认为具有实际分组意义的结构，按第 3.2 节保留；其他相关模块使用直接的 `sshrecover`，不要求所有模块复制相同深度。
+Linux 的 `ssh/connect` 与 `ssh/recover` 已确认为具有实际分组意义的结构，按第 3.2 节保留；DB 保留直接的 `sshrecover`，UI 救援归 `server`，不要求所有模块复制相同深度。
 
 以下列出计划编制时的压平映射；完整实施清单与实际目录分别见 S0 验收和 File.md：
 
@@ -566,11 +570,11 @@ app/file/
 | db 的桌面偏好放在通用仓库包 | `app/db/setting` | `DesktopPreferenceRepository`；删除前 AI 用途说明开关复用该偏好存储 |
 | db 的 SSH 救援仓库、归档分别在仓库包和任务包 | `app/db/sshrecover` | `BrowserRecoveryRepository`、`BrowserRecoveryArchival`；通用任务恢复仍归 `task` |
 | 1.2 新增的受管链接及操作记录（当时尚无现成类） | `app/db/file` | S3 已由 `FileRepository` 承接受管链接及操作记录；操作依据先于副作用保存，不扩大为全盘索引 |
-| service 的救援接口、数据和实现分散于 `contract`、`contract/definition`、`recovery` | `app/service/sshrecover` | `SshRecoverySession`、`RecoverySnapshot`、`RecoveryTerminal` 及现有救援服务和适配类 |
+| 救援流程与接口散布于 AI、Service 和 Linux，存在重复快照与终端值 | `app/linux/ssh/recover` | `SshRecovery`、`SshRecoverySession`、`BrowserRecoverySnapshot`、`TerminalTarget`、模型建议及任务所属浏览器；DB 记录留原包 |
 | service 的普通接口和专属数据分散于 `contract` 下 | `app/service/ai`、`server`、`file`、`security`、`task` | `AiProviderProfile`、`AiProviderSummary`、`AiInventoryAccess` 归 `ai`；`ServerProfile`、`ServerSummary`、`ServerProfileEditor` 归 `server`；`SourceDirectoryPicker` 归 `file`；安全契约归 `security`；`TaskManagement` 归 `task` |
 | service 的通用异常放在 `contract/result` | `app/service/error` | `ApplicationServiceException`、`ApplicationServiceFailureType` |
 | ui 的后台任务工具在控件包，任务交互在窗口包 | `app/ui/task` | `DesktopTaskExecutor`、`DesktopTaskHandle`、`TaskInteractionPresenter` |
-| ui 的通用任务恢复与 SSH 救援混在 `recovery` | `app/ui/task`、`app/ui/sshrecover` | `TaskRecoveryPane` 归 `task`；`SshRecoveryDialog` 归 `sshrecover` |
+| ui 的通用任务恢复与 SSH 救援混在 `recovery` | `app/ui/task`、`app/ui/server` | `TaskRecoveryPane` 归 `task`；`SshRecoveryDialog` 归 `server` |
 | ui 的 Mod 页面挂载放在窗口包 | `app/ui/mod` | `ExtensionPagePane` 与页面注册类就近放置 |
 | ui 的调试窗口放在设置包 | `app/ui/debug` | `UiDebugDialog`、`UiDebugPreviewHost`；普通设置页面继续归 `setting` |
 
@@ -719,7 +723,7 @@ session.cancel();                           // 取消并释放会话
 - **保留能力：** 首次建库、当前结构与数据库身份校验仍保留。Mod 自身数据版本升级是独立的平台能力，本次不因拒绝旧 APP 开发库兼容而整体删除；也不由本决定推出公开 API 或远端协议的兼容政策。
 - **重建方式：** 这是开发切换时的明确清理与初始化步骤，不是软件遇到数据库错误就自动删除重建的运行策略；旧库结构不匹配、材料损坏或身份冲突仍须按实际错误处理。
 
-当前实现中，`DatabaseBootstrap` 要求 `platform.mv.db` 与 `db-access.bin` 成对存在；只删数据库主体会因访问材料残留而拒绝启动。新建前也会检查数据库残留文件。实施时先使 APP 退出并释放连接、锁及资源，确认实际本机开发数据目录，再处理确属该库的数据库文件、配对访问材料和需清理的残留。不能通过删除整个工作区或所有配置目录代替核对，也不删除正在使用的锁来强行重建。
+当前实现中，`DatabaseBootstrap` 要求 `windowstolinux.mv.db` 与 `db-access.bin` 成对存在；只删数据库主体会因访问材料残留而拒绝启动。新建前也会检查数据库残留文件。实施时先使 APP 退出并释放连接、锁及资源，确认实际本机开发数据目录，再处理确属该库的数据库文件、配对访问材料和需清理的残留。不能通过删除整个工作区或所有配置目录代替核对，也不删除正在使用的锁来强行重建。
 
 当前 `PlatformDatabase` 首次初始化读取建库脚本，随后启动校验数据库身份、结构记录和脚本摘要。1.2 可在这一基础上直接更新当前结构；语音分协议配置、能力及用途记录、受管链接和操作依据均随最终合同落地；删除 AI 说明开关复用桌面偏好存储，初始化及重开行为一并验证，不额外建设旧库数据转换通路。当前建库脚本已按 1.2 更新；实际开发库切换与重建验收见 S5 和[第 6.6 节](#database-delivery)。
 
@@ -735,7 +739,7 @@ session.cancel();                           // 取消并释放会话
 | 界面 | Swing 页面注册与挂载、环境通知、页面生命周期及平台隐私/锁定边界 | 页面组件、布局、输入校验、业务交互及作者持有资源的释放 |
 | 其他公开 API | 该能力的基础操作入口、必要协议适配，以及统一任务、权限、取消、错误和资源归属管理 | 业务流程、领域规则和便于自身使用的高层组合 |
 
-当前 [ModDatabase](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/db/ModDatabase.java) 已提供受管 `java.sql.Connection`；[ModPage](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ui/ModPage.java) 由作者创建 `JComponent`，[UiService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ui/UiService.java) 负责登记和挂载。这些是当前接口事实，不表示后续封装 Mod 已存在或本轮重新完成运行验收。
+当前 [ModDatabase](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/db/ModDatabase.java) 已提供受管 `java.sql.Connection`；[ModPage](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ui/page/ModPage.java) 由作者创建 `JComponent`，[UiService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ui/UiService.java) 负责登记和挂载。这些是当前接口事实，不表示后续封装 Mod 已存在或本轮重新完成运行验收。
 
 **这一原则适用于全部公开 API。** 主 APP 不为降低某一技术的学习成本而内置面向 Mod 的业务数据库封装层或组件框架；作者可以直接使用基础接口，也可在后续选择复用 Mod。原生接口仍保留必要的受管合同，不意味着直接暴露引擎管理连接、秘密、宿主实现类或原始 SSH 客户端，也不撤销统一文件 API、语音协议适配、平台审批等必要能力。
 
@@ -752,7 +756,7 @@ session.cancel();                           // 取消并释放会话
 
 两个 Mod 均为可选依赖，作者仍可直接使用平台基础 API。它们与资源管理器 Mod 是三个不同的后续方向：资源管理器提供文件管理产品界面，Swing 封装提供开发者可复用的界面构建能力。
 
-1.2 只确认边界和后续规划，不开发这两个 Mod、不创建空模块或占位 API，也不将它们设为主 APP 或普通 Mod 的默认依赖。具体名称、公开接口、实现方式和版本安排在后续开发时敲定，不从资源管理器的 1.3 / 1.4 候选安排推定这两个 Mod 的发布时间。
+1.2 只确认边界和后续规划，不开发这两个 Mod、不创建空模块或占位 API，也不将它们设为主 APP 或普通 Mod 的默认依赖。按 [1.3 期后期工程说明](PHASE-1.3.md#author-wrappers)，两个封装因暂时没有使用需求移至后期，不在 1.3 实现；具体名称、接口、实现与验证尚待确定，官方 Mod 自写 SQL 和 Swing，不使用这两个封装。
 
 <a id="api-overloads"></a>
 
@@ -762,9 +766,9 @@ session.cancel();                           // 取消并释放会话
 
 | 能力 | 当前代码与缺口 | 本期安排 |
 | --- | --- | --- |
-| 上传、下载 | [RemoteSession](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/RemoteSession.java) 只有 `upload(request, grant)`、`download(request, grant)`；[TransferRequest](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/TransferRequest.java) 不含冲突方式，实际同名冲突转平台交互 | 优先补同名重载：未传方式时询问，显式传入时按方式执行。落到统一文件 API，既有会话调用路径同步衔接，底层仍复用原传输实现 |
+| 上传、下载 | [RemoteSession](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/session/RemoteSession.java) 只有 `upload(request, grant)`、`download(request, grant)`；[TransferRequest](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/linux/transfer/TransferRequest.java) 不含冲突方式，实际同名冲突转平台交互 | 优先补同名重载：未传方式时询问，显式传入时按方式执行。落到统一文件 API，既有会话调用路径同步衔接，底层仍复用原传输实现 |
 | 目录选择 | [SourceService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 只有 `selectDirectory(title, task)`；[平台实现](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/file/PlatformFileAccess.java) 实际调用目录选择器 | 优先补接收明确目录路径的同名重载。适用于调用方已知目录的情形，不再让用户重复选择；仍核对任务授权、账户权限和物理目录身份 |
-| 任务进度 | [TaskContext](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskContext.java) 仅接收 `progress(text, Optional<Double>)`，生产调用方存在反复传空值的情形 | 补 `progress(text)` 和 `progress(text, fraction)`，分别表达纯文字状态与明确比例；复用原校验和发布逻辑 |
+| 任务进度 | [TaskContext](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/run/TaskContext.java) 仅接收 `progress(text, Optional<Double>)`，生产调用方存在反复传空值的情形 | 补 `progress(text)` 和 `progress(text, fraction)`，分别表达纯文字状态与明确比例；复用原校验和发布逻辑 |
 | 第一页查询 | [ServerService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/server/ServerService.java) 的 `list`、`listConfigured` 及 [TaskService](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskService.java) 的 `list` 均需显式传游标，即使查询第一页 | 补省略游标的同名重载，保留显式页大小和原权限范围；后续页仍传原游标，不改成无界“查询全部” |
 | 传输停滞 | [PlatformLinuxService](../../src/app/service/src/main/java/gold/debug/windowstolinux/app/service/linux/PlatformLinuxService.java) 在 `SFTP_STALLED` 后停止当前连接并询问重试/终止，与同名冲突是独立交互 | 按需增加带有限重试策略的重载；未传策略仍沿用原交互。若本期调用方需要自动处理停滞，则在 S3-06 落实，否则记录保留原行为，不直接列为本期新增必做能力 |
 
@@ -802,7 +806,7 @@ list(cursor, limit, task);       // ServerService 后续页
 #### 已有重载与不扩大的范围
 
 - [AiService.call](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/AiService.java) 已有普通调用与携带 `expectedRevision` 的重载；保留其配置修订约束，不为统一外观重复添加同义入口。
-- [SourceService.workspace](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 和 [ProcessService.start](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/ProcessService.java) 已有自动身份与显式预留身份的重载；保留原任务归属及首次创建约束，不能解释为任意复用旧资源。
+- [SourceService.workspace](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java) 和 [ProcessService.start](../../src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/process/ProcessService.java) 已有自动身份与显式预留身份的重载；保留原任务归属及首次创建约束，不能解释为任意复用旧资源。
 - 数据库连接、凭据使用及资源关闭沿用现有显式合同，不统一新增“普通/高权限”重载。SSH 命令仍需要精确审核和真实许可，不仅为减少参数而省略权限或业务修订信息。
 - 以上是必要的基础 API 调用便利和交互选择，不扩大为主 APP 内置 SQL/Swing 业务封装框架，也不强制 Mod 作者修改自己的公开 API。
 
@@ -1200,7 +1204,7 @@ mvn -B -ntp -pl src/app/main -am '-Dtest=PackageStructureArchitectureTest,Docume
 mvn -B -ntp -DskipTests verify
 ```
 
-打包命令跳过测试执行，必须与实际已运行的测试记录一起使用。当前本机验收先运行根 `clean test`，保持所有活动 APP 依赖的 CLASS 布局；再运行根 `-DskipTests verify -Pidea-check`，独立记录打包与 IDEA 格式。生产仍拒绝不一致的 CLASS/JAR 布局，不因测试装配放宽启动检查。包迁移后的陈旧产物先保留证据，再清理或隔离。
+打包命令跳过测试执行，必须与实际已运行的测试记录一起使用。当前完整本机验收使用 JDK 21 根 `clean verify -Pidea-check`；Main 和官方部署 Mod 的测试类路径显式使用 reactor 的 APP/appapi classes 与 Main test-classes，package 阶段的 JAR 不改变测试运行模式。生产仍拒绝不一致的 CLASS/JAR 布局，发行布局由隔离入口测试验证，不因测试装配放宽启动检查。包迁移后的陈旧产物先保留证据，再清理或隔离。下方有日期的分步构建记录保留其当时适用范围。
 
 **S1～S4 验收时测试及构建记录（2026-10-03）：** 根 `mvn -B -ntp clean test` 实际执行 12 个活动叶模块、309 类、1,879 项；首轮部署夹具/API 迁移和本机 Python 路径问题导致 62 失败、2 错误，原失败日志保留。修正后真实账户重新编译补跑 16 类 137 项，余下一项发布收尾夹具再以 2 类 25 项补验。当时最新完整叶模块报告合计 1,879 项通过，0 失败、0 错误、0 跳过；这是全量运行与必要补跑的汇总。所有 APP 模块 1,038 项、官方部署 Mod 841 项均包含在内，未统计冻结历史或迁移前失效模块报告。随后根 `mvn -B -ntp -DskipTests verify -Pidea-check` 全部 15 个 Reactor 项目通过，IDEA 2026.2.2 检查 1,278 文件通过；该打包命令未执行测试。Windows 回收、DPAPI、SSH/SFTP、HTTP/WebSocket 和实际 Swing 使用任务自有资源与真实本机账户；部署 helper 另有 18 项 Python/Bash 验证，格式脚本 5 项单测通过。完整日志与可复核清单保存在本任务进度证据中。实际指定开发库初始化和跨 JVM 重开另见 S5；真实远端及提供方未由这些受控结果代验。S5 新增生产修复后的完整回归另行登记，不以本段 1,879 项代替。
 
@@ -1433,7 +1437,7 @@ File.md、Mod.md、APP.md、Runtime.md、产品说明书与 AllFile.md 同步实
 | 原文件移动、复制与覆盖 | APP 移动/重命名维护本次受管链接；单文件复制不改旧链接，整目录复制按内部映射；覆盖保持目标路径并更新身份。部分目录移动不提前更新整目录链接；权限或维护失败报告真实结果 | S3-01、S3-04～S3-06、S3-12、S5-03 |
 | APP 与系统独立操作 | 经统一文件 API 发起即由 APP 落实规则，底层调用 Windows / Linux 不改变归属；外部系统、其他程序及未接入 API 的脚本操作不监听、不接管、不事后修复 | S3-01、S3-05、S3-12；原生适配、外部移动、重开及失效记录 |
 
-现有 [SourceWorkDirectory](../../src/app/file/src/main/java/gold/debug/windowstolinux/app/file/SourceWorkDirectory.java) 的受管临时清理已按链接本身删除，继续保留目标。相对链接按所在位置解析的机制见 [JDK 21 Files.createSymbolicLink](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Files.html#createSymbolicLink(java.nio.file.Path,java.nio.file.Path,java.nio.file.attribute.FileAttribute...))；本计划的链接指向规则由 APP 在受管操作内实现，不宣称符号链接天然具有任意移动跟踪能力。
+现有 [SourceWorkDirectory](../../src/app/file/src/main/java/gold/debug/windowstolinux/app/file/source/SourceWorkDirectory.java) 的受管临时清理已按链接本身删除，继续保留目标。相对链接按所在位置解析的机制见 [JDK 21 Files.createSymbolicLink](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Files.html#createSymbolicLink(java.nio.file.Path,java.nio.file.Path,java.nio.file.attribute.FileAttribute...))；本计划的链接指向规则由 APP 在受管操作内实现，不宣称符号链接天然具有任意移动跟踪能力。
 
 以下是尚未纳入基线的扩展或后续排期；未新增决定时按表中范围执行，无需等待用户选择后才开始本期：
 
@@ -1441,8 +1445,8 @@ File.md、Mod.md、APP.md、Runtime.md、产品说明书与 AllFile.md 同步实
 | --- | --- | --- |
 | 跨两台远端服务器复制/移动 | 本期基线是本机、单台 Linux 内部及本机↔远端传输 | 如需服务器↔服务器能力，先确认再增加任务，不从上传/下载推定支持 |
 | 独立回收项查询/还原公开 API | 本期交付可恢复回收及实际效果验证；独立管理接口未获确认 | 需要时再确认接口范围；不能因此把回收实现降为不可恢复删除 |
-| 资源管理器 Mod | 明确不在 1.2，1.3/1.4 只是候选 | 后续确定版本、界面及功能；不阻塞本期 API 验收 |
-| SQL 封装、Swing 封装 Mod | 两个独立可选 Mod，均不在 1.2，也不是默认依赖 | 名称、公开接口、实现及排期在后续敲定，不套用资源管理器候选版本 |
+| 资源管理器 Mod | 不在 1.2，后续已纳入 1.3 | 界面、功能及验收见 [1.3 文档](PHASE-1.3.md#file-explorer)；不改变本期 API 验收 |
+| SQL 封装、Swing 封装 Mod | 两个独立可选 Mod，不在 1.2 或 1.3，移至后期 | 保留方案见 [1.3 文档](PHASE-1.3.md#author-wrappers)，排期待定；官方 Mod 不使用封装 |
 
 ### 7.4 环境核实与真实验收
 
@@ -1453,3 +1457,66 @@ File.md、Mod.md、APP.md、Runtime.md、产品说明书与 AllFile.md 同步实
 | 真实语音提供方、服务器及云控制台 | 在环境和调用授权具备时验证；缺失则列明未验收项和所需条件，继续独立实现与受控验证 | S2-04、S3-12、S4-09、S5-03、S6-03 |
 
 后续决定直接更新对应规格、任务卡、验收和本节，不另留一套冲突规则。必要决策、失败或真实验收缺口不能因目标运行时间较长而自动消失；阶段记录中的“待验证”也不能用于宣称整体全场景验收完成。
+
+
+## 1.2 交付后：类名简化与结构文档整理（2026-10-03）
+
+本次按用户确认的常见词表统一 APP、appapi 和官方 deployment 自有类型，采用对象＋职责／用途。包名和已确认的 Registry、Parser、Deployment、Capability、Application、Profile、Snapshot、Identity、Transcript 保留；改名不代表新增功能或真实远端验收。
+
+252 个生产 Java 文件名调整及嵌套类型边界见[类名调整清单](CLASS-RENAMES.md)。ServerId / SecretId 表示标识，ServerRef / SecretRef 表示业务引用；TaskResult 与资源清理状态独立。公开类型不保留旧兼容壳，旧编译 Mod 需要用当前 API 重新编译；源码与官方 Mod 调用同时更新。数据库表、字段、业务键、JSON 字段、协议值、枚举值与冻结 history-src 保持现状。
+
+[结构规范](../File.md)的当前包树补齐全部 196 个目录节点的中文职责，词表明确 Store / Storage、Id / Ref / Identity 和 Checker / CheckFacts / CheckResult；[实际源码索引](../AllFile.md)同步文件名与包注释。
+
+本次实际验证（JDK 21，2026-10-03）：
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 根项目完整 clean test | 15 个 Reactor 项目成功；12 个叶模块、309 类、1881 项，0 失败／错误／跳过。APP/API 1040 项、deployment 841 项。 |
+| 独立 -DskipTests verify -Pidea-check | 15 个 Reactor 项目成功，IDEA 2026.2.3 检查全部 1281 个范围内文件；此命令不作为测试执行证据。 |
+| 类型与结构 | 252 个生产、86 个测试／夹具文件改名，生产嵌套改名声明另列；无未解决类型冲突或旧类型引用。196 个目录职责注释完整，988 个生产文件索引与实际路径完全一致，106 个现行文档本地链接有效。 |
+| 存储与冻结边界 | 全部 101 个生产运行资源与改名前逐字节一致；其中 79 项为 SQL、JSON、脚本、Properties、浏览器资源。生产 Java 除命名／排版外仅保留本会话先前 5 个 AI 文件差异；102 个枚举声明及持久化／协议逻辑保持。history-src 的 2836 个文件与 HEAD 的 2837 个 blob 校验通过。 |
+| 合同与清理行为 | ServerId / SecretId 与 ServerRef / SecretRef 的不同类型、原用途约束、任务结果与清理状态及载荷清零行为保持；公开合同、权限、依赖、真实平台／H2／回环协议和界面用例通过。 |
+
+首轮发现的通配符嵌套类型、语言 Checker 后缀门禁、当前树注释检查范围及 $PartForm 反射引用均已修正。Windows 集成测试通过既有 managed.test.bash / managed.test.python 属性指定本机 Git Bash 与 Python，JDK 临时路径只在验证进程中设置；旧格式缓存权限问题由实际账户执行 clean 处理，未更改系统配置或削弱测试断言。
+
+本轮还修正两处已有测试时序预期：Git 取消回执已确认时允许直接 ENDED/CANCELLED，同时严格保留最终取消及资源释放检查，另一项强制 UNKNOWN 后显式恢复的用例保持；界面等待辅助方法在首次观察到原条件成立时返回，避免再次读取瞬态空闲造成误失败，原十秒期限及删除权限断言保持。Git 2 项、反射界面 1 项、窗口 6 项专项通过后，最终以上述单轮完整根结果交付；失败及中断记录保留，不与最终报告混合计数。生产业务流程未因这些测试修正而更改。
+
+本节只登记此次改名和本机验证，保留上方历史验收事实。真实 Linux、真实语音／模型提供方和云控制台未新增验收；旧编译 Mod 需要按当前 appapi 重新编译和打包。
+
+
+交付清理：本次测试、编译及格式进程均已退出，任务临时脚本与 JDK 目录已删除，开始前四个 Node 进程及其他既有文件保留。实际改名映射、失败记录与最终报告留在 .ai-workspace/progress/class-naming-evidence；未提交或推送。
+
+## SSH 救援闭环统一归 Linux SSH（2026-10-03）
+
+完整救援实现统一归 `app/linux/ssh/recover`。`SshRecovery` 持有原中央任务准入、服务器选择核对、会话、模型建议、终端交接、逐命令确认、固定 SSH 复核、原任务恢复和实际资源收尾；当前 `PlatformRecoveryModels` 与专属协议归 `recover/ai`，`TaskBrowserSession` 归 `recover/browser`，共享目标值归 `recover/model`；根包保留状态及恢复编排。Service 和 AI 不再保留救援专属包，重复的 `RecoverySnapshot` / `RecoveryTerminal` 已合并为 Linux 的 `BrowserRecoverySnapshot` / `TerminalTarget`。DB 的救援存储和归档继续保留，UI 继续负责显示及人工确认。
+
+启动层 `PlatformRecoveryHost` 只接入原平台任务、安全、模型和 DB 凭据。Linux 不反向依赖 Service、DB 或 UI；界面直接依赖 Linux 时仅允许受控救援入口、会话和纯值，SSH 客户端、浏览器、模型调用和宿主注入对象均受架构门禁禁止。原任务 UUID、服务器占用、配置变化拒绝、模型用途及上限、UNKNOWN 保留、逐命令授权、归档协议和物理清理保持。
+
+本次验证：JDK 21 下受影响 APP/API 模块编译及测试编译通过；16 类、95 项救援和架构专项检查全部通过，0 失败、错误或跳过。覆盖严格协议、模型替身、实际本机浏览器、回环 SSH、原任务跨启动核对、权限反例及物理/持久资源释放；29 个受变 Java/XML 文件经 IDEA 格式化，生产双语文档与 JDK 21 doclint 通过；871 个生产 Java 路径与索引一致，受变文档本地链接及差异空白检查通过。未重跑完整根测试；根 clean 被既有格式缓存权限阻止，改为清理受影响模块后验证，保留该缓存。真实远端、模型提供方及云控制台未新增验收。
+
+## 数据库文件统一命名与旧数据清理（2026-10-03）
+
+当前 H2 主文件由 `platform.mv.db` 改为 `windowstolinux.mv.db`，单实例锁由 `platform.lock` 改为 `windowstolinux.lock`；管理员与 Mod 连接均使用同一新路径。`db-access.bin`、数据库身份、Schema 和业务记录保持原样。首次初始化继续拒绝新旧 H2 不明残留，不将旧文件误判为空目录；已有库未完成改名时拒绝创建替代库，不自动改名或导入 SQLite。
+
+本机 RUN_CLASS 数据根 `src/app/db/data` 已在核实实例锁和数据库未占用后原位改名，数据库与配对访问材料的 SHA-256 核对一致。经明确授权，移除旧 SQLite `windowstolinux.db`、19 份旧 `error-logs` 报告、空 `backups` 及仅含空子目录的测试残留 `multilanguage-live-test-temp`；保留当前 `work` 和 `log`。上方 S5 验收中的旧文件名与当时保留记录属于历史事实。
+
+JDK 21 下 6 类、28 项专项检查通过，覆盖改名与重开后的身份和偏好保留、引导材料配对与损坏拒绝、残留保护、单实例锁、实际 Windows DPAPI，以及隔离 CLASS/JAR 的 AppMain 启动和正常关闭；7 个受变 Java 文件经 IDEA 格式化。首次沙箱运行的原生 DPAPI 检查失败、实际入口超时，改在当前 Windows 用户环境中重跑这 6 项后通过；未修改保护逻辑或放宽测试。未重跑完整项目测试，未进行正式 EXE 验收或远端数据操作。
+
+## App 按职责归包（2026-10-03）
+
+按已确认清单迁移 59 个顶层类型，类名、Maven 模块和公开 appapi 合同保持。当前 APP 的 309 个生产类型分属 78 个包；数量只触发职责检查，不决定合并或拆分，职责独立的 24 个一至两个类型的小包保留，不新增每包数量硬门禁。
+
+救援共享值、模型协议及浏览器控制分别归 `linux/ssh/recover/model`、`ai` 和 `browser`；Windows 更新的共享值与清单核验归 `windows/update/model` 和 `check`，卸载共享值归 `windows/uninstall/model`。文件内部合同归 `file/model`，已选及冻结来源归 `file/source`；Mod 安装、删除、重装与清理成组归 `service/mod/install`，商店适配归 `service/mod/store`，文件审批与后端准入归 `service/file/check`。文件、传输及导航偏好服务统一归 `service/setting`，主密码加密归 `secret`，导航存储归 `db/setting`，救援界面归 `ui/server`。
+
+`FileBackend.recoveryInformationMatches` 保留声明，原默认算法迁到 `FileEngine`；本机 Windows 原生核验分支保留，其余本机路径与 SFTP 显式委托引擎。65536 字节读取上限、读取后身份复核和异常／取消行为保持。安装维护及浏览器的包内协作随类型同步迁移，没有扩大生产可见性或旧包兼容壳。UI 救援白名单仅更新 `TerminalTarget` 的精确位置。
+
+[结构规范](../File.md)与[实际源码索引](../AllFile.md)已同步；当前 999 个生产文件与索引一致，活动源码没有迁移前的类型路径。配置键、消息键、资源、持久化和协议内容保持；Config 改造结果、appapi、Mod 生产实现、Maven 描述及冻结 history-src 与本任务基线逐字节一致；仅一处 Mod 界面测试的等待辅助方法随后按原条件修正。
+
+为完成既有检查，补齐基线严格 Javadoc 的 101 项缺漏，并给隔离的 CLASS/JAR 入口测试补齐 Config 改造后的 `config.yaml`；入口测试继续使用隔离数据根、原平台启动和正常关闭断言，不修改生产布局识别规则。
+
+
+本次实际验证（JDK 21）：根 clean 的 16 个 Reactor 项目成功；清理后分批完整回归覆盖 13 个叶模块、314 份唯一 XML、1910 项（APP/API 1069、deployment 841），0 失败／错误／跳过，其中 55 项架构及严格 Javadoc 检查通过。独立 `-DskipTests verify -Pidea-check` 的 16 个 Reactor 项目成功，IDEA 2026.2.3 检查 1296 个文件通过；此命令不作为测试执行证据。174 个受变文档本地链接及本次差异空白检查通过。
+
+直接 `clean verify` 的混合测试布局仍被原有 `RunModeResolver` 拒绝：DB 来自 JAR、Main 来自 classes。该识别器与任务基线一致，本次保留生产锚点限制，采用既有分步清理、测试和打包流程，没有宣称单轮根 test 或单条 clean verify 成功。入口夹具补齐配置后两项通过；Git 取消首次结果不稳定，原样两项复核通过，首次失败根因未确认。界面等待辅助方法在条件成立后重复读取而误失败，已按原 15 秒期限与条件修正，原主题、语言、草稿、所属窗口及锁定断言完整通过。另有首次沙箱原生操作、临时目录设置和浏览器观察时序失败，原日志保留，不计为最终通过记录。
+
+实际迁移清单、基线校验和、失败日志及最终报告保存在 `.ai-workspace/progress/app-package-evidence`；未提交或推送。验证进程及任务临时脚本完成清理，保留原 App 和 IDEA 进程；未新增真实 Linux、模型服务或正式 EXE 验收。

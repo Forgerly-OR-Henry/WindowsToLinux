@@ -1,13 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-
 import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentSendGuard;
 
 /** Rechecks the assisted binding immediately before every actual SSH dispatch. / 每次真实 SSH 发送前立即复核辅助绑定。

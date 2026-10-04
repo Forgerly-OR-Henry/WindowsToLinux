@@ -1,16 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -22,19 +21,19 @@ class DeploymentAgentHistoryTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
-            var journal = new DeploymentAgentJournal(context.db());
+            var journal = new DeploymentAgentActionLog(context.db());
             var original = context.tasks().submit(new TaskRequest(DeploymentAgentWorkflow.TASK_TYPE,
                 "Original evidence owner", List.of(), true), task -> {
-                journal.create(task, new DeploymentAgentJournal.Identity("evidence-only", "a".repeat(64),
+                journal.create(task, new DeploymentAgentActionLog.Identity("evidence-only", "a".repeat(64),
                     "b".repeat(64), "MANUAL_REVIEW"));
                 journal.event(task, "COMMAND_EXECUTING", "original-binding", "10");
                 journal.event(task, "COMMAND_RESULT", "original-binding", "1");
                 journal.state(task, "FAILED");
-                return new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                     ProblemCode.IO_FAILURE, "CONTROLLED_KNOWN_FAILURE", "Known closed test evidence",
                     Map.of(), Optional.empty())));
             });
-            assertEquals(Outcome.FAILED, original.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.FAILED, original.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
             var page = new DeploymentAgentPageService(context, new DeploymentAgentWorkflow(context));
             assertTrue(page.tasks().isEmpty());
             var history = page.history();
@@ -48,10 +47,10 @@ class DeploymentAgentHistoryTest extends DeploymentRuntimeFixture {
             assertEquals(entry, detail.entry());
             assertEquals("b".repeat(64), detail.snapshot().identity().configurationDigest());
             assertEquals(List.of("COMMAND_EXECUTING", "COMMAND_RESULT", "STATE"),
-                detail.events().stream().map(DeploymentAgentJournal.Event::type).toList());
+                detail.events().stream().map(DeploymentAgentActionLog.Event::type).toList());
             assertEquals("original-binding", detail.events().getFirst().action());
             var rejected = page.requestInspection(entry.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
-            assertEquals(Outcome.FAILED, rejected.outcome());
+            assertEquals(TaskResult.FAILED, rejected.outcome());
             assertEquals("DEPLOYMENT_AGENT_INSPECT_NOT_RETAINED", rejected.problem().orElseThrow().eventCode());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         }

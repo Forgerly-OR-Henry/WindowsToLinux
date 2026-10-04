@@ -1,21 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,15 +16,30 @@ import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.PlatformModServices;
-
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.mod.service.ServiceHandle;
+import gold.debug.windowstolinux.appapi.mod.service.ServiceRegistration;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,7 +57,7 @@ class PlatformModServicesTest {
             """
                 package example.provider.api;
                 public interface Service {
-                    Object execute(String mode, gold.debug.windowstolinux.appapi.task.TaskContext task) throws Exception;
+                    Object execute(String mode, gold.debug.windowstolinux.appapi.task.run.TaskContext task) throws Exception;
                 }
                 """,
             "example.provider.api.View", """
@@ -67,11 +66,11 @@ class PlatformModServicesTest {
                 """, "example.provider.Mod",
             """
                 package example.provider;
-                
-                
-                import gold.debug.windowstolinux.appapi.server.*;
+
+
+                import gold.debug.windowstolinux.appapi.server.model.ServerId; import gold.debug.windowstolinux.appapi.server.ServerService;
                 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-                import gold.debug.windowstolinux.appapi.task.*;
+                import gold.debug.windowstolinux.appapi.task.result.ApiException; import gold.debug.windowstolinux.appapi.task.result.OperationResult; import gold.debug.windowstolinux.appapi.task.run.TaskContext; import gold.debug.windowstolinux.appapi.task.model.TaskRequest; import gold.debug.windowstolinux.appapi.task.result.TaskResult; import gold.debug.windowstolinux.appapi.task.TaskService;
                 import java.util.*;
                 public final class Mod implements example.provider.api.Service {
                     private final ModDatabase db;
@@ -98,12 +97,15 @@ class PlatformModServicesTest {
                                 }
                             }
                             case "servers" -> servers.list(Optional.empty(), 10, task).items().stream().map(s -> s.ref().id()).toList();
-                            case "unadmitted" -> servers.get(new ServerRef("other"), task);
+                            case "unadmitted" -> servers.get(new ServerId("other"), task);
                             case "snapshot" -> new example.provider.api.View(values);
                             case "leak" -> { retained=db.openConnection(task); yield "retained"; }
                             case "close" -> { if(retained!=null) retained.close(); yield "closed"; }
                             case "future" -> java.util.concurrent.CompletableFuture.completedFuture("done");
                             case "throw" -> throw new IllegalStateException("must-not-leak-secret");
+                            case "providerError" -> throw new java.util.ServiceConfigurationError("must-not-leak-secret");
+                            case "providerFatal" -> throw new InternalError("synthetic provider VM error");
+                            case "providerDeath" -> throw new ThreadDeath();
                             case "async" -> {
                                 var result = new java.util.concurrent.atomic.AtomicReference<String>();
                                 Thread worker=Thread.ofVirtual().start(() -> {
@@ -113,7 +115,7 @@ class PlatformModServicesTest {
                                 }); worker.join(); yield result.get();
                             }
                             case "reenter" -> {
-                                try { tasks.submit(new TaskRequest("nested", "nested", List.of("server"), false), c -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())); yield "WRONG"; }
+                                try { tasks.submit(new TaskRequest("nested", "nested", List.of("server"), false), c -> new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())); yield "WRONG"; }
                                 catch(ApiException denied) { yield denied.problem().eventCode(); }
                             }
                             default -> "ready";
@@ -339,7 +341,7 @@ class PlatformModServicesTest {
                     assertTrue(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                     return success(null);
                 });
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
                 assertEquals(1, count(f.db, "SELECT COUNT(*) FROM mod_schema WHERE ever_used=TRUE"));
                 assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -355,14 +357,59 @@ class PlatformModServicesTest {
                 assertEquals(1, new TaskLedger(f.db).queries().dependencies(context.id()).size());
                 return success(null);
             })) {
-                for (String mode : List.of("throw", "future", "unadmitted")) {
+                for (String mode : List.of("throw", "providerError", "future", "unadmitted")) {
                     var task = f.tasks.submit(request("server"), context -> {
-                        assertThrows(ApiException.class, () -> f.call(handle, mode, context));
+                        var failure = assertThrows(ApiException.class, () -> f.call(handle, mode, context));
+                        if (mode.equals("throw") || mode.equals("providerError")) {
+                            var id = failure.problem().diagnosticId().orElseThrow();
+                            var records = new gold.debug.windowstolinux.app.db.log.LogStore(f.db)
+                                .read(gold.debug.windowstolinux.app.db.log.LogStore.startupTarget());
+                            assertTrue(records.stream().anyMatch(record -> record.id().equals(id)));
+                            var saved = records.stream().filter(record -> record.id().equals(id)).findFirst().orElseThrow();
+                            assertTrue(saved.details().contains("example.provider.Mod.execute"));
+                            assertFalse(saved.details().contains("must-not-leak-secret"));
+                        }
                         return success(null);
                     });
                     state(task, TaskState.UNKNOWN);
                     assertFalse(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                     assertEquals(TaskState.ENDED, f.reconcile(task.id()).state());
+                }
+            }
+        }
+    }
+
+    @Test
+    void fatalProviderErrorsEscapeWithoutLosingOriginalDependencyRecovery() throws Exception {
+        try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null)) {
+            f.publish();
+            try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
+                assertEquals(1, new TaskLedger(f.db).queries().dependencies(context.id()).size());
+                return success(null);
+            })) {
+                for (String mode : List.of("providerFatal", "providerDeath")) {
+                    var escaped = new AtomicReference<Throwable>();
+                    var returned = new java.util.concurrent.CountDownLatch(1);
+                    var calls = new AtomicInteger();
+                    var task = f.tasks.submit(request("server"), context -> {
+                        Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+                            escaped.set(failure);
+                            returned.countDown();
+                        });
+                        calls.incrementAndGet();
+                        f.call(handle, mode, context);
+                        return success(null);
+                    });
+                    assertTrue(returned.await(8, java.util.concurrent.TimeUnit.SECONDS));
+                    if (mode.equals("providerFatal"))
+                        assertInstanceOf(InternalError.class, escaped.get());
+                    else
+                        assertInstanceOf(ThreadDeath.class, escaped.get());
+                    state(task, TaskState.UNKNOWN);
+                    assertFalse(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
+                    assertEquals(TaskState.ENDED, f.reconcile(task.id()).state());
+                    assertEquals(1, calls.get());
+                    assertTrue(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                 }
             }
         }
@@ -437,7 +484,7 @@ class PlatformModServicesTest {
                 } finally {
                     providerChanged.countDown();
                 }
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
                 assertTrue(new TaskLedger(f.db).queries().dependencies(task.id()).isEmpty());
                 sql(f.db, "UPDATE mod_registry SET enabled=TRUE WHERE mod_id=?", PROVIDER);
@@ -453,10 +500,10 @@ class PlatformModServicesTest {
                         assertTrue(ledger.queries().dependencies(context.id()).isEmpty());
                         return success(null);
                     });
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         blocked.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
                 } finally {
-                    assertTrue(ledger.complete(maintenance, Outcome.SUCCEEDED, "{}", false));
+                    assertTrue(ledger.complete(maintenance, TaskResult.SUCCEEDED, "{}", false));
                 }
             }
         }
@@ -487,7 +534,7 @@ class PlatformModServicesTest {
                                 .interaction().approve(PlatformAuthorizationTest.action(command,
                                     "application.restart", PlatformAuthorizationTest.APP), task)
                                 .value().orElseThrow();
-                            assertEquals(Outcome.SUCCEEDED, session.execute(command, grant).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                         }
                     } catch (Exception | AssertionError e) {
                         failed.set(e);
@@ -508,7 +555,7 @@ class PlatformModServicesTest {
                             return success(null);
                         }));
                     try {
-                        assertEquals(Outcome.SUCCEEDED,
+                        assertEquals(TaskResult.SUCCEEDED,
                             task.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
                     } catch (TimeoutException timeout) {
                         throw new AssertionError(task.snapshot().toString(),
@@ -527,23 +574,23 @@ class PlatformModServicesTest {
                 var choices = new AtomicInteger();
                 reviews.conflictPolicy = conflict -> {
                     choices.incrementAndGet();
-                    return gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.OVERWRITE;
+                    return gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.OVERWRITE;
                 };
                 f.hook.set(() -> {
                     try (var session = provider.linux().connect(PlatformRemoteCapabilitiesTest.SERVER,
                         original.get())) {
                         for (boolean upload : List.of(true, false)) {
-                            var request = new gold.debug.windowstolinux.appapi.linux.TransferRequest(
+                            var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(
                                 upload ? source : destination, "/artifact", 1024);
                             var digest = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
                                 .digest(Files.readAllBytes(source)));
-                            var intent = gold.debug.windowstolinux.appapi.linux.RemoteActions
+                            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions
                                 .transfer(PlatformRemoteCapabilitiesTest.SERVER, "revision", request, digest,
                                     upload)
                                 .withSemantics(new ActionSemantics("application.files",
                                     Set.of(PlatformAuthorizationTest.APP)));
                             var grant = provider.interaction().approve(intent, original.get()).value().orElseThrow();
-                            assertEquals(Outcome.SUCCEEDED,
+                            assertEquals(TaskResult.SUCCEEDED,
                                 (upload ? session.upload(request, grant) : session.download(request, grant))
                                     .outcome());
                         }
@@ -559,7 +606,7 @@ class PlatformModServicesTest {
                         return success(f.call(handle, "ready", context));
                     }));
                 try {
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         transfer.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
                 } catch (TimeoutException timeout) {
                     throw new AssertionError(transfer.snapshot().toString(),
@@ -600,7 +647,7 @@ class PlatformModServicesTest {
                 } finally {
                     proceed.countDown();
                 }
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
                 f.registration.close();
                 f.providerBinding.close();

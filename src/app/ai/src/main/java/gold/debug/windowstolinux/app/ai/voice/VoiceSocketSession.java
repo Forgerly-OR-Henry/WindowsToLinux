@@ -10,8 +10,16 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceListener;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceSession;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** OpenAI transcription session with ordered commits, bounded queues and explicit terminal cleanup. / 具有有序提交、有界队列及明确终态清理的 OpenAI 转写会话。 */
 public final class VoiceSocketSession implements VoiceSession, WebSocket.Listener {
@@ -55,7 +63,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
     private final Set<byte[]> audioBuffers = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** Bounded commit association and transcript state under this monitor. / 由此监视器保护的有界提交关联及转写状态。 */
-    private final VoiceTranscript transcript = new VoiceTranscript();
+    private final VoiceTranscriptBuilder transcript = new VoiceTranscriptBuilder();
 
     /** Current bounded fragmented JSON event. / 当前有界分片 JSON 事件。 */
     private final StringBuilder frame = new StringBuilder();
@@ -109,23 +117,26 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
     public static VoiceSocketSession open(URI endpoint, char[] key, String model, String modelId,
                                           VoiceOptions options, VoiceListener listener, CancelToken cancellation) throws ApiException {
         return open(endpoint, key, model, modelId, options, listener, cancellation, ignored -> {
-        });
+        }, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().connectSeconds());
     }
 
-    /** Records transport ownership before connection admission so failed cleanup remains recoverable. / 在连接准入前记录传输归属，使失败清理仍可恢复。
-     * @param endpoint configured complete endpoint / 配置完整端点
-     * @param key captured credential / 捕获凭据
+    /** Applies the startup cap to HTTP and WebSocket connection admission. / 将启动上限应用于 HTTP 和 WebSocket 连接准入。
+     * @param endpoint configured endpoint / 配置端点
+     * @param key temporary credential / 临时凭据
      * @param model provider model / 提供方模型
-     * @param modelId platform model identity / 平台模型身份
+     * @param modelId platform identity / 平台身份
      * @param options finite limits / 有限限制
-     * @param listener serialized observations / 串行观测
-     * @param cancellation original cancellation / 原取消信号
-     * @param retained host-owned transport registration / 宿主持有的传输登记
+     * @param listener ordered callbacks / 有序回调
+     * @param cancellation original cancellation / 原取消
+     * @param retained original physical ownership / 原物理归属
+     * @param connectSeconds configured HTTP cap / 配置 HTTP 上限
      * @return ready session / 就绪会话
-     * @throws ApiException if opening or cleanup fails / 打开或清理失败时 */
+     * @throws ApiException if configuration or admission fails / 配置或准入失败时 */
     public static VoiceSocketSession open(URI endpoint, char[] key, String model, String modelId,
                                           VoiceOptions options, VoiceListener listener, CancelToken cancellation,
-                                          java.util.function.Consumer<VoiceSocketSession> retained) throws ApiException {
+                                          java.util.function.Consumer<VoiceSocketSession> retained, int connectSeconds) throws ApiException {
+        if (connectSeconds < 1)
+            throw problem(ProblemCode.INVALID_INPUT, "VOICE_CONFIGURATION", "Connection cap must be positive");
         VoiceProtocol.validateEndpoint(endpoint);
         try {
             VoiceProtocol.validateKey(key);
@@ -134,7 +145,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
         }
         if (model == null || !model.matches("[A-Za-z0-9._:/-]{1,128}"))
             throw problem(ProblemCode.INVALID_INPUT, "VOICE_CONFIGURATION", "Invalid realtime model configuration");
-        var session = new VoiceSocketSession(model, modelId, options, listener, cancellation);
+        var session = new VoiceSocketSession(model, modelId, options, listener, cancellation, connectSeconds);
         try {
             retained.accept(session);
             if (cancellation.requested())
@@ -142,7 +153,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
             if (System.nanoTime() - session.start >= options.timeout().toNanos())
                 throw problem(ProblemCode.TIMEOUT, "VOICE_REALTIME_TIMEOUT", "Realtime opening budget ended before connection admission");
             session.connecting = session.client.newWebSocketBuilder()
-                .connectTimeout(options.timeout().compareTo(Duration.ofSeconds(10)) < 0 ? options.timeout() : Duration.ofSeconds(10))
+                .connectTimeout(options.timeout().compareTo(Duration.ofSeconds(connectSeconds)) < 0 ? options.timeout() : Duration.ofSeconds(connectSeconds))
                 .header("Authorization", "Bearer " + new String(key))
                 .buildAsync(VoiceProtocol.transcriptionEndpoint(endpoint), session);
             session.connecting.whenComplete((connected, failure) -> {
@@ -150,21 +161,21 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
                     Throwable cause = unwrap(failure);
                     if (cause instanceof WebSocketHandshakeException handshake) {
                         int status = handshake.getResponse().statusCode();
-                        session.fail(Outcome.FAILED, status == 401 || status == 403 ? ProblemCode.ACCESS_DENIED : ProblemCode.UNAVAILABLE,
+                        session.fail(TaskResult.FAILED, status == 401 || status == 403 ? ProblemCode.ACCESS_DENIED : ProblemCode.UNAVAILABLE,
                             "VOICE_CONNECTION_REJECTED", "The provider rejected the realtime connection");
                     } else
-                        session.fail(Outcome.FAILED, ProblemCode.IO_FAILURE, "VOICE_CONNECTION_FAILED", "Realtime connection could not be established");
+                        session.fail(TaskResult.FAILED, ProblemCode.IO_FAILURE, "VOICE_CONNECTION_FAILED", "Realtime connection could not be established");
                 }
             });
             session.awaitReady();
             return session;
         } catch (ApiException failure) {
-            session.fail(Outcome.FAILED, failure.problem().code(), failure.problem().eventCode(), failure.problem().message());
+            session.fail(TaskResult.FAILED, failure.problem().code(), failure.problem().eventCode(), failure.problem().message());
             session.awaitCleanup();
             throw failure;
         } catch (RuntimeException invalid) {
             var failure = problem(ProblemCode.INVALID_INPUT, "VOICE_CONFIGURATION", "Realtime connection configuration is invalid");
-            session.fail(Outcome.FAILED, failure.problem().code(), failure.problem().eventCode(), failure.problem().message());
+            session.fail(TaskResult.FAILED, failure.problem().code(), failure.problem().eventCode(), failure.problem().message());
             session.awaitCleanup();
             throw failure;
         }
@@ -175,16 +186,17 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
      * @param modelId frozen platform identity / 冻结平台身份
      * @param options validated finite limits / 已校验有限限制
      * @param listener serialized observations / 串行观测
-     * @param cancellation original cancellation / 原取消信号 */
+     * @param cancellation original cancellation / 原取消信号
+     * @param connectSeconds configured connection cap / 配置连接上限 */
     private VoiceSocketSession(String model, String modelId, VoiceOptions options,
-                               VoiceListener listener, CancelToken cancellation) {
+                               VoiceListener listener, CancelToken cancellation, int connectSeconds) {
         this.model = model;
         this.modelId = Objects.requireNonNull(modelId);
         this.options = Objects.requireNonNull(options);
         this.listener = Objects.requireNonNull(listener);
         this.cancellation = Objects.requireNonNull(cancellation);
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
-            .connectTimeout(Duration.ofSeconds(10)).build();
+            .connectTimeout(options.timeout().compareTo(Duration.ofSeconds(connectSeconds)) < 0 ? options.timeout() : Duration.ofSeconds(connectSeconds)).build();
         watchdog = Executors.newSingleThreadScheduledExecutor(r -> {
             var thread = new Thread(r, "voice-session-deadline");
             thread.setDaemon(true);
@@ -193,7 +205,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
         watchdog.scheduleWithFixedDelay(() -> {
             if (cancellation.requested()) cancelTransport();
             else if (System.nanoTime() - start >= options.timeout().toNanos())
-                fail(audioWasSent() ? Outcome.UNKNOWN : Outcome.FAILED, ProblemCode.TIMEOUT,
+                fail(audioWasSent() ? TaskResult.UNKNOWN : TaskResult.FAILED, ProblemCode.TIMEOUT,
                     "VOICE_REALTIME_TIMEOUT", "Realtime input ended without all confirmed results before the deadline");
         }, 0, 25, TimeUnit.MILLISECONDS);
     }
@@ -257,25 +269,25 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
             synchronized (this) {
                 if (terminal) return CompletableFuture.completedFuture(null);
                 if (data.length() > VoiceProtocol.MAX_RESPONSE_BYTES - frame.length()) {
-                    fail(Outcome.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_EVENT_LIMIT", "Realtime event exceeded its bound");
+                    fail(TaskResult.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_EVENT_LIMIT", "Realtime event exceeded its bound");
                     return CompletableFuture.completedFuture(null);
                 }
                 int received = StandardCharsets.UTF_8.encode(CharBuffer.wrap(data)).remaining();
                 if (received > VoiceProtocol.MAX_RESPONSE_BYTES - frameBytes) {
-                    fail(Outcome.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_EVENT_LIMIT", "Realtime event exceeded its UTF-8 byte bound");
+                    fail(TaskResult.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_EVENT_LIMIT", "Realtime event exceeded its UTF-8 byte bound");
                     return CompletableFuture.completedFuture(null);
                 }
                 frameBytes += received;
                 frame.append(data);
                 if (last) {
                     if (StandardCharsets.UTF_8.encode(CharBuffer.wrap(frame)).remaining() > VoiceProtocol.MAX_RESPONSE_BYTES) {
-                        fail(Outcome.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_EVENT_LIMIT", "Realtime event exceeded its complete UTF-8 byte bound");
+                        fail(TaskResult.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_EVENT_LIMIT", "Realtime event exceeded its complete UTF-8 byte bound");
                         return CompletableFuture.completedFuture(null);
                     }
                     try {
                         event(VoiceProtocol.JSON.readTree(frame.toString()));
                     } catch (IOException | IllegalArgumentException invalid) {
-                        fail(audioSent ? Outcome.UNKNOWN : Outcome.FAILED, ProblemCode.CONTRACT_VIOLATION,
+                        fail(audioSent ? TaskResult.UNKNOWN : TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION,
                             "VOICE_EVENT_INVALID", "Realtime event did not satisfy the transcription protocol");
                     } finally {
                         frame.setLength(0);
@@ -315,7 +327,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
         if (type.equals("error") || type.equals("conversation.item.input_audio_transcription.failed")) {
             String errorType = event.path("error").path("type").asText();
             boolean unsupported = VoiceProtocol.unsupported(event.path("error"));
-            fail(Outcome.FAILED, unsupported ? ProblemCode.INCOMPATIBLE : errorType.equals("authentication_error")
+            fail(TaskResult.FAILED, unsupported ? ProblemCode.INCOMPATIBLE : errorType.equals("authentication_error")
                     ? ProblemCode.ACCESS_DENIED : ProblemCode.CONTRACT_VIOLATION,
                 unsupported ? "VOICE_UNSUPPORTED" : "VOICE_PROTOCOL_REJECTED", "The provider rejected the realtime transcription operation");
             return;
@@ -333,7 +345,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
                 try {
                     listener.onEvent(observation);
                 } catch (RuntimeException failure) {
-                    fail(Outcome.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_LISTENER_FAILED", "The transcript listener failed");
+                    fail(TaskResult.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_LISTENER_FAILED", "The transcript listener failed");
                     return;
                 }
             }
@@ -348,7 +360,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
      * @return acknowledgement after classified termination / 分类终止后的确认 */
     @Override
     public CompletionStage<?> onBinary(WebSocket webSocket, java.nio.ByteBuffer data, boolean last) {
-        fail(Outcome.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_BINARY_EVENT", "Unexpected binary provider event");
+        fail(TaskResult.UNKNOWN, ProblemCode.CONTRACT_VIOLATION, "VOICE_BINARY_EVENT", "Unexpected binary provider event");
         return CompletableFuture.completedFuture(null);
     }
 
@@ -359,7 +371,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
      * @return acknowledgement after classification / 分类后的确认 */
     @Override
     public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-        fail(audioWasSent() ? Outcome.UNKNOWN : Outcome.FAILED, ProblemCode.IO_FAILURE,
+        fail(audioWasSent() ? TaskResult.UNKNOWN : TaskResult.FAILED, ProblemCode.IO_FAILURE,
             "VOICE_DISCONNECTED", "Realtime connection ended before completion");
         return CompletableFuture.completedFuture(null);
     }
@@ -369,7 +381,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
      * @param error transport cause discarded from public diagnostics / 从公开诊断中丢弃的传输原因 */
     @Override
     public void onError(WebSocket webSocket, Throwable error) {
-        fail(audioWasSent() ? Outcome.UNKNOWN : Outcome.FAILED, ProblemCode.IO_FAILURE,
+        fail(audioWasSent() ? TaskResult.UNKNOWN : TaskResult.FAILED, ProblemCode.IO_FAILURE,
             "VOICE_DISCONNECTED", "Realtime connection failed before completion");
     }
 
@@ -442,7 +454,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
                     buffered -= audio.length;
                 }
                 if (failure != null && !terminal)
-                    fail(audioSent ? Outcome.UNKNOWN : Outcome.FAILED, ProblemCode.IO_FAILURE,
+                    fail(audioSent ? TaskResult.UNKNOWN : TaskResult.FAILED, ProblemCode.IO_FAILURE,
                         "VOICE_SEND_UNKNOWN", "The realtime send outcome could not be established");
                 else completeIfReady();
             }
@@ -469,7 +481,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
     private void completeIfReady() {
         if (!terminal && finishing && transcript.complete()
             && outbound.isDone() && !outbound.isCompletedExceptionally())
-            terminate(new OperationResult<>(Outcome.SUCCEEDED, Optional.of(confirmed()), Optional.empty()), true);
+            terminate(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(confirmed()), Optional.empty()), true);
     }
 
     /** Guards original input admission and observes cooperative cancellation. / 保护原输入准入并观测协作取消。
@@ -502,7 +514,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
      * @param code stable failure category / 稳定失败类别
      * @param event safe event identity / 安全事件身份
      * @param message safe explanation / 安全说明 */
-    private void fail(Outcome outcome, ProblemCode code, String event, String message) {
+    private void fail(TaskResult outcome, ProblemCode code, String event, String message) {
         synchronized (this) {
             terminate(VoiceProtocol.failure(outcome, code, event, message, modelId,
                 !transcript.hasConfirmed() ? Optional.empty() : Optional.of(confirmed())), false);
@@ -512,7 +524,7 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
     /** Seals input without replay or implicit commit, retaining uncertain external effects. / 封闭输入而不重放或隐式提交，保留未知外部影响。 */
     private void cancelTransport() {
         synchronized (this) {
-            terminate(VoiceProtocol.failure(audioSent ? Outcome.UNKNOWN : Outcome.CANCELLED, ProblemCode.CANCELLED,
+            terminate(VoiceProtocol.failure(audioSent ? TaskResult.UNKNOWN : TaskResult.CANCELLED, ProblemCode.CANCELLED,
                 "VOICE_CANCELLED", audioSent ? "Cancelled audio may have been processed; confirmed parts are retained"
                     : "Realtime input was cancelled before audio was sent", modelId,
                 !transcript.hasConfirmed() ? Optional.empty() : Optional.of(confirmed())), false);
@@ -553,9 +565,9 @@ public final class VoiceSocketSession implements VoiceSession, WebSocket.Listene
                 awaitClientClose();
             } catch (InterruptedException failure) {
                 interrupted = true;
-                actual = VoiceProtocol.failure(Outcome.UNKNOWN, ProblemCode.UNKNOWN, "VOICE_CLOSE_UNKNOWN", "Voice cleanup was interrupted", modelId, result.value());
+                actual = VoiceProtocol.failure(TaskResult.UNKNOWN, ProblemCode.UNKNOWN, "VOICE_CLOSE_UNKNOWN", "Voice cleanup was interrupted", modelId, result.value());
             } catch (IOException failure) {
-                actual = VoiceProtocol.failure(Outcome.UNKNOWN, ProblemCode.UNKNOWN, "VOICE_CLOSE_UNKNOWN", "Voice connection cleanup could not be confirmed", modelId, result.value());
+                actual = VoiceProtocol.failure(TaskResult.UNKNOWN, ProblemCode.UNKNOWN, "VOICE_CLOSE_UNKNOWN", "Voice connection cleanup could not be confirmed", modelId, result.value());
             } finally {
                 completion.complete(actual);
                 if (interrupted) Thread.currentThread().interrupt();

@@ -28,7 +28,7 @@ final class DeploymentEcosystemServiceFixture {
             && (gradleWrapperJar == null || !Files.isRegularFile(gradleWrapperJar))) {
             throw new IOException("managed.gradle.wrapper.jar must identify a real verified Gradle wrapper JAR");
         }
-        Path root = DeploymentRepositoryServiceFixture.copy(parent, applicationId, combination, healthy);
+        Path root = DeploymentStoreServiceFixture.copy(parent, applicationId, combination, healthy);
         var replacements = new LinkedHashMap<String, String>();
         replacements.put("deployment-smoke-ok", marker);
         switch (projectType) {
@@ -52,7 +52,7 @@ final class DeploymentEcosystemServiceFixture {
             case RUBY_SERVICE -> Files.writeString(root.resolve(".ruby-version"), version + "\n");
             default -> throw new IllegalStateException("unsupported fixture");
         }
-        DeploymentRepositoryServiceFixture.replaceText(root, replacements);
+        DeploymentStoreServiceFixture.replaceText(root, replacements);
         return root;
     }
 }

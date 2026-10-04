@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -13,7 +7,11 @@ import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -31,7 +29,7 @@ class TaskRecoveryLedgerTest {
             task = new TaskLedgerTest().queue(ledger, "one", "A");
             assertTrue(ledger.tryStart(task));
             lease = ledger.retain(task, resource, facts, false);
-            assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertFalse(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
             assertEquals(List.of("FILE: sftp:original"), ledger.queries().snapshot(task).blockers());
             assertThrows(SQLException.class, () -> ledger.retain(task, resource));
             assertThrows(SQLException.class, () -> ledger.retain(task, resource,
@@ -46,7 +44,7 @@ class TaskRecoveryLedgerTest {
             assertThrows(SQLException.class, () -> ledger.release(waiting, lease));
             ledger.release(task, lease);
             ledger.release(task, lease);
-            assertTrue(ledger.complete(task, Outcome.SUCCEEDED, "{}", true));
+            assertTrue(ledger.complete(task, TaskResult.SUCCEEDED, "{}", true));
             assertTrue(ledger.tryStart(waiting));
         }
     }
@@ -70,7 +68,7 @@ class TaskRecoveryLedgerTest {
                     p.setObject(2, lease);
                     p.executeUpdate();
                 }
-                assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+                assertFalse(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
                 assertEquals(List.of("FILE: sftp:corrupt"), ledger.queries().snapshot(task).blockers());
                 assertThrows(SQLException.class, () -> ledger.release(task, lease), malformed);
                 assertThrows(SQLException.class, () -> ledger.retain(task, resource), malformed);
@@ -108,7 +106,7 @@ class TaskRecoveryLedgerTest {
                 "three", "x".repeat(16384), "four", "x".repeat(16384)));
             assertThrows(SQLException.class, () -> ledger.retain(task, file, huge, false));
             assertEquals(2, new TaskLedgerTest().active(db, task));
-            assertTrue(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
         }
     }
 }

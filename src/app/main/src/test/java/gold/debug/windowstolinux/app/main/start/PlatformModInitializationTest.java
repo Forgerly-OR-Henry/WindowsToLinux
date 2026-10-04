@@ -11,8 +11,8 @@ import java.util.*;
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.db.mod.ModRestartLedger;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,15 +21,15 @@ class PlatformModInitializationTest {
     @TempDir
     Path root;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
-    static final String OWNER = PlatformModCoordinatorTest.P;
+    static final String OWNER = PlatformModFlowTest.P;
 
     static final String CONNECTION = "wtl.schema.fixture.connection", SCOPE = "wtl.schema.fixture.scope";
 
     @BeforeEach
     void setup() throws Exception {
-        fixture = new PlatformModCoordinatorTest();
+        fixture = new PlatformModFlowTest();
         fixture.root = root;
         fixture.workspace();
     }
@@ -52,9 +52,9 @@ class PlatformModInitializationTest {
                 import java.nio.file.*;
                 import java.sql.*;
                 import java.util.*;
-                import gold.debug.windowstolinux.appapi.db.CheckResult;
-                import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
-                import gold.debug.windowstolinux.appapi.db.SchemaAccess;
+                import gold.debug.windowstolinux.appapi.db.schema.CheckResult;
+                import gold.debug.windowstolinux.appapi.db.schema.ModSchemaLifecycle;
+                import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
                 public final class ProviderSchema implements ModSchemaLifecycle {
                     public static int calls;
                     static final String MODE="%s";
@@ -64,6 +64,7 @@ class PlatformModInitializationTest {
                     public void initialize(SchemaAccess target) throws Exception {
                         calls++;
                         trace("initialize");
+                        if(MODE.equals("initializeError"))throw new java.util.ServiceConfigurationError("private initialize failure");
                         var c=target.openConnection();
                         if(MODE.equals("writerLeak")) {
                             System.getProperties().put("%s",c);
@@ -88,6 +89,8 @@ class PlatformModInitializationTest {
                     }
                     public CheckResult validate(SchemaAccess target) throws Exception {
                         trace("validate");
+                        if(MODE.equals("validationError"))throw new java.util.ServiceConfigurationError("private validation failure");
+                        if(MODE.equals("validationFatal"))throw new InternalError("synthetic validation VM error");
                         var c=target.openConnection();
                         if(MODE.equals("readerLeak")) {
                             System.getProperties().put("%s",c);
@@ -115,7 +118,7 @@ class PlatformModInitializationTest {
         assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "--release", "21", "-proc:none",
             "-encoding", "UTF-8", "-classpath", cp, "-d", classes.toString(), source.toString(), entry.toString()));
         Files.writeString(module.resolve("mod.json"), manifest(OWNER, VERSION, Map.of(), "1", List.of()));
-        DevelopmentDescriptor.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
+        DevelopmentInfo.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
             List.of(fixture.workspace.resolve("pom.xml"), fixture.workspace.resolve("src/mod/pom.xml"),
                 module.resolve("pom.xml")),
             List.of());
@@ -159,7 +162,7 @@ class PlatformModInitializationTest {
             assertFalse(report.problems().isEmpty());
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
             assertEquals("FALSE", text(runtime, "SELECT ever_used FROM mod_schema"));
-            assertEquals("FAILED", PlatformModCoordinatorTest.state(runtime, OWNER));
+            assertEquals("FAILED", PlatformModFlowTest.state(runtime, OWNER));
             assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals(VERSION, text(runtime, "SELECT selected_version FROM mod_registry"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
@@ -168,6 +171,58 @@ class PlatformModInitializationTest {
         }
         try (var runtime = fixture.open(false)) {
             assertTrue(fixture.start(runtime).running().isEmpty());
+        }
+        assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
+    }
+
+    @Test
+    void initializationErrorRetainsFailedGenerationWithoutAutomaticReplay() throws Exception {
+        module("initializeError", false);
+        fixture.enable(OWNER);
+        String generation;
+        try (var runtime = fixture.open(false)) {
+            var report = fixture.start(runtime);
+            assertTrue(report.running().isEmpty());
+            assertFalse(report.problems().isEmpty());
+            assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
+            assertEquals("FALSE", text(runtime, "SELECT ever_used FROM mod_schema"));
+            assertEquals(0, runtime.persistence().database().openConnections());
+            generation = text(runtime, "SELECT generation FROM mod_schema");
+        }
+        try (var runtime = fixture.open(false)) {
+            assertTrue(fixture.start(runtime).running().isEmpty());
+            assertEquals(generation, text(runtime, "SELECT generation FROM mod_schema"));
+        }
+        assertEquals(List.of("schema:initialize"), fixture.actions());
+    }
+
+    @Test
+    void validationErrorRetainsInitializedDataAndClosesOriginalReaders() throws Exception {
+        module("validationError", false);
+        fixture.enable(OWNER);
+        String generation;
+        try (var runtime = fixture.open(false)) {
+            assertTrue(fixture.start(runtime).running().isEmpty());
+            assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
+            assertEquals(0, runtime.persistence().database().openConnections());
+            generation = text(runtime, "SELECT generation FROM mod_schema");
+        }
+        try (var runtime = fixture.open(false)) {
+            assertTrue(fixture.start(runtime).running().isEmpty());
+            assertEquals(generation, text(runtime, "SELECT generation FROM mod_schema"));
+        }
+        assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
+    }
+
+    @Test
+    void fatalValidationPropagatesAfterClosingOriginalScopes() throws Exception {
+        module("validationFatal", false);
+        fixture.enable(OWNER);
+        try (var runtime = fixture.open(false)) {
+            assertThrows(InternalError.class, () -> fixture.start(runtime));
+            assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
+            assertEquals("FALSE", text(runtime, "SELECT ever_used FROM mod_schema"));
+            assertEquals(0, runtime.persistence().database().openConnections());
         }
         assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
     }
@@ -278,13 +333,13 @@ class PlatformModInitializationTest {
                 .create(plan.target());
             ledger.preparationPhase(plan, false);
             ledger.preparationPhase(plan, true);
-            ledger.finishPreparation(plan, gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "1".repeat(64));
+            ledger.finishPreparation(plan, gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, "1".repeat(64));
             sql(runtime.persistence().database(), "DELETE FROM runtime_log WHERE event_code='MOD_SCHEMA_INITIALIZED'");
-            ledger.finishPreparation(plan, gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "1".repeat(64));
+            ledger.finishPreparation(plan, gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, "1".repeat(64));
             assertEquals(0, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_SCHEMA_INITIALIZED'"));
             assertThrows(SQLException.class, () -> ledger.finishPreparation(plan,
-                gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED, "2".repeat(64)));
+                gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, "2".repeat(64)));
         }
     }
 
@@ -296,7 +351,7 @@ class PlatformModInitializationTest {
             assertTrue(fixture.start(runtime).running().isEmpty());
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
             assertEquals("TRUE", text(runtime, "SELECT ever_used FROM mod_schema"));
-            assertEquals("FAILED", PlatformModCoordinatorTest.state(runtime, OWNER));
+            assertEquals("FAILED", PlatformModFlowTest.state(runtime, OWNER));
         }
     }
 
@@ -329,7 +384,7 @@ class PlatformModInitializationTest {
         module("valid", false);
         fixture.enable(OWNER);
         String schema = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(
-            new gold.debug.windowstolinux.appapi.db.SchemaIdentity(OWNER, "1", UUID.randomUUID())).physicalName();
+            new gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity(OWNER, "1", UUID.randomUUID())).physicalName();
         try (var runtime = fixture.open(false)) {
             sql(runtime.persistence().database(), "CREATE SCHEMA \"" + schema + "\"");
             sql(runtime.persistence().database(), "CREATE TABLE \"" + schema + "\".retained(id INT)");

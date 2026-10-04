@@ -5,10 +5,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.file.FileBackend;
-import gold.debug.windowstolinux.app.file.FileRecycleReceipt;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.app.file.FileEngine;
+import gold.debug.windowstolinux.app.file.model.FileBackend;
+import gold.debug.windowstolinux.app.file.model.FileRecycleReceipt;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.extensions.openssh.OpenSSHPosixRenameExtension;
 import org.apache.sshd.sftp.common.*;
@@ -21,13 +23,13 @@ public final class SftpFileBackend implements FileBackend {
 
     /** authenticated server identity / 已认证服务器身份.
      */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Wraps a channel whose owning connection retains lifecycle responsibility. / 包装由所属连接负责生命周期的通道。
      * @param sftp original managed authenticated channel / 原受管认证通道
      * @param server authenticated server identity / 已认证服务器身份
      */
-    public SftpFileBackend(SftpClient sftp, ServerRef server) {
+    public SftpFileBackend(SftpClient sftp, ServerId server) {
         this(server, () -> Objects.requireNonNull(sftp));
     }
 
@@ -35,7 +37,7 @@ public final class SftpFileBackend implements FileBackend {
      * @param server server identity / 服务器身份
      * @param clients currently owned channel lookup / 当前所属通道查找器
      */
-    public SftpFileBackend(ServerRef server, ClientAccess clients) {
+    public SftpFileBackend(ServerId server, ClientAccess clients) {
         this.clients = Objects.requireNonNull(clients);
         this.server = Objects.requireNonNull(server);
     }
@@ -301,6 +303,16 @@ public final class SftpFileBackend implements FileBackend {
             else result.append('%').append(String.format(Locale.ROOT, "%02X", c));
         }
         return result.toString();
+    }
+
+    /** Verifies bounded restoration metadata through the shared file engine. / 通过统一文件引擎核验有界恢复元数据。
+     * @param original original removed object position / 原被移除对象位置
+     * @param receipt observed recovery object and metadata / 已观测恢复对象及元数据
+     * @return whether metadata describes the exact original position / 元数据是否描述精确原位置
+     * @throws IOException if metadata is unreadable, changes or exceeds its bound / 元数据无法读取、发生变化或超过界限时 */
+    @Override
+    public boolean recoveryInformationMatches(FilePath original, FileRecycleReceipt receipt) throws IOException {
+        return new FileEngine(this).recoveryInformationMatches(original, receipt);
     }
 
     /** The managed connection closes the actual channel. / 实际通道由受管连接关闭。 */

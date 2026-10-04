@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
@@ -19,11 +13,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerInfo;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.appapi.ui.ModPage;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
@@ -314,7 +312,7 @@ public final class DeploymentStaticPage implements ModPage {
                 handle.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                     if (closed || locked || generation.get() != view)
                         return;
-                    if (error != null || result.outcome() != Outcome.SUCCEEDED) {
+                    if (error != null || result.outcome() != TaskResult.SUCCEEDED) {
                         status.setText(text("preferenceError"));
                         return;
                     }
@@ -356,7 +354,7 @@ public final class DeploymentStaticPage implements ModPage {
                             serverLookup = null;
                         if (closed || locked || generation.get() != view)
                             return;
-                        if (failure != null || result.outcome() != Outcome.SUCCEEDED) {
+                        if (failure != null || result.outcome() != TaskResult.SUCCEEDED) {
                             status.setText(text("serverError"));
                             return;
                         }
@@ -706,7 +704,7 @@ public final class DeploymentStaticPage implements ModPage {
 
     /** Returns the selected visible server, if any. / 返回当前可见选定服务器。
      * @return selected server / 选定服务器 */
-    Optional<ServerRef> selectedServer() {
+    Optional<ServerId> selectedServer() {
         var selected = servers.getSelectedItem();
         return selected instanceof ServerInfo info ? Optional.of(info.ref()) : Optional.empty();
     }

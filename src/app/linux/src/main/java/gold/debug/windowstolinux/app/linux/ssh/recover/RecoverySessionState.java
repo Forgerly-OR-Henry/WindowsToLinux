@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.linux.ssh.recover;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.app.ai.sshrecover.RecoveryAction;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.RecoveryAction;
 
 /**
  * Worker-owned state; snapshots contain no raw terminal evidence. / 工作线程持有状态，快照不含原始终端证据。
@@ -42,7 +42,7 @@ final class RecoverySessionState {
      * Structured failure occurrence retained for safe reporting.
      * <p>保留用于安全报告的结构化失败实例。
      */
-    gold.debug.windowstolinux.appapi.task.Problem failure;
+    gold.debug.windowstolinux.appapi.task.result.Problem failure;
 
     /**
      * Token.

@@ -6,8 +6,8 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.error.DesktopPersistenceException;
-import gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType;
+import gold.debug.windowstolinux.app.db.error.DesktopStorageException;
+import gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,10 +51,10 @@ class DesktopSchemaTest {
                 if (version == 0) s.execute("DELETE FROM app_schema_history");
                 else s.execute("UPDATE app_schema_history SET schema_version=" + version);
             }
-            assertEquals(DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE.code(),
-                assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(path)).problem().eventCode());
+            assertEquals(DesktopStorageFailureType.SCHEMA_INCOMPATIBLE.code(),
+                assertThrows(DesktopStorageException.class, () -> DatabaseTestFixture.open(path)).problem().eventCode());
             try (var material = gold.debug.windowstolinux.app.db.init.DatabaseBootstrap.load(path, PlatformDatabaseTest.TEST_PROTECTION);
-                 var c = java.sql.DriverManager.getConnection("jdbc:h2:" + path.resolve("platform") + ";DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE", "app_internal", material.password());
+                 var c = java.sql.DriverManager.getConnection("jdbc:h2:" + path.resolve("windowstolinux") + ";DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE", "app_internal", material.password());
                  var s = c.createStatement(); var r = s.executeQuery("SELECT preference_value FROM app.desktop_preference WHERE preference_key='sentinel'")) {
                 assertTrue(r.next());
                 assertEquals("retained", r.getString(1));
@@ -63,8 +63,8 @@ class DesktopSchemaTest {
         try (var db = DatabaseTestFixture.open(directory); var c = db.database().openConnection(); var s = c.createStatement()) {
             s.execute("ALTER TABLE ai_model ADD COLUMN unexpected VARCHAR");
         }
-        assertEquals(DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE.code(),
-            assertThrows(DesktopPersistenceException.class, () -> DatabaseTestFixture.open(directory)).problem().eventCode());
+        assertEquals(DesktopStorageFailureType.SCHEMA_INCOMPATIBLE.code(),
+            assertThrows(DesktopStorageException.class, () -> DatabaseTestFixture.open(directory)).problem().eventCode());
     }
 
     @Test

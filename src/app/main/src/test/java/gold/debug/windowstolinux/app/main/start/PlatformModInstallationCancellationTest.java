@@ -11,9 +11,9 @@ import java.sql.SQLException;
 import java.util.*;
 
 import com.sun.jna.platform.win32.*;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,7 +38,7 @@ class PlatformModInstallationCancellationTest {
     UUID staged(PlatformRuntime runtime, PlatformModInstallation installer, Path original) throws Exception {
         trap(runtime, "phase <> 'STAGED'");
         var review = installer.review(original);
-        assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+        assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
         untrap(runtime);
         return review.id();
     }
@@ -64,7 +64,7 @@ class PlatformModInstallationCancellationTest {
             assertFalse(review.paths().contains(original));
             assertTrue(Files.exists(stage(operation)));
             var result = installer.cancel(review);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertTrue(Files.exists(original));
             assertFalse(Files.exists(stage(operation)));
             assertFalse(Files.exists(fixture.target("1.0.0")));
@@ -79,7 +79,7 @@ class PlatformModInstallationCancellationTest {
             assertEquals(review.bytes(), archived.get("reviewedBytes").longValue());
             assertThrows(IllegalArgumentException.class, () -> installer.cancel(review));
             assertEquals(result, installer.reconcileCancellation(operation));
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
         }
     }
 
@@ -119,7 +119,7 @@ class PlatformModInstallationCancellationTest {
             assertTrue(Files.exists(program(operation).resolve("README.md")));
             Files.move(stage(operation), root.resolve("replacement"));
             Files.move(genuine, stage(operation));
-            assertEquals(Outcome.CANCELLED, installer.cancel(installer.reviewCancellation(operation)).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.cancel(installer.reviewCancellation(operation)).outcome());
             assertTrue(Files.exists(root.resolve("replacement/program/README.md")));
         }
     }
@@ -131,13 +131,13 @@ class PlatformModInstallationCancellationTest {
         UUID operation;
         String oldIdentity;
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(first)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(first)).outcome());
             oldIdentity = WindowsFileIdentity.read(fixture.target("1.0.0"));
             sql(runtime.persistence().database(),
                 "ALTER TABLE mod_version ADD CONSTRAINT cancel_register_trap CHECK(version <> '2.0.0')");
             var review = installer.review(second);
             operation = review.id();
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertEquals("FILES_PUBLISHED", phase(runtime));
             sql(runtime.persistence().database(), "ALTER TABLE mod_version DROP CONSTRAINT cancel_register_trap");
         }
@@ -145,7 +145,7 @@ class PlatformModInstallationCancellationTest {
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             var review = installer.reviewCancellation(operation);
             assertTrue(review.paths().contains(fixture.target("2.0.0")));
-            assertEquals(Outcome.CANCELLED, installer.cancel(review).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.cancel(review).outcome());
             assertFalse(Files.exists(fixture.target("2.0.0")));
             assertEquals(oldIdentity, WindowsFileIdentity.read(fixture.target("1.0.0")));
             assertEquals("1.0.0", text(runtime, "SELECT selected_version FROM mod_registry"));
@@ -164,7 +164,7 @@ class PlatformModInstallationCancellationTest {
             assertTrue(Files.exists(program(operation).resolve("main/fixture.jar")));
             assertEquals("VALIDATED", phase(runtime));
             untrap(runtime);
-            assertEquals(Outcome.CANCELLED, installer.cancel(installer.reviewCancellation(operation)).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.cancel(installer.reviewCancellation(operation)).outcome());
         }
     }
 
@@ -180,7 +180,7 @@ class PlatformModInstallationCancellationTest {
                 WinNT.FILE_SHARE_READ | WinNT.FILE_SHARE_WRITE, null, WinNT.OPEN_EXISTING, 0, null);
             assertNotEquals(WinBase.INVALID_HANDLE_VALUE, handle);
             try {
-                assertEquals(Outcome.UNKNOWN, installer.cancel(review).outcome());
+                assertEquals(TaskResult.UNKNOWN, installer.cancel(review).outcome());
                 assertEquals("CANCELLING", phase(runtime));
                 assertFalse(Files.exists(program(operation).resolve("main/fixture.jar")));
                 assertTrue(Files.exists(license));
@@ -193,10 +193,10 @@ class PlatformModInstallationCancellationTest {
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             Path extra = program(operation).resolve("extra.txt");
             Files.writeString(extra, "preserve");
-            assertEquals(Outcome.UNKNOWN, installer.reconcileCancellation(operation).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcileCancellation(operation).outcome());
             assertEquals("preserve", Files.readString(extra));
             Files.move(extra, root.resolve("preserved.txt"));
-            assertEquals(Outcome.CANCELLED, installer.reconcileCancellation(operation).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.reconcileCancellation(operation).outcome());
             assertTrue(Files.exists(original));
             assertFalse(Files.exists(stage(operation)));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
@@ -211,16 +211,16 @@ class PlatformModInstallationCancellationTest {
             operation = staged(runtime, installer, original);
             sql(runtime.persistence().database(),
                 "ALTER TABLE runtime_log ADD CONSTRAINT cancel_archive_trap CHECK(event_code <> 'MOD_INSTALL_CANCELLED')");
-            assertEquals(Outcome.UNKNOWN, installer.cancel(installer.reviewCancellation(operation)).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.cancel(installer.reviewCancellation(operation)).outcome());
             assertFalse(Files.exists(stage(operation)));
             assertEquals("CANCELLING", phase(runtime));
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT cancel_archive_trap");
         }
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
-            assertEquals(Outcome.CANCELLED, installer.reconcileCancellation(operation).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.reconcileCancellation(operation).outcome());
             Files.createDirectories(stage(operation));
             Files.writeString(stage(operation).resolve("keep.txt"), "later");
-            assertEquals(Outcome.CANCELLED, installer.reconcileCancellation(operation).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.reconcileCancellation(operation).outcome());
             assertEquals("later", Files.readString(stage(operation).resolve("keep.txt")));
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_INSTALL_CANCELLED'"));
@@ -233,19 +233,19 @@ class PlatformModInstallationCancellationTest {
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             trap(runtime, "recovery_json LIKE '%\"root\":null%'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             untrap(runtime);
             assertThrows(IOException.class, () -> installer.reviewCancellation(review.id()));
             Files.delete(stage(review.id()));
-            assertEquals(Outcome.CANCELLED, installer.cancel(installer.reviewCancellation(review.id())).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.cancel(installer.reviewCancellation(review.id())).outcome());
             trap(runtime, "phase <> 'CLEANUP'");
             var registered = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(registered).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(registered).outcome());
             assertEquals("REGISTERED", phase(runtime));
             assertThrows(SQLException.class, () -> installer.reviewCancellation(registered.id()));
             assertTrue(Files.exists(fixture.target("1.0.0")));
             untrap(runtime);
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(registered.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(registered.id()).outcome());
         }
     }
 
@@ -256,7 +256,7 @@ class PlatformModInstallationCancellationTest {
             var operation = staged(runtime, installer, original);
             sql(runtime.persistence().database(),
                 "ALTER TABLE runtime_log ADD CONSTRAINT corrupt_cancel_archive_trap CHECK(event_code <> 'MOD_INSTALL_CANCELLED')");
-            assertEquals(Outcome.UNKNOWN, installer.cancel(installer.reviewCancellation(operation)).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.cancel(installer.reviewCancellation(operation)).outcome());
             String recovery = text(runtime, "SELECT recovery_json FROM mod_operation");
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             var corrupt = mapper.readTree(recovery);
@@ -276,7 +276,7 @@ class PlatformModInstallationCancellationTest {
             }
             sql(runtime.persistence().database(),
                 "ALTER TABLE runtime_log DROP CONSTRAINT corrupt_cancel_archive_trap");
-            assertEquals(Outcome.CANCELLED, installer.reconcileCancellation(operation).outcome());
+            assertEquals(TaskResult.CANCELLED, installer.reconcileCancellation(operation).outcome());
         }
     }
 }

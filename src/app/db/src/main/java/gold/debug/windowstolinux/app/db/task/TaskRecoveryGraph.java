@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.db.task;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 
 /** Exact code and data identities captured before a Mod task is admitted. / Mod 任务准入前捕获的精确代码及数据身份。
  * @param owner original task owner / 原任务所有者

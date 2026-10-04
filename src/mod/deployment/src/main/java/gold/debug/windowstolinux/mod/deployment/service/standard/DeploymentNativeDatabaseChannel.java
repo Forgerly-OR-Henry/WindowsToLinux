@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -18,15 +9,22 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseResults;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseWire;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Inventory;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.InstanceList;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Target;
 
 /** Sends one original native DB operation and later reads only its exact helper receipt. / 发送一次原生数据库原操作，随后仅读取其精确 helper 回执。 */
@@ -41,7 +39,7 @@ public final class DeploymentNativeDatabaseChannel {
     private final InteractionService interaction;
 
     /** Original admitted server. / 原已准入服务器。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Original task. / 原任务。 */
     private final TaskContext task;
@@ -51,7 +49,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @param interaction host review / 宿主审核
      * @param server exact server / 精确服务器
      * @param task original task / 原任务 */
-    public DeploymentNativeDatabaseChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentNativeDatabaseChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                            TaskContext task) {
         this.wire = new DeploymentNativeDatabaseWire(session, interaction, server, task);
         this.session = Objects.requireNonNull(session);
@@ -64,12 +62,12 @@ public final class DeploymentNativeDatabaseChannel {
      * @param engine supported native family / 已支持原生数据库族
      * @return observed bounded inventory / 已观察有界库存
      * @throws ApiException if helper identity or reviewed transport fails / helper 身份或已审核传输失败时 */
-    public OperationResult<Inventory> inspect(DeploymentDatabaseEngineType engine) throws ApiException {
+    public OperationResult<InstanceList> inspect(DeploymentDatabaseEngineType engine) throws ApiException {
         Objects.requireNonNull(engine);
         if (engine == DeploymentDatabaseEngineType.SQLITE)
             throw new IllegalArgumentException("SQLite has no native inventory");
         var identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
-        if (identity.outcome() != Outcome.SUCCEEDED)
+        if (identity.outcome() != TaskResult.SUCCEEDED)
             return empty(identity);
         byte[] frame = DeploymentNativeDatabaseWire.frame(Map.of("engine", engine.name()));
         try {
@@ -103,7 +101,7 @@ public final class DeploymentNativeDatabaseChannel {
         if (fields.keySet().stream().anyMatch(Set.of("adminPassword", "applicationPassword", "sql")::contains))
             throw new IllegalArgumentException("Administrator password must remain mutable bytes");
         var identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
-        if (identity.outcome() != Outcome.SUCCEEDED)
+        if (identity.outcome() != TaskResult.SUCCEEDED)
             return empty(identity);
         byte[] frame = DeploymentNativeDatabaseWire.sensitiveFrame(fields,
             administratorPassword.length == 0 ? Map.of() : Map.of("adminPassword", administratorPassword));
@@ -127,15 +125,15 @@ public final class DeploymentNativeDatabaseChannel {
                                             java.util.function.Function<Map<String, String>, T> decode) throws ApiException {
         var observed = wire.send(action, frame, DeploymentNativeDatabaseWire.digest(frame), target, () -> {
         });
-        if (observed.outcome() != Outcome.SUCCEEDED)
+        if (observed.outcome() != TaskResult.SUCCEEDED)
             return empty(observed);
         if (observed.value().isEmpty())
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_MISSING",
                     "Native database inspection returned no command result", Map.of(), Optional.empty())));
         var command = observed.value().orElseThrow();
         if (!command.exitCode().equals(Optional.of(0)) || command.truncated() || !command.stderr().isEmpty())
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_UNCONFIRMED",
                     "Native database read-only result was not confirmed", Map.of(), Optional.empty())));
         try {
@@ -144,12 +142,12 @@ public final class DeploymentNativeDatabaseChannel {
             if (status == null || !status.matches("[A-Z][A-Z0-9_]{0,63}"))
                 throw new IllegalArgumentException("Invalid native database status");
             if (!"OK".equals(status))
-                return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_DB_INSPECT_FAILED",
                         "Native database inspection failed", Map.of("reason", status), Optional.empty())));
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(decode.apply(fields)), Optional.empty());
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(decode.apply(fields)), Optional.empty());
         } catch (IllegalArgumentException invalid) {
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_NATIVE_DB_INSPECT_INVALID",
                     "Native database inspection returned invalid facts", Map.of(), Optional.empty())));
         }
@@ -181,10 +179,10 @@ public final class DeploymentNativeDatabaseChannel {
             identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
         } catch (ApiException unsent) {
             return new OperationResult<>(
-                unsent.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                unsent.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                 Optional.empty(), Optional.of(unsent.problem()));
         }
-        if (identity.outcome() != Outcome.SUCCEEDED)
+        if (identity.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(identity);
         var values = new LinkedHashMap<String, String>();
         values.put("operationId", UUID.randomUUID().toString());
@@ -197,7 +195,7 @@ public final class DeploymentNativeDatabaseChannel {
             .digest((engine + '\0' + instanceId + '\0' + fingerprint).getBytes(StandardCharsets.UTF_8));
         byte[] frame = DeploymentNativeDatabaseWire.frame(values);
         try {
-            var journal = DeploymentNativeDatabaseJournal.begin(tasks, task, server,
+            var journal = DeploymentNativeDatabaseActionLog.begin(tasks, task, server,
                 UUID.fromString(values.get("operationId")), "start", targetDigest,
                 DeploymentNativeDatabaseWire.digest(frame), engine + ":" + instanceId);
             var dispatched = new java.util.concurrent.atomic.AtomicBoolean();
@@ -218,7 +216,7 @@ public final class DeploymentNativeDatabaseChannel {
                 if (!approvalReturned.get()) {
                     journal.close();
                     return new OperationResult<>(
-                        uncertain.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        uncertain.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                         Optional.empty(), Optional.of(uncertain.problem()));
                 }
                 return unknown("DEPLOYMENT_NATIVE_DB_DISPATCH_UNCONFIRMED");
@@ -238,8 +236,8 @@ public final class DeploymentNativeDatabaseChannel {
      * @param target bounded reviewed business target / 有界已审阅业务目标
      * @return exact known non-secret result or retained uncertainty / 精确已知非秘密结果或保留未知
      * @throws ApiException if original persistence or admission fails / 原持久化或准入失败时 */
-    public OperationResult<Map<String, String>> perform(TaskService tasks, DeploymentDatabasePlanJournal plan,
-                                                        DeploymentDatabasePlanJournal.Entry entry, String action, Map<String, String> fields,
+    public OperationResult<Map<String, String>> perform(TaskService tasks, DeploymentDatabasePlanActionLog plan,
+                                                        DeploymentDatabasePlanActionLog.Entry entry, String action, Map<String, String> fields,
                                                         Map<String, byte[]> sensitive, String target) throws ApiException {
         if (!Set.of("install", "start", "resume", "prepare", "initialize").contains(action)
             || !plan.facts().serverId().equals(server.id()) || !plan.facts().keys().contains(entry.key())
@@ -250,7 +248,7 @@ public final class DeploymentNativeDatabaseChannel {
             .anyMatch(key -> !Set.of("adminPassword", "applicationPassword", "sql").contains(key)))
             throw new IllegalArgumentException("Unplanned native database operation");
         var identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
-        if (identity.outcome() != Outcome.SUCCEEDED)
+        if (identity.outcome() != TaskResult.SUCCEEDED)
             return empty(identity);
         var actual = new LinkedHashMap<>(fields);
         UUID operationId = UUID.randomUUID();
@@ -260,12 +258,12 @@ public final class DeploymentNativeDatabaseChannel {
         String targetDigest = DeploymentNativeDatabaseWire.targetDigest(action, actual);
         byte[] frame = DeploymentNativeDatabaseWire.sensitiveFrame(actual, sensitive);
         try {
-            String key = DeploymentNativeDatabaseJournal.KEY + "." + entry.key();
+            String key = DeploymentNativeDatabaseActionLog.KEY + "." + entry.key();
             String requestDigest = DeploymentNativeDatabaseWire.digest(frame);
-            var previous = DeploymentNativeDatabaseJournal.find(tasks, task, key);
+            var previous = DeploymentNativeDatabaseActionLog.find(tasks, task, key);
             var journal = previous.orElse(null);
             if (journal == null)
-                journal = DeploymentNativeDatabaseJournal.begin(tasks, task, server, key, operationId, action,
+                journal = DeploymentNativeDatabaseActionLog.begin(tasks, task, server, key, operationId, action,
                     targetDigest, requestDigest, target);
             else
                 journal.next(operationId, action, targetDigest, requestDigest, target);
@@ -283,7 +281,7 @@ public final class DeploymentNativeDatabaseChannel {
                     return empty(observed);
                 }
                 var settled = confirmed(observed, current, true, actual);
-                if (settled.outcome() != Outcome.SUCCEEDED)
+                if (settled.outcome() != TaskResult.SUCCEEDED)
                     return empty(settled);
                 var receipt = DeploymentNativeDatabaseWire.fields(observed.value().orElseThrow().stdout());
                 var output = new LinkedHashMap<String, String>();
@@ -291,12 +289,12 @@ public final class DeploymentNativeDatabaseChannel {
                     if (name.startsWith("result."))
                         output.put(name.substring(7), value);
                 });
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(Map.copyOf(output)), Optional.empty());
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(Map.copyOf(output)), Optional.empty());
             } catch (ApiException uncertain) {
                 if (!approvalReturned.get()) {
                     current.close();
                     return new OperationResult<>(
-                        uncertain.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                        uncertain.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                         Optional.empty(), Optional.of(uncertain.problem()));
                 }
                 return empty(unknown("DEPLOYMENT_NATIVE_DB_DISPATCH_UNCONFIRMED"));
@@ -310,12 +308,12 @@ public final class DeploymentNativeDatabaseChannel {
      * @param journal exact original journal / 精确原日志
      * @return reconciled terminal result or retained unknown / 已核对终态或保留未知
      * @throws ApiException if original access or persistence fails / 原访问或持久化失败时 */
-    public OperationResult<Void> status(DeploymentNativeDatabaseJournal journal) throws ApiException {
+    public OperationResult<Void> status(DeploymentNativeDatabaseActionLog journal) throws ApiException {
         var facts = journal.facts();
         if (!server.id().equals(facts.serverId()))
             return unknown("DEPLOYMENT_NATIVE_DB_SERVER_CHANGED");
         var identity = new DeploymentManagedHelper(session, interaction, server, task, "native-db-protocol-12").probe();
-        if (identity.outcome() != Outcome.SUCCEEDED)
+        if (identity.outcome() != TaskResult.SUCCEEDED)
             return unknown("DEPLOYMENT_NATIVE_DB_HELPER_IDENTITY_UNCONFIRMED");
         var values = new LinkedHashMap<String, String>();
         values.put("operationId", facts.operationId().toString());
@@ -344,7 +342,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @throws ApiException when the journal cannot be read or advanced / 检查点无法读取或推进时
      */
     private OperationResult<Void> confirmed(OperationResult<CommandResult> observed,
-                                            DeploymentNativeDatabaseJournal journal) throws ApiException {
+                                            DeploymentNativeDatabaseActionLog journal) throws ApiException {
         return confirmed(observed, journal, false, Map.of());
     }
 
@@ -356,8 +354,8 @@ public final class DeploymentNativeDatabaseChannel {
      * @return exact known result or unknown / 精确已知结果或未知
      * @throws ApiException if persistence fails / 持久化失败时 */
     private OperationResult<Void> confirmed(OperationResult<CommandResult> observed,
-                                            DeploymentNativeDatabaseJournal journal, boolean typed, Map<String, String> expected) throws ApiException {
-        if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
+                                            DeploymentNativeDatabaseActionLog journal, boolean typed, Map<String, String> expected) throws ApiException {
+        if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
             return unknown("DEPLOYMENT_NATIVE_DB_RECEIPT_UNCONFIRMED");
         var command = observed.value().orElseThrow();
         if (!command.exitCode().equals(Optional.of(0)) || command.truncated() || !command.stderr().isEmpty())
@@ -411,7 +409,7 @@ public final class DeploymentNativeDatabaseChannel {
                 }
             }
             journal.terminal(phase, boundary);
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
         }
         if ("FAILED".equals(phase) && ("NONE".equals(boundary) || "MAY_HAVE_RUN".equals(boundary))
             && fields.get("receipt.failureCode") != null
@@ -419,7 +417,7 @@ public final class DeploymentNativeDatabaseChannel {
             && ("OK".equals(fields.get("status"))
             || fields.get("receipt.failureCode").equals(fields.get("status")))) {
             journal.terminal(phase, boundary);
-            return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+            return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_NATIVE_DB_HELPER_FAILED",
                     "Native database operation failed; inspect original server and target before retry",
                     Map.of("serverId", facts.serverId(), "target", facts.target(), "failureCode",
@@ -442,7 +440,7 @@ public final class DeploymentNativeDatabaseChannel {
      * @return unknown result / 未知结果
      */
     private static OperationResult<Void> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
             event, "Original native database operation needs exact receipt review", Map.of(), Optional.empty())));
     }
 }

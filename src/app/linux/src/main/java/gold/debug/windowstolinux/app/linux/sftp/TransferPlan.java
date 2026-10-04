@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.app.linux.sftp;
 import java.nio.file.Path;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.linux.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 
 /** Immutable observations persisted before staging one original transfer. / 暂存一次原传输前持久化的不可变观测。
  * @param id original transfer identity / 原传输身份

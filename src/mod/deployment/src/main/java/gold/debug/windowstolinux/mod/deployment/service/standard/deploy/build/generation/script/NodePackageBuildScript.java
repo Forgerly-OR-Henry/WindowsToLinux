@@ -46,7 +46,7 @@ public final class NodePackageBuildScript {
             %s
             %s
             """.formatted(SafeBuildScriptEnvelope.shellQuote("^v" + nodeMajorVersion + "\\."),
-            NodeDependencyToolPreparation.render(tool) + installAndBuild, normalizeBinaryLinks(), artifact);
+            NodeDependencyToolSetup.render(tool) + installAndBuild, normalizeBinaryLinks(), artifact);
     }
 
     // npm creates executable links even with lifecycle scripts disabled; releases remain free of symlinks. / 即使禁用生命周期脚本，npm 仍会创建可执行链接，发布目录继续禁止符号链接。

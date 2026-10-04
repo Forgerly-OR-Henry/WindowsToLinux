@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallEvent;
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallState;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;

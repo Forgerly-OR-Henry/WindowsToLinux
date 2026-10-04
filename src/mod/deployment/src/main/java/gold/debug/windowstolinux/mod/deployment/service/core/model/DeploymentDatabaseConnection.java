@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation;
 
 /**
@@ -117,7 +117,7 @@ public sealed interface DeploymentDatabaseConnection
      * @param tlsRequired tls required / tls必需
      */
     record Server(DeploymentDatabaseEngineType engine, String host, int port, String database, String username,
-                  DeploymentSecretReference passwordReference,
+                  DeploymentSecretRef passwordReference,
                   boolean tlsRequired) implements DeploymentDatabaseConnection {
         /**
          * Validates one supported server connection without accepting secret material. / 校验一个受支持且不含秘密内容的服务器连接。

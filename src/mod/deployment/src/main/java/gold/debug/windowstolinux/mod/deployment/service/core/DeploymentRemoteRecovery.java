@@ -2,10 +2,10 @@ package gold.debug.windowstolinux.mod.deployment.service.core;
 
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRecord;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationProposal;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublishProposal;
 
 /** Narrow original-task publication recovery boundary assembled by the Mod. / 由Mod装配的窄原任务发布恢复边界。 */
 @FunctionalInterface
@@ -15,6 +15,6 @@ public interface DeploymentRemoteRecovery {
      * @param record original retained execution / 原留存执行
      * @return remote-owned result, or absence for a reference-only execution / 远端所属结果；纯引用执行为空
      * @throws Exception if original evidence or cleanup cannot be accessed / 原依据或收尾不可访问时 */
-    Optional<OperationResult<DeploymentPublicationProposal>> reconcile(TaskContext task,
-                                                                       DeploymentExecutionRecord record) throws Exception;
+    Optional<OperationResult<DeploymentPublishProposal>> reconcile(TaskContext task,
+                                                                   DeploymentExecutionRecord record) throws Exception;
 }

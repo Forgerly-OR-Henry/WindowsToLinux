@@ -1,43 +1,43 @@
 package gold.debug.windowstolinux.app.main.mod;
 
-import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.LogService;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessService;
-import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
-import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import java.sql.Connection;
 import java.util.*;
 
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.ContextLease;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.ContextLease;
 import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.ai.AiService;
-
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.mod.service.ModServices;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-import gold.debug.windowstolinux.appapi.file.FileService;
-
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.process.ProcessService;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.recover.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
 /** Owns complete capabilities and staged contributions of one actual Mod activation. / 持有一次实际 Mod 启用的完整能力及暂存扩展。 */
@@ -125,7 +125,7 @@ public final class PlatformModContext implements ContextLease {
             ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
             : new StatelessDatabase();
         var context = new BoundContext(identity, mode, pageScope, tasks, remote.interaction(), servers, remote.linux(),
-            ai, database, secrets, source, logs, processes, services);
+            ai, database, secrets, new gold.debug.windowstolinux.app.service.file.PlatformFileService(source), logs, processes, services);
         lease = new ModHostLease(context, runtime.tasks(), contributions);
     }
 
@@ -158,7 +158,7 @@ public final class PlatformModContext implements ContextLease {
     /** Binds normal activation persistence; recovery contexts never replace ordinary runtime state. / 绑定普通启用持久化；恢复上下文不替换普通运行状态。
      * @param finalized removes the original session only after durable final acknowledgement / 仅在最终持久确认后移除原会话
      * @return original host lifecycle journal / 原宿主生命周期记录器 */
-    public gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.Journal journal(Runnable finalized) {
+    public gold.debug.windowstolinux.app.mod.run.ModRuntimeSession.ActionLog journal(Runnable finalized) {
         var ledger = new gold.debug.windowstolinux.app.db.mod.ModActivationLedger(runtime.persistence().database(),
             identity.id(), identity.version(), schema);
         return (state, failure, resourcesClosed) -> {
@@ -241,7 +241,7 @@ public final class PlatformModContext implements ContextLease {
     /** Pairs a concrete publication action with its actual original close owner. / 将具体发布动作与实际原关闭所有者配对。
      * @param publication staged publication / 暂存发布
      * @param resource actual close owner / 实际关闭所有者 */
-    private record OwnedContribution(Publication publication,
+    private record OwnedContribution(Publish publication,
                                      AutoCloseable resource) implements ModHostLease.Contribution {
         /** Publishes the already prepared contribution. / 发布已准备扩展。
          * @throws Exception if publication fails / 发布失败时 */
@@ -260,7 +260,7 @@ public final class PlatformModContext implements ContextLease {
 
     /** Checked staged publication, with no background work implied. / 受检暂存发布，不隐含后台工作。 */
     @FunctionalInterface
-    private interface Publication {
+    private interface Publish {
         /** Publishes one prepared host contribution. / 发布一个已准备宿主扩展。
          * @throws Exception if publication fails / 发布失败时 */
         void run() throws Exception;

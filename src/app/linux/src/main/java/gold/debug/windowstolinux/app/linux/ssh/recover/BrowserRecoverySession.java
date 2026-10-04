@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.linux.ssh.recover;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static gold.debug.windowstolinux.app.linux.ssh.recover.BrowserRecoverySnapshot.State.*;
 
 import java.nio.charset.StandardCharsets;
@@ -15,21 +11,35 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.*;
 
-import gold.debug.windowstolinux.app.ai.sshrecover.RecoveryAction;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.app.linux.ssh.recover.ai.RecoveryModels;
+import gold.debug.windowstolinux.app.linux.ssh.recover.ai.RecoveryProtocol;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserRecoveryException;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserTerminalSession;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.RecoveryAction;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.RecoveryProbeResult;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.RecoveryTarget;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.TerminalObservation;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.TerminalTarget;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /**
  * Serial Linux rescue state machine with revocable exact-action approval. / 带可撤销精确动作确认的串行 Linux 救援状态机。
  */
 public final class BrowserRecoverySession implements AutoCloseable, Runnable {
+    /** Frozen rescue observation and probe intervals. / 冻结的救援观测和复核间隔。 */
+    private final gold.debug.windowstolinux.app.config.AppConfig.Ssh timing;
+
     /**
      * Current lifecycle or workflow state.
      * <p>当前生命周期或工作流状态。
      */
     private final RecoverySessionState state;
 
-    /** Central cooperative cancellation, absent only for the remaining legacy caller. / 中央协作取消，仅剩余旧调用方不提供。 */
-    private final gold.debug.windowstolinux.appapi.task.CancelToken cancellation;
+    /** Original central cooperative cancellation. / 原中央协作取消。 */
+    private final gold.debug.windowstolinux.appapi.task.run.CancelToken cancellation;
 
     /**
      * Browser.
@@ -50,7 +60,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
     private final Supplier<RecoveryProbeResult> probe;
 
     /**
-     * Journal.
+     * ActionLog.
      * <p>日志。
      */
     private final Consumer<BrowserRecoverySnapshot> journal;
@@ -109,59 +119,18 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      */
     private volatile boolean handoff = true;
 
-    /**
-     * Runner.
-     * <p>执行线程。
-     */
-    private volatile Thread runner;
-
-    /**
-     * Initializes browser recovery session through its shared constructor contract.
-     * <p>通过共享构造契约初始化浏览器恢复会话。
-     *
-     * @param browser browser / 浏览器
-     * @param ai the supplied recovery ai use case / 所提供的恢复AI用例
-     * @param probe probe / 探测
-     * @param journal journal / 日志
-     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param lock lock / 锁
-     */
+    /** Captures original task and configured timings. / 捕获原任务及配置时序。
+     * @param browser actual browser / 实际浏览器
+     * @param ai task model capability / 任务模型能力
+     * @param probe fixed probe / 固定复核
+     * @param journal durable journal / 持久记录
+     * @param server admitted target / 准入目标
+     * @param task original task / 原任务
+     * @param timing frozen timing / 冻结时序 */
     public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
                                   Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
-                                  ReentrantLock lock) {
-        this(browser, ai, probe, journal, server, lock, System::nanoTime);
-    }
-
-    /**
-     * Binds the supplied dependencies and state for browser recovery session.
-     * <p>为浏览器恢复会话绑定传入的依赖及状态。
-     *
-     * @param browser browser / 浏览器
-     * @param ai the supplied recovery ai use case / 所提供的恢复AI用例
-     * @param probe probe / 探测
-     * @param journal journal / 日志
-     * @param server server identity or selected server configuration / 服务器身份或所选服务器配置
-     * @param lock lock / 锁
-     * @param clock clock / 时钟
-     */
-    public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-                                  Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
-                                  ReentrantLock lock, LongSupplier clock) {
-        this(browser, ai, probe, journal, server, lock, clock, UUID.randomUUID(), null);
-    }
-
-    /** Runs directly on the original central task callback with cooperative cancellation. / 直接在原中央任务回调运行并协作取消。
-     * @param browser original task browser / 原任务浏览器
-     * @param ai original model capability / 原模型能力
-     * @param probe fixed authenticated verification / 固定认证复核
-     * @param journal original-task metadata journal / 原任务元数据记录
-     * @param server admitted server / 准入服务器
-     * @param task original central context / 原中央上下文 */
-    public BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-                                  Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
-                                  gold.debug.windowstolinux.appapi.task.TaskContext task) {
-        this(browser, ai, probe, journal, server, new ReentrantLock(), System::nanoTime, task.id(),
-            task.cancelToken());
+                                  gold.debug.windowstolinux.appapi.task.run.TaskContext task, gold.debug.windowstolinux.app.config.AppConfig.Ssh timing) {
+        this(browser, ai, probe, journal, server, task, timing, System::nanoTime);
     }
 
     /** Binds one state machine without starting another worker. / 绑定一个状态机，不启动另一个工作线程。
@@ -170,25 +139,26 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @param probe fixed verification / 固定复核
      * @param journal durable metadata observer / 持久元数据观察器
      * @param server admitted server / 准入服务器
-     * @param lock legacy local serialization / 旧本地串行化
      * @param clock monotonic observation clock / 单调观察时钟
-     * @param id original session identity / 原会话身份
-     * @param cancellation optional central cancellation / 可选中央取消 */
-    private BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
-                                   Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
-                                   ReentrantLock lock, LongSupplier clock, UUID id,
-                                   gold.debug.windowstolinux.appapi.task.CancelToken cancellation) {
-        state = new RecoverySessionState(id);
+     * @param task original central task / 原中央任务
+     * @param timing frozen observation and probe timing / 冻结观测及复核时序
+     */
+    BrowserRecoverySession(BrowserTerminalSession browser, RecoveryModels ai,
+                           Supplier<RecoveryProbeResult> probe, Consumer<BrowserRecoverySnapshot> journal, RecoveryTarget server,
+                           gold.debug.windowstolinux.appapi.task.run.TaskContext task,
+                           gold.debug.windowstolinux.app.config.AppConfig.Ssh timing, LongSupplier clock) {
+        this.timing = java.util.Objects.requireNonNull(timing);
+        state = new RecoverySessionState(Objects.requireNonNull(task.id()));
         snapshot = state.snapshot();
-        this.cancellation = cancellation;
-        this.clock = clock;
+        this.cancellation = Objects.requireNonNull(task.cancelToken());
+        this.clock = Objects.requireNonNull(clock);
         this.browser = browser;
         this.ai = ai;
         this.probe = probe;
         this.journal = journal;
         this.server = server;
 
-        this.lock = lock;
+        this.lock = new ReentrantLock();
     }
 
     /**
@@ -297,9 +267,6 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
         handoff = true;
         authorization.incrementAndGet();
         stop = true;
-        Thread current = runner;
-        if (cancellation == null && current != null && current != Thread.currentThread())
-            current.interrupt();
     }
 
     /**
@@ -331,7 +298,6 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      */
     @Override
     public void run() {
-        runner = Thread.currentThread();
         boolean acquired = lock.tryLock();
         try {
             if (stopping()) {
@@ -389,7 +355,6 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
                 if (acquired)
                     lock.unlock();
                 completion.complete(snapshot);
-                runner = null;
             }
         }
     }
@@ -440,7 +405,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      */
     private void observe() {
         long epoch = authorization.get();
-        state.nextObservation = clock.getAsLong() + Duration.ofSeconds(2).toNanos();
+        state.nextObservation = clock.getAsLong() + Duration.ofSeconds(timing.observationSeconds()).toNanos();
         try {
             TerminalObservation observed = browser.observe(state.generation);
             if (handoff || epoch != authorization.get())
@@ -453,7 +418,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
                 return;
             }
             String text = observed.text().isBlank()
-                ? gold.debug.windowstolinux.app.ai.sshrecover.RecoveryProtocol.parseObservation(result.content())
+                ? RecoveryProtocol.parseObservation(result.content())
                 : result.content();
             if (handoff || epoch != authorization.get() || checkSsh())
                 return;
@@ -479,8 +444,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
                 interrupt(decision.code());
                 return;
             }
-            RecoveryAction proposal = gold.debug.windowstolinux.app.ai.sshrecover.RecoveryProtocol
-                .parseAction(decision.content());
+            RecoveryAction proposal = RecoveryProtocol.parseAction(decision.content());
             if (proposal.command().isBlank()) {
                 interrupt("humanRequired");
                 return;
@@ -541,7 +505,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
      * @return true when SSH recovery or cancellation ends further work; false otherwise / SSH 恢复或取消终止后续工作时为 true，否则为 false
      */
     private boolean checkSsh() {
-        state.nextProbe = clock.getAsLong() + Duration.ofSeconds(10).toNanos();
+        state.nextProbe = clock.getAsLong() + Duration.ofSeconds(timing.probeIntervalSeconds()).toNanos();
         RecoveryProbeResult result = probe.get();
         if (result.status() == RecoveryProbeResult.StatusType.RECOVERED) {
             state.failure = null;
@@ -571,11 +535,8 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
             return true;
         }
         if (result.status() != RecoveryProbeResult.StatusType.RETRYABLE_CONNECTION) {
-            if (cancellation != null) {
-                change(FAILED, result.messageCode());
-                return true;
-            }
-            interrupt(result.messageCode());
+            change(FAILED, result.messageCode());
+            return true;
         }
         return false;
     }
@@ -610,7 +571,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
     /** Observes original cancellation without interrupting an executing physical operation. / 观察原取消请求，不中断正在执行的物理操作。
      * @return whether no new rescue work may start / 是否不得启动新救援工作 */
     private boolean stopping() {
-        return stop || cancellation != null && cancellation.requested();
+        return stop || cancellation.requested();
     }
 
     /**
@@ -627,7 +588,7 @@ public final class BrowserRecoverySession implements AutoCloseable, Runnable {
     }
 
     /**
-     * Publishes a transient snapshot and records only the journal's approved metadata. Journal failure ends the session with a structured Problem and never recursively retries the failed journal write.
+     * Publishes a transient snapshot and records only the journal's approved metadata. ActionLog failure ends the session with a structured Problem and never recursively retries the failed journal write.
      * <p>发布临时快照并仅记录日志契约批准的元数据。日志失败以结构化 Problem结束会话，绝不递归重试已失败的日志写入。
      *
      * @param code stable machine-readable classification code / 稳定的机器可读分类码

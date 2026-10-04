@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreSteps.*;
 
 import java.nio.charset.StandardCharsets;
@@ -15,15 +8,22 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Exact reviewed target, runtime health and restore outcome evidence. / 精确审阅目标、运行健康及恢复结果依据。 */
@@ -39,18 +39,18 @@ final class DeploymentRestoreEvidence {
      * @return complete health conclusion / 完整健康结论
      * @throws ApiException if authority or remote observations are unavailable / 权限或远端观察不可用时 */
     static OperationResult<Void> health(DeploymentRestorePlan plan, DeploymentHandoffChannel channel,
-                                        DeploymentPublicationChannel publisher) throws ApiException {
+                                        DeploymentPublishChannel publisher) throws ApiException {
         for (var component : plan.proposal.graph().components()) {
             var current = channel.current(component, plan.commit(component.componentId()).release().sha256());
-            if (current.outcome() != Outcome.SUCCEEDED)
+            if (current.outcome() != TaskResult.SUCCEEDED)
                 return current;
             var checked = publisher.healthCheck(component.unit(), component.reviewedRuntime().healthCheck());
-            if (checked.outcome() != Outcome.SUCCEEDED)
+            if (checked.outcome() != TaskResult.SUCCEEDED)
                 return checked;
             var observed = publisher.observe(component.unit(), component.reviewedRuntime());
             String expected = component.reviewedRuntime().workload()
                 .mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND ? "INSTALLED" : "RUNNING";
-            if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
+            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
                 return copy(observed);
             if (!observed.value().orElseThrow().state().name().equals(expected))
                 return failed("DEPLOYMENT_RESTORE_COMPONENT_UNHEALTHY");
@@ -69,7 +69,7 @@ final class DeploymentRestoreEvidence {
      * @param current actual component current digests / 实际组件当前摘要
      * @return canonical target review digest / 规范目标审阅摘要 */
     static String reviewed(DeploymentApplicationSnapshot archived, String digest,
-                           gold.debug.windowstolinux.appapi.server.ServerInfo server, RemoteFacts facts, Map<String, String> current) {
+                           gold.debug.windowstolinux.appapi.server.model.ServerInfo server, RemoteFacts facts, Map<String, String> current) {
         StringBuilder value = new StringBuilder(DeploymentRestorePlan.review(archived, digest, server, facts));
         new TreeMap<>(current).forEach((key, sha) -> value.append('\n').append(key).append(':').append(sha));
         return DeploymentApplicationReader.sha256(value.toString().getBytes(StandardCharsets.UTF_8));
@@ -90,7 +90,7 @@ final class DeploymentRestoreEvidence {
             var response = send(channel, "managed-target-status",
                 List.of(component.unit().id(), component.unit().ownershipManifestSha256(), kind),
                 Duration.ofMinutes(2));
-            if (response.outcome() != Outcome.SUCCEEDED || response.value().isEmpty()
+            if (response.outcome() != TaskResult.SUCCEEDED || response.value().isEmpty()
                 || response.value().orElseThrow().truncated()
                 || !response.value().orElseThrow().exitCode().equals(Optional.of(0)))
                 throw new IllegalStateException("Target identity unconfirmed");
@@ -140,7 +140,7 @@ final class DeploymentRestoreEvidence {
      * @param value observed payload / 已观察载荷
      * @return known successful result / 已知成功结果 */
     static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     /** Rejects incompatible input before an unknown effect is assumed. / 不假设未知副作用地拒绝不兼容输入。
@@ -148,7 +148,7 @@ final class DeploymentRestoreEvidence {
      * @param event original failure / 原失败
      * @return known failed result / 已知失败结果 */
     static <T> OperationResult<T> failed(String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(problem(ProblemCode.INCOMPATIBLE, event)));
     }
 
@@ -157,7 +157,7 @@ final class DeploymentRestoreEvidence {
      * @param event original uncertainty / 原未知
      * @return unknown result / 未知结果 */
     static <T> OperationResult<T> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
             Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 
@@ -166,7 +166,7 @@ final class DeploymentRestoreEvidence {
      * @param event original cancellation / 原取消
      * @return known cancelled result / 已知取消结果 */
     static <T> OperationResult<T> cancelled(String event) {
-        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(),
             Optional.of(problem(ProblemCode.CANCELLED, event)));
     }
 
@@ -176,7 +176,7 @@ final class DeploymentRestoreEvidence {
      * @return unchanged conclusion and problem / 不变结论与问题
      * @throws IllegalArgumentException if a successful result is supplied / 传入成功结果时 */
     static <T> OperationResult<T> copy(OperationResult<?> value) {
-        if (value.outcome() == Outcome.SUCCEEDED)
+        if (value.outcome() == TaskResult.SUCCEEDED)
             throw new IllegalArgumentException("Successful evidence cannot be discarded");
         return new OperationResult<>(value.outcome(), Optional.empty(), value.problem());
     }
@@ -199,9 +199,9 @@ final class DeploymentRestoreEvidence {
      * @param request immutable original request / 不可变原请求
      * @param task authentic original task / 真实原任务
      * @return original publication channel / 原发布频道 */
-    static DeploymentPublicationChannel publication(ModContext context, RemoteSession session,
-                                                    DeploymentRestoreRequest request, TaskContext task) {
-        return new DeploymentPublicationChannel(session, context.interaction(), request.target(), task,
+    static DeploymentPublishChannel publication(ModContext context, RemoteSession session,
+                                                DeploymentRestoreRequest request, TaskContext task) {
+        return new DeploymentPublishChannel(session, context.interaction(), request.target(), task,
             request.reviewedTargetSha256());
     }
 

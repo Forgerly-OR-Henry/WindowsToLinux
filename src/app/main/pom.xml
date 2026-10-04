@@ -11,6 +11,11 @@
   <dependencies>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-config</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-app-ai</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -27,7 +32,7 @@
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-appapi</artifactId>
-      <version>1.0.0-dev.1</version>
+      <version>1.0.0-dev.2</version>
     </dependency>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
@@ -122,6 +127,23 @@
           <argLine>
             "-Djava.io.tmpdir=${project.build.directory}" "-Djdk.net.unixdomain.tmpdir=${project.build.directory}"
           </argLine>
+          <classpathDependencyExcludes>
+            <classpathDependencyExclude>gold.debug.windowstolinux:windowstolinux-app-*</classpathDependencyExclude>
+            <classpathDependencyExclude>gold.debug.windowstolinux:windowstolinux-appapi</classpathDependencyExclude>
+          </classpathDependencyExcludes>
+          <additionalClasspathElements>
+            <additionalClasspathElement>${project.basedir}/../config/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../ai/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../linux/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../file/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../mod/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../ui/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../windows/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../db/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../secret/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../service/target/classes</additionalClasspathElement>
+            <additionalClasspathElement>${project.basedir}/../../appapi/target/classes</additionalClasspathElement>
+          </additionalClasspathElements>
         </configuration>
       </plugin>
     </plugins>

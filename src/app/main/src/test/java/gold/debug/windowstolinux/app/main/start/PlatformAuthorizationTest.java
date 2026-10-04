@@ -1,17 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformRemoteCapabilitiesTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,8 +12,22 @@ import java.util.concurrent.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService.Launch;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -71,7 +73,7 @@ class PlatformAuthorizationTest {
                 for (var mode : AuthorizationMode.values()) {
                     runtime.authorization().saveMode(mode);
                     long before = prompts(reviews);
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         result(capabilities.launcher().submit(
                             new Launch<>(request("server"), Set.of(APP), task -> repeat(capabilities, task))))
                             .outcome());
@@ -84,7 +86,7 @@ class PlatformAuthorizationTest {
                 runtime.authorization().saveMode(AuthorizationMode.GENERAL);
                 for (int i = 0; i < 2; i++) {
                     long before = prompts(reviews);
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         result(capabilities.launcher().submit(
                             new Launch<>(request("server"), Set.of(APP), task -> repeat(capabilities, task))))
                             .outcome());
@@ -115,12 +117,12 @@ class PlatformAuthorizationTest {
                             assertThrows(ApiException.class,
                                 () -> session.execute(command, new ApprovalGrant(grant.id())));
                             assertEquals(0, remote.commands.get());
-                            assertEquals(Outcome.SUCCEEDED, session.execute(command, grant).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                             for (var next : List.of(action(command, "application.restart", OTHER),
                                 action(command, "application.stop", APP))) {
                                 var nextGrant = capabilities.interaction().approve(next, task).value()
                                     .orElseThrow();
-                                assertEquals(Outcome.SUCCEEDED, session.execute(command, nextGrant).outcome());
+                                assertEquals(TaskResult.SUCCEEDED, session.execute(command, nextGrant).outcome());
                             }
                             assertEquals(3, prompts(reviews));
                             for (var target : List.of(new ActionTarget(SERVER.id(), "application", "/srv/app-c"),
@@ -133,7 +135,7 @@ class PlatformAuthorizationTest {
                             return success(null);
                         }
                     }));
-                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                 assertEquals(3, remote.commands.get());
             }
         }
@@ -148,23 +150,23 @@ class PlatformAuthorizationTest {
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 runtime.authorization().saveMode(AuthorizationMode.ONCE);
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
                         runtime.authorization().saveMode(AuthorizationMode.FULL);
                         return repeat(capabilities, task);
                     }))).outcome());
                 assertEquals(3, prompts(reviews));
-                assertEquals(Outcome.SUCCEEDED, result(runtime.tasks().bind(OWNER, VERSION, false)
+                assertEquals(TaskResult.SUCCEEDED, result(runtime.tasks().bind(OWNER, VERSION, false)
                     .submit(request("server"), task -> repeat(capabilities, task))).outcome());
                 assertEquals(6, prompts(reviews));
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
                         try (var session = capabilities.linux().connect(SERVER, task)) {
                             var command = command("builtin printf unclassified");
                             var grant = capabilities.interaction()
                                 .approve(RemoteActions.command(SERVER, "revision", command), task).value()
                                 .orElseThrow();
-                            assertEquals(Outcome.SUCCEEDED, session.execute(command, grant).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                         }
                         return repeat(capabilities, task);
                     }))).outcome());
@@ -188,7 +190,7 @@ class PlatformAuthorizationTest {
                         var command = command("builtin printf accepted");
                         var intent = action(command, "application.restart", APP);
                         reviews.policy = ignored -> false;
-                        assertEquals(Outcome.CANCELLED, capabilities.interaction().approve(intent, task).outcome());
+                        assertEquals(TaskResult.CANCELLED, capabilities.interaction().approve(intent, task).outcome());
                         reviews.policy = ignored -> true;
                         var start = new CountDownLatch(1);
                         var futures = new ArrayList<Future<ApprovalGrant>>();
@@ -202,13 +204,13 @@ class PlatformAuthorizationTest {
                         for (var future : futures) {
                             var grant = future.get(8, TimeUnit.SECONDS);
                             assertTrue(grants.add(grant));
-                            assertEquals(Outcome.SUCCEEDED, session.execute(command, grant).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, session.execute(command, grant).outcome());
                         }
                         assertEquals(2, prompts(reviews));
                         return success(null);
                     }
                 }));
-                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                 assertEquals(3, remote.commands.get());
             }
         }
@@ -242,13 +244,13 @@ class PlatformAuthorizationTest {
                                 .withSemantics(new ActionSemantics("application.upload", Set.of(APP))), task)
                             .value().orElseThrow();
                         var skipped = session.upload(transfer, grant);
-                        assertEquals(Outcome.FAILED, skipped.outcome());
+                        assertEquals(TaskResult.FAILED, skipped.outcome());
                         assertEquals("SFTP_CONFLICT_SKIPPED", skipped.problem().orElseThrow().eventCode());
                         assertFalse(task.cancelToken().requested());
                     }
                     return success(null);
                 }));
-                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                 assertEquals(1, choices.get());
                 assertEquals("old", Files.readString(remote.files.resolve("file")));
                 assertEquals(0, reviews.approved.stream().filter(intent -> intent.type().equals("platform.sftp.upload"))

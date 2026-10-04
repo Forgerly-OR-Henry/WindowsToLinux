@@ -5,12 +5,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.appapi.linux.RemoteActions;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.linux.TransferCheckpoint;
-import gold.debug.windowstolinux.appapi.linux.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Explicit original-upload staging cleanup under the provider's own authority. / 在提供方自身权限下明确清理原上传暂存。 */
 final class DeploymentRestoreTransfers {
@@ -41,10 +41,10 @@ final class DeploymentRestoreTransfers {
             var approved = context.interaction().approve(
                 RemoteActions.recoverTransfer(transfer.checkpoint(), plan.request.reviewedTargetSha256(), false),
                 cursor.task);
-            if (approved.outcome() != Outcome.SUCCEEDED)
+            if (approved.outcome() != TaskResult.SUCCEEDED)
                 return false;
             var discarded = session.discardTransfer(transfer.checkpoint().id(), approved.value().orElseThrow());
-            if (discarded.outcome() != Outcome.SUCCEEDED)
+            if (discarded.outcome() != TaskResult.SUCCEEDED)
                 return false;
             file.put("transferDiscarded", true);
             cursor.save(cursor.entry.publicValue().state());

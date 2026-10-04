@@ -6,7 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,7 +22,7 @@ class ApplicationBundleIdentityTest {
             python(cli);
             Files.writeString(root.resolve("windowstolinux-application.properties"),
                 "version=1\nprojectType=PYTHON_SERVICE\nbuildDirectory=cli\nmode=ON_DEMAND\n");
-            var assessed = new DeploymentAnalysisCoordinator().analyze(root, DeploymentProjectKind.PYTHON_SERVICE);
+            var assessed = new DeploymentAnalysisFlow().analyze(root, DeploymentProjectKind.PYTHON_SERVICE, (root).getFileName().toString());
             var facts = assessed.facts().orElseThrow(() -> new AssertionError(assessed));
             assertEquals(name, facts.applicationId());
             assertEquals(root.toRealPath(), facts.sourceRoot());
@@ -33,7 +33,7 @@ class ApplicationBundleIdentityTest {
     @Test
     void ordinaryProjectsKeepTheirDeclaredIdentity() throws Exception {
         python(directory);
-        var facts = new DeploymentAnalysisCoordinator().analyze(directory, DeploymentProjectKind.PYTHON_SERVICE).facts()
+        var facts = new DeploymentAnalysisFlow().analyze(directory, DeploymentProjectKind.PYTHON_SERVICE, (directory).getFileName().toString()).facts()
             .orElseThrow();
         assertEquals("shared-package", facts.applicationId());
         assertEquals("", facts.buildDirectory());

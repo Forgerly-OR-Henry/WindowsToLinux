@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.app.windows.update;
 
+import gold.debug.windowstolinux.app.windows.update.check.DesktopUpdateVerification;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopArchitectureType;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopReleaseVersion;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateEvent;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateState;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -15,9 +21,9 @@ import java.util.UUID;
 
 import javax.crypto.SecretKey;
 
-import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffEnvelopeCodec;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffException;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffFailureType;
 
 /**
  * Strict authenticated transport codec for an update handoff crossing the process boundary. / 更新交接跨进程边界使用的严格认证传输编解码器。
@@ -51,10 +57,10 @@ public final class DesktopUpdateHandoffCodec {
      * @param handoff handoff / 交接
      * @param authenticationKey authentication key / 认证键
      * @return the complete verified update and paired backup evidence / 完整的已验证更新及成对备份证据
-     * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
+     * @throws DesktopHandoffException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      * @throws NullPointerException if a required input is absent / 必需输入缺失时
      */
-    public byte[] write(DesktopUpdateHandoff handoff, SecretKey authenticationKey) throws WindowsWorkspaceException {
+    public byte[] write(DesktopUpdateHandoff handoff, SecretKey authenticationKey) throws DesktopHandoffException {
         Objects.requireNonNull(handoff, "handoff");
         byte[] payload = null;
         try {
@@ -68,7 +74,7 @@ public final class DesktopUpdateHandoffCodec {
             }
             payload = bytes.toByteArray();
             return envelope.write(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE, payload, authenticationKey);
-        } catch (WindowsWorkspaceException exception) {
+        } catch (DesktopHandoffException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
             throw invalid("update handoff could not be encoded", exception);
@@ -84,9 +90,9 @@ public final class DesktopUpdateHandoffCodec {
      * @param document document / 文档
      * @param authenticationKey authentication key / 认证键
      * @return constructed or resolved desktop update handoff / 构造或解析得到的Desktop更新交接
-     * @throws WindowsWorkspaceException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
+     * @throws DesktopHandoffException if the windows workspace boundary rejects the operation / Windows工作区边界拒绝当前操作时
      */
-    public DesktopUpdateHandoff read(byte[] document, SecretKey authenticationKey) throws WindowsWorkspaceException {
+    public DesktopUpdateHandoff read(byte[] document, SecretKey authenticationKey) throws DesktopHandoffException {
         byte[] payload = envelope.read(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE, document, authenticationKey);
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
             if (input.readInt() != PAYLOAD_VERSION) {
@@ -99,7 +105,7 @@ public final class DesktopUpdateHandoffCodec {
             if (input.available() != 0)
                 throw invalid("update handoff payload has trailing bytes", null);
             return new DesktopUpdateHandoff(operation, update, backup, events);
-        } catch (WindowsWorkspaceException exception) {
+        } catch (DesktopHandoffException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
             throw invalid("authenticated update handoff payload is malformed", exception);
@@ -268,7 +274,7 @@ public final class DesktopUpdateHandoffCodec {
      * @param cause original failure retained as the nested cause / 保留为嵌套原因的原始失败
      * @return the owning module's failure for rejected input or evidence / 为被拒绝输入或证据创建所属模块的失败
      */
-    private static WindowsWorkspaceException invalid(String diagnostic, Throwable cause) {
-        return WindowsWorkspaceException.create(WindowsWorkspaceFailureType.HANDOFF_INVALID, diagnostic, cause);
+    private static DesktopHandoffException invalid(String diagnostic, Throwable cause) {
+        return DesktopHandoffException.create(DesktopHandoffFailureType.HANDOFF_INVALID, diagnostic, cause);
     }
 }

@@ -1,6 +1,11 @@
 package gold.debug.windowstolinux.appapi.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
 /**
  * Owned page mounting without access to host implementation types. / 不暴露宿主实现类型的所属页面挂载服务。
@@ -8,9 +13,9 @@ import gold.debug.windowstolinux.appapi.task.ApiException;
 public interface UiService {
 
     /**
-     * Registers an owned contribution; visibility follows successful startup. / 登记所属扩展；仅在启动成功后对外可见。
+     * Registers one root workspace, or an isolated settings contribution; publication follows successful startup and adds one root navigation entry. / 登记唯一根工作区或隔离设置扩展；成功启动后发布并自动显示唯一根导航入口。
      * @param spec registration or launch specification / 登记或启动规格
-     * @param factory factory for a fresh page instance on each opening / 每次打开页面时创建新实例的工厂
+     * @param factory lazy factory, reused until explicit close and then called for a fresh instance / 按需创建并复用至明确关闭，重开时创建新实例的工厂
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
@@ -24,7 +29,7 @@ public interface UiService {
     PageRegistration registerPreview(PageSpec spec, PageFactory factory) throws ApiException;
 
     /**
-     * Opens a registered local page on the EDT without adding a navigation pin. / 在事件分发线程打开已注册本地页，不自动固定导航。
+     * Opens or focuses this owner's published root or settings view on the EDT; root metadata already supplies navigation. / 在事件分发线程打开或聚焦所属已发布根工作区或设置视图；根元数据已提供导航。
      * @param localPageId page identifier local to the registering Mod / 登记插件内部的页面标识
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */

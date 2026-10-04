@@ -1,16 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.Types;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,7 +35,7 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             assertEquals("demo", selected.displayName());
             var before = businessBytes(runtime);
             var url = website ? Optional.of("https://demo.debug.gold/path?view=1") : Optional.<String>empty();
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 await(service.edit(selected, "  本地名称  ", website ? "WEBSITE" : "APP", url)).outcome());
             assertEquals(List.of("本地名称", website ? "WEBSITE" : "APP", url.orElse("<NULL>")),
                 storedPresentation(runtime, "demo-web"));
@@ -45,13 +43,13 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             var editor = await(service.presentation(selected)).value().orElseThrow();
             assertEquals(website ? "WEBSITE" : "APP", editor.category());
             assertEquals(url, editor.accessUrl());
-            assertEquals(Outcome.SUCCEEDED, await(service.editName(selected, "Renamed locally")).outcome());
+            assertEquals(TaskResult.SUCCEEDED, await(service.editName(selected, "Renamed locally")).outcome());
             assertEquals(List.of("Renamed locally", website ? "WEBSITE" : "APP", url.orElse("<NULL>")),
                 storedPresentation(runtime, "demo-web"));
             var inspected = new AtomicReference<DeploymentApplicationReader.ApplicationFacts>();
-            assertEquals(Outcome.SUCCEEDED, await(rootTask(runtime, task -> {
+            assertEquals(TaskResult.SUCCEEDED, await(rootTask(runtime, task -> {
                 var reader = new DeploymentApplicationReader(context(runtime).db());
-                var data = reader.find(new DeploymentApplicationRef("demo", new ServerRef("server")), task);
+                var data = reader.find(new DeploymentApplicationId("demo", new ServerId("server")), task);
                 inspected.set(data);
                 assertEquals("Renamed locally", data.snapshot().displayName());
                 assertEquals(revision, data.snapshot().revisionSha256());
@@ -62,7 +60,7 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             assertEquals(before, businessBytes(runtime));
             assertEquals(url, await(service.presentation(selected)).value().orElseThrow().accessUrl(),
                 "Name-only edit preserves the stored access override");
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 await(service.edit(selected, "No access override", website ? "WEBSITE" : "APP", Optional.empty()))
                     .outcome());
             assertTrue(await(service.presentation(selected)).value().orElseThrow().accessUrl().isEmpty());
@@ -104,7 +102,7 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
                 default -> Optional.empty();
             };
             var result = await(service.edit(selected, name, category, url));
-            assertEquals(Outcome.FAILED, result.outcome());
+            assertEquals(TaskResult.FAILED, result.outcome());
             assertTrue(result.value().isEmpty());
             String event = switch (rejected) {
                 case APP_URL -> "DEPLOYMENT_PRESENTATION_URL_NOT_APPLICABLE";
@@ -129,17 +127,17 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             start(runtime, true);
             server(runtime, ssh.server().getPort(), "tester");
             var service = new DeploymentApplicationsService(context(runtime));
-            var target = await(service.scan(new ServerRef("server"))).value().orElseThrow().applications().getFirst();
-            assertEquals(Outcome.SUCCEEDED, await(service.adopt(new ServerRef("server"), target)).outcome());
+            var target = await(service.scan(new ServerId("server"))).value().orElseThrow().applications().getFirst();
+            assertEquals(TaskResult.SUCCEEDED, await(service.adopt(new ServerId("server"), target)).outcome());
             var original = await(service.externalApplications()).value().orElseThrow().getFirst();
             int reads = peer.reads.get();
-            assertEquals(Outcome.FAILED, await(service.editExternal(original, "App with forbidden URL", "APP",
+            assertEquals(TaskResult.FAILED, await(service.editExternal(original, "App with forbidden URL", "APP",
                 Optional.of("https://demo.debug.gold/"))).outcome());
-            assertEquals(Outcome.FAILED,
+            assertEquals(TaskResult.FAILED,
                 await(service.editExternal(original, "Blank URL", "WEBSITE", Optional.of(""))).outcome());
-            assertEquals(Outcome.FAILED, await(service.editExternal(original, "Invalid URL", "WEBSITE",
+            assertEquals(TaskResult.FAILED, await(service.editExternal(original, "Invalid URL", "WEBSITE",
                 Optional.of("https://user:password@demo.debug.gold/"))).outcome());
-            assertEquals(Outcome.SUCCEEDED, await(service.editExternal(original, "  External website  ", "WEBSITE",
+            assertEquals(TaskResult.SUCCEEDED, await(service.editExternal(original, "  External website  ", "WEBSITE",
                 Optional.of("https://demo.debug.gold/"))).outcome());
             var updated = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals("External website", updated.displayName());
@@ -148,7 +146,7 @@ class DeploymentApplicationPresentationTest extends DeploymentApplicationsFixtur
             assertEquals(original.id(), updated.id());
             assertEquals(original.server(), updated.server());
             assertEquals(original.target(), updated.target());
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 await(service.editExternal(updated, "External app", "APP", Optional.empty())).outcome());
             var app = await(service.externalApplications()).value().orElseThrow().getFirst();
             assertEquals("APP", app.category());

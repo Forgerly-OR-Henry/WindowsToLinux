@@ -1,24 +1,21 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.mod.ModActivationLedger;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.mod.ModActivationLedger;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -205,7 +202,7 @@ class ModActivationLedgerTest {
                     new TaskResource("MOD", OWNER, "other.mod", false)));
             assertTrue(tasks.tryStart(caller));
             assertThrows(SQLException.class, ledger(db)::starting);
-            assertTrue(tasks.complete(caller, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(tasks.complete(caller, TaskResult.SUCCEEDED, "{}", false));
             var journal = ledger(db);
             journal.starting();
             journal.running();

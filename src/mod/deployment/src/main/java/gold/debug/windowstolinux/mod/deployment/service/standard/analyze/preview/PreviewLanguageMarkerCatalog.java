@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.language.Lang
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.ProjectLanguageFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceCheckFacts;
 
 /**
  * Collects markers only for languages without a dedicated ecosystem inspector.
@@ -27,7 +27,7 @@ public final class PreviewLanguageMarkerCatalog {
      * @param source source identity or content read by the operation / 操作读取的源身份或内容
      * @return all declared language markers without selecting a primary language or executable / 全部附加语言标记，不选择主要语言或可执行文件
      */
-    public ProjectLanguageFacts inspect(SourceInspectionFacts source) {
+    public ProjectLanguageFacts inspect(SourceCheckFacts source) {
         EnumSet<LanguageEcosystemType> ecosystems = EnumSet.noneOf(LanguageEcosystemType.class);
         EnumSet<SourceLanguageType> languages = EnumSet.noneOf(SourceLanguageType.class);
         EnumMap<SourceLanguageType, Path> firstEvidence = new EnumMap<>(SourceLanguageType.class);

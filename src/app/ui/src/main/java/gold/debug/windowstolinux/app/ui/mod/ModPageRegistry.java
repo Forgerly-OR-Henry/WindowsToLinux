@@ -1,15 +1,19 @@
 package gold.debug.windowstolinux.app.ui.mod;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.util.*;
 import java.util.concurrent.*;
 
 import javax.swing.*;
 
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 /** Owns staged page contributions and EDT-confined author view lifetimes. / 持有暂存页面扩展及限定在 EDT 的作者视图生命周期。 */
 public final class ModPageRegistry {
@@ -144,6 +148,46 @@ public final class ModPageRegistry {
         });
     }
 
+    /** Opens a host navigation target in its current locked or unlocked environment. / 在当前锁定或解锁环境中打开宿主导航目标。
+     * @param key exact host-selected identity / 宿主选择的精确身份
+     * @throws ApiException if unavailable or creation fails / 不可用或创建失败时 */
+    public void navigateView(PageKey key) throws ApiException {
+        navigateView(key, null);
+    }
+
+    /** Opens a host startup target with optional stable internal navigation. / 打开宿主启动目标及可选稳定内部导航。
+     * @param key exact published identity / 精确已发布身份
+     * @param navigationId internal identity or null for normal navigation / 内部身份，普通导航时为 null
+     * @throws ApiException if unavailable or creation fails / 不可用或创建失败时 */
+    public void navigateView(PageKey key, String navigationId) throws ApiException {
+        onEdt(() -> {
+            var scope = scopes.get(key.ownerId());
+            if (scope == null || !scope.visible())
+                throw failure(ProblemCode.UNAVAILABLE, "PAGE_NOT_PUBLISHED", "The page owner is unavailable");
+            var entry = scope.entries.get(key.pageId());
+            if (entry == null || entry.preview)
+                throw failure(ProblemCode.NOT_FOUND, "PAGE_NOT_FOUND", "The page is not registered");
+            entry.open(navigationId);
+            return null;
+        });
+    }
+
+    /** Captures a bounded internal identity without creating a view or reading business data. / 捕获有界内部身份，不创建视图或读取业务数据。
+     * @param key exact mounted identity / 精确挂载身份
+     * @return internal navigation identity or empty / 内部导航身份或空
+     * @throws ApiException if author metadata cannot be captured / 作者元数据无法捕获时 */
+    public String navigationId(PageKey key) throws ApiException {
+        return onEdt(() -> {
+            var scope = scopes.get(key.ownerId());
+            var entry = scope == null ? null : scope.entries.get(key.pageId());
+            if (entry == null || entry.page == null || !entry.mounted) return "";
+            String id = entry.page.navigationId();
+            if (id == null || !id.isEmpty() && !id.matches("[a-z][a-z0-9_.-]{0,127}"))
+                throw failure(ProblemCode.CONTRACT_VIOLATION, "NAVIGATION_ID_INVALID", "Invalid internal navigation identity");
+            return id;
+        });
+    }
+
     /** Observes published metadata without creating pages or retaining removed listeners. / 观察发布元数据，不创建页面或保留已移除监听器。
      * @param listener host refresh callback on the EDT / EDT 上的宿主刷新回调
      * @return removable host subscription / 可移除宿主订阅
@@ -211,7 +255,8 @@ public final class ModPageRegistry {
                     if (entry.page != null && !entry.pageClosed)
                         try {
                             entry.page.environmentChanged(next);
-                        } catch (RuntimeException | LinkageError | AssertionError problem) {
+                        } catch (RuntimeException | Error problem) {
+                            rethrowFatal(problem);
                             if (failure == null)
                                 failure = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_ENVIRONMENT_FAILED",
                                     "A page environment notification failed");
@@ -244,6 +289,7 @@ public final class ModPageRegistry {
                 } catch (InterruptedException waiting) {
                     interrupted = true;
                 } catch (ExecutionException problem) {
+                    rethrowFatal(problem.getCause());
                     if (problem.getCause() instanceof ApiException publicFailure)
                         throw publicFailure;
                     throw failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_HOST_FAILED",
@@ -253,6 +299,17 @@ public final class ModPageRegistry {
             if (interrupted)
                 Thread.currentThread().interrupt();
         }
+    }
+
+    /** Propagates fatal JVM errors, including reflective author construction. / 传播致命 JVM 错误，包括反射作者构造失败。
+     * @param failure original callback failure / 原回调失败 */
+    private static void rethrowFatal(Throwable failure) {
+        if (failure instanceof java.lang.reflect.InvocationTargetException invocation)
+            failure = invocation.getCause();
+        if (failure instanceof VirtualMachineError fatal)
+            throw fatal;
+        if (failure instanceof ThreadDeath fatal)
+            throw fatal;
     }
 
     /**
@@ -404,9 +461,13 @@ public final class ModPageRegistry {
             return onEdt(() -> {
                 if (stopping)
                     throw failure(ProblemCode.UNAVAILABLE, "PAGE_SCOPE_STOPPING", "Page scope is stopping");
-                if (spec.id().isBlank() || spec.id().indexOf('\0') >= 0 || entries.containsKey(spec.id()))
+                if (spec.id().isBlank() || spec.id().length() > 1024 || spec.id().indexOf('\0') >= 0 || entries.containsKey(spec.id()))
                     throw failure(ProblemCode.INVALID_INPUT, "PAGE_ID_INVALID",
                         "Page identity is empty, invalid or already registered");
+                if (!preview && !spec.settingsPage() && entries.values().stream()
+                    .anyMatch(entry -> !entry.preview && !entry.spec.settingsPage()))
+                    throw failure(ProblemCode.CONTRACT_VIOLATION, "WORKSPACE_ALREADY_REGISTERED",
+                        "A Mod can register only one root workspace");
                 var entry = new PageEntry(this, spec, factory, preview);
                 entries.put(spec.id(), entry);
                 if (visible())
@@ -547,15 +608,24 @@ public final class ModPageRegistry {
          * @throws ApiException if creation or pending cleanup prevents opening / 创建失败或待清理状态阻止打开时
          */
         private void open() throws ApiException {
+            open(null);
+        }
+
+        /** Applies only an explicit restoration while preserving normal cached navigation. / 仅应用明确恢复，普通缓存导航保持原选择。
+         * @param navigationId internal identity or null / 内部身份或 null
+         * @throws ApiException if author creation or restoration fails / 作者创建或恢复失败时 */
+        private void open(String navigationId) throws ApiException {
             if (page != null) {
                 if (cleanupPending || pageClosed || !mounted)
                     throw failure(ProblemCode.BUSY, "PAGE_CLEANUP_PENDING",
                         "A previous page instance still requires cleanup");
+                if (navigationId != null) page.restoreNavigation(navigationId);
                 (preview ? previewHost : host).focus(key);
                 return;
             }
             try {
                 page = Objects.requireNonNull(factory.create());
+                if (navigationId != null) page.restoreNavigation(navigationId);
                 var component = Objects.requireNonNull(page.create(environment));
                 if (page == null || scope.entries.get(spec.id()) != this || scope.stopping)
                     throw new IllegalStateException("Page registration was revoked during creation");
@@ -563,7 +633,8 @@ public final class ModPageRegistry {
                     throw new IllegalStateException("Page component is already attached");
                 mounted = true;
                 (preview ? previewHost : host).show(key, spec, component);
-            } catch (Exception | LinkageError | AssertionError creation) {
+            } catch (Exception | Error creation) {
+                rethrowFatal(creation);
                 var problem = failure(ProblemCode.CONTRACT_VIOLATION, "PAGE_CREATION_FAILED",
                     "Page creation or mounting failed");
                 try {
@@ -596,7 +667,8 @@ public final class ModPageRegistry {
                 page = null;
                 pageClosed = false;
                 cleanupPending = false;
-            } catch (Exception | LinkageError | AssertionError closing) {
+            } catch (Exception | Error closing) {
+                rethrowFatal(closing);
                 throw failure(ProblemCode.BUSY, "PAGE_CLEANUP_PENDING",
                     "Page resources or host mounting still require cleanup");
             } finally {

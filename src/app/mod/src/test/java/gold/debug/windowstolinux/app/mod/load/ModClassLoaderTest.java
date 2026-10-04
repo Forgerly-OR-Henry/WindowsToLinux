@@ -12,7 +12,28 @@ import java.util.jar.*;
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceSession;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.file.source.FileContent;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
+import gold.debug.windowstolinux.appapi.mod.service.ModServices;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.ref.ServerRef;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.process.ManagedProcess;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.pf4j.*;
@@ -73,11 +94,11 @@ class ModClassLoaderTest {
             "privatevendor.Value",
             "package privatevendor; public final class Value { public static String get(){return \"provider\";} }",
             "example.provider.Mod",
-            "package example.provider; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint, example.provider.api.Echo { public String value(){ return privatevendor.Value.get(); } public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){} }"));
+            "package example.provider; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint, example.provider.api.Echo { public String value(){ return privatevendor.Value.get(); } public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c){} }"));
         var consumer = compile("consumer", Map.of("privatevendor.Value",
                 "package privatevendor; public final class Value { public static String get(){return \"consumer\";} }",
                 "example.consumer.Mod",
-                "package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint { public String call(example.provider.api.Echo e) {return e.value()+\":\"+privatevendor.Value.get();} public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){} }"),
+                "package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint { public String call(example.provider.api.Echo e) {return e.value()+\":\"+privatevendor.Value.get();} public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c){} }"),
             provider);
         var companion = compile("companion", Map.of("example.consumer.extra.Companion",
             "package example.consumer.extra; public final class Companion {}"));
@@ -96,6 +117,50 @@ class ModClassLoaderTest {
                      Map.of("example.provider.api", p))) {
                 var api = p.loadClass("example.provider.api.Echo");
                 assertSame(api, c.loadClass(api.getName()));
+                for (Class<?> contract : List.of(AiImage.class, VoiceSession.class, SchemaAccess.class,
+                    FileReport.class, FilePath.class, FileSnapshot.class, FileContent.class, FileWorkspace.class,
+                    CommandRequest.class, TransferCheckpoint.class, ModServices.class, ServerId.class,
+                    ServerRef.class, ApprovalGrant.class, LogEvent.class, TaskSnapshot.class, ManagedProcess.class,
+                    PageSlice.class, TaskRecovery.class, OperationResult.class, TaskContext.class,
+                    gold.debug.windowstolinux.appapi.ai.model.AiMessage.class,
+                    gold.debug.windowstolinux.appapi.ai.model.AiPurpose.class,
+                    gold.debug.windowstolinux.appapi.ai.model.AiRequest.class,
+                    gold.debug.windowstolinux.appapi.ai.model.AiResponse.class,
+                    gold.debug.windowstolinux.appapi.ai.model.AiRole.class,
+                    gold.debug.windowstolinux.appapi.ai.model.AiUsage.class,
+                    gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class,
+                    gold.debug.windowstolinux.appapi.linux.session.RemoteFacts.class,
+                    gold.debug.windowstolinux.appapi.linux.action.RemoteActions.class,
+                    gold.debug.windowstolinux.appapi.ui.page.ModPage.class,
+                    gold.debug.windowstolinux.appapi.ui.page.PageFactory.class,
+                    gold.debug.windowstolinux.appapi.ui.page.PageRegistration.class,
+                    gold.debug.windowstolinux.appapi.ui.page.PageSpec.class,
+                    gold.debug.windowstolinux.appapi.ui.page.UiEnvironment.class,
+                    gold.debug.windowstolinux.appapi.secret.model.SecretId.class,
+                    gold.debug.windowstolinux.appapi.secret.ref.SecretRef.class,
+                    gold.debug.windowstolinux.appapi.secret.access.SecretConsumer.class,
+                    gold.debug.windowstolinux.appapi.mod.model.ModIdentity.class,
+                    gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.class,
+                    gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext.class,
+                    gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason.class,
+                    gold.debug.windowstolinux.appapi.db.schema.SchemaAccess.class,
+                    gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity.class,
+                    gold.debug.windowstolinux.appapi.db.schema.SchemaMigration.class,
+                    gold.debug.windowstolinux.appapi.db.schema.ModSchemaLifecycle.class,
+                    gold.debug.windowstolinux.appapi.db.schema.CheckResult.class,
+                    gold.debug.windowstolinux.appapi.task.ref.ResourceRefState.class,
+                    gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult.class,
+                    gold.debug.windowstolinux.appapi.file.query.FileQueryService.class,
+                    gold.debug.windowstolinux.appapi.file.action.FileActionService.class,
+                    gold.debug.windowstolinux.appapi.file.source.FileSourceService.class,
+                    gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService.class,
+                    gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService.class)) {
+                    assertSame(contract, p.loadClass(contract.getName()));
+                    assertSame(contract, c.loadClass(contract.getName()));
+                    String resource = contract.getName().replace('.', '/') + ".class";
+                    assertEquals(contract.getResource("/" + resource), p.getResource(resource));
+                    assertEquals(contract.getResource("/" + resource), c.getResource(resource));
+                }
                 var mod = ModEntryFactory.create(c);
                 assertInstanceOf(ModEntrypoint.class, mod);
                 assertEquals("provider:consumer",
@@ -211,7 +276,7 @@ class ModClassLoaderTest {
 
     @Test
     void entryMustBePublicConcreteAndDefinedByTheExplicitMainSource() throws Exception {
-        String methods = "public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){}";
+        String methods = "public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c){}";
         for (var shape : List.of("class Mod", "public abstract class Mod", "public class Mod")) {
             var name = "shape" + Math.abs(shape.hashCode());
             var body = shape + " implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint {"

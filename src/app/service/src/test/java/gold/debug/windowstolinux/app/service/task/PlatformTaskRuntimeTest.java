@@ -1,17 +1,5 @@
 package gold.debug.windowstolinux.app.service.task;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -20,10 +8,20 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -31,8 +29,8 @@ class PlatformTaskRuntimeTest {
     static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
         throws Exception {
         var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
-            new gold.debug.windowstolinux.app.db.security.SecurityRepository(
-                new gold.debug.windowstolinux.app.db.connect.RepositoryConnections(
+            new gold.debug.windowstolinux.app.db.security.SecurityStore(
+                new gold.debug.windowstolinux.app.db.connect.StoreConnections(
                     db::openConnection)));
         if (security.securityState().configured())
             security.unlock("fixture-password".toCharArray());
@@ -71,7 +69,7 @@ class PlatformTaskRuntimeTest {
     }
 
     static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
     }
 
     static void state(TaskHandle<?> task, TaskState expected) throws Exception {
@@ -83,6 +81,96 @@ class PlatformTaskRuntimeTest {
 
     static <T> OperationResult<T> result(TaskHandle<T> task) throws Exception {
         return task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
+    }
+
+    @Test
+    void cursorSurvivesEarlierTaskCompletionAndExcludesLaterAdmissions() throws Exception {
+        var releases = new ArrayList<CountDownLatch>();
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var handles = new ArrayList<TaskHandle<Void>>();
+            for (int i = 0; i < 4; i++) {
+                var release = new CountDownLatch(1);
+                releases.add(release);
+                handles.add(service.submit(request(), task -> {
+                    assertTrue(release.await(8, TimeUnit.SECONDS));
+                    return success(null);
+                }));
+            }
+            var first = service.list(2);
+            assertEquals(handles.subList(0, 2).stream().map(TaskHandle::id).toList(),
+                first.items().stream().map(s -> s.id()).toList());
+            releases.getFirst().countDown();
+            result(handles.getFirst());
+            var laterRelease = new CountDownLatch(1);
+            releases.add(laterRelease);
+            var later = service.submit(request(), task -> {
+                assertTrue(laterRelease.await(8, TimeUnit.SECONDS));
+                return success(null);
+            });
+            var second = service.list(first.nextCursor(), 2);
+            assertEquals(handles.subList(2, 4).stream().map(TaskHandle::id).toList(),
+                second.items().stream().map(s -> s.id()).toList());
+            assertTrue(second.nextCursor().isEmpty());
+            assertTrue(service.list(200).items().stream().anyMatch(s -> s.id().equals(later.id())));
+            var anotherBinding = runtime.bind("example.owner", "1.0.0", false);
+            assertThrows(ApiException.class, () -> anotherBinding.list(first.nextCursor(), 2));
+            releases.forEach(CountDownLatch::countDown);
+            for (var handle : handles) result(handle);
+            result(later);
+        } finally {
+            releases.forEach(CountDownLatch::countDown);
+        }
+    }
+
+    @Test
+    void edtObservationsDoNotWaitForBlockedAdmission() throws Exception {
+        var admissionEntered = new CountDownLatch(1);
+        var admissionRelease = new CountDownLatch(1);
+        var workRelease = new CountDownLatch(1);
+        var admissions = new AtomicInteger();
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, (connection, owner, version, request) -> {
+                 if (admissions.incrementAndGet() == 2) {
+                     admissionEntered.countDown();
+                     try {
+                         if (!admissionRelease.await(8, TimeUnit.SECONDS))
+                             throw new java.sql.SQLException("fixture timeout");
+                     } catch (InterruptedException failure) {
+                         throw new java.sql.SQLException(failure);
+                     }
+                 }
+                 return claims(connection, owner, version, request);
+             }, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var first = service.submit(request(), task -> {
+                assertTrue(workRelease.await(8, TimeUnit.SECONDS));
+                return success(null);
+            });
+            state(first, TaskState.RUNNING);
+            var submitting = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return service.submit(request(), task -> success(null));
+                } catch (ApiException failure) {
+                    throw new CompletionException(failure);
+                }
+            });
+            assertTrue(admissionEntered.await(3, TimeUnit.SECONDS));
+            var observed = new CompletableFuture<List<gold.debug.windowstolinux.appapi.task.model.TaskSnapshot>>();
+            javax.swing.SwingUtilities.invokeLater(() -> observed.complete(runtime.snapshots()));
+            assertTrue(observed.get(3, TimeUnit.SECONDS).stream().anyMatch(s -> s.id().equals(first.id())));
+            admissionRelease.countDown();
+            workRelease.countDown();
+            result(first);
+            result(submitting.get(8, TimeUnit.SECONDS));
+            assertTrue(runtime.snapshots().stream().noneMatch(s -> s.id().equals(first.id())));
+        } finally {
+            admissionRelease.countDown();
+            workRelease.countDown();
+        }
     }
 
     @Test
@@ -167,7 +255,7 @@ class PlatformTaskRuntimeTest {
                 assertThrows(ApiException.class, () -> owner.inspect(forged));
                 return success(null);
             });
-            assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
             assertThrows(ApiException.class, () -> owner.inspect(retained.get()));
         }
     }
@@ -217,7 +305,7 @@ class PlatformTaskRuntimeTest {
                 assertTrue(release.await(8, TimeUnit.SECONDS));
                 assertFalse(Thread.currentThread().isInterrupted());
                 assertTrue(task.cancelToken().requested());
-                return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             assertTrue(entered.await(8, TimeUnit.SECONDS));
             var queued = service.submit(request("A"), task -> {
@@ -225,13 +313,13 @@ class PlatformTaskRuntimeTest {
                 return success(null);
             });
             queued.requestCancel();
-            assertEquals(Outcome.CANCELLED, result(queued).outcome());
+            assertEquals(TaskResult.CANCELLED, result(queued).outcome());
             assertFalse(ran.get());
             running.requestCancel();
             state(running, TaskState.CANCEL_REQUESTED);
             assertFalse(running.completion().toCompletableFuture().isDone());
             release.countDown();
-            assertEquals(Outcome.CANCELLED, result(running).outcome());
+            assertEquals(TaskResult.CANCELLED, result(running).outcome());
         } finally {
             release.countDown();
         }
@@ -239,9 +327,16 @@ class PlatformTaskRuntimeTest {
 
     @Test
     void callbackFailureStaysUnknownAndRecoveryReusesIdentityWithoutReplay() throws Exception {
+        var originalFailure = new AtomicReference<Throwable>();
+        var diagnostic = UUID.randomUUID();
+        var recordedProblem = new AtomicReference<gold.debug.windowstolinux.appapi.task.result.Problem>();
         try (var db = PlatformDatabase.open(root, PROTECTION);
              var security = security(db);
-             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security, (failure, problem) -> {
+                 originalFailure.set(failure);
+                 recordedProblem.set(problem);
+                 return Optional.of(diagnostic);
+             })) {
             var service = runtime.bind("example.owner", "1.0.0", false);
             var invocations = new AtomicInteger();
             var originalLease = new AtomicReference<UUID>();
@@ -251,6 +346,17 @@ class PlatformTaskRuntimeTest {
                 throw new AssertionError("fixture-secret-never-log");
             });
             state(task, TaskState.UNKNOWN);
+            assertInstanceOf(AssertionError.class, originalFailure.get());
+            assertEquals(task.id().toString(), recordedProblem.get().context().get("taskId"));
+            assertFalse(recordedProblem.get().message().contains("fixture-secret"));
+            try (var connection = db.openConnection(); var query = connection.prepareStatement(
+                "SELECT result_json FROM platform_task WHERE task_id=?")) {
+                query.setObject(1, task.id());
+                try (var rows = query.executeQuery()) {
+                    assertTrue(rows.next());
+                    assertTrue(rows.getString(1).contains(diagnostic.toString()));
+                }
+            }
             assertFalse(task.completion().toCompletableFuture().isDone());
             assertThrows(ApiException.class, () -> runtime.reconcile(task.id()));
             var waiting = runtime.bind("example.other", "1.0.0", false).submit(request("A"),
@@ -267,10 +373,174 @@ class PlatformTaskRuntimeTest {
                 assertEquals(TaskState.ENDED,
                     runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
             }
-            assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
             assertTrue(result(task).value().isEmpty());
             assertEquals(1, invocations.get());
             assertEquals("resumed", result(waiting).value().orElseThrow());
+        }
+    }
+
+    @Test
+    void nonFatalErrorsKeepOriginalTasksRecoverableWithoutReplay() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            for (var failure : List.of(new ServiceConfigurationError("private fixture"), new Error("custom fixture"))) {
+                var calls = new AtomicInteger();
+                var lease = new AtomicReference<UUID>();
+                var task = service.<Void>submit(request("A"), active -> {
+                    calls.incrementAndGet();
+                    lease.set(active.retain("file", "pending", "original resource").id());
+                    throw failure;
+                });
+                state(task, TaskState.UNKNOWN);
+                assertFalse(task.completion().toCompletableFuture().isDone());
+                try (var registration = service.registerRecovery("fixture", (previous, original) -> {
+                    assertEquals(task.id(), previous.id());
+                    assertEquals(task.id(), original.id());
+                    try (var held = original.retain("file", "pending", "original resource")) {
+                        assertEquals(lease.get(), held.id());
+                    }
+                    return success(null);
+                })) {
+                    assertEquals(TaskState.ENDED,
+                        runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                }
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
+                assertEquals(1, calls.get());
+            }
+        }
+    }
+
+    @Test
+    void recoveryErrorReleasesReconciliationGateAndAllowsExplicitRetry() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            var task = service.<Void>submit(request("A"), active -> {
+                throw new Error("unknown original effect");
+            });
+            state(task, TaskState.UNKNOWN);
+            var retries = new AtomicInteger();
+            try (var registration = service.registerRecovery("fixture", (previous, original) -> {
+                assertEquals(task.id(), original.id());
+                if (retries.incrementAndGet() == 1)
+                    throw new ServiceConfigurationError("unavailable recovery provider");
+                return success(null);
+            })) {
+                assertEquals(TaskState.UNKNOWN,
+                    runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                assertFalse(task.completion().toCompletableFuture().isDone());
+                assertEquals(TaskState.ENDED,
+                    runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+            }
+            assertEquals(2, retries.get());
+            assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
+        }
+    }
+
+    @Test
+    void fatalTaskErrorsPropagateAfterRetainingUnknownOriginalIdentity() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            for (var fatal : List.of(new InternalError("synthetic VM error"), new ThreadDeath())) {
+                var escaped = new AtomicReference<Throwable>();
+                var returned = new CountDownLatch(1);
+                var task = service.<Void>submit(request("A"), active -> {
+                    Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+                        escaped.set(failure);
+                        returned.countDown();
+                    });
+                    throw fatal;
+                });
+                assertTrue(returned.await(8, TimeUnit.SECONDS));
+                assertSame(fatal, escaped.get());
+                state(task, TaskState.UNKNOWN);
+                try (var registration = service.registerRecovery("fixture", (previous, original) -> {
+                    assertEquals(task.id(), original.id());
+                    return success(null);
+                })) {
+                    assertEquals(TaskState.ENDED,
+                        runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                }
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
+            }
+        }
+    }
+
+    @Test
+    void fatalRecoveryErrorsCompleteAttemptAndAllowOriginalRetry() throws Exception {
+        try (var db = PlatformDatabase.open(root, PROTECTION);
+             var security = security(db);
+             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
+            var service = runtime.bind("example.owner", "1.0.0", false);
+            for (var fatal : List.of(new InternalError("synthetic VM error"), new ThreadDeath())) {
+                var task = service.<Void>submit(request("A"), active -> {
+                    throw new Error("unknown original effect");
+                });
+                state(task, TaskState.UNKNOWN);
+                var attempts = new AtomicInteger();
+                var escaped = new AtomicReference<Throwable>();
+                var returned = new CountDownLatch(1);
+                try (var registration = service.registerRecovery("fixture", (previous, original) -> {
+                    if (attempts.incrementAndGet() == 1) {
+                        Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+                            escaped.set(failure);
+                            returned.countDown();
+                        });
+                        throw fatal;
+                    }
+                    return success(null);
+                })) {
+                    var failed = runtime.reconcile(task.id()).toCompletableFuture();
+                    assertSame(fatal, assertThrows(ExecutionException.class,
+                        () -> failed.get(8, TimeUnit.SECONDS)).getCause());
+                    assertTrue(returned.await(8, TimeUnit.SECONDS));
+                    assertSame(fatal, escaped.get());
+                    state(task, TaskState.UNKNOWN);
+                    assertEquals(TaskState.ENDED,
+                        runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                }
+                assertEquals(2, attempts.get());
+            }
+        }
+    }
+
+    @Test
+    void diagnosticErrorsCannotLeaveReturnedTasksRunning() throws Exception {
+        for (var recorderFailure : List.of(new ServiceConfigurationError("diagnostic unavailable"),
+            new InternalError("synthetic diagnostic VM error"))) {
+            try (var db = PlatformDatabase.open(root.resolve(recorderFailure.getClass().getSimpleName()), PROTECTION);
+                 var security = security(db);
+                 var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security,
+                     (failure, problem) -> {
+                         throw recorderFailure;
+                     })) {
+                var service = runtime.bind("example.owner", "1.0.0", false);
+                var escaped = new AtomicReference<Throwable>();
+                var returned = new CountDownLatch(1);
+                var task = service.<Void>submit(request("A"), active -> {
+                    Thread.currentThread().setUncaughtExceptionHandler((thread, failure) -> {
+                        escaped.set(failure);
+                        returned.countDown();
+                    });
+                    throw new ServiceConfigurationError("author callback unavailable");
+                });
+                state(task, TaskState.UNKNOWN);
+                if (recorderFailure instanceof VirtualMachineError) {
+                    assertTrue(returned.await(8, TimeUnit.SECONDS));
+                    assertSame(recorderFailure, escaped.get());
+                }
+                try (var registration = service.registerRecovery("fixture", (previous, original) -> success(null))) {
+                    assertEquals(TaskState.ENDED,
+                        runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
+                }
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
+            }
         }
     }
 
@@ -285,7 +555,7 @@ class PlatformTaskRuntimeTest {
             assertTrue(ledger.tryStart(id));
             originalLease = ledger.retain(id,
                 new TaskResource("CUSTOM", "example.owner/file/pending", "example.owner", false));
-            assertFalse(ledger.complete(id, Outcome.UNKNOWN, "{}", false));
+            assertFalse(ledger.complete(id, TaskResult.UNKNOWN, "{}", false));
         }
         try (var db = PlatformDatabase.open(root, PROTECTION);
              var security = security(db);
@@ -396,7 +666,7 @@ class PlatformTaskRuntimeTest {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_no_release");
             }
             retained.get().close();
-            assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
         }
     }
 
@@ -440,11 +710,11 @@ class PlatformTaskRuntimeTest {
                 assertThrows(ApiException.class, () -> service.submit(request("B"), context -> success(null)))
                     .problem().code());
             cancelled.requestCancel();
-            assertEquals(Outcome.CANCELLED, result(cancelled).outcome());
+            assertEquals(TaskResult.CANCELLED, result(cancelled).outcome());
             assertEquals(2, security.securityState().activeTasks());
             release.countDown();
-            assertEquals(Outcome.SUCCEEDED, result(running).outcome());
-            assertEquals(Outcome.SUCCEEDED, result(queued).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(running).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(queued).outcome());
             assertFalse(security.securityState().unlocked());
             assertEquals(0, security.securityState().activeTasks());
         } finally {
@@ -483,7 +753,7 @@ class PlatformTaskRuntimeTest {
                 assertEquals(TaskState.ENDED,
                     runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
             }
-            assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
             assertEquals(1, calls.get());
             assertEquals(0, security.securityState().activeTasks());
             assertThrows(gold.debug.windowstolinux.app.service.error.ApplicationServiceException.class,

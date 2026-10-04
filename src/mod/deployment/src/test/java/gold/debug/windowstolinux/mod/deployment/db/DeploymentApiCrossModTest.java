@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -29,13 +18,27 @@ import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.mod.StopReason;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
@@ -100,12 +103,12 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 return true;
             }
 
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall s, ServerRef target, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall s, ServerId target, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -151,7 +154,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             () -> runtime.modRecovery().review(OWNER, Optional.empty()));
                         assertEquals(ProblemCode.BUSY, providerBusy.problem().code());
                         assertThrows(SQLException.class,
-                            () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
+                            () -> new ModDeletionLedger(runtime.persistence().database(), root, new gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletionFileEvidence(root, runtime.persistence().database().root())).review(OWNER));
                         assertEquals(1, scalar(runtime,
                             "SELECT COUNT(*) FROM mod_schema WHERE mod_id='" + OWNER + "' AND state='READY'"));
                         assertEquals(0,
@@ -175,22 +178,20 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 waitReturned(handle);
                 if (!unknown) {
                     assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
-                    assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
+                    assertEquals(Optional.of(TaskResult.SUCCEEDED), handle.snapshot().outcome());
                 } else {
                     assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), failure(runtime, caller, handle));
                     assertTrue(handle.snapshot().outcome().isEmpty());
                     assertTrue(scalar(runtime,
                         "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND resource_id='example.deploymentcaller/checkpoint/handoff' AND released_at IS NULL") > 0);
                     int creates = peer.created.get();
-                    var pending = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                        TimeUnit.SECONDS);
+                    var pending = reconcileReady(runtime, handle, 30);
                     assertEquals(TaskState.UNKNOWN, pending.state());
                     assertEquals(creates, peer.created.get());
                     peer.uncertain = false;
-                    var finished = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                        TimeUnit.SECONDS);
+                    var finished = reconcileReady(runtime, handle, 30);
                     assertEquals(TaskState.ENDED, finished.state(), finished.toString());
-                    assertEquals(Optional.of(Outcome.FAILED), finished.outcome());
+                    assertEquals(Optional.of(TaskResult.FAILED), finished.outcome());
                     assertEquals(creates, peer.created.get(), "Recovery cannot create the original archive again");
                 }
                 assertEquals(0,
@@ -219,7 +220,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var handle = caller.boundaries();
                 waitReturned(handle);
                 assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
-                assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
+                assertEquals(Optional.of(TaskResult.SUCCEEDED), handle.snapshot().outcome());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             }
@@ -247,7 +248,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             () -> runtime.modRecovery().review(OWNER, Optional.empty()));
                         assertEquals(ProblemCode.BUSY, maintenance.problem().code());
                         assertThrows(SQLException.class,
-                            () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
+                            () -> new ModDeletionLedger(runtime.persistence().database(), root, new gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletionFileEvidence(root, runtime.persistence().database().root())).review(OWNER));
                         assertEquals(1, scalar(runtime,
                             "SELECT COUNT(*) FROM mod_schema WHERE mod_id='" + OWNER + "' AND state='READY'"));
                         assertEquals(0,
@@ -261,9 +262,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 waitReturned(handle);
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), failure(runtime, caller, handle));
                 assertTrue(handle.snapshot().outcome().isEmpty());
-                var settled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30, TimeUnit.SECONDS);
+                var settled = reconcileReady(runtime, handle, 30);
                 assertEquals(TaskState.ENDED, settled.state(), settled.toString());
-                assertEquals(Optional.of(Outcome.CANCELLED), settled.outcome());
+                assertEquals(Optional.of(TaskResult.CANCELLED), settled.outcome());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 try (var access = scope(runtime, true);
@@ -290,8 +291,8 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             publishFixture(sourceRuntime, true);
             run(sourceRuntime, task -> {
                 archived.set(new DeploymentApplicationReader(sourceRuntime.modContexts().get(OWNER).context().db())
-                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                        new ServerRef("server")), task)
+                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId("demo",
+                        new ServerId("server")), task)
                     .snapshot());
                 return success();
             });
@@ -339,7 +340,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                                 () -> runtime.modRecovery().review(OWNER, Optional.empty()));
                             assertEquals(ProblemCode.BUSY, providerBusy.problem().code());
                             assertThrows(SQLException.class,
-                                () -> new ModDeletionLedger(runtime.persistence().database(), root).review(OWNER));
+                                () -> new ModDeletionLedger(runtime.persistence().database(), root, new gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletionFileEvidence(root, runtime.persistence().database().root())).review(OWNER));
                             assertEquals(0,
                                 scalar(runtime, "SELECT COUNT(*) FROM mod_operation WHERE mod_id='" + OWNER + "'"));
                         } catch (Exception error) {
@@ -356,15 +357,13 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         int preparations = peer.restorePreparationEffects.get(),
                             publications = peer.restorePublicationEffects.get();
                         int cleanups = peer.restoreCleanupEffects.get();
-                        var pending = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                            TimeUnit.SECONDS);
+                        var pending = reconcileReady(runtime, handle, 30);
                         assertEquals(TaskState.UNKNOWN, pending.state(), failure(runtime, caller, handle));
                         assertEquals(effects, peer.restoreEffects.get());
                         peer.restoreCleanupUncertain = false;
-                        var settled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                            TimeUnit.SECONDS);
+                        var settled = reconcileReady(runtime, handle, 30);
                         assertEquals(TaskState.ENDED, settled.state(), failure(runtime, caller, handle));
-                        assertEquals(Optional.of(Outcome.SUCCEEDED), settled.outcome());
+                        assertEquals(Optional.of(TaskResult.SUCCEEDED), settled.outcome());
                         assertEquals(preparations, peer.restorePreparationEffects.get(),
                             "Recovery cannot prepare or build another candidate");
                         assertEquals(publications, peer.restorePublicationEffects.get(),
@@ -375,7 +374,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             "Only four previously unattempted worker cleanup effects are allowed");
                     }
                     assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
-                    assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
+                    assertEquals(Optional.of(TaskResult.SUCCEEDED), handle.snapshot().outcome());
                     assertEquals(0,
                         scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                     try (var access = scope(runtime, true);
@@ -427,8 +426,8 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             publishFixture(sourceRuntime, true);
             run(sourceRuntime, task -> {
                 archived.set(new DeploymentApplicationReader(sourceRuntime.modContexts().get(OWNER).context().db())
-                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                        new ServerRef("server")), task)
+                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId("demo",
+                        new ServerId("server")), task)
                     .snapshot());
                 return success();
             });
@@ -581,8 +580,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         }
                         originalStaging.set(staging);
                         byte[] retained = Files.readAllBytes(staging);
-                        var pending = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                            TimeUnit.SECONDS);
+                        var pending = reconcileReady(runtime, handle, 30);
                         assertEquals(TaskState.UNKNOWN, pending.state(), failure(runtime, caller, handle));
                         assertEquals(originalId, caller.handoff());
                         assertArrayEquals(retained, Files.readAllBytes(staging));
@@ -607,10 +605,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                         lookupCommands.set(peer.commands.get());
                         lookupAuthentication.set(authentication.get());
                     }
-                    var settled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(30,
-                        TimeUnit.SECONDS);
+                    var settled = reconcileReady(runtime, handle, 30);
                     assertEquals(TaskState.ENDED, settled.state(), failure(runtime, caller, handle));
-                    assertEquals(Optional.of(prepared ? Outcome.SUCCEEDED : Outcome.CANCELLED), settled.outcome());
+                    assertEquals(Optional.of(prepared ? TaskResult.SUCCEEDED : TaskResult.CANCELLED), settled.outcome());
                     assertEquals(originalId, caller.handoff());
                     assertEquals(prepared ? 1 : 2, lookupVerified.get());
                     assertEquals(originalWrites, writes.get(),
@@ -670,8 +667,8 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             publishFixture(source, false, secrets);
             run(source, task -> {
                 archived.set(new DeploymentApplicationReader(source.modContexts().get(OWNER).context().db())
-                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                        new ServerRef("server")), task)
+                    .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId("demo",
+                        new ServerId("server")), task)
                     .snapshot());
                 return success();
             });
@@ -710,13 +707,13 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                     "fixture-secret".toCharArray());
                 assertEquals(0,
                     scalar(runtime, "SELECT COUNT(*) FROM server_profile WHERE server_profile_id='server'"));
-                var conflict = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
+                var conflict = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot
                     .create("worker", 1, "1", OBSERVED.plusSeconds(1),
-                        gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput
+                        gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigInput
                             .parse("PORT=9999"));
                 if (!secrets)
                     runTarget(runtime, task -> {
-                        new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db())
+                        new DeploymentConfigStore(runtime.modContexts().get(OWNER).context().db())
                             .save(task, conflict);
                         return success();
                     });
@@ -741,7 +738,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                             () -> beforePrepare.set(peer.commands.get()));
                         waitReturned(handle);
                         assertEquals(TaskState.ENDED, handle.snapshot().state(), failure(runtime, caller, handle));
-                        assertEquals(Outcome.SUCCEEDED,
+                        assertEquals(TaskResult.SUCCEEDED,
                             handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                         assertEquals(beforePrepare.get(), peer.commands.get(),
                             "Target input authorization must precede a new SSH connection or helper request");
@@ -768,7 +765,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 if (!secrets)
                     runTarget(runtime, task -> {
                         assertEquals(Optional.of(conflict),
-                            new DeploymentConfigurationRepository(runtime.modContexts().get(OWNER).context().db())
+                            new DeploymentConfigStore(runtime.modContexts().get(OWNER).context().db())
                                 .find(task, "worker", 1));
                         return success();
                     });
@@ -812,7 +809,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         if (observed.get() != null)
             throw new AssertionError("Actual target input task failed", observed.get());
         assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
-        assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
+        assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
     }
 
     private static byte[] fractionalCredentialFormat(byte[] runtime) throws Exception {
@@ -892,7 +889,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
                 var bindings = List.of(
                     new DeploymentDatabaseBinding("alpha", new DeploymentDatabaseConnection.Sqlite("alpha.sqlite")),
                     new DeploymentDatabaseBinding("beta", new DeploymentDatabaseConnection.Sqlite("beta.sqlite")));
-                var replaced = new DeploymentApplicationGraph.Component(worker.componentId(), worker.unit(),
+                var replaced = new DeploymentApplicationGraph.Part(worker.componentId(), worker.unit(),
                     worker.runtime(), worker.dependencies(), worker.reviewedRuntime(), worker.dataPaths(),
                     new DeploymentResourceBindings(worker.resources().fileBindings(), Optional.of(bindings)));
                 graph = new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(),
@@ -902,29 +899,29 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             peer.restoreComponents.clear();
             for (var component : graph.components())
                 peer.restoreComponents.put(component.unit().id(), component);
-            var secrets = new ArrayList<DeploymentSecretReference>();
-            var references = new HashMap<DeploymentSecretReference, gold.debug.windowstolinux.appapi.secret.SecretRef>();
+            var secrets = new ArrayList<DeploymentSecretRef>();
+            var references = new HashMap<DeploymentSecretRef, gold.debug.windowstolinux.appapi.secret.model.SecretId>();
             if (withSecret) {
-                var revision = new DeploymentSecretReference("restore-secret", 1);
+                var revision = new DeploymentSecretRef("restore-secret", 1);
                 var actual = context.secrets().create("deployment.restore", new byte[]{7}, task);
-                new DeploymentSecretRepository(context.db()).saveRevision(task,
+                new DeploymentSecretStore(context.db()).saveRevision(task,
                     new DeploymentSecretRevision(revision, actual.id(), OBSERVED, Optional.of(actual.purpose())));
                 secrets.add(revision);
                 references.put(revision, actual);
             }
-            var proposal = new DeploymentPublication(graph, publications(graph, 1, secrets));
-            var plan = new DeploymentPublicationPlan(UUID.randomUUID(), Optional.empty(), "demo",
-                new ServerRef("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64),
-                DeploymentOriginalPublicationCommit.references(new ServerRef("server"), proposal, references),
+            var proposal = new DeploymentPublish(graph, publications(graph, 1, secrets));
+            var plan = new DeploymentPublishPlan(UUID.randomUUID(), Optional.empty(), "demo",
+                new ServerId("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64),
+                DeploymentOriginalPublishCommit.references(new ServerId("server"), proposal, references),
                 Instant.now());
-            var commit = new DeploymentOriginalPublicationCommit(context);
+            var commit = new DeploymentOriginalPublishCommit(context);
             commit.begin(plan, proposal, task, "deployment-agent");
-            assertEquals(Outcome.SUCCEEDED, commit.commitVerified(task, plan.executionId(), proposal).outcome());
-            var record = new DeploymentExecutionRepository(context.db()).find(task, plan.executionId()).orElseThrow();
-            assertEquals(Outcome.SUCCEEDED, commit.finishKnown(task, record).outcome());
+            assertEquals(TaskResult.SUCCEEDED, commit.commitVerified(task, plan.executionId(), proposal).outcome());
+            var record = new DeploymentExecutionStore(context.db()).find(task, plan.executionId()).orElseThrow();
+            assertEquals(TaskResult.SUCCEEDED, commit.finishKnown(task, record).outcome());
             observed.set(new DeploymentApplicationReader(context.db())
-                .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef("demo",
-                    new ServerRef("server")), task)
+                .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId("demo",
+                    new ServerId("server")), task)
                 .snapshot().revisionSha256());
             return success();
         });
@@ -1031,7 +1028,7 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
 
         final Map<String, String> manifests = new ConcurrentHashMap<>();
 
-        final Map<String, DeploymentApplicationGraph.Component> restoreComponents = new ConcurrentHashMap<>();
+        final Map<String, DeploymentApplicationGraph.Part> restoreComponents = new ConcurrentHashMap<>();
 
         final Set<String> discarded = ConcurrentHashMap.newKeySet();
 

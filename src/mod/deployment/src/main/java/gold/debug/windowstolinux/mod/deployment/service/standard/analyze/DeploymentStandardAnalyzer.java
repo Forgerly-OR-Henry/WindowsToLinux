@@ -1,29 +1,28 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.analyze;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
-import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 
 /** Borrows one still-owned immutable source material for deterministic standard analysis. / 借用一份仍受管的不可变素材进行确定性标准分析。 */
 public final class DeploymentStandardAnalyzer {
     /** Complete single-project analyzer. / 完整单项目分析器。 */
-    private final DeploymentAnalysisCoordinator single = new DeploymentAnalysisCoordinator();
+    private final DeploymentAnalysisFlow single = new DeploymentAnalysisFlow();
 
     /** Complete mixed-project analyzer. / 完整混合项目分析器。 */
-    private final MixedProjectInspector mixed = new MixedProjectInspector();
+    private final MixedProjectChecker mixed = new MixedProjectChecker();
 
     /** Creates the standard analyzer without retaining a source handle. / 创建不持有来源句柄的标准分析器。 */
     public DeploymentStandardAnalyzer() {
@@ -34,12 +33,12 @@ public final class DeploymentStandardAnalyzer {
      * @param snapshotSha256 original immutable content digest / 原不可变内容摘要
      * @param assessment original deterministic result / 原确定性结果
      * @param <T> single or mixed assessment type / 单项目或混合项目评估类型 */
-    public record SnapshotAssessment<T>(UUID snapshotId, String snapshotSha256, T assessment) {
+    public record SnapshotReport<T>(UUID snapshotId, String snapshotSha256, T assessment) {
         /** Validates the borrowed material identity. / 校验借用素材身份。
          * @param snapshotId original snapshot UUID / 原快照 UUID
          * @param snapshotSha256 original content digest / 原内容摘要
          * @param assessment complete typed facts / 完整类型化事实 */
-        public SnapshotAssessment {
+        public SnapshotReport {
             Objects.requireNonNull(snapshotId);
             Objects.requireNonNull(snapshotSha256);
             Objects.requireNonNull(assessment);
@@ -54,9 +53,9 @@ public final class DeploymentStandardAnalyzer {
      * @param deferDatabase whether database review must remain pending / 是否保留数据库待审
      * @param task original admitted task / 原准入任务
      * @return typed assessment associated with the same snapshot / 关联同一快照的类型化评估 */
-    public OperationResult<SnapshotAssessment<DeploymentProjectAssessment>> analyze(DeploymentSourceMaterial material,
-                                                                                    String logicalRootName, DeploymentProjectKind type, Optional<DatabaseSchemaReview> review,
-                                                                                    boolean deferDatabase, TaskContext task) {
+    public OperationResult<SnapshotReport<DeploymentProjectReport>> analyze(DeploymentSourceMaterial material,
+                                                                            String logicalRootName, DeploymentProjectKind type, Optional<DatabaseSchemaReview> review,
+                                                                            boolean deferDatabase, TaskContext task) {
         Objects.requireNonNull(material);
         requireLogicalName(logicalRootName);
         Objects.requireNonNull(type);
@@ -84,7 +83,7 @@ public final class DeploymentStandardAnalyzer {
      * @param type selected deployable kind / 选定可部署类型
      * @param task original task / 原任务
      * @return source-bound component assessment / 来源绑定组件评估 */
-    public OperationResult<SnapshotAssessment<DeploymentProjectAssessment>> analyzeComponent(
+    public OperationResult<SnapshotReport<DeploymentProjectReport>> analyzeComponent(
         DeploymentSourceMaterial material, Path relativeRoot, String logicalName, DeploymentProjectKind type,
         TaskContext task) {
         return analyzeComponent(material, relativeRoot, logicalName, type, Optional.empty(), false, task);
@@ -99,7 +98,7 @@ public final class DeploymentStandardAnalyzer {
      * @param deferDatabase whether schema review remains pending / 模式审阅是否待决
      * @param task original task / 原任务
      * @return source-bound component assessment / 来源绑定组件评估 */
-    public OperationResult<SnapshotAssessment<DeploymentProjectAssessment>> analyzeComponent(
+    public OperationResult<SnapshotReport<DeploymentProjectReport>> analyzeComponent(
         DeploymentSourceMaterial material, Path relativeRoot, String logicalName, DeploymentProjectKind type,
         Optional<DatabaseSchemaReview> review, boolean deferDatabase, TaskContext task) {
         Objects.requireNonNull(material);
@@ -135,9 +134,9 @@ public final class DeploymentStandardAnalyzer {
      * @param deferDatabase whether database review must remain pending / 是否保留数据库待审
      * @param task original admitted task / 原准入任务
      * @return typed graph assessment associated with the same snapshot / 关联同一快照的类型化图评估 */
-    public OperationResult<SnapshotAssessment<MultiComponentProjectAssessment>> analyzeComponents(
+    public OperationResult<SnapshotReport<MultiPartProjectReport>> analyzeComponents(
         DeploymentSourceMaterial material, String logicalRootName, String applicationId,
-        List<ComponentAnalysisRequest> requests, Map<String, DatabaseSchemaReview> reviews, boolean deferDatabase,
+        List<PartAnalysisRequest> requests, Map<String, DatabaseSchemaReview> reviews, boolean deferDatabase,
         TaskContext task) {
         Objects.requireNonNull(material);
         requireLogicalName(logicalRootName);
@@ -193,31 +192,31 @@ public final class DeploymentStandardAnalyzer {
      * @param task original task / 原任务
      * @param <T> assessment type / 评估类型
      * @return successful observation / 成功观测 */
-    private static <T> OperationResult<SnapshotAssessment<T>> success(DeploymentSourceMaterial material, T assessment,
-                                                                      TaskContext task) {
+    private static <T> OperationResult<SnapshotReport<T>> success(DeploymentSourceMaterial material, T assessment,
+                                                                  TaskContext task) {
         if (sourceRoot(material) == null) {
             active(task);
             return unavailable();
         }
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(
-                new SnapshotAssessment<>(material.snapshot().id(), material.snapshot().sha256(), assessment)),
+                new SnapshotReport<>(material.snapshot().id(), material.snapshot().sha256(), assessment)),
             Optional.empty());
     }
 
     /** Reports confirmed cooperative cancellation. / 报告已确认协作取消。
      * @param <T> assessment type / 评估类型
      * @return cancelled outcome / 已取消结果 */
-    private static <T> OperationResult<SnapshotAssessment<T>> cancelled() {
-        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
+    private static <T> OperationResult<SnapshotReport<T>> cancelled() {
+        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
             "DEPLOYMENT_ANALYSIS_CANCELLED", "Source analysis was cancelled", Map.of(), Optional.empty())));
     }
 
     /** Reports that the original frozen material was not available. / 报告原冻结素材不可用。
      * @param <T> assessment type / 评估类型
      * @return known failure / 已知失败 */
-    private static <T> OperationResult<SnapshotAssessment<T>> unavailable() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+    private static <T> OperationResult<SnapshotReport<T>> unavailable() {
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_ANALYSIS_SOURCE_UNAVAILABLE",
                 "Frozen source material is unavailable", Map.of(), Optional.empty())));
     }

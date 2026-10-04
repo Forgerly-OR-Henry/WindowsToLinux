@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,13 +9,21 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.app.db.*;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
-import gold.debug.windowstolinux.app.linux.ssh.recover.BrowserProcess;
-import gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService;
+import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserProcess;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,7 +40,7 @@ class PlatformRecoveryRestartTest {
             UUID task;
             String owner = PlatformTaskAdmission.PLATFORM_OWNER;
             try (var db = PlatformDatabase.open(directory, PlatformStartupTest.PROTECTION)) {
-                var persistence = new PlatformPersistence(db);
+                var persistence = new PlatformStorage(db);
                 try (var security = new DesktopSecurityService(persistence.security())) {
                     security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
                     try (var operation = security.enterOperation(); var credentials = security.openCredentials()) {
@@ -52,7 +50,7 @@ class PlatformRecoveryRestartTest {
                 persistence.servers().saveServerProfile(profile.stored());
                 var ledger = new TaskLedger(db);
                 task = ledger.enqueue(UUID.randomUUID(), owner, "0.0.1-original",
-                    new TaskRequest(PlatformRecoveryService.TASK_TYPE, "Original rescue", List.of(profile.id()),
+                    new TaskRequest(SshRecovery.TASK_TYPE, "Original rescue", List.of(profile.id()),
                         true),
                     List.of(new TaskResource("MOD", owner, owner, false),
                         new TaskResource("SERVER", profile.id(), owner, true)));
@@ -98,14 +96,14 @@ class PlatformRecoveryRestartTest {
                     assertEquals("0.0.1-original", result.ownerVersion());
                     if (scenario.equals("closed")) {
                         assertEquals(TaskState.ENDED, result.state());
-                        assertEquals(Optional.of(Outcome.FAILED), result.outcome());
+                        assertEquals(Optional.of(TaskResult.FAILED), result.outcome());
                         assertEquals(0, count(runtime.persistence().database(),
                             "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                     } else {
                         assertEquals(TaskState.UNKNOWN, result.state());
                         assertEquals(leases.size(), TaskBrowserSessionTest.claims(runtime));
                         assertEquals(ProblemCode.BUSY,
-                            assertThrows(ApiException.class, () -> service.start(profile)).problem().code());
+                            assertThrows(ApiException.class, () -> service.start(PlatformRecoveryServiceTest.selection(profile))).problem().code());
                         assertThrows(SQLException.class, () -> runtime.servers().delete(profile.id()));
                     }
                     assertEquals(scenario.equals("closed") ? 0 : 1,

@@ -6,7 +6,8 @@ import java.util.Arrays;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.server.ServerProfileDialog;
@@ -30,13 +31,13 @@ public final class UiDebugDialog extends JDialog {
     private final PageMessagePresenter messages;
 
     /** Same current theme control factory. / 同一当前主题控件工厂。 */
-    private final DesktopComponentFactory components;
+    private final DesktopPartFactory components;
 
     /** Current preview choices, without creating views. / 当前预览选项；不创建视图。 */
     private final DefaultListModel<ModPageRegistry.PageContribution> entries = new DefaultListModel<>();
 
     /** Pure local choice control. / 纯本地选项控件。 */
-    private final JList<ModPageRegistry.PageContribution> list = new JList<>(entries);
+    private final DesktopCardList<ModPageRegistry.PageContribution> list = new DesktopCardList<>(entries, 48);
 
     /** Removable original metadata listener. / 可移除原元数据监听器。 */
     private AutoCloseable subscription;
@@ -46,9 +47,9 @@ public final class UiDebugDialog extends JDialog {
      * @param pages original author registry / 原作者登记
      * @param components current display controls / 当前显示控件
      * @param messages current localized messages / 当前本地化消息
-     * @throws gold.debug.windowstolinux.appapi.task.ApiException if metadata is unavailable / 元数据不可用时 */
-    public UiDebugDialog(Window owner, ModPageRegistry pages, DesktopComponentFactory components,
-                         PageMessagePresenter messages) throws gold.debug.windowstolinux.appapi.task.ApiException {
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if metadata is unavailable / 元数据不可用时 */
+    public UiDebugDialog(Window owner, ModPageRegistry pages, DesktopPartFactory components,
+                         PageMessagePresenter messages) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         super(owner, messages.text("settings.debug.open"), ModalityType.MODELESS);
         this.pages = pages;
         this.components = components;
@@ -72,6 +73,7 @@ public final class UiDebugDialog extends JDialog {
             label.setForeground(selected ? values.getSelectionForeground() : values.getForeground());
             return label;
         });
+        components.cardList(list, false);
         body.add(new JScrollPane(list));
         var actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         var server = messages.bind(components.secondaryButton(""), "auto.addServer");
@@ -121,7 +123,7 @@ public final class UiDebugDialog extends JDialog {
                 entries.addElement(contribution);
             if (!entries.isEmpty())
                 list.setSelectedIndex(0);
-        } catch (gold.debug.windowstolinux.appapi.task.ApiException failure) {
+        } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
             getRootPane().putClientProperty("debug.problem", failure.problem());
         }
     }
@@ -132,7 +134,7 @@ public final class UiDebugDialog extends JDialog {
             return;
         try {
             pages.openPreview(list.getSelectedValue().key());
-        } catch (gold.debug.windowstolinux.appapi.task.ApiException failure) {
+        } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
             getRootPane().putClientProperty("debug.problem", failure.problem());
         }
     }
@@ -191,10 +193,10 @@ public final class UiDebugDialog extends JDialog {
             super.dispose();
         } catch (Exception failure) {
             getRootPane().putClientProperty("debug.cleanupProblem",
-                failure instanceof gold.debug.windowstolinux.appapi.task.ApiException api
+                failure instanceof gold.debug.windowstolinux.appapi.task.result.ApiException api
                     ? api.problem()
-                    : new gold.debug.windowstolinux.appapi.task.Problem(
-                    gold.debug.windowstolinux.appapi.task.ProblemCode.CONTRACT_VIOLATION,
+                    : new gold.debug.windowstolinux.appapi.task.result.Problem(
+                    gold.debug.windowstolinux.appapi.task.result.ProblemCode.CONTRACT_VIOLATION,
                     "PREVIEW_CLEANUP_FAILED", "Preview cleanup remains incomplete", java.util.Map.of(),
                     java.util.Optional.empty()));
         }

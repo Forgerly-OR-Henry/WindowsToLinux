@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.service.mod;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
@@ -15,17 +8,25 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
-import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.log.LogRecordCodec;
+import gold.debug.windowstolinux.app.db.log.LogStore;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.setting.ModNavigationPreferences;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.config.ModManifest;
+import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Reviews and atomically claims restart intentions or explicit data retries without invoking author code. / 审阅并原子取得重启意图或明确数据重试，不调用作者代码。 */
 public final class PlatformModIntents implements AutoCloseable {
@@ -33,7 +34,7 @@ public final class PlatformModIntents implements AutoCloseable {
     private final UUID boot;
 
     /** Platform transaction owner shared with task admission. / 与任务准入共用的平台事务所有者。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Current-user management authorization. / 当前用户管理授权。 */
     private final DesktopSecurityService security;
@@ -42,10 +43,10 @@ public final class PlatformModIntents implements AutoCloseable {
     private final SemanticVersion api;
 
     /** Existing bounded log writer used inside the same transaction. / 在同一事务中使用的既有有界日志写入器。 */
-    private final LogRepository logs;
+    private final LogStore logs;
 
     /** Fixed platform operation archive target. / 固定平台操作归档目标。 */
-    private final LogRepository.Target archive;
+    private final LogStore.Target archive;
 
     /** Shared data preparation ledger used inside the same management transaction. / 在同一管理事务中使用的共用数据准备账本。 */
     private final gold.debug.windowstolinux.app.db.mod.ModRestartLedger preparations;
@@ -65,19 +66,45 @@ public final class PlatformModIntents implements AutoCloseable {
     public PlatformModIntents(PlatformDatabase database, DesktopSecurityService security, SemanticVersion api)
         throws SQLException {
         boot = database.bootId();
-        connections = new RepositoryConnections(database::openConnection);
+        connections = new StoreConnections(database::openConnection);
         this.security = Objects.requireNonNull(security);
         this.api = Objects.requireNonNull(api);
-        logs = new LogRepository(database);
+        logs = new LogStore(database);
         archive = logs.register("app", Optional.empty(),
             new LogCategory("mod_operation", "mod_operation", Optional.empty()));
         preparations = new gold.debug.windowstolinux.app.db.mod.ModRestartLedger(database);
     }
 
+    /** Validated release observations without implementation types. / 不含实现类型的已验证发布观察。
+     * @param id Mod identity / Mod 身份
+     * @param name display name / 展示名
+     * @param version canonical version / 规范版本
+     * @param schemaVersion optional data version / 可选数据版本 */
+    public record ReleaseInfo(String id, String name, String version, Optional<String> schemaVersion) {
+        /** Requires explicit release facts. / 要求明确发布事实。
+         * @param id identity / 身份
+         * @param name name / 名称
+         * @param version version / 版本
+         * @param schemaVersion data version / 数据版本 */
+        public ReleaseInfo {
+            Objects.requireNonNull(id);
+            Objects.requireNonNull(name);
+            Objects.requireNonNull(version);
+            Objects.requireNonNull(schemaVersion);
+        }
+    }
+
+    /** Converts validated declarations to host observations. / 将已验证声明转为宿主观察。
+     * @param manifest original declaration / 原声明
+     * @return immutable release facts / 不可变发布事实 */
+    private static ReleaseInfo releaseInfo(ModManifest manifest) {
+        return new ReleaseInfo(manifest.id(), manifest.name(), manifest.version().toString(), manifest.schemaVersion());
+    }
+
     /** Registered release displayed independently of selection and runtime. / 独立于选择和运行展示的登记发布。
      * @param manifest original validated declaration / 原已验证声明
      * @param state current installation state / 当前安装状态 */
-    public record ReleaseView(ModManifest manifest, String state) {
+    public record ReleaseView(ReleaseInfo manifest, String state) {
     }
 
     /** Retained data available for explicit source review. / 供明确来源审阅的保留数据。
@@ -168,12 +195,12 @@ public final class PlatformModIntents implements AutoCloseable {
                                 || !manifest.schemaVersion()
                                 .equals(Optional.ofNullable(release.getValue().schema())))
                                 throw new IllegalArgumentException("Registered release identity changed");
-                            versions.add(new ReleaseView(manifest, release.getValue().state()));
+                            versions.add(new ReleaseView(releaseInfo(manifest), release.getValue().state()));
                         } catch (java.io.IOException | IllegalArgumentException invalid) {
                             throw rejected("MOD_MANIFEST_INVALID", "Registered release cannot be displayed safely");
                         }
                     }
-                    versions.sort(Comparator.comparing((ReleaseView v) -> v.manifest().version()).reversed());
+                    versions.sort(Comparator.comparing((ReleaseView v) -> SemanticVersion.parse(v.manifest().version())).reversed());
                     var data = new ArrayList<SchemaView>();
                     for (var item : new TreeMap<>(state.schemas().getOrDefault(owner, Map.of())).entrySet()) {
                         var value = item.getValue();
@@ -259,6 +286,17 @@ public final class PlatformModIntents implements AutoCloseable {
         public PagePin {
             new ModNavigationPreferences.PagePin(ownerId, pageId);
         }
+
+        /** Projects root metadata onto retained owner order without creating views or accessing storage. / 将根元数据投影到保留所有者顺序，不创建视图或访问存储。
+         * @param saved retained complete order / 保留完整顺序
+         * @param roots current published roots / 当前已发布根
+         * @return merged complete order / 归并后完整顺序 */
+        public static List<PagePin> workspaceOrder(List<PagePin> saved, List<PagePin> roots) {
+            return ModNavigationPreferences.workspaces(
+                    saved.stream().map(pin -> new ModNavigationPreferences.PagePin(pin.ownerId(), pin.pageId())).toList(),
+                    roots.stream().map(pin -> new ModNavigationPreferences.PagePin(pin.ownerId(), pin.pageId())).toList())
+                .stream().map(pin -> new PagePin(pin.ownerId(), pin.pageId())).toList();
+        }
     }
 
     /** Reads user-pinned identities without publishing or opening any page. / 读取用户固定身份，不发布或打开页面。
@@ -277,6 +315,35 @@ public final class PlatformModIntents implements AutoCloseable {
         }
     }
 
+    /** Atomically normalizes published root identities in the original admitted preference transaction. / 在原准入偏好事务中原子归并已发布根身份。
+     * @param roots immutable root metadata supplied by the host / 宿主提供的不可变根元数据
+     * @return confirmed complete owner order / 已确认完整所有者顺序
+     * @throws ApiException if locked, corrupt or persistence is unconfirmed / 锁定、损坏或持久化未确认时 */
+    public synchronized List<PagePin> workspacePins(List<PagePin> roots) throws ApiException {
+        requireOpen();
+        roots = List.copyOf(roots);
+        var published = roots;
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                read(c);
+                var before = ModNavigationPreferences.read(c);
+                var after = ModNavigationPreferences.workspaces(before, published.stream()
+                    .map(pin -> new ModNavigationPreferences.PagePin(pin.ownerId(), pin.pageId())).toList());
+                if (!before.equals(after)) {
+                    for (var root : published) {
+                        var oldOwner = before.stream().filter(pin -> pin.ownerId().equals(root.ownerId())).toList();
+                        var newOwner = after.stream().filter(pin -> pin.ownerId().equals(root.ownerId())).toList();
+                        if (!oldOwner.equals(newOwner)) requireNavigationOwner(c, root.ownerId());
+                    }
+                    ModNavigationPreferences.write(c, after);
+                }
+                return after.stream().map(pin -> new PagePin(pin.ownerId(), pin.pageId())).toList();
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
     /** Saves an explicit pin change under the original platform admission lock. / 在原平台准入锁下保存明确固定变更。
      * @param pin exact identity, whose publication is separately checked by the host / 精确身份，其发布另由宿主核验
      * @param pinned whether to retain a navigation preference / 是否保留导航偏好
@@ -288,16 +355,7 @@ public final class PlatformModIntents implements AutoCloseable {
             return locked(c -> {
                 var state = read(c);
                 var owner = state.owners().get(pin.ownerId());
-                try (var pending = c.prepareStatement(
-                    "SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='DELETE_MOD'")) {
-                    pending.setString(1, pin.ownerId());
-                    try (var rows = pending.executeQuery()) {
-                        rows.next();
-                        if (rows.getLong(1) != 0)
-                            throw rejected("MOD_DELETE_PENDING",
-                                "Whole-Mod deletion retains the original navigation scope");
-                    }
-                }
+                requireNavigationOwner(c, pin.ownerId());
                 if (pinned && (owner == null || !"RUNNING".equals(owner.runtime()) || owner.actual() == null))
                     throw rejected("MOD_PAGE_UNAVAILABLE", "Only an actually running Mod can add navigation entries");
                 var pins = new ArrayList<>(ModNavigationPreferences.read(c).stream()
@@ -309,6 +367,49 @@ public final class PlatformModIntents implements AutoCloseable {
                 ModNavigationPreferences.write(c, pins.stream()
                     .map(saved -> new ModNavigationPreferences.PagePin(saved.ownerId(), saved.pageId())).toList());
                 return List.copyOf(pins);
+            });
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Keeps an original pending deletion's navigation identity frozen. / 保持原待核对删除的导航身份不变。
+     * @param c original admitted transaction / 原准入事务
+     * @param owner exact owner / 精确所有者
+     * @throws SQLException if a pending deletion owns the identity / 待核对删除持有该身份时 */
+    private static void requireNavigationOwner(Connection c, String owner) throws SQLException {
+        try (var pending = c.prepareStatement("SELECT COUNT(*) FROM mod_operation WHERE mod_id=? AND operation_type='DELETE_MOD'")) {
+            pending.setString(1, owner);
+            try (var rows = pending.executeQuery()) {
+                rows.next();
+                if (rows.getLong(1) != 0)
+                    throw rejected("MOD_DELETE_PENDING", "Whole-Mod deletion retains the original navigation scope");
+            }
+        }
+    }
+
+    /** Reorders exact published pins without moving hidden identities. / 重排精确已发布固定项，不移动隐藏身份。
+     * @param expected complete confirmed pins / 完整已确认固定项
+     * @param visible requested visible permutation / 请求可见排列
+     * @return committed complete pins / 已提交完整固定项
+     * @throws ApiException if preferences changed or persistence fails / 偏好变化或持久化失败时 */
+    public synchronized List<PagePin> reorderPins(List<PagePin> expected, List<PagePin> visible) throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                var before = ModNavigationPreferences.read(c).stream()
+                    .map(pin -> new PagePin(pin.ownerId(), pin.pageId())).toList();
+                if (!before.equals(expected))
+                    throw rejected("MOD_NAVIGATION_CHANGED", "Reload changed navigation preferences");
+                final List<PagePin> after;
+                try {
+                    after = gold.debug.windowstolinux.app.db.setting.NavigationPreferenceStore.reorderVisible(before, visible);
+                } catch (IllegalArgumentException failure) {
+                    throw rejected("MOD_NAVIGATION_CHANGED", "Invalid visible pin permutation");
+                }
+                ModNavigationPreferences.write(c, after.stream()
+                    .map(pin -> new ModNavigationPreferences.PagePin(pin.ownerId(), pin.pageId())).toList());
+                return after;
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -453,8 +554,14 @@ public final class PlatformModIntents implements AutoCloseable {
 
         /** Returns the original selected program. / 返回原选定程序。
          * @return selected declaration / 选定声明 */
-        public ModManifest manifest() {
-            return manifest;
+        public ReleaseInfo manifest() {
+            return releaseInfo(manifest);
+        }
+
+        /** Returns original validated bytes for host loader assembly. / 返回供宿主加载器装配的原已验证字节。
+         * @return original validated declaration / 原已验证声明 */
+        public String manifestJson() {
+            return manifest.json();
         }
 
         /** Returns the reviewed actual build digest. / 返回已审阅实际构建摘要。
@@ -521,7 +628,7 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param review user-confirmed original retry / 用户确认原重试
      * @return new exclusive preparation generation / 新独占准备代次
      * @throws ApiException if review changed, was consumed, or original work remains / 审阅变化、已使用或原工作残留时 */
-    public synchronized gold.debug.windowstolinux.app.db.mod.ModRestartLedger.Preparation acceptRetry(
+    public synchronized gold.debug.windowstolinux.app.db.mod.ModRestartLedger.Setup acceptRetry(
         RetryReview review) throws ApiException {
         requireOpen();
         try (var permission = security.enterOperation()) {
@@ -1015,7 +1122,7 @@ public final class PlatformModIntents implements AutoCloseable {
         logs.store(c, archive,
             List.of(new LogRecordCodec.Record(pending.archive(), now, "app", "mod_operation", LogLevel.INFO,
                 "MOD_INTENT_CANCELLED", "Pending Mod change was superseded before execution", null,
-                pending.owner(), pending.target().version().orElse(null), null, pending.id(), Outcome.CANCELLED,
+                pending.owner(), pending.target().version().orElse(null), null, pending.id(), TaskResult.CANCELLED,
                 false)),
             100);
         try (var p = c.prepareStatement(
@@ -1035,7 +1142,7 @@ public final class PlatformModIntents implements AutoCloseable {
         var value = new AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 value.set(work.run(c));
             }
         });

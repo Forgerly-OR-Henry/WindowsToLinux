@@ -11,8 +11,8 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
@@ -42,7 +42,7 @@ class ServerProfileDialogTest {
         var messages = new PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"));
         AtomicReference<ServerProfileDialog> dialog = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
-            dialog.set(new ServerProfileDialog(null, service, new DesktopComponentFactory(ThemePalette.light()),
+            dialog.set(new ServerProfileDialog(null, service, new DesktopPartFactory(ThemePalette.light()),
                 messages, new ServerProfile("first", "192.0.2.1", 22, "tester", "custom/credential", "Production"),
                 saved -> {
                     assertEquals("custom/credential", saved.credentialKey());
@@ -63,7 +63,7 @@ class ServerProfileDialogTest {
             assertTrue(started.await(5, TimeUnit.SECONDS));
             release.countDown();
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
-            while (DesktopTaskExecutor.hasActiveTasks() && System.nanoTime() < deadline)
+            while (DesktopTaskRunner.hasActiveTasks() && System.nanoTime() < deadline)
                 Thread.sleep(10);
             SwingUtilities.invokeAndWait(() -> {
                 assertTrue(dialog.get().isVisible());
@@ -77,7 +77,7 @@ class ServerProfileDialogTest {
                 .map(JButton.class::cast).filter(button -> "server.save".equals(button.getName())).findFirst()
                 .orElseThrow().doClick(0));
             deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(8);
-            while (DesktopTaskExecutor.hasActiveTasks() && System.nanoTime() < deadline)
+            while (DesktopTaskRunner.hasActiveTasks() && System.nanoTime() < deadline)
                 Thread.sleep(10);
             SwingUtilities.invokeAndWait(() -> assertFalse(dialog.get().isDisplayable()));
             assertEquals(2, saves.get());

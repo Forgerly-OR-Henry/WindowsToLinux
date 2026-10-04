@@ -31,7 +31,7 @@ public final class DeploymentArchivedRuntimeCodec {
     /** Complete private restoration input; archive references still require target authorization. / 完整私有恢复输入；归档引用仍须目标授权。
      * @param publication original graph, configurations and release bindings / 原图、配置与发布绑定
      * @param secrets nonsecret original credential identities and purposes / 非秘密原凭据身份与用途 */
-    public record Archive(DeploymentPublicationProposal publication, List<DeploymentSecretRevision> secrets) {
+    public record Archive(DeploymentPublishProposal publication, List<DeploymentSecretRevision> secrets) {
         /** Copies nonsecret metadata. / 复制非秘密元数据。
          * @param publication complete publication / 完整发布
          * @param secrets credential metadata / 凭据元数据 */
@@ -47,8 +47,8 @@ public final class DeploymentArchivedRuntimeCodec {
      * @param releases existing canonical codec / 既有规范编解码器
      * @return bounded opaque archive bytes / 有界不透明归档字节
      * @throws IOException if complete content is invalid or exceeds the bound / 完整内容无效或超过界限时 */
-    public static VersionedRuntime encode(DeploymentPublicationProposal proposal,
-                                          List<DeploymentSecretRevision> secrets, DeploymentReleaseRepository releases) throws IOException {
+    public static VersionedRuntime encode(DeploymentPublishProposal proposal,
+                                          List<DeploymentSecretRevision> secrets, DeploymentReleaseStore releases) throws IOException {
         try {
             requireSecrets(proposal, secrets);
             byte[] template = releases.archiveTemplate(proposal).getBytes(StandardCharsets.UTF_8);
@@ -97,7 +97,7 @@ public final class DeploymentArchivedRuntimeCodec {
      * @param releases existing full validator / 既有完整校验器
      * @return exact complete private restoration input / 精确完整私有恢复输入
      * @throws IOException if any archive binding or document differs / 任一归档绑定或文档不符时 */
-    public static Archive restore(DeploymentApplicationSnapshot archived, DeploymentReleaseRepository releases)
+    public static Archive restore(DeploymentApplicationSnapshot archived, DeploymentReleaseStore releases)
         throws IOException {
         try {
             var envelope = envelope(archived.runtime());
@@ -118,7 +118,7 @@ public final class DeploymentArchivedRuntimeCodec {
                     || !secret.path("purpose").isTextual())
                     throw new IOException("Invalid archived secret identity");
                 secrets.add(new DeploymentSecretRevision(
-                    new DeploymentSecretReference(secret.path("identifier").asText(),
+                    new DeploymentSecretRef(secret.path("identifier").asText(),
                         secret.path("revision").longValue()),
                     secret.path("credentialId").asText(),
                     Instant.ofEpochMilli(secret.path("createdAt").longValue()),
@@ -138,7 +138,7 @@ public final class DeploymentArchivedRuntimeCodec {
      * @return complete original graph and bindings / 完整原图与绑定
      * @throws IOException if archive content differs / 归档内容不符时 */
     public static DeploymentReleaseSnapshot verify(DeploymentApplicationSnapshot archived,
-                                                   DeploymentReleaseRepository releases) throws IOException {
+                                                   DeploymentReleaseStore releases) throws IOException {
         var archive = restore(archived, releases);
         return DeploymentReleaseSnapshot.capture(archive.publication().graph(), archive.publication().units());
     }
@@ -162,10 +162,10 @@ public final class DeploymentArchivedRuntimeCodec {
     /** Requires exact complete credential metadata coverage without plaintext. / 要求无明文的精确完整凭据元数据覆盖。
      * @param proposal canonical original publication / 规范原发布
      * @param secrets original nonsecret credential metadata / 原非秘密凭据元数据 */
-    private static void requireSecrets(DeploymentPublicationProposal proposal, List<DeploymentSecretRevision> secrets) {
-        var required = new HashSet<DeploymentSecretReference>();
+    private static void requireSecrets(DeploymentPublishProposal proposal, List<DeploymentSecretRevision> secrets) {
+        var required = new HashSet<DeploymentSecretRef>();
         proposal.units().forEach(value -> required.addAll(value.secrets()));
-        var supplied = new HashSet<DeploymentSecretReference>();
+        var supplied = new HashSet<DeploymentSecretRef>();
         for (var value : secrets)
             if (value.purpose().isEmpty() || !supplied.add(value.reference()))
                 throw new IllegalArgumentException("Archived credential metadata is incomplete or repeated");

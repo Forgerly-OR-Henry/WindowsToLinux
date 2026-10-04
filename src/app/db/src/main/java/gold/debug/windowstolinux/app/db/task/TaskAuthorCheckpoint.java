@@ -7,8 +7,8 @@ import java.util.*;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
-import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
 
 /** Exact owner-bound author facts stored on one platform CUSTOM lease without exposing host recovery protocols. / 存于一个平台 CUSTOM 占用、且不暴露宿主恢复协议的精确作者依据。 */
 public final class TaskAuthorCheckpoint {
@@ -126,7 +126,7 @@ public final class TaskAuthorCheckpoint {
         var after = facts(task, owner, version, key, expected.revision() + 1, next).encode();
         try (var connection = database.openConnection()) {
             connection.setAutoCommit(false);
-            RepositoryConnections.lockPlatformState(connection);
+            StoreConnections.lockPlatformState(connection);
             requireTask(connection, task, owner, version);
             String before;
             try (var query = connection.prepareStatement(

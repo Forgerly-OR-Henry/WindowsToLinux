@@ -12,9 +12,9 @@ import java.util.Optional;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 
 /**
- * Resolves the fixed {@code data} directory from the DB module in CLASS/JAR mode or the EXE in jpackage mode.
+ * Validates mode anchors and resolves configured paths against the workspace, main JAR or EXE directory.
  *
- *  <p>CLASS/JAR 模式按 DB 模块、jpackage 模式按 EXE 解析固定 {@code data} 目录。
+ *  <p>验证模式锚点，并以工作区、主入口 JAR 或 EXE 所在目录解析配置路径。
  */
 public final class RunModeResolver {
 
@@ -124,12 +124,17 @@ public final class RunModeResolver {
                 + "Maven output, its module JAR, or a jpackage application"));
     }
 
-    /**
-     * Resolves data directory.
-     * <p>解析数据目录。
-     *
-     * @return the operation result / 操作结果
-     */
+    /** Applies the configured path to verified mode anchors. / 对已验证模式锚点应用配置路径。
+     * @param anchors detected anchors / 已检测锚点
+     * @param config immutable values / 不可变配置
+     * @return configured layout / 已配置布局 */
+    public static RuntimeLayout configured(RuntimeLayout anchors, gold.debug.windowstolinux.app.config.AppConfig config) {
+        Path selected = Path.of(config.dataDirectory());
+        return new RuntimeLayout(anchors.mode(), anchors.applicationHome(), selected.isAbsolute() ? selected : anchors.applicationHome().resolve(selected));
+    }
+
+    /** Returns the default data anchor before external configuration. / 返回外置配置前的默认数据锚点。
+     * @return default directory / 默认目录 */
     public static Path resolveDataDirectory() {
         return resolve().dataDirectory();
     }
@@ -165,7 +170,7 @@ public final class RunModeResolver {
         if (layout.mode() == RunMode.RUN_JAR)
             return mainSource.filter(java.nio.file.Files::isRegularFile)
                 .flatMap(RuntimePathResolver::layoutFromCodeSource).filter(main -> main.mode() == RunMode.RUN_JAR)
-                .map(main -> new RuntimeLayout(layout.mode(), main.applicationHome(), layout.dataDirectory()));
+                .map(main -> new RuntimeLayout(layout.mode(), main.applicationHome(), main.dataDirectory()));
         Path dbModule = layout.dataDirectory().getParent();
         Path root = dbModule == null || dbModule.getParent() == null || dbModule.getParent().getParent() == null
             ? null

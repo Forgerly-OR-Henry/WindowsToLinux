@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.secret;
 
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Supplies plaintext only inside the accepted original task; the chosen submit contract determines ownership. / 仅在已接纳原任务内提供明文；具体提交契约决定数组所有权。 */
 @FunctionalInterface

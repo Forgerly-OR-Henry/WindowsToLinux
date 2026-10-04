@@ -1,15 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,10 +18,23 @@ import com.sun.net.httpserver.*;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
 import gold.debug.windowstolinux.app.service.ai.PlatformAiService;
 import gold.debug.windowstolinux.appapi.ai.*;
-
+import gold.debug.windowstolinux.appapi.ai.model.AiMessage;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.model.AiRole;
+import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -65,7 +69,7 @@ class PlatformAiServiceTest {
             }
         }
         runtime.persistence().aiProfiles().saveVerified(
-            new StoredAiProviderProfile(id, fixture.uri(path).toString(), "fixture/" + id, credential), id,
+            new StoredAiModelProfile(id, fixture.uri(path).toString(), "fixture/" + id, credential), id,
             Instant.now(), capability);
         if (limit != null)
             runtime.persistence().aiProfiles().saveOutputLimit(id, limit);
@@ -83,7 +87,7 @@ class PlatformAiServiceTest {
         try (var recovery = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture",
             (previous, task) -> {
                 ai.closeTaskResources(task);
-                return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_ABANDONED",
                         "The fixture explicitly abandoned the unknown provider response", Map.of(),
                         Optional.empty())));
@@ -168,6 +172,10 @@ class PlatformAiServiceTest {
                     Duration.ofSeconds(6), false),
                 new AiRequest(AiPurpose.VISION,
                     List.of(new AiMessage(AiRole.USER, "images", Collections.nCopies(5, image))), 16,
+                    Duration.ofSeconds(6), false),
+                new AiRequest(AiPurpose.VISION,
+                    List.of(new AiMessage(AiRole.USER, "first images", Collections.nCopies(3, image)),
+                        new AiMessage(AiRole.USER, "more images", Collections.nCopies(2, image))), 16,
                     Duration.ofSeconds(6), false),
                 new AiRequest(AiPurpose.VISION,
                     List.of(new AiMessage(AiRole.USER, "wrong type", List.of(new AiImage("image/jpeg", PNG)))),
@@ -294,7 +302,7 @@ class PlatformAiServiceTest {
             var result = runtime.tasks().bind(OWNER, VERSION, false)
                 .submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE), task)).completion()
                 .toCompletableFuture().get(8, TimeUnit.SECONDS);
-            assertEquals(Outcome.FAILED, result.outcome());
+            assertEquals(TaskResult.FAILED, result.outcome());
             assertEquals("AI_RESPONSE_INVALID", result.problem().orElseThrow().eventCode());
             assertEquals(1, fixture.calls.get());
         }

@@ -18,7 +18,7 @@
       <dependency>
         <groupId>gold.debug.windowstolinux</groupId>
         <artifactId>windowstolinux-appapi</artifactId>
-        <version>1.0.0-dev.1</version>
+        <version>1.0.0-dev.2</version>
         <scope>provided</scope>
       </dependency>
     </dependencies>
@@ -79,7 +79,7 @@
                 <argument>-classpath</argument>
                 <classpath/>
                 <argument
-                >gold.debug.windowstolinux.app.mod.install.ModPackageTool
+                >gold.debug.windowstolinux.app.mod.dev.ModPackageTool
                 </argument>
                 <argument>describe</argument>
                 <argument>--input</argument>

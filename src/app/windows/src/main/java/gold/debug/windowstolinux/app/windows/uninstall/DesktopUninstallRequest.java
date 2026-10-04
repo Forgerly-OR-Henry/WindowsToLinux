@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallDecisionType;
+
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;

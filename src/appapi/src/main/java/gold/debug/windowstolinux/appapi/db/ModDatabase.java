@@ -3,8 +3,9 @@ package gold.debug.windowstolinux.appapi.db;
 import java.sql.Connection;
 import java.sql.SQLException;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /**
  * Task-bound access to the active owned schema generation. / 绑定任务并访问当前所有者数据代次的连接能力。

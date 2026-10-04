@@ -96,8 +96,8 @@ final class TypedAcceptanceFixture {
     }
 
     static Path node(Path parent, String applicationId, boolean healthy, String marker) throws IOException {
-        Path root = RepositoryServiceFixture.copy(parent, applicationId, "node/npm/http-service", true);
-        RepositoryServiceFixture.replaceText(root,
+        Path root = StoreServiceFixture.copy(parent, applicationId, "node/npm/http-service", true);
+        StoreServiceFixture.replaceText(root,
             java.util.Map.of("deployment-smoke-ok", marker, "http-service-npm", applicationId));
         Path build = root.resolve("build.js");
         Files.writeString(build,
@@ -116,8 +116,8 @@ final class TypedAcceptanceFixture {
     }
 
     static Path python(Path parent, String applicationId) throws IOException {
-        Path root = RepositoryServiceFixture.copy(parent, applicationId, "python/pip/http-service", true);
-        RepositoryServiceFixture.replaceText(root,
+        Path root = StoreServiceFixture.copy(parent, applicationId, "python/pip/http-service", true);
+        StoreServiceFixture.replaceText(root,
             java.util.Map.of("deployment-smoke-ok", "python-live-ok", "http-service-fixture", applicationId));
         Files.move(root.resolve("http_service_fixture"), root.resolve("demo"));
         return root;

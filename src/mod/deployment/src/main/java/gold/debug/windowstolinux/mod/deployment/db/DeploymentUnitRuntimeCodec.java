@@ -6,7 +6,7 @@ import java.util.Optional;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentAccessUrl;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentIdentityMode;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitRuntimeConfiguration;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitRuntimeConfig;
 
 /**
  * Exact activation and inventory state, without inferred service exposure. / 不推测服务对外范围的精确激活与清单状态。
@@ -20,7 +20,7 @@ public final class DeploymentUnitRuntimeCodec {
      * @return encoded or copied content buffer / 编码或复制得到的内容缓冲区
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public byte[] write(DeploymentUnitRuntimeConfiguration value) throws IOException {
+    public byte[] write(DeploymentUnitRuntimeConfig value) throws IOException {
         var bytes = new ByteArrayOutputStream();
         try (var out = new DataOutputStream(bytes)) {
             out.writeInt(0x57544c41);
@@ -45,7 +45,7 @@ public final class DeploymentUnitRuntimeCodec {
      * @return the bounded versioned application runtime document and rejects unsupported variants or trailing bytes / 有界且带版本的应用运行文档，并拒绝不支持的变体或尾随字节
      * @throws IOException if the required file or stream operation fails / 所需文件或流操作失败时
      */
-    public DeploymentUnitRuntimeConfiguration read(byte[] bytes) throws IOException {
+    public DeploymentUnitRuntimeConfig read(byte[] bytes) throws IOException {
         if (bytes == null || bytes.length > 1_048_576)
             throw new IOException("invalid application runtime size");
         try (var in = new DataInputStream(new ByteArrayInputStream(bytes))) {
@@ -60,7 +60,7 @@ public final class DeploymentUnitRuntimeCodec {
             var health = new DeploymentHealthCodec().read(in.readNBytes(count));
             var identity = DeploymentIdentityMode.valueOf(in.readUTF());
             String url = in.readUTF();
-            var result = new DeploymentUnitRuntimeConfiguration(health,
+            var result = new DeploymentUnitRuntimeConfig(health,
                 url.isEmpty() ? Optional.empty() : Optional.of(new DeploymentAccessUrl(URI.create(url))), identity,
                 DeploymentWorkloadCodec.read(in, version == 2));
             if (in.read() != -1)

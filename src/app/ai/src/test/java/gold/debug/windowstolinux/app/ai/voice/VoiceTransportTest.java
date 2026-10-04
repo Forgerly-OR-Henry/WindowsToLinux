@@ -15,8 +15,12 @@ import java.util.concurrent.atomic.*;
 
 import com.fasterxml.jackson.databind.*;
 import com.sun.net.httpserver.HttpServer;
-import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceEvent;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 
 class VoiceTransportTest {
@@ -70,7 +74,7 @@ class VoiceTransportTest {
             HttpFixture.reply(exchange, 200, "{\"text\":\"你好\"}");
         }); var call = new VoiceHttpCall(server.uri(), "fixture-key".toCharArray(), "fixture/transcribe", "model-a", input())) {
             var result = call.execute(() -> false);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals("你好", result.value().orElseThrow().text());
             assertEquals("model-a", result.value().orElseThrow().modelId());
             assertTrue(contentType.get().startsWith("multipart/form-data; boundary="));
@@ -91,7 +95,7 @@ class VoiceTransportTest {
                 HttpFixture.reply(exchange, status, "{\"unexpected\":true}");
             }); var call = new VoiceHttpCall(server.uri(), "fixture-key".toCharArray(), "model", "id", input())) {
                 var result = call.execute(() -> false);
-                assertEquals(Outcome.FAILED, result.outcome());
+                assertEquals(TaskResult.FAILED, result.outcome());
                 assertEquals(status == 200 ? "VOICE_RESPONSE_INVALID" : "VOICE_HTTP_REJECTED", result.problem().orElseThrow().eventCode());
             }
         }
@@ -110,12 +114,12 @@ class VoiceTransportTest {
             HttpFixture.reply(exchange, 200, "{\"text\":\"late\"}");
         })) {
             try (var call = new VoiceHttpCall(server.uri(), "key".toCharArray(), "model", "id", input())) {
-                assertEquals(Outcome.CANCELLED, call.execute(() -> true).outcome());
+                assertEquals(TaskResult.CANCELLED, call.execute(() -> true).outcome());
                 assertEquals(0, count.get());
             }
             var input = new VoiceRequest(wav(4800), "sample.wav", Duration.ofMillis(150));
             try (var call = new VoiceHttpCall(server.uri(), "key".toCharArray(), "model", "id", input)) {
-                assertEquals(Outcome.UNKNOWN, call.execute(() -> false).outcome());
+                assertEquals(TaskResult.UNKNOWN, call.execute(() -> false).outcome());
             }
             assertEquals(1, count.get());
         }
@@ -128,7 +132,7 @@ class VoiceTransportTest {
                 "{\"error\":{\"code\":\"unsupported_model\",\"message\":\"private provider text\"}}"));
                  var call = new VoiceHttpCall(server.uri(), "fixture-key".toCharArray(), "model", "id", input())) {
                 var result = call.execute(() -> false);
-                assertEquals(Outcome.FAILED, result.outcome());
+                assertEquals(TaskResult.FAILED, result.outcome());
                 assertEquals(status == 400 ? ProblemCode.INCOMPATIBLE : ProblemCode.ACCESS_DENIED,
                     result.problem().orElseThrow().code());
                 assertFalse(result.problem().orElseThrow().toString().contains("private provider text"));
@@ -175,7 +179,7 @@ class VoiceTransportTest {
             }, () -> false)) {
             session.send(input().pcm()).toCompletableFuture().get(2, TimeUnit.SECONDS);
             var result = session.finish().toCompletableFuture().get(4, TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals(ProblemCode.CONTRACT_VIOLATION, result.problem().orElseThrow().code());
             assertTrue(result.value().isEmpty());
         }
@@ -191,7 +195,7 @@ class VoiceTransportTest {
                 session.commit().toCompletableFuture().get(2, TimeUnit.SECONDS);
             }
             var result = session.finish().toCompletableFuture().get(5, TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals(ProblemCode.CONTRACT_VIOLATION, result.problem().orElseThrow().code());
             assertEquals(3, result.value().orElseThrow().segments().size());
             assertEquals(3 * 262_144 + 2, result.value().orElseThrow().text().length());
@@ -209,7 +213,7 @@ class VoiceTransportTest {
             session.commit().toCompletableFuture().get(2, TimeUnit.SECONDS);
             session.send(audio).toCompletableFuture().get(2, TimeUnit.SECONDS);
             var result = session.finish().toCompletableFuture().get(6, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals("turn-0\nturn-1", result.value().orElseThrow().text());
             assertEquals(List.of(0L, 1L), result.value().orElseThrow().segments().stream().map(VoiceEvent::inputOrder).toList());
             assertEquals(1, events.stream().filter(VoiceEvent::finalResult).findFirst().orElseThrow().inputOrder());
@@ -232,7 +236,7 @@ class VoiceTransportTest {
             }, () -> false)) {
             session.send(input().pcm()).toCompletableFuture().get(2, TimeUnit.SECONDS);
             var result = session.finish().toCompletableFuture().get(4, TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals(ProblemCode.TIMEOUT, result.problem().orElseThrow().code());
         }
         try (var server = new SocketFixture("lost"); var session = VoiceSocketSession.open(server.uri(), "key".toCharArray(),
@@ -244,7 +248,7 @@ class VoiceTransportTest {
             session.send(input().pcm()).toCompletableFuture().get(2, TimeUnit.SECONDS);
             var result = session.finish().toCompletableFuture().get(10, TimeUnit.SECONDS);
             assertTrue(server.closed.await(2, TimeUnit.SECONDS));
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals("turn-0", result.value().orElseThrow().text());
         }
     }
@@ -259,7 +263,7 @@ class VoiceTransportTest {
             session.cancel();
             int count = events.size();
             var result = session.completion().toCompletableFuture().get(2, TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals(count, events.size());
             assertTrue(events.isEmpty());
             assertFalse(server.events.stream().anyMatch(event -> event.path("type").asText().equals("input_audio_buffer.commit")));
@@ -302,7 +306,7 @@ class VoiceTransportTest {
                 throw new IllegalStateException("author listener");
             }, () -> false)) {
             session.send(input().pcm()).toCompletableFuture().get(2, TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, session.finish().toCompletableFuture().get(4, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.UNKNOWN, session.finish().toCompletableFuture().get(4, TimeUnit.SECONDS).outcome());
         }
     }
 

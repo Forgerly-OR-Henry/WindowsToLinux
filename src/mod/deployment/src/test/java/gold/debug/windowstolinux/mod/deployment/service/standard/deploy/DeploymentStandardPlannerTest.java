@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -14,17 +10,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.ComponentIsolationSpecification;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.PartIsolationSpec;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ComponentAnalysisRequest;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.PartAnalysisRequest;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.ReviewedPlanIdentity;
-import gold.debug.windowstolinux.mod.deployment.file.*;
 import org.junit.jupiter.api.Test;
 
 class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
@@ -50,8 +48,8 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
             var handle = context.tasks().submit(new TaskRequest("mixed-planning", "Plan components", List.of(), true),
                 task -> {
                     try {
-                        var selection = context.file().selectDirectory("Source", task);
-                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 65536,
+                        var selection = context.file().sources().selectDirectory("Source", task);
+                        try (var material = new DeploymentSourceSetup(context.file()).prepare(selection, 65536,
                             100, task);
                              var apiArchive = new DeploymentSourceArchiver(context.file()).prepare(material,
                                  "api", 65536, task);
@@ -62,9 +60,9 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                 List.of(component("api", 8080, Set.of("database")),
                                     component("database", 5432, Set.of())),
                                 Map.of(), false, task);
-                            assertEquals(Outcome.SUCCEEDED, graph.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, graph.outcome());
                             var assessment = graph.value().orElseThrow();
-                            var server = new ServerRef("Server Exact 1");
+                            var server = new ServerId("Server Exact 1");
                             var archives = Map.of("api", apiArchive, "database", databaseArchive);
                             var requests = new TreeMap<String, ReviewedDeploymentRequest>();
                             for (var component : assessment.assessment().components())
@@ -72,14 +70,14 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                     archives.get(component.componentId()), component.runtime().orElseThrow()));
                             var planner = new DeploymentStandardPlanner();
                             var planned = planner.planComponents(material, assessment, requests, task);
-                            assertEquals(Outcome.SUCCEEDED, planned.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, planned.outcome());
                             var plans = planned.value().orElseThrow();
                             assertEquals(List.of(List.of("database"), List.of("api")),
                                 plans.ordering().buildWaves());
                             assertEquals(List.of("api", "database"), plans.ordering().rollbackOrder());
                             for (var plan : plans.components().entrySet()) {
                                 var rendered = planner.render(plan.getValue(), task);
-                                assertEquals(Outcome.SUCCEEDED, rendered.outcome());
+                                assertEquals(TaskResult.SUCCEEDED, rendered.outcome());
                                 assertTrue(rendered.value().orElseThrow().buildScript()
                                     .contains(archives.get(plan.getKey()).sha256()));
                             }
@@ -87,11 +85,11 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                 assessment, Map.of("api", requests.get("api")), task));
                             assertThrows(IllegalArgumentException.class,
                                 () -> planner.planComponents(material,
-                                    new DeploymentStandardAnalyzer.SnapshotAssessment<>(UUID.randomUUID(),
+                                    new DeploymentStandardAnalyzer.SnapshotReport<>(UUID.randomUUID(),
                                         assessment.snapshotSha256(), assessment.assessment()),
                                     requests, task));
                         }
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError caught) {
                         failure.set(caught);
                         throw caught;
@@ -107,18 +105,18 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
             }
             if (failure.get() != null)
                 throw new AssertionError("Mixed planning callback failed", failure.get());
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
     }
 
-    private static ComponentAnalysisRequest component(String id, int port, Set<String> dependencies) {
-        return new ComponentAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE,
+    private static PartAnalysisRequest component(String id, int port, Set<String> dependencies) {
+        return new PartAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE,
             Optional.of(new DeploymentRuntimeDefinition.GoService("1.24", id, "main.go",
                 new DeploymentHealthCheck.Tcp(port, 10, 2))),
             List.of(id + "/.w2l/bin/" + id), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
-            true, ComponentIsolationSpecification.managed());
+            true, PartIsolationSpec.managed());
     }
 
     @Test
@@ -139,9 +137,9 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
             var handle = context.tasks().submit(new TaskRequest("standard-plan-cancel", "Cancel plan", List.of(), true),
                 task -> {
                     try {
-                        var selection = context.file().selectDirectory("Source", task);
+                        var selection = context.file().sources().selectDirectory("Source", task);
                         ReviewedDeploymentPlan plan;
-                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 65536,
+                        try (var material = new DeploymentSourceSetup(context.file()).prepare(selection, 65536,
                             100, task);
                              var archive = new DeploymentSourceArchiver(context.file()).prepare(material,
                                  65536, task)) {
@@ -150,15 +148,15 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                             var facts = analysis.value().orElseThrow().assessment().facts().orElseThrow();
                             plan = new DeploymentStandardPlanner()
                                 .plan(material, analysis.value().orElseThrow(),
-                                    request(new ServerRef("server-1"), facts, material, archive), task)
+                                    request(new ServerId("server-1"), facts, material, archive), task)
                                 .value().orElseThrow();
                             ready.countDown();
                             assertTrue(proceed.await(8, TimeUnit.SECONDS));
                         }
                         var rendered = new DeploymentStandardPlanner().render(plan, task);
-                        assertEquals(Outcome.CANCELLED, rendered.outcome());
+                        assertEquals(TaskResult.CANCELLED, rendered.outcome());
                         assertTrue(rendered.value().isEmpty());
-                        return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError caught) {
                         failure.set(caught);
                         throw caught;
@@ -175,7 +173,7 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
             assertTrue(finished.await(8, TimeUnit.SECONDS));
             if (failure.get() != null)
                 throw new AssertionError("Cancelled plan callback failed", failure.get());
-            assertEquals(Outcome.CANCELLED,
+            assertEquals(TaskResult.CANCELLED,
                 handle.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
@@ -197,33 +195,33 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
             var handle = context.tasks().submit(new TaskRequest("standard-planning", "Plan source", List.of(), true),
                 task -> {
                     try {
-                        var selection = context.file().selectDirectory("Source", task);
-                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 65536,
+                        var selection = context.file().sources().selectDirectory("Source", task);
+                        try (var material = new DeploymentSourceSetup(context.file()).prepare(selection, 65536,
                             100, task);
                              var archive = new DeploymentSourceArchiver(context.file()).prepare(material,
                                  65536, task)) {
                             var analyzed = new DeploymentStandardAnalyzer().analyze(material, "Reviewed Go Service",
                                 DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
-                            assertEquals(Outcome.SUCCEEDED, analyzed.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, analyzed.outcome());
                             var original = analyzed.value().orElseThrow();
                             var facts = original.assessment().facts().orElseThrow();
-                            var server = new ServerRef("server-1");
+                            var server = new ServerId("server-1");
                             var request = request(server, facts, material, archive);
                             var planner = new DeploymentStandardPlanner();
                             var plan = planner.plan(material, original, request, task);
-                            assertEquals(Outcome.SUCCEEDED, plan.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, plan.outcome());
                             assertEquals(DeploymentPlanAction.ROLLBACK_ON_FAILURE,
                                 plan.value().orElseThrow().steps().getLast());
                             assertNotEquals(archive.sha256(), material.snapshot().sha256());
                             var rendered = planner.render(plan.value().orElseThrow(), task);
-                            assertEquals(Outcome.SUCCEEDED, rendered.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, rendered.outcome());
                             var script = rendered.value().orElseThrow().buildScript();
                             assertFalse(script.isBlank());
                             assertTrue(script.contains(archive.sha256()));
                             assertEquals(ReviewedPlanIdentity.from(request),
                                 rendered.value().orElseThrow().reviewedPlanSha256());
-                            var secretA = new DeploymentSecretReference("alpha", 1);
-                            var secretB = new DeploymentSecretReference("beta", 2);
+                            var secretA = new DeploymentSecretRef("alpha", 1);
+                            var secretB = new DeploymentSecretRef("beta", 2);
                             var secrets = new ReviewedDeploymentRequest(server, facts, material, archive,
                                 request.configuration(), List.of(secretA, secretB), request.resources(),
                                 request.runtime(), request.userAccessUrl(), request.limits(), request.review(),
@@ -236,7 +234,7 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                             assertNotEquals(ReviewedPlanIdentity.from(request), ReviewedPlanIdentity.from(secrets));
                             assertNotEquals(ReviewedPlanIdentity.from(secrets),
                                 ReviewedPlanIdentity.from(reviewed(secrets, facts,
-                                    List.of(new DeploymentSecretReference("alpha", 2), secretB),
+                                    List.of(new DeploymentSecretRef("alpha", 2), secretB),
                                     secrets.resources(), secrets.runtime())));
                             assertNotEquals(ReviewedPlanIdentity.from(request),
                                 ReviewedPlanIdentity.from(new ReviewedDeploymentRequest(server, facts, material,
@@ -267,7 +265,7 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                     request.secretReferences(), request.resources(), springRuntime)),
                                 ReviewedPlanIdentity.from(reviewed(request, mavenFacts,
                                     request.secretReferences(), request.resources(), springRuntime)));
-                            var password = new DeploymentSecretReference("database-password", 3);
+                            var password = new DeploymentSecretRef("database-password", 3);
                             var withPassword = reviewed(request, facts, List.of(password), request.resources(),
                                 request.runtime());
                             var postgres = new DeploymentDatabaseBinding("orders",
@@ -339,7 +337,7 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                             assertNotEquals(ReviewedPlanIdentity.from(request),
                                 ReviewedPlanIdentity.from(new ReviewedDeploymentRequest(server, facts, material,
                                     archive,
-                                    DeploymentConfigurationSnapshot.create(facts.applicationId(), 2, "v1",
+                                    DeploymentConfigSnapshot.create(facts.applicationId(), 2, "v1",
                                         Instant.now(), List.of()),
                                     request.secretReferences(), request.resources(), request.runtime(),
                                     request.userAccessUrl(), request.limits(), request.review(), false,
@@ -353,7 +351,7 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
                                         material.snapshot().sha256(), "0".repeat(64), Instant.now()),
                                     false, true));
                         }
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError caught) {
                         failure.set(caught);
                         throw caught;
@@ -369,13 +367,13 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
             }
             if (failure.get() != null)
                 throw new AssertionError("Original planning callback failed", failure.get());
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
     }
 
-    private static ReviewedDeploymentRequest request(ServerRef server,
+    private static ReviewedDeploymentRequest request(ServerId server,
                                                      gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts facts,
                                                      DeploymentSourceMaterial material, DeploymentSourceArchive archive) {
         var runtime = new DeploymentRuntimeDefinition.GoService("1.24", facts.applicationId(), "main.go",
@@ -383,11 +381,11 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
         return request(server, facts, material, archive, runtime);
     }
 
-    private static ReviewedDeploymentRequest request(ServerRef server,
+    private static ReviewedDeploymentRequest request(ServerId server,
                                                      gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts facts,
                                                      DeploymentSourceMaterial material, DeploymentSourceArchive archive, DeploymentRuntimeDefinition runtime) {
         return new ReviewedDeploymentRequest(server, facts, material, archive,
-            DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1", Instant.now(), List.of()),
+            DeploymentConfigSnapshot.create(facts.applicationId(), 1, "v1", Instant.now(), List.of()),
             List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())), runtime, Optional.empty(),
             DeploymentBuildLimits.defaultNonRoot(), new DeploymentReviewConsent(facts.applicationId(), server.id(),
             material.snapshot().sha256(), archive.sha256(), Instant.now()),
@@ -396,7 +394,7 @@ class DeploymentStandardPlannerTest extends DeploymentRuntimeFixture {
 
     private static ReviewedDeploymentRequest reviewed(ReviewedDeploymentRequest base,
                                                       gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts facts,
-                                                      List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
+                                                      List<DeploymentSecretRef> secrets, DeploymentResourceBindings resources,
                                                       DeploymentRuntimeDefinition runtime) {
         return new ReviewedDeploymentRequest(base.server(), facts, base.material(), base.archive(),
             base.configuration(), secrets, resources, runtime, base.userAccessUrl(), base.limits(), base.review(),

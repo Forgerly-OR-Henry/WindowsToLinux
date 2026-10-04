@@ -1,15 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,15 +13,22 @@ import java.util.concurrent.atomic.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.*;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.file.source.SourceWorkDirectory;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.app.file.SourceWorkDirectory;
-import gold.debug.windowstolinux.appapi.file.FileReadRequest;
-import gold.debug.windowstolinux.appapi.file.FileSelection;
-import gold.debug.windowstolinux.appapi.file.FileWorkspace;
-import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
-
+import gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileReadRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -139,7 +137,7 @@ class PlatformSourceWorkspaceTest {
                     assertEquals(ProblemCode.CANCELLED,
                         assertThrows(ApiException.class, () -> source.workspace(task)).problem().code());
                 }
-                return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             try {
                 assertTrue(ready.await(8, TimeUnit.SECONDS));
@@ -147,7 +145,7 @@ class PlatformSourceWorkspaceTest {
             } finally {
                 cancelled.countDown();
             }
-            assertEquals(Outcome.CANCELLED,
+            assertEquals(TaskResult.CANCELLED,
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             assertFalse(Files.exists(path.get()));
         }
@@ -255,7 +253,7 @@ class PlatformSourceWorkspaceTest {
         Path payload, marker;
         byte[] expected;
         try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(db);
+            var persistence = new PlatformStorage(db);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }
@@ -299,7 +297,7 @@ class PlatformSourceWorkspaceTest {
         UUID id = UUID.randomUUID(), task = UUID.randomUUID();
         byte[] receipt = "verified-original-receipt".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(db);
+            var persistence = new PlatformStorage(db);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }

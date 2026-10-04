@@ -4,10 +4,20 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.*;
 
+import gold.debug.windowstolinux.app.db.file.FileStore;
 import gold.debug.windowstolinux.app.file.*;
-import gold.debug.windowstolinux.app.db.file.FileRepository;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.file.FileEngine;
+import gold.debug.windowstolinux.app.file.model.FileLinkMaintenance;
+import gold.debug.windowstolinux.app.file.model.FileRecycleReceipt;
+import gold.debug.windowstolinux.app.service.file.check.FileBackendAccess;
+import gold.debug.windowstolinux.appapi.file.action.FileOperation;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Reconciles original physical evidence and repairs only already-proved link metadata. / 核对原物理依据，仅修复已证明的链接元数据。 */
 final class FileOperationRecovery {
@@ -15,12 +25,12 @@ final class FileOperationRecovery {
     private final FileBackendAccess backends;
 
     /** Exact owner and release evidence. / 精确所有者及发布依据。 */
-    private final FileRepository repository;
+    private final FileStore repository;
 
     /** Binds existing host access and durable evidence. / 绑定既有主机访问及持久依据。
      * @param backends admitted actual host access / 准入实际主机访问
      * @param repository exact release evidence / 精确发布依据 */
-    FileOperationRecovery(FileBackendAccess backends, FileRepository repository) {
+    FileOperationRecovery(FileBackendAccess backends, FileStore repository) {
         this.backends = backends;
         this.repository = repository;
     }
@@ -44,10 +54,10 @@ final class FileOperationRecovery {
             if (!linkPaths.contains(entry.getKey()))
                 results.add(checkObject(original, entry.getKey(), entry.getValue(), task));
         if (results.isEmpty())
-            results.add(result(original.source(), original.target(), Outcome.UNKNOWN, "No original object effect was confirmed"));
+            results.add(result(original.source(), original.target(), TaskResult.UNKNOWN, "No original object effect was confirmed"));
         if (original.steps().stream().anyMatch(s -> s.phase().equals("COMPLETE") && s.detail().equals("FAILED")))
-            results.add(result(original.source(), original.target(), Outcome.FAILED, "Original required items were skipped or failed"));
-        Outcome overall = results.stream().anyMatch(r -> r.outcome() == Outcome.UNKNOWN) ? Outcome.UNKNOWN : results.stream().anyMatch(r -> r.outcome() == Outcome.FAILED) ? Outcome.FAILED : Outcome.SUCCEEDED;
+            results.add(result(original.source(), original.target(), TaskResult.FAILED, "Original required items were skipped or failed"));
+        TaskResult overall = results.stream().anyMatch(r -> r.outcome() == TaskResult.UNKNOWN) ? TaskResult.UNKNOWN : results.stream().anyMatch(r -> r.outcome() == TaskResult.FAILED) ? TaskResult.FAILED : TaskResult.SUCCEEDED;
         return new FileReport(original.id(), overall, results);
     }
 
@@ -101,14 +111,14 @@ final class FileOperationRecovery {
             if (updated.isPresent()) {
                 FileInfo target = backends.withBackend(item.target(), task, backend -> new FileEngine(backend).inspect(item.target(), false, cancel));
                 if (!target.identity().equals(targets.get(item.target())))
-                    return result(item.link(), Optional.of(item.target()), Outcome.UNKNOWN, "Mapped target changed while checking metadata");
+                    return result(item.link(), Optional.of(item.target()), TaskResult.UNKNOWN, "Mapped target changed while checking metadata");
                 repository.saveLink(task.id(), updated.orElseThrow(), Optional.of(target));
-                return result(item.link(), Optional.of(item.target()), Outcome.SUCCEEDED, "Original mapped link effect confirmed; registration repaired without file modification");
+                return result(item.link(), Optional.of(item.target()), TaskResult.SUCCEEDED, "Original mapped link effect confirmed; registration repaired without file modification");
             }
         } catch (IOException inaccessible) {
-            return result(item.link(), Optional.of(item.target()), Outcome.UNKNOWN, "Original link or target cannot be observed");
+            return result(item.link(), Optional.of(item.target()), TaskResult.UNKNOWN, "Original link or target cannot be observed");
         }
-        return result(item.link(), Optional.of(item.target()), Outcome.UNKNOWN, "Original link maintenance remains unfinished or externally changed");
+        return result(item.link(), Optional.of(item.target()), TaskResult.UNKNOWN, "Original link maintenance remains unfinished or externally changed");
     }
 
     /** Uses object identity evidence rather than outer summary text to verify publications and removals. / 使用对象身份依据而非外层摘要核实发布及移除。
@@ -131,12 +141,12 @@ final class FileOperationRecovery {
                 boolean proved = backends.withBackend(observed, task, b -> b.stat(observed).map(i -> i.identity().equals(evidence.detail())).orElse(false));
                 if (original.type().startsWith("MOVE"))
                     proved = proved && backends.withBackend(source, task, b -> b.stat(source).isEmpty());
-                return result(source, evidence.target(), proved ? Outcome.SUCCEEDED : Outcome.UNKNOWN, proved ? "Original publication and required source absence confirmed" : "Original publication or source cleanup remains unproved");
+                return result(source, evidence.target(), proved ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN, proved ? "Original publication and required source absence confirmed" : "Original publication or source cleanup remains unproved");
             }
         } catch (IOException inaccessible) {
-            return result(source, last.target(), Outcome.UNKNOWN, "Original object effect cannot be observed");
+            return result(source, last.target(), TaskResult.UNKNOWN, "Original object effect cannot be observed");
         }
-        return result(source, last.target(), Outcome.UNKNOWN, "No original object identity was confirmed");
+        return result(source, last.target(), TaskResult.UNKNOWN, "No original object identity was confirmed");
     }
 
     /** Requires a confirmed permanent removal or the still-existing exact recoverable object and metadata. / 要求已确认永久移除或仍存在的精确可恢复对象及元数据。
@@ -148,16 +158,16 @@ final class FileOperationRecovery {
      * @throws ApiException if host admission fails / 主机准入失败时 */
     private FileReport.Item checkDeletion(FilePath source, List<FileOperation.Step> steps, TaskContext task) throws IOException, ApiException {
         boolean absent = backends.withBackend(source, task, b -> b.stat(source).isEmpty());
-        if (!absent) return result(source, Optional.empty(), Outcome.UNKNOWN, "Original object exists again");
+        if (!absent) return result(source, Optional.empty(), TaskResult.UNKNOWN, "Original object exists again");
         if (steps.stream().anyMatch(s -> s.phase().equals("DELETED_ITEM")))
-            return result(source, Optional.empty(), Outcome.SUCCEEDED, "Original permanent removal was confirmed before absence checking");
+            return result(source, Optional.empty(), TaskResult.SUCCEEDED, "Original permanent removal was confirmed before absence checking");
         var receipt = steps.stream().filter(s -> s.phase().equals("RECYCLED_ITEM")).reduce((a, b) -> b);
         if (receipt.isEmpty() || receipt.orElseThrow().target().isEmpty())
-            return result(source, Optional.empty(), Outcome.UNKNOWN, "Original source absence has no recoverable object receipt");
+            return result(source, Optional.empty(), TaskResult.UNKNOWN, "Original source absence has no recoverable object receipt");
         var object = receipt.orElseThrow();
         FilePath recycled = object.target().orElseThrow();
         if (!source.server().equals(recycled.server()))
-            return result(source, Optional.of(recycled), Outcome.UNKNOWN, "Recovery receipt host differs from the original object");
+            return result(source, Optional.of(recycled), TaskResult.UNKNOWN, "Recovery receipt host differs from the original object");
         boolean proved = backends.withBackend(recycled, task, b -> b.stat(recycled).map(info -> info.identity().equals(object.detail())).orElse(false));
         var metadata = steps.stream().filter(s -> s.phase().equals("RECYCLE_METADATA")).reduce((a, b) -> b);
         if (metadata.isEmpty()) proved = false;
@@ -171,7 +181,7 @@ final class FileOperationRecovery {
                 return path.server().equals(recycled.server()) && b.recoveryInformationMatches(source, new FileRecycleReceipt(recycled, object.detail(), Optional.of(path), Optional.of(evidence.detail())));
             });
         }
-        return result(source, Optional.of(recycled), proved ? Outcome.SUCCEEDED : Outcome.UNKNOWN, proved ? "Original recoverable object and restoration evidence confirmed" : "Original recovery object or metadata remains unproved");
+        return result(source, Optional.of(recycled), proved ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN, proved ? "Original recoverable object and restoration evidence confirmed" : "Original recovery object or metadata remains unproved");
     }
 
     /** Reconstructs only structured pre-effect maintenance entries. / 仅重建结构化副作用前维护条目。
@@ -198,7 +208,7 @@ final class FileOperationRecovery {
      * @param outcome proved or unproved state / 已证明或未证明状态
      * @param detail readable proof limitation / 可读证明限制
      * @return immutable per-object result / 不可变逐对象结果 */
-    private static FileReport.Item result(FilePath source, Optional<FilePath> target, Outcome outcome, String detail) {
+    private static FileReport.Item result(FilePath source, Optional<FilePath> target, TaskResult outcome, String detail) {
         return new FileReport.Item(source, target, outcome, detail);
     }
 }

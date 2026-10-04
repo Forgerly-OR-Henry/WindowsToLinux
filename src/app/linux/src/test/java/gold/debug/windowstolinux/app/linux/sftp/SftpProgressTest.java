@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.linux.sftp;
 
-import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
-
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
-import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
-
 import static gold.debug.windowstolinux.app.linux.sftp.SftpTransferTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,8 +8,12 @@ import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.linux.*;
-
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
@@ -64,7 +62,7 @@ class SftpProgressTest {
                 var result = connection.transfer(new TransferRequest(local, "/file", bytes.length), digest(bytes),
                     upload, idle, () -> false, observations::add, conflict -> TransferConflictChoice.SKIP,
                     journal());
-                assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                 assertTrue(System.nanoTime() - start > idle.toNanos() * 3);
                 assertArrayEquals(bytes, Files.readAllBytes(upload ? fixture.remote.resolve("file") : local));
                 assertTrue(observations.stream().anyMatch(p -> p.stage() == TransferProgress.Stage.TRANSFERRING
@@ -115,7 +113,7 @@ class SftpProgressTest {
                     Thread.sleep(1100);
                     return TransferConflictChoice.OVERWRITE;
                 }, journal());
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals("new", Files.readString(fixture.remote.resolve("file")));
         }
     }

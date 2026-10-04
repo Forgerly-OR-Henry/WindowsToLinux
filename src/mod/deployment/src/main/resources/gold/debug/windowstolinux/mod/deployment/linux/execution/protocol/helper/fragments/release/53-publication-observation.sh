@@ -43,8 +43,7 @@ publication_original_status_owned() {
                 current_kind=container
                 current_mode="$application_mode"
             else
-                current_kind=ordinary
-                current_mode=unknown
+                reject unsupported-runtime-format
             fi
         fi
     fi
@@ -80,7 +79,7 @@ publication_original_status_owned() {
             if [ "$old_kind" != container ]; then
                 assert_root_owned_regular "$path/kind"
                 old_kind="$(cat -- "$path/kind")"
-                case "$old_kind" in deployment | ordinary) ;; *) reject publication-snapshot-kind ;; esac
+                [ "$old_kind" = deployment ] || reject publication-snapshot-kind
             fi
         fi
     fi

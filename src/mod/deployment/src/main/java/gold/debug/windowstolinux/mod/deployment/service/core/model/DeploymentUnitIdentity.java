@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 
 /**
  * Immutable identity of an application owned by WindowsToLinux.
@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
  * @param releaseRoot release root / 发布根目录
  * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
  */
-public record DeploymentUnitIdentity(String id, ServerRef server, String systemdUnit, String releaseRoot,
+public record DeploymentUnitIdentity(String id, ServerId server, String systemdUnit, String releaseRoot,
                                      String ownershipManifestSha256) {
     /**
      * Validates and binds the inputs required by managed application.
@@ -54,7 +54,7 @@ public record DeploymentUnitIdentity(String id, ServerRef server, String systemd
      * @param ownershipManifestSha256 digest binding the managed resource to its ownership manifest / 将受管资源绑定到归属清单的摘要
      * @return the operation result / 操作结果
      */
-    public static DeploymentUnitIdentity forManaged(String id, ServerRef server, String ownershipManifestSha256) {
+    public static DeploymentUnitIdentity forManaged(String id, ServerId server, String ownershipManifestSha256) {
         String normalizedId = DeploymentServerIdentity.requireIdentifier(id, "id");
         return new DeploymentUnitIdentity(normalizedId, server, "windowstolinux-" + normalizedId + ".service",
             DeploymentStorageLocation.installationRoot(normalizedId), ownershipManifestSha256);

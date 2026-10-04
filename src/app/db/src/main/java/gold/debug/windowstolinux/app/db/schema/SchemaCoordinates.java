@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.Set;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 
 /** Encodes exact logical identities into bounded H2 schema and owner names. / 将精确逻辑身份编码为有界的 H2 数据结构及所有者名称。 */
 public final class SchemaCoordinates {

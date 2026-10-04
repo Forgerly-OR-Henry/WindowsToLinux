@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.main.start;
 
+import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
+import gold.debug.windowstolinux.app.ui.display.ThemeMode;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
+
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -10,13 +14,13 @@ import java.util.Locale;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.linux.TransferConfiguration;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.service.setting.TransferConfig;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,14 +55,14 @@ class PlatformTransferSettingsWindowTest {
                     return null;
                 });
                 await(() -> ((JLabel) named(frame, "transfer.settings.status")).getText().startsWith("已保存"));
-                assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
+                assertEquals(new TransferConfig(12, 40), runtime.transfers().read());
                 onEdt(() -> {
                     ((JTextField) named(frame, "transfer.settings.connect")).setText("0");
                     ((JButton) named(frame, "transfer.settings.save")).doClick(0);
                     assertTrue(((JLabel) named(frame, "transfer.settings.status")).getText().contains("1～86400"));
                     return null;
                 });
-                assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
+                assertEquals(new TransferConfig(12, 40), runtime.transfers().read());
                 sql(runtime.persistence().database(),
                     "ALTER TABLE desktop_preference ADD CONSTRAINT fixture_transfer_save CHECK(preference_value <> '41')");
                 try {
@@ -76,7 +80,7 @@ class PlatformTransferSettingsWindowTest {
                         capture(frame, "platform-transfer-settings.png");
                         return null;
                     });
-                    assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
+                    assertEquals(new TransferConfig(12, 40), runtime.transfers().read());
                 } finally {
                     sql(runtime.persistence().database(),
                         "ALTER TABLE desktop_preference DROP CONSTRAINT fixture_transfer_save");
@@ -90,8 +94,8 @@ class PlatformTransferSettingsWindowTest {
                     runtime.transfers()::read);
                 runtime.security().unlock(PASSWORD.toCharArray());
                 await(() -> named(frame, "transfer.settings.save").isEnabled());
-                assertEquals(new TransferConfiguration(12, 40), runtime.transfers().read());
-                await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                assertEquals(new TransferConfig(12, 40), runtime.transfers().read());
+                await(() -> !DesktopTaskRunner.hasActiveTasks());
             } finally {
                 onEdt(() -> {
                     frame.dispose();

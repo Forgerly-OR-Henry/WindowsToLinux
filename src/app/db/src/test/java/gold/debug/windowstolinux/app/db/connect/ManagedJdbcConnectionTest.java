@@ -10,6 +10,78 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class ManagedJdbcConnectionTest {
+    static int retainedHandles(Connection connection) throws Exception {
+        Object handler = Proxy.getInvocationHandler(connection);
+        var capture = java.util.Arrays.stream(handler.getClass().getDeclaredFields())
+            .filter(field -> field.getType() == ManagedJdbcConnection.class).findFirst().orElseThrow();
+        capture.setAccessible(true);
+        Object managed = capture.get(handler);
+        var cache = ManagedJdbcConnection.class.getDeclaredField("wrappers");
+        cache.setAccessible(true);
+        return ((java.util.Map<?, ?>) cache.get(managed)).size();
+    }
+
+    @Test
+    void repeatedQueriesReleaseClosedHandlesAndDoNotRetainMetadataOrFreedLobs() throws Exception {
+        try (var connection = ManagedJdbcConnection.wrap(DriverManager.getConnection("jdbc:h2:mem:retention"), () -> {
+        })) {
+            for (int i = 0; i < 10000; i++) {
+                try (var statement = connection.prepareStatement("SELECT CAST(? AS CLOB)")) {
+                    statement.setString(1, "bounded payload");
+                    statement.getParameterMetaData();
+                    try (var result = statement.executeQuery()) {
+                        assertSame(result, statement.getResultSet());
+                        assertTrue(result.next());
+                        result.getMetaData();
+                        var clob = result.getClob(1);
+                        assertEquals("bounded payload", clob.getSubString(1, (int) clob.length()));
+                        clob.free();
+                    }
+                }
+                connection.getMetaData();
+                assertEquals(1, retainedHandles(connection), "Closed resources must not accumulate on a long-lived connection");
+            }
+        }
+    }
+
+    @Test
+    void reexecutionAndStatementClosureForgetImplicitlyClosedResults() throws Exception {
+        try (var connection = ManagedJdbcConnection.wrap(DriverManager.getConnection("jdbc:h2:mem:implicit_close"), () -> {
+        })) {
+            var statement = connection.createStatement();
+            var first = statement.executeQuery("SELECT 1");
+            var second = statement.executeQuery("SELECT 2");
+            assertTrue(first.isClosed());
+            assertSame(second, statement.getResultSet());
+            assertEquals(3, retainedHandles(connection));
+            statement.close();
+            assertTrue(second.isClosed());
+            assertEquals(1, retainedHandles(connection));
+            var retained = connection.createStatement().executeQuery("SELECT 3");
+            connection.close();
+            assertTrue(connection.isClosed());
+            assertEquals(1, retainedHandles(connection));
+            retained.close();
+            assertTrue(retained.isClosed());
+        }
+    }
+
+    @Test
+    void releaseFailureAfterPhysicalCloseRetainsOnlyRootAndAllowsRetry() throws Exception {
+        var attempts = new AtomicInteger();
+        var connection = ManagedJdbcConnection.wrapTracked(DriverManager.getConnection("jdbc:h2:mem:release_retry"), () -> {
+            if (attempts.incrementAndGet() == 1) throw new SQLException("release acknowledgement lost");
+        });
+        connection.createStatement().executeQuery("SELECT 1");
+        assertThrows(SQLException.class, connection::close);
+        assertTrue(connection.isClosed());
+        assertEquals(1, retainedHandles(connection));
+        connection.close();
+        assertEquals(2, attempts.get());
+        connection.close();
+        assertEquals(2, attempts.get());
+    }
+
     @Test
     void standardJdbcStaysUsableWithoutLeakingPhysicalHandles() throws Exception {
         var held = new AtomicInteger(1);

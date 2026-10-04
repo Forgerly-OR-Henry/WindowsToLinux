@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -21,9 +10,29 @@ import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
@@ -43,12 +52,12 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 return true;
             }
 
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -102,9 +111,9 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             var handle = actual.tasks().submit(
                 new TaskRequest("graph_acceptance", "Lifecycle contract", List.of("server"), true), task -> {
                     try {
-                        var app = new DeploymentApplicationRef("application", new ServerRef("server"));
+                        var app = new DeploymentApplicationId("application", new ServerId("server"));
                         var snapshot = new DeploymentApplicationReader(context.db()).find(app, task).snapshot();
-                        var manager = new DeploymentApplicationExecutor(context);
+                        var manager = new DeploymentApplicationRunner(context);
                         var action = scenario == ScenarioType.DEGRADED_STOP
                             || scenario == ScenarioType.CURRENT_DRIFT || scenario == ScenarioType.DISPATCH_DRIFT
                             || scenario == ScenarioType.FINAL_CURRENT_DRIFT
@@ -112,16 +121,16 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                             : DeploymentLifecycleAction.RESTART;
                         var first = manager.lifecycle(app, snapshot.revisionSha256(), action, task);
                         if (scenario == ScenarioType.CURRENT_DRIFT) {
-                            assertEquals(Outcome.FAILED, first.outcome());
+                            assertEquals(TaskResult.FAILED, first.outcome());
                             assertEquals(0, peer.effects.get());
-                            assertTrue(new DeploymentManagementJournal(context).find(task).isEmpty());
+                            assertTrue(new DeploymentManagementActionLog(context).find(task).isEmpty());
                         } else if (scenario == ScenarioType.DEGRADED_STOP) {
-                            assertEquals(Outcome.SUCCEEDED, first.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, first.outcome());
                             assertEquals(2, peer.effects.get());
                         } else {
-                            assertEquals(Outcome.UNKNOWN, first.outcome());
+                            assertEquals(TaskResult.UNKNOWN, first.outcome());
                             assertEquals("UNKNOWN",
-                                new DeploymentManagementJournal(context).find(task).orElseThrow().phase());
+                                new DeploymentManagementActionLog(context).find(task).orElseThrow().phase());
                         }
                         if (scenario == ScenarioType.CURRENT_DRIFT)
                             return new OperationResult<Void>(first.outcome(), Optional.empty(), first.problem());
@@ -131,11 +140,11 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                         var repeated = manager.lifecycle(app, snapshot.revisionSha256(), action, task);
                         assertEquals(before, peer.effects.get(),
                             "Repeated original-task query cannot resend lifecycle");
-                        Outcome expected = scenario == ScenarioType.DISPATCH_DRIFT
+                        TaskResult expected = scenario == ScenarioType.DISPATCH_DRIFT
                             || scenario == ScenarioType.RESTART_ACK_LOST
                             || scenario == ScenarioType.FINAL_CURRENT_DRIFT
-                            ? Outcome.UNKNOWN
-                            : Outcome.SUCCEEDED;
+                            ? TaskResult.UNKNOWN
+                            : TaskResult.SUCCEEDED;
                         assertEquals(expected, repeated.outcome());
                         if (scenario == ScenarioType.DISPATCH_DRIFT)
                             assertEquals(0, peer.effects.get(),
@@ -231,7 +240,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
 
     private ModContext bind(ModContext actual, Peer peer) {
         LinuxService linux = new LinuxService() {
-            public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+            public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 return peer.session(task);
             }
 
@@ -333,7 +342,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
                 running.put(unit, !action.equals("stop"));
                 if (scenario == ScenarioType.RESTART_ACK_LOST && action.equals("start")) {
                     running.replaceAll((key, value) -> true);
-                    return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_START_ACK_LOST",
                             "Start acknowledgement unavailable", Map.of(), Optional.empty())));
                 }
@@ -350,7 +359,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         }
 
         private OperationResult<CommandResult> reply(int exit, String text) {
-            return new OperationResult<>(Outcome.SUCCEEDED,
+            return new OperationResult<>(TaskResult.SUCCEEDED,
                 Optional.of(new CommandResult(Optional.of(exit), text, "", false)), Optional.empty());
         }
     }

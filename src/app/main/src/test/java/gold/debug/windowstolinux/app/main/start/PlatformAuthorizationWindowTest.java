@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.AuthorizationMode;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformAuthorizationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformRemoteCapabilitiesTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
@@ -19,14 +15,16 @@ import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService.Launch;
-import gold.debug.windowstolinux.app.ui.task.WorkflowLaunchButton;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.app.ui.task.WorkflowLaunchButton;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -96,7 +94,7 @@ class PlatformAuthorizationWindowTest {
                 await(() -> !named(frame, "authorization.mode").isEnabled());
                 runtime.security().unlock(PASSWORD.toCharArray());
                 await(() -> named(frame, "authorization.mode").isEnabled());
-                await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                await(() -> !DesktopTaskRunner.hasActiveTasks());
             } finally {
                 onEdt(() -> {
                     frame.dispose();
@@ -120,7 +118,7 @@ class PlatformAuthorizationWindowTest {
                 var continueWork = new CountDownLatch(1);
                 var reads = new AtomicInteger();
                 var selection = new AtomicReference<>(APP);
-                DesktopTaskExecutor.bindSecurity(runtime.security());
+                DesktopTaskRunner.bindSecurity(runtime.security());
                 var button = onEdt(() -> new WorkflowLaunchButton<Void>("一键部署", capabilities.launcher(), () -> {
                     assertTrue(SwingUtilities.isEventDispatchThread());
                     reads.incrementAndGet();
@@ -153,10 +151,10 @@ class PlatformAuthorizationWindowTest {
                         return null;
                     });
                     continueWork.countDown();
-                    assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                     assertEquals(3, remote.commands.get());
                     assertEquals(0, prompts(reviews));
-                    await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                    await(() -> !DesktopTaskRunner.hasActiveTasks());
                     onEdt(() -> {
                         assertFalse(button.isEnabled());
                         button.doClick(0);
@@ -170,7 +168,7 @@ class PlatformAuthorizationWindowTest {
                         frame.dispose();
                         return null;
                     });
-                    DesktopTaskExecutor.unbindSecurity(runtime.security());
+                    DesktopTaskRunner.unbindSecurity(runtime.security());
                 }
             }
         }

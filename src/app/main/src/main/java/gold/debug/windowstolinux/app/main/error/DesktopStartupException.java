@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.main.error;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Structured failure that prevents the desktop from starting safely. / 阻止桌面安全启动的结构化失败。

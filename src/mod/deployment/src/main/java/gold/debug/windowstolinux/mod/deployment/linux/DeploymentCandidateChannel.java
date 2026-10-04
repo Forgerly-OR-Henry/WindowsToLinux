@@ -1,27 +1,30 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPlatformCapabilityParser;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPlatformCapabilityProbe;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts;
-import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
 
 /** Sends fixed pre-upload probes, task-owned candidate creation and one exact archive transfer. / 发送固定上传前探测、任务所属候选创建及一次精确归档传输。 */
 public final class DeploymentCandidateChannel {
@@ -32,7 +35,7 @@ public final class DeploymentCandidateChannel {
     private final InteractionService interaction;
 
     /** Exact saved server. / 精确已保存服务器。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Original admitted task. / 原准入任务。 */
     private final TaskContext task;
@@ -53,7 +56,7 @@ public final class DeploymentCandidateChannel {
      * @param task original task / 原任务
      * @param revision reviewed plan digest / 已审阅计划摘要
      * @param budget shared cumulative build budget / 共用累计构建预算 */
-    public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                       TaskContext task, String revision, DeploymentBuildBudget budget) {
         this(session, interaction, server, task, revision, budget, DeploymentSendGuard.NONE);
     }
@@ -66,7 +69,7 @@ public final class DeploymentCandidateChannel {
      * @param revision reviewed plan digest / 已审阅计划摘要
      * @param budget shared build budget / 共用构建预算
      * @param beforeSend caller-owned check / 调用方持有的核对 */
-    public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentCandidateChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                       TaskContext task, String revision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -84,7 +87,7 @@ public final class DeploymentCandidateChannel {
     public OperationResult<DeploymentLinuxCapabilityFacts> hostFacts() throws ApiException {
         var observed = commands.send("deployment.candidate.host-probe.v1", "deployment-host", server.id(),
             DeploymentPlatformCapabilityProbe.render(), new byte[0], Duration.ofMinutes(2), 65536);
-        if (observed.outcome() != Outcome.SUCCEEDED)
+        if (observed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(observed);
         if (observed.value().isEmpty())
             return failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_HOST_PROBE_MISSING");
@@ -109,7 +112,7 @@ public final class DeploymentCandidateChannel {
             + "stat -f -c '%a %S' -- '/var/lib'\n";
         var observed = commands.send("deployment.candidate.capacity.v1", "deployment-workspace", "/var/lib", script,
             new byte[0], Duration.ofSeconds(20), 1024);
-        if (observed.outcome() != Outcome.SUCCEEDED)
+        if (observed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(observed);
         if (observed.value().isEmpty())
             return failure(ProblemCode.IO_FAILURE, "DEPLOYMENT_CAPACITY_MISSING");
@@ -142,9 +145,9 @@ public final class DeploymentCandidateChannel {
         String helper = quoted(DeploymentManagedHelperBundle.PATH);
         var created = commands.send("deployment.candidate.create.v1", "deployment-candidate", workspace.candidateRoot(),
             helper + " candidate-create-task " + args, new byte[0], Duration.ofMinutes(5), 4096);
-        if (created.outcome() == Outcome.CANCELLED || created.outcome() == Outcome.UNKNOWN)
+        if (created.outcome() == TaskResult.CANCELLED || created.outcome() == TaskResult.UNKNOWN)
             return withoutValue(created);
-        if (created.outcome() == Outcome.FAILED && created.value().isEmpty())
+        if (created.outcome() == TaskResult.FAILED && created.value().isEmpty())
             return withoutValue(created);
         if (!complete(created)
             || !created.value().orElseThrow().stdout().equals("CANDIDATE=" + workspace.candidateRoot() + "\n"))
@@ -175,7 +178,7 @@ public final class DeploymentCandidateChannel {
             .withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
                 Set.of(new ActionTarget(server.id(), "deployment-candidate", remote))));
         var grant = interaction.approve(intent, task);
-        if (grant.outcome() != Outcome.SUCCEEDED)
+        if (grant.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(grant);
         final OperationResult<TransferResult> result;
         beforeSend.verify();
@@ -187,7 +190,7 @@ public final class DeploymentCandidateChannel {
                 throw failure;
             return unknown("DEPLOYMENT_UPLOAD_DISPATCH_UNCONFIRMED");
         }
-        if (result.outcome() != Outcome.SUCCEEDED)
+        if (result.outcome() != TaskResult.SUCCEEDED)
             return result;
         if (result.value().isEmpty())
             return unknown("DEPLOYMENT_UPLOAD_RECEIPT_MISSING");
@@ -243,7 +246,7 @@ public final class DeploymentCandidateChannel {
      * @param observed original command observation / 原命令观测
      * @return whether complete success was observed / 是否观察到完整成功 */
     private static boolean complete(OperationResult<CommandResult> observed) {
-        return observed.outcome() == Outcome.SUCCEEDED && observed.value().isPresent()
+        return observed.outcome() == TaskResult.SUCCEEDED && observed.value().isPresent()
             && observed.value().orElseThrow().exitCode().equals(Optional.of(0))
             && !observed.value().orElseThrow().truncated();
     }
@@ -268,7 +271,7 @@ public final class DeploymentCandidateChannel {
      * @param <T> observed type / 观测类型
      * @return successful result / 成功结果 */
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     /** Reports a known pre-effect failure. / 报告已知副作用前失败。
@@ -277,7 +280,7 @@ public final class DeploymentCandidateChannel {
      * @param <T> expected payload / 预期载荷
      * @return failed result / 失败结果 */
     private static <T> OperationResult<T> failure(ProblemCode code, String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(problem(code, event)));
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(problem(code, event)));
     }
 
     /** Keeps an effect unconfirmed without replay. / 不重放地保留未知副作用。
@@ -285,7 +288,7 @@ public final class DeploymentCandidateChannel {
      * @param <T> expected payload / 预期载荷
      * @return unknown result / 未知结果 */
     private static <T> OperationResult<T> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
             Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 

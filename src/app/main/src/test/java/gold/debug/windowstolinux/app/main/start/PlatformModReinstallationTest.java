@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformModDeletionTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModInstallationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.text;
@@ -18,8 +16,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.jna.platform.win32.*;
 import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
 import gold.debug.windowstolinux.app.service.mod.*;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModReinstallation;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
-
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -54,7 +54,7 @@ class PlatformModReinstallationTest {
     }
 
     void install(PlatformRuntime runtime, PlatformModInstallation installer, Path original) throws Exception {
-        assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
         acknowledged(runtime);
     }
 
@@ -78,7 +78,7 @@ class PlatformModReinstallationTest {
         var second = fixture.original("second.wtlmod", "2.0.0", "other release");
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             install(runtime, installer, original);
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(second)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(second)).outcome());
             String choice = choice(runtime), oldId = WindowsFileIdentity.read(target());
             Path data = Files.createDirectories(root.resolve("data/mod/" + OWNER)).resolve("retained.txt");
             Files.writeString(data, "data stays");
@@ -88,8 +88,8 @@ class PlatformModReinstallationTest {
             assertTrue(review.oldFiles().contains(target().resolve("main/fixture.jar")));
             assertFalse(Files.exists(stage(review.id())));
             var result = service.reinstall(review);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
-            ModPackageReader.verifyDirectory(review.inspection(), target());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
+            ModPackageReader.verifyDirectory(ModPackageReader.read(review.packageInfo().archive()), target());
             assertNotEquals(oldId, WindowsFileIdentity.read(target()));
             assertEquals(choice, choice(runtime));
             assertEquals("data stays", Files.readString(data));
@@ -114,7 +114,7 @@ class PlatformModReinstallationTest {
             var review = review(installer, original);
             id = review.id();
             trap(runtime, "phase<>'" + rejected + "'");
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             request = text(runtime, "SELECT request_json FROM mod_operation WHERE operation_type='REINSTALL'");
             assertTrue(Files.exists(stage(id)));
             assertThrows(SQLException.class, () -> installer.reviewDelete(original));
@@ -126,7 +126,7 @@ class PlatformModReinstallationTest {
             assertEquals(request,
                 text(runtime, "SELECT request_json FROM mod_operation WHERE operation_type='REINSTALL'"));
             var result = installer.reinstallation().reconcile(id);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             ModPackageReader.verifyDirectory(ModPackageReader.read(root.resolve("retained-original.wtlmod")), target());
             assertFalse(Files.exists(stage(id)));
             assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
@@ -165,8 +165,8 @@ class PlatformModReinstallationTest {
             Files.move(target(), root.resolve("separately-retained-program"));
             var review = review(installer, original);
             assertTrue(review.oldFiles().isEmpty());
-            assertEquals(Outcome.SUCCEEDED, installer.reinstallation().reinstall(review).outcome());
-            ModPackageReader.verifyDirectory(review.inspection(), target());
+            assertEquals(TaskResult.SUCCEEDED, installer.reinstallation().reinstall(review).outcome());
+            ModPackageReader.verifyDirectory(ModPackageReader.read(review.packageInfo().archive()), target());
             assertTrue(Files.exists(root.resolve("separately-retained-program/main/fixture.jar")));
         }
     }
@@ -183,13 +183,13 @@ class PlatformModReinstallationTest {
                 null);
             assertNotEquals(WinBase.INVALID_HANDLE_VALUE, handle);
             try {
-                assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+                assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
                 assertTrue(Files.exists(stage(review.id()).resolve("program"))
                     || Files.exists(stage(review.id()).resolve("old")));
             } finally {
                 assertTrue(Kernel32.INSTANCE.CloseHandle(handle));
             }
-            assertEquals(Outcome.SUCCEEDED, installer.reinstallation().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reinstallation().reconcile(review.id()).outcome());
             assertNotEquals(oldId, WindowsFileIdentity.read(target()));
         }
     }
@@ -206,22 +206,22 @@ class PlatformModReinstallationTest {
             trap(runtime, "phase<>'REGISTERED'");
             var review = review(installer, original);
             id = review.id();
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             untrap(runtime);
             state(runtime, id, "UNKNOWN/FILES_PUBLISHED");
             Files.writeString(target().resolve("main/fixture.jar"), "invalid new bytes");
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reconcile(id).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reconcile(id).outcome());
             var restore = installer.reinstallation().reviewRestore(id);
             assertTrue(restore.discardedFiles().contains(target().resolve("main/fixture.jar")));
             trap(runtime, "phase<>'RESTORED'");
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().restore(restore).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().restore(restore).outcome());
             assertEquals(oldId, WindowsFileIdentity.read(target()));
             state(runtime, id, "UNKNOWN/RESTORING");
             untrap(runtime);
         }
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             var result = installer.reinstallation().reconcile(id);
-            assertEquals(Outcome.FAILED, result.outcome(), result.toString());
+            assertEquals(TaskResult.FAILED, result.outcome(), result.toString());
             assertTrue(result.value().orElseThrow().restored());
             assertEquals(oldId, WindowsFileIdentity.read(target()));
             assertFalse(Files.exists(stage(id)));
@@ -242,7 +242,7 @@ class PlatformModReinstallationTest {
             String oldId = WindowsFileIdentity.read(target());
             trap(runtime, "phase<>'STAGED'");
             var review = review(installer, original);
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             untrap(runtime);
             state(runtime, review.id(), "UNKNOWN/VALIDATED");
             Files.delete(stage(review.id()).resolve("program/LICENSE"));
@@ -250,7 +250,7 @@ class PlatformModReinstallationTest {
             Files.writeString(stage(review.id()).resolve("program/README.md"), "changed new bytes");
             assertThrows(IOException.class, () -> installer.reinstallation().restore(restore));
             var fresh = installer.reinstallation().reviewRestore(review.id());
-            assertEquals(Outcome.FAILED, installer.reinstallation().restore(fresh).outcome());
+            assertEquals(TaskResult.FAILED, installer.reinstallation().restore(fresh).outcome());
             assertEquals(oldId, WindowsFileIdentity.read(target()));
             assertFalse(Files.exists(stage(review.id())));
         }
@@ -263,11 +263,11 @@ class PlatformModReinstallationTest {
             install(runtime, installer, original);
             trap(runtime, "phase<>'OLD_SAVED'");
             var review = review(installer, original);
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             untrap(runtime);
             Path stage = stage(review.id()), program = stage.resolve("program"), old = stage.resolve("old");
             Files.writeString(stage.resolve("foreign.txt"), "keep");
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reconcile(review.id()).outcome());
             assertThrows(IOException.class, () -> installer.reinstallation().reviewRestore(review.id()));
             Files.move(stage.resolve("foreign.txt"), root.resolve("foreign-retained.txt"));
             String oldReadme = Files.readString(old.resolve("README.md"));
@@ -277,7 +277,7 @@ class PlatformModReinstallationTest {
             Files.move(program, stage.resolve("saved-new"));
             copied(stage.resolve("saved-new"), program);
             Files.move(stage.resolve("saved-new"), root.resolve("original-new-directory"));
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reconcile(review.id()).outcome());
             assertTrue(Files.exists(old));
             assertFalse(Files.exists(target()));
             assertTrue(Files.exists(program));
@@ -293,16 +293,16 @@ class PlatformModReinstallationTest {
             var review = review(installer, original);
             sql(runtime,
                 "ALTER TABLE runtime_log ADD CONSTRAINT repair_archive_trap CHECK(event_code<>'MOD_REINSTALLED')");
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             state(runtime, review.id(), "UNKNOWN/CLEANUP");
             assertFalse(Files.exists(stage(review.id())));
             String archive = text(runtime, "SELECT archive_log_id FROM mod_operation WHERE operation_type='REINSTALL'");
             sql(runtime, "ALTER TABLE runtime_log DROP CONSTRAINT repair_archive_trap");
-            assertEquals(Outcome.SUCCEEDED, installer.reinstallation().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reinstallation().reconcile(review.id()).outcome());
             assertEquals(archive,
                 text(runtime, "SELECT log_id FROM runtime_log WHERE operation_id='" + review.id() + "'"));
             Files.writeString(target().resolve("README.md"), "later state");
-            assertEquals(Outcome.SUCCEEDED, installer.reinstallation().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reinstallation().reconcile(review.id()).outcome());
             assertEquals("later state", Files.readString(target().resolve("README.md")));
         }
     }
@@ -314,7 +314,7 @@ class PlatformModReinstallationTest {
             install(runtime, installer, original);
             trap(runtime, "phase<>'STAGED'");
             var review = review(installer, original);
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             untrap(runtime);
             var outside = Files.writeString(root.resolve("outside.txt"), "keep");
             var json = new ObjectMapper();
@@ -343,7 +343,7 @@ class PlatformModReinstallationTest {
             assertFalse(review.keepOriginal());
             installer.keepOriginal(true);
             var result = installer.reinstallation().reinstall(review);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals("DELETED", result.value().orElseThrow().originalCleanup());
             assertFalse(Files.exists(original));
             assertEquals(result, installer.reinstallation().reconcile(review.id()));
@@ -351,7 +351,7 @@ class PlatformModReinstallationTest {
             var externalReview = review(installer, external);
             assertTrue(externalReview.keepOriginal());
             var second = installer.reinstallation().reinstall(externalReview);
-            assertEquals(Outcome.SUCCEEDED, second.outcome());
+            assertEquals(TaskResult.SUCCEEDED, second.outcome());
             assertEquals("RETAINED", second.value().orElseThrow().originalCleanup());
             assertTrue(Files.exists(external));
         }
@@ -366,7 +366,7 @@ class PlatformModReinstallationTest {
             installer.keepOriginal(false);
             trap(runtime, "phase<>'REGISTERED'");
             var review = review(installer, original);
-            assertEquals(Outcome.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reinstallation().reinstall(review).outcome());
             untrap(runtime);
             assertThrows(SQLException.class, () -> installer.reviewDelete(original));
             assertNotNull(installer.reviewDelete(other));
@@ -376,7 +376,7 @@ class PlatformModReinstallationTest {
             assertNotEquals(WinBase.INVALID_HANDLE_VALUE, handle);
             try {
                 var result = installer.reinstallation().reconcile(review.id());
-                assertEquals(Outcome.SUCCEEDED, result.outcome());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome());
                 assertEquals("RETAINED_UNCONFIRMED", result.value().orElseThrow().originalCleanup());
                 assertEquals(result, installer.reinstallation().reconcile(review.id()));
                 assertTrue(Files.exists(original));

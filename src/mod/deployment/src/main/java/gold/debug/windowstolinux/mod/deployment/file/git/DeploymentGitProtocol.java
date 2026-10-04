@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-
 import java.io.*;
 import java.nio.*;
 import java.nio.charset.*;
@@ -14,6 +8,11 @@ import java.util.*;
 import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Author-side version-one Git worker frames matching the public process contract. / 符合公开进程契约的作者侧第一版 Git worker 帧。 */
 final class DeploymentGitProtocol {
@@ -171,8 +170,8 @@ final class DeploymentGitProtocol {
                 throw new IllegalArgumentException();
             var node = object(frame.payload());
             fields(node, Set.of("outcome", "value", "problem"));
-            Outcome outcome = Outcome.valueOf(text(node, "outcome"));
-            if (frame.kind() == KindType.ERROR && outcome != Outcome.FAILED && outcome != Outcome.UNKNOWN)
+            TaskResult outcome = TaskResult.valueOf(text(node, "outcome"));
+            if (frame.kind() == KindType.ERROR && outcome != TaskResult.FAILED && outcome != TaskResult.UNKNOWN)
                 throw new IllegalArgumentException();
             var value = node.get("value");
             if (!value.isObject() && !value.isNull())

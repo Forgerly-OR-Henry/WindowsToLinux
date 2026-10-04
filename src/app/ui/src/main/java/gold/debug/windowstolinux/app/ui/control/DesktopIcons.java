@@ -19,6 +19,16 @@ public final class DesktopIcons {
     private DesktopIcons() {
     }
 
+    /** Loads the bundled, independent project logo. / 加载内置的独立项目标识副本。
+     * @param size logical icon size / 逻辑图标尺寸
+     * @return scaled logo / 缩放后的标识 */
+    public static Icon logo(int size) {
+        var url = Objects.requireNonNull(DesktopIcons.class.getResource("brand/windowstolinux-icon-2k.png"));
+        var source = new javax.swing.ImageIcon(url);
+        int pixels = com.formdev.flatlaf.util.UIScale.scale(size);
+        return new javax.swing.ImageIcon(source.getImage().getScaledInstance(pixels, pixels, java.awt.Image.SCALE_SMOOTH));
+    }
+
     /**
      * Creates an icon whose color follows the owning control. / 图标颜色跟随所属控件。
      *

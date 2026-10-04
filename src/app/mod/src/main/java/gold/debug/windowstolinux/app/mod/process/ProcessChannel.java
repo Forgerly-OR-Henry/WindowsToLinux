@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.mod.process;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ManagedProcess;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-
 import static gold.debug.windowstolinux.app.mod.process.ProcessProtocol.Kind;
 
 import java.io.*;
@@ -15,6 +7,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+
+import gold.debug.windowstolinux.appapi.task.process.ManagedProcess;
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Owns one real child's bounded protocol transport; the host owns admission and durable leases. / 持有一个真实子进程的有界协议传输；宿主负责准入和持久占用。 */
 public final class ProcessChannel implements ManagedProcess {
@@ -47,6 +47,24 @@ public final class ProcessChannel implements ManagedProcess {
 
     /** Physical stream and monitoring workers. / 实际流及监控工作线程。 */
     private final List<Thread> workers = new ArrayList<>();
+
+    /** Bounded notification ownership separate from protocol transport state. / 与协议传输状态分开的有界通知归属。 */
+    private final NotificationState notifications = new NotificationState();
+
+    /** Coalesces host feedback and caps active outward continuations. / 合并宿主反馈并限制活动对外续接。 */
+    private static final class NotificationState {
+        /** Internal feedback phases required before physical release. / 物理释放前必需的内部反馈阶段。 */
+        private final Set<CompletableFuture<Void>> notices = new HashSet<>();
+
+        /** Fixed events already scheduled for this process. / 已为此进程调度的固定事件。 */
+        private final Set<String> feedbackEvents = new HashSet<>();
+
+        /** Active outward continuations. / 活动对外续接。 */
+        private int notifying;
+
+        /** Coalesces slow host feedback and original cancellation. / 合并较慢宿主反馈及原取消。 */
+        private boolean diagnosticActive, waitingActive, cancellationActive, cancellationObserved;
+    }
 
     /** Bounded stderr excerpt, drained independently of log storage. / 有界 stderr 摘要，消费独立于日志存储。 */
     private final ByteArrayOutputStream diagnostic = new ByteArrayOutputStream();
@@ -139,8 +157,8 @@ public final class ProcessChannel implements ManagedProcess {
         } catch (RuntimeException invalid) {
             throw error(ProblemCode.INVALID_INPUT, "PROCESS_TIMEOUT", "Invalid request deadline");
         }
-        if (pending.size() == CAPACITY)
-            throw error(ProblemCode.BUSY, "PROCESS_REQUEST_LIMIT", "Process has 32 unsettled requests");
+        if (pending.size() + notifications.notifying >= CAPACITY)
+            throw error(ProblemCode.BUSY, "PROCESS_REQUEST_LIMIT", "Process has 32 unsettled requests or active result continuations");
         var requestId = UUID.randomUUID();
         ProcessProtocol.Frame frame;
         try {
@@ -195,12 +213,14 @@ public final class ProcessChannel implements ManagedProcess {
                     break;
                 worker.join(Duration.ofNanos(remaining));
             }
+            emitDiagnostic();
+            awaitFeedback(start, limit);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw error(ProblemCode.BUSY, "PROCESS_CLOSE_INTERRUPTED", "Process cleanup remains pending");
         }
         synchronized (this) {
-            if (workers.stream().anyMatch(Thread::isAlive))
+            if (workers.stream().anyMatch(Thread::isAlive) || !notifications.notices.isEmpty())
                 throw error(ProblemCode.BUSY, "PROCESS_PIPES_PENDING", "Original process pipe workers remain active");
             try {
                 child.getOutputStream().close();
@@ -212,6 +232,53 @@ public final class ProcessChannel implements ManagedProcess {
             }
             released = true;
         }
+    }
+
+    /** Waits for internal feedback, excluding author continuations that may themselves call close. / 等待内部反馈，不等待可能自行调用关闭的作者续接。
+     * @param start original monotonic close start / 原关闭单调起点
+     * @param limit total close budget / 关闭总预算
+     * @throws InterruptedException if the caller is interrupted / 调用方被中断时
+     * @throws ApiException if original feedback remains active / 原反馈仍活动时 */
+    private void awaitFeedback(long start, long limit) throws InterruptedException, ApiException {
+        while (true) {
+            List<CompletableFuture<Void>> active;
+            synchronized (this) {
+                active = List.copyOf(notifications.notices);
+            }
+            if (active.isEmpty()) return;
+            for (var notice : active) {
+                long remaining = limit - (System.nanoTime() - start);
+                if (remaining <= 0)
+                    throw error(ProblemCode.BUSY, "PROCESS_FEEDBACK_PENDING", "Original process feedback remains active");
+                try {
+                    notice.get(remaining, TimeUnit.NANOSECONDS);
+                } catch (ExecutionException | TimeoutException pending) {
+                    throw error(ProblemCode.BUSY, "PROCESS_FEEDBACK_PENDING", "Original process feedback remains active");
+                }
+            }
+        }
+    }
+
+    /** Runs feedback and outward publication away from protocol workers and their monitor. / 在协议线程及其监视器之外执行反馈和对外发布。
+     * @param feedback host-only evidence recording / 仅宿主的证据记录
+     * @param publication outward completion after feedback / 反馈后的对外完成 */
+    private synchronized void notifyAsync(Runnable feedback, Runnable publication) {
+        var notice = new CompletableFuture<Void>();
+        notifications.notices.add(notice);
+        Thread.ofVirtual().name("wtl-process-notify-" + id).start(() -> {
+            synchronized (ProcessChannel.this) {
+                // The originating state update must release its monitor first. / 原状态更新须先释放监视器。
+            }
+            try {
+                feedback.run();
+            } finally {
+                synchronized (ProcessChannel.this) {
+                    notifications.notices.remove(notice);
+                    notice.complete(null);
+                }
+                publication.run();
+            }
+        });
     }
 
     /** Offers an already validated complete frame without blocking a producer. / 提供已校验完整帧，不阻塞生产方。
@@ -315,10 +382,8 @@ public final class ProcessChannel implements ManagedProcess {
         completed.put(frame.request(), frame);
         if (completed.size() > CAPACITY)
             completed.remove(completed.keySet().iterator().next());
-        if (result.outcome() == Outcome.UNKNOWN)
-            notifyFailure(problem(ProblemCode.UNKNOWN, "PROCESS_RESULT_UNKNOWN", "Child reported an unknown outcome"),
-                true);
-        entry.result.complete(result);
+        publish(entry, result, result.outcome() == TaskResult.UNKNOWN
+            ? problem(ProblemCode.UNKNOWN, "PROCESS_RESULT_UNKNOWN", "Child reported an unknown outcome") : null);
     }
 
     /** Consumes stderr continuously while retaining only a bounded aggregate. / 持续消费 stderr，仅保留有界聚合。 */
@@ -344,10 +409,11 @@ public final class ProcessChannel implements ManagedProcess {
     private void waitLoop() {
         try {
             int code = child.waitFor();
-            exit.complete(code);
-            if (code != 0)
-                notifyFailure(problem(ProblemCode.IO_FAILURE, "PROCESS_EXIT_NONZERO",
-                    "Auxiliary process exited with code " + code), false);
+            notifyAsync(() -> {
+                if (code != 0)
+                    failureNow(problem(ProblemCode.IO_FAILURE, "PROCESS_EXIT_NONZERO",
+                        "Auxiliary process exited with code " + code), false);
+            }, () -> exit.complete(code));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             feedback("PROCESS_EXIT_OBSERVATION", false);
@@ -360,7 +426,8 @@ public final class ProcessChannel implements ManagedProcess {
         try {
             while (child.isAlive() || !writerDone || !stdoutDone || !stderrDone) {
                 synchronized (this) {
-                    if (observer.cancellationRequested()) {
+                    observeCancellation();
+                    if (notifications.cancellationObserved) {
                         try {
                             requestCancel();
                         } catch (ApiException full) {
@@ -378,10 +445,21 @@ public final class ProcessChannel implements ManagedProcess {
                         }
                     if (stopping && System.nanoTime() - stopReported >= Duration.ofSeconds(30).toNanos()) {
                         stopReported = System.nanoTime();
-                        try {
-                            observer.waiting(stopped);
-                        } catch (RuntimeException failure) {
-                            feedback("PROCESS_FEEDBACK_FAILED", false);
+                        if (!notifications.waitingActive) {
+                            notifications.waitingActive = true;
+                            boolean acknowledged = stopped;
+                            notifyAsync(() -> {
+                                try {
+                                    observer.waiting(acknowledged);
+                                } catch (RuntimeException failure) {
+                                    feedback("PROCESS_FEEDBACK_FAILED", false);
+                                } finally {
+                                    synchronized (ProcessChannel.this) {
+                                        notifications.waitingActive = false;
+                                    }
+                                }
+                            }, () -> {
+                            });
                         }
                     }
                 }
@@ -401,22 +479,52 @@ public final class ProcessChannel implements ManagedProcess {
     }
 
     /** Publishes at most one bounded stderr aggregate per observation interval. / 每个观察间隔最多发布一个有界 stderr 聚合。 */
-    private void emitDiagnostic() {
+    private synchronized void emitDiagnostic() {
         String text;
         boolean truncated;
         synchronized (diagnostic) {
-            if (diagnostic.size() == 0)
+            if (notifications.diagnosticActive || diagnostic.size() == 0)
                 return;
+            notifications.diagnosticActive = true;
             text = diagnostic.toString(StandardCharsets.UTF_8);
             truncated = diagnosticTruncated;
             diagnostic.reset();
             diagnosticTruncated = false;
         }
-        try {
-            observer.diagnostic(text, truncated);
-        } catch (RuntimeException failure) {
-            feedback("PROCESS_DIAGNOSTIC_FAILED", false);
-        }
+        notifyAsync(() -> {
+            try {
+                observer.diagnostic(text, truncated);
+            } catch (RuntimeException failure) {
+                feedback("PROCESS_DIAGNOSTIC_FAILED", false);
+            } finally {
+                synchronized (ProcessChannel.this) {
+                    notifications.diagnosticActive = false;
+                    if (stderrDone) emitDiagnostic();
+                }
+            }
+        }, () -> {
+        });
+    }
+
+    /** Keeps a slow host cancellation lookup from delaying request deadlines. / 避免较慢的宿主取消查询延迟请求期限。 */
+    private void observeCancellation() {
+        if (notifications.cancellationActive || notifications.cancellationObserved) return;
+        notifications.cancellationActive = true;
+        notifyAsync(() -> {
+            try {
+                boolean requested = observer.cancellationRequested();
+                synchronized (ProcessChannel.this) {
+                    notifications.cancellationObserved |= requested;
+                }
+            } catch (RuntimeException failure) {
+                feedback("PROCESS_FEEDBACK_FAILED", false);
+            } finally {
+                synchronized (ProcessChannel.this) {
+                    notifications.cancellationActive = false;
+                }
+            }
+        }, () -> {
+        });
     }
 
     /** Sends a single cancellation for the exact original request. / 对精确原请求发送单次取消。
@@ -433,11 +541,29 @@ public final class ProcessChannel implements ManagedProcess {
      * @param entry original unresolved request / 原未核实请求
      * @param event stable event code / 稳定事件码 */
     private void unknown(Pending entry, String event) {
-        if (entry.result.isDone())
-            return;
         var problem = problem(ProblemCode.UNKNOWN, event, "The original process request requires reconciliation");
-        notifyFailure(problem, true);
-        entry.result.complete(new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(problem)));
+        publish(entry, new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(problem)), problem);
+    }
+
+    /** Reserves one immutable caller observation before scheduling any continuation. / 调度任何续接前预留单次不可变调用方观察。
+     * @param entry original request / 原请求
+     * @param result first outward observation / 首次对外观察
+     * @param uncertainty host evidence that must precede an unknown result, or null / 须先于未知结果记录的宿主证据，或空 */
+    private void publish(Pending entry, OperationResult<ProcessMessage> result, Problem uncertainty) {
+        if (entry.observed) return;
+        entry.observed = true;
+        notifications.notifying++;
+        notifyAsync(() -> {
+            if (uncertainty != null) failureNow(uncertainty, true);
+        }, () -> {
+            try {
+                entry.result.complete(result);
+            } finally {
+                synchronized (ProcessChannel.this) {
+                    notifications.notifying--;
+                }
+            }
+        });
     }
 
     /** Seals a failed channel while retaining trusted completed outcomes and actual pipes. / 封闭失败通道，保留已可信完成的结果及实际管道。
@@ -465,7 +591,16 @@ public final class ProcessChannel implements ManagedProcess {
     /** Preserves transport progress even if the host feedback callback fails. / 即使宿主反馈回调失败，仍保留传输进展。
      * @param problem safe evidence / 安全证据
      * @param uncertain whether original business remains unknown / 原业务是否仍未知 */
-    private void notifyFailure(Problem problem, boolean uncertain) {
+    private synchronized void notifyFailure(Problem problem, boolean uncertain) {
+        if (!released && notifications.feedbackEvents.add(problem.eventCode() + ":" + uncertain))
+            notifyAsync(() -> failureNow(problem, uncertain), () -> {
+            });
+    }
+
+    /** Records fixed host evidence on a notification worker without holding the protocol monitor. / 在通知线程上无协议监视器地记录固定宿主证据。
+     * @param problem safe evidence / 安全证据
+     * @param uncertain whether original business remains unknown / 原业务是否仍未知 */
+    private void failureNow(Problem problem, boolean uncertain) {
         try {
             observer.failure(problem, uncertain);
         } catch (RuntimeException ignored) {
@@ -476,6 +611,9 @@ public final class ProcessChannel implements ManagedProcess {
 
     /** Original request and immutable outward observation. / 原请求及不可变对外观察。 */
     private static final class Pending {
+        /** Whether the first outward observation has already been reserved. / 是否已预留首次对外观察。 */
+        private boolean observed;
+
         /** Original frame used only once. / 仅使用一次的原帧。 */
         private final ProcessProtocol.Frame frame;
 

@@ -9,7 +9,7 @@
 
 ## 1. APP 模式发布目录布局
 
-本文描述发布后的程序布局，与 [源码目录](File.md#phase-1-1-tree)、`.wtlmod` 的包内目录分别维护。
+本文描述发布后的程序布局，与 [源码目录](File.md#current-source-tree)、`.wtlmod` 的包内目录分别维护。
 
 ```text
 WindowsToLinux/                            # 安装根目录
@@ -17,7 +17,8 @@ WindowsToLinux/                            # 安装根目录
 ├─ app/                                   # 平台自身的程序及启动配置
 │  ├─ WindowsToLinux.cfg                   # 启动类、classpath 和 JVM 参数等配置
 │  ├─ main.jar                            # 软件主程序；文件名为示意
-│  └─ appapi.jar                         # APP 公开 API；文件名为示意
+│  ├─ appapi.jar                          # APP 公开 API；文件名为示意
+│  └─ config.jar                          # 内含 YAML 启动配置资源；文件名为示意
 ├─ lib/                                   # 仅存放平台主体使用的第三方依赖
 │  ├─ dependency-a.jar                    # 主体依赖示例
 │  └─ dependency-b.jar                    # 主体依赖示例
@@ -49,6 +50,7 @@ JAR 模式以**主程序 JAR 所在目录**为程序根目录，平台 `lib/`、
 WindowsToLinux/                            # 主程序 JAR 所在目录
 ├─ main.jar                               # 主程序 JAR；文件名为示意
 ├─ appapi.jar                            # APP 公开 API；文件名为示意
+├─ config.jar                            # 内含 YAML 启动配置资源；文件名为示意
 ├─ lib/                                   # 平台主体第三方依赖
 │  ├─ dependency-a.jar                    # 主体依赖示例
 │  └─ dependency-b.jar                    # 主体依赖示例
@@ -57,7 +59,7 @@ WindowsToLinux/                            # 主程序 JAR 所在目录
 └─ mod/                                   # 解压安装或随发行物预装的 Mod
 ```
 
-主体自身模块的 JAR 数量与名称仍由构建结果确定；不能把所有 JAR 都作为 Mod 扫描。JAR 模式与 APP 模式共用 Mod 安装和加载规则，程序与 Mod 安装根分别锚定主程序 JAR 与 EXE。JAR 模式的运行 `data/` 则独立锚定数据库模块 JAR（如 `db.jar`）的所在目录；程序根和数据根不必相同，均不以启动命令的当前工作目录为基准。
+主体自身模块的 JAR 数量与名称仍由构建结果确定；不能把所有 JAR 都作为 Mod 扫描。JAR 模式与 APP 模式共用 Mod 安装和加载规则，固定执行 Mod 发现与加载流程，并沿用各 Mod 已保存的启用及版本选择。程序、Mod 安装根及相对数据路径的基准分别锚定最外层主程序 JAR 与 EXE 所在目录；均不以启动命令的当前工作目录为基准。
 
 开发用 JAR 发行物采用 `java -jar` 启动，由构建生成主 JAR 的入口和所需依赖的相对 `Class-Path`；仅在旁边放一个 `lib/` 目录不会自动加载其中所有 JAR。Mod 仍经插件加载器加载，不加入主体依赖清单。[JAR Class-Path 规范](https://docs.oracle.com/en/java/javase/21/docs/specs/jar/jar.html#class-path-attribute)
 
@@ -67,12 +69,15 @@ WindowsToLinux/                            # 主程序 JAR 所在目录
 
 ## 4. APP 模式启动配置要求
 
+启动 YAML 随 Config 模块资源打入 Config JAR，无需在 EXE 或主入口 JAR 旁额外携带配置文件。main 首先读取模块的 classpath 资源，资源缺失或非法即停止；所有有效字段只维护于 [Config.md](Config.md)。Config JAR、Jackson YAML 及其传递依赖必须进入平台 classpath，不混入 Mod 私有加载器。修改配置后重新构建、打包并重启；升级前将定制配置合并到资源 YAML。
+
 启动 classpath 明确包含根目录 `lib/` 中的平台依赖；仅存在这个目录不会使启动器自动发现依赖。以 JDK 21 的普通 classpath 启动方式为例，`app/WindowsToLinux.cfg` 中的相关配置可以表达为：
 
 ```ini
 [Application]
 app.classpath=$APPDIR\main.jar
 app.classpath=$APPDIR\appapi.jar
+app.classpath=$APPDIR\config.jar
 app.classpath=$ROOTDIR\lib\dependency-a.jar
 app.classpath=$ROOTDIR\lib\dependency-b.jar
 app.mainclass=example.Main
@@ -92,13 +97,17 @@ app.mainclass=example.Main
 
 ## 6. 整个 APP 的更新与卸载边界（已认可、待实施）
 
-首版手动更新，不开发后台自动更新。更新只替换程序文件，保留 `mod/`、`mod-zip/` 和运行 `data/`；实际数据路径仍按 [Runtime.md](Runtime.md#desktop-data)定位，不能把 JAR 模式的数据库模块目录误当作可整体清除的程序目录。平台数据库升级与程序文件替换分别管理，升级状态由[平台表](Mod.md#platform-database-tables)登记。
+首版手动更新，不开发后台自动更新。更新只替换程序文件，保留 `mod/`、`mod-zip/` 和运行 `data/`；配置资源随 Config JAR 更新，定制配置需在更新构建前合并。实际数据路径仍按 [Runtime.md](Runtime.md#desktop-data)定位，不能把包含实际数据的目录当作可整体清除的程序目录。平台数据库升级与程序文件替换分别管理，升级状态由[平台表](Mod.md#platform-database-tables)登记。
 
 未来卸载器默认保留这些用户内容，提供明确的“同时清除本地内容”选项并展示范围；用户导出的独立备份不自动删除。上述边界不代表已经实现更新/卸载执行器或数据库升级程序。
 
 <a id="website-service"></a>
 
 ## 7. 官网与 Mod 商店服务范围
+
+当前 APP 已提供搜索、列表、详情、确认下载并安装、进度和重试界面，以及服务和验证适配接口。默认实现明确不可用，不发起 HTTP，也不实现签名算法；填写 URL 不代表线上接通。成功搜索、下载与安装仅通过测试适配器验收。配置与当前边界见 [Config.md](Config.md)。
+
+[1.3 期商店连同下载](development/PHASE-1.3.md#dependency-download)已明确纳入客户端依赖获取及必要查询/下载通道接线，尚未实施；客户端协议与完整本地验收由该期维护，正式商店真实服务验证独立安排。下述官网投稿、审核及公开发布体系继续后置，不因客户端功能纳入 1.3 就视为整套服务已经交付。
 
 - 官网提供软件介绍、教程、熟悉流程的教学演示和公开下载。演示使用示例数据，操作按钮不实际部署、备份或连接用户 Linux。
 - 下载者无需账号、邮箱或其他个人资料，下载后即可使用；不围绕下载建立用户画像、广告或营销联系。
@@ -115,14 +124,14 @@ app.mainclass=example.Main
 
 ### 8.1 构建身份与依赖
 
-本节描述尚待交付的发行装配，不能作为当前安装包或 SDK 已发布的证据。当前活动根 POM 的工程版本为 `0.1.0-SNAPSHOT`，平台 API 开发契约为 `1.0.0-dev.1`；工程阶段编号不自动修改版本，备份 Mod 仍属后续范围。
+本节描述尚待交付的发行装配，不能作为当前安装包或 SDK 已发布的证据。当前活动根 POM 的工程版本为 `0.1.0-SNAPSHOT`，平台 API 开发契约为 `1.0.0-dev.2`（P0 普通页面收敛为唯一根工作区）；工程阶段编号不自动修改版本，备份 Mod 仍属后续范围。
 
 发行规格沿用 `gold.debug.windowstolinux` groupId，原规划工程开发版本为 `1.1.0-SNAPSHOT`，不是当前 POM 或公开版本承诺。平台 API 契约独立于 Maven 工程版本；规划中的两个官方 Mod 清单版本为 `1.1.0-dev.1`、schemaVersion 为 `1`，platformApiRange 为 `[1.0.0-dev.1,1.0.0)`，备份依赖部署的范围为 `[1.1.0-dev.1,1.1.0)`。正式发行前需核对实际声明和测试，不能由字符串相似推断兼容。
 
 | 构建项         | artifactId / 最终文件                                                                          | 装配关系                                                                                |
 | -------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | API            | `windowstolinux-appapi` / `appapi.jar`                                                         | 单独的公开契约叶子模块，仅依赖所需 JDK 模块。                                           |
-| APP 各叶子模块 | `windowstolinux-app-<模块名>` / `<模块名>.jar`                                                 | ai、db、file、linux、main、mod、secret、service、ui、windows；依赖方向由 File 维护。    |
+| APP 各叶子模块 | `windowstolinux-app-<模块名>` / `<模块名>.jar`                                                 | config、ai、db、file、linux、main、mod、secret、service、ui、windows；依赖方向由 File 维护。    |
 | 官方 Mod       | `windowstolinux-mod-deployment` / `deployment.jar`；`windowstolinux-mod-backup` / `backup.jar` | 各自独立主 JAR；平台 API 为 provided，备份对部署的编译依赖为 provided，只引用导出 API。 |
 | 聚合模块       | 根、app、mod 的 POM                                                                            | 不生成运行 JAR，不把后置 Web 加入新活动根构建。                                         |
 
@@ -130,22 +139,22 @@ app.mainclass=example.Main
 
 构建生成固定顺序的主体 classpath 清单、依赖坐标与 SHA-256 清单，不手工改启动配置。JAR 的 Manifest 指定 Main-Class 和相对 Class-Path，路径按 JAR 规范 URL 编码；APP 生成配置逐项引用 `$APPDIR` 自有 JAR 和 `$ROOTDIR/lib` 依赖。运行时 API 与主体依赖只各加载一份，官方 Mod 不进入主体 classpath。两个官方包预先经过校验并展开到 `mod/<id>/<version>`，初始开关仍为关闭；发行包不带运行数据库或替用户建立配置。
 
-前面的 `appapi.jar`、`dependency-a.jar` 图示只说明目录关系，实际文件以本节 `appapi.jar` 和构建依赖清单为准。JAR 的 data 始终以 db.jar 所在目录为锚点，APP 的 data 按 EXE 目录；所有路径在不同工作目录及含空格目录启动时复验。
+前面的 `appapi.jar`、`dependency-a.jar` 图示只说明目录关系，实际文件以本节 `appapi.jar` 和构建依赖清单为准。YAML 中的相对数据目录在 JAR 模式以最外层主入口 JAR 所在目录为基准，APP 模式以 EXE 所在目录为基准；也允许明确配置绝对路径，详见 [Config.md](Config.md)。切换路径不会自动迁移已有数据。
 
 ### 8.2 作者构建和校验工具
 
 当前源码已提供 `.mvn/wtlmod-author-parent/pom.xml` 的 CLASS 构建接线，版本暂随现有工程为 `0.1.0-SNAPSHOT`。Mod 主模块通过相对路径继承该独立 POM，并显式声明平台 API 的 provided 依赖；配套模块保持普通 Maven 配置。`initialize` 的 `development-inputs` 目标使用 Maven 原会话捕获解析结果并撤销旧描述，`process-classes` 的 exec 子进程调用 `ModPackageTool describe`。真实 reactor 已验证可直接使用 app/mod 的编译输出，不要求预先打包或安装工具 JAR；工具不进入业务 Mod 运行依赖。当前仅 describe 已实现，下面 pack/verify、SDK 分发与 package 绑定仍是 S7 目标。
 
-`wtl.workspace` 构建默认采用 Maven 明确的多模块根，也可用同名属性指定；运行 APP 时仍必须明确提供该 VM 参数。CLASS 的父 POM、主/从模块 POM、Maven 配置和资源过滤文件均须位于该工作区，额外维护的构建配置可用 `wtl.buildInputs` 逗号列表声明。`wtl.authorArtifacts` 使用完整 `groupId:artifactId:jar:version` 坐标；CLASS 配套必须是同 groupId、当前 reactor 中无独立 mod.json 的普通模块，不接受 classifier 猜测输出。provided/test 依赖不进入私有库，API 非 provided、H2/宿主运行依赖、其他 Mod 运行依赖及未声明配套均失败。需执行 `process-classes`；仅 compile 或编译失败时不会留下可用的旧开发描述。
+`wtl.workspace` 构建默认采用 Maven 明确的多模块根，也可用同名属性指定；CLASS 开启 Mod 自动加载时必须明确提供该 VM 参数；关闭时不读取它。CLASS 的父 POM、主/从模块 POM、Maven 配置和资源过滤文件均须位于该工作区，额外维护的构建配置可用 `wtl.buildInputs` 逗号列表声明。`wtl.authorArtifacts` 使用完整 `groupId:artifactId:jar:version` 坐标；CLASS 配套必须是同 groupId、当前 reactor 中无独立 mod.json 的普通模块，不接受 classifier 猜测输出。provided/test 依赖不进入私有库，API 非 provided、H2/宿主运行依赖、其他 Mod 运行依赖及未声明配套均失败。需执行 `process-classes`；仅 compile 或编译失败时不会留下可用的旧开发描述。
 
 作者使用独立 `wtlmod-author-parent` POM（同 groupId、同工程开发版本），包含 JDK 21 编译、资源处理、开发描述生成和 package 绑定；该 POM 不继承整个 APP reactor、不作为业务 Mod 运行依赖。作者通过 Maven provided 依赖平台 API，自行声明第三方依赖；同作者配套 JAR 在构建属性 `wtl.authorArtifacts` 中以完整 Maven 坐标列举，其余有效 runtime 依赖进入 lib。平台 API、H2、宿主依赖和 provided 的其他 Mod 不打入包，冲突在构建时失败。
 
-工具主类固定为 `gold.debug.windowstolinux.app.mod.install.ModPackageTool`，使用 app/mod 现有安装校验职责，不新增 Maven 业务模块。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
+工具主类固定为 `gold.debug.windowstolinux.app.mod.dev.ModPackageTool`，归 app/mod 的开发描述生成职责，不新增 Maven 业务模块。当前只实现 describe，安装包读取和校验继续复用原安装能力；迁包不代表 pack/verify 或 ModDev 工程划分已经实施。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
 
 ```text
-java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool describe --input <构建生成的输入JSON>
-java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool pack --input <构建生成的输入JSON> --output <目标.wtlmod>
-java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool verify --package <目标.wtlmod>
+java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.dev.ModPackageTool describe --input <构建生成的输入JSON>
+java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.dev.ModPackageTool pack --input <构建生成的输入JSON> --output <目标.wtlmod>
+java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.dev.ModPackageTool verify --package <目标.wtlmod>
 ```
 
 输入 JSON 固定字段 `formatVersion`（1）、`workspace`、`buildInputs`、`manifest`、`mainJar`、`authorJars`、`libraries`、`readme`、`license`、`changelog`（可选）、`mainOutput`、`authorOutputs`；文件路径均为绝对路径，数组可以为空，无未知键和重复键，未使用的 changelog 省略。`workspace` 为明确工作区，`buildInputs` 是 Maven 提供的实际配置文件集合，算法见 [CLASS 开发描述](Mod.md#72-class-开发描述)。mainJar 为待打包主产物；describe 阶段允许 mainJar、authorJars、README/LICENSE 尚不存在，只验证这些字段的路径语法，并必须验证编译输出及处理后的资源。describe 结果的 contentSha256 是生成描述文件本身的 SHA-256，不是发行包内容摘要。作者原始清单的 mainJar 相对包路径保持不变，构建复制主产物到该路径，不要求物理 Maven JAR 同名。
@@ -160,7 +169,7 @@ java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.install.ModPackageTool
 
 打包必须验证：解压即用、没有本机 Maven 缓存依赖、无业务 Mod 时主体可用、官方 Mod 默认未启用、CLASS/JAR/APP 根目录正确、资源和救援浏览器已随包提供。发行物内容白名单为平台 JAR/lib、运行环境、救援运行依赖、官方 Mod、作者工具/示例和说明及许可证；排除 history-src、源码工作区、.git、IDE 状态、运行 data、暂存操作、日志、凭据和缓存。
 
-首版手动更新说明基于两个目录进行：正常退出 APP；在新目录解压新程序；保留并按路径说明迁入原 mod、mod-zip、data，再从新程序启动核对。同一 ID/版本的官方 Mod 不静默覆盖已有用户内容，附带新版也不自动启用或改选。db-access.bin 随 data 一并保留，受同一 Windows 用户和本机 DPAPI 约束；跨电脑或跨 Windows 账户搬迁本地 H2 不在首轮承诺范围，应用业务跨服务器迁移仍由备份 Mod 提供。程序回退须匹配 H2 状态，不把旧 SQLite 程序指向新 H2。公开下载、签名和正式安装器留在后置清单，不阻塞本地包交付。
+首版手动更新说明基于两个目录进行：正常退出 APP；在新目录解压新程序；保留并按路径说明迁入原 mod、mod-zip、data，再从新程序启动核对。同一 ID/版本的官方 Mod 不静默覆盖已有用户内容，附带新版也不自动启用或改选。db-access.bin 随 data 一并保留，受同一 Windows 用户和本机 DPAPI 约束；跨电脑或跨 Windows 账户搬迁本地 H2 不在首轮承诺范围，应用业务跨服务器迁移仍由备份 Mod 提供。程序回退须同时匹配 H2 数据库与 db-access.bin，不分开恢复数据库和访问材料。公开下载、签名和正式安装器留在后置清单，不阻塞本地包交付。
 
 ## 9. 技术依据
 

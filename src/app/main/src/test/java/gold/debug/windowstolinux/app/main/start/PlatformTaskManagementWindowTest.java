@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -23,15 +13,23 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskManagement;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,7 +38,7 @@ class PlatformTaskManagementWindowTest {
     Path root;
 
     static OperationResult<Void> unknown() {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNAVAILABLE,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNAVAILABLE,
             "FIXTURE_UNCONFIRMED", "Original result is unconfirmed", Map.of(), Optional.empty())));
     }
 
@@ -67,7 +65,7 @@ class PlatformTaskManagementWindowTest {
     }
 
     static void idle(PlatformFrame frame) throws Exception {
-        await(() -> named(frame, "tasks.reload").isEnabled() && !DesktopTaskExecutor.hasActiveTasks());
+        await(() -> named(frame, "tasks.reload").isEnabled() && !DesktopTaskRunner.hasActiveTasks());
     }
 
     static void select(PlatformFrame frame) throws Exception {
@@ -114,7 +112,7 @@ class PlatformTaskManagementWindowTest {
             frame.dispose();
             return null;
         });
-        await(() -> !frame.isDisplayable() && !DesktopTaskExecutor.hasActiveTasks());
+        await(() -> !frame.isDisplayable() && !DesktopTaskRunner.hasActiveTasks());
     }
 
     @Test
@@ -164,7 +162,7 @@ class PlatformTaskManagementWindowTest {
                     answer(dialog, JOptionPane.OK_OPTION);
                     idle(frame);
                     assertEquals(1, recovered.get());
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         task.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                     assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
                     assertEquals(1, count(runtime.persistence().database(),
@@ -198,7 +196,7 @@ class PlatformTaskManagementWindowTest {
             var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), context -> {
                 assertTrue(release.await(20, TimeUnit.SECONDS));
                 assertTrue(context.cancelToken().requested());
-                return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             state(task, TaskState.RUNNING);
             var frame = window(runtime, management(runtime));
@@ -216,7 +214,7 @@ class PlatformTaskManagementWindowTest {
                     return null;
                 });
                 release.countDown();
-                assertEquals(Outcome.CANCELLED,
+                assertEquals(TaskResult.CANCELLED,
                     task.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                 click(frame, "tasks.reload");
                 idle(frame);
@@ -309,7 +307,7 @@ class PlatformTaskManagementWindowTest {
                 idle(frame);
                 assertEquals(1, calls.get());
                 var result = task.completion().toCompletableFuture().get(5, TimeUnit.SECONDS);
-                assertEquals(Outcome.SUCCEEDED, result.outcome());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome());
                 assertTrue(result.value().isEmpty());
                 assertEquals(0, count(db, "SELECT COUNT(*) FROM platform_task"));
             } finally {
@@ -325,7 +323,7 @@ class PlatformTaskManagementWindowTest {
         UUID id;
         try (var db = gold.debug.windowstolinux.app.db.connect.PlatformDatabase.open(root,
             PlatformStartupTest.PROTECTION)) {
-            var persistence = new gold.debug.windowstolinux.app.db.PlatformPersistence(db);
+            var persistence = new gold.debug.windowstolinux.app.db.PlatformStorage(db);
             try (var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
                 persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
@@ -423,13 +421,13 @@ class PlatformTaskManagementWindowTest {
                             });
                         else {
                             runtime.security().lock();
-                            await(() -> !frame.getContentPane().isVisible());
+                            await(() -> frame.getGlassPane().isVisible());
                             runtime.security().unlock(PASSWORD.toCharArray());
-                            await(() -> frame.getContentPane().isVisible());
+                            await(() -> !frame.getGlassPane().isVisible());
                         }
                         release.countDown();
                         if (close)
-                            await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                            await(() -> !DesktopTaskRunner.hasActiveTasks());
                         else
                             idle(frame);
                         onEdt(() -> {

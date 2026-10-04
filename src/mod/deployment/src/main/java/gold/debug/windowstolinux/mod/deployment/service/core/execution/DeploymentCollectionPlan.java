@@ -8,9 +8,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader.ApplicationFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -130,7 +130,7 @@ public final class DeploymentCollectionPlan {
      * @param publicBinding original component-qualified binding / 原带组件身份的绑定
      * @return complete supported database plan / 完整受支持数据库计划
      * @throws ApiException if protocol or secret revision differs / 协议或秘密修订不符时 */
-    private static ArtifactPlan database(DeploymentApplicationGraph.Component component,
+    private static ArtifactPlan database(DeploymentApplicationGraph.Part component,
                                          gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseSnapshot.Binding release,
                                          DeploymentBinding publicBinding) throws ApiException {
         var database = component.resources().databaseBindings().orElse(List.of()).stream()

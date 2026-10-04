@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -21,15 +16,20 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -65,7 +65,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
             var actual = runtime.modContexts().get(OWNER).context();
             var connections = new AtomicInteger();
             LinuxService linux = new LinuxService() {
-                public RemoteSession connect(ServerRef server, TaskContext task) {
+                public RemoteSession connect(ServerId server, TaskContext task) {
                     connections.incrementAndGet();
                     throw new AssertionError("No SSH before final approval");
                 }
@@ -84,7 +84,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                         throw failure.getCause();
                     }
                 });
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
+            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
             SwingUtilities.invokeAndWait(() -> {
                 var view = new DeploymentStaticPage(new DeploymentStaticPageService(bound, workflow));
                 var frame = new JFrame("Original ordinary runtime form");
@@ -100,8 +100,8 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
             var confirms = new AtomicInteger();
             var delegate = new DeploymentStaticPageReviewer(page.get(), page.get().viewGeneration());
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
-                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                                                                                  List<DiscoveredProjectComponent> components, TaskContext task) {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+                                                                                  List<DiscoveredProjectPart> components, TaskContext task) {
                     assertEquals(1, components.size());
                     originalTask.set(task);
                     String id = components.getFirst().id();
@@ -110,7 +110,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                         Optional.empty()));
                 }
 
-                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server,
                                                                                              String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertSame(originalTask.get(), task);
                     assertEquals(1, prompts.size());
@@ -127,7 +127,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                     return delegate.review(server, sha, prompts, task);
                 }
 
-                public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
+                public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
                                                         Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                         Map<String, DeploymentPreparedDatabase> databases,
                                                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
@@ -144,7 +144,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                     return delegate.confirm(server, sha, archives, answers, databases, git, task);
                 }
             };
-            var handle = workflow.submit(new ServerRef("server"),
+            var handle = workflow.submit(new ServerId("server"),
                 new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer);
             var first = awaitModal(owner.get(), "Review runtime and bindings");
             var fields = new AtomicReference<Map<String, JComponent>>();
@@ -201,7 +201,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 decide(finalReview, JOptionPane.CANCEL_OPTION);
             });
             var result = handle.completion().toCompletableFuture().get(25, TimeUnit.SECONDS);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(handle.id(), originalTask.get().id());
             assertEquals(0, connections.get());
@@ -231,7 +231,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
     }
 
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     private static JPanel componentForm(JDialog dialog) {

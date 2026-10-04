@@ -9,14 +9,15 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.event.*;
 
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation.*;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation.*;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 
 /** Manages explicitly discovered originals and their original interrupted installations. / 管理明确发现的原包及其原中断安装。 */
 public final class ModOriginalsPane extends JPanel implements AutoCloseable {
@@ -36,7 +37,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     private final DefaultListModel<OriginalView> rows = new DefaultListModel<>();
 
     /** Explicit single original selection. / 明确单个原包选择。 */
-    private final JList<OriginalView> inventory = new JList<>(rows);
+    private final DesktopCardList<OriginalView> inventory = new DesktopCardList<>(rows, 48);
 
     /** Filename, declared name, identity or release search. / 文件名、声明名称、身份或发布搜索。 */
     private final JTextField search = new JTextField();
@@ -80,7 +81,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @param messages localized feedback / 本地化反馈
      * @param installedChanged refreshes registered versions / 刷新登记版本
      * @param showLogs opens actual platform logs / 打开实际平台日志 */
-    public ModOriginalsPane(PlatformModInstallation service, DesktopComponentFactory components,
+    public ModOriginalsPane(PlatformModInstallation service, DesktopPartFactory components,
                             PageMessagePresenter messages, Runnable installedChanged, Runnable showLogs) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
@@ -93,6 +94,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         setBorder(BorderFactory.createEmptyBorder(18, 22, 18, 22));
         prepareSearch();
         prepareInventory();
+        components.cardList(inventory, false);
         refresh = button(components, "refresh", this::refresh);
         install = button(components, "install", this::reviewInstall);
         delete = button(components, "delete", this::reviewDelete);
@@ -145,7 +147,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @param key action key / 动作键
      * @param action explicit user action / 明确用户动作
      * @return named control / 命名控件 */
-    private JButton button(DesktopComponentFactory components, String key, Runnable action) {
+    private JButton button(DesktopPartFactory components, String key, Runnable action) {
         var button = messages.bind(components.secondaryButton(""), "originals." + key);
         button.setName("originals." + key);
         button.addActionListener(event -> {
@@ -155,7 +157,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         return button;
     }
 
-    /** Clears private observations and invalidates confirmations on every lock transition. / 每次锁定变化均清空私有观察并使确认失效。
+    /** Preserves loaded observations and invalidates confirmations on every lock transition. / 每次锁定变化保留已加载观察并使确认失效。
      * @param value current lock state / 当前锁定状态 */
     public void setLocked(boolean value) {
         locked = value;
@@ -163,15 +165,6 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         current = false;
         if (confirmation != null)
             confirmation.dispose();
-        all = List.of();
-        rows.clear();
-        pending.removeAllItems();
-        LocaleBinding.unbind(details);
-        details.setText("");
-        LocaleBinding.unbind(status);
-        status.setText("");
-        search.setText("");
-        keep.setSelected(false);
         controls();
         if (!locked)
             refresh();
@@ -209,7 +202,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         rows.clear();
         for (var value : all) {
             String text = value.file().getFileName()
-                + value.manifest().map(m -> " " + m.name() + " " + m.id() + " " + m.version()).orElse("");
+                + value.packageInfo().map(m -> " " + m.name() + " " + m.id() + " " + m.version()).orElse("");
             if (text.toLowerCase(Locale.ROOT).contains(query))
                 rows.addElement(value);
         }
@@ -226,7 +219,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         else {
             var text = new StringBuilder(value.file().toString()).append("\n\n")
                 .append(messages.text("originals.local"));
-            value.manifest().ifPresent(m -> text.append("\n\n").append(m.name()).append("\n").append(m.id())
+            value.packageInfo().ifPresent(m -> text.append("\n\n").append(m.name()).append("\n").append(m.id())
                 .append("\n").append(m.version()));
             text.append("\n\n").append(state(value.state()));
             value.problem().ifPresent(
@@ -289,7 +282,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
     private void reviewInstall() {
         var file = inventory.getSelectedValue().file();
         run(() -> service.review(file), review -> {
-            var manifest = review.inspection().manifest();
+            var manifest = review.packageInfo();
             String text = messages.text("originals.confirmInstall",
                 Map.of("path", file.toString(), "name", manifest.name(), "owner", manifest.id(), "version",
                     manifest.version().toString(), "retention",
@@ -355,7 +348,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @param result original cancellation observation / 原撤销观察 */
     private void cancelOutcome(OperationResult<CancellationReceipt> result) {
         LocaleBinding.unbind(status);
-        status.setText(result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.CANCELLED
+        status.setText(result.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.CANCELLED
             ? messages.text("originals.cancelled")
             : messages.text("originals.cancelUnconfirmed") + " " + result.problem().map(messages::safe).orElse(""));
         refresh();
@@ -365,7 +358,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
      * @param result original operation result / 原操作结果 */
     private void outcome(OperationResult<Receipt> result) {
         LocaleBinding.unbind(status);
-        if (result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.SUCCEEDED) {
+        if (result.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED) {
             var receipt = result.value().orElseThrow();
             status.setText(messages.text("originals.installed") + " "
                 + messages.text("originals.cleanup." + receipt.originalCleanup()));
@@ -427,7 +420,7 @@ public final class ModOriginalsPane extends JPanel implements AutoCloseable {
         busy = true;
         long original = epoch;
         controls();
-        DesktopTaskExecutor.run(action, value -> {
+        DesktopTaskRunner.run(action, value -> {
             busy = false;
             controls();
             if (!closed && !locked) {

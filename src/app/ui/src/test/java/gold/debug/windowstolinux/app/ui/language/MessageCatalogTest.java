@@ -84,7 +84,7 @@ class MessageCatalogTest {
             assertCode("ai.purpose." + value.name());
         for (var value : gold.debug.windowstolinux.app.ai.model.AiCapabilityType.values())
             assertCode("ai.capability." + value.name().toLowerCase(Locale.ROOT));
-        for (var value : gold.debug.windowstolinux.appapi.task.TaskState.values())
+        for (var value : gold.debug.windowstolinux.appapi.task.model.TaskState.values())
             assertCode("platform.task." + value.name());
     }
 

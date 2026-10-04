@@ -10,7 +10,7 @@ import java.sql.SQLException;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Versioned complete release manifests using the existing binary runtime formats. / 使用既有二进制运行格式的版本化完整发布清单。 */
@@ -117,7 +117,7 @@ final class DeploymentReleaseCodec {
             || !string(health, "applicationId").equals(record.applicationId()))
             throw new SQLException("Release documents belong to another application");
         try {
-            var components = new ArrayList<DeploymentApplicationGraph.Component>();
+            var components = new ArrayList<DeploymentApplicationGraph.Part>();
             var bindings = new ArrayList<DeploymentReleaseSnapshot.Binding>();
             for (var entry : array(runtime, "components", 64)) {
                 components.add(component(entry));
@@ -139,7 +139,7 @@ final class DeploymentReleaseCodec {
      * @return original component / 原组件
      * @throws SQLException if fields are invalid / 字段无效时
      * @throws IOException if binary formats are invalid / 二进制格式无效时 */
-    private static DeploymentApplicationGraph.Component component(JsonNode entry) throws SQLException, IOException {
+    private static DeploymentApplicationGraph.Part component(JsonNode entry) throws SQLException, IOException {
         fields(entry,
             Set.of("componentId", "unitId", "serverId", "systemdUnit", "releaseRoot", "ownershipManifestSha256",
                 "runtime", "reviewedRuntime", "dataPaths", "resources", "dependencies", "releaseSha256",
@@ -150,10 +150,10 @@ final class DeploymentReleaseCodec {
                 throw new SQLException("Release dependency is not textual");
             dependencies.add(dependency.textValue());
         }
-        var unit = new DeploymentUnitIdentity(string(entry, "unitId"), new ServerRef(string(entry, "serverId")),
+        var unit = new DeploymentUnitIdentity(string(entry, "unitId"), new ServerId(string(entry, "serverId")),
             string(entry, "systemdUnit"), string(entry, "releaseRoot"), string(entry, "ownershipManifestSha256"));
         var runtime = new DeploymentUnitRuntimeCodec().read(binary(entry, "runtime", 1_048_576));
-        return new DeploymentApplicationGraph.Component(string(entry, "componentId"), unit, runtime, dependencies,
+        return new DeploymentApplicationGraph.Part(string(entry, "componentId"), unit, runtime, dependencies,
             new DeploymentRuntimeCodec().read(binary(entry, "reviewedRuntime", 1_048_576), runtime.healthCheck()),
             new DeploymentStoragePathCodec().read(binary(entry, "dataPaths", 1_048_576)),
             new DeploymentResourceCodec().read(binary(entry, "resources", 1_048_576)));
@@ -166,13 +166,13 @@ final class DeploymentReleaseCodec {
     private static DeploymentReleaseSnapshot.Binding binding(JsonNode entry) throws SQLException {
         if (!entry.path("configurationRevision").isInt())
             throw new SQLException("Release configuration revision is invalid");
-        var secrets = new ArrayList<DeploymentSecretReference>();
+        var secrets = new ArrayList<DeploymentSecretRef>();
         for (var secret : array(entry, "secrets", LIMIT)) {
             fields(secret, Set.of("identifier", "revision"));
             if (!secret.path("revision").isInt())
                 throw new SQLException("Release secret revision is invalid");
             secrets.add(
-                new DeploymentSecretReference(string(secret, "identifier"), secret.path("revision").intValue()));
+                new DeploymentSecretRef(string(secret, "identifier"), secret.path("revision").intValue()));
         }
         return new DeploymentReleaseSnapshot.Binding(string(entry, "unitId"), string(entry, "releaseSha256"),
             entry.path("configurationRevision").intValue(), string(entry, "configurationSha256"), secrets);

@@ -19,7 +19,7 @@ class DesktopThemeServiceTest {
     void wrappedDescriptionsStayInsideActualWidthAndGrowWhenNarrowed() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             DesktopThemeService.install(ThemeMode.LIGHT);
-            var components = new gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory(ThemePalette.light());
+            var components = new gold.debug.windowstolinux.app.ui.control.DesktopPartFactory(ThemePalette.light());
             var description = components.description("Save connection settings, then check SSH authentication when needed. "
                 + "A check does not inspect or change the remote environment.");
             description.setBounds(0, 0, 420, 100);
@@ -184,8 +184,8 @@ class DesktopThemeServiceTest {
         DesktopThemeService.install(ThemeMode.LIGHT);
 
         assertInstanceOf(FlatLightLaf.class, UIManager.getLookAndFeel());
-        assertEquals(12, UIManager.get("Component.arc"));
-        assertEquals(12, UIManager.get("Button.arc"));
+        assertEquals(8, UIManager.get("Component.arc"));
+        assertEquals(8, UIManager.get("Button.arc"));
     }
 
     @Test
@@ -203,9 +203,9 @@ class DesktopThemeServiceTest {
         AtomicReference<PlatformFrame> frame = new AtomicReference<>();
 
         SwingUtilities.invokeAndWait(() -> {
-            var security = (gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade) java.lang.reflect.Proxy
+            var security = (gold.debug.windowstolinux.app.service.security.SecurityAccess) java.lang.reflect.Proxy
                 .newProxyInstance(getClass().getClassLoader(), new Class<?>[]{
-                        gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade.class},
+                        gold.debug.windowstolinux.app.service.security.SecurityAccess.class},
                     (proxy, method, arguments) -> {
                         if (method.getName().equals("securityState"))
                             return new gold.debug.windowstolinux.app.service.security.DesktopSecurityState(
@@ -214,7 +214,7 @@ class DesktopThemeServiceTest {
                     });
             PlatformFrame desktopFrame = new PlatformFrame(security,
                 gold.debug.windowstolinux.app.ui.language.MessageCatalog.forLanguageTag("en"), ThemePalette.light(),
-                new gold.debug.windowstolinux.appapi.ui.UiEnvironment(java.util.Locale.ENGLISH, "LIGHT", false),
+                new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.ENGLISH, "LIGHT", false),
                 gold.debug.windowstolinux.app.ui.error.FailureReportStore.disabled());
             frame.set(desktopFrame);
             var root = desktopFrame.getContentPane();

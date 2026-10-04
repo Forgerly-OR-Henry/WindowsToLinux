@@ -3,16 +3,16 @@ package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.databas
 import java.util.Map;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Inventory;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.InstanceList;
 
 /** Original-view decisions for exact native database effects and short-lived passwords. / 精确原生数据库效果与短期密码的原视图决定。 */
 public interface DeploymentNativeDatabaseReview {
@@ -24,8 +24,8 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return selected ID; empty value means candidate install / 选定 ID；空值表示候选安装
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<String> choose(ServerRef server, String componentId, DatabaseRequirement database,
-                                           Inventory inventory, TaskContext task) throws Exception {
+    default OperationResult<String> choose(ServerId server, String componentId, DatabaseRequirement database,
+                                           InstanceList inventory, TaskContext task) throws Exception {
         return unavailable();
     }
 
@@ -36,7 +36,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return affirmative decision / 肯定决定
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<Boolean> install(ServerRef server, DatabaseRequirement database, Candidate candidate,
+    default OperationResult<Boolean> install(ServerId server, DatabaseRequirement database, Candidate candidate,
                                              TaskContext task) throws Exception {
         return unavailable();
     }
@@ -48,7 +48,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return affirmative backup and downtime confirmation / 已备份且停机的肯定确认
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<Boolean> replacement(ServerRef server, Instance previous, Candidate candidate,
+    default OperationResult<Boolean> replacement(ServerId server, Instance previous, Candidate candidate,
                                                  TaskContext task) throws Exception {
         return unavailable();
     }
@@ -59,7 +59,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return affirmative decision / 肯定决定
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<Boolean> restored(ServerRef server, Instance instance, TaskContext task) throws Exception {
+    default OperationResult<Boolean> restored(ServerId server, Instance instance, TaskContext task) throws Exception {
         return unavailable();
     }
 
@@ -69,7 +69,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return newly owned UTF-8 bytes for caller to clear / 由调用方清零的新所属 UTF-8 字节
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<byte[]> administratorPassword(ServerRef server, Instance instance, TaskContext task)
+    default OperationResult<byte[]> administratorPassword(ServerId server, Instance instance, TaskContext task)
         throws Exception {
         return unavailable();
     }
@@ -80,7 +80,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return newly owned UTF-8 bytes for caller to clear / 由调用方清零的新所属 UTF-8 字节
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<byte[]> applicationPassword(ServerRef server, DatabaseRequirement database,
+    default OperationResult<byte[]> applicationPassword(ServerId server, DatabaseRequirement database,
                                                         TaskContext task) throws Exception {
         return unavailable();
     }
@@ -93,7 +93,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param task original task / 原任务
      * @return affirmative schema change decision / 肯定结构变更决定
      * @throws Exception if review fails / 审阅失败时 */
-    default OperationResult<Boolean> existingSchema(ServerRef server, String componentId, DatabaseRequirement database,
+    default OperationResult<Boolean> existingSchema(ServerId server, String componentId, DatabaseRequirement database,
                                                     String sourceDigest, TaskContext task) throws Exception {
         return unavailable();
     }
@@ -102,7 +102,7 @@ public interface DeploymentNativeDatabaseReview {
      * @param <T> expected value / 预期值
      * @return known refusal / 已知拒绝 */
     private static <T> OperationResult<T> unavailable() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_NATIVE_DB_REVIEW_UNAVAILABLE",
                 "Native database review is unavailable", Map.of(), Optional.empty())));
     }

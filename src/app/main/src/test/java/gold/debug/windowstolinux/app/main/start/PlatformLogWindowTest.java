@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.LogStorage;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformLogServiceTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
@@ -13,14 +11,14 @@ import java.util.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.log.LogRepository;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.app.db.log.LogStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.task.log.LogStorage;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -109,7 +107,7 @@ class PlatformLogWindowTest {
                     return null;
                 });
                 await(() -> ((JLabel) named(frame, "logs.status")).getText().startsWith("已完成"));
-                var saved = new LogRepository(runtime.persistence().database()).read(target(runtime, handle));
+                var saved = new LogStore(runtime.persistence().database()).read(target(runtime, handle));
                 assertEquals(11, saved.size());
                 assertTrue(saved.stream().noneMatch(r -> r.message().contains("lost and not replayed")));
                 onEdt(() -> {
@@ -121,7 +119,7 @@ class PlatformLogWindowTest {
                     runtime.logs()::cleanHistory);
                 runtime.security().unlock(PASSWORD.toCharArray());
                 await(() -> named(frame, "logs.clean").isEnabled());
-                await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                await(() -> !DesktopTaskRunner.hasActiveTasks());
             } finally {
                 onEdt(() -> {
                     frame.dispose();

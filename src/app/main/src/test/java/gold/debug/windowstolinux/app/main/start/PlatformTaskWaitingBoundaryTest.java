@@ -9,14 +9,21 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -90,7 +97,7 @@ class PlatformTaskWaitingBoundaryTest {
                 assertEquals(1, (first.get(5, TimeUnit.SECONDS) ? 1 : 0) + (second.get(5, TimeUnit.SECONDS) ? 1 : 0));
                 state(handle, TaskState.RUNNING);
                 finish.countDown();
-                assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
+                assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                 assertEquals(1, calls.get());
                 assertEquals(1, resumed.get());
                 assertThrows(ApiException.class, () -> service.continueWaiting(handle.id()));
@@ -114,7 +121,7 @@ class PlatformTaskWaitingBoundaryTest {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                     calls.incrementAndGet();
                     if (!runtime.tasks().awaitContinue(task, OWNER, VERSION, "用户拒绝删除，等待继续或终止"))
-                        return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                     actions.incrementAndGet();
                     return success(null);
                 });
@@ -132,7 +139,7 @@ class PlatformTaskWaitingBoundaryTest {
                     if (continueTask) PlatformTaskManagementWindowTest.click(frame, "tasks.continue");
                     else PlatformTaskManagementWindowTest.answer(
                         PlatformTaskManagementWindowTest.confirm(frame, "tasks.cancel"), JOptionPane.OK_OPTION);
-                    assertEquals(continueTask ? Outcome.SUCCEEDED : Outcome.CANCELLED,
+                    assertEquals(continueTask ? TaskResult.SUCCEEDED : TaskResult.CANCELLED,
                         handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                     PlatformTaskManagementWindowTest.idle(frame);
                     assertEquals(1, calls.get());
@@ -156,7 +163,7 @@ class PlatformTaskWaitingBoundaryTest {
             var actions = new AtomicInteger();
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 if (runtime.tasks().awaitContinue(task, OWNER, VERSION, "等待用户决定")) actions.incrementAndGet();
-                return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             state(handle, TaskState.WAITING);
             var frame = PlatformTaskManagementWindowTest.window(runtime, management(runtime));
@@ -178,7 +185,7 @@ class PlatformTaskWaitingBoundaryTest {
     void persistedWaitAfterRestartRequiresOriginalRecoveryAndCannotContinueAnAbsentCallback() throws Exception {
         UUID id;
         try (var database = PlatformDatabase.open(root, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(database);
+            var persistence = new PlatformStorage(database);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }
@@ -200,7 +207,7 @@ class PlatformTaskWaitingBoundaryTest {
             try (var registration = runtime.tasks().bind(OWNER, VERSION, true).registerRecovery("fixture", (previous, task) -> {
                 recovered.incrementAndGet();
                 assertEquals(id, task.id());
-                return new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                     ProblemCode.UNAVAILABLE, "WAIT_INTERRUPTED", "The previous callback no longer exists", Map.of(), Optional.empty())));
             })) {
                 assertEquals(TaskState.ENDED, service.reconcile(id, false).toCompletableFuture().get(5, TimeUnit.SECONDS).state());

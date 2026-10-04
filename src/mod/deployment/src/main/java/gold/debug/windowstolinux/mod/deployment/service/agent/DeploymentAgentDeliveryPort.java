@@ -4,8 +4,8 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 
@@ -47,7 +47,7 @@ public interface DeploymentAgentDeliveryPort extends AutoCloseable {
      * @param component declared component / 已声明组件
      * @return observed candidate and revision / 已观察候选与修订
      * @throws Exception on unknown or denied preparation / 准备未知或被拒绝时 */
-    Prepared prepare(String applicationId, DeploymentAgentPlan.Component component) throws Exception;
+    Prepared prepare(String applicationId, DeploymentAgentPlan.Part component) throws Exception;
 
     /** Executes exact reviewed script in the protected candidate. / 在受保护候选中执行精确已审脚本。
      * @param task original task / 原任务

@@ -9,7 +9,7 @@ import java.util.HexFormat;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseConnection;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentRequest;
 
 /**
@@ -24,7 +24,7 @@ public final class DeploymentReviewedReleaseIdentity {
     }
 
     /**
-     * Pins the exact prepared tools into a new release without changing legacy identities. / 将精确准备的工具绑定到新发布，不改变旧版身份。
+     * Pins the exact prepared tools while preserving the original reviewed content identity. / 绑定精确准备的工具并保留原已审阅内容身份。
      *
      * @param reviewedIdentity reviewed identity / 已审阅身份
      * @param tools tools / 工具集合
@@ -62,8 +62,8 @@ public final class DeploymentReviewedReleaseIdentity {
             update(digest, request.archive().sha256());
             update(digest, request.facts().buildTool().name());
             update(digest, request.configuration().sha256());
-            request.secretReferences().stream().sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                .thenComparingLong(DeploymentSecretReference::revision)).forEach(reference -> {
+            request.secretReferences().stream().sorted(Comparator.comparing(DeploymentSecretRef::identifier)
+                .thenComparingLong(DeploymentSecretRef::revision)).forEach(reference -> {
                 update(digest, reference.identifier());
                 update(digest, Long.toString(reference.revision()));
             });

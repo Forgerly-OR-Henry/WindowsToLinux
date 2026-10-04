@@ -65,7 +65,7 @@ class DeploymentManagedHelperBundleTest {
     }
 
     @Test
-    void exposesOnlyVersionedTypedOperationsAndKeepsLegacyGradleReadCompatibility() {
+    void exposesOnlyCurrentTypedOperations() {
         String helper = DeploymentManagedHelperBundle.renderScript();
 
         assertEquals(14, DeploymentManagedHelperBundle.PROTOCOL_VERSION);
@@ -74,8 +74,11 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper.contains("publication-original-status-attempt) publication_original_status_attempt \"$@\""));
         assertTrue(helper.contains("snapshot-discard-attempt) discard_original_snapshot_attempt \"$@\""));
         assertTrue(helper.contains("printf 'HELPER=1\\nPROTOCOL=%s\\n' \"$helper_protocol\""));
-        assertTrue(helper.contains("gradle)"));
-        assertTrue(helper.contains("[ \"$kind\" != gradle ] || reject legacy-gradle-write"));
+        assertFalse(helper.contains("gradle)"));
+        assertFalse(helper.contains("LEGACY_UNSPECIFIED"));
+        assertFalse(helper.contains("legacy_runtime_user"));
+        assertFalse(helper.contains("expected_unit_digest()"));
+        assertFalse(helper.contains("lifecycle) lifecycle \"$@\""));
         assertTrue(helper.contains("go | rust)"));
         assertTrue(helper.contains("java | javasource)"));
         assertTrue(helper.contains("PIP_LOCKED | PIPENV_LOCKED | POETRY_LOCKED | UV_LOCKED"));
@@ -123,7 +126,7 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper
             .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path $toolchain_php -n -S"));
         assertTrue(helper
-            .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path bundle exec rackup"));
+            .contains("ecosystem_runtime_command_result=\"/usr/bin/env PATH=$root/current/source/.w2l/bundler/bin:$toolchain_path GEM_HOME=$root/current/source/.w2l/bundler"));
         assertTrue(helper.contains("GEM_PATH=$root/current/source/.w2l/bundler: bundle exec rackup"));
         assertTrue(helper.contains(
             "ecosystem_runtime_command_result=\"/usr/bin/env PATH=$toolchain_path PORT=$rubycli_port $toolchain_ruby"));
@@ -133,9 +136,9 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(helper.contains("restore-mark-quiesced) restore_mark_quiesced \"$@\""));
         assertTrue(helper.contains("restore-quiesce-recovery) restore_quiesce_recovery \"$@\""));
         assertTrue(helper.contains("restore-recover) restore_recover_component \"$@\""));
-        assertTrue(helper.contains("previous_kind=ordinary"));
-        assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || [ \"$previous_kind\" = ordinary ]"));
-        assertTrue(helper.contains("printf '%s\\n' \"$previous_kind\" >\"$snapshot/kind\""));
+        assertFalse(helper.contains("previous_kind=ordinary"));
+        assertTrue(helper.contains("[ \"$previous_kind\" = deployment ] || reject snapshot-kind"));
+        assertTrue(helper.contains("printf 'deployment\\n' >\"$snapshot/kind\""));
         assertTrue(helper.contains("tr -d '\\r' <\"$manifest/META-INF/MANIFEST.MF\" | grep -Eq"));
         assertTrue(helper.contains(
             "if [ ! -e \"$candidate/.windowstolinux-owner\" ] && [ ! -L \"$candidate/.windowstolinux-owner\" ]; then"));
@@ -337,11 +340,48 @@ class DeploymentManagedHelperBundleTest {
         assertTrue(foreign.output().contains("publication-snapshot-foreign"), foreign.output());
     }
 
+    @Test
+    void refusesLegacyRuntimeIdentityAndUnboundToolchainBeforeEffects() throws Exception {
+        String helper = DeploymentManagedHelperBundle.renderScript();
+        String functions = helper.substring(0, helper.lastIndexOf("\nrequire_root\n"));
+        String parser = functions + "\nparse_application_payload() { application_payload=\"$1\"; }\n";
+        String digest = "a".repeat(64);
+        for (String arguments : java.util.List.of("old-format SYSTEMD_STATIC reviewed " + digest + " 0",
+            "identity-v2 LEGACY_UNSPECIFIED reviewed " + digest + " 0")) {
+            var rejected = publicationScript(parser + "parse_deployment_inputs " + arguments + "\nprintf 'EFFECT=1\\n'\n");
+            assertNotEquals(0, rejected.exit(), rejected.output());
+            assertFalse(rejected.output().contains("EFFECT=1"), rejected.output());
+        }
+        for (String policy : java.util.List.of("SYSTEMD_STATIC", "CONTAINER_NON_ROOT")) {
+            var accepted = publicationScript(parser + "parse_deployment_inputs identity-v2 " + policy
+                + " reviewed " + digest + " 0\nprintf '%s:%s\\n' \"$runtime_identity_policy\" \"$deployment_configuration_digest\"\n");
+            assertEquals(0, accepted.exit(), accepted.output());
+            assertEquals(policy + ":" + digest + "\n", accepted.output());
+        }
+        var unbound = publicationScript(functions + "\ntoolchain_binding=''\nrequire_bound_version JAVA 21\nprintf 'EFFECT=1\\n'\n");
+        assertNotEquals(0, unbound.exit(), unbound.output());
+        assertTrue(unbound.output().contains("runtime-toolchain-missing"), unbound.output());
+        assertFalse(unbound.output().contains("EFFECT=1"), unbound.output());
+    }
+
+    @Test
+    void refusesLegacyGradleRuntimeBeforeFilesystemOrServiceEffects() throws Exception {
+        String helper = DeploymentManagedHelperBundle.renderScript();
+        String functions = helper.substring(0, helper.lastIndexOf("\nrequire_root\n"));
+        String setup = "\nparse_deployment_inputs() { deployment_remaining_arguments=(\"$@\"); }\n"
+            + "parse_managed_data_bindings() { managed_data_remaining_arguments=(\"$@\"); }\n"
+            + "parse_toolchain_binding() { toolchain_remaining_arguments=(\"$@\"); }\n";
+        var rejected = publicationScript(functions + setup + "render_deployment_unit demo gradle\nprintf 'EFFECT=1\\n'\n");
+        assertNotEquals(0, rejected.exit(), rejected.output());
+        assertTrue(rejected.output().contains("runtime-kind"), rejected.output());
+        assertFalse(rejected.output().contains("EFFECT=1"), rejected.output());
+    }
+
     /** Runs one actual bundled Bash function without allowing a test process to outlive the assertion. / 实际运行一项打包Bash函数，不让测试进程越过断言。
      * @param script complete local fixture / 完整本机夹具
      * @return process exit and complete output / 进程退出码与完整输出
      * @throws Exception if the local interpreter cannot start / 本机解释器无法启动时 */
-    private static PublicationScriptResult publicationScript(String script) throws Exception {
+    private static PublishScriptResult publicationScript(String script) throws Exception {
         String bash = System.getProperty("managed.test.bash", "/bin/bash");
         org.junit.jupiter.api.Assumptions.assumeTrue(java.nio.file.Files.isExecutable(java.nio.file.Path.of(bash)));
         var process = new ProcessBuilder(bash, "--noprofile", "--norc", "-s").redirectErrorStream(true).start();
@@ -350,7 +390,7 @@ class DeploymentManagedHelperBundleTest {
                 input.write(script.getBytes(StandardCharsets.UTF_8));
             }
             assertTrue(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
-            return new PublicationScriptResult(process.exitValue(),
+            return new PublishScriptResult(process.exitValue(),
                 new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
         } finally {
             if (process.isAlive()) {
@@ -363,7 +403,7 @@ class DeploymentManagedHelperBundleTest {
     /** Complete local Bash observation. / 完整本机Bash观测。
      * @param exit actual process exit / 实际进程退出
      * @param output complete output / 完整输出 */
-    private record PublicationScriptResult(int exit, String output) {
+    private record PublishScriptResult(int exit, String output) {
     }
 
 }

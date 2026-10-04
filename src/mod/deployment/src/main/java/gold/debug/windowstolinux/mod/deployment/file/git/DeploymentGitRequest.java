@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.mod.deployment.file.git;
 import java.util.Objects;
 import java.util.Set;
 
-import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitReference;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRef;
 import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRemote;
 
 /**
@@ -17,7 +17,7 @@ import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRemote;
  * @param maximumArchiveBytes the maximum generated source archive size / 生成源码归档的最大大小
  * @param permitLocalFileRemote whether test or controlled local remotes are permitted / 是否允许测试或受控本地远端
  */
-public record DeploymentGitRequest(DeploymentGitRemote remote, DeploymentGitReference reference,
+public record DeploymentGitRequest(DeploymentGitRemote remote, DeploymentGitRef reference,
                                    Set<String> allowedHosts, long maximumArchiveBytes, boolean permitLocalFileRemote) {
     /**
      * Validates and binds the inputs required by git source request.

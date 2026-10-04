@@ -8,23 +8,23 @@ import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationRepository;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublishStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitIdentity;
 
 /** Resolves the original managed owner or generates an unpersisted random owner for first publication. / 解析原受管所有者，首次发布则生成尚未持久化的随机所有者。 */
 public final class DeploymentStaticUnitResolver {
     /** Original task-bound deployment records. / 原任务绑定的部署记录。 */
-    private final DeploymentPublicationRepository publications;
+    private final DeploymentPublishStore publications;
 
     /** Binds original deployment storage without owning the source or target. / 绑定原部署存储，不取得来源或目标所有权。
      * @param database original Mod database / 原 Mod 数据库 */
     public DeploymentStaticUnitResolver(ModDatabase database) {
-        this.publications = new DeploymentPublicationRepository(Objects.requireNonNull(database));
+        this.publications = new DeploymentPublishStore(Objects.requireNonNull(database));
     }
 
     /** Reuses exact canonical ownership on update and never derives it from source or plan SHA. / 更新时复用精确规范所有权，绝不从来源或计划摘要派生。
@@ -34,7 +34,7 @@ public final class DeploymentStaticUnitResolver {
      * @return original or newly proposed identity / 原身份或新建议身份
      * @throws SQLException if stored identity is unavailable or conflicts / 已存身份不可用或冲突时
      * @throws ApiException if original task access is unavailable / 原任务访问不可用时 */
-    public DeploymentUnitIdentity resolve(TaskContext task, String applicationId, ServerRef server)
+    public DeploymentUnitIdentity resolve(TaskContext task, String applicationId, ServerId server)
         throws SQLException, ApiException {
         Objects.requireNonNull(task);
         Objects.requireNonNull(server);

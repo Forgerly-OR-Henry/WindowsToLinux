@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,16 +12,20 @@ import java.util.concurrent.CancellationException;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Inventory;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.InstanceList;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
@@ -59,9 +57,9 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return explicit non-secret answers / 明确非秘密答案
      * @throws Exception if the owner view cannot complete the interaction / 所属视图无法完成交互时 */
     @Override
-    public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+    public OperationResult<Map<String, String>> databaseInputs(ServerId server, String componentId,
                                                                String sourceSha256, java.nio.file.Path root, String applicationId,
-                                                               DatabaseProjectInspector.Assessment assessment, TaskContext task) throws Exception {
+                                                               DatabaseProjectChecker.Report assessment, TaskContext task) throws Exception {
         Map<String, String> supplied = Map.of();
         var form = page.onEdt(() -> new DatabaseInputForm(page, componentId, sourceSha256, assessment,
             DeploymentDatabaseSourceInputs.questions(assessment, applicationId, Map.of())));
@@ -97,8 +95,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return explicit consent or cancellation / 明确同意或取消 */
     @Override
-    public OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
-                                                                String sourceSha256, DatabaseProjectInspector.Assessment assessment, TaskContext task) {
+    public OperationResult<Boolean> confirmSqliteInitialization(ServerId server, String componentId,
+                                                                String sourceSha256, DatabaseProjectChecker.Report assessment, TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
             rows.add(new JLabel(page.text("sqliteFirstInitialization")));
@@ -126,8 +124,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return selected exact ID or refusal / 选中精确 ID 或拒绝 */
     @Override
-    public OperationResult<String> choose(ServerRef server, String componentId, DatabaseRequirement database,
-                                          Inventory inventory, TaskContext task) {
+    public OperationResult<String> choose(ServerId server, String componentId, DatabaseRequirement database,
+                                          InstanceList inventory, TaskContext task) {
         var selected = page.onEdt(() -> {
             var values = inventory.instances().stream().map(Instance::id).toArray(String[]::new);
             var box = new JComboBox<>(values);
@@ -153,7 +151,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return explicit decision / 明确决定 */
     @Override
-    public OperationResult<Boolean> install(ServerRef server, DatabaseRequirement database, Candidate candidate,
+    public OperationResult<Boolean> install(ServerId server, DatabaseRequirement database, Candidate candidate,
                                             TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
@@ -175,7 +173,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return explicit decision / 明确决定 */
     @Override
-    public OperationResult<Boolean> replacement(ServerRef server, Instance previous, Candidate candidate,
+    public OperationResult<Boolean> replacement(ServerId server, Instance previous, Candidate candidate,
                                                 TaskContext task) {
         var form = page.onEdt(() -> new NativeReplacementForm(page, server, previous, candidate));
         while (page.active(view)) {
@@ -207,7 +205,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param server admitted target / 已准入目标
          * @param previous exact original instance / 精确原实例
          * @param candidate selected replacement / 选定替换 */
-        private NativeReplacementForm(DeploymentStaticPage page, ServerRef server, Instance previous,
+        private NativeReplacementForm(DeploymentStaticPage page, ServerId server, Instance previous,
                                       Candidate candidate) {
             panel.add(new JLabel(page.text("database.nativeReplacementWarning")));
             panel.add(new JLabel(server.id() + " / " + previous.engine() + " / " + previous.id()));
@@ -235,7 +233,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return explicit decision / 明确决定 */
     @Override
-    public OperationResult<Boolean> restored(ServerRef server, Instance instance, TaskContext task) {
+    public OperationResult<Boolean> restored(ServerId server, Instance instance, TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
             rows.add(new JLabel(page.text("database.nativeRestoreWarning")));
@@ -255,7 +253,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return caller-owned UTF-8 bytes or cancellation / 调用方所属 UTF-8 字节或取消
      * @throws Exception if the current view fails / 当前视图失败时 */
     @Override
-    public OperationResult<byte[]> administratorPassword(ServerRef server, Instance instance, TaskContext task)
+    public OperationResult<byte[]> administratorPassword(ServerId server, Instance instance, TaskContext task)
         throws Exception {
         try {
             return success(
@@ -274,7 +272,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @return caller-owned UTF-8 bytes or cancellation / 调用方所属 UTF-8 字节或取消
      * @throws Exception if the current view fails / 当前视图失败时 */
     @Override
-    public OperationResult<byte[]> applicationPassword(ServerRef server, DatabaseRequirement database, TaskContext task)
+    public OperationResult<byte[]> applicationPassword(ServerId server, DatabaseRequirement database, TaskContext task)
         throws Exception {
         try {
             return success(DeploymentStaticPasswordInput.request(page, view, task,
@@ -294,7 +292,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return explicit affirmative decision or cancellation / 显式肯定决定或取消 */
     @Override
-    public OperationResult<Boolean> existingSchema(ServerRef server, String componentId, DatabaseRequirement database,
+    public OperationResult<Boolean> existingSchema(ServerId server, String componentId, DatabaseRequirement database,
                                                    String sourceDigest, TaskContext task) {
         var panel = page.onEdt(() -> {
             var rows = new JPanel(new GridLayout(0, 1));
@@ -329,7 +327,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param assessment source-derived declarations / 源码派生声明
          * @param questions actual missing inputs / 实际缺失输入 */
         private DatabaseInputForm(DeploymentStaticPage page, String componentId, String sourceSha256,
-                                  DatabaseProjectInspector.Assessment assessment, List<DeploymentReviewField> questions) {
+                                  DatabaseProjectChecker.Report assessment, List<DeploymentReviewField> questions) {
             panel.add(new JLabel(componentId + " / " + page.text("sourceDigest")));
             panel.add(new JLabel(sourceSha256));
             for (var database : assessment.databases()) {
@@ -374,8 +372,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return reviewed graph selection / 经审阅图选择 */
     @Override
-    public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sourceSha256,
-                                                                      List<DiscoveredProjectComponent> discovered, TaskContext task) {
+    public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sourceSha256,
+                                                                      List<DiscoveredProjectPart> discovered, TaskContext task) {
         var form = page.onEdt(() -> new SelectionForm(page, discovered));
         while (page.active(view)) {
             if (!page.approve(view, form.panel, page.text("componentReview"), task))
@@ -407,7 +405,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         private final JTextField application;
 
         /** Actual discovered components. / 实际发现组件。 */
-        private final List<DiscoveredProjectComponent> discovered;
+        private final List<DiscoveredProjectPart> discovered;
 
         /** Project-kind choices. / 项目类型选择。 */
         private final Map<String, JComboBox<DeploymentProjectKind>> types = new LinkedHashMap<>();
@@ -421,7 +419,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         /** Builds a form from the discovered roots. / 从已发现根构建表单。
          * @param page owner page / 所属页
          * @param discovered actual components / 实际组件 */
-        private SelectionForm(DeploymentStaticPage page, List<DiscoveredProjectComponent> discovered) {
+        private SelectionForm(DeploymentStaticPage page, List<DiscoveredProjectPart> discovered) {
             this.discovered = List.copyOf(discovered);
             application = discovered.size() > 1 ? new JTextField("application") : null;
             if (application != null) {
@@ -450,7 +448,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             }
             healthOwner = application == null
                 ? null
-                : new JComboBox<>(discovered.stream().map(DiscoveredProjectComponent::id).toArray(String[]::new));
+                : new JComboBox<>(discovered.stream().map(DiscoveredProjectPart::id).toArray(String[]::new));
             if (healthOwner != null) {
                 panel.add(new JLabel(page.text("healthOwner")));
                 panel.add(healthOwner);
@@ -487,7 +485,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return reviewed values / 经审阅值 */
     @Override
-    public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server, String sourceSha256,
+    public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server, String sourceSha256,
                                                                                  List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
         var form = page.onEdt(() -> new ReviewForm(page, sourceSha256, prompts));
         while (page.active(view)) {
@@ -516,7 +514,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original publication task / 原发布任务
      * @return explicitly reviewed correction or cancellation / 明确审阅的纠正或取消 */
     @Override
-    public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerRef server,
+    public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerId server,
                                                                                    String sourceSha256, DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
                                                                                    TaskContext task) {
         var form = page.onEdt(() -> new BuildCorrectionForm(page, sourceSha256, prompt, original));
@@ -608,7 +606,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         private final JLabel error = new JLabel();
 
         /** Per-component forms. / 逐组件表单。 */
-        private final Map<String, ComponentForm> forms = new LinkedHashMap<>();
+        private final Map<String, PartForm> forms = new LinkedHashMap<>();
 
         /** Creates source-bound component tabs. / 创建来源绑定的组件页。
          * @param page owner page / 所属页
@@ -618,7 +616,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                            List<DeploymentStaticWorkflow.Prompt> prompts) {
             var tabs = new JTabbedPane();
             for (var prompt : prompts) {
-                var form = new ComponentForm(page, prompt);
+                var form = new PartForm(page, prompt);
                 tabs.addTab(prompt.componentId(), new JScrollPane(form.panel()));
                 forms.put(prompt.componentId(), form);
             }
@@ -646,7 +644,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param task original task / 原任务
      * @return current explicit confirmation / 当前明确确认 */
     @Override
-    public OperationResult<Boolean> confirm(ServerRef server, String sourceSha256, Map<String, String> archiveSha256,
+    public OperationResult<Boolean> confirm(ServerId server, String sourceSha256, Map<String, String> archiveSha256,
                                             Map<String, DeploymentStaticWorkflow.Answers> answers, Map<String, DeploymentPreparedDatabase> databases,
                                             Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
         var panel = page.onEdt(() -> confirmation(page, server, sourceSha256, archiveSha256, answers, databases, git));
@@ -664,7 +662,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param databases source-derived SQLite facts / 源码派生 SQLite 事实
      * @param git original and pinned Git identity / 原及固定 Git 身份
      * @return confirmation rows / 确认行 */
-    private static JPanel confirmation(DeploymentStaticPage page, ServerRef server, String sourceSha256,
+    private static JPanel confirmation(DeploymentStaticPage page, ServerId server, String sourceSha256,
                                        Map<String, String> archiveSha256, Map<String, DeploymentStaticWorkflow.Answers> answers,
                                        Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git) {
         var panel = new JPanel(new GridLayout(0, 1));
@@ -723,14 +721,14 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param <T> value type / 值类型
      * @return successful result / 成功结果 */
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     /** Returns an owner-decision cancellation. / 返回所属决定取消。
      * @param <T> value type / 值类型
      * @return cancelled result / 已取消结果 */
     private static <T> OperationResult<T> cancelled() {
-        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
+        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
             "DEPLOYMENT_STATIC_VIEW_REVOKED", "Review was closed or locked", Map.of(), Optional.empty())));
     }
 
@@ -738,7 +736,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param <T> value type / 值类型
      * @return invalid form / 无效表单 */
     private static <T> OperationResult<T> invalid() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_STATIC_FORM_INVALID",
                 "Review fields need correction", Map.of(), Optional.empty())));
     }
@@ -748,16 +746,16 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
      * @param environment current display only / 仅当前显示
      * @return same ordinary runtime form controls / 同一普通运行表单控件 */
     static JPanel runtimePreview(DeploymentStaticWorkflow.Prompt prompt,
-                                 gold.debug.windowstolinux.appapi.ui.UiEnvironment environment) {
+                                 gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) {
         var messages = java.util.ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page",
             environment.locale());
-        var content = DeploymentPageStyle.card(null, new ComponentForm(messages::getString, List.of(), prompt).panel());
+        var content = DeploymentPageStyle.card(null, new PartForm(messages::getString, List.of(), prompt).panel());
         DeploymentPageStyle.refresh(content, messages);
         return content;
     }
 
     /** One typed component form with bounded resource rows. / 一份带有界资源行的类型化组件表单。 */
-    private static final class ComponentForm {
+    private static final class PartForm {
         /** Source-bound prompt. / 来源绑定问题。 */
         private final DeploymentStaticWorkflow.Prompt prompt;
 
@@ -784,7 +782,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         /** Builds editable controls from actual source-backed values. / 从真实来源依据值构建可编辑控件。
          * @param page owner page / 所属页
          * @param prompt original prompt / 原问题 */
-        private ComponentForm(DeploymentStaticPage page, DeploymentStaticWorkflow.Prompt prompt) {
+        private PartForm(DeploymentStaticPage page, DeploymentStaticWorkflow.Prompt prompt) {
             this(page::text, page.secretChoices(), prompt);
         }
 
@@ -792,8 +790,8 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
          * @param texts localized labels / 本地化标签
          * @param choices exact non-secret revisions / 精确非秘密修订
          * @param prompt bounded original values / 有界原值 */
-        private ComponentForm(java.util.function.Function<String, String> texts,
-                              List<DeploymentSecretSelection> choices, DeploymentStaticWorkflow.Prompt prompt) {
+        private PartForm(java.util.function.Function<String, String> texts,
+                         List<DeploymentSecretSelection> choices, DeploymentStaticWorkflow.Prompt prompt) {
             this.texts = texts;
             this.prompt = prompt;
             panel.add(new JLabel(texts.apply("application") + ": " + prompt.applicationId()));
@@ -803,7 +801,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 if (fields.containsKey(key))
                     continue;
                 JComponent input = key.equals("secrets")
-                    ? new DeploymentSecretReferenceField(texts, field.value(), choices)
+                    ? new DeploymentSecretRefField(texts, field.value(), choices)
                     : field.choices().isEmpty()
                     ? new JTextField(field.value())
                     : new JComboBox<>(field.choices().toArray(String[]::new));
@@ -855,7 +853,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             fields.forEach((key, control) -> {
                 String value = control instanceof JTextField field
                     ? field.getText().trim()
-                    : control instanceof DeploymentSecretReferenceField secret
+                    : control instanceof DeploymentSecretRefField secret
                     ? secret.value()
                     : String.valueOf(((JComboBox<?>) control).getSelectedItem());
                 values.put(key, value);

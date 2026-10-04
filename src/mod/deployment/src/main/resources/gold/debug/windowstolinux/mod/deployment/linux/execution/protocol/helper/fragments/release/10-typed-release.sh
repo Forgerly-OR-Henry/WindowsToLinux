@@ -25,7 +25,6 @@ seal_deployment_tree() {
     [ "$#" -ge 1 ] || reject runtime-arguments
     local kind="$1"
     shift
-    [ "$kind" != gradle ] || reject legacy-gradle-write
     local candidate mutable source artifact
     candidate="$(candidate_root "$candidate_id")"
     mutable="$candidate/mutable"
@@ -191,14 +190,13 @@ publish_deployment() {
     initialise_controlled_roots
     assert_application_root_or_absent "$app"
     render_deployment_unit "$app" "$@" >/dev/null
-    assert_deployment_or_ordinary_current_or_empty "$app" "$manifest"
+    assert_deployment_current_or_empty "$app" "$manifest"
     local root releases release unit tmp
     root="$(app_root "$app")"
     releases="$root/releases"
     release="$releases/$release_digest"
     unit="$(unit_path "$app")"
-    if [ "$previous_present" -eq 1 ] && [ "$previous_kind" = deployment ] \
-        && [ "$previous_path" = "$release" ]; then
+    if [ "$previous_present" -eq 1 ] && [ "$previous_path" = "$release" ]; then
         [ "$(printf '%s\n' "$@" | sha256sum | awk '{print $1}')" = "$(sha256sum -- "$release/.windowstolinux-deployment-parameters" | awk '{print $1}')" ] || reject release-parameters-changed
         if [ "$application_mode" = DAEMON ] && [ "$previous_running" = 0 ]; then systemctl start "$(unit_name "$app")"; fi
         printf 'PUBLISHED=1\n'

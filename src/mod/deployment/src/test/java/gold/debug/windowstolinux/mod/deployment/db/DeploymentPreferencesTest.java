@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
@@ -12,7 +7,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +28,7 @@ class DeploymentPreferencesTest extends DeploymentRuntimeFixture {
         });
         try {
             var result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
         } catch (java.util.concurrent.TimeoutException failure) {
             throw new AssertionError("Original preference task did not conclude: " + handle.snapshot(), observed.get() == null ? failure : observed.get());
         }
@@ -38,7 +36,7 @@ class DeploymentPreferencesTest extends DeploymentRuntimeFixture {
     }
 
     private OperationResult<Void> success() {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     @Test

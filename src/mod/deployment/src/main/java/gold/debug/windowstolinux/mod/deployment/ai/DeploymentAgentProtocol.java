@@ -4,10 +4,9 @@ import java.io.IOException;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Strict autonomous action schema with no execution authority. / 不具执行权限的严格自主动作模式。 */
 public final class DeploymentAgentProtocol {

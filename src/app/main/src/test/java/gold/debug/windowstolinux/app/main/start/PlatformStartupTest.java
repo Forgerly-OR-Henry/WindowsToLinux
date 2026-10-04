@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -16,9 +10,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.windows.security.CurrentUserProtection;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,7 +55,7 @@ class PlatformStartupTest {
             generation = runtime.persistence().database().generation();
             firstBoot = runtime.persistence().database().bootId();
             bootstrap = Files.readAllBytes(root.resolve("db-access.bin"));
-            assertTrue(Files.isRegularFile(root.resolve("platform.mv.db")));
+            assertTrue(Files.isRegularFile(root.resolve("windowstolinux.mv.db")));
             assertArrayEquals(old, Files.readAllBytes(root.resolve("windowstolinux.db")));
             assertFalse(Files.exists(root.resolve("backups")));
         }
@@ -96,10 +93,10 @@ class PlatformStartupTest {
                 new TaskRequest("write", "Example", List.of(), true),
                 List.of(new TaskResource("MOD", "mod.example", "mod.example", false)));
             assertTrue(ledger.tryStart(id));
-            assertFalse(ledger.complete(id, Outcome.UNKNOWN, "{}", false));
+            assertFalse(ledger.complete(id, TaskResult.UNKNOWN, "{}", false));
             assertThrows(SQLException.class, runtime::close);
             assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(id).state());
-            assertTrue(ledger.complete(id, Outcome.SUCCEEDED, "{}", true));
+            assertTrue(ledger.complete(id, TaskResult.SUCCEEDED, "{}", true));
         } finally {
             runtime.close();
         }
@@ -120,7 +117,7 @@ class PlatformStartupTest {
             }
         });
         assertInstanceOf(IllegalStateException.class, failure.get());
-        assertFalse(Files.exists(root.resolve("platform.mv.db")));
+        assertFalse(Files.exists(root.resolve("windowstolinux.mv.db")));
     }
 
     @Test
@@ -148,10 +145,10 @@ class PlatformStartupTest {
         byte[] damaged = Files.readAllBytes(bootstrap);
         damaged[damaged.length - 1] ^= 1;
         Files.write(bootstrap, damaged);
-        byte[] dbBefore = Files.readAllBytes(root.resolve("platform.mv.db"));
+        byte[] dbBefore = Files.readAllBytes(root.resolve("windowstolinux.mv.db"));
         assertThrows(Exception.class, () -> PlatformRuntime.open(root, protection));
         assertArrayEquals(damaged, Files.readAllBytes(bootstrap));
-        assertArrayEquals(dbBefore, Files.readAllBytes(root.resolve("platform.mv.db")));
+        assertArrayEquals(dbBefore, Files.readAllBytes(root.resolve("windowstolinux.mv.db")));
     }
 
     static String marker(PlatformRuntime runtime) throws Exception {

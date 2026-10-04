@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.secret;
 
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Credential failures expressed using the public platform vocabulary. / 使用平台公开词汇表达凭据失败。 */
 public enum SecretStoreFailureType {

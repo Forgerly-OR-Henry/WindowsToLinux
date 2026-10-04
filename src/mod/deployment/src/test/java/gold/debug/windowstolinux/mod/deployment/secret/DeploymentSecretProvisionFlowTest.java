@@ -1,21 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.secret;
 
-import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -27,30 +11,48 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.secret.*;
-import gold.debug.windowstolinux.appapi.server.*;
-
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefState;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.junit.jupiter.api.Test;
 
 class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
-    private static final ServerRef SERVER = new ServerRef("server");
+    private static final ServerId SERVER = new ServerId("server");
 
     private static final String PURPOSE = "deployment-password";
 
     private static final Instant CREATED = Instant.parse("2026-09-28T00:00:00Z");
 
-    private static final DeploymentSecretReference REVISION = new DeploymentSecretReference("database-password", 1);
+    private static final DeploymentSecretRef REVISION = new DeploymentSecretRef("database-password", 1);
 
     private static TaskSnapshot original(TaskContext task) {
         return new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentSecretProvisionFlow.TASK_TYPE, TaskState.RUNNING,
@@ -58,7 +60,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
     }
 
     private static OperationResult<Void> fixtureFailure() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.IO_FAILURE, "TEST_INTERRUPTED_SECRET",
                 "Test released only its own constructed facts", Map.of(), Optional.empty())));
     }
@@ -129,7 +131,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             byte[] callerOwned = "private-fixture".getBytes(StandardCharsets.UTF_8);
             var first = flow.submit(SERVER, REVISION, PURPOSE, CREATED, task -> callerOwned);
             var result = first.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             var row = result.value().orElseThrow();
             assertEquals(REVISION, row.reference());
             assertEquals(CREATED, row.createdAt());
@@ -141,26 +143,26 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             var read = context.tasks().submit(
                 new TaskRequest("secret-provision-read", "Read original revision", List.of(SERVER.id()), false),
                 task -> {
-                    var stored = new DeploymentSecretRepository(context.db()).findRevision(task, REVISION);
-                    var secret = new SecretRef(row.credentialId(), PURPOSE);
-                    var intent = gold.debug.windowstolinux.mod.deployment.db.DeploymentReferenceKey
+                    var stored = new DeploymentSecretStore(context.db()).findRevision(task, REVISION);
+                    var secret = new SecretId(row.credentialId(), PURPOSE);
+                    var intent = gold.debug.windowstolinux.mod.deployment.db.DeploymentRefKey
                         .secretRevision(SERVER, secret, REVISION);
                     var reference = context.secrets().findReference(secret, intent.businessKey(), task);
                     boolean matched = context.secrets().use(secret, PURPOSE, task,
                         bytes -> Arrays.equals(callerOwned, bytes));
                     assertEquals(Optional.of(row), stored);
-                    assertEquals(ReferenceState.ACTIVE, reference.orElseThrow().state());
+                    assertEquals(ResourceRefState.ACTIVE, reference.orElseThrow().state());
                     assertTrue(matched);
-                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var calls = new AtomicInteger();
             var duplicate = flow.submitOwned(SERVER, REVISION, PURPOSE, CREATED.plusSeconds(1), task -> {
                 calls.incrementAndGet();
                 return callerOwned;
             });
-            assertEquals(Outcome.FAILED,
+            assertEquals(TaskResult.FAILED,
                 duplicate.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(0, calls.get());
             assertEquals(1, creates.get());
@@ -180,26 +182,26 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             var calls = new AtomicInteger();
             var first = context.tasks().submit(new TaskRequest(DeploymentSecretProvisionFlow.TASK_TYPE,
                 "Lost created ID", List.of(SERVER.id()), true), task -> {
-                var journal = DeploymentSecretProvisionJournal.begin(context.tasks(), task, SERVER, REVISION,
+                var journal = DeploymentSecretProvisionActionLog.begin(context.tasks(), task, SERVER, REVISION,
                     PURPOSE, CREATED);
                 journal.createStarted();
                 var created = context.secrets().create(PURPOSE, new byte[]{1, 2, 3}, task);
                 calls.incrementAndGet();
                 assertNotNull(created.id());
-                assertEquals(Outcome.UNKNOWN,
+                assertEquals(TaskResult.UNKNOWN,
                     new DeploymentSecretProvisionFlow(context).reconcile(original(task), task).outcome());
-                assertEquals(DeploymentSecretProvisionJournal.PhaseType.CREATE_STARTED,
+                assertEquals(DeploymentSecretProvisionActionLog.PhaseType.CREATE_STARTED,
                     journal.refresh().phase());
                 assertTrue(journal.facts().credentialId().isEmpty());
                 journal.close();
                 return fixtureFailure();
             });
-            assertEquals(Outcome.FAILED, first.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.FAILED, first.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(1, calls.get());
             var second = context.tasks().submit(new TaskRequest(DeploymentSecretProvisionFlow.TASK_TYPE,
                 "Unknown business commit", List.of(SERVER.id()), true), task -> {
-                var journal = DeploymentSecretProvisionJournal.begin(context.tasks(), task, SERVER,
-                    new DeploymentSecretReference("unwritten-password", 1), PURPOSE, CREATED);
+                var journal = DeploymentSecretProvisionActionLog.begin(context.tasks(), task, SERVER,
+                    new DeploymentSecretRef("unwritten-password", 1), PURPOSE, CREATED);
                 journal.createStarted();
                 var secret = context.secrets().create(PURPOSE, new byte[]{4, 5, 6}, task);
                 journal.created(secret);
@@ -209,17 +211,17 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                 journal.reserved(reference.id());
                 journal.writeStarted();
                 var flow = new DeploymentSecretProvisionFlow(context);
-                assertEquals(Outcome.UNKNOWN, flow.reconcile(original(task), task).outcome());
-                assertEquals(DeploymentSecretProvisionJournal.PhaseType.WRITE_STARTED,
+                assertEquals(TaskResult.UNKNOWN, flow.reconcile(original(task), task).outcome());
+                assertEquals(DeploymentSecretProvisionActionLog.PhaseType.WRITE_STARTED,
                     journal.refresh().phase());
                 journal.saved();
-                assertEquals(Outcome.UNKNOWN, flow.reconcile(original(task), task).outcome());
-                assertEquals(DeploymentSecretProvisionJournal.PhaseType.SAVED, journal.refresh().phase());
-                context.secrets().resolve(reference.id(), ReferenceResolution.NOT_REFERENCED, task);
+                assertEquals(TaskResult.UNKNOWN, flow.reconcile(original(task), task).outcome());
+                assertEquals(DeploymentSecretProvisionActionLog.PhaseType.SAVED, journal.refresh().phase());
+                context.secrets().resolve(reference.id(), ResourceRefResult.NOT_REFERENCED, task);
                 journal.close();
                 return fixtureFailure();
             });
-            assertEquals(Outcome.FAILED, second.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.FAILED, second.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
         }
@@ -262,9 +264,9 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             assertTrue(resolutions.get() >= 1);
             assertEquals(1, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
-            var reconciled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+            var reconciled = reconcileReady(runtime, handle);
             assertEquals(TaskState.ENDED, reconciled.state(), reconciled.toString());
-            assertEquals(Optional.of(Outcome.SUCCEEDED), reconciled.outcome());
+            assertEquals(Optional.of(TaskResult.SUCCEEDED), reconciled.outcome());
             assertEquals(1, creates.get());
             assertEquals(1, inputs.get());
             assertEquals(0, scalar(runtime,
@@ -288,7 +290,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                     Object answer = method.invoke(context.secrets(), args);
                     if (method.getName().equals("create")) {
                         creates.incrementAndGet();
-                        assertNotNull(((SecretRef) answer).id());
+                        assertNotNull(((SecretId) answer).id());
                         throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_SECRET_CREATE_ACK",
                             "Created ID response was lost", Map.of(), Optional.empty()));
                     }
@@ -307,17 +309,17 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                             submitted[1] = (TaskWork<DeploymentSecretRevision>) task -> {
                                 var actual = work.run(task);
                                 observed.set(actual);
-                                assertEquals(Outcome.UNKNOWN, actual.outcome());
+                                assertEquals(TaskResult.UNKNOWN, actual.outcome());
                                 var checkpoint = context.tasks()
-                                    .findCheckpoint(task, DeploymentSecretProvisionJournal.KEY).orElseThrow();
+                                    .findCheckpoint(task, DeploymentSecretProvisionActionLog.KEY).orElseThrow();
                                 assertTrue(
                                     checkpoint.snapshot().payload().contains("\"phase\":\"CREATE_STARTED\""));
                                 assertTrue(checkpoint.snapshot().payload().contains("\"credentialId\":null"));
-                                assertEquals(Outcome.UNKNOWN, new DeploymentSecretProvisionFlow(context)
+                                assertEquals(TaskResult.UNKNOWN, new DeploymentSecretProvisionFlow(context)
                                     .reconcile(original(task), task).outcome());
                                 assertEquals(1, creates.get());
                                 checkpoint.close(); // Test-only release after checking the durable UNKNOWN.
-                                return new OperationResult<DeploymentSecretRevision>(Outcome.FAILED,
+                                return new OperationResult<DeploymentSecretRevision>(TaskResult.FAILED,
                                     Optional.empty(), fixtureFailure().problem());
                             };
                             return method.invoke(context.tasks(), submitted);
@@ -334,8 +336,8 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                 owned.set(value);
                 return value;
             });
-            assertEquals(Outcome.FAILED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
-            assertEquals(Outcome.UNKNOWN, observed.get().outcome());
+            assertEquals(TaskResult.FAILED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.UNKNOWN, observed.get().outcome());
             assertEquals(1, creates.get());
             assertEquals(1, inputs.get());
             assertArrayEquals(new byte[3], owned.get(), "UNKNOWN must not retain page-owned plaintext");
@@ -352,7 +354,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
         UUID prior;
         UUID interrupted = UUID.randomUUID();
         UUID boot;
-        gold.debug.windowstolinux.appapi.db.SchemaIdentity schema;
+        gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity schema;
         try (var runtime = open()) {
             start(runtime, true);
             server(runtime);
@@ -363,15 +365,15 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                 "Capture original secret task graph", List.of(SERVER.id()), true), task -> {
                 graph.set(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(task.id())
                     .orElseThrow());
-                var journal = DeploymentSecretProvisionJournal.begin(context.tasks(), task, SERVER, REVISION,
+                var journal = DeploymentSecretProvisionActionLog.begin(context.tasks(), task, SERVER, REVISION,
                     PURPOSE, CREATED);
-                payload.set(context.tasks().findCheckpoint(task, DeploymentSecretProvisionJournal.KEY)
+                payload.set(context.tasks().findCheckpoint(task, DeploymentSecretProvisionActionLog.KEY)
                     .orElseThrow().snapshot().payload());
                 journal.close();
-                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             });
             prior = probe.id();
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 probe.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
         }
         try (var db = PlatformDatabase.open(root.resolve("data"), PROTECTION)) {
@@ -391,9 +393,9 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                     }
                 });
             assertTrue(ledger.tryStart(interrupted));
-            new TaskAuthorCheckpoint(db).begin(interrupted, OWNER, VERSION, DeploymentSecretProvisionJournal.KEY,
+            new TaskAuthorCheckpoint(db).begin(interrupted, OWNER, VERSION, DeploymentSecretProvisionActionLog.KEY,
                 payload.get().replace(prior.toString(), interrupted.toString()));
-            assertFalse(ledger.complete(interrupted, Outcome.UNKNOWN, "Interrupted before secret create", false));
+            assertFalse(ledger.complete(interrupted, TaskResult.UNKNOWN, "Interrupted before secret create", false));
             try (var connection = db.openConnection();
                  var update = connection.prepareStatement("UPDATE mod_registry SET last_boot_id=?,"
                      + "last_runtime_state='UNKNOWN',actual_version=? WHERE mod_id=?")) {
@@ -423,7 +425,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
             assertEquals(List.of("MOD_RECOVERY_READY"), report.problems().stream().map(Problem::eventCode).toList());
             var recovered = runtime.tasks().reconcile(interrupted).toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, recovered.state());
-            assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
+            assertEquals(Optional.of(TaskResult.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
             runtime.modRecovery().release();
@@ -465,7 +467,7 @@ class DeploymentSecretProvisionFlowTest extends DeploymentRuntimeFixture {
                 release.countDown();
             }
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(0, creates.get());
             assertArrayEquals(new byte[3], owned.get(), "Cancelled owned input must be cleared");
             assertEquals(0, scalar(runtime,

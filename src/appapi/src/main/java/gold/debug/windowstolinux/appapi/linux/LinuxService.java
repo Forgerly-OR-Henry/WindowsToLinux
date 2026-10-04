@@ -1,8 +1,11 @@
 package gold.debug.windowstolinux.appapi.linux;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /**
  * Task-authorized SSH access with host trust verification. / 绑定任务授权及主机信任校验的 SSH 能力。
@@ -16,7 +19,7 @@ public interface LinuxService {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    RemoteSession connect(ServerRef server, TaskContext task) throws ApiException;
+    RemoteSession connect(ServerId server, TaskContext task) throws ApiException;
 
     /** Lists outstanding transfers owned by the original executing or recovering task. / 列出原执行或恢复任务所属的未完成传输。
      * @param task authentic original task / 真实原任务

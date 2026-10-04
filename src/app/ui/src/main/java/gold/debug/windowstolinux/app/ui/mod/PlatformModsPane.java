@@ -9,21 +9,22 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.mod.PlatformModDeletion;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
-import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice;
-import gold.debug.windowstolinux.app.service.mod.PlatformModReinstallation;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletion;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModReinstallation;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageContribution;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Manages saved Mod choices and explicit data maintenance through the original host. / 经原宿主管理 Mod 已存选择及明确数据维护。 */
 public final class PlatformModsPane extends JPanel implements AutoCloseable {
@@ -40,13 +41,13 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
          * @param review confirmed original review / 已确认原审阅
          * @return observed data outcome / 观察到的数据结果
          * @throws Exception if acceptance or cleanup remains uncertain / 接纳或清理仍不确定时 */
-        Outcome retry(RetryReview review) throws Exception;
+        TaskResult retry(RetryReview review) throws Exception;
 
         /** Reconciles the original interrupted preparation without replay. / 不重放地核对原中断准备。
          * @param operation original preparation / 原准备
          * @return verified data outcome / 已核实数据结果
          * @throws Exception if evidence or cleanup remains uncertain / 证据或清理仍不确定时 */
-        Outcome reconcile(UUID operation) throws Exception;
+        TaskResult reconcile(UUID operation) throws Exception;
     }
 
     /** Original installed-program maintenance collaborator. / 原已安装程序维护协作者。 */
@@ -65,7 +66,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private final PageMessagePresenter messages;
 
     /** Current themed controls. / 当前主题控件。 */
-    private final DesktopComponentFactory components;
+    private final DesktopPartFactory components;
 
     /** Shared exact page publication and persisted navigation preferences. / 共用的精确页面发布及持久导航偏好。 */
     private final ModNavigationPane navigation;
@@ -80,7 +81,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     private final DefaultListModel<ModView> rows = new DefaultListModel<>();
 
     /** Single selected Mod, independent of its version choice. / 独立于版本选择的单选 Mod。 */
-    private final JList<ModView> inventory = new JList<>(rows);
+    private final DesktopCardList<ModView> inventory = new DesktopCardList<>(rows, 84);
 
     /** Draft whole-Mod switch reviewed before saving. / 保存前需审阅的整个 Mod 开关草稿。 */
     private final JCheckBox enabled = new JCheckBox();
@@ -113,7 +114,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @param messages safe localized feedback / 安全本地化反馈
      * @param showLogs opens existing platform log management / 打开既有平台日志管理
      * @param navigation actual publication and navigation owner / 实际发布及导航所有者 */
-    public PlatformModsPane(PlatformModIntents service, SchemaActions schemas, DesktopComponentFactory components,
+    public PlatformModsPane(PlatformModIntents service, SchemaActions schemas, DesktopPartFactory components,
                             PageMessagePresenter messages, Runnable showLogs, ModNavigationPane navigation) {
         super(new BorderLayout(12, 12));
         if (!SwingUtilities.isEventDispatchThread())
@@ -166,7 +167,6 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         pageActions.add(pagePicker, BorderLayout.NORTH);
         var pageButtons = components.transparent(new FlowLayout(FlowLayout.LEFT, 6, 0));
         pageButtons.add(view.openPage);
-        pageButtons.add(view.pinPage);
         pageActions.add(pageButtons, BorderLayout.SOUTH);
         facts.add(pageActions, BorderLayout.NORTH);
         facts.add(new JScrollPane(details), BorderLayout.CENTER);
@@ -247,7 +247,6 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         epoch++;
         if (confirmation != null)
             confirmation.dispose();
-        rows.clear();
         LocaleBinding.unbind(view.status);
         view.status.setText("");
         render();
@@ -323,8 +322,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                     .filter(d -> manifest.schemaVersion().equals(Optional.of(d.identity().schemaVersion())))
                     .findFirst();
                 if (data.isPresent() && data.get().state().equals("FAILED")) {
-                    radio.setBorder(BorderFactory.createLineBorder(new Color(178, 45, 45)));
-                    radio.setBorderPainted(true);
+                    radio.setForeground(new Color(178, 45, 45));
                     radio.setText(radio.getText() + " · " + messages.text("mods.dataFailed"));
                 }
             }
@@ -356,8 +354,6 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         boolean active = !locked && !closed && !busy && navigation.available() && page != null;
         pagePicker.setEnabled(active);
         view.openPage.setEnabled(active);
-        view.pinPage.setEnabled(active);
-        messages.bind(view.pinPage, page != null && navigation.pinned(page.key()) ? "mods.unpinPage" : "mods.pinPage");
     }
 
     /** Localizes a persisted state without changing its meaning. / 本地化持久状态，不改变其含义。
@@ -482,10 +478,10 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
      * @return localized actual outcome / 本地化实际结果 */
     static String repairMessage(PageMessagePresenter messages,
                                 OperationResult<PlatformModReinstallation.Receipt> result) {
-        if (result.outcome() == Outcome.SUCCEEDED)
+        if (result.outcome() == TaskResult.SUCCEEDED)
             return messages.text("mods.repaired") + " "
                 + messages.text("originals.cleanup." + result.value().orElseThrow().originalCleanup());
-        if (result.outcome() == Outcome.FAILED
+        if (result.outcome() == TaskResult.FAILED
             && result.value().map(PlatformModReinstallation.Receipt::restored).orElse(false))
             return messages.text("mods.restoredProgram");
         return messages.text("mods.repairPending");
@@ -577,7 +573,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
 
     /** Displays data outcome separately from business runtime. / 分开显示数据结果和业务运行。
      * @param result verified or unknown data result / 已核实或未知数据结果 */
-    private void outcome(Outcome result) {
+    private void outcome(TaskResult result) {
         completed("mods.result." + result.name());
     }
 
@@ -636,7 +632,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         busy = true;
         long original = epoch;
         controls();
-        DesktopTaskExecutor.run(action, value -> {
+        DesktopTaskRunner.run(action, value -> {
             busy = false;
             controls();
             if (!closed && !locked) {
@@ -774,8 +770,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         /** Reports actual cleanup and refreshes both durable catalog and original observations. / 报告实际清理并刷新持久目录及原包观察。
          * @param result observed deletion result / 观察删除结果
          * @param whole whether the complete owner was selected / 是否选择完整所有者 */
-        private void deleted(Outcome result, boolean whole) {
-            completed(result == Outcome.SUCCEEDED ? whole ? "mods.deletedMod" : "mods.deleted" : "mods.deletePending");
+        private void deleted(TaskResult result, boolean whole) {
+            completed(result == TaskResult.SUCCEEDED ? whole ? "mods.deletedMod" : "mods.deleted" : "mods.deletePending");
             if (whole)
                 navigation.refreshPreferences();
             refreshOriginals.run();
@@ -786,9 +782,9 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             String owner = inventory.getSelectedValue().owner(), version = selectedVersion;
             run(installation::scan, observation -> {
                 var paths = observation.originals().stream()
-                    .filter(o -> o.state().equals("INSTALLED") && o.manifest().isPresent()
-                        && o.manifest().orElseThrow().id().equals(owner)
-                        && o.manifest().orElseThrow().version().toString().equals(version))
+                    .filter(o -> o.state().equals("INSTALLED") && o.packageInfo().isPresent()
+                        && o.packageInfo().orElseThrow().id().equals(owner)
+                        && o.packageInfo().orElseThrow().version().toString().equals(version))
                     .map(PlatformModInstallation.OriginalView::file).toList();
                 Path selected = null;
                 if (!paths.isEmpty()) {
@@ -866,7 +862,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         private void reviewRepair(String owner, String version, Path original) {
             run(() -> installation.reinstallation().review(owner, version, original), review -> {
                 var text = new StringBuilder(messages.text("mods.confirmRepair",
-                    Map.of("owner", owner, "version", version, "path", review.inspection().archive().toString(),
+                    Map.of("owner", owner, "version", version, "path", review.packageInfo().archive().toString(),
                         "retention",
                         messages.text(review.keepOriginal() ? "originals.keep" : "originals.removeAfter"))));
                 text.append("\n\n").append(messages.text("mods.repairOldFiles"));
@@ -921,7 +917,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
     /** Owns action controls and their visual arrangement, preserving pane admission. / 持有动作控件及布局，保留原页面准入。 */
     private final class ActionControls {
         /** Explicit opening and pinning, independent of version selection. / 独立于版本选择的明确打开及固定操作。 */
-        private final JButton openPage, pinPage;
+        private final JButton openPage;
 
         /** Explicit management actions. / 明确管理操作。 */
         private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, deleteMod,
@@ -950,11 +946,6 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
                 var page = (PageContribution) pagePicker.getSelectedItem();
                 if (page != null)
                     navigation.open(page.key());
-            });
-            pinPage = button("pinPage", () -> {
-                var page = (PageContribution) pagePicker.getSelectedItem();
-                if (page != null)
-                    navigation.pin(page.key(), !navigation.pinned(page.key()));
             });
             var actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             refresh = button("refresh", PlatformModsPane.this::refresh);

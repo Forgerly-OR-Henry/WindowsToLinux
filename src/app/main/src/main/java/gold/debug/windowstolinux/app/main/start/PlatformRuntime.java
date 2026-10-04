@@ -4,9 +4,9 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.Objects;
 
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
-import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.service.linux.PlatformLinuxService;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
@@ -17,6 +17,29 @@ import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
 /** Owns platform storage, task execution and security for one desktop boot. / 为一次桌面启动持有平台存储、任务执行及安全会话。 */
 public final class PlatformRuntime implements AutoCloseable {
+    /** One resolved startup snapshot. / 唯一已解析启动快照。 */
+    private final Startup startup;
+
+    /** Immutable configuration and verified layout. / 不可变配置及已验证布局。
+     * @param config startup configuration / 启动配置
+     * @param layout resolved paths / 已解析路径 */
+    public record Startup(gold.debug.windowstolinux.app.config.AppConfig config,
+                          gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RuntimeLayout layout) {
+        /** Requires both the frozen configuration and resolved runtime layout. / 要求冻结配置和已解析运行布局均存在。
+         * @param config frozen startup configuration / 冻结启动配置
+         * @param layout resolved runtime layout / 已解析运行布局 */
+        public Startup {
+            Objects.requireNonNull(config);
+            Objects.requireNonNull(layout);
+        }
+    }
+
+    /** Returns the same snapshot to every startup consumer. / 向所有启动消费者返回同一快照。
+     * @return immutable startup / 不可变启动 */
+    public Startup startup() {
+        return startup;
+    }
+
     /** Returns original Mod cleanup and schema recovery as one host feature. / 将原 Mod 清理及数据恢复作为同一宿主功能返回。
      * @return current host recovery / 当前宿主恢复 */
     public ModRecovery modRecovery() {
@@ -30,10 +53,10 @@ public final class PlatformRuntime implements AutoCloseable {
         }
 
         /** Releases drained original Mod sessions after explicit task reconciliation. / 在明确任务核对后释放已排空原 Mod 会话。
-         * @throws gold.debug.windowstolinux.appapi.task.ApiException if actual cleanup remains / 实际清理仍残留时 */
-        public void release() throws gold.debug.windowstolinux.appapi.task.ApiException {
+         * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if actual cleanup remains / 实际清理仍残留时 */
+        public void release() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
             PlatformBuildIdentity.requireWorker();
-            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
             synchronized (PlatformRuntime.this) {
                 coordinator = modCoordinator;
             }
@@ -42,9 +65,9 @@ public final class PlatformRuntime implements AutoCloseable {
             try {
                 coordinator.releaseRecovery();
             } catch (Exception failure) {
-                throw new gold.debug.windowstolinux.appapi.task.ApiException(
-                    new gold.debug.windowstolinux.appapi.task.Problem(
-                        gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN, "MOD_RECOVERY_CLEANUP_PENDING",
+                throw new gold.debug.windowstolinux.appapi.task.result.ApiException(
+                    new gold.debug.windowstolinux.appapi.task.result.Problem(
+                        gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN, "MOD_RECOVERY_CLEANUP_PENDING",
                         "The task ended but original Mod cleanup remains; closing the application retries retained cleanup",
                         java.util.Map.of(), java.util.Optional.empty()));
             }
@@ -54,10 +77,10 @@ public final class PlatformRuntime implements AutoCloseable {
          * @param preparation original retained preparation / 原保留准备
          * @return observed data outcome without business startup / 不含业务启动的已观察数据结果
          * @throws Exception if authorization, graph or original cleanup is unavailable / 授权、图或原清理不可用时 */
-        public gold.debug.windowstolinux.appapi.task.Outcome reconcile(java.util.UUID preparation)
+        public gold.debug.windowstolinux.appapi.task.result.TaskResult reconcile(java.util.UUID preparation)
             throws Exception {
             PlatformBuildIdentity.requireWorker();
-            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
             synchronized (PlatformRuntime.this) {
                 if (stopping || closed || modCoordinator == null)
                     throw new IllegalStateException("Mod graph is unavailable");
@@ -72,9 +95,9 @@ public final class PlatformRuntime implements AutoCloseable {
          * @return original concrete retry review / 原具体重试审阅
          * @throws Exception if the graph or retry requirements are unavailable / 图或重试条件不可用时 */
         public gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review(String owner,
-                                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> source) throws Exception {
+                                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> source) throws Exception {
             PlatformBuildIdentity.requireWorker();
-            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
             synchronized (PlatformRuntime.this) {
                 if (stopping || closed || modCoordinator == null)
                     throw new IllegalStateException("Mod graph is unavailable");
@@ -87,10 +110,10 @@ public final class PlatformRuntime implements AutoCloseable {
          * @param review user-confirmed original review / 用户确认原审阅
          * @return actual data result without starting business / 不启动业务的实际数据结果
          * @throws Exception if original execution or cleanup remains unconfirmed / 原执行或清理仍未确认时 */
-        public gold.debug.windowstolinux.appapi.task.Outcome retry(
+        public gold.debug.windowstolinux.appapi.task.result.TaskResult retry(
             gold.debug.windowstolinux.app.service.mod.PlatformModIntents.RetryReview review) throws Exception {
             PlatformBuildIdentity.requireWorker();
-            final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+            final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
             synchronized (PlatformRuntime.this) {
                 if (stopping || closed || modCoordinator == null)
                     throw new IllegalStateException("Mod graph is unavailable");
@@ -104,7 +127,7 @@ public final class PlatformRuntime implements AutoCloseable {
     private final ModCapabilities capabilities = new ModCapabilities();
 
     /** Protected platform storage retained until actual shutdown. / 实际关闭前保留的受保护平台存储。 */
-    private final PlatformPersistence persistence;
+    private final PlatformStorage persistence;
 
     /** Master-password session and accepted credential operations. / 主密码会话及已接纳的凭据操作。 */
     private final DesktopSecurityService security;
@@ -113,7 +136,7 @@ public final class PlatformRuntime implements AutoCloseable {
     private final PlatformTaskRuntime tasks;
 
     /** Shared service publication and synchronous provider ownership. / 共用服务发布及同步提供方归属。 */
-    private final gold.debug.windowstolinux.app.service.mod.PlatformModServices services;
+    private gold.debug.windowstolinux.app.service.mod.PlatformModServices services;
 
     /** Independent platform permission preference and current workflow scopes. / 独立平台权限偏好及当前流程作用域。 */
     private final PlatformAuthorizationService authorization;
@@ -122,10 +145,10 @@ public final class PlatformRuntime implements AutoCloseable {
     private final gold.debug.windowstolinux.app.service.log.PlatformLogService logs;
 
     /** Shared permanent connection and transfer preferences. / 共用常驻连接及传输偏好。 */
-    private final gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers;
+    private final gold.debug.windowstolinux.app.service.setting.TransferSettingsService transfers;
 
     /** Persistent optional file explanation preference. / 持久可选文件说明偏好。 */
-    private final gold.debug.windowstolinux.app.service.file.FileSettingsService fileSettings;
+    private final gold.debug.windowstolinux.app.service.setting.FileSettingsService fileSettings;
 
     /** Actual Maven artifact version, also used by host-owned task recovery. / 实际 Maven 产物版本，同时用于宿主任务恢复。 */
     private final String version;
@@ -140,7 +163,7 @@ public final class PlatformRuntime implements AutoCloseable {
     private gold.debug.windowstolinux.app.service.server.PlatformServerService servers;
 
     /** Permanent independent rescue coordinator on central platform tasks. / 中央平台任务上的常驻独立救援协调器。 */
-    private gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService recovery;
+    private gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery recovery;
 
     /** Permanent model settings and capability probes. / 常驻模型设置及能力探测。 */
     private gold.debug.windowstolinux.app.service.ai.PlatformModelService models;
@@ -149,10 +172,10 @@ public final class PlatformRuntime implements AutoCloseable {
     private gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents;
 
     /** Original-package installer, owned only in actual JAR or APP layouts. / 仅实际 JAR 或 APP 布局持有的原包安装器。 */
-    private gold.debug.windowstolinux.app.service.mod.PlatformModInstallation modInstallation;
+    private gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation modInstallation;
 
     /** Original automatic CLASS graph and its reverse cleanup ownership. / 原自动 CLASS 图及其逆序清理归属。 */
-    private gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator modCoordinator;
+    private gold.debug.windowstolinux.app.main.mod.PlatformModFlow modCoordinator;
 
     /** Complete or partially prepared Mod contexts whose cleanup is still owned. / 仍持有清理责任的完整或部分已准备 Mod 上下文。 */
     private final java.util.Map<String, gold.debug.windowstolinux.app.main.mod.PlatformModContext> modContexts = new java.util.LinkedHashMap<>();
@@ -175,25 +198,30 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param security current boot security owner / 当前启动的安全所有者
      * @throws SQLException if retained tasks cannot be loaded / 无法加载保留任务时
      * @throws java.io.IOException if build identity is missing or unfiltered / 构建身份缺失或未展开时
+     * @param config frozen startup configuration / 冻结启动配置
+     * @param layout resolved runtime paths / 已解析运行路径
      */
-    private PlatformRuntime(PlatformPersistence persistence, DesktopSecurityService security)
+    private PlatformRuntime(PlatformStorage persistence, DesktopSecurityService security, gold.debug.windowstolinux.app.config.AppConfig config, gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RuntimeLayout layout)
         throws SQLException, java.io.IOException {
+        this.startup = new Startup(config, layout);
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
-        initiallyDisabled = gold.debug.windowstolinux.app.db.mod.ModRestartLedger
-            .initiallyDisabled(persistence.database());
-        transfers = new gold.debug.windowstolinux.app.service.linux.TransferSettingsService(persistence, security);
-        fileSettings = new gold.debug.windowstolinux.app.service.file.FileSettingsService(persistence, security);
+        initiallyDisabled = config.modLoad() ? gold.debug.windowstolinux.app.db.mod.ModRestartLedger.initiallyDisabled(persistence.database()) : java.util.Map.of();
+        transfers = new gold.debug.windowstolinux.app.service.setting.TransferSettingsService(persistence, security, config.defaults());
+        fileSettings = new gold.debug.windowstolinux.app.service.setting.FileSettingsService(persistence, security, config.defaults().deleteExplanation());
         version = PlatformBuildIdentity.readVersion();
-        logs = new gold.debug.windowstolinux.app.service.log.PlatformLogService(persistence.database(), security);
+        logs = new gold.debug.windowstolinux.app.service.log.PlatformLogService(persistence.database(), security, config.emergencyRecords());
         try {
             logs.replayAll();
         } catch (Exception failure) {
             throw new SQLException("Platform diagnostic recovery could not enumerate registered categories", failure);
         }
+        var callbackReports = new gold.debug.windowstolinux.app.main.error.DesktopFailureReportStore(
+            layout.dataDirectory(), version, config.emergencyRecords());
+        callbackReports.attach(logs, version);
         tasks = new PlatformTaskRuntime(persistence.database(),
-            new PlatformTaskAdmission(persistence.database(), version), security);
-        services = new gold.debug.windowstolinux.app.service.mod.PlatformModServices(persistence.database(), tasks);
+            new PlatformTaskAdmission(persistence.database(), version), security, callbackReports::recordDiagnostic);
+
         authorization = new PlatformAuthorizationService(persistence, security, tasks);
     }
 
@@ -205,12 +233,26 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if initialization or cleanup fails / 初始化或清理失败时
      */
     public static PlatformRuntime open(Path dataDirectory, DatabaseProtection protection) throws Exception {
+        var detected = gold.debug.windowstolinux.app.main.runtime.RunModeResolver.resolve();
+        return open(new gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RuntimeLayout(detected.mode(), detected.applicationHome(), dataDirectory), protection, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig());
+    }
+
+    /** Opens one explicitly configured boot. / 打开明确配置的一次启动。
+     * @param layout one resolved layout / 唯一解析布局
+     * @param protection current-user protector / 当前用户保护器
+     * @param config immutable startup configuration / 不可变启动配置
+     * @return owned runtime / 所属运行时
+     * @throws Exception if bootstrap fails / 引导失败时 */
+    public static PlatformRuntime open(gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RuntimeLayout layout, DatabaseProtection protection, gold.debug.windowstolinux.app.config.AppConfig config) throws Exception {
+        if (!config.modLoad() && layout.mode() != gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RunMode.RUN_CLASS)
+            throw new IllegalArgumentException("Mod loading may only be disabled in CLASS mode");
+        Path dataDirectory = layout.dataDirectory();
         PlatformBuildIdentity.requireWorker();
-        var persistence = new PlatformPersistence(PlatformDatabase.open(dataDirectory, protection));
+        var persistence = new PlatformStorage(PlatformDatabase.open(dataDirectory, protection, java.util.Map.of("file_delete_ai_explanation", Boolean.toString(config.defaults().deleteExplanation())), config.modLoad()));
         DesktopSecurityService security = null;
         try {
             security = new DesktopSecurityService(persistence.security());
-            return new PlatformRuntime(persistence, security);
+            return new PlatformRuntime(persistence, security, config, layout);
         } catch (Exception | Error failure) {
             if (security != null) {
                 try {
@@ -230,7 +272,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Returns the platform repositories for startup composition. / 返回供启动装配使用的平台仓库。
      * @return owned platform repositories / 所属平台仓库 */
-    public PlatformPersistence persistence() {
+    public PlatformStorage persistence() {
         return persistence;
     }
 
@@ -262,8 +304,8 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
     public gold.debug.windowstolinux.app.mod.run.ModRuntimeSession modSession(
         gold.debug.windowstolinux.app.mod.load.ModClassLoader loader,
-        java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
-        gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+        java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
+        gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode mode,
         gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
         gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception {
         Objects.requireNonNull(platformApi);
@@ -291,6 +333,7 @@ public final class PlatformRuntime implements AutoCloseable {
      * @throws Exception if build identity or archive registration is unavailable / 构建身份或归档登记不可用时 */
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModIntents modIntents() throws Exception {
         PlatformBuildIdentity.requireWorker();
+        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
         if (stopping || closed)
             throw new IllegalStateException("Mod intent management is closing");
         if (modIntents == null) {
@@ -303,16 +346,17 @@ public final class PlatformRuntime implements AutoCloseable {
     /** Returns original-package installation for the actual application layout. / 为实际应用布局返回原包安装能力。
      * @return original installation owner / 原安装所有者
      * @throws Exception if closing, in CLASS mode or storage is unavailable / 正在关闭、处于 CLASS 模式或存储不可用时 */
-    public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModInstallation modInstallation()
+    public synchronized gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation modInstallation()
         throws Exception {
         PlatformBuildIdentity.requireWorker();
+        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
         if (stopping || closed)
             throw new IllegalStateException("Mod installation is closing");
-        var layout = gold.debug.windowstolinux.app.main.runtime.RunModeResolver.resolve();
+        var layout = startup.layout();
         if (layout.mode() == gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RunMode.RUN_CLASS)
             throw new IllegalStateException("CLASS mode uses source builds, not installed package directories");
         if (modInstallation == null)
-            modInstallation = new gold.debug.windowstolinux.app.service.mod.PlatformModInstallation(
+            modInstallation = new gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation(
                 persistence.database(), security, layout.applicationHome(), logs,
                 PlatformBuildIdentity.readApiVersion());
         return modInstallation;
@@ -323,8 +367,8 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param pages actual visible window page registry / 实际可见窗口页面登记
      * @return original graph's startup facts / 原图启动事实
      * @throws Exception if ownership or build identity prevents composition / 归属或构建身份阻止装配时 */
-    public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startDevelopmentMods(Path workspace,
-                                                                                                     gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
+    public gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startDevelopmentMods(Path workspace,
+                                                                                              gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         return startMods(workspace, true, pages);
     }
 
@@ -333,8 +377,8 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param pages actual desktop registry / 实际桌面登记
      * @return actual graph facts / 实际图事实
      * @throws Exception if graph ownership or installed code is unavailable / 图归属或安装代码不可用时 */
-    public gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startInstalledMods(Path home,
-                                                                                                   gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
+    public gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startInstalledMods(Path home,
+                                                                                            gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         return startMods(home, false, pages);
     }
 
@@ -344,14 +388,15 @@ public final class PlatformRuntime implements AutoCloseable {
      * @param pages actual desktop registry / 实际桌面登记
      * @return actual startup facts / 实际启动事实
      * @throws Exception if ownership or source verification fails / 归属或来源核验失败时 */
-    private gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator.Report startMods(Path root,
-                                                                                           boolean development, gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
+    private gold.debug.windowstolinux.app.main.mod.PlatformModFlow.Report startMods(Path root,
+                                                                                    boolean development, gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
         PlatformBuildIdentity.requireWorker();
-        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
+        final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
         synchronized (this) {
             if (stopping || closed || modCoordinator != null || !modContexts.isEmpty() || !modSessions.isEmpty())
                 throw new IllegalStateException("Mod startup already has an owner or the platform is closing");
-            coordinator = new gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator(capabilities, root,
+            coordinator = new gold.debug.windowstolinux.app.main.mod.PlatformModFlow(capabilities, root,
                 development, initiallyDisabled, pages, PlatformBuildIdentity.readApiVersion());
             modCoordinator = coordinator;
         }
@@ -363,6 +408,9 @@ public final class PlatformRuntime implements AutoCloseable {
     public synchronized gold.debug.windowstolinux.app.service.mod.PlatformModServices services() {
         if (stopping || closed)
             throw new IllegalStateException("Platform services are closing");
+        if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
+        if (services == null)
+            services = new gold.debug.windowstolinux.app.service.mod.PlatformModServices(persistence.database(), tasks);
         return services;
     }
 
@@ -376,7 +424,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Returns the shared file preference for host settings. / 返回宿主设置共用文件偏好。
      * @return actual preference owner / 实际偏好所有者 */
-    public synchronized gold.debug.windowstolinux.app.service.file.FileSettingsService fileSettings() {
+    public synchronized gold.debug.windowstolinux.app.service.setting.FileSettingsService fileSettings() {
         if (stopping || closed) throw new IllegalStateException("Platform file settings are closing");
         return fileSettings;
     }
@@ -397,7 +445,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Returns the permanent transfer preference owner. / 返回常驻传输偏好所有者。
      * @return shared settings service / 共用设置服务 */
-    public synchronized gold.debug.windowstolinux.app.service.linux.TransferSettingsService transfers() {
+    public synchronized gold.debug.windowstolinux.app.service.setting.TransferSettingsService transfers() {
         if (stopping || closed)
             throw new IllegalStateException("Platform transfer settings are closing");
         return transfers;
@@ -425,10 +473,10 @@ public final class PlatformRuntime implements AutoCloseable {
     /**
      * Creates the permanent platform server capability after human presentation is installed. / 安装人工呈现后创建常驻平台服务器能力。
      * @return current platform settings and check coordinator / 当前平台设置及检查协调器
-     * @throws gold.debug.windowstolinux.appapi.task.ApiException if recovery ownership cannot be registered / 无法登记恢复归属时
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if recovery ownership cannot be registered / 无法登记恢复归属时
      */
     public synchronized gold.debug.windowstolinux.app.service.server.PlatformServerService servers()
-        throws gold.debug.windowstolinux.appapi.task.ApiException {
+        throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         if (closed || stopping || prompts == null)
             throw new IllegalStateException("Platform server settings are unavailable");
         if (servers == null) {
@@ -436,7 +484,7 @@ public final class PlatformRuntime implements AutoCloseable {
             try {
                 servers = new gold.debug.windowstolinux.app.service.server.PlatformServerService(persistence, security,
                     tasks, version, remote.linux(), remote::closeTaskResources);
-            } catch (gold.debug.windowstolinux.appapi.task.ApiException | RuntimeException failure) {
+            } catch (gold.debug.windowstolinux.appapi.task.result.ApiException | RuntimeException failure) {
                 try {
                     remote.close();
                 } catch (Exception cleanup) {
@@ -450,18 +498,18 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Composes permanent rescue with actual host model, browser and SSH task ownership. / 使用实际宿主模型、浏览器及 SSH 任务归属装配常驻救援。
      * @return original platform rescue coordinator / 原平台救援协调器
-     * @throws gold.debug.windowstolinux.appapi.task.ApiException if original recovery registration fails / 原恢复登记失败时 */
-    public synchronized gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService recovery()
-        throws gold.debug.windowstolinux.appapi.task.ApiException {
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if original recovery registration fails / 原恢复登记失败时 */
+    public synchronized gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery recovery()
+        throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         if (closed || stopping || prompts == null)
             throw new IllegalStateException("Platform rescue is unavailable");
         if (recovery == null) {
             var remote = capabilities.remoteCapabilities(PlatformTaskAdmission.PLATFORM_OWNER, version);
             var model = capabilities.ai(PlatformTaskAdmission.PLATFORM_OWNER, version);
             try {
-                recovery = new gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService(persistence,
-                    security, tasks, version, remote.linux, model, remote::closeTaskResources);
-            } catch (gold.debug.windowstolinux.appapi.task.ApiException | RuntimeException failure) {
+                recovery = new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery(
+                    new PlatformRecoveryHost(persistence, security, tasks, remote.linux, model, remote::closeTaskResources), version, startup.config());
+            } catch (gold.debug.windowstolinux.appapi.task.result.ApiException | RuntimeException failure) {
                 try {
                     remote.close();
                 } catch (Exception cleanup) {
@@ -480,9 +528,9 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Creates the permanent model configuration service with real task-bound probes. / 创建具有真实任务探测的常驻模型配置服务。
      * @return host model settings / 宿主模型设置
-     * @throws gold.debug.windowstolinux.appapi.task.ApiException if recovery registration fails / 恢复登记失败时 */
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if recovery registration fails / 恢复登记失败时 */
     public synchronized gold.debug.windowstolinux.app.service.ai.PlatformModelService models()
-        throws gold.debug.windowstolinux.appapi.task.ApiException {
+        throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         PlatformBuildIdentity.requireWorker();
         if (closed || stopping)
             throw new IllegalStateException("Platform model settings are closing");
@@ -517,7 +565,7 @@ public final class PlatformRuntime implements AutoCloseable {
     @Override
     public void close() throws Exception {
         PlatformBuildIdentity.requireWorker();
-        final gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator coordinator;
+        final gold.debug.windowstolinux.app.main.mod.PlatformModFlow coordinator;
         synchronized (this) {
             if (closed)
                 return;
@@ -576,7 +624,7 @@ public final class PlatformRuntime implements AutoCloseable {
         capabilities.close();
         transfers.close();
         authorization.close();
-        services.close();
+        if (services != null) services.close();
         logs.close();
         tasks.close();
         security.close();
@@ -592,6 +640,16 @@ public final class PlatformRuntime implements AutoCloseable {
 
     /** Binds author capabilities and owns their cleanup under the original runtime monitor. / 在原运行时监视器下绑定作者能力并持有清理职责。 */
     public final class ModCapabilities implements gold.debug.windowstolinux.app.main.mod.PlatformModHost {
+
+        /** Keeps fatal author/cleanup errors outside ordinary preparation failures. / 不将致命作者或清理错误转为普通准备失败。
+         * @param failure original error / 原错误 */
+        private static void rethrowFatal(Throwable failure) {
+            if (failure instanceof VirtualMachineError fatal)
+                throw fatal;
+            if (failure instanceof ThreadDeath fatal)
+                throw fatal;
+        }
+
         /** Caller-bound remote capabilities owned through their actual cleanup. / 持有至实际清理完成的调用方远端能力。 */
         private final java.util.Set<RemoteCapabilities> remoteCapabilities = new java.util.LinkedHashSet<>();
 
@@ -616,7 +674,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
         /** Returns the platform repositories for startup composition. / 返回供启动装配使用的平台仓库。
          * @return owned platform repositories / 所属平台仓库 */
-        public PlatformPersistence persistence() {
+        public PlatformStorage persistence() {
             return PlatformRuntime.this.persistence();
         }
 
@@ -667,10 +725,11 @@ public final class PlatformRuntime implements AutoCloseable {
          * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
         public gold.debug.windowstolinux.app.mod.run.ModRuntimeSession modSession(
             gold.debug.windowstolinux.app.mod.load.ModClassLoader loader,
-            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
-            gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+            java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
+            gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode mode,
             gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
             gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception {
+            if (!startup.config().modLoad()) throw new IllegalStateException("Mod loading is disabled for this boot");
             return PlatformRuntime.this.modSession(loader, schema, mode, pages, platformApi);
         }
 
@@ -683,8 +742,8 @@ public final class PlatformRuntime implements AutoCloseable {
          * @throws Exception if identity, preparation or cleanup fails / 身份、准备或清理失败时 */
         public gold.debug.windowstolinux.app.main.mod.PlatformModContext modContext(
             gold.debug.windowstolinux.app.mod.load.ModClassLoader loader,
-            java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
-            gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+            java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
+            gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode mode,
             gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages) throws Exception {
             PlatformBuildIdentity.requireWorker();
             final gold.debug.windowstolinux.app.main.mod.PlatformModContext prepared;
@@ -701,12 +760,16 @@ public final class PlatformRuntime implements AutoCloseable {
             try {
                 prepared.prepare();
                 return prepared;
-            } catch (Exception | LinkageError | AssertionError failure) {
+            } catch (Exception | Error failure) {
                 try {
                     prepared.close();
-                } catch (Exception cleanup) {
-                    failure.addSuppressed(cleanup);
+                } catch (Exception | Error cleanup) {
+                    rethrowFatal(failure);
+                    rethrowFatal(cleanup);
+                    if (cleanup != failure)
+                        failure.addSuppressed(cleanup);
                 }
+                rethrowFatal(failure);
                 throw failure;
             }
         }
@@ -741,10 +804,10 @@ public final class PlatformRuntime implements AutoCloseable {
                     throw new IllegalArgumentException("File service requires the original activation capabilities");
                 var source = new gold.debug.windowstolinux.app.service.file.PlatformFileAccess(
                     persistence.database(), tasks, security, owner, version, sourcePicker);
-                var interaction = new gold.debug.windowstolinux.app.service.file.PlatformFileInteraction(
-                    remote.interaction, tasks, remote.reviewAi, fileSettings, owner, version);
-                gold.debug.windowstolinux.app.service.file.FileBackendAccess backends = backends(remote.linux);
-                source.installOperations(new gold.debug.windowstolinux.app.service.file.PlatformFileCoordinator(
+                var interaction = new gold.debug.windowstolinux.app.service.file.check.PlatformFileInteraction(
+                    remote.interaction, tasks, remote.reviewAi, fileSettings, owner, version, startup.config().ai().file());
+                gold.debug.windowstolinux.app.service.file.check.FileBackendAccess backends = backends(remote.linux);
+                source.installOperations(new gold.debug.windowstolinux.app.service.file.PlatformFileFlow(
                     persistence.database(), tasks, security, owner, version, interaction, backends, remote.linux::transferFile));
                 sourceServices.add(source);
                 return source;
@@ -761,7 +824,7 @@ public final class PlatformRuntime implements AutoCloseable {
          */
         @Override
         public gold.debug.windowstolinux.app.service.server.PlatformServerAccess serverAccess(String owner,
-                                                                                              String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
+                                                                                              String version, java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema) {
             synchronized (PlatformRuntime.this) {
                 if (closed || stopping)
                     throw new IllegalStateException("Platform server capabilities are closing");
@@ -782,7 +845,7 @@ public final class PlatformRuntime implements AutoCloseable {
          */
         @Override
         public gold.debug.windowstolinux.app.service.secret.PlatformSecretService secrets(String owner, String version,
-                                                                                          java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
+                                                                                          java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema) {
             synchronized (PlatformRuntime.this) {
                 if (closed || stopping)
                     throw new IllegalStateException("Platform secret capabilities are closing");
@@ -807,7 +870,7 @@ public final class PlatformRuntime implements AutoCloseable {
                 if (closed || stopping)
                     throw new IllegalStateException("Platform model capabilities are closing");
                 var ai = new gold.debug.windowstolinux.app.service.ai.PlatformAiService(persistence.database(), tasks,
-                    security, persistence.aiProfiles(), owner, version);
+                    security, persistence.aiProfiles(), owner, version, startup.config().ai().connectSeconds());
                 aiServices.add(ai);
                 return ai;
 
@@ -847,9 +910,9 @@ public final class PlatformRuntime implements AutoCloseable {
                 var interaction = new PlatformInteractionService(tasks, security, authorization, ownerId, version,
                     prompts);
                 var linux = new PlatformLinuxService(tasks, security, persistence.servers(), interaction, ownerId,
-                    version, transfers);
+                    version, transfers, startup.config().ssh());
                 var reviewAi = ai(ownerId, version);
-                interaction.installDeletionReview(new gold.debug.windowstolinux.app.service.file.FileDeletionReview(tasks, reviewAi, backends(linux)));
+                interaction.installDeletionReview(new gold.debug.windowstolinux.app.service.file.check.FileDeletionReview(tasks, reviewAi, backends(linux), startup.config().ai().deletion()));
                 var capabilities = new RemoteCapabilities(ownerId, version, interaction, linux, authorization.launcher(ownerId, version), reviewAi);
                 remoteCapabilities.add(capabilities);
                 return capabilities;
@@ -860,8 +923,8 @@ public final class PlatformRuntime implements AutoCloseable {
         /** Routes exact file hosts to account primitives without exporting transport clients. / 将精确文件主机路由到账户原语而不导出传输客户端。
          * @param linux original managed connection owner / 原受管连接所有者
          * @return scoped backend adapter / 作用域后端适配 */
-        private gold.debug.windowstolinux.app.service.file.FileBackendAccess backends(PlatformLinuxService linux) {
-            return new gold.debug.windowstolinux.app.service.file.FileBackendAccess() {
+        private gold.debug.windowstolinux.app.service.file.check.FileBackendAccess backends(PlatformLinuxService linux) {
+            return new gold.debug.windowstolinux.app.service.file.check.FileBackendAccess() {
                 /** Keeps local access unrestricted by artificial roots and remote access task-bound. / 本机不设人为根限制，远端保持任务绑定。
                  * @param <T> result / 结果
                  * @param host exact host / 精确主机
@@ -869,10 +932,10 @@ public final class PlatformRuntime implements AutoCloseable {
                  * @param work actual primitive work / 实际原语工作
                  * @return actual result / 实际结果
                  * @throws java.io.IOException if file I/O fails / 文件I/O失败时
-                 * @throws gold.debug.windowstolinux.appapi.task.ApiException if authorization fails / 授权失败时 */
+                 * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if authorization fails / 授权失败时 */
                 @Override
-                public <T> T withBackend(gold.debug.windowstolinux.appapi.file.FilePath host,
-                                         gold.debug.windowstolinux.appapi.task.TaskContext task, Work<T> work) throws java.io.IOException, gold.debug.windowstolinux.appapi.task.ApiException {
+                public <T> T withBackend(gold.debug.windowstolinux.appapi.file.model.FilePath host,
+                                         gold.debug.windowstolinux.appapi.task.run.TaskContext task, Work<T> work) throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
                     if (host.server().isPresent()) return linux.withFiles(host.server().orElseThrow(), task, work);
                     try (var backend = new gold.debug.windowstolinux.app.file.LocalFileBackend()) {
                         return work.run(backend);
@@ -906,7 +969,7 @@ public final class PlatformRuntime implements AutoCloseable {
          * @return original activation's logger / 原启用日志器 */
         @Override
         public gold.debug.windowstolinux.app.service.log.PlatformLogService.Binding logs(String owner, String version,
-                                                                                         java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema) {
+                                                                                         java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema) {
             synchronized (PlatformRuntime.this) {
                 return PlatformRuntime.this.logs().bind(owner, version, schema, tasks);
 
@@ -980,7 +1043,7 @@ public final class PlatformRuntime implements AutoCloseable {
 
             /** Returns the public author review contract. / 返回公开作者审核契约。
              * @return bound review service / 绑定的审核服务 */
-            public gold.debug.windowstolinux.appapi.task.InteractionService interaction() {
+            public gold.debug.windowstolinux.appapi.task.action.InteractionService interaction() {
                 return interaction;
             }
 
@@ -993,20 +1056,20 @@ public final class PlatformRuntime implements AutoCloseable {
             /**
              * Retries retained physical resources for explicit host reconciliation. / 为显式宿主核对重试保留物理资源。
              * @param task original retained task / 原始保留任务
-             * @throws gold.debug.windowstolinux.appapi.task.ApiException if release remains incomplete / 释放仍未完成时
+             * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if release remains incomplete / 释放仍未完成时
              */
-            public void closeTaskResources(gold.debug.windowstolinux.appapi.task.TaskContext task)
-                throws gold.debug.windowstolinux.appapi.task.ApiException {
+            public void closeTaskResources(gold.debug.windowstolinux.appapi.task.run.TaskContext task)
+                throws gold.debug.windowstolinux.appapi.task.result.ApiException {
                 linux.closeTaskResources(task);
                 interaction.retryFinishedReleases();
             }
 
             /**
              * Closes actual clients before revoking their review capability. / 在撤销审核能力之前关闭实际客户端。
-             * @throws gold.debug.windowstolinux.appapi.task.ApiException if actual cleanup remains / 实际清理仍未完成时
+             * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if actual cleanup remains / 实际清理仍未完成时
              */
             @Override
-            public void close() throws gold.debug.windowstolinux.appapi.task.ApiException {
+            public void close() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
                 launcher.close();
                 linux.close();
                 reviewAi.close();

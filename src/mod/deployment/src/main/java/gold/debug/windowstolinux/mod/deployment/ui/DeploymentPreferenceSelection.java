@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -16,6 +8,13 @@ import java.util.function.Supplier;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection;
 
 /** Persists explicit view edits without writing initialization or locale changes. / 持久化明确视图编辑，不写初始化或语言变化。 */
@@ -134,10 +133,10 @@ final class DeploymentPreferenceSelection {
         if (observer != null) observer.stop();
         if (closed) return;
         saving = false;
-        if (error == null && result != null && result.outcome() == Outcome.SUCCEEDED) {
+        if (error == null && result != null && result.outcome() == TaskResult.SUCCEEDED) {
             diagnostic = "";
             load(result.value().orElseThrow());
-        } else if (error == null && result != null && result.outcome() == Outcome.UNKNOWN
+        } else if (error == null && result != null && result.outcome() == TaskResult.UNKNOWN
             || error instanceof ApiException api && api.problem().code() == ProblemCode.UNKNOWN) {
             ready = false;
             diagnostic = error instanceof ApiException api ? api.problem().eventCode()

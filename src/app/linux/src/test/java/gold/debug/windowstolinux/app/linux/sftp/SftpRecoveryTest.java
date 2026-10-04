@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.linux.sftp;
 
-import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
-
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-
-import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
-
 import static gold.debug.windowstolinux.app.linux.sftp.SftpTransferTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,8 +9,14 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.appapi.linux.*;
-
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
@@ -91,7 +89,7 @@ class SftpRecoveryTest {
             Files.writeString(target, "old");
         }
 
-        TransferJournal journal() {
+        TransferActionLog journal() {
             return original -> {
                 plan.compareAndSet(null, original);
                 assertEquals(plan.get(), original);
@@ -113,7 +111,7 @@ class SftpRecoveryTest {
                 var result = connection.transfer(new TransferRequest(local, "/file.bin", bytes.length), digest(bytes),
                     upload, Duration.ofSeconds(5), () -> false, progress -> {
                     }, conflict -> TransferConflictChoice.OVERWRITE, journal());
-                assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
+                assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
             }
             assertEquals(0, releases.get());
             assertEquals("old", Files.readString(target));
@@ -148,7 +146,7 @@ class SftpRecoveryTest {
                     interrupted.start();
                     long extent = Files.size(interrupted.staging());
                     var result = interrupted.recover(false);
-                    assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                    assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                     assertArrayEquals(interrupted.bytes, Files.readAllBytes(interrupted.target));
                     assertFalse(Files.exists(interrupted.staging()));
                     assertEquals(1, interrupted.releases.get());
@@ -181,7 +179,7 @@ class SftpRecoveryTest {
                 byte[] stageBefore = Files.readAllBytes(interrupted.staging());
                 byte[] targetBefore = Files.readAllBytes(interrupted.target);
                 var result = interrupted.recover(false);
-                assertEquals(Outcome.UNKNOWN, result.outcome(), change + ": " + result);
+                assertEquals(TaskResult.UNKNOWN, result.outcome(), change + ": " + result);
                 assertEquals(0, interrupted.releases.get());
                 assertEquals(-1, interrupted.firstWrite.get());
                 assertArrayEquals(stageBefore, Files.readAllBytes(interrupted.staging()));
@@ -199,11 +197,11 @@ class SftpRecoveryTest {
                 byte[] corrupt = original.clone();
                 corrupt[0] ^= 1;
                 Files.write(interrupted.staging(), corrupt);
-                assertEquals(Outcome.UNKNOWN, interrupted.recover(true).outcome());
+                assertEquals(TaskResult.UNKNOWN, interrupted.recover(true).outcome());
                 assertTrue(Files.exists(interrupted.staging()));
                 assertEquals(0, interrupted.releases.get());
                 Files.write(interrupted.staging(), original);
-                assertEquals(Outcome.SUCCEEDED, interrupted.recover(true).outcome());
+                assertEquals(TaskResult.SUCCEEDED, interrupted.recover(true).outcome());
                 assertFalse(Files.exists(interrupted.staging()));
                 assertEquals("old", Files.readString(interrupted.target));
                 assertEquals(1, interrupted.releases.get());
@@ -226,7 +224,7 @@ class SftpRecoveryTest {
             }
         })) {
             var source = Files.writeString(root.resolve("source"), "new");
-            TransferJournal journal = facts -> {
+            TransferActionLog journal = facts -> {
                 plan.set(facts);
                 return new ResourceLease() {
                     public UUID id() {
@@ -240,7 +238,7 @@ class SftpRecoveryTest {
             };
             try (var connector = new SshConnector();
                  var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
-                assertEquals(Outcome.UNKNOWN, connection.transfer(new TransferRequest(source, "/file", 3),
+                assertEquals(TaskResult.UNKNOWN, connection.transfer(new TransferRequest(source, "/file", 3),
                     digest("new".getBytes()), true, Duration.ofSeconds(5), () -> false, progress -> {
                     }, conflict -> TransferConflictChoice.SKIP, journal).outcome());
             }
@@ -251,7 +249,7 @@ class SftpRecoveryTest {
                 var recovered = connection.recoverTransfer(plan.get(), false, Duration.ofSeconds(5), () -> false,
                     progress -> {
                     }, journal);
-                assertEquals(Outcome.SUCCEEDED, recovered.outcome(), recovered.toString());
+                assertEquals(TaskResult.SUCCEEDED, recovered.outcome(), recovered.toString());
             }
             assertEquals(1, publications.get());
             assertEquals(1, releases.get());
@@ -306,7 +304,7 @@ class SftpRecoveryTest {
                         return journal().prepare(original);
                     });
                 assertTrue(changed.get());
-                assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
+                assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
                 assertEquals("old", Files.readString(upload ? remote : local));
             }
         }
@@ -337,7 +335,7 @@ class SftpRecoveryTest {
                     });
                 var result = interrupted.recover(true);
                 assertTrue(changed.get());
-                assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
+                assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
                 assertTrue(Files.exists(interrupted.staging()));
                 assertEquals(0, interrupted.releases.get());
                 assertEquals("old", Files.readString(interrupted.target));

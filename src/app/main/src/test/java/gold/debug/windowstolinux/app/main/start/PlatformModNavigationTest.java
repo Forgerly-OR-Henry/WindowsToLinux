@@ -13,18 +13,22 @@ import javax.swing.*;
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.*;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -32,7 +36,7 @@ class PlatformModNavigationTest {
     @TempDir
     Path root;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
     PlatformRuntime runtime;
 
@@ -40,7 +44,7 @@ class PlatformModNavigationTest {
 
     @BeforeEach
     void setup() throws Exception {
-        fixture = new PlatformModCoordinatorTest();
+        fixture = new PlatformModFlowTest();
         fixture.root = root;
         fixture.workspace();
         module(P);
@@ -58,8 +62,8 @@ class PlatformModNavigationTest {
                 package %s;
                 import java.nio.file.*;
                 import javax.swing.*;
-                import gold.debug.windowstolinux.appapi.mod.*;
-                import gold.debug.windowstolinux.appapi.ui.*;
+                import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+                import gold.debug.windowstolinux.appapi.ui.page.ModPage; import gold.debug.windowstolinux.appapi.ui.page.PageSpec; import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
                 public final class Mod implements ModEntrypoint {
                     static void trace(String text) throws Exception {
                         Files.writeString(Path.of("%s"),"%s:"+text+"\\n",StandardOpenOption.CREATE,StandardOpenOption.APPEND);
@@ -70,7 +74,7 @@ class PlatformModNavigationTest {
                             var registration=context.ui().register(new PageSpec(id,"fixture."+id,id.equals("main")?"本机业务页":"本机设置页",id.equals("settings")),()->new ModPage(){
                                 public JComponent create(UiEnvironment environment) throws Exception {
                                     trace("create:"+id);
-                                    var label=new JLabel("%s / "+id);
+                                    var label=new JTextField("%s / "+id);
                                     label.setName("%s."+id);
                                     return label;
                                 }
@@ -92,7 +96,7 @@ class PlatformModNavigationTest {
         String cp = Path.of(ModContext.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
         assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, "--release", "21", "-proc:none",
             "-encoding", "UTF-8", "-classpath", cp, "-d", classes.toString(), source.toString()));
-        DevelopmentDescriptor.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
+        DevelopmentInfo.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
             List.of(fixture.workspace.resolve("pom.xml"), fixture.workspace.resolve("src/mod/pom.xml"),
                 module.resolve("pom.xml")),
             List.of());
@@ -101,7 +105,7 @@ class PlatformModNavigationTest {
     void start() throws Exception {
         runtime = fixture.open(true);
         frame = onEdt(() -> {
-            DesktopThemeService.install(ThemeMode.LIGHT);
+            DesktopThemeService.install(ThemeMode.LIGHT, 100);
             var value = new PlatformFrame(runtime.security(), MessageCatalog.forLanguageTag("zh-CN"),
                 ThemePalette.light(), new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false),
                 FailureReportStore.disabled());
@@ -109,16 +113,16 @@ class PlatformModNavigationTest {
             value.setVisible(true);
             return value;
         });
-        DesktopMain.startMods(runtime, new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS,
+        ApplicationLauncher.startMods(runtime, new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS,
                 fixture.workspace, runtime.persistence().database().root()), fixture.workspace.toString(),
             frame.pages());
-        DesktopMain.installModManagement(runtime, frame);
+        ApplicationLauncher.installModManagement(runtime, frame);
         idle();
         select(P);
     }
 
     void idle() throws Exception {
-        await(() -> !DesktopTaskExecutor.hasActiveTasks());
+        await(() -> !DesktopTaskRunner.hasActiveTasks());
     }
 
     void select(String owner) throws Exception {
@@ -139,6 +143,20 @@ class PlatformModNavigationTest {
             var button = (AbstractButton) named(frame, name);
             assertTrue(button.isEnabled(), name);
             button.doClick(0);
+            return null;
+        });
+        idle();
+    }
+
+    JButton rootButton(String owner) throws Exception {
+        return (JButton) descendants(named(frame, "mods.navigation")).filter(c -> c instanceof JButton button
+                && button.getClientProperty("mod.pageKey") instanceof PageKey key && key.ownerId().equals(owner))
+            .findFirst().orElseThrow();
+    }
+
+    void clickRoot(String owner) throws Exception {
+        onEdt(() -> {
+            rootButton(owner).doClick(0);
             return null;
         });
         idle();
@@ -171,20 +189,78 @@ class PlatformModNavigationTest {
     }
 
     @Test
-    void publishedPagesOpenLazilyCloseAndRecreateWhilePinsNeverAutoOpen() throws Exception {
-        assertEquals(0, pins());
+    void rootOrderMergesOldPagesPreservesUnpublishedOwnersAndRejectsStaleWrites() throws Exception {
+        var service = runtime.modIntents();
+        var first = new PagePin(P, "main");
+        var second = new PagePin(FREE, "main");
+        var absent = new PagePin("example.absent", "legacy");
+        runtime.persistence().preferences().save("mod_navigation_pins", "{\"formatVersion\":1,\"pages\":["
+            + "{\"ownerId\":\"" + FREE + "\",\"pageId\":\"old-applications\"},"
+            + "{\"ownerId\":\"example.absent\",\"pageId\":\"legacy\"},"
+            + "{\"ownerId\":\"" + P + "\",\"pageId\":\"old-static\"},"
+            + "{\"ownerId\":\"" + FREE + "\",\"pageId\":\"old-agent\"}]}");
+        var before = service.workspacePins(List.of(first, second));
+        assertEquals(List.of(second, absent, first), before);
+        assertEquals(List.of(first, absent, second), service.reorderPins(before, List.of(first, second)));
+        assertThrows(ApiException.class, () -> service.reorderPins(before, List.of(second, first)));
+        var current = service.pins();
+        assertThrows(ApiException.class, () -> service.reorderPins(current, List.of(first, first)));
+        assertEquals(current, service.pins());
+        assertEquals(current, service.workspacePins(List.of(first, second)));
+    }
+
+    @Test
+    void appearanceReordersAutomaticRootsWithoutRecreatingViews() throws Exception {
+        var service = runtime.modIntents();
+        var first = service.pins().get(0);
+        var second = service.pins().get(1);
+        var order = new gold.debug.windowstolinux.app.service.setting.NavigationOrderService(runtime.persistence().navigation(), runtime.security());
+        onEdt(() -> {
+            frame.installAppearance(new DesktopDisplayConfig("zh-CN", ThemeMode.LIGHT), ignored -> {
+            });
+            frame.installNavigationOrder(order);
+            ((JTabbedPane) named(frame, "platform.pages")).setSelectedComponent(named(frame, "platform.appearance"));
+            return null;
+        });
+        idle();
+        onEdt(() -> {
+            var list = (JList<?>) named(frame, "navigation.mods.list");
+            assertEquals(2, list.getModel().getSize());
+            list.setSelectedIndex(1);
+            ((JButton) named(frame, "navigation.mods.up")).doClick(0);
+            return null;
+        });
+        idle();
+        assertEquals(List.of(second, first), service.pins());
+        onEdt(() -> {
+            capture(frame, "configured-pinned-order.png");
+            return null;
+        });
+        assertFalse(Files.exists(fixture.trace) && Files.readString(fixture.trace).contains("create:main"));
+    }
+
+    @Test
+    void automaticRootsOpenLazilyRetainDraftsAndCloseThenRecreate() throws Exception {
+        assertEquals(2, pins());
         assertTrue(fixture.actions().isEmpty());
-        click("mods.pinPage");
-        assertEquals(1, pins());
-        assertTrue(fixture.actions().isEmpty());
-        assertEquals(List.of(new PagePin(P, "main")), runtime.modIntents().pins());
+        assertEquals(2, runtime.modIntents().pins().size());
         click("mods.openPage");
-        assertTrue(onEdt(() -> named(frame, P + ".main").isShowing()));
-        click("mods.pinned.0");
-        assertEquals(List.of(P + ":create:main"), fixture.actions());
+        var field = onEdt(() -> (JTextField) named(frame, P + ".main"));
+        onEdt(() -> {
+            field.setText("retained draft");
+            return null;
+        });
+        clickRoot(FREE);
+        assertTrue(onEdt(() -> named(frame, FREE + ".main").isShowing()));
+        assertFalse(onEdt(field::isShowing));
+        clickRoot(P);
+        assertSame(field, onEdt(() -> named(frame, P + ".main")));
+        assertEquals("retained draft", onEdt(field::getText));
+        assertEquals(1, fixture.actions().stream().filter((P + ":create:main")::equals).count());
         frame.pages().closeView(new PageKey(P, "main"));
-        assertEquals(List.of(P + ":create:main", P + ":close:main"), fixture.actions());
-        click("mods.pinned.0");
+        assertEquals(2, pins());
+        clickRoot(P);
+        assertNotSame(field, onEdt(() -> named(frame, P + ".main")));
         assertEquals(2, fixture.actions().stream().filter((P + ":create:main")::equals).count());
         select(P);
         onEdt(() -> {
@@ -193,71 +269,59 @@ class PlatformModNavigationTest {
         });
         click("mods.openPage");
         assertTrue(onEdt(() -> named(frame, P + ".settings").isShowing()));
-        assertEquals(1, pins());
-        onEdt(() -> {
-            capture(frame, "platform-mod-navigation-settings.png");
-            return null;
-        });
+        assertEquals(2, pins());
     }
 
     @Test
-    void pinsSurviveRestartHideWhenDisabledAndReappearWithoutCreatingViews() throws Exception {
-        click("mods.pinPage");
+    void rootsKeepOrderAcrossRestartAndDisappearOnlyAfterActualDisable() throws Exception {
+        var before = runtime.modIntents().pins();
         stop();
         Files.writeString(fixture.trace, "");
         start();
-        assertEquals(1, pins());
+        assertEquals(2, pins());
         assertTrue(fixture.actions().isEmpty());
         var service = runtime.modIntents();
         service.apply(service.review(P, choice(false, VERSION), Optional.empty()), true);
-        assertEquals(1, pins());
+        idle();
+        assertEquals(frame.pages().contributions().stream().filter(page -> !page.spec().settingsPage()).count(), pins());
         stop();
         start();
-        assertEquals(0, pins());
+        assertEquals(1, pins());
         assertEquals(0, onEdt(() -> ((JComboBox<?>) named(frame, "mods.pages")).getItemCount()));
         assertFalse(onEdt(() -> named(frame, "mods.openPage").isEnabled()));
-        assertEquals(List.of(new PagePin(P, "main")), runtime.modIntents().pins());
+        assertEquals(before, runtime.modIntents().pins());
         service = runtime.modIntents();
         service.apply(service.review(P, choice(true, VERSION), Optional.empty()), false);
         stop();
         start();
-        assertEquals(1, pins());
+        assertEquals(2, pins());
         assertTrue(fixture.actions().isEmpty());
-        onEdt(() -> {
-            capture(frame, "platform-mod-navigation-restored.png");
-            return null;
-        });
     }
 
     @Test
-    void sameLocalPageIdInTwoModsKeepsExactIndependentPins() throws Exception {
-        click("mods.pinPage");
-        select(FREE);
-        click("mods.pinPage");
+    void identicalRootIdsInDifferentOwnersRemainIndependent() throws Exception {
         assertEquals(2, pins());
-        click("mods.pinned.1");
+        clickRoot(FREE);
         assertTrue(onEdt(() -> named(frame, FREE + ".main").isShowing()));
         assertEquals(List.of(FREE + ":create:main"), fixture.actions());
-        select(P);
-        click("mods.pinPage");
-        assertEquals(List.of(new PagePin(FREE, "main")), runtime.modIntents().pins());
-        assertEquals(1, pins());
-        assertTrue(onEdt(() -> named(frame, FREE + ".main") != null));
+        clickRoot(P);
+        assertTrue(onEdt(() -> named(frame, P + ".main").isShowing()));
+        assertFalse(onEdt(() -> named(frame, FREE + ".main").isShowing()));
+        assertEquals(2, pins());
     }
 
     @Test
     void removingARegistrationRevokesPinAndStaleButtonsCannotRecreateIt() throws Exception {
-        click("mods.pinPage");
-        var stale = onEdt(() -> (JButton) named(frame, "mods.pinned.0"));
+        var stale = onEdt(() -> rootButton(P));
         ((PageRegistration) System.getProperties().get(P + ".main")).close();
         await(() -> !stale.isShowing());
-        assertEquals(0, pins());
+        assertEquals(1, pins());
         onEdt(() -> {
             stale.doClick(0);
             return null;
         });
         assertTrue(fixture.actions().isEmpty());
-        assertEquals(1, runtime.modIntents().pins().size());
+        assertEquals(2, runtime.modIntents().pins().size());
         assertEquals(1, onEdt(() -> ((JComboBox<?>) named(frame, "mods.pages")).getItemCount()));
         assertThrows(ApiException.class, () -> frame.pages().openView(new PageKey(P, "main")));
         var created = new java.util.concurrent.atomic.AtomicInteger();
@@ -277,29 +341,30 @@ class PlatformModNavigationTest {
                 public void close() {
                 }
             })) {
-            await(() -> descendants(frame).anyMatch(c -> "mods.pinned.0".equals(c.getName())));
-            assertEquals(1, pins());
+            await(() -> descendants(named(frame, "mods.navigation")).filter(c -> c instanceof JButton
+                && c.getName() != null && c.getName().startsWith("mods.pinned.")).count() == 2);
+            assertEquals(2, pins());
             assertEquals(0, created.get());
-            click("mods.pinned.0");
+            clickRoot(P);
             assertEquals(1, created.get());
             assertTrue(onEdt(() -> named(frame, "replacement.main").isShowing()));
         }
-        await(() -> descendants(frame).noneMatch(c -> "mods.pinned.0".equals(c.getName())));
+        await(() -> descendants(named(frame, "mods.navigation")).filter(c -> c instanceof JButton
+            && c.getName() != null && c.getName().startsWith("mods.pinned.")).count() == 1);
     }
 
     @Test
-    void lockedNavigationIsHiddenAndOriginalScopeStillRejectsOpening() throws Exception {
-        click("mods.pinPage");
+    void lockedNavigationRemainsVisibleAndOriginalScopeStillRejectsOpening() throws Exception {
         runtime.security().lock();
-        await(() -> !frame.getContentPane().isVisible());
-        assertEquals(0, pins());
+        await(() -> frame.getGlassPane().isVisible());
+        assertEquals(2, pins());
         assertEquals(0, onEdt(() -> ((JComboBox<?>) named(frame, "mods.pages")).getItemCount()));
         assertThrows(Exception.class, () -> runtime.modIntents().pins());
         assertThrows(ApiException.class, () -> frame.pages().openView(new PageKey(P, "main")));
         runtime.security().unlock(PASSWORD.toCharArray());
-        await(() -> frame.getContentPane().isVisible());
+        await(() -> !frame.getGlassPane().isVisible());
         idle();
-        assertEquals(1, pins());
+        assertEquals(2, pins());
         assertTrue(fixture.actions().isEmpty());
         ((UiService) System.getProperties().get(P + ".ui")).open("settings");
         assertTrue(onEdt(() -> named(frame, P + ".settings").isShowing()));
@@ -307,7 +372,6 @@ class PlatformModNavigationTest {
 
     @Test
     void pendingWholeDeletionPreservesItsOwnedPinsUntilTheOriginalCleanupFinishes() throws Exception {
-        click("mods.pinPage");
         var original = runtime.modIntents().pins();
         UUID operation = UUID.randomUUID();
         var db = runtime.persistence().database();
@@ -321,6 +385,10 @@ class PlatformModNavigationTest {
                 assertThrows(ApiException.class, () -> runtime.modIntents().pin(new PagePin(P, "settings"), true))
                     .problem().eventCode());
             assertEquals(original, runtime.modIntents().pins());
+            assertEquals("MOD_DELETE_PENDING", assertThrows(ApiException.class,
+                () -> runtime.modIntents().workspacePins(List.of(new PagePin(P, "replacement"), new PagePin(FREE, "main"))))
+                .problem().eventCode());
+            assertEquals(original, runtime.modIntents().pins());
             runtime.modIntents().pin(new PagePin(FREE, "main"), true);
             assertTrue(runtime.modIntents().pins().contains(new PagePin(FREE, "main")));
         } finally {
@@ -331,36 +399,72 @@ class PlatformModNavigationTest {
     }
 
     @Test
-    void failedPinStorageIsNotShownAsSavedAndOriginalPreferencesAreNotReplaced() throws Exception {
-        sql(runtime.persistence().database(),
-            "ALTER TABLE desktop_preference ADD CONSTRAINT navigation_write_failure CHECK(preference_key<>'mod_navigation_pins')");
-        try {
-            click("mods.pinPage");
-            assertEquals(0, pins());
-            assertTrue(runtime.modIntents().pins().isEmpty());
-            assertTrue(onEdt(() -> !((JLabel) named(frame, "mods.navigationStatus")).getText().isEmpty()));
-        } finally {
-            sql(runtime.persistence().database(),
-                "ALTER TABLE desktop_preference DROP CONSTRAINT navigation_write_failure");
-        }
-        click("mods.pinPage");
-        assertEquals(1, pins());
-        assertEquals("", onEdt(() -> ((JLabel) named(frame, "mods.navigationStatus")).getText()));
-        runtime.persistence().preferences().save("mod_navigation_pins",
-            "{\"formatVersion\":1,\"pages\":[{\"ownerId\":\"example.provider\",\"pageId\":\"main\"},{\"ownerId\":\"example.provider\",\"pageId\":\"main\"}]}");
-        String invalid = runtime.persistence().preferences().find("mod_navigation_pins").orElseThrow();
-        assertEquals("MOD_NAVIGATION_INVALID",
-            assertThrows(ApiException.class, () -> runtime.modIntents().pins()).problem().eventCode());
-        assertThrows(ApiException.class, () -> runtime.modIntents().pin(new PagePin(P, "settings"), true));
-        assertEquals(invalid, runtime.persistence().preferences().find("mod_navigation_pins").orElseThrow());
+    void corruptedOrderIsReportedAndRetainedWithoutRemovingPublishedRoots() throws Exception {
         for (String corrupted : List.of("", "null", "{\"formatVersion\":1,\"formatVersion\":1,\"pages\":[]}")) {
             sql(runtime.persistence().database(),
-                "UPDATE desktop_preference SET preference_value=? WHERE preference_key='mod_navigation_pins'",
-                corrupted);
-            assertEquals("MOD_NAVIGATION_INVALID",
-                assertThrows(ApiException.class, () -> runtime.modIntents().pins()).problem().eventCode());
-            assertThrows(ApiException.class, () -> runtime.modIntents().pin(new PagePin(P, "settings"), true));
+                "UPDATE desktop_preference SET preference_value=? WHERE preference_key='mod_navigation_pins'", corrupted);
+            onEdt(() -> {
+                ((gold.debug.windowstolinux.app.ui.mod.ModNavigationPane) named(frame, "mods.navigation"))
+                    .refreshPreferences();
+                return null;
+            });
+            idle();
+            assertEquals(2, pins());
+            assertEquals("MOD_NAVIGATION_INVALID", assertThrows(ApiException.class,
+                () -> runtime.modIntents().workspacePins(List.of(new PagePin(P, "main"), new PagePin(FREE, "main"))))
+                .problem().eventCode());
             assertEquals(corrupted, runtime.persistence().preferences().find("mod_navigation_pins").orElseThrow());
+            assertTrue(onEdt(() -> !((JLabel) named(frame, "mods.navigationStatus")).getText().isEmpty()));
+            assertTrue(fixture.actions().isEmpty());
         }
     }
+
+    @Test
+    void explicitCloseDefaultsToCancelAndReopeningCreatesAFreshRoot() throws Exception {
+        clickRoot(P);
+        var field = onEdt(() -> (JTextField) named(frame, P + ".main"));
+        onEdt(() -> {
+            field.setText("unsubmitted draft");
+            return null;
+        });
+        SwingUtilities.invokeLater(() -> {
+            try {
+                ((JButton) named(frame, "mods.workspace.close")).doClick(0);
+            } catch (Exception error) {
+                throw new RuntimeException(error);
+            }
+        });
+        await(() -> java.util.Arrays.stream(frame.getOwnedWindows()).anyMatch(java.awt.Window::isShowing));
+        var dialog = onEdt(() -> java.util.Arrays.stream(frame.getOwnedWindows()).filter(java.awt.Window::isShowing)
+            .findFirst().orElseThrow());
+        onEdt(() -> {
+            var buttons = descendants(dialog).filter(JButton.class::isInstance).map(JButton.class::cast).toList();
+            var cancel = buttons.stream().filter(button -> button.getText().equals("取消")).findFirst().orElseThrow();
+            assertSame(cancel, ((JDialog) dialog).getRootPane().getDefaultButton());
+            cancel.doClick(0);
+            return null;
+        });
+        assertSame(field, onEdt(() -> named(frame, P + ".main")));
+        assertEquals("unsubmitted draft", onEdt(field::getText));
+        SwingUtilities.invokeLater(() -> {
+            try {
+                ((JButton) named(frame, "mods.workspace.close")).doClick(0);
+            } catch (Exception error) {
+                throw new RuntimeException(error);
+            }
+        });
+        await(() -> java.util.Arrays.stream(frame.getOwnedWindows()).anyMatch(java.awt.Window::isShowing));
+        onEdt(() -> {
+            var prompt = java.util.Arrays.stream(frame.getOwnedWindows()).filter(java.awt.Window::isShowing)
+                .findFirst().orElseThrow();
+            descendants(prompt).filter(JButton.class::isInstance).map(JButton.class::cast)
+                .filter(button -> button.getText().equals("关闭工作区")).findFirst().orElseThrow().doClick(0);
+            return null;
+        });
+        assertEquals("shell.home", onEdt(frame::currentPage).platformId());
+        assertEquals(2, pins());
+        clickRoot(P);
+        assertNotSame(field, onEdt(() -> named(frame, P + ".main")));
+    }
+
 }

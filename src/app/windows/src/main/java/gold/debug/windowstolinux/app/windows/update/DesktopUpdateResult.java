@@ -5,7 +5,10 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopReleaseVersion;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateEvent;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateStatus;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Terminal update result with paired program/database recovery evidence. / 带程序及数据库成对恢复证据的更新终态。

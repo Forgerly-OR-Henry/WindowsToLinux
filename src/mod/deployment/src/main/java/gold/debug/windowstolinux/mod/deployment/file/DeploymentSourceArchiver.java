@@ -1,19 +1,18 @@
 package gold.debug.windowstolinux.mod.deployment.file;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.io.*;
 import java.nio.file.*;
 import java.security.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.file.FileSnapshot;
-import gold.debug.windowstolinux.appapi.file.FileWorkspace;
-import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Builds deterministic archives using only platform-owned staging and snapshots. / 仅使用平台所属暂存及快照构建确定性归档。 */
 public final class DeploymentSourceArchiver {
@@ -57,7 +56,7 @@ public final class DeploymentSourceArchiver {
             cancelled(task);
             UUID originSnapshotId = material.snapshot().id();
             String sourceManifestSha256 = material.snapshot().sha256();
-            workspace = source.workspace(task);
+            workspace = source.workspaces().workspace(task);
             Path file = workspace.directory().resolve("source.tar.gz");
             var digest = digest();
             long bytes, originalBytes;
@@ -67,7 +66,7 @@ public final class DeploymentSourceArchiver {
                 bytes = bounded.count;
             }
             String sha256 = HexFormat.of().formatHex(digest.digest());
-            frozen = source.snapshot(workspace.selection(), new SnapshotRequest(List.of("source.tar.gz"), maximumBytes),
+            frozen = source.snapshots().snapshot(workspace.selection(), new SnapshotRequest(List.of("source.tar.gz"), maximumBytes),
                 task);
             verify(frozen.directory().resolve("source.tar.gz"), sha256, bytes, task);
             cancelled(task);

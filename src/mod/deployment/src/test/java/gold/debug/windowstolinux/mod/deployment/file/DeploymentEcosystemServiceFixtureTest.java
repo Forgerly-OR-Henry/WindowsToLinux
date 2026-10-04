@@ -31,12 +31,12 @@ class DeploymentEcosystemServiceFixtureTest {
 
     @Test
     void textCustomizationPreservesTheBinaryWrapperAndKeepsCopiedSourcesIndependent() throws Exception {
-        Path original = DeploymentRepositoryServiceFixture.repositoryRoot()
+        Path original = DeploymentStoreServiceFixture.repositoryRoot()
             .resolve("test/single-language/java/gradle/spring-boot/success-deployment-smoke");
         byte[] wrapper = Files.readAllBytes(original.resolve("gradle/wrapper/gradle-wrapper.jar"));
-        Path root = DeploymentRepositoryServiceFixture.copy(temporaryDirectory, "copied-service", "java/gradle/spring-boot",
+        Path root = DeploymentStoreServiceFixture.copy(temporaryDirectory, "copied-service", "java/gradle/spring-boot",
             true);
-        DeploymentRepositoryServiceFixture.replaceText(root, Map.of("gradle", "customized", "deployment-smoke-ok", "copied-ok"));
+        DeploymentStoreServiceFixture.replaceText(root, Map.of("gradle", "customized", "deployment-smoke-ok", "copied-ok"));
         assertArrayEquals(wrapper, Files.readAllBytes(root.resolve("gradle/wrapper/gradle-wrapper.jar")));
         assertTrue(Files.readString(root.resolve("gradle/wrapper/gradle-wrapper.properties")).contains("customized"));
         assertTrue(Files.readString(original.resolve("gradle/wrapper/gradle-wrapper.properties")).contains("gradle"));

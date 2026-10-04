@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -26,7 +16,7 @@ import com.fasterxml.jackson.databind.node.*;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
@@ -34,18 +24,42 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.ai.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
 
 /** Uses two real hosts and deliberately exits with retained UNKNOWN resources; neither exit is reported as cleanup. / 使用两个真实宿主并刻意带留存UNKNOWN资源退出；任一退出均不冒充收尾。 */
 public final class DeploymentAssistedEnvironmentRecoveryWorker extends DeploymentRuntimeFixture {
@@ -90,12 +104,12 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall c, ServerRef s, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall c, ServerId s, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -135,7 +149,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         var tasks = runtime.tasks().bind(OWNER, VERSION, false);
         var peer = new DeploymentAssistedBuildPeer(false);
         var linux = new LinuxService() {
-            public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+            public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 return interrupted(peer.session(task));
             }
 
@@ -158,9 +172,9 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                     throw failure.getCause();
                 }
             });
-        var flow = new DeploymentReferenceFlow(bound, new DeploymentStandardPublicationRecovery(bound));
-        tasks.registerRecovery(DeploymentReferenceFlow.TASK_TYPE, flow);
-        var handle = new DeploymentStaticWorkflow(bound, flow).submit(new ServerRef("server"),
+        var flow = new DeploymentRefFlow(bound, new DeploymentStandardPublishRecovery(bound));
+        tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, flow);
+        var handle = new DeploymentStaticWorkflow(bound, flow).submit(new ServerId("server"),
             new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(), true,
             "MANUAL_REVIEW");
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
@@ -206,9 +220,9 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                     if (target) {
                         assertEquals(1, lost.incrementAndGet(),
                             "Only the original corrected send loses its physical receipt");
-                        assertEquals(Outcome.SUCCEEDED, ((OperationResult<?>) returned).outcome(),
+                        assertEquals(TaskResult.SUCCEEDED, ((OperationResult<?>) returned).outcome(),
                             "Physical effect precedes the lost acknowledgement");
-                        return new OperationResult<CommandResult>(Outcome.UNKNOWN, Optional.empty(),
+                        return new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(),
                             Optional.of(new Problem(ProblemCode.UNKNOWN,
                                 "TEST_ORIGINAL_" + boundary + "_ACK_LOST",
                                 "Original fixed tool effect receipt lost", Map.of(), Optional.empty())));
@@ -230,22 +244,22 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
     private AiService models() {
         return new AiService() {
             @Override
-            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
             @Override
-            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expectedRevision,
-                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, String expectedRevision,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
             @Override
-            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
-                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
-                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.ai.voice.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.voice.VoiceListener listener,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
@@ -283,8 +297,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
 
     private DeploymentStaticWorkflow.Reviewer reviewer() {
         return new DeploymentStaticWorkflow.Reviewer() {
-            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                                                                              List<DiscoveredProjectComponent> components, TaskContext task) {
+            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+                                                                              List<DiscoveredProjectPart> components, TaskContext task) {
                 assertEquals(1, components.size());
                 String id = components.getFirst().id();
                 return success(new DeploymentStaticWorkflow.Selection(id,
@@ -292,7 +306,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                     Optional.empty()));
             }
 
-            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server, String sha,
+            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server, String sha,
                                                                                          List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                 assertEquals(1, prompts.size());
                 var prompt = prompts.getFirst();
@@ -312,7 +326,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                     new DeploymentBuildLimits(600, 32, 512, 65536, 128L * 1024 * 1024, false), false, true)));
             }
 
-            public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerRef server, String sha,
+            public OperationResult<DeploymentStaticWorkflow.Answers> reviewBuildCorrection(ServerId server, String sha,
                                                                                            DeploymentStaticWorkflow.Prompt prompt, DeploymentStaticWorkflow.Answers original,
                                                                                            TaskContext task) {
                 var values = new LinkedHashMap<>(original.values());
@@ -321,7 +335,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                     original.containerRisk(), original.adapterRisk()));
             }
 
-            public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
+            public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
                                                     Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                     Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
                                                     TaskContext task) {
@@ -470,7 +484,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
             }
         }
         runtime.persistence().aiProfiles().saveVerified(
-            new StoredAiProviderProfile("environment-sentinel", "http://127.0.0.1:" + httpPort + "/chat",
+            new StoredAiModelProfile("environment-sentinel", "http://127.0.0.1:" + httpPort + "/chat",
                 "fixture/environment", credential),
             "Environment recovery sentinel", java.time.Instant.now(), AiCapabilityType.TEXT);
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
@@ -482,7 +496,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
     }
 
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     private static void assertBusy(PlatformRuntime runtime) throws Exception {

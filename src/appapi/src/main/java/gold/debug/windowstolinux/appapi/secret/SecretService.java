@@ -1,11 +1,15 @@
 package gold.debug.windowstolinux.appapi.secret;
 
+import gold.debug.windowstolinux.appapi.secret.access.SecretConsumer;
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.secret.ref.SecretRef;
+
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /**
  * Owned secrets exposed only through authorized temporary callbacks. / 仅经授权临时回调提供所属秘密的服务。
@@ -20,7 +24,7 @@ public interface SecretService {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    SecretRef create(String purpose, byte[] value, TaskContext task) throws ApiException;
+    SecretId create(String purpose, byte[] value, TaskContext task) throws ApiException;
 
     /**
      * Protects the referenced resource before the business transaction commits. / 在业务事务提交前保护引用资源。
@@ -30,7 +34,7 @@ public interface SecretService {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    SecretReference reserve(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
+    SecretRef reserve(SecretId secret, String businessKey, TaskContext task) throws ApiException;
 
     /**
      * Looks up an existing association without reserving or changing it, including original-task recovery. / 只读查询已有关联，支持原任务恢复，不预留或改变引用。
@@ -40,7 +44,7 @@ public interface SecretService {
      * @return current owned reference, or empty when absent; not proof of business rollback / 当前所属引用，不存在时为空；不证明业务已回滚
      * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
      */
-    Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
+    Optional<SecretRef> findReference(SecretId secret, String businessKey, TaskContext task) throws ApiException;
 
     /**
      * Records a reconciled business reference result without guessing unknown commits. / 登记已核对的业务引用结果，不猜测未知提交。
@@ -49,7 +53,7 @@ public interface SecretService {
      * @param task active host-created task context / 宿主创建的活动任务上下文
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException;
+    void resolve(UUID referenceId, ResourceRefResult result, TaskContext task) throws ApiException;
 
     /**
      * Consumes temporarily authorized secret bytes without retaining or logging them. / 使用临时授权的秘密字节，不保留或记录秘密。
@@ -61,5 +65,5 @@ public interface SecretService {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    <T> T use(SecretRef secret, String purpose, TaskContext task, SecretConsumer<T> consumer) throws ApiException;
+    <T> T use(SecretId secret, String purpose, TaskContext task, SecretConsumer<T> consumer) throws ApiException;
 }

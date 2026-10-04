@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -15,7 +8,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,9 +49,9 @@ class PlatformSourceSelectionMigrationTest {
                     assertEquals("SOURCE_UNAVAILABLE", rejected.problem().eventCode());
                 }
                 assertEquals(ProblemCode.INVALID_INPUT, assertThrows(ApiException.class, () -> source.selectDirectory("", task)).problem().code());
-                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             });
-            assertEquals(Outcome.SUCCEEDED, original.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, original.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
             assertEquals(TaskState.ENDED, original.snapshot().state());
             assertEquals(PlatformTaskAdmission.PLATFORM_OWNER, original.snapshot().ownerId());
             assertEquals(runtime.version(), original.snapshot().ownerVersion());

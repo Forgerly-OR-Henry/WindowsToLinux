@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.main.error;
 
-import gold.debug.windowstolinux.appapi.task.LogEvent;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.LogStorage;
-import gold.debug.windowstolinux.appapi.task.Problem;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -14,9 +9,16 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.log.EmergencyLogs;
+import gold.debug.windowstolinux.app.db.log.LogRecordCodec;
+import gold.debug.windowstolinux.app.db.log.LogStore;
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
 import gold.debug.windowstolinux.app.ui.error.FailureReportRecord;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.log.LogStorage;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Routes bounded host failures through the existing database or startup emergency queue. / 将有界宿主失败送入既有数据库或启动应急队列。
@@ -72,8 +74,16 @@ public final class DesktopFailureReportStore implements FailureReportStore {
      * @param dataDirectory fixed data root / 固定数据根
      * @param version actual version or explicit unavailable identity / 实际版本或明确不可用身份 */
     public DesktopFailureReportStore(Path dataDirectory, String version) {
+        this(dataDirectory, version, 100);
+    }
+
+    /** Captures configured emergency retention. / 捕获配置的应急保留数量。
+     * @param dataDirectory selected root / 数据根
+     * @param version producer identity / 生产者身份
+     * @param retention records per category / 每类数量 */
+    public DesktopFailureReportStore(Path dataDirectory, String version, int retention) {
         directory = dataDirectory.toAbsolutePath().normalize().resolve("log").resolve("emergency");
-        emergency = new EmergencyLogs(dataDirectory);
+        emergency = new EmergencyLogs(dataDirectory, retention);
         this.version = java.util.Objects.requireNonNull(version);
     }
 
@@ -93,9 +103,27 @@ public final class DesktopFailureReportStore implements FailureReportStore {
         if (throwable == null)
             return Optional.empty();
         Problem descriptor = structured(throwable).orElseGet(() -> unknownDescriptor(throwable));
+        return write(descriptor, throwable).or(() -> Optional.of(new FailureReportRecord(descriptor, directory, Optional.empty())));
+    }
+
+    /** Saves bounded callback evidence and returns only an actually persisted identifier. / 保存有界回调依据，仅返回实际持久化编号。
+     * @param throwable original exception / 原异常
+     * @param problem fixed public host diagnosis / 固定公开宿主诊断
+     * @return saved identifier, empty when all storage fails / 已保存编号，全部存储失败时为空 */
+    public synchronized Optional<java.util.UUID> recordDiagnostic(Throwable throwable, Problem problem) {
+        var descriptor = new Problem(problem.code(), problem.eventCode(), problem.message(), problem.context(),
+            Optional.of(java.util.UUID.randomUUID()));
+        return write(descriptor, throwable).flatMap(record -> record.failure().diagnosticId());
+    }
+
+    /** Writes through the existing durable and emergency channels. / 经既有持久及应急通道写入。
+     * @param descriptor safe public identity / 安全公开身份
+     * @param throwable original bounded stack evidence / 原有界堆栈依据
+     * @return receipt only after actual storage / 仅实际存储后返回凭据 */
+    private Optional<FailureReportRecord> write(Problem descriptor, Throwable throwable) {
         Optional<Path> report = Optional.empty();
         try {
-            var target = LogRepository.startupTarget();
+            var target = LogStore.startupTarget();
             var id = descriptor.diagnosticId().orElseGet(java.util.UUID::randomUUID);
             var event = new LogEvent(LogLevel.ERROR, descriptor.eventCode(), descriptor.message(),
                 Optional.of(new String(boundedReport(descriptor, throwable), StandardCharsets.UTF_8)),
@@ -103,12 +131,13 @@ public final class DesktopFailureReportStore implements FailureReportStore {
             var record = LogRecordCodec.createSummary(target, version, event, id, System.currentTimeMillis(), null);
             if (logs != null && logs.writeStartup(record).storage() != LogStorage.NOT_SAVED)
                 return Optional.of(new FailureReportRecord(descriptor, directory, report));
-            synchronized (LogRepository.class) {
+            synchronized (LogStore.class) {
                 emergency.append(target, record);
             }
             report = Optional.of(directory.resolve(target.key() + ".log"));
         } catch (IOException | RuntimeException ignored) {
             System.err.println("LOG_STARTUP_WRITE_FAILED: original diagnostic could not be saved");
+            return Optional.empty();
         }
         return Optional.of(new FailureReportRecord(descriptor, directory, report));
     }
@@ -268,17 +297,17 @@ public final class DesktopFailureReportStore implements FailureReportStore {
     private static Optional<Problem> directProblem(Throwable throwable) {
         if (throwable instanceof DesktopStartupException failure)
             return Optional.of(failure.problem());
-        if (throwable instanceof gold.debug.windowstolinux.appapi.task.ApiException failure)
+        if (throwable instanceof gold.debug.windowstolinux.appapi.task.result.ApiException failure)
             return Optional.of(failure.problem());
         if (throwable instanceof gold.debug.windowstolinux.app.service.error.ApplicationServiceException failure)
             return Optional.of(failure.problem());
-        if (throwable instanceof gold.debug.windowstolinux.app.db.error.DesktopPersistenceException failure)
+        if (throwable instanceof gold.debug.windowstolinux.app.db.error.DesktopStorageException failure)
             return Optional.of(failure.problem());
-        if (throwable instanceof gold.debug.windowstolinux.app.windows.update.DesktopUpdateException failure)
+        if (throwable instanceof gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateException failure)
             return Optional.of(failure.problem());
-        if (throwable instanceof gold.debug.windowstolinux.app.windows.uninstall.DesktopUninstallException failure)
+        if (throwable instanceof gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallException failure)
             return Optional.of(failure.problem());
-        if (throwable instanceof gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException failure)
+        if (throwable instanceof gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffException failure)
             return Optional.of(failure.problem());
         return Optional.empty();
     }

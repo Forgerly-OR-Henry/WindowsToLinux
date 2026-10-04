@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -21,9 +11,28 @@ import java.util.regex.Pattern;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
@@ -44,12 +53,12 @@ class DeploymentRetainedSwitchTest extends DeploymentManagedApplicationFixture {
                 return true;
             }
 
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -124,14 +133,14 @@ class DeploymentRetainedSwitchTest extends DeploymentManagedApplicationFixture {
                 .submit(new TaskRequest("graph_acceptance", "Retained switch", List.of("server"), true), task -> {
                     try {
                         var service = new DeploymentRetainedReleases(context);
-                        var app = new DeploymentApplicationRef("application", new ServerRef("server"));
+                        var app = new DeploymentApplicationId("application", new ServerId("server"));
                         var result = service.switchRelease(app, second.get().identity().sha256(),
                             first.get().identity().id(), task);
-                        Outcome expected = scenario == ScenarioType.SNAPSHOT_WINDOW_DRIFT
-                            ? Outcome.UNKNOWN
-                            : scenario == ScenarioType.STOPPED_SWITCH ? Outcome.SUCCEEDED : Outcome.FAILED;
+                        TaskResult expected = scenario == ScenarioType.SNAPSHOT_WINDOW_DRIFT
+                            ? TaskResult.UNKNOWN
+                            : scenario == ScenarioType.STOPPED_SWITCH ? TaskResult.SUCCEEDED : TaskResult.FAILED;
                         assertEquals(expected, result.outcome());
-                        var repository = new DeploymentReleaseRepository(context.db());
+                        var repository = new DeploymentReleaseStore(context.db());
                         UUID active = scenario == ScenarioType.STOPPED_SWITCH
                             ? first.get().identity().id()
                             : second.get().identity().id();
@@ -142,7 +151,7 @@ class DeploymentRetainedSwitchTest extends DeploymentManagedApplicationFixture {
                             assertTrue(peer.current.values().stream().allMatch("b".repeat(64)::equals));
                             assertTrue(peer.snapshots.values().stream().noneMatch(Boolean::booleanValue));
                             assertEquals("FINISHED",
-                                new DeploymentManagementJournal(context).find(task).orElseThrow().phase());
+                                new DeploymentManagementActionLog(context).find(task).orElseThrow().phase());
                         }
                         if (scenario == ScenarioType.CURRENT_DRIFT || scenario == ScenarioType.SNAPSHOT_WINDOW_DRIFT
                             || scenario == ScenarioType.COMPONENT_MAPPING_CONFLICT)
@@ -218,15 +227,15 @@ class DeploymentRetainedSwitchTest extends DeploymentManagedApplicationFixture {
         var web = component("web", "server", List.of());
         var worker = component("worker", "server", List.of());
         return new DeploymentApplicationGraph("application", "web", new DeploymentHealthCheck.Process(20, 2),
-            List.of(new DeploymentApplicationGraph.Component("worker", web.unit(), web.runtime(), List.of(),
+            List.of(new DeploymentApplicationGraph.Part("worker", web.unit(), web.runtime(), List.of(),
                     web.reviewedRuntime(), web.dataPaths(), web.resources()),
-                new DeploymentApplicationGraph.Component("web", worker.unit(), worker.runtime(), List.of(),
+                new DeploymentApplicationGraph.Part("web", worker.unit(), worker.runtime(), List.of(),
                     worker.reviewedRuntime(), worker.dataPaths(), worker.resources())));
     }
 
     private ModContext bind(ModContext actual, Peer peer) {
         LinuxService linux = new LinuxService() {
-            public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+            public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 return peer.session(task);
             }
 
@@ -352,7 +361,7 @@ class DeploymentRetainedSwitchTest extends DeploymentManagedApplicationFixture {
         }
 
         private OperationResult<CommandResult> reply(int exit, String text) {
-            return new OperationResult<>(Outcome.SUCCEEDED,
+            return new OperationResult<>(TaskResult.SUCCEEDED,
                 Optional.of(new CommandResult(Optional.of(exit), text, "", false)), Optional.empty());
         }
     }

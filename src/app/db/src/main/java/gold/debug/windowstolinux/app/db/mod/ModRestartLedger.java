@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.db.mod;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.*;
@@ -11,17 +7,20 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Applies restart intentions and explicit data retries against original durable facts. / 根据原持久事实应用重启意图和明确数据重试。 */
 public final class ModRestartLedger {
     /** Existing-state responsibility collaborator. / 既有状态职责协作者。 */
-    private final PreparationLedger preparation = new PreparationLedger();
+    private final SetupLedger preparation = new SetupLedger();
 
     /** Exact physical database boot. / 精确物理数据库启动身份。 */
     private final UUID boot;
@@ -30,13 +29,13 @@ public final class ModRestartLedger {
     private final PlatformDatabase database;
 
     /** Platform transactions shared with task admission. / 与任务准入共用的平台事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Existing standard log writer. / 既有标准日志写入器。 */
-    private final LogRepository logs;
+    private final LogStore logs;
 
     /** Registered platform operation category. / 已登记的平台操作类别。 */
-    private final LogRepository.Target archive;
+    private final LogStore.Target archive;
 
     /** Strict durable request parser. / 严格持久请求解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -48,8 +47,8 @@ public final class ModRestartLedger {
     public ModRestartLedger(PlatformDatabase database) throws SQLException {
         this.database = database;
         boot = database.bootId();
-        connections = new RepositoryConnections(database::openConnection);
-        logs = new LogRepository(database);
+        connections = new StoreConnections(database::openConnection);
+        logs = new LogStore(database);
         archive = logs.register("app", Optional.empty(),
             new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
@@ -112,8 +111,8 @@ public final class ModRestartLedger {
      * @param archive fixed summary identity / 固定摘要身份
      * @param source confirmed original source, if migrating / 迁移时已确认的原来源
      * @param steps original ordered migration chain / 原有序迁移链 */
-    public record Preparation(UUID intent, UUID operation, SchemaIdentity target, UUID writer, UUID reader,
-                              UUID archive, Optional<SchemaIdentity> source, List<MigrationStep> steps) {
+    public record Setup(UUID intent, UUID operation, SchemaIdentity target, UUID writer, UUID reader,
+                        UUID archive, Optional<SchemaIdentity> source, List<MigrationStep> steps) {
         /** Copies the operation-owned ordered steps. / 复制操作所属有序步骤。
          * @param intent original intent, or the standalone retry operation / 原意图，或独立重试操作
          * @param operation preparation operation / 准备操作
@@ -123,7 +122,7 @@ public final class ModRestartLedger {
          * @param archive original summary / 原摘要
          * @param source confirmed source, if migrating / 迁移时的已确认来源
          * @param steps ordered original chain / 有序原链 */
-        public Preparation {
+        public Setup {
             source = Objects.requireNonNull(source);
             steps = List.copyOf(steps);
         }
@@ -146,7 +145,7 @@ public final class ModRestartLedger {
      * @param plan original operation / 原操作
      * @param step original edge / 原迁移边
      * @return original target coordinates / 原目标坐标 */
-    public static SchemaCoordinates targetCoordinates(Preparation plan, MigrationStep step) {
+    public static SchemaCoordinates targetCoordinates(Setup plan, MigrationStep step) {
         return step.index() == plan.steps().size() - 1
             ? new SchemaCoordinates(plan.target())
             : new SchemaCoordinates(step.target(), plan.operation(), step.index());
@@ -156,7 +155,7 @@ public final class ModRestartLedger {
      * @param plan original operation / 原操作
      * @param step original edge / 原迁移边
      * @return exact original source / 精确原来源 */
-    public static SchemaCoordinates sourceCoordinates(Preparation plan, MigrationStep step) {
+    public static SchemaCoordinates sourceCoordinates(Setup plan, MigrationStep step) {
         return step.index() == 0
             ? new SchemaCoordinates(plan.source().orElseThrow())
             : targetCoordinates(plan, plan.steps().get(step.index() - 1));
@@ -168,7 +167,7 @@ public final class ModRestartLedger {
      * @param digest verified program bytes / 已验证程序字节摘要
      * @return committed preparation / 已提交准备
      * @throws SQLException if the original plan cannot execute / 原计划无法执行时 */
-    public Preparation beginPreparation(UUID id, String manifest, String digest) throws SQLException {
+    public Setup beginPreparation(UUID id, String manifest, String digest) throws SQLException {
         return locked(c -> "MIGRATE".equals(IntentEvidence.required(c, id).data().path("mode").asText())
             ? beginMigration(id, manifest, digest)
             : beginInitialization(id, manifest, digest));
@@ -184,8 +183,8 @@ public final class ModRestartLedger {
      * @param dataJson explicitly confirmed data plan / 明确确认数据计划
      * @return registered original preparation, whose intent equals its standalone operation / 已登记原准备，其意图等于独立操作
      * @throws SQLException if source, target, references or occupancy changed / 来源、目标、引用或占用变化时 */
-    public Preparation beginRetry(Connection c, SchemaIdentity previous, String version, long revision, String manifest,
-                                  String digest, String dataJson) throws SQLException {
+    public Setup beginRetry(Connection c, SchemaIdentity previous, String version, long revision, String manifest,
+                            String digest, String dataJson) throws SQLException {
         var data = preparation.retryAdmission(c, previous, version, revision, manifest, digest, dataJson);
         var target = new SchemaIdentity(previous.ownerId(), previous.schemaVersion(), UUID.randomUUID());
         Optional<SchemaIdentity> source = Optional.empty();
@@ -196,7 +195,7 @@ public final class ModRestartLedger {
             source = Optional.of(new SchemaIdentity(previous.ownerId(), data.path("source").asText(),
                 IntentEvidence.uuid(data, "generation")));
             new SchemaCoordinates(source.get()).requireRegistered(c, Set.of("READY"));
-            steps = PreparationLedger.migrationSteps(source.get(), target, data, manifest);
+            steps = SetupLedger.migrationSteps(source.get(), target, data, manifest);
         } else {
             require("INITIALIZE".equals(data.path("mode").textValue())
                     && IntentEvidence.fields(data).equals(Set.of("mode", "target")),
@@ -211,7 +210,7 @@ public final class ModRestartLedger {
             }
         }
         UUID operation = UUID.randomUUID();
-        var plan = new Preparation(operation, operation, target,
+        var plan = new Setup(operation, operation, target,
             steps.isEmpty() ? UUID.randomUUID() : steps.getLast().writer(),
             steps.isEmpty() ? UUID.randomUUID() : steps.getLast().reader(), UUID.randomUUID(), source, steps);
         long now = System.currentTimeMillis();
@@ -243,14 +242,14 @@ public final class ModRestartLedger {
             p.setLong(12, now);
             p.executeUpdate();
         }
-        PreparationLedger.registerSteps(c, plan);
+        SetupLedger.registerSteps(c, plan);
         return plan;
     }
 
     /** Confirms physical removal before any retried author code may create new data. / 在重试作者代码创建新数据前确认物理移除。
      * @param plan original explicit retry / 原明确重试
      * @throws SQLException if original target removal remains uncertain / 原目标移除仍不确定时 */
-    public void resetCompleted(Preparation plan) throws SQLException {
+    public void resetCompleted(Setup plan) throws SQLException {
         locked(c -> {
             require(plan.intent().equals(plan.operation())
                 && "MIGRATING".equals(preparation.requirePreparation(c, plan)), "Not an active retry reset");
@@ -264,9 +263,9 @@ public final class ModRestartLedger {
                     require(r.getLong(1) == 0, "Failed target removal is incomplete");
                 }
             }
-            var recovery = PreparationLedger.preparationRecovery(c, plan);
+            var recovery = SetupLedger.preparationRecovery(c, plan);
             ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).put("retryResetComplete", true);
-            PreparationLedger.saveRecovery(c, plan, recovery);
+            SetupLedger.saveRecovery(c, plan, recovery);
             return null;
         });
     }
@@ -277,7 +276,7 @@ public final class ModRestartLedger {
      * @param digest verified selected bytes / 已验证选定字节摘要
      * @return committed original preparation / 已提交原准备
      * @throws SQLException if source, declaration, chain or occupancy changed / 来源、声明、迁移链或占用变化时 */
-    public Preparation beginMigration(UUID id, String manifest, String digest) throws SQLException {
+    public Setup beginMigration(UUID id, String manifest, String digest) throws SQLException {
         return locked(c -> {
             var row = IntentEvidence.required(c, id);
             var data = row.data();
@@ -316,10 +315,10 @@ public final class ModRestartLedger {
                 }
             }
             var target = new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID());
-            var steps = PreparationLedger.migrationSteps(source, target, data, manifest);
+            var steps = SetupLedger.migrationSteps(source, target, data, manifest);
             preparation.claimUnprepared(c, row);
             var last = steps.getLast();
-            var plan = new Preparation(id, UUID.randomUUID(), target, last.writer(), last.reader(), UUID.randomUUID(),
+            var plan = new Setup(id, UUID.randomUUID(), target, last.writer(), last.reader(), UUID.randomUUID(),
                 Optional.of(source), steps);
             preparation.registerPreparation(c, row, plan);
             return plan;
@@ -332,7 +331,7 @@ public final class ModRestartLedger {
      * @param digest verified selected content digest / 已验证选定内容摘要
      * @return committed preparation identities / 已提交准备身份
      * @throws SQLException if the original choice, source or exclusivity changed / 原选择、来源或独占发生变化时 */
-    public Preparation beginInitialization(UUID id, String manifest, String digest) throws SQLException {
+    public Setup beginInitialization(UUID id, String manifest, String digest) throws SQLException {
         return locked(c -> {
             var row = IntentEvidence.required(c, id);
             require(row.enabled() && row.targetSchema() != null && row.generation() == null
@@ -360,7 +359,7 @@ public final class ModRestartLedger {
                 }
             }
             preparation.claimUnprepared(c, row);
-            var plan = new Preparation(id, UUID.randomUUID(),
+            var plan = new Setup(id, UUID.randomUUID(),
                 new SchemaIdentity(row.owner(), row.targetSchema(), UUID.randomUUID()), UUID.randomUUID(),
                 UUID.randomUUID(), UUID.randomUUID(), Optional.empty(), List.of());
             preparation.registerPreparation(c, row, plan);
@@ -387,15 +386,15 @@ public final class ModRestartLedger {
      * @param plan original attempt / 原尝试
      * @param validating true for validation, false for initialization / 真表示验证，假表示初始化
      * @throws SQLException if original ownership or phase is stale / 原归属或阶段已过期时 */
-    public void preparationPhase(Preparation plan, boolean validating) throws SQLException {
+    public void preparationPhase(Setup plan, boolean validating) throws SQLException {
         locked(c -> {
             String phase = preparation.requirePreparation(c, plan);
-            require(phase.equals(validating ? "MIGRATING" : "SOURCE_CHECKED"), "Preparation phase changed");
+            require(phase.equals(validating ? "MIGRATING" : "SOURCE_CHECKED"), "Setup phase changed");
             try (var p = c.prepareStatement("UPDATE mod_operation SET phase=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, validating ? "VALIDATING" : "MIGRATING");
                 p.setLong(2, System.currentTimeMillis());
                 p.setObject(3, plan.operation());
-                require(p.executeUpdate() == 1, "Preparation disappeared");
+                require(p.executeUpdate() == 1, "Setup disappeared");
             }
             return null;
         });
@@ -405,7 +404,7 @@ public final class ModRestartLedger {
      * @param plan original preparation / 原准备
      * @param target original permanent or intermediate target / 原正式或中间目标
      * @throws SQLException if original identity or acknowledgement changed / 原身份或确认变化时 */
-    public void created(Preparation plan, SchemaCoordinates target) throws SQLException {
+    public void created(Setup plan, SchemaCoordinates target) throws SQLException {
         locked(c -> {
             preparation.requirePreparation(c, plan);
             boolean owned = new SchemaCoordinates(plan.target()).physicalName().equals(target.physicalName())
@@ -414,10 +413,10 @@ public final class ModRestartLedger {
             require(owned, "Created target is not in the original inventory");
             target.requireRegistered(c, Set.of("PREPARING"));
             target.requirePhysicalOwnership(c);
-            var recovery = PreparationLedger.preparationRecovery(c, plan);
+            var recovery = SetupLedger.preparationRecovery(c, plan);
             ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).withObject("/created")
                 .put(target.physicalName(), target.identity().generation().toString());
-            PreparationLedger.saveRecovery(c, plan, recovery);
+            SetupLedger.saveRecovery(c, plan, recovery);
             return null;
         });
     }
@@ -428,18 +427,18 @@ public final class ModRestartLedger {
      * @param after whether this is the final observation / 是否最终观测
      * @return whether the observed source still matches its original / 观测来源是否仍匹配原值
      * @throws SQLException if source evidence cannot be recorded / 无法记录来源证据时 */
-    public boolean sourceDigest(Preparation plan, String digest, boolean after) throws SQLException {
+    public boolean sourceDigest(Setup plan, String digest, boolean after) throws SQLException {
         require(digest != null && digest.matches("[0-9a-f]{64}") && plan.source().isPresent(), "Invalid source proof");
         return locked(c -> {
             String phase = preparation.requirePreparation(c, plan);
             require(after || phase.equals("SOURCE_CHECKED"), "Source proof must precede migration");
-            var recovery = PreparationLedger.preparationRecovery(c, plan);
+            var recovery = SetupLedger.preparationRecovery(c, plan);
             var facts = (com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts");
             String field = after ? "sourceAfter" : "sourceBefore";
             require(after || !facts.has(field) || digest.equals(facts.path(field).asText()),
                 "Original source proof changed");
             facts.put(field, digest);
-            PreparationLedger.saveRecovery(c, plan, recovery);
+            SetupLedger.saveRecovery(c, plan, recovery);
             return !after || digest.equals(facts.path("sourceBefore").asText());
         });
     }
@@ -449,11 +448,11 @@ public final class ModRestartLedger {
      * @param step original ordered edge / 原有序迁移边
      * @param before source fingerprint before this callback / 此回调前来源指纹
      * @throws SQLException if phase or previous steps changed / 阶段或前序步骤变化时 */
-    public void beginStep(Preparation plan, MigrationStep step, String before) throws SQLException {
+    public void beginStep(Setup plan, MigrationStep step, String before) throws SQLException {
         require(before != null && before.matches("[0-9a-f]{64}"), "Invalid original step source proof");
         locked(c -> {
             require(preparation.requirePreparation(c, plan).equals("MIGRATING"), "Migration is not executing");
-            var facts = PreparationLedger.preparationRecovery(c, plan).path("facts");
+            var facts = SetupLedger.preparationRecovery(c, plan).path("facts");
             require(facts.path("sourceBefore").asText().matches("[0-9a-f]{64}"),
                 "Original source has not been checked");
             try (var p = c.prepareStatement(
@@ -477,10 +476,10 @@ public final class ModRestartLedger {
                 p.setString(8, targetCoordinates(plan, step).physicalName());
                 require(p.executeUpdate() == 1, "Original migration step changed or was already attempted");
             }
-            var recovery = PreparationLedger.preparationRecovery(c, plan);
+            var recovery = SetupLedger.preparationRecovery(c, plan);
             ((com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts")).withObject("/steps")
                 .putObject(Integer.toString(step.index())).put("sourceBefore", before);
-            PreparationLedger.saveRecovery(c, plan, recovery);
+            SetupLedger.saveRecovery(c, plan, recovery);
             return null;
         });
     }
@@ -492,7 +491,7 @@ public final class ModRestartLedger {
      * @param after source snapshot after its callback / 回调后来源快照
      * @param targetDigest target validation receipt / 目标验证凭据
      * @throws SQLException if physical release, proof or write fails / 物理释放、证明或写入失败时 */
-    public void completeStep(Preparation plan, MigrationStep step, String before, String after, String targetDigest)
+    public void completeStep(Setup plan, MigrationStep step, String before, String after, String targetDigest)
         throws SQLException {
         require(before != null && before.matches("[0-9a-f]{64}") && before.equals(after) && targetDigest != null
             && targetDigest.matches("[0-9a-f]{64}"), "Migration source changed or validation is absent");
@@ -501,7 +500,7 @@ public final class ModRestartLedger {
         locked(c -> {
             require(Set.of("MIGRATING", "VALIDATING").contains(preparation.requirePreparation(c, plan)),
                 "Original migration phase changed");
-            var recovery = PreparationLedger.preparationRecovery(c, plan);
+            var recovery = SetupLedger.preparationRecovery(c, plan);
             var facts = (com.fasterxml.jackson.databind.node.ObjectNode) recovery.path("facts");
             var original = facts.path("steps").path(Integer.toString(step.index()));
             require(before.equals(original.path("sourceBefore").asText()), "Original step source proof changed");
@@ -527,7 +526,7 @@ public final class ModRestartLedger {
             }
             facts.withObject("/steps").putObject(Integer.toString(step.index())).put("sourceBefore", before)
                 .put("sourceAfter", after).put("targetDigest", targetDigest);
-            PreparationLedger.saveRecovery(c, plan, recovery);
+            SetupLedger.saveRecovery(c, plan, recovery);
             return null;
         });
     }
@@ -537,13 +536,13 @@ public final class ModRestartLedger {
      * @param outcome known result, or UNKNOWN for retained reconciliation / 已知结果，UNKNOWN 保留核对
      * @param digest validation receipt for success, otherwise null / 成功验证凭据，否则为空
      * @throws SQLException if release, identity or atomic archival cannot be confirmed / 无法确认释放、身份或原子归档时 */
-    public void finishPreparation(Preparation plan, Outcome outcome, String digest) throws SQLException {
-        require(Set.of(Outcome.SUCCEEDED, Outcome.FAILED, Outcome.UNKNOWN).contains(outcome),
+    public void finishPreparation(Setup plan, TaskResult outcome, String digest) throws SQLException {
+        require(Set.of(TaskResult.SUCCEEDED, TaskResult.FAILED, TaskResult.UNKNOWN).contains(outcome),
             "Invalid preparation result");
         var scopes = new HashSet<>(List.of(plan.writer(), plan.reader()));
         plan.steps().forEach(step -> scopes.addAll(List.of(step.sourceReader(), step.writer(), step.reader())));
         for (var scope : scopes)
-            require(database.openConnections(scope.toString()) == 0, "Preparation connections remain");
+            require(database.openConnections(scope.toString()) == 0, "Setup connections remain");
         locked(c -> {
             if (preparation.preparationFinished(c, plan, outcome, digest))
                 return null;
@@ -552,13 +551,13 @@ public final class ModRestartLedger {
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
                 "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='PREPARING' AND NOT ever_used")) {
-                p.setString(1, outcome == Outcome.SUCCEEDED ? "READY" : outcome.name());
-                p.setObject(2, outcome == Outcome.SUCCEEDED ? now : null);
-                p.setString(3, outcome == Outcome.SUCCEEDED ? digest : null);
+                p.setString(1, outcome == TaskResult.SUCCEEDED ? "READY" : outcome.name());
+                p.setObject(2, outcome == TaskResult.SUCCEEDED ? now : null);
+                p.setString(3, outcome == TaskResult.SUCCEEDED ? digest : null);
                 p.setObject(4, plan.target().generation());
                 require(p.executeUpdate() == 1, "Original target cannot change state");
             }
-            if (outcome == Outcome.UNKNOWN) {
+            if (outcome == TaskResult.UNKNOWN) {
                 try (var p = c.prepareStatement(
                     "UPDATE mod_migration_step SET state='UNKNOWN' WHERE operation_id=? AND state='RUNNING'")) {
                     p.setObject(1, plan.operation());
@@ -579,13 +578,13 @@ public final class ModRestartLedger {
                     : IntentEvidence.required(c, plan.intent()).version();
                 boolean migrating = plan.source().isPresent();
                 logs.store(c, archive, List.of(new LogRecordCodec.Record(plan.archive(), now, "app", "mod_operation",
-                    outcome == Outcome.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
+                    outcome == TaskResult.SUCCEEDED ? LogLevel.INFO : LogLevel.ERROR,
                     migrating
-                        ? outcome == Outcome.SUCCEEDED ? "MOD_SCHEMA_MIGRATED" : "MOD_SCHEMA_MIGRATION_FAILED"
-                        : outcome == Outcome.SUCCEEDED
+                        ? outcome == TaskResult.SUCCEEDED ? "MOD_SCHEMA_MIGRATED" : "MOD_SCHEMA_MIGRATION_FAILED"
+                        : outcome == TaskResult.SUCCEEDED
                         ? "MOD_SCHEMA_INITIALIZED"
                         : "MOD_SCHEMA_INITIALIZATION_FAILED",
-                    outcome == Outcome.SUCCEEDED
+                    outcome == TaskResult.SUCCEEDED
                         ? "Data validation and original resource cleanup succeeded"
                         : "Data preparation failed and original resources are closed",
                     null, owner, version, null, plan.operation(), outcome, false)), 100);
@@ -594,7 +593,7 @@ public final class ModRestartLedger {
                         "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=?")) {
                         p.setObject(1, boot);
                         p.setString(2,
-                            outcome == Outcome.SUCCEEDED
+                            outcome == TaskResult.SUCCEEDED
                                 ? "MOD_DATA_READY_RESTART_REQUIRED"
                                 : "MOD_SCHEMA_PREPARATION_FAILED");
                         p.setString(3, owner);
@@ -717,7 +716,7 @@ public final class ModRestartLedger {
                 }
             }
             long now = System.currentTimeMillis();
-            var outcome = failed ? Outcome.FAILED : Outcome.SUCCEEDED;
+            var outcome = failed ? TaskResult.FAILED : TaskResult.SUCCEEDED;
             try (var p = c.prepareStatement(
                 "UPDATE mod_operation SET state='FINISHING',phase='VERIFIED',outcome=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, outcome.name());
@@ -854,7 +853,7 @@ public final class ModRestartLedger {
         var value = new AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 try (var s = c.createStatement();
                      var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                     require(r.next() && boot.equals(r.getObject(1, UUID.class))
@@ -1037,9 +1036,9 @@ public final class ModRestartLedger {
     }
 
     /** Registers and verifies the original physical preparation and its recovery facts. / 登记并核验原物理准备及其恢复事实。 */
-    private final class PreparationLedger {
+    private final class SetupLedger {
         /** Binds the existing ledger state only. / 仅绑定既有账本状态。 */
-        private PreparationLedger() {
+        private SetupLedger() {
         }
 
         /** Verifies the original failed target before a retry changes any registration. / 重试改变任何登记前核验原失败目标。
@@ -1055,7 +1054,7 @@ public final class ModRestartLedger {
         private JsonNode retryAdmission(Connection c, SchemaIdentity previous, String version, long revision,
                                         String manifest, String digest, String dataJson) throws SQLException {
             require(!c.getAutoCommit(), "Explicit retry requires the owning platform transaction");
-            RepositoryConnections.lockPlatformState(c);
+            StoreConnections.lockPlatformState(c);
             try (var s = c.createStatement();
                  var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                 require(r.next() && boot.equals(r.getObject(1, UUID.class)) && "RUNNING".equals(r.getString(2)),
@@ -1148,7 +1147,7 @@ public final class ModRestartLedger {
          * @param row original intent / 原意图
          * @param plan original physical plan / 原物理计划
          * @throws SQLException if registration fails / 登记失败时 */
-        private void registerPreparation(Connection c, Intent row, Preparation plan) throws SQLException {
+        private void registerPreparation(Connection c, Intent row, Setup plan) throws SQLException {
             var coordinates = new SchemaCoordinates(plan.target());
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
@@ -1198,7 +1197,7 @@ public final class ModRestartLedger {
          * @param c original transaction / 原事务
          * @param plan original preparation / 原准备
          * @throws SQLException if an edge cannot be registered / 无法登记迁移边时 */
-        private static void registerSteps(Connection c, Preparation plan) throws SQLException {
+        private static void registerSteps(Connection c, Setup plan) throws SQLException {
             for (var step : plan.steps()) {
                 try (var p = c.prepareStatement(
                     "INSERT INTO mod_migration_step(operation_id,step_number,from_version,to_version,migration_class,source_schema,target_schema,state) VALUES(?,?,?,?,?,?,?,'PENDING')")) {
@@ -1241,7 +1240,7 @@ public final class ModRestartLedger {
          * @return mutable copy of original recovery facts / 原恢复事实的可变副本
          * @throws SQLException if original recovery is absent / 原恢复不存在时 */
         private static com.fasterxml.jackson.databind.node.ObjectNode preparationRecovery(Connection c,
-                                                                                          Preparation plan) throws SQLException {
+                                                                                          Setup plan) throws SQLException {
             try (var p = c.prepareStatement("SELECT recovery_json FROM mod_operation WHERE operation_id=?")) {
                 p.setObject(1, plan.operation());
                 try (var r = p.executeQuery()) {
@@ -1256,7 +1255,7 @@ public final class ModRestartLedger {
          * @param plan original operation / 原操作
          * @param recovery complete original envelope / 完整原封套
          * @throws SQLException if the original write cannot be confirmed / 无法确认原写入时 */
-        private static void saveRecovery(Connection c, Preparation plan, JsonNode recovery) throws SQLException {
+        private static void saveRecovery(Connection c, Setup plan, JsonNode recovery) throws SQLException {
             try (var p = c
                 .prepareStatement("UPDATE mod_operation SET recovery_json=?,updated_at=? WHERE operation_id=?")) {
                 p.setString(1, recovery.toString());
@@ -1274,23 +1273,23 @@ public final class ModRestartLedger {
          * @param phase original confirmed phase / 原确认阶段
          * @param scopes exact original preparation scopes / 精确原准备作用域
          * @throws SQLException if closure or validation evidence is absent / 关闭或验证证据缺失时 */
-        private void verifyCompletion(Connection c, Preparation plan, Outcome outcome, String digest, String phase,
+        private void verifyCompletion(Connection c, Setup plan, TaskResult outcome, String digest, String phase,
                                       Set<UUID> scopes) throws SQLException {
             for (var scope : scopes) {
                 try (var p = c.prepareStatement("SELECT COUNT(*) FROM information_schema.users WHERE user_name=?")) {
                     p.setString(1, SchemaAccessScope.readerUser(scope));
                     try (var r = p.executeQuery()) {
                         r.next();
-                        require(outcome == Outcome.UNKNOWN || r.getLong(1) == 0, "Temporary preparation user remains");
+                        require(outcome == TaskResult.UNKNOWN || r.getLong(1) == 0, "Temporary preparation user remains");
                     }
                 }
             }
-            require(outcome != Outcome.SUCCEEDED
+            require(outcome != TaskResult.SUCCEEDED
                     || phase.equals("VALIDATING") && digest != null && digest.matches("[0-9a-f]{64}"),
                 "Successful validation evidence is absent");
-            if (plan.source().isPresent() && outcome != Outcome.UNKNOWN) {
-                var facts = PreparationLedger.preparationRecovery(c, plan).path("facts");
-                require(!facts.has("sourceBefore") && outcome == Outcome.FAILED
+            if (plan.source().isPresent() && outcome != TaskResult.UNKNOWN) {
+                var facts = SetupLedger.preparationRecovery(c, plan).path("facts");
+                require(!facts.has("sourceBefore") && outcome == TaskResult.FAILED
                         || facts.path("sourceBefore").asText().matches("[0-9a-f]{64}")
                         && facts.path("sourceBefore").equals(facts.path("sourceAfter")),
                     "Original source is not confirmed unchanged");
@@ -1299,7 +1298,7 @@ public final class ModRestartLedger {
                     p.setObject(1, plan.operation());
                     try (var r = p.executeQuery()) {
                         r.next();
-                        require(outcome != Outcome.SUCCEEDED || r.getLong(1) == 0,
+                        require(outcome != TaskResult.SUCCEEDED || r.getLong(1) == 0,
                             "Original migration chain is incomplete");
                     }
                 }
@@ -1325,10 +1324,10 @@ public final class ModRestartLedger {
          * @param digest original validation receipt / 原验证凭据
          * @return whether the exact original terminal transaction is already visible / 是否已经可见精确原终态事务
          * @throws SQLException if retained evidence cannot be read / 无法读取保留证据时 */
-        private boolean preparationFinished(Connection c, Preparation plan, Outcome outcome, String digest)
+        private boolean preparationFinished(Connection c, Setup plan, TaskResult outcome, String digest)
             throws SQLException {
             if (plan.intent().equals(plan.operation())) {
-                String state = outcome == Outcome.SUCCEEDED ? "READY" : outcome.name();
+                String state = outcome == TaskResult.SUCCEEDED ? "READY" : outcome.name();
                 try (var p = c.prepareStatement("SELECT state,validation_digest FROM mod_schema WHERE generation=?")) {
                     p.setObject(1, plan.target().generation());
                     try (var r = p.executeQuery()) {
@@ -1341,7 +1340,7 @@ public final class ModRestartLedger {
                     p.setObject(1, plan.operation());
                     try (var r = p.executeQuery()) {
                         boolean exists = r.next();
-                        return outcome == Outcome.UNKNOWN
+                        return outcome == TaskResult.UNKNOWN
                             ? exists && "UNKNOWN".equals(r.getString(1)) && sameInventory(r.getString(2), plan)
                             : !exists;
                     }
@@ -1353,7 +1352,7 @@ public final class ModRestartLedger {
                     && boot.equals(IntentEvidence.uuid(IntentEvidence.object(row.recovery()), "applicationBootId")),
                 "Original terminal identity changed");
             registry(c, row);
-            String state = outcome == Outcome.SUCCEEDED ? "READY" : outcome.name();
+            String state = outcome == TaskResult.SUCCEEDED ? "READY" : outcome.name();
             try (var p = c.prepareStatement("SELECT state,validation_digest FROM mod_schema WHERE generation=?")) {
                 p.setObject(1, plan.target().generation());
                 try (var r = p.executeQuery()) {
@@ -1366,7 +1365,7 @@ public final class ModRestartLedger {
                 p.setObject(1, plan.operation());
                 try (var r = p.executeQuery()) {
                     boolean exists = r.next();
-                    return outcome == Outcome.UNKNOWN
+                    return outcome == TaskResult.UNKNOWN
                         ? exists && row.state().equals("UNKNOWN") && "UNKNOWN".equals(r.getString(1))
                         && sameInventory(r.getString(2), plan)
                         : !exists && row.state().equals("RUNNING") && row.phase().equals("APPLYING");
@@ -1379,7 +1378,7 @@ public final class ModRestartLedger {
          * @param plan original preparation / 原准备
          * @return current physical preparation phase / 当前物理准备阶段
          * @throws SQLException if ownership or registry evidence changed / 归属或登记证据变化时 */
-        private String requirePreparation(Connection c, Preparation plan) throws SQLException {
+        private String requirePreparation(Connection c, Setup plan) throws SQLException {
             if (plan.intent().equals(plan.operation()))
                 retryRequest(c, plan);
             else {
@@ -1413,7 +1412,7 @@ public final class ModRestartLedger {
          * @param plan original preparation / 原准备
          * @return exact retry request / 精确重试请求
          * @throws SQLException if original program, choice or ownership changed / 原程序、选择或归属变化时 */
-        private JsonNode retryRequest(Connection c, Preparation plan) throws SQLException {
+        private JsonNode retryRequest(Connection c, Setup plan) throws SQLException {
             try (var p = c.prepareStatement(
                 "SELECT o.request_json,o.target_version FROM mod_operation o JOIN mod_registry r ON r.mod_id=o.mod_id JOIN mod_version v ON v.mod_id=o.mod_id AND v.version=o.target_version WHERE o.operation_id=? AND o.mod_id=? AND o.operation_type='MIGRATE' AND o.state='RUNNING' AND o.outcome IS NULL AND o.target_generation=? AND r.enabled AND r.selected_version=o.target_version AND r.revision=o.accepted_revision AND r.actual_version IS NULL AND r.last_runtime_state IN ('STOPPED','FAILED') AND v.state='READY' AND v.schema_version=o.target_schema_version")) {
                 p.setObject(1, plan.operation());
@@ -1451,7 +1450,7 @@ public final class ModRestartLedger {
         /** Encodes recoverable physical identities without passwords or author data. / 编码可恢复物理身份，不含口令或作者数据。
          * @param plan original preparation / 原准备
          * @return canonical recovery envelope / 规范恢复封套 */
-        private String preparationEvidence(Preparation plan) {
+        private String preparationEvidence(Setup plan) {
             var coordinates = new SchemaCoordinates(plan.target());
             var recovery = JSON.createObjectNode().put("formatVersion", 1).put("bootId", boot.toString())
                 .put("intent", plan.intent().toString()).put("writer", plan.writer().toString())
@@ -1480,7 +1479,7 @@ public final class ModRestartLedger {
          * @param plan original in-memory operation / 原内存操作
          * @return whether original inventory and facts shape match / 原清单和事实形状是否匹配
          * @throws SQLException if recovery is malformed / 恢复格式错误时 */
-        private boolean sameInventory(String encoded, Preparation plan) throws SQLException {
+        private boolean sameInventory(String encoded, Setup plan) throws SQLException {
             var actual = (com.fasterxml.jackson.databind.node.ObjectNode) IntentEvidence.object(encoded);
             var expected = (com.fasterxml.jackson.databind.node.ObjectNode) IntentEvidence
                 .object(preparationEvidence(plan));

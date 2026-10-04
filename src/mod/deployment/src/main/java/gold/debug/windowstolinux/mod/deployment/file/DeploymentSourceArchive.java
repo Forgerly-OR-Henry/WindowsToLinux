@@ -4,8 +4,8 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.file.FileSnapshot;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
 /** Frozen deployment archive with the digest of its actual compressed bytes. / 带实际压缩字节摘要的冻结部署归档。
  * @param snapshot original platform archive snapshot / 原平台归档快照

@@ -15,10 +15,10 @@ import java.util.List;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -29,13 +29,13 @@ public final class DeploymentApplicationReader {
     private final ModDatabase database;
 
     /** Canonical complete release validator. / 规范完整发布校验器。 */
-    private final DeploymentReleaseRepository releases;
+    private final DeploymentReleaseStore releases;
 
     /** Binds the original deployment Schema. / 绑定原部署Schema。
      * @param database exact deployment database / 精确部署数据库 */
     public DeploymentApplicationReader(ModDatabase database) {
         this.database = java.util.Objects.requireNonNull(database);
-        this.releases = new DeploymentReleaseRepository(database);
+        this.releases = new DeploymentReleaseStore(database);
     }
 
     /** Reads one persisted page without claiming live remote status. / 读取一页持久记录，不宣称实时远端状态。
@@ -92,7 +92,7 @@ public final class DeploymentApplicationReader {
      * @param task original task / 原任务
      * @return current persisted graph and public copy / 当前持久图与公开副本
      * @throws ApiException if identity or stored evidence fails / 身份或存储依据失败时 */
-    public ApplicationFacts find(DeploymentApplicationRef application, TaskContext task) throws ApiException {
+    public ApplicationFacts find(DeploymentApplicationId application, TaskContext task) throws ApiException {
         try (var connection = open(task)) {
             var value = read(connection, application.id(), task);
             connection.rollback();
@@ -176,7 +176,7 @@ public final class DeploymentApplicationReader {
             }
         }
         var bindings = bindings(graph);
-        var snapshot = new DeploymentApplicationSnapshot(new DeploymentApplicationRef(id, server), display,
+        var snapshot = new DeploymentApplicationSnapshot(new DeploymentApplicationId(id, server), display,
             record.identity().sha256(), ownership(graph), state, observed, archived(release, record, task),
             bindings, sha256(new DeploymentHealthCodec().write(graph.healthCheck())));
         return new ApplicationFacts(snapshot, graph, release);
@@ -192,10 +192,10 @@ public final class DeploymentApplicationReader {
      * @throws ApiException if original metadata access fails / 原元数据访问失败时 */
     private VersionedRuntime archived(DeploymentReleaseSnapshot release, DeploymentReleaseRecord record,
                                       TaskContext task) throws SQLException, IOException, ApiException {
-        var configurations = new DeploymentConfigurationRepository(database);
-        var credentials = new DeploymentSecretRepository(database);
+        var configurations = new DeploymentConfigStore(database);
+        var credentials = new DeploymentSecretStore(database);
         var commits = new ArrayList<DeploymentUnitCommit>();
-        var metadata = new java.util.LinkedHashMap<DeploymentSecretReference, DeploymentSecretRevision>();
+        var metadata = new java.util.LinkedHashMap<DeploymentSecretRef, DeploymentSecretRevision>();
         for (var component : release.graph().components()) {
             var binding = release.bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
                 .findFirst().orElseThrow();
@@ -210,7 +210,7 @@ public final class DeploymentApplicationReader {
                 metadata.putIfAbsent(secret, credentials.findRevision(task, secret)
                     .orElseThrow(() -> new SQLException("Published credential metadata is absent")));
         }
-        var proposal = new DeploymentPublicationProposal(release.graph(), commits);
+        var proposal = new DeploymentPublishProposal(release.graph(), commits);
         if (!DeploymentReleaseSnapshot.capture(proposal.graph(), proposal.units()).equals(release))
             throw new SQLException("Published complete archive differs");
         return DeploymentArchivedRuntimeCodec.encode(proposal, List.copyOf(metadata.values()), releases);
@@ -353,8 +353,8 @@ public final class DeploymentApplicationReader {
      * @param event stable evidence failure / 稳定依据失败
      * @return bounded original evidence exception / 有界原依据异常 */
     private static ApiException problem(String event) {
-        return new ApiException(new gold.debug.windowstolinux.appapi.task.Problem(
-            gold.debug.windowstolinux.appapi.task.ProblemCode.INCOMPATIBLE, event,
+        return new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.INCOMPATIBLE, event,
             "Deployment application evidence cannot be confirmed", java.util.Map.of(), Optional.empty()));
     }
 

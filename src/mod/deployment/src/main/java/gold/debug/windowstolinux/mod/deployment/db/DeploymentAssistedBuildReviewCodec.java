@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
@@ -51,8 +51,8 @@ public final class DeploymentAssistedBuildReviewCodec {
     public record Description(String applicationId, String serverId, Map<String, String> source,
                               Map<String, String> facts, List<ToolchainRequirement> requirements,
                               Optional<DeploymentAccessUrl> userAccessUrl,
-                              DeploymentConfigurationSnapshot configuration,
-                              List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
+                              DeploymentConfigSnapshot configuration,
+                              List<DeploymentSecretRef> secrets, DeploymentResourceBindings resources,
                               DeploymentRuntimeDefinition runtime, DeploymentBuildLimits limits, List<String> steps,
                               Map<String, String> inputs, Instant reviewedAt, boolean containerRisk,
                               boolean adapterRisk,
@@ -127,7 +127,7 @@ public final class DeploymentAssistedBuildReviewCodec {
                     .put("source", declaration.source()).put("purpose", declaration.purpose().name()).put("constraint", declaration.constraint().name());
                 declaration.version().ifPresentOrElse(version -> item.put("version", version.text()), () -> item.putNull("version"));
             }
-            DeploymentPublicationTemplateCodec.configuration(node.putObject("configuration"), value.configuration());
+            DeploymentPublishTemplateCodec.configuration(node.putObject("configuration"), value.configuration());
             var secrets = node.putArray("secrets");
             value.secrets().forEach(secret -> secrets.addObject().put("identifier", secret.identifier()).put("revision", secret.revision()));
             var steps = node.putArray("steps");
@@ -159,12 +159,12 @@ public final class DeploymentAssistedBuildReviewCodec {
             var health = new DeploymentHealthCodec().read(Base64.getDecoder().decode(string(node, "health")));
             var runtime = new DeploymentRuntimeCodec().read(Base64.getDecoder().decode(string(node, "runtime")), health);
             var resources = new DeploymentResourceCodec().read(Base64.getDecoder().decode(string(node, "resources")));
-            var secrets = new ArrayList<DeploymentSecretReference>();
+            var secrets = new ArrayList<DeploymentSecretRef>();
             for (var entry : array(node, "secrets", 4096)) {
                 fields(entry, Set.of("identifier", "revision"));
                 if (!entry.path("revision").isIntegralNumber() || !entry.path("revision").canConvertToLong())
                     throw new SQLException("Invalid secret revision");
-                secrets.add(new DeploymentSecretReference(string(entry, "identifier"), entry.path("revision").longValue()));
+                secrets.add(new DeploymentSecretRef(string(entry, "identifier"), entry.path("revision").longValue()));
             }
             var steps = new ArrayList<String>();
             for (var entry : array(node, "steps", 64)) {
@@ -182,7 +182,7 @@ public final class DeploymentAssistedBuildReviewCodec {
                 throw new SQLException("Invalid build root privilege");
             var value = new Description(string(node, "applicationId"), string(node, "serverId"), readMap(node.path("source")), readMap(node.path("facts")),
                 requirements(node), node.path("userAccessUrl").isNull() ? Optional.empty() : Optional.of(new DeploymentAccessUrl(java.net.URI.create(string(node, "userAccessUrl")))),
-                DeploymentPublicationTemplateCodec.configuration(node.path("configuration"), string(node, "applicationId")), secrets, resources, runtime,
+                DeploymentPublishTemplateCodec.configuration(node.path("configuration"), string(node, "applicationId")), secrets, resources, runtime,
                 new DeploymentBuildLimits(limits.path("timeout").intValue(), limits.path("processes").intValue(), limits.path("memory").intValue(), limits.path("output").longValue(), limits.path("workspace").longValue(), false),
                 steps, readMap(node.path("inputs")), Instant.parse(string(node, "reviewedAt")), node.path("containerRisk").booleanValue(), node.path("adapterRisk").booleanValue(), string(node, "reviewedRevision"));
             if (!encodeDescription(value).equals(text))
@@ -289,7 +289,7 @@ public final class DeploymentAssistedBuildReviewCodec {
      * @return complete non-authorizing hash values / 完整非授权哈希值 */
     private static DeploymentReviewedPlanDigest.Values hashValues(String application, String server, Map<String, String> source,
                                                                   Map<String, String> facts, List<ToolchainRequirement> requirements, Optional<DeploymentAccessUrl> url,
-                                                                  DeploymentConfigurationSnapshot configuration, List<DeploymentSecretReference> secrets, DeploymentResourceBindings resources,
+                                                                  DeploymentConfigSnapshot configuration, List<DeploymentSecretRef> secrets, DeploymentResourceBindings resources,
                                                                   DeploymentRuntimeDefinition runtime, DeploymentBuildLimits limits, Instant at, boolean container, boolean adapter) {
         var hashFacts = new LinkedHashMap<>(facts);
         hashFacts.put("applicationId", application);

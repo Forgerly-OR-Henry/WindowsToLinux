@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
 
 /** Copies the two authored deployment migration edges into independent protected generations. / 将两个作者定义的部署迁移边复制到独立受保护代次。 */
 final class DeploymentSchemaMigration {

@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -20,7 +13,12 @@ import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,7 +28,7 @@ class PlatformModSchemaRetryTest {
 
     PlatformModInitializationTest initial;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
     static final String OWNER = PlatformModInitializationTest.OWNER;
 
@@ -66,7 +64,7 @@ class PlatformModSchemaRetryTest {
             var review = runtime.modRecovery().review(OWNER, Optional.empty());
             assertEquals(old, text(runtime, "SELECT generation FROM mod_schema"));
             assertTrue(fixture.actions().isEmpty());
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().retry(review));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().retry(review));
             newGeneration = text(runtime, "SELECT generation FROM mod_schema");
             assertNotEquals(old, newGeneration);
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
@@ -96,10 +94,10 @@ class PlatformModSchemaRetryTest {
     void repeatedFailureNeedsAnotherExplicitReviewAndDoesNotReplayOnNextBoot() throws Exception {
         try (var runtime = failedInitialization()) {
             var review = runtime.modRecovery().review(OWNER, Optional.empty());
-            assertEquals(Outcome.FAILED, runtime.modRecovery().retry(review));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().retry(review));
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
             assertThrows(ApiException.class, () -> runtime.modRecovery().retry(review));
-            assertEquals(Outcome.FAILED, runtime.modRecovery().retry(runtime.modRecovery().review(OWNER, Optional.empty())));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().retry(runtime.modRecovery().review(OWNER, Optional.empty())));
             assertEquals(2, fixture.actions().stream().filter("schema:initialize"::equals).count());
         }
         try (var runtime = fixture.open(false)) {
@@ -122,7 +120,7 @@ class PlatformModSchemaRetryTest {
             assertThrows(ApiException.class, () -> runtime.modRecovery().retry(review));
             assertEquals(generation, text(runtime, "SELECT generation FROM mod_schema"));
             assertTrue(fixture.actions().isEmpty());
-            assertTrue(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
             assertEquals(0, count(db, "SELECT COUNT(*) FROM mod_operation"));
             assertTrue(fixture.actions().isEmpty());
             var stale = runtime.modRecovery().review(OWNER, Optional.empty());
@@ -160,7 +158,7 @@ class PlatformModSchemaRetryTest {
             assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertThrows(Exception.class, runtime::close);
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT fail_retry_archive");
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().retry(review));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().retry(review));
             assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
         } finally {
@@ -179,7 +177,7 @@ class PlatformModSchemaRetryTest {
             var scope = (SchemaAccess) System.getProperties().get(PlatformModInitializationTest.SCOPE);
             assertThrows(SQLException.class, scope::openConnection);
             ((Connection) System.getProperties().remove(PlatformModInitializationTest.CONNECTION)).close();
-            assertEquals(Outcome.FAILED, runtime.modRecovery().retry(review));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().retry(review));
             assertEquals(List.of("schema:initialize"), fixture.actions());
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
         } finally {
@@ -205,7 +203,7 @@ class PlatformModSchemaRetryTest {
             Files.writeString(fixture.trace, "");
             assertThrows(Exception.class, () -> runtime.modRecovery().review(OWNER, Optional.empty()));
             var review = runtime.modRecovery().review(OWNER, Optional.of(migration.original));
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().retry(review));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().retry(review));
             assertNotEquals(old, text(runtime, "SELECT generation FROM mod_schema WHERE schema_version='3'"));
             assertEquals(source,
                 SchemaSnapshot.digest(runtime.persistence().database(), new SchemaCoordinates(migration.original)));
@@ -217,7 +215,7 @@ class PlatformModSchemaRetryTest {
 
     @Test
     void interruptionBeforeResetKeepsFailedResidueAndRequiresAnotherExplicitRetry() throws Exception {
-        ModRestartLedger.Preparation accepted;
+        ModRestartLedger.Setup accepted;
         String physical;
         try (var runtime = failedInitialization()) {
             initial.module("valid", false);
@@ -231,11 +229,11 @@ class PlatformModSchemaRetryTest {
             assertEquals("UNKNOWN", text(runtime, "SELECT state FROM mod_schema"));
             assertTrue(fixture.start(runtime).running().isEmpty());
             assertTrue(fixture.actions().isEmpty());
-            assertEquals(Outcome.FAILED, runtime.modRecovery().reconcile(accepted.operation()));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().reconcile(accepted.operation()));
             assertTrue(fixture.actions().isEmpty());
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
             assertEquals(2, count(runtime.persistence().database(), "SELECT COUNT(*) FROM \"" + physical + "\".item"));
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 runtime.modRecovery().retry(runtime.modRecovery().review(OWNER, Optional.empty())));
         }
         assertEquals(List.of("schema:initialize", "schema:validate"), fixture.actions());
@@ -243,7 +241,7 @@ class PlatformModSchemaRetryTest {
 
     @Test
     void interruptionAfterNewTargetCreationUsesReadOnlyReconciliationWithoutAnotherReset() throws Exception {
-        ModRestartLedger.Preparation accepted;
+        ModRestartLedger.Setup accepted;
         try (var runtime = failedInitialization()) {
             initial.module("valid", false);
             accepted = runtime.modIntents().acceptRetry(runtime.modRecovery().review(OWNER, Optional.empty()));
@@ -264,7 +262,7 @@ class PlatformModSchemaRetryTest {
         }
         try (var runtime = fixture.open(true)) {
             fixture.start(runtime);
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(accepted.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(accepted.operation()));
             assertEquals(accepted.target().generation().toString(), text(runtime, "SELECT generation FROM mod_schema"));
             assertEquals(List.of("schema:validate"), fixture.actions());
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));

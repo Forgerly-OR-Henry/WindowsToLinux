@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -13,9 +7,12 @@ import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -63,9 +60,9 @@ class DependencyRecoveryLedgerTest {
             ledger.releaseDependency(task, first, one);
             assertEquals(Set.of(second), ledger.queries().dependencies(task).keySet());
             assertTrue(ledger.queries().holds(task, first.claims().getFirst()));
-            assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertFalse(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
             ledger.releaseDependency(task, second, two);
-            assertTrue(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
         }
     }
 

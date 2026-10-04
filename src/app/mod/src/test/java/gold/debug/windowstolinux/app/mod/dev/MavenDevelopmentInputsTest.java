@@ -9,7 +9,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.mod.install.ModPackageTool;
+import gold.debug.windowstolinux.app.mod.dev.ModPackageTool;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.load.ModEntryFactory;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ class MavenDevelopmentInputsTest {
         Path root = reactor();
         assertEquals(0, build(root), () -> log(root));
         Path module = root.resolve("src/mod/main");
-        var descriptor = DevelopmentDescriptor.read(root, module.resolve("target/wtlmod-development.json"));
+        var descriptor = DevelopmentInfo.read(root, module.resolve("target/wtlmod-development.json"));
         assertEquals(List.of(root.resolve("src/mod/helper/target/classes")), descriptor.authorOutputs());
         assertEquals(1, descriptor.libraries().size());
         assertEquals("commons-lang3-3.17.0.jar", descriptor.libraries().getFirst().getFileName().toString());
@@ -59,7 +59,7 @@ class MavenDevelopmentInputsTest {
         assertTrue(log(root).contains("COMPILATION ERROR"));
         assertFalse(Files.exists(module.resolve("target/wtlmod-development.json")));
         assertFalse(Files.exists(module.resolve("target/classes/META-INF/wtlmod-development-input.sha256")));
-        assertTrue(DevelopmentModDiscovery.scan(root).candidates().isEmpty());
+        assertTrue(DevelopmentModFinder.scan(root).candidates().isEmpty());
         assertFalse(Files.exists(root.resolve("author-initialized")));
     }
 
@@ -85,7 +85,7 @@ class MavenDevelopmentInputsTest {
 
     @Test
     void commandRejectsUnknownDuplicateOrStaleInputsWithOneStructuredResult() throws Exception {
-        var fixture = new DevelopmentModDiscoveryTest();
+        var fixture = new DevelopmentModFinderTest();
         fixture.temporary = temporary;
         Path root = fixture.workspace();
         Path module = fixture.module(root, "main", "example.discovery");
@@ -192,7 +192,7 @@ class MavenDevelopmentInputsTest {
                 public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint {
                     public Mod() throws Exception { java.nio.file.Files.writeString(java.nio.file.Path.of(%s), "constructed"); }
                     public void start(gold.debug.windowstolinux.appapi.mod.ModContext c) {}
-                    public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c) {}
+                    public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c) {}
                     public String value() { return org.apache.commons.lang3.StringUtils.upperCase(fixture.helper.Helper.value()); }
                 }
                 """

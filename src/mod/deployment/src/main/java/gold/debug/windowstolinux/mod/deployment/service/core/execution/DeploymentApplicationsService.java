@@ -1,22 +1,21 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.*;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord;
 
@@ -32,7 +31,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
     private final ModContext context;
 
     /** Exact managed lifecycle and complete observations. / 精确受管生命周期及完整观察。 */
-    private final DeploymentApplicationExecutor manager;
+    private final DeploymentApplicationRunner manager;
 
     /** Original retained transitions and verified compensation. / 原保留转换及已核实补偿。 */
     private final DeploymentRetainedReleases releases;
@@ -44,7 +43,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param context active context / 活动上下文 */
     public DeploymentApplicationsService(ModContext context) {
         this.context = Objects.requireNonNull(context);
-        manager = new DeploymentApplicationExecutor(context);
+        manager = new DeploymentApplicationRunner(context);
         releases = new DeploymentRetainedReleases(context);
         external = new DeploymentExternalApplications(context);
     }
@@ -70,9 +69,9 @@ public final class DeploymentApplicationsService implements TaskRecovery {
     /** Loads both saved origins with their original payloads and real business dates. / 加载两类保存来源及其原载荷和真实业务时间。
      * @return original local inventory query / 原本地清单查询
      * @throws ApiException if original task admission fails / 原任务准入失败时 */
-    public TaskHandle<List<DeploymentApplicationInventory.Entry>> inventory() throws ApiException {
+    public TaskHandle<List<DeploymentApplicationList.Entry>> inventory() throws ApiException {
         return query(List.of(), "Application inventory",
-            task -> success(new DeploymentApplicationInventory(context).list(task)));
+            task -> success(new DeploymentApplicationList(context).list(task)));
     }
 
     /** Loads configured scan targets. / 加载已配置扫描目标。
@@ -97,7 +96,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param application selected application / 所选应用
      * @return original query / 原查询
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application) throws ApiException {
+    public TaskHandle<DeploymentApplicationSnapshot> inspect(DeploymentApplicationId application) throws ApiException {
         return query(List.of(application.server().id()), "Inspect application",
             task -> manager.inspect(application, task));
     }
@@ -117,7 +116,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param application exact application / 精确应用
      * @return history query / 历史查询
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<List<DeploymentReleaseRecord>> history(DeploymentApplicationRef application) throws ApiException {
+    public TaskHandle<List<DeploymentReleaseRecord>> history(DeploymentApplicationId application) throws ApiException {
         return query(List.of(application.server().id()), "Release history",
             task -> success(releases.list(application, task)));
     }
@@ -137,7 +136,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param server exact target / 精确目标
      * @return scan query / 扫描查询
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<DeploymentExternalApplications.Scan> scan(ServerRef server) throws ApiException {
+    public TaskHandle<DeploymentExternalApplications.Scan> scan(ServerId server) throws ApiException {
         return query(List.of(server.id()), "Scan external applications", task -> external.scan(server, task));
     }
 
@@ -146,7 +145,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param candidate selected discovered row / 所选发现行
      * @return original registration / 原登记
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<String> adopt(ServerRef server, DeploymentExternalApplications.Discovered candidate)
+    public TaskHandle<String> adopt(ServerId server, DeploymentExternalApplications.Discovered candidate)
         throws ApiException {
         return action(server, "Adopt external application", task -> external.adopt(server, candidate, task));
     }
@@ -270,7 +269,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
                 return unknown("DEPLOYMENT_APPLICATION_QUERY_RESOURCES");
             return failed("DEPLOYMENT_APPLICATION_QUERY_INTERRUPTED");
         }
-        var stored = new DeploymentManagementJournal(context).find(task);
+        var stored = new DeploymentManagementActionLog(context).find(task);
         if (stored.isEmpty()) {
             if (!context.tasks().resourcesReleased(task))
                 return unknown("DEPLOYMENT_MANAGEMENT_RESOURCES");
@@ -284,11 +283,11 @@ public final class DeploymentApplicationsService implements TaskRecovery {
         }
         OperationResult<?> result;
         if (entry.action().startsWith("LIFECYCLE_")) {
-            var application = new DeploymentApplicationRef(entry.applicationId(), entry.server());
+            var application = new DeploymentApplicationId(entry.applicationId(), entry.server());
             result = manager.lifecycle(application, entry.currentRevision(),
                 DeploymentLifecycleAction.valueOf(entry.action().substring("LIFECYCLE_".length())), task);
         } else if (entry.action().equals("HISTORY_SWITCH")) {
-            var application = new DeploymentApplicationRef(entry.applicationId(), entry.server());
+            var application = new DeploymentApplicationId(entry.applicationId(), entry.server());
             result = releases.switchRelease(application, entry.currentRevision(),
                 UUID.fromString(entry.facts().path("selectedId").asText()), task);
         } else if (entry.action().equals("EXTERNAL_ADOPT")) {
@@ -322,7 +321,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param work original action callback / 原动作回调
      * @return actual accepted action task / 实际接纳动作任务
      * @throws ApiException if admission fails / 准入失败时 */
-    private <T> TaskHandle<T> action(ServerRef server, String title, TaskWork<T> work) throws ApiException {
+    private <T> TaskHandle<T> action(ServerId server, String title, TaskWork<T> work) throws ApiException {
         return context.tasks().submit(new TaskRequest(ACTION_TASK, title, List.of(server.id()), true), work);
     }
 
@@ -331,7 +330,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param value verified original value / 已核实原值
      * @return successful original result / 成功原结果 */
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     /** Returns a known original query or action failure. / 返回已知原查询或动作失败。
@@ -339,7 +338,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param event stable known failure / 稳定已知失败
      * @return known original failure / 已知原失败 */
     private static <T> OperationResult<T> failed(String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
             event, "Application operation did not complete", Map.of(), Optional.empty())));
     }
 
@@ -348,7 +347,7 @@ public final class DeploymentApplicationsService implements TaskRecovery {
      * @param event stable uncertainty identity / 稳定未知身份
      * @return retained original uncertainty / 留存原未知 */
     private static <T> OperationResult<T> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
             event, "Original application operation requires reconciliation", Map.of(), Optional.empty())));
     }
 }

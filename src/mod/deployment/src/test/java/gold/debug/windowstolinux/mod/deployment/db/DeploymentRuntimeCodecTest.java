@@ -34,12 +34,12 @@ class DeploymentRuntimeCodecTest {
         var runtime = new DeploymentRuntimeDefinition.ManagedProcess(TCP,
             gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentIdentityMode.SYSTEMD_STATIC,
             workload);
-        var encoded = DeploymentCodecCompatibility.write(runtime);
+        var encoded = DeploymentCodecMatch.write(runtime);
         assertEquals(7, encoded[4]);
         assertEquals(runtime, codec.read(encoded, TCP));
         encoded[4] = 5;
         assertThrows(java.io.IOException.class, () -> codec.read(encoded, TCP));
-        var historical = DeploymentCodecCompatibility.write(new DeploymentRuntimeDefinition.SpringBoot(TCP));
+        var historical = DeploymentCodecMatch.write(new DeploymentRuntimeDefinition.SpringBoot(TCP));
         assertEquals(5, historical[4]);
         assertEquals(new DeploymentRuntimeDefinition.SpringBoot(TCP), codec.read(historical, TCP));
     }
@@ -48,10 +48,10 @@ class DeploymentRuntimeCodecTest {
     void preservesNewTargetsAndRejectsLegacyLayout() throws Exception {
         var java8 = new DeploymentRuntimeDefinition.SpringBoot("8", TCP);
         var kotlin8 = new DeploymentRuntimeDefinition.KotlinService("1.8.22", "demo", "demo.MainKt", "8", TCP);
-        assertEquals(java8, codec.read(DeploymentCodecCompatibility.write(java8), TCP));
-        assertEquals(kotlin8, codec.read(DeploymentCodecCompatibility.write(kotlin8), TCP));
+        assertEquals(java8, codec.read(DeploymentCodecMatch.write(java8), TCP));
+        assertEquals(kotlin8, codec.read(DeploymentCodecMatch.write(kotlin8), TCP));
         // A version-one Spring Boot payload contains only magic, format and runtime tag. / 第一版 Spring Boot 载荷仅包含魔数、格式和运行时标签。
-        byte[] legacy = Arrays.copyOf(DeploymentCodecCompatibility.write(java8), 6);
+        byte[] legacy = Arrays.copyOf(DeploymentCodecMatch.write(java8), 6);
         legacy[4] = 1;
         assertThrows(java.io.IOException.class, () -> codec.read(legacy, TCP));
     }
@@ -82,13 +82,13 @@ class DeploymentRuntimeCodecTest {
             new DeploymentRuntimeDefinition.CmakeService("release", "demo", "demo", TCP));
 
         for (DeploymentRuntimeDefinition runtime : runtimes) {
-            assertEquals(runtime, codec.read(DeploymentCodecCompatibility.write(runtime), runtime.healthCheck()));
+            assertEquals(runtime, codec.read(DeploymentCodecMatch.write(runtime), runtime.healthCheck()));
         }
     }
 
     @Test
     void rejectsUnsupportedTruncatedAndTrailingDocuments() throws Exception {
-        byte[] valid = DeploymentCodecCompatibility.write(new DeploymentRuntimeDefinition.NodeService(22, TCP));
+        byte[] valid = DeploymentCodecMatch.write(new DeploymentRuntimeDefinition.NodeService(22, TCP));
         byte[] unsupported = valid.clone();
         unsupported[5] = 99;
         assertThrows(java.io.IOException.class, () -> codec.read(unsupported, TCP));
@@ -99,7 +99,7 @@ class DeploymentRuntimeCodecTest {
 
     @Test
     void refusesToRebindStaticSiteToATcpHealthContract() throws Exception {
-        byte[] runtime = DeploymentCodecCompatibility.write(new DeploymentRuntimeDefinition.StaticSite("dist", HTTP));
+        byte[] runtime = DeploymentCodecMatch.write(new DeploymentRuntimeDefinition.StaticSite("dist", HTTP));
         assertThrows(java.io.IOException.class, () -> codec.read(runtime, TCP));
     }
 }

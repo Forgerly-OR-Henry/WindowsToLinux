@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.start;
 
 import static gold.debug.windowstolinux.app.main.start.PlatformInteractionTest.dialog;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.completed;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.completed;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -13,14 +13,19 @@ import java.util.Locale;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -49,7 +54,7 @@ class PlatformTransferChoiceWindowTest {
                 int index = 0;
                 for (var expected : TransferConflictChoice.values()) {
                     var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> success(
-                        interaction.transferConflict(conflict, new ServerRef("server"), context)));
+                        interaction.transferConflict(conflict, new ServerId("server"), context)));
                     await(() -> dialog(frame) != null);
                     String label = labels[index++];
                     onEdt(() -> {
@@ -78,7 +83,7 @@ class PlatformTransferChoiceWindowTest {
                     java.time.Duration.ofMinutes(5));
                 for (var expected : TransferStallChoice.values()) {
                     var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"),
-                        context -> success(interaction.transferStalled(stall, new ServerRef("server"), context)));
+                        context -> success(interaction.transferStalled(stall, new ServerId("server"), context)));
                     await(() -> dialog(frame) != null);
                     onEdt(() -> {
                         var window = dialog(frame);

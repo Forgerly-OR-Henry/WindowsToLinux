@@ -1,26 +1,29 @@
 package gold.debug.windowstolinux.app.service.task;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.util.*;
 
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Owns caller-bound human review and single-use grants without persisting secret input. / 持有调用方绑定的人工审核及单次授权，不持久化秘密输入。 */
 public final class PlatformInteractionService implements InteractionService, AutoCloseable {
@@ -168,7 +171,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
                 grants.entrySet().removeIf(entry -> !activeTasks.contains(entry.getValue().task().id()));
                 var grant = new ApprovalGrant(UUID.randomUUID());
                 grants.put(grant, new Reviewed(task, intent, permit, Optional.ofNullable(independentRevision)));
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(grant), Optional.empty());
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.empty());
             }
         } finally {
             release(lease);
@@ -181,7 +184,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param task original active task / 原活动任务
      * @return explicit conflict choice, or termination after cancellation / 明确冲突选择，取消后终止
      * @throws ApiException if identity, presentation or resource release fails / 身份、呈现或资源释放失败时 */
-    public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskContext task)
+    public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server, TaskContext task)
         throws ApiException {
         worker();
         requireOpen();
@@ -212,7 +215,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param task original active task / 原活动任务
      * @return explicit retry choice, or termination after cancellation / 明确重试选择，取消后终止
      * @throws ApiException if identity, presentation or resource release fails / 身份、呈现或资源释放失败时 */
-    public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskContext task)
+    public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskContext task)
         throws ApiException {
         worker();
         requireOpen();
@@ -254,8 +257,8 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @param task original task / 原任务
      * @return explicit zero/one/two choice / 明确零一二选择
      * @throws ApiException if prompt identity or cleanup fails / 提示身份或清理失败时 */
-    public int fileConflict(gold.debug.windowstolinux.appapi.file.FileInfo source,
-                            gold.debug.windowstolinux.appapi.file.FileInfo target, boolean directory, TaskContext task) throws ApiException {
+    public int fileConflict(gold.debug.windowstolinux.appapi.file.model.FileInfo source,
+                            gold.debug.windowstolinux.appapi.file.model.FileInfo target, boolean directory, TaskContext task) throws ApiException {
         worker();
         requireOpen();
         tasks.requireExecuting(task, owner, version);
@@ -308,7 +311,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
                 return cancelled();
             if (value.length > 65536)
                 throw error(ProblemCode.INVALID_INPUT, "INPUT_TOO_LARGE", "Human input exceeds its limit");
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new String(value)), Optional.empty());
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new String(value)), Optional.empty());
         } catch (java.util.concurrent.CancellationException cancelled) {
             return cancelled();
         } catch (ApiException failure) {
@@ -464,7 +467,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
      * @return cancelled operation result / 已取消操作结果
      */
     private static <T> OperationResult<T> cancelled() {
-        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional
+        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional
             .of(error(ProblemCode.CANCELLED, "HUMAN_CANCELLED", "Human review or input was cancelled").problem()));
     }
 
@@ -499,8 +502,8 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param task original task / 原任务
          * @param cancellation original cancellation / 原取消
          * @return explicit choice / 明确选择 */
-        default int fileConflict(gold.debug.windowstolinux.appapi.file.FileInfo source,
-                                 gold.debug.windowstolinux.appapi.file.FileInfo target, boolean directory,
+        default int fileConflict(gold.debug.windowstolinux.appapi.file.model.FileInfo source,
+                                 gold.debug.windowstolinux.appapi.file.model.FileInfo target, boolean directory,
                                  TaskSnapshot task, CancelToken cancellation) {
             throw new UnsupportedOperationException("This presenter does not provide file collision decisions");
         }
@@ -511,7 +514,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param task original task identity / 原任务身份
          * @param cancellation cooperative prompt cancellation / 协作提示取消
          * @return explicit business choice / 明确业务选择 */
-        TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskSnapshot task,
+        TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server, TaskSnapshot task,
                                                 CancelToken cancellation);
 
         /** Presents retry or termination after the old transfer physically stops. / 原传输物理停止后呈现重试或终止。
@@ -520,7 +523,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @param task original task identity / 原任务身份
          * @param cancellation cooperative prompt cancellation / 协作提示取消
          * @return explicit user choice / 明确用户选择 */
-        TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+        TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                             CancelToken cancellation);
 
         /** Formats a physical stage without accessing window controls. / 不访问窗口控件地格式化物理阶段。

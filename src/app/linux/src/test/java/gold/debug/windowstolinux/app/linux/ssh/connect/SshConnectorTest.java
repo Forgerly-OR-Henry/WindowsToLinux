@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.net.*;
@@ -14,6 +11,8 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.SwingUtilities;
 
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

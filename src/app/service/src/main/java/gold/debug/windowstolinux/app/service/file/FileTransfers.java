@@ -2,8 +2,11 @@ package gold.debug.windowstolinux.app.service.file;
 
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Adapts one preplanned ordinary file to the existing journalled transfer state machine. / 将单个预先计划的普通文件接入既有持久传输状态机。 */
 @FunctionalInterface

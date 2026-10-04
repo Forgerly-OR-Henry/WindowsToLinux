@@ -1,23 +1,49 @@
 package gold.debug.windowstolinux.app.linux.ssh.recover;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
 
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.app.linux.ssh.recover.ai.RecoveryModels;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserRecoveryException;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserTerminalSession;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.RecoveryProbeResult;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.RecoveryTarget;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.TerminalObservation;
+import gold.debug.windowstolinux.app.linux.ssh.recover.model.TerminalTarget;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 
 class BrowserRecoveryEvidenceTest {
+    private static gold.debug.windowstolinux.appapi.task.run.TaskContext task() {
+        var id = UUID.randomUUID();
+        return new gold.debug.windowstolinux.appapi.task.run.TaskContext() {
+            public UUID id() {
+                return id;
+            }
+
+            public gold.debug.windowstolinux.appapi.task.run.CancelToken cancelToken() {
+                return () -> false;
+            }
+
+            public void progress(String text, Optional<Double> fraction) {
+                throw new AssertionError("No progress in controller");
+            }
+
+            public gold.debug.windowstolinux.appapi.task.run.ResourceLease retain(String kind, String localId, String description) {
+                throw new AssertionError("Ownership belongs to browser adapter");
+            }
+        };
+    }
+
     private static final RecoveryTarget TARGET = new RecoveryTarget("server", "example.test", 22);
 
     private static Problem problem(ProblemCode code, String event) {
@@ -44,7 +70,7 @@ class BrowserRecoveryEvidenceTest {
         var browser = new Browser();
         var original = problem(ProblemCode.IO_FAILURE, "SSH_AUTHENTICATION_FAILED");
         var session = new BrowserRecoverySession(browser, null, () -> RecoveryProbeResult.failed(original), s -> {
-        }, TARGET, new ReentrantLock());
+        }, TARGET, task(), gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ssh());
         session.run();
         assertSame(original, session.snapshot().failure().orElseThrow());
         assertEquals(0, browser.opens);
@@ -57,7 +83,7 @@ class BrowserRecoveryEvidenceTest {
         var browser = new Browser();
         var session = new BrowserRecoverySession(browser, null, RecoveryProbeResult::recovered, s -> {
             throw new IllegalStateException("terminal-password=private", new ApiException(original));
-        }, TARGET, new ReentrantLock());
+        }, TARGET, task(), gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ssh());
         session.run();
         assertEquals(BrowserRecoverySnapshot.State.FAILED, session.await().state());
         assertEquals("journalUnavailable", session.snapshot().messageCode());
@@ -76,7 +102,7 @@ class BrowserRecoveryEvidenceTest {
             }
         };
         var session = new BrowserRecoverySession(browser, null, RecoveryProbeResult::recovered, s -> {
-        }, TARGET, new ReentrantLock());
+        }, TARGET, task(), gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ssh());
         session.run();
         assertSame(original.problem(), session.await().failure().orElseThrow());
         assertEquals(BrowserRecoverySnapshot.State.FAILED, session.snapshot().state());
@@ -117,7 +143,7 @@ class BrowserRecoveryEvidenceTest {
         };
         var session = new BrowserRecoverySession(browser, models,
             () -> RecoveryProbeResult.failed(problem(ProblemCode.IO_FAILURE, "SSH_CONNECTION_FAILED")), s -> {
-        }, TARGET, task);
+        }, TARGET, task, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ssh());
         var worker = new Thread(session);
         worker.start();
         try {
@@ -209,7 +235,7 @@ class BrowserRecoveryEvidenceTest {
             () -> RecoveryProbeResult.failed(problem(ProblemCode.IO_FAILURE, "SSH_CONNECTION_FAILED")), snapshot -> {
             if (snapshot.state() == BrowserRecoverySnapshot.State.WAITING_TERMINAL)
                 waiting.countDown();
-        }, TARGET, task);
+        }, TARGET, task, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ssh());
         var worker = new Thread(session, "recovery-cancellation-boundary-" + id);
         worker.start();
         try {

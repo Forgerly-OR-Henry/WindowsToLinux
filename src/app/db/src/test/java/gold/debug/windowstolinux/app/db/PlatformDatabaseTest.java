@@ -6,8 +6,8 @@ import java.nio.file.*;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,7 +38,7 @@ class PlatformDatabaseTest {
     @Test
     void schemaOwnerCredentialsRemainCompatibleWithExistingUsersAcrossRestart() throws Exception {
         var coordinates = new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(
-            new gold.debug.windowstolinux.appapi.db.SchemaIdentity("credential.fixture", "1", UUID.randomUUID()));
+            new gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity("credential.fixture", "1", UUID.randomUUID()));
         UUID generation;
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
              var original = gold.debug.windowstolinux.app.db.init.DatabaseBootstrap.load(root, TEST_PROTECTION);
@@ -102,6 +102,10 @@ class PlatformDatabaseTest {
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION)) {
             generation = database.generation();
             firstBoot = database.bootId();
+            assertTrue(Files.isRegularFile(root.resolve("windowstolinux.mv.db")));
+            assertTrue(Files.isRegularFile(root.resolve("windowstolinux.lock")));
+            assertFalse(Files.exists(root.resolve("platform.mv.db")));
+            assertFalse(Files.exists(root.resolve("platform.lock")));
             database.started();
             assertEquals(23, count(database,
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='app' AND table_type='BASE TABLE'"));
@@ -120,10 +124,50 @@ class PlatformDatabaseTest {
     }
 
     @Test
+    void offlineRenameRetainsExistingGenerationPreferencesAndBootstrapBytes() throws Exception {
+        UUID generation;
+        try (var database = PlatformDatabase.open(root, TEST_PROTECTION);
+             var connection = database.openConnection(); var statement = connection.createStatement()) {
+            generation = database.generation();
+            statement.execute("INSERT INTO desktop_preference VALUES('rename-sentinel','retained')");
+        }
+        var access = Files.readAllBytes(root.resolve("db-access.bin"));
+        var current = root.resolve("windowstolinux.mv.db");
+        var previous = root.resolve("platform.mv.db");
+        var original = Files.readAllBytes(current);
+        Files.move(current, previous);
+        assertThrows(Exception.class, () -> PlatformDatabase.open(root, TEST_PROTECTION));
+        assertFalse(Files.exists(current));
+        assertArrayEquals(original, Files.readAllBytes(previous));
+        assertArrayEquals(access, Files.readAllBytes(root.resolve("db-access.bin")));
+        Files.move(previous, current);
+        try (var database = PlatformDatabase.open(root, TEST_PROTECTION)) {
+            assertEquals(generation, database.generation());
+            assertEquals(1, count(database,
+                "SELECT COUNT(*) FROM desktop_preference WHERE preference_key='rename-sentinel' AND preference_value='retained'"));
+        }
+        assertArrayEquals(access, Files.readAllBytes(root.resolve("db-access.bin")));
+        assertFalse(Files.exists(previous));
+    }
+
+    @Test
+    void oldAndCurrentH2ArtifactsCannotBeMistakenForAnEmptyDataDirectory() throws Exception {
+        for (var name : List.of("platform.mv.db", "platform.trace.db", "windowstolinux.trace.db")) {
+            var directory = Files.createDirectory(root.resolve(name + "-fixture"));
+            var artifact = directory.resolve(name);
+            Files.writeString(artifact, "unreconciled original data");
+            assertThrows(Exception.class, () -> PlatformDatabase.open(directory, TEST_PROTECTION));
+            assertEquals("unreconciled original data", Files.readString(artifact));
+            assertFalse(Files.exists(directory.resolve("db-access.bin")));
+            assertFalse(Files.exists(directory.resolve("windowstolinux.mv.db")));
+        }
+    }
+
+    @Test
     void missingOrMixedBootstrapPairFailsWithoutReplacingEitherFile() throws Exception {
         try (var database = PlatformDatabase.open(root, TEST_PROTECTION)) {
         }
-        var database = root.resolve("platform.mv.db");
+        var database = root.resolve("windowstolinux.mv.db");
         var before = Files.readAllBytes(database);
         Files.delete(root.resolve("db-access.bin"));
         assertThrows(Exception.class, () -> PlatformDatabase.open(root, TEST_PROTECTION));
@@ -133,7 +177,7 @@ class PlatformDatabaseTest {
         Files.createDirectory(other);
         Files.writeString(other.resolve("db-access.bin"), "orphan");
         assertThrows(Exception.class, () -> PlatformDatabase.open(other, TEST_PROTECTION));
-        assertFalse(Files.exists(other.resolve("platform.mv.db")));
+        assertFalse(Files.exists(other.resolve("windowstolinux.mv.db")));
     }
 
     @Test
@@ -185,7 +229,7 @@ class PlatformDatabaseTest {
         };
         assertThrows(Exception.class, () -> PlatformDatabase.open(root, protection));
         assertFalse(Files.exists(root.resolve("db-access.bin")));
-        assertFalse(Files.exists(root.resolve("platform.mv.db")));
+        assertFalse(Files.exists(root.resolve("windowstolinux.mv.db")));
     }
 
     @Test

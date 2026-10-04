@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallException;
+
 import java.util.List;
 import java.util.Objects;
 

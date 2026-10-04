@@ -3,136 +3,109 @@ package gold.debug.windowstolinux.app.ui.window;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
-
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade;
+import gold.debug.windowstolinux.app.service.security.SecurityAccess;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
-/** Covers the shell and every owned dialog with the same security boundary. / 统一遮挡桌面外壳和所有从属窗口。 */
+/** Locks content while preserving navigation and accepted tasks. / 锁定内容，保留导航和已接受任务。 */
 final class DesktopLockController implements AutoCloseable {
-    /** Desktop frame owning the lock boundary. / 持有锁定边界的桌面主窗口。
-     */
-    /** Attaches the security surface and lock action to a compatible desktop. / 为支持安全契约的桌面接入锁定界面及动作。
-     * @param frame owning desktop / 所属桌面
-     * @param service application facade / 应用门面
-     * @param messages localized catalog / 本地化目录
-     * @param reports safe failure reports / 安全失败报告
-     * @param sidebar navigation panel / 导航面板
-     * @param components themed controls / 主题控件
-     * @param initialWindow whether this is the initial window / 是否为首次打开的窗口
-     * @param openSettings opens the settings page / 打开设置页
-     * @return attached controller or null for nonsecurity preview facades / 已接入控制器，非安全预览门面为空
-     */
-    static DesktopLockController attach(JFrame frame, Object service,
-                                        gold.debug.windowstolinux.app.ui.language.MessageCatalog messages,
-                                        gold.debug.windowstolinux.app.ui.error.FailureReportStore reports, JPanel sidebar,
-                                        gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory components, boolean initialWindow,
-                                        Runnable openSettings) {
-        if (!(service instanceof SecurityApplicationFacade security))
-            return null;
-        var controller = new DesktopLockController(frame, security, new PageMessagePresenter(messages, reports));
-        JButton lock = controller.messages.bind(components.secondaryButton(""), "security.lock");
-        controller.lockButton = lock;
-        lock.setEnabled(security.securityState().configured());
-        lock.setName("security.lock");
-        lock.addActionListener(event -> controller.lock());
-        sidebar.add(lock);
-        if (initialWindow)
-            frame.addWindowListener(new WindowAdapter() {
-                /** Prompts after the main window becomes visible. / 在主窗口可见后显示设置提示。
-                 * @param event window-open event / 窗口打开事件
-                 */
-                @Override
-                public void windowOpened(WindowEvent event) {
-                    SwingUtilities.invokeLater(() -> controller.promptSetup(openSettings));
-                }
-            });
-        return controller;
-    }
-
-    /** Desktop frame owning the lock boundary. / 持有锁定边界的桌面主窗口。
-     */
+    /** Owned desktop privacy boundary. / 所属桌面隐私边界。 */
     private final JFrame frame;
 
-    /** Service-owned interactive authorization boundary. / 服务持有的交互授权边界。
-     */
-    private final SecurityApplicationFacade security;
+    /** Existing authorization facade. / 既有授权门面。 */
+    private final SecurityAccess security;
 
-    /** Localized safe message presenter. / 本地化安全消息呈现器。
-     */
+    /** Localized safe diagnostic presenter. / 本地化安全诊断展示器。 */
     private final PageMessagePresenter messages;
 
-    /** Installed covers indexed by owned root pane. / 按从属根面板索引的已安装遮罩。
-     */
-    private final Map<RootPaneContainer, Cover> covers = new IdentityHashMap<>();
+    /** Transparent input gate preserving navigation. / 保留导航的透明输入门禁。 */
+    private final DesktopLockGate gate;
 
-    /** Event-thread refresh timer. / 事件线程刷新定时器。
-     */
+    /** Original glass pane restored on unlock or disposal. / 解锁或释放时恢复的原玻璃层。 */
+    private final Component oldGlass;
+
+    /** Owned dialogs hidden while locked and their original visibility. / 锁定时隐藏的所属对话框及其原可见状态。 */
+    private final Map<Window, Boolean> hidden = new IdentityHashMap<>();
+
+    /** EDT security-state observer stopped on disposal. / 释放时停止的 EDT 安全状态观察计时器。 */
     private final javax.swing.Timer timer;
 
-    /** Keyboard gate for locked windows. / 锁定窗口的键盘门禁。
-     */
+    /** Owned-window keyboard admission filter. / 所属窗口键盘准入过滤器。 */
     private final KeyEventDispatcher keys;
 
-    /** Listener covering newly opened owned windows. / 遮挡新从属窗口的监听器。
-     */
+    /** Synchronizes newly opened owned windows with privacy state. / 将新打开的所属窗口与隐私状态同步。 */
     private final AWTEventListener windows;
 
-    /** Guarded application shutdown callback. / 受保护的应用关闭回调。
-     */
+    /** Sidebar state and lock or unlock action. / 侧栏状态及锁定或解锁操作。 */
+    private final DesktopLockStatus controls;
+
+    /** Original default button withheld while locked. / 锁定时暂时撤除的原默认按钮。 */
+    private JButton oldDefault;
+
+    /** Guarded shutdown callback. / 受门禁保护的关闭回调。 */
     private Runnable exit;
 
-    /** Manual lock control, available after setup. / 完成设置后可用的手动锁定控件。
-     */
-    private JButton lockButton;
+    /** Last privacy and admission state, disposal and reentrancy guards. / 上次隐私及准入状态、释放及重入保护。 */
+    private boolean lastLocked, lastBlocked, closed, updating;
 
-    /** Last observed lock state. / 上次观测的锁定状态。
-     */
-    private boolean lastLocked;
-
-    /** Last notified interactive-access state, including initial password setup. / 最近通知的交互访问状态，包括首次密码设置。 */
-    private boolean lastBlocked;
-
-    /** Observer notified after the host covers have been applied. / 宿主遮罩应用后通知的观察者。 */
+    /** Receives admission changes after applying the input gate. / 输入门禁应用后接收准入变化。 */
     private java.util.function.Consumer<Boolean> lockObserver = ignored -> {
     };
 
-    /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
-     * @param frame frame supplied to this boundary / 传入当前边界的frame值
-     * @param security security supplied to this boundary / 传入当前边界的security值
-     * @param messages messages supplied to this boundary / 传入当前边界的messages值
+    /** Single owned password prompt, absent until requested. / 唯一所属密码提示，请求前为空。 */
+    private DesktopUnlockDialog unlock;
+
+    /** Attaches the sidebar status and authorization boundary. / 接入侧栏状态及授权边界。
+     * @param frame desktop / 桌面
+     * @param service authorization / 授权
+     * @param catalog language / 语言
+     * @param reports diagnostics / 诊断
+     * @param sidebar bottom controls / 底部控件
+     * @param components themed controls / 主题控件
+     * @param initialWindow first-use prompt / 首次提示
+     * @param openSettings settings navigation / 设置导航
+     * @return controller or null for preview facades / 控制器，预览门面为空 */
+    static DesktopLockController attach(JFrame frame, Object service,
+                                        gold.debug.windowstolinux.app.ui.language.MessageCatalog catalog,
+                                        gold.debug.windowstolinux.app.ui.error.FailureReportStore reports, JPanel sidebar,
+                                        gold.debug.windowstolinux.app.ui.control.DesktopPartFactory components,
+                                        boolean initialWindow, Runnable openSettings) {
+        if (!(service instanceof SecurityAccess security)) return null;
+        var controller = new DesktopLockController(frame, security, new PageMessagePresenter(catalog, reports));
+        sidebar.add(controller.controls);
+        if (initialWindow) frame.addWindowListener(new WindowAdapter() {
+            /** Schedules the first-use security settings prompt after the desktop opens. / 桌面打开后安排首次安全设置提示。
+             * @param event original event notification / 原事件通知
+             */
+            @Override
+            public void windowOpened(WindowEvent event) {
+                SwingUtilities.invokeLater(() -> controller.promptSetup(openSettings));
+            }
+        });
+        return controller;
+    }
+
+    /** Attaches privacy listeners and the original input boundary. / 接入隐私监听器及原输入边界。
+     * @param frame owned desktop / 所属桌面
+     * @param security original authorization facade / 原授权门面
+     * @param messages localized safe messages / 本地化安全消息
      */
-    DesktopLockController(JFrame frame, SecurityApplicationFacade security, PageMessagePresenter messages) {
+    DesktopLockController(JFrame frame, SecurityAccess security, PageMessagePresenter messages) {
         this.frame = frame;
         this.security = security;
         this.messages = messages;
         exit = frame::dispose;
-        gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor.bindSecurity(security);
-        keys = event -> {
-            Component source = event.getComponent();
-            Window window = source instanceof Window value ? value : SwingUtilities.getWindowAncestor(source);
-            if (!owned(window))
-                return false;
-            if (event.getID() == KeyEvent.KEY_PRESSED && event.getKeyCode() == KeyEvent.VK_L && event.isControlDown()
-                && event.isShiftDown()) {
-                lock();
-                return true;
-            }
-            if (locked()) {
-                synchronize();
-                Cover cover = window instanceof RootPaneContainer root ? covers.get(root) : null;
-                return cover == null || !SwingUtilities.isDescendingFrom(source, cover.panel) || event.isAltDown()
-                    || event.isControlDown()
-                    && !java.util.Set.of(KeyEvent.VK_A, KeyEvent.VK_C, KeyEvent.VK_V, KeyEvent.VK_X)
-                    .contains(event.getKeyCode())
-                    || event.getKeyCode() >= KeyEvent.VK_F1 && event.getKeyCode() <= KeyEvent.VK_F12;
-            }
-            return false;
-        };
+        oldGlass = frame.getGlassPane();
+        gate = new DesktopLockGate(frame);
+        controls = new DesktopLockStatus(messages, () -> {
+            if (locked()) openUnlock();
+            else lock();
+        });
+        gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.bindSecurity(security);
+        keys = this::key;
         windows = event -> {
-            if (event.getSource() instanceof Window window && owned(window))
-                synchronize();
+            if (!closed && event.getSource() instanceof Window window && owned(window)) synchronize();
         };
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(keys);
         Toolkit.getDefaultToolkit().addAWTEventListener(windows, AWTEvent.WINDOW_EVENT_MASK);
@@ -140,17 +113,14 @@ final class DesktopLockController implements AutoCloseable {
         timer.start();
         frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         frame.addWindowListener(new WindowAdapter() {
-            /** Allows shutdown only after task and security-change completion. / 仅在任务及安全变更完成后允许关闭。
-             * @param event event supplied to this boundary / 传入当前边界的event值
+            /** Applies the existing task and privacy guards before closing. / 关闭前应用既有任务及隐私门禁。
+             * @param event original event notification / 原事件通知
              */
             @Override
             public void windowClosing(WindowEvent event) {
                 if (security.securityState().activeTasks() > 0 || security.securityState().changing()) {
-                    synchronize();
-                    if (locked())
-                        covers.get(frame).status.setText(messages.text("security.exit.unlock"));
-                    else
-                        JOptionPane.showMessageDialog(frame, messages.text("security.exit.tasks"));
+                    if (locked()) controls.blockedExit();
+                    else JOptionPane.showMessageDialog(frame, messages.text("security.exit.tasks"));
                 } else {
                     security.lock();
                     exit.run();
@@ -160,289 +130,218 @@ final class DesktopLockController implements AutoCloseable {
         synchronize();
     }
 
-    /** Registers the application shutdown callback behind the task guard. / 在任务保护之后注册应用关闭回调。
-     * @param action action supplied to this boundary / 传入当前边界的action值
+    /** Filters owned-window shortcuts and preserves locked navigation. / 过滤所属窗口快捷键并保留锁定导航。
+     * @param event original event notification / 原事件通知
+     * @return whether the original key is consumed / 是否消费原按键
      */
+    private boolean key(KeyEvent event) {
+        Component source = event.getComponent();
+        Window window = source instanceof Window value ? value : SwingUtilities.getWindowAncestor(source);
+        if (!owned(window)) return false;
+        if (event.getID() == KeyEvent.KEY_PRESSED && event.getKeyCode() == KeyEvent.VK_L
+            && event.isControlDown() && event.isShiftDown()) {
+            lock();
+            return true;
+        }
+        if (!locked()) return false;
+        if (unlock != null && window == unlock.window()) return false;
+        if (window != frame && navigationPopup(window)) return DesktopLockGate.blocks(event);
+        if (window == frame && event.getKeyCode() == KeyEvent.VK_TAB) {
+            if (event.getID() == KeyEvent.KEY_PRESSED) focusNavigation(event.isShiftDown());
+            return true;
+        }
+        return window != frame || DesktopLockGate.blocks(event);
+    }
+
+    /** Moves keyboard focus through currently admitted navigation controls. / 在当前准入导航控件间移动键盘焦点。
+     * @param reverse whether to traverse backwards / 是否反向遍历
+     */
+    private void focusNavigation(boolean reverse) {
+        var candidates = new java.util.ArrayList<Component>();
+        collectNavigation(frame.getContentPane(), candidates);
+        if (candidates.isEmpty()) return;
+        int current = candidates.indexOf(KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner());
+        candidates.get(Math.floorMod(current + (reverse ? -1 : 1), candidates.size())).requestFocusInWindow();
+    }
+
+    /** Collects visible enabled host navigation controls in tree order. / 按树顺序收集可见且启用的宿主导航控件。
+     * @param component original component tree / 原组件树
+     * @param result collected admitted controls / 收集到的准入控件
+     */
+    private static void collectNavigation(Component component, java.util.List<Component> result) {
+        if (component.isShowing() && component.isEnabled() && component.isFocusable()
+            && (component instanceof JTabbedPane || component instanceof JComponent control
+            && Boolean.TRUE.equals(control.getClientProperty("desktop.navigation")))) result.add(component);
+        if (component instanceof Container container)
+            for (Component child : container.getComponents()) collectNavigation(child, result);
+    }
+
+    /** Installs guarded shutdown. / 安装受保护的关闭动作。
+     * @param action shutdown / 关闭 */
     void onExit(Runnable action) {
         exit = Objects.requireNonNull(action);
     }
 
-    /**
-     * Connects Mod environment updates after applying the host privacy boundary. / 在应用宿主隐私边界后连接 Mod 环境更新。
-     * @param observer current lock-state observer / 当前锁定状态观察者
-     */
+    /** Observes authorization after the input boundary. / 输入边界应用后观察授权。
+     * @param observer state observer / 状态观察器 */
     void onLockChange(java.util.function.Consumer<Boolean> observer) {
         lockObserver = Objects.requireNonNull(observer);
         lastBlocked = !security.securityState().unlocked();
         observer.accept(lastBlocked);
     }
 
-    /** Drops interactive access while preserving accepted task capabilities. / 释放交互会话，保留已接纳任务的凭据能力。
-     */
+    /** Revokes new authorization without cancelling accepted tasks. / 撤销新授权，不取消已接受任务。 */
     void lock() {
-        if (!security.securityState().configured())
-            return;
+        if (!security.securityState().configured()) return;
         security.lock();
         synchronize();
     }
 
-    /** Offers settings navigation without hiding the first-use workspace. / 提供设置导航，不遮挡首次使用的主界面。
-     * @param openSettings opens the settings page / 打开设置页
+    /** Offers security settings on first use without starting business work. / 首次使用时提示安全设置，不启动业务任务。
+     * @param openSettings security settings navigation / 安全设置导航
      */
     private void promptSetup(Runnable openSettings) {
-        if (!frame.isShowing() || security.securityState().configured())
-            return;
+        if (!frame.isShowing() || security.securityState().configured()) return;
         Object[] options = {messages.text("security.setup.openSettings"), messages.text("security.setup.later")};
         int choice = JOptionPane.showOptionDialog(frame, messages.text("security.setup.hint"),
-            messages.text("security.setup"), JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null,
-            options, options[0]);
-        if (choice == 0 && frame.isShowing())
-            openSettings.run();
+            messages.text("security.setup"), JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE,
+            null, options, options[0]);
+        if (choice == 0 && frame.isShowing()) openSettings.run();
     }
 
-    /** Distinguishes a locked vault from an unconfigured first-use workspace. / 区分已锁定凭据库与尚未配置的首次使用界面。
-     * @return whether configured credentials are locked / 已配置凭据是否锁定
+    /** Reads configured privacy state from the original facade. / 从原门面读取已配置隐私状态。
+     * @return whether configured security is locked / 已配置安全是否锁定
      */
     private boolean locked() {
-        var state = security.securityState();
-        return state.configured() && !state.unlocked();
+        var current = security.securityState();
+        return current.configured() && !current.unlocked();
     }
 
-    /** Checks whether a window belongs to this desktop frame. / 检查窗口是否属于当前桌面主窗口。
-     * @param window window supplied to this boundary / 传入当前边界的window值
-     * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
+    /** Checks the original owner chain against the desktop. / 对照桌面检查原所有者链。
+     * @param window candidate owned window / 候选所属窗口
+     * @return whether the candidate belongs to the desktop / 候选是否属于桌面
      */
     private boolean owned(Window window) {
         for (Window current = window; current != null; current = current.getOwner())
-            if (current == frame)
-                return true;
+            if (current == frame) return true;
         return false;
     }
 
-    /** Covers or restores every owned window according to current lock state. / 依据当前锁定状态遮挡或恢复所有从属窗口。
+    /** Applies privacy state without reentrant listener updates. / 应用隐私状态并避免监听器重入更新。
      */
     private void synchronize() {
+        if (closed || updating) return;
+        updating = true;
+        try {
+            applyState();
+        } finally {
+            updating = false;
+        }
+    }
+
+    /** Revokes input, conceals owned dialogs and then notifies admission observers. / 撤销输入、隐藏所属对话框后通知准入观察器。
+     */
+    private void applyState() {
         boolean locked = locked();
-        if (lockButton != null)
-            lockButton.setEnabled(security.securityState().configured());
         if (locked && !lastLocked) {
             MenuSelectionManager.defaultManager().clearSelectedPath();
-            for (Window window : Window.getWindows())
-                if (owned(window))
-                    clearPasswords(window);
-        }
-        for (Window window : Window.getWindows()) {
-            if (!owned(window) || !(window instanceof RootPaneContainer root))
-                continue;
-            if (locked) {
-                Cover cover = covers.computeIfAbsent(root, Cover::new);
-                cover.update();
-            } else {
-                Cover cover = covers.remove(root);
-                if (cover != null)
-                    cover.restore();
-            }
-        }
+            clearPasswords(frame);
+            oldDefault = frame.getRootPane().getDefaultButton();
+            frame.getRootPane().setDefaultButton(null);
+            frame.setGlassPane(gate);
+            gate.setVisible(true);
+            KeyboardFocusManager.getCurrentKeyboardFocusManager().clearGlobalFocusOwner();
+            SwingUtilities.invokeLater(controls::focusAction);
+        } else if (!locked && lastLocked) restore();
         lastLocked = locked;
+        if (locked) hideDialogs();
+        controls.refresh(security.securityState().configured(), locked);
         boolean blocked = !security.securityState().unlocked();
         if (lastBlocked != blocked) {
             lastBlocked = blocked;
             lockObserver.accept(blocked);
         }
+        if (unlock != null) unlock.refresh();
     }
 
-    /** Clears password controls recursively before covering a window. / 在遮挡窗口前递归清除密码控件。
-     * @param component component supplied to this boundary / 传入当前边界的component值
+    /** Conceals owned business dialogs while retaining their visibility for unlock. / 隐藏所属业务对话框并保留解锁恢复所需可见状态。
      */
-    private static void clearPasswords(Component component) {
-        if (component instanceof JPasswordField field)
-            field.setText("");
+    private void hideDialogs() {
+        for (Window window : Window.getWindows()) {
+            if (window == frame || !owned(window) || !window.isShowing()
+                || unlock != null && window == unlock.window() || navigationPopup(window)) continue;
+            hidden.putIfAbsent(window, true);
+            clearPasswords(window);
+            if (window instanceof RootPaneContainer root) root.getContentPane().setVisible(false);
+            window.setVisible(false);
+        }
+    }
+
+    /** Recognizes host navigation menus and tooltips in owned popup trees. / 在所属弹层树中识别宿主导航菜单及提示。
+     * @param component original component tree / 原组件树
+     * @return whether this tree contains host navigation / 此树是否包含宿主导航
+     */
+    private static boolean navigationPopup(Component component) {
+        if (component instanceof JPopupMenu && DesktopLockGate.navigation(component)) return true;
+        if (component instanceof JToolTip tip && DesktopLockGate.navigation(tip.getComponent())) return true;
         if (component instanceof Container container)
             for (Component child : container.getComponents())
-                clearPasswords(child);
+                if (navigationPopup(child)) return true;
+        return false;
     }
 
-    /** Opaque authorization surface for one owned window. / 单个从属窗口的不透明授权界面。
+    /** Restores the original glass pane and schedules owned-dialog visibility. / 恢复原玻璃层并安排所属对话框可见状态恢复。
      */
-    private final class Cover {
-        /** Window root protected by this cover. / 当前遮罩保护的窗口根节点。
-         */
-        private final RootPaneContainer root;
-
-        /** Original glass pane restored on unlock. / 解锁时恢复的原玻璃面板。
-         */
-        private final Component oldGlass;
-
-        /** Original default button restored on unlock. / 解锁时恢复的原默认按钮。
-         */
-        private final JButton oldDefault;
-
-        /** Original dialog title hidden while locked. / 锁定时隐藏的原对话框标题。
-         */
-        private final String oldTitle;
-
-        /** Opaque lock surface. / 不透明锁定界面。
-         */
-        private final JPanel panel = new JPanel(new GridBagLayout());
-
-        /** Safe status and error label. / 安全状态及错误标签。
-         */
-        /** Task-count overview without private details. / 不含私密详情的任务数量概要。
-         */
-        private final JLabel status = new JLabel(), summary = new JLabel();
-
-        /** Master password input control. / 主密码输入控件。
-         */
-        private final JPasswordField password = new JPasswordField(24);
-
-        /** Explicit password submission action. / 显式密码提交动作。
-         */
-        private final JButton submit = new JButton();
-
-        /** Action revealing the initially hidden password form. / 显示初始隐藏密码表单的动作。
-         */
-        private final JButton enter = new JButton();
-
-        /** Unlock form. / 解锁表单。
-         */
-        private final JPanel form = new JPanel(new GridLayout(0, 1, 0, 10));
-
-        /** Prevents concurrent form submissions. / 防止并发提交表单。
-         */
-        private boolean busy;
-
-        /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
-         * @param root root supplied to this boundary / 传入当前边界的root值
-         */
-        Cover(RootPaneContainer root) {
-            this.root = root;
-            clearPasswords(root.getContentPane());
-            oldTitle = root instanceof Dialog dialog ? dialog.getTitle() : null;
-            if (root instanceof Dialog dialog)
-                dialog.setTitle(messages.text("security.locked"));
-            oldGlass = root.getGlassPane();
-            oldDefault = root.getRootPane().getDefaultButton();
-            root.getRootPane().setDefaultButton(submit);
-            panel.setName("security.locked");
-            panel.setOpaque(true);
-            panel.setFocusCycleRoot(true);
-            form.setBorder(BorderFactory.createEmptyBorder(28, 28, 28, 28));
-            JLabel title = messages.bind(new JLabel(), "security.locked");
-            title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
-            form.add(title);
-            form.add(summary);
-            messages.bind(enter, "security.unlock");
-            form.add(enter);
-            JLabel label = messages.bind(new JLabel(), "security.password");
-            form.add(label);
-            form.add(password);
-            form.add(submit);
-            form.add(status);
-            label.setVisible(false);
-            password.setVisible(false);
-            submit.setVisible(false);
-            enter.addActionListener(event -> {
-                enter.setVisible(false);
-                label.setVisible(true);
-                password.setVisible(true);
-                submit.setVisible(true);
-                messages.bind(submit, "security.unlock");
-                password.requestFocusInWindow();
-                panel.revalidate();
-            });
-            password.setName("security.password");
-            submit.setName("security.submit");
-            enter.setName("security.enter");
-            password.addActionListener(event -> unlock());
-            submit.addActionListener(event -> unlock());
-            panel.add(form);
-            panel.addMouseListener(new MouseAdapter() {
-            });
-            panel.addMouseMotionListener(new MouseMotionAdapter() {
-            });
-            root.getContentPane().setVisible(false);
-            root.setGlassPane(panel);
-            panel.setVisible(true);
-            SwingUtilities.invokeLater(enter::requestFocusInWindow);
+    private void restore() {
+        gate.setVisible(false);
+        frame.setGlassPane(oldGlass);
+        frame.getRootPane().setDefaultButton(oldDefault);
+        if (unlock != null) {
+            unlock.close();
+            unlock = null;
         }
-
-        /** Refreshes visible status from the current security state. / 按当前安全状态刷新可见状态。
-         */
-        void update() {
-            gold.debug.windowstolinux.app.ui.language.LocaleBinding.bind(summary,
-                gold.debug.windowstolinux.app.ui.language.LocalizedMessage.of("security.tasks", "count",
-                    security.securityState().activeTasks()),
-                messages.catalog());
-            if (!panel.isVisible())
-                panel.setVisible(true);
-            root.getContentPane().setVisible(false);
-        }
-
-        /** Verifies the password and opens a session without exposing the data key. / 验证密码并建立会话，不暴露数据密钥。
-         */
-        void unlock() {
-            if (busy || !submit.isVisible())
-                return;
-            busy = true;
-            submit.setEnabled(false);
-            password.setEnabled(false);
-            char[] supplied = password.getPassword();
-            clearPasswords(form);
-            new SwingWorker<Void, Void>() {
-                /** Executes the security request away from the event thread and clears buffers. / 在事件线程外执行安全请求并清理缓冲区。
-                 * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
-                 * @throws Exception if validation or the scoped operation fails / 校验或限定操作失败时
-                 */
-                @Override
-                protected Void doInBackground() throws Exception {
-                    try {
-                        security.unlock(supplied);
-                        return null;
-                    } finally {
-                        Arrays.fill(supplied, '\0');
-                    }
-                }
-
-                /** Reports completion on the event thread without changing lock state implicitly. / 在事件线程报告完成，不隐式修改锁定状态。
-                 */
-                @Override
-                protected void done() {
-                    busy = false;
-                    submit.setEnabled(true);
-                    password.setEnabled(true);
-                    try {
-                        get();
-                        synchronize();
-                    } catch (Exception failure) {
-                        status.setText(messages.safe(failure));
-                        password.requestFocusInWindow();
-                    }
-                }
-            }.execute();
-        }
-
-        /** Restores the covered window and clears lock-form password buffers. / 恢复被遮挡窗口并清除锁定表单密码缓冲区。
-         */
-        void restore() {
-            if (root instanceof Dialog dialog)
-                dialog.setTitle(oldTitle);
-            root.getRootPane().setDefaultButton(oldDefault);
-            clearPasswords(form);
-            panel.setVisible(false);
-            root.setGlassPane(oldGlass);
-            root.getContentPane().setVisible(true);
-        }
+        var original = new IdentityHashMap<>(hidden);
+        hidden.clear();
+        original.forEach((window, visible) -> SwingUtilities.invokeLater(() -> {
+            if (!closed && !locked() && window.isDisplayable()) {
+                if (window instanceof RootPaneContainer root) root.getContentPane().setVisible(true);
+                if (visible) window.setVisible(true);
+            }
+        }));
     }
 
-    /** Releases this scope and its owned resources. / 释放当前作用域及其持有资源。
+    /** Creates or focuses the single prompt while the desktop remains locked. / 桌面仍锁定时创建或聚焦唯一提示。
      */
+    private void openUnlock() {
+        if (!locked() || closed) return;
+        if (unlock != null) {
+            unlock.focus();
+            return;
+        }
+        unlock = new DesktopUnlockDialog(frame, security, messages, this::synchronize, () -> unlock = null);
+        unlock.show();
+    }
+
+    /** Clears password fields throughout the owned component tree. / 清空所属组件树中的密码字段。
+     * @param component original component tree / 原组件树
+     */
+    private static void clearPasswords(Component component) {
+        if (component instanceof JPasswordField field) field.setText("");
+        if (component instanceof Container container)
+            for (Component child : container.getComponents()) clearPasswords(child);
+    }
+
+    /** Releases listeners, password controls and the input gate. / 释放监听器、密码控件及输入门禁。 */
     @Override
     public void close() {
-        gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor.unbindSecurity(security);
+        closed = true;
+        gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.unbindSecurity(security);
         timer.stop();
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(keys);
         Toolkit.getDefaultToolkit().removeAWTEventListener(windows);
-        covers.values().forEach(cover -> clearPasswords(cover.panel));
-        covers.clear();
+        gate.setVisible(false);
+        frame.setGlassPane(oldGlass);
+        if (unlock != null) unlock.close();
+        hidden.clear();
     }
 }

@@ -1,27 +1,25 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteActions;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 
 /** Sends only fixed deployment-owned collection and restore helper verbs on a borrowed session. / 仅在借用会话上发送固定的部署所属采集与恢复helper动作。 */
@@ -45,7 +43,7 @@ public final class DeploymentHandoffChannel {
     private final InteractionService interaction;
 
     /** Exact authorized target endpoint. / 精确授权目标端点。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Host-certified original caller task. / 宿主认证原调用方任务。 */
     private final TaskContext task;
@@ -59,7 +57,7 @@ public final class DeploymentHandoffChannel {
      * @param server exact server / 精确服务器
      * @param task original task / 原任务
      * @param revision reviewed business revision / 已审阅业务修订 */
-    public DeploymentHandoffChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentHandoffChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                     TaskContext task, String revision) {
         this.session = java.util.Objects.requireNonNull(session);
         this.interaction = java.util.Objects.requireNonNull(interaction);
@@ -94,13 +92,13 @@ public final class DeploymentHandoffChannel {
                 new ActionSemantics("deployment.handoff." + verb + ".v1", Set.of(new ActionTarget(server.id(),
                     "deployment-handoff", args.isEmpty() ? "" : args.getFirst()))));
             var approved = interaction.approve(intent, task);
-            if (approved.outcome() != Outcome.SUCCEEDED)
+            if (approved.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(approved.outcome(), Optional.empty(), approved.problem());
             try {
                 var result = session.execute(request, approved.value().orElseThrow());
-                if (result.outcome() == Outcome.UNKNOWN)
+                if (result.outcome() == TaskResult.UNKNOWN)
                     return result;
-                if (result.outcome() == Outcome.FAILED && result.value().isEmpty())
+                if (result.outcome() == TaskResult.FAILED && result.value().isEmpty())
                     return unknown("DEPLOYMENT_HANDOFF_DISPATCH_UNCONFIRMED");
                 return result;
             } catch (ApiException failure) {
@@ -117,7 +115,7 @@ public final class DeploymentHandoffChannel {
      * @param receipt exact expected receipt / 精确预期回执
      * @return true only after known exit and exact output / 仅已知退出与精确输出时为真 */
     public static boolean receipt(OperationResult<CommandResult> result, String receipt) {
-        return result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
+        return result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
             && result.value().orElseThrow().exitCode().equals(Optional.of(0))
             && !result.value().orElseThrow().truncated() && result.value().orElseThrow().stdout().equals(receipt);
     }
@@ -128,7 +126,7 @@ public final class DeploymentHandoffChannel {
      * @return verified match or explicit drift / 已核实匹配或明确漂移
      * @throws ApiException if platform authorization fails / 平台授权失败时 */
     public OperationResult<Void> current(
-        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph.Component component,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph.Part component,
         String expected) throws ApiException {
         String kind = component
             .reviewedRuntime() instanceof gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition.Container
@@ -138,13 +136,13 @@ public final class DeploymentHandoffChannel {
             List.of(component.unit().id(), component.unit().ownershipManifestSha256(), kind), new byte[0],
             Duration.ofMinutes(2), 1024);
         if (receipt(result, "MANAGED_CURRENT=1\nKIND=" + kind + "\nRELEASE_SHA256=" + expected + "\n"))
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
-        if (result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+        if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
             && result.value().orElseThrow().exitCode().isPresent() && !result.value().orElseThrow().truncated())
-            return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+            return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_CURRENT_RELEASE_CHANGED",
                     "Current component release or owner differs from review", Map.of(), Optional.empty())));
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
             Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_CURRENT_RELEASE_UNCONFIRMED",
                 "Current component release cannot be confirmed", Map.of(), Optional.empty())));
     }
@@ -160,7 +158,7 @@ public final class DeploymentHandoffChannel {
      * @param event stable dispatch uncertainty / 稳定发送未知
      * @return retained original uncertainty / 留存原未知 */
     private static OperationResult<CommandResult> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
             event, "Remote handoff effect requires reconciliation", Map.of(), Optional.empty())));
     }
 }

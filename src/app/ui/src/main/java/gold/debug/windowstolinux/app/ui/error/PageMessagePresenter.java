@@ -99,10 +99,10 @@ public final class PageMessagePresenter {
         return failures.present(exception);
     }
 
-    /** Formats public safe evidence without invoking the legacy report store on every UI refresh. / 格式化公开安全证据，不在每次 UI 刷新时调用旧报告存储。
+    /** Formats public safe evidence without invoking the host report store on every UI refresh. / 格式化公开安全证据，不在每次 UI 刷新时调用旧报告存储。
      * @param problem original platform diagnostic / 原平台诊断
      * @return safe message, event and optional diagnostic identity / 安全消息、事件及可选诊断身份 */
-    public String safe(gold.debug.windowstolinux.appapi.task.Problem problem) {
+    public String safe(gold.debug.windowstolinux.appapi.task.result.Problem problem) {
         return failures.present(problem);
     }
 

@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
@@ -20,12 +10,20 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteActions;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentToolchainType;
@@ -40,7 +38,7 @@ public final class DeploymentBuildCommandChannel {
     private final InteractionService interaction;
 
     /** Exact saved server identity. / 已保存的精确服务器身份。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Original admitted task. / 原准入任务。 */
     private final TaskContext task;
@@ -61,7 +59,7 @@ public final class DeploymentBuildCommandChannel {
      * @param task original admitted task / 原准入任务
      * @param planRevision reviewed-plan identity, not final release identity / 已审阅计划身份，非最终发布身份
      * @param budget cumulative execution budget / 累计执行预算 */
-    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                          TaskContext task, String planRevision, DeploymentBuildBudget budget) {
         this(session, interaction, server, task, planRevision, budget, DeploymentSendGuard.NONE);
     }
@@ -74,7 +72,7 @@ public final class DeploymentBuildCommandChannel {
      * @param planRevision reviewed plan digest / 已审阅计划摘要
      * @param budget shared build budget / 共用构建预算
      * @param beforeSend caller-owned check / 调用方持有的核对 */
-    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentBuildCommandChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                          TaskContext task, String planRevision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -224,7 +222,7 @@ public final class DeploymentBuildCommandChannel {
         var intent = RemoteActions.command(server, planRevision, request)
             .withSemantics(new ActionSemantics(operation, Set.of(new ActionTarget(server.id(), kind, target))));
         var grant = interaction.approve(intent, task);
-        if (grant.outcome() != Outcome.SUCCEEDED)
+        if (grant.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
         beforeSend.verify();
         try {
@@ -238,7 +236,7 @@ public final class DeploymentBuildCommandChannel {
             if (failure.problem().code() == ProblemCode.ACCESS_DENIED
                 || failure.problem().code() == ProblemCode.INVALID_INPUT)
                 throw failure;
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_BUILD_DISPATCH_UNCONFIRMED",
                     "Remote build effect is unconfirmed", Map.of(), Optional.empty())));
         }
@@ -247,7 +245,7 @@ public final class DeploymentBuildCommandChannel {
     /** Returns a known exhausted budget before any further dispatch. / 在继续发送前返回已知预算耗尽。
      * @return known timeout without a remote effect / 无远端副作用的已知超时 */
     private static OperationResult<CommandResult> timeout() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.TIMEOUT, "DEPLOYMENT_BUILD_BUDGET_EXHAUSTED",
                 "Reviewed build execution budget is exhausted", Map.of(), Optional.empty())));
     }

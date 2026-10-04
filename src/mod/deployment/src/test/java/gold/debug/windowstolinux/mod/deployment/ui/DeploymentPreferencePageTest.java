@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -18,8 +14,12 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -168,9 +168,9 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
                 assertTrue(rows.next());
                 assertEquals(0, rows.getLong(1));
             }
-            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
         });
-        assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+        assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
     }
 
     private void sql(PlatformRuntime runtime, String query) throws Exception {
@@ -179,8 +179,8 @@ class DeploymentPreferencePageTest extends DeploymentRuntimeFixture {
             try (var connection = context.db().openConnection(task); var statement = connection.createStatement()) {
                 statement.execute(query);
             }
-            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
         });
-        assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+        assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
     }
 }

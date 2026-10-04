@@ -21,14 +21,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import com.sun.source.tree.Tree;
-import gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType;
+import gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType;
 import gold.debug.windowstolinux.app.main.error.DesktopSystemFailureType;
 import gold.debug.windowstolinux.app.secret.SecretStoreFailureType;
 import gold.debug.windowstolinux.app.service.error.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
-import gold.debug.windowstolinux.app.windows.uninstall.DesktopUninstallFailureType;
-import gold.debug.windowstolinux.app.windows.update.DesktopUpdateFailureType;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceFailureType;
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallFailureType;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateFailureType;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffFailureType;
 import org.junit.jupiter.api.Test;
 
 /** Guards the shared failure vocabulary without centralizing module-specific interpretation. / 在不集中模块特定解释的前提下守护共用失败词汇。 */
@@ -53,9 +53,9 @@ class FailureContractArchitectureTest {
         Map.entry(DesktopUpdateFailureType.class, "windows"),
         Map.entry(DesktopUninstallFailureType.class, "windows"),
         Map.entry(ApplicationServiceFailureType.class, "service"),
-        Map.entry(DesktopPersistenceFailureType.class, "persistence"),
+        Map.entry(DesktopStorageFailureType.class, "persistence"),
         Map.entry(DesktopSystemFailureType.class, "desktop"),
-        Map.entry(WindowsWorkspaceFailureType.class, "windows"));
+        Map.entry(DesktopHandoffFailureType.class, "windows"));
 
     @Test
     void failureDefinitionsHaveStableUniqueCodesAndLocalizedMessages() throws Exception {
@@ -93,22 +93,22 @@ class FailureContractArchitectureTest {
 
     @Test
     void customExceptionsExposeOnlyTheStructuredFailureContract() throws Exception {
-        List<String> violations = exceptionViolations(ArchitectureSourceInspector.production());
+        List<String> violations = exceptionViolations(ArchitectureSourceChecker.production());
         assertTrue(violations.isEmpty(), () -> "custom exception violations: " + violations);
-        assertTrue(ArchitectureSourceInspector.productionPaths().stream()
+        assertTrue(ArchitectureSourceChecker.productionPaths().stream()
             .noneMatch(path -> Set.of("LocalizedFailure.java", "LocalizedOperationException.java")
                 .contains(path.getFileName().toString())));
     }
 
     @Test
     void everyProductionFailureDefinitionMustBeRegistered() throws Exception {
-        assertEquals(Set.of(), registrationDifferences(ArchitectureSourceInspector.production(), FAILURE_TYPES.keySet()
+        assertEquals(Set.of(), registrationDifferences(ArchitectureSourceChecker.production(), FAILURE_TYPES.keySet()
             .stream().map(Class::getCanonicalName).collect(java.util.stream.Collectors.toSet())));
     }
 
     @Test
     void missingAndStaleRegistrationsCannotPass() throws Exception {
-        var sources = ArchitectureSourceInspector.production();
+        var sources = ArchitectureSourceChecker.production();
         var registered = new HashSet<>(FAILURE_TYPES.keySet().stream().map(Class::getCanonicalName).toList());
         registered.remove(DesktopUpdateFailureType.class.getCanonicalName());
         assertEquals(Set.of(DesktopUpdateFailureType.class.getCanonicalName()),
@@ -120,9 +120,9 @@ class FailureContractArchitectureTest {
 
     @Test
     void newlyAddedNestedFailureDefinitionsCannotEscapeRegistration() throws Exception {
-        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.FailureFixtures", """
+        var sources = ArchitectureSourceChecker.snippets(Map.of("fixture.FailureFixtures", """
             package fixture;
-            import gold.debug.windowstolinux.appapi.task.Problem;
+            import gold.debug.windowstolinux.appapi.task.result.Problem;
             class FailureFixtures {
                 enum AddedFailureType {
                     NEW;
@@ -139,13 +139,13 @@ class FailureContractArchitectureTest {
 
     @Test
     void nestedAndIndirectExceptionsAreCheckedByType() throws Exception {
-        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.ExceptionFixtures", """
+        var sources = ArchitectureSourceChecker.snippets(Map.of("fixture.ExceptionFixtures", """
             package fixture;
             class ExceptionFixtures {
                 static class MissingContractException extends RuntimeException { }
                 static class IndirectException extends MissingContractException { }
                 static class StructuredException extends RuntimeException {
-                    public gold.debug.windowstolinux.appapi.task.Problem problem() { return null; }
+                    public gold.debug.windowstolinux.appapi.task.result.Problem problem() { return null; }
                 }
                 static class InheritedException extends StructuredException { }
                 static class WrongName extends StructuredException { }
@@ -159,7 +159,7 @@ class FailureContractArchitectureTest {
             .anyMatch(value -> value.contains("StructuredException") || value.contains("InheritedException")));
     }
 
-    private static Set<String> registrationDifferences(List<ArchitectureSourceInspector.JavaSource> sources,
+    private static Set<String> registrationDifferences(List<ArchitectureSourceChecker.JavaSource> sources,
                                                        Set<String> registered) {
         Set<String> discovered = new HashSet<>();
         Set<String> invalid = new HashSet<>();
@@ -183,7 +183,7 @@ class FailureContractArchitectureTest {
 
     @Test
     void registeredFailureNamesCannotReplaceTheActualSdkFactory() throws Exception {
-        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.InvalidFailures", """
+        var sources = ArchitectureSourceChecker.snippets(Map.of("fixture.InvalidFailures", """
             package fixture;
             class InvalidFailures {
                 enum MissingFailureType { BAD }
@@ -193,7 +193,7 @@ class FailureContractArchitectureTest {
                 }
                 enum WrongIdentityFailureType {
                     BAD;
-                    public gold.debug.windowstolinux.appapi.task.Problem problem(String id) { return null; }
+                    public gold.debug.windowstolinux.appapi.task.result.Problem problem(String id) { return null; }
                 }
             }
             class SameNamed { record Problem(String value) { } }
@@ -203,10 +203,10 @@ class FailureContractArchitectureTest {
         assertEquals(names, registrationDifferences(sources, names));
     }
 
-    private static List<String> exceptionViolations(List<ArchitectureSourceInspector.JavaSource> sources) {
+    private static List<String> exceptionViolations(List<ArchitectureSourceChecker.JavaSource> sources) {
         List<String> violations = new ArrayList<>();
         sources.stream().flatMap(source -> source.types().stream())
-            .filter(ArchitectureSourceInspector.JavaType::throwable).forEach(type -> {
+            .filter(ArchitectureSourceChecker.JavaType::throwable).forEach(type -> {
                 if (!type.publicProblem() && !(type.sqlException() && SQL_BRIDGE_TYPES.contains(type.name())))
                     violations.add(type.name() + " does not expose an actual public SDK Problem contract");
                 if (!type.simpleName().matches("[A-Z][A-Za-z0-9]+Exception"))
@@ -217,35 +217,35 @@ class FailureContractArchitectureTest {
 
     @Test
     void platformProblemsRequireAnActualPublicInstanceAccessorAndSqlSignalsRemainExplicit() throws Exception {
-        var sources = ArchitectureSourceInspector.snippets(Map.of("fixture.PlatformFailures", """
+        var sources = ArchitectureSourceChecker.snippets(Map.of("fixture.PlatformFailures", """
             package fixture;
-            import gold.debug.windowstolinux.appapi.task.Problem;
+            import gold.debug.windowstolinux.appapi.task.result.Problem;
             class PlatformFailures {
                 static class ClassifiedException extends Exception {
-                    public gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                    public gold.debug.windowstolinux.appapi.task.result.TaskResult outcome() { return null; }
                     public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
                 }
                 static class MissingOutcomeException extends Exception {
                     public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
                 }
                 static class WrongOptionalException extends Exception {
-                    public gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                    public gold.debug.windowstolinux.appapi.task.result.TaskResult outcome() { return null; }
                     public java.util.Optional<String> problem() { return java.util.Optional.empty(); }
                 }
                 static class PrivateOutcomeException extends Exception {
-                    private gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                    private gold.debug.windowstolinux.appapi.task.result.TaskResult outcome() { return null; }
                     public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
                 }
                 static class StaticOutcomeException extends Exception {
-                    public static gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                    public static gold.debug.windowstolinux.appapi.task.result.TaskResult outcome() { return null; }
                     public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
                 }
                 static class ForeignOutcomeException extends Exception {
-                    public SameNamed.Outcome outcome() { return null; }
+                    public SameNamed.TaskResult outcome() { return null; }
                     public java.util.Optional<Problem> problem() { return java.util.Optional.empty(); }
                 }
                 static class ForeignProblemException extends Exception {
-                    public gold.debug.windowstolinux.appapi.task.Outcome outcome() { return null; }
+                    public gold.debug.windowstolinux.appapi.task.result.TaskResult outcome() { return null; }
                     public java.util.Optional<SameNamed.Problem> problem() { return java.util.Optional.empty(); }
                 }
                 static class PublicProblemException extends Exception {
@@ -264,7 +264,7 @@ class FailureContractArchitectureTest {
                 static class UntranslatedSqlException extends java.sql.SQLException { }
             }
             class SameNamed {
-                enum Outcome { CANCELLED }
+                enum TaskResult { CANCELLED }
                 record Problem(String message) { }
             }
             """));
@@ -275,11 +275,11 @@ class FailureContractArchitectureTest {
             "PrivateOutcomeException", "StaticOutcomeException", "ForeignOutcomeException",
             "ForeignProblemException"))
             assertTrue(violations.stream().anyMatch(value -> value.contains(name)), name);
-        var registered = ArchitectureSourceInspector.production().stream().flatMap(source -> source.types().stream())
+        var registered = ArchitectureSourceChecker.production().stream().flatMap(source -> source.types().stream())
             .filter(type -> SQL_BRIDGE_TYPES.contains(type.name())).toList();
-        assertEquals(SQL_BRIDGE_TYPES, registered.stream().map(ArchitectureSourceInspector.JavaType::name)
+        assertEquals(SQL_BRIDGE_TYPES, registered.stream().map(ArchitectureSourceChecker.JavaType::name)
             .collect(java.util.stream.Collectors.toSet()));
-        assertTrue(registered.stream().allMatch(ArchitectureSourceInspector.JavaType::sqlException));
+        assertTrue(registered.stream().allMatch(ArchitectureSourceChecker.JavaType::sqlException));
     }
 
     @Test
@@ -326,12 +326,12 @@ class FailureContractArchitectureTest {
                 var identity = java.util.UUID.randomUUID();
                 var factory = java.util.Arrays.stream(owner.getMethods())
                     .filter(method -> method.getName().equals("problem")
-                        && method.getReturnType() == gold.debug.windowstolinux.appapi.task.Problem.class)
+                        && method.getReturnType() == gold.debug.windowstolinux.appapi.task.result.Problem.class)
                     .findFirst().orElseThrow();
                 Object[] arguments = factory.getParameterCount() == 3
                     ? new Object[]{identity, Map.of(), "fixture"}
                     : new Object[]{identity, "fixture"};
-                var problem = (gold.debug.windowstolinux.appapi.task.Problem) factory.invoke(value, arguments);
+                var problem = (gold.debug.windowstolinux.appapi.task.result.Problem) factory.invoke(value, arguments);
                 var metadata = new FailureMetadata(owner, text(owner, value, "code"), text(owner, value, "domain"),
                     text(owner, value, "phase"), text(owner, value, "messageKey"), text(owner, value, "severity"),
                     text(owner, value, "recoveryAction"));
@@ -374,7 +374,7 @@ class FailureContractArchitectureTest {
     }
 
     private static List<Path> productionSources() throws IOException {
-        return ArchitectureSourceInspector.production().stream().map(ArchitectureSourceInspector.JavaSource::path)
+        return ArchitectureSourceChecker.production().stream().map(ArchitectureSourceChecker.JavaSource::path)
             .toList();
     }
 

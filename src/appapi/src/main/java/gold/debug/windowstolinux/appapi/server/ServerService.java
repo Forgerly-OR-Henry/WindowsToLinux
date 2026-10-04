@@ -3,9 +3,13 @@ package gold.debug.windowstolinux.appapi.server;
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.server.ref.ServerRef;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /**
  * Task-bound server lookup and persistent reference management. / 绑定任务的服务器查询及持久引用管理。
@@ -57,7 +61,7 @@ public interface ServerService {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    ServerInfo get(ServerRef server, TaskContext task) throws ApiException;
+    ServerInfo get(ServerId server, TaskContext task) throws ApiException;
 
     /**
      * Protects the referenced resource before the business transaction commits. / 在业务事务提交前保护引用资源。
@@ -67,7 +71,7 @@ public interface ServerService {
      * @return the owned result described by this capability / 此能力约定的所属结果
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    ServerReference reserve(ServerRef server, String businessKey, TaskContext task) throws ApiException;
+    ServerRef reserve(ServerId server, String businessKey, TaskContext task) throws ApiException;
 
     /**
      * Looks up an existing association without reserving or changing it, including original-task recovery. / 只读查询已有关联，支持原任务恢复，不预留或改变引用。
@@ -77,7 +81,7 @@ public interface ServerService {
      * @return current owned reference, or empty when absent; not proof of business rollback / 当前所属引用，不存在时为空；不证明业务已回滚
      * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
      */
-    Optional<ServerReference> findReference(ServerRef server, String businessKey, TaskContext task) throws ApiException;
+    Optional<ServerRef> findReference(ServerId server, String businessKey, TaskContext task) throws ApiException;
 
     /**
      * Records a reconciled business reference result without guessing unknown commits. / 登记已核对的业务引用结果，不猜测未知提交。
@@ -86,5 +90,5 @@ public interface ServerService {
      * @param task active host-created task context / 宿主创建的活动任务上下文
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
-    void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException;
+    void resolve(UUID referenceId, ResourceRefResult result, TaskContext task) throws ApiException;
 }

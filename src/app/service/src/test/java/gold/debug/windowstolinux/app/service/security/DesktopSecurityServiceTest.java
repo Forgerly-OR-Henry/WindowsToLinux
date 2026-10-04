@@ -6,7 +6,7 @@ import java.nio.file.Path;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.secret.SecretStoreException;
@@ -18,7 +18,7 @@ class DesktopSecurityServiceTest {
     @TempDir
     Path directory;
 
-    private PlatformPersistence openPlatform() throws Exception {
+    private PlatformStorage openPlatform() throws Exception {
         var testProtection = new DatabaseProtection() {
             public byte[] protect(byte[] clear) {
                 return clear.clone();
@@ -28,7 +28,7 @@ class DesktopSecurityServiceTest {
                 return encrypted.clone();
             }
         };
-        return new PlatformPersistence(PlatformDatabase.open(directory, testProtection));
+        return new PlatformStorage(PlatformDatabase.open(directory, testProtection));
     }
 
     private char[] password() {
@@ -244,21 +244,84 @@ class DesktopSecurityServiceTest {
     }
 
     @Test
-    void failedNativePrivacyDoesNotClaimThatTheSessionIsLocked() throws Exception {
+    void failedNativePrivacyKeepsPlatformLockedAndCanBeRetried() throws Exception {
+        try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
+            initialize(security);
+            var hidden = new AtomicBoolean();
+            var failing = new AtomicBoolean(true);
+            try (var registration = security.observeLock(locked -> {
+                if (locked && failing.get())
+                    throw new IllegalStateException("native fixture failed");
+                hidden.set(locked);
+            })) {
+                security.lock();
+                assertFalse(security.securityState().unlocked());
+                assertThrows(ApplicationServiceException.class, security::beginTask);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                while (security.privacyState().pending() && System.nanoTime() < deadline) Thread.sleep(5);
+                assertTrue(security.privacyState().failure().isPresent());
+                assertFalse(hidden.get());
+                failing.set(false);
+                security.retryPrivacy();
+                deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                while (security.privacyState().pending() && System.nanoTime() < deadline) Thread.sleep(5);
+                assertTrue(hidden.get());
+                assertTrue(security.privacyState().failure().isEmpty());
+                assertFalse(security.securityState().unlocked());
+            }
+            security.lock();
+            assertFalse(security.securityState().unlocked());
+        }
+    }
+
+    @Test
+    void slowNativeHideDoesNotBlockEdtAndStaleConfirmationCannotUnlock() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
         try (var db = openPlatform(); var security = new DesktopSecurityService(db.security())) {
             initialize(security);
             var hidden = new AtomicBoolean();
             try (var registration = security.observeLock(locked -> {
-                if (locked)
-                    throw new IllegalStateException("native fixture failed");
+                if (locked) {
+                    entered.countDown();
+                    try {
+                        if (!release.await(8, TimeUnit.SECONDS)) throw new IllegalStateException("fixture timeout");
+                    } catch (InterruptedException failure) {
+                        throw new IllegalStateException(failure);
+                    }
+                }
                 hidden.set(locked);
             })) {
-                assertThrows(ApplicationServiceException.class, security::lock);
-                assertTrue(security.securityState().unlocked());
-                assertFalse(hidden.get());
+                var observed = new CompletableFuture<Boolean>();
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    security.lock();
+                    observed.complete(security.securityState().unlocked());
+                });
+                assertFalse(observed.get(3, TimeUnit.SECONDS));
+                assertTrue(entered.await(3, TimeUnit.SECONDS));
+                var responsive = new CompletableFuture<Boolean>();
+                javax.swing.SwingUtilities.invokeLater(() -> responsive.complete(security.privacyState().pending()));
+                assertTrue(responsive.get(3, TimeUnit.SECONDS));
+                var unlocking = CompletableFuture.runAsync(() -> {
+                    try {
+                        security.unlock(password());
+                    } catch (Exception failure) {
+                        throw new CompletionException(failure);
+                    }
+                });
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                while (!security.securityState().changing() && System.nanoTime() < deadline) Thread.sleep(5);
+                assertTrue(security.securityState().changing());
+                security.lock();
+                release.countDown();
+                unlocking.get(8, TimeUnit.SECONDS);
+                deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                while (security.privacyState().pending() && System.nanoTime() < deadline) Thread.sleep(5);
+                assertTrue(hidden.get());
+                assertFalse(security.securityState().unlocked());
             }
-            security.lock();
-            assertFalse(security.securityState().unlocked());
+        } finally {
+            release.countDown();
         }
     }
 }

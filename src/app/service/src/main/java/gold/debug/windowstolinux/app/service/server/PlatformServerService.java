@@ -1,33 +1,32 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.CompletionStage;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
-import gold.debug.windowstolinux.app.secret.SecretStoreException;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.server.ServerSummary;
-import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
+import gold.debug.windowstolinux.app.service.server.ServerSummary;
 import gold.debug.windowstolinux.app.service.task.*;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.recover.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 
 /** Manages platform server settings and task-owned authentication checks without deployment code. / 管理平台服务器设置及任务所属认证检查，不依赖部署代码。 */
 public final class PlatformServerService implements ServerProfileEditor, AutoCloseable {
@@ -35,7 +34,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
     private static final String CHECK_TYPE = "platform.ssh.check.v1";
 
     /** Authoritative platform repositories. / 权威平台仓库。 */
-    private final PlatformPersistence persistence;
+    private final PlatformStorage persistence;
 
     /** Current-user settings and retained credential authority. / 当前用户设置及保留凭据授权方。 */
     private final DesktopSecurityService security;
@@ -68,7 +67,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @param cleanup physical cleanup without command replay / 不重放命令的物理清理
      * @throws ApiException if recovery registration is unavailable / 恢复登记不可用时
      */
-    public PlatformServerService(PlatformPersistence persistence, DesktopSecurityService security,
+    public PlatformServerService(PlatformStorage persistence, DesktopSecurityService security,
                                  PlatformTaskRuntime runtime, String version, LinuxService linux, TaskCleanup cleanup) throws ApiException {
         this.persistence = Objects.requireNonNull(persistence);
         this.security = Objects.requireNonNull(security);
@@ -86,7 +85,7 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
                     .registerRecovery(CHECK_TYPE, (previous, task) -> {
                         if (!releasePreviousProcessResources(previous))
                             this.cleanup.close(task);
-                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                             ProblemCode.UNAVAILABLE, "SERVER_CHECK_INTERRUPTED",
                             "The earlier authentication check did not deliver a confirmed result; start a new check if needed",
                             Map.of(), Optional.empty())));
@@ -123,10 +122,10 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * @param profile exact edited profile / 精确已编辑配置
      * @param password optional replacement, always cleared / 可选替换密码，始终清零
      * @throws SQLException if metadata cannot commit / 无法提交元数据时
-     * @throws SecretStoreException if credentials cannot commit / 无法提交凭据时
+     * @throws ApiException if credentials cannot commit / 无法提交凭据时
      */
     @Override
-    public void saveServerProfile(ServerProfile profile, char[] password) throws SQLException, SecretStoreException {
+    public void saveServerProfile(ServerProfile profile, char[] password) throws SQLException, ApiException {
         Objects.requireNonNull(password);
         try {
             worker();
@@ -152,9 +151,9 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
      * Deletes an idle unreferenced profile and only an otherwise unowned credential. / 删除空闲无引用配置，并且仅清理没有其他所有者的凭据。
      * @param id exact saved server / 精确已保存服务器
      * @throws SQLException if tasks or business references block deletion / 任务或业务引用阻止删除时
-     * @throws SecretStoreException if credential cleanup fails / 凭据清理失败时
+     * @throws ApiException if credential cleanup fails / 凭据清理失败时
      */
-    public void delete(String id) throws SQLException, SecretStoreException {
+    public void delete(String id) throws SQLException, ApiException {
         worker();
         try (var operation = security.enterOperation(); var credentials = security.openCredentials()) {
             credentials.transaction(() -> {
@@ -177,16 +176,16 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
             new TaskRequest(CHECK_TYPE, "SSH: " + profile.displayName(), List.of(profile.id()), true), task -> {
                 var current = persistence.servers().findServerProfile(profile.id())
                     .orElseThrow(() -> new SQLException("Admitted server is missing"));
-                try (var session = linux.connect(new ServerRef(profile.id()), task)) {
+                try (var session = linux.connect(new ServerId(profile.id()), task)) {
                     var facts = session.facts();
                     persistence.servers().recordObservation(current, true, facts.operatingSystem());
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(facts), Optional.empty());
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(facts), Optional.empty());
                 } catch (ApiException failure) {
                     if (failure.problem().code() != ProblemCode.CANCELLED)
                         persistence.servers().recordObservation(current, false, "");
                     return new OperationResult<>(
-                        failure.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED
-                            : failure.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+                        failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED
+                            : failure.problem().code() == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED,
                         Optional.empty(), Optional.of(failure.problem()));
                 }
             });

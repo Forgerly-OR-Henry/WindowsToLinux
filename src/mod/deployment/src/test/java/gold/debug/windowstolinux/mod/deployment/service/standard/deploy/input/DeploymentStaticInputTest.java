@@ -12,10 +12,10 @@ import java.util.stream.Collectors;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeLanguageInspector;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeServiceDeploymentInspector;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
-import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitReference;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeLanguageChecker;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.node.NodeServiceDeploymentChecker;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceCheckFacts;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -67,11 +67,11 @@ class DeploymentStaticInputTest {
         String metadata = "{\"name\":\"node-process\",\"engines\":{\"node\":\"22\"},\"scripts\":{\"build\":\"node build.js\",\"start\":\"node main.js\"}}";
         Files.writeString(root.resolve("package.json"), metadata);
         Files.writeString(root.resolve("package-lock.json"), "{\"name\":\"node-process\",\"lockfileVersion\":3}");
-        var source = new SourceInspectionFacts(2, List.of(Path.of("package.json"), Path.of("package-lock.json")),
-            metadata);
-        var language = new NodeLanguageInspector().inspect(root, source);
+        var source = new SourceCheckFacts(2, List.of(Path.of("package.json"), Path.of("package-lock.json")),
+            metadata, "reviewed-source");
+        var language = new NodeLanguageChecker().inspect(root, source);
         var rejected = new ArrayList<RejectionReason>();
-        var assessment = new NodeServiceDeploymentInspector().inspect(root, source, language, rejected);
+        var assessment = new NodeServiceDeploymentChecker().inspect(root, source, language, rejected);
         assertNotNull(assessment);
         assertTrue(rejected.isEmpty());
         assertTrue(assessment.runtimeSuggestion().suggestedHealthPort().isEmpty());
@@ -102,7 +102,7 @@ class DeploymentStaticInputTest {
         assertEquals(1, DeploymentStaticInputParser.volumes("windowstolinux-data:/var/lib/demo:rw").size());
         assertEquals(java.util.List.of("--flag", "value"), DeploymentStaticInputParser.arguments("--flag value"));
         assertEquals("main",
-            ((DeploymentGitReference.Branch) DeploymentStaticInputParser.gitReference(0, "main")).value());
+            ((DeploymentGitRef.Branch) DeploymentStaticInputParser.gitReference(0, "main")).value());
         var php = (DeploymentRuntimeDefinition.PhpService) DeploymentStaticInputParser.service(
             DeploymentProjectKind.PHP_SERVICE, "8.3", "public", "public/index.php",
             new DeploymentHealthCheck.Tcp(8080, 10, 5));
@@ -164,7 +164,7 @@ class DeploymentStaticInputTest {
     /** Converts the explicit tag index while rejecting every unsupported reference choice. / 转换显式标签索引，并拒绝每项不受支持的引用选择。 */
     @Test
     void typedGitTagIndexRetainsItsReferenceAndRejectsUnsupportedIndexes() {
-        var tag = assertInstanceOf(DeploymentGitReference.Tag.class,
+        var tag = assertInstanceOf(DeploymentGitRef.Tag.class,
             DeploymentStaticInputParser.gitReference(1, "release-one"));
         assertEquals("release-one", tag.value());
         for (int index : List.of(-1, 3, 9))

@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.linux.sftp;
 
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.linux.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
 
 /** Counts only completed file bytes, excluding human waiting from the no-progress clock. / 仅计算已完成文件字节，从无进展计时中排除人工等待。 */
 final class SftpProgress {

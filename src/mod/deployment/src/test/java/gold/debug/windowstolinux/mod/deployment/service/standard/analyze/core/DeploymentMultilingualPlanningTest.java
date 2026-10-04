@@ -7,8 +7,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ProjectComponentDiscovery;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ProjectPartFinder;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
@@ -23,7 +23,7 @@ class DeploymentMultilingualPlanningTest {
         List<Executable> checks = new ArrayList<>();
         for (String project : PROJECTS) {
             Path root = repositoryRoot().resolve("test/multi-language/success-" + project);
-            var components = new ProjectComponentDiscovery().discover(root);
+            var components = new ProjectPartFinder().discover(root);
             var expected = switch (project) {
                 case "task-board" -> java.util.Set.of("frontend", "backend");
                 case "file-transfer", "asset-lending" -> java.util.Set.of("web", "backend");
@@ -38,7 +38,7 @@ class DeploymentMultilingualPlanningTest {
                     assertEquals(1, component.types().size(), project + "/" + component.id());
                     var type = component.types().getFirst();
                     Path source = root.resolve(component.relativeRoot());
-                    var assessment = new DeploymentAnalysisCoordinator().analyzeForDatabaseReview(source, type);
+                    var assessment = new DeploymentAnalysisFlow().analyzeForDatabaseReview(source, type, (source).getFileName().toString());
                     System.out.println("POLYGLOT_ANALYSIS " + project + "/" + component.id() + " type=" + type
                         + " admission=" + assessment.admission() + " rejections=" + assessment.rejections());
                     assertTrue(assessment.facts().isPresent(), assessment::toString);

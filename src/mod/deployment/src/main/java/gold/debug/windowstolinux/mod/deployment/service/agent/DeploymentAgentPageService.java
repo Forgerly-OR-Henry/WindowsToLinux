@@ -1,22 +1,21 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import java.nio.file.Path;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.*;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
 
 /** Provides agent-only page queries and original task admission. / 提供自主专用页面查询与原任务接纳。 */
@@ -71,22 +70,22 @@ public final class DeploymentAgentPageService implements TaskRecovery {
                     Optional<String> cursor = Optional.empty();
                     do {
                         if (task.cancelToken().requested())
-                            return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional
+                            return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional
                                 .of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_AGENT_SERVER_LIST_CANCELLED")));
                         var page = context.servers().listConfigured(cursor, 200, task);
                         all.addAll(page.items());
                         cursor = page.nextCursor();
                     } while (cursor.isPresent() && all.size() < 10000);
                     if (cursor.isPresent())
-                        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional
+                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional
                             .of(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_AGENT_SERVER_LIST_LIMIT")));
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(List.copyOf(all)),
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(List.copyOf(all)),
                         Optional.empty());
                 } catch (ApiException failure) {
                     var code = failure.problem().code();
                     var result = code == ProblemCode.CANCELLED
-                        ? Outcome.CANCELLED
-                        : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
+                        ? TaskResult.CANCELLED
+                        : code == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED;
                     return new OperationResult<>(result, Optional.empty(), Optional.of(failure.problem()));
                 }
             });
@@ -173,21 +172,21 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     private <T> TaskHandle<T> query(String title, List<String> servers, Query<T> work) throws ApiException {
         return context.tasks().submit(new TaskRequest(SERVER_LIST_TASK, title, servers, true), task -> {
             try {
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(work.run(task)), Optional.empty());
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(work.run(task)), Optional.empty());
             } catch (ApiException failure) {
                 if (!context.tasks().resourcesReleased(task))
-                    return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_HISTORY_RESOURCES_UNKNOWN",
                             "Original query resource closure is unconfirmed",
                             Map.of("causeEvent", failure.problem().eventCode()),
                             failure.problem().diagnosticId())));
                 return new OperationResult<>(failure.problem().code() == ProblemCode.UNKNOWN
-                    ? Outcome.UNKNOWN
-                    : failure.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                    ? TaskResult.UNKNOWN
+                    : failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                     Optional.empty(), Optional.of(failure.problem()));
             } catch (Exception failure) {
                 boolean released = context.tasks().resourcesReleased(task);
-                return new OperationResult<>(released ? Outcome.FAILED : Outcome.UNKNOWN, Optional.empty(),
+                return new OperationResult<>(released ? TaskResult.FAILED : TaskResult.UNKNOWN, Optional.empty(),
                     Optional.of(problem(released ? ProblemCode.IO_FAILURE : ProblemCode.UNKNOWN,
                         "DEPLOYMENT_AGENT_HISTORY_UNCONFIRMED")));
             }
@@ -210,7 +209,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @param request bounded agent policy / 有界自主策略
      * @return original observable task / 原可观察任务
      * @throws ApiException on failed admission / 准入失败时 */
-    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerRef server,
+    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server,
                                                                          DeploymentAgentWorkflow.Request request) throws ApiException {
         return workflow.submitLocal(server, request);
     }
@@ -223,7 +222,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
      * @param projectName reviewed saved project name / 经审阅已存项目名称
      * @return original observable task / 原可观察任务
      * @throws ApiException on failed admission / 准入失败时 */
-    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitGit(ServerRef server,
+    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitGit(ServerId server,
                                                                        DeploymentAgentWorkflow.Request request, DeploymentGitRequest git, Path executable, String projectName)
         throws ApiException {
         return workflow.submitGit(server, request, git, executable, projectName);
@@ -238,9 +237,9 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws ApiException {
         if (!SERVER_LIST_TASK.equals(previous.type()) || !previous.id().equals(task.id())
             || !context.tasks().resourcesReleased(task))
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_SERVER_LIST_UNKNOWN")));
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_AGENT_SERVER_LIST_INTERRUPTED")));
     }
 

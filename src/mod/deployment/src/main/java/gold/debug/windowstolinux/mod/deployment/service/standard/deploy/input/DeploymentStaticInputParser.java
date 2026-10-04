@@ -7,9 +7,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigInput;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitReference;
+import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRef;
 
 /**
  * Parses bounded desktop runtime, database, secret-reference, and Git-reference notation. / 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法。
@@ -61,7 +61,7 @@ public final class DeploymentStaticInputParser {
         if (values.length != 7) {
             throw new IllegalArgumentException("server database binding must contain seven fields");
         }
-        List<DeploymentSecretReference> passwordReferences = DeploymentConfigurationInput.secrets(values[5]);
+        List<DeploymentSecretRef> passwordReferences = DeploymentConfigInput.secrets(values[5]);
         if (passwordReferences.size() != 1) {
             throw new IllegalArgumentException("server database binding requires one password reference");
         }
@@ -184,11 +184,11 @@ public final class DeploymentStaticInputParser {
      * @return constructed or resolved git reference / 构造或解析得到的Git引用
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
-    public static DeploymentGitReference gitReference(int index, String value) {
+    public static DeploymentGitRef gitReference(int index, String value) {
         return switch (index) {
-            case 0 -> new DeploymentGitReference.Branch(value);
-            case 1 -> new DeploymentGitReference.Tag(value);
-            case 2 -> new DeploymentGitReference.Commit(value);
+            case 0 -> new DeploymentGitRef.Branch(value);
+            case 1 -> new DeploymentGitRef.Tag(value);
+            case 2 -> new DeploymentGitRef.Commit(value);
             default -> throw new IllegalArgumentException("unsupported Git reference kind");
         };
     }

@@ -12,6 +12,7 @@ import java.util.jar.*;
 
 import javax.swing.SwingUtilities;
 
+import gold.debug.windowstolinux.app.config.ConfigLoader;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.main.AppMain;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
@@ -29,8 +30,9 @@ class PlatformEntryProcessTest {
         org.junit.jupiter.api.Assumptions.assumeFalse(GraphicsEnvironment.isHeadless());
         org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").startsWith("Windows"));
         var program = Files.createDirectories(root.resolve("程序目录 with spaces"));
-        var mainOrigin = Path.of(AppMain.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-        var dbOrigin = Path.of(PlatformDatabase.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        var mainOrigin = Path.of(AppMain.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
+        var dbOrigin = Path.of(PlatformDatabase.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
+        var configOrigin = Path.of(ConfigLoader.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath().normalize();
         Path mainOutput;
         Path dbOutput;
         Path data;
@@ -39,7 +41,7 @@ class PlatformEntryProcessTest {
             dbOutput = Files.createDirectories(program.resolve("separate db module")).resolve("db.jar");
             archive(mainOrigin, mainOutput);
             archive(dbOrigin, dbOutput);
-            data = dbOutput.getParent().resolve("data");
+            data = program.resolve("data");
         } else {
             Files.writeString(program.resolve("pom.xml"), "<project/>");
             var mainModule = Files.createDirectories(program.resolve("src/app/main"));
@@ -54,9 +56,26 @@ class PlatformEntryProcessTest {
             copy(dbOrigin, dbOutput);
             data = dbModule.resolve("data");
         }
+        var yaml = new com.fasterxml.jackson.databind.ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory());
+        com.fasterxml.jackson.databind.JsonNode configuration;
+        try (var input = ConfigLoader.class.getResourceAsStream(ConfigLoader.RESOURCE)) {
+            assertNotNull(input);
+            configuration = yaml.readTree(input);
+        }
+        ((com.fasterxml.jackson.databind.node.ObjectNode) configuration.path("common").path("database"))
+            .put("data-directory", "data");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) configuration.path("class").path("database"))
+            .put("data-directory", "src/app/db/data");
+        var configClasses = jarMode ? root.resolve("config-classes")
+            : program.resolve("src/app/config/target/classes");
+        copy(configOrigin, configClasses);
+        Files.writeString(configClasses.resolve(ConfigLoader.RESOURCE.substring(1)), yaml.writeValueAsString(configuration));
+        var configOutput = jarMode ? program.resolve("config.jar") : configClasses;
+        if (jarMode) archive(configClasses, configOutput);
         var classpath = new ArrayList<String>();
         boolean replacedMain = false;
         boolean replacedDb = false;
+        boolean replacedConfig = false;
         for (String value : System.getProperty("java.class.path")
             .split(java.util.regex.Pattern.quote(File.pathSeparator))) {
             Path entry = Path.of(value).toAbsolutePath().normalize();
@@ -68,10 +87,15 @@ class PlatformEntryProcessTest {
                 entry = dbOutput;
                 replacedDb = true;
             }
+            if (entry.equals(configOrigin)) {
+                entry = configOutput;
+                replacedConfig = true;
+            }
             classpath.add(entry.toString());
         }
-        assertTrue(replacedMain && replacedDb);
+        assertTrue(replacedMain && replacedDb && replacedConfig);
         var unrelated = Files.createDirectories(root.resolve("unrelated working directory/mod"));
+        Files.writeString(unrelated.resolve("config.yaml"), "invalid unrelated configuration");
         var output = root.resolve(jarMode ? "jar-entry.log" : "class-entry.log");
         var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin/java.exe").toString(),
             "-Djava.io.tmpdir=" + root, "-cp", String.join(File.pathSeparator, classpath),
@@ -81,13 +105,16 @@ class PlatformEntryProcessTest {
             assertTrue(process.waitFor(25, TimeUnit.SECONDS), "AppMain did not exit after the window close action");
             assertEquals(0, process.exitValue(), Files.readString(output));
             assertTrue(Files.readString(output).contains("APP_MAIN_CLOSED"));
-            assertTrue(Files.isRegularFile(data.resolve("platform.mv.db")));
+            assertTrue(Files.isRegularFile(data.resolve("windowstolinux.mv.db")));
             assertTrue(Files.isRegularFile(data.resolve("db-access.bin")));
             assertFalse(Files.exists(unrelated.resolve("data")));
             assertFalse(Files.exists(data.resolve("windowstolinux.db")));
+            assertFalse(Files.exists(program.resolve("config.yaml")));
+            if (jarMode) assertFalse(Files.exists(dbOutput.getParent().resolve("data")));
             if (jarMode) {
                 Files.delete(mainOutput);
                 Files.delete(dbOutput);
+                Files.delete(configOutput);
             }
         } finally {
             if (process.isAlive()) {
@@ -98,9 +125,15 @@ class PlatformEntryProcessTest {
     }
 
     static void copy(Path origin, Path target) throws Exception {
+        if (Files.isRegularFile(origin)) {
+            try (var archive = FileSystems.newFileSystem(origin)) {
+                copy(archive.getPath("/"), target);
+            }
+            return;
+        }
         try (var paths = Files.walk(origin)) {
             for (Path path : paths.toList()) {
-                var destination = target.resolve(origin.relativize(path));
+                var destination = target.resolve(origin.relativize(path).toString());
                 if (Files.isDirectory(path))
                     Files.createDirectories(destination);
                 else
@@ -110,6 +143,10 @@ class PlatformEntryProcessTest {
     }
 
     static void archive(Path origin, Path output) throws Exception {
+        if (Files.isRegularFile(origin)) {
+            Files.copy(origin, output);
+            return;
+        }
         try (var archive = new JarOutputStream(Files.newOutputStream(output)); var paths = Files.walk(origin)) {
             for (Path path : paths.filter(Files::isRegularFile).toList()) {
                 archive.putNextEntry(new JarEntry(origin.relativize(path).toString().replace('\\', '/')));

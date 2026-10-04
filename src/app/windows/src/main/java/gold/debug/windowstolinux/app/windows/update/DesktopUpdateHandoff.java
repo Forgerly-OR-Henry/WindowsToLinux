@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.windows.update;
 
+import gold.debug.windowstolinux.app.windows.update.check.DesktopUpdateVerification;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateEvent;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateState;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;

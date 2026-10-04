@@ -7,11 +7,26 @@ import java.time.*;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.server.ServerInfo;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.file.FileContent;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
+import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.file.source.FileContent;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.process.ProcessSpec;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 
 class PublicValueContractTest {
@@ -63,27 +78,27 @@ class PublicValueContractTest {
     @Test
     void uncertaintyCannotBeMisrepresentedAsSuccessOrAReasonlessFailure() {
         assertThrows(IllegalArgumentException.class,
-            () -> new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.empty()));
+            () -> new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty()));
         assertThrows(IllegalArgumentException.class,
-            () -> new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.empty()));
+            () -> new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.empty()));
         assertThrows(IllegalArgumentException.class,
-            () -> new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.of(problem())));
-        var unknown = new OperationResult<>(Outcome.UNKNOWN, Optional.of("observed evidence"), Optional.of(problem()));
-        assertEquals(Outcome.UNKNOWN, unknown.outcome());
+            () -> new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.of(problem())));
+        var unknown = new OperationResult<>(TaskResult.UNKNOWN, Optional.of("observed evidence"), Optional.of(problem()));
+        assertEquals(TaskResult.UNKNOWN, unknown.outcome());
         assertTrue(unknown.value().isPresent());
-        assertEquals(Outcome.CANCELLED,
-            new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty()).outcome());
+        assertEquals(TaskResult.CANCELLED,
+            new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty()).outcome());
     }
 
     @Test
     void taskTerminalFieldsCannotDisagreeAndDuplicateResourcesAreRejected() {
         var now = Instant.now();
         assertThrows(IllegalArgumentException.class, () -> new TaskSnapshot(UUID.randomUUID(), "mod", "1.0.0", "test",
-            TaskState.UNKNOWN, Optional.of(Outcome.FAILED), "", now, Optional.of(now), List.of()));
+            TaskState.UNKNOWN, Optional.of(TaskResult.FAILED), "", now, Optional.of(now), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new TaskSnapshot(UUID.randomUUID(), "mod", "1.0.0", "test",
             TaskState.ENDED, Optional.empty(), "", now, Optional.of(now), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new TaskSnapshot(UUID.randomUUID(), "mod", "1.0.0", "test",
-            TaskState.ENDED, Optional.of(Outcome.UNKNOWN), "", now, Optional.of(now), List.of()));
+            TaskState.ENDED, Optional.of(TaskResult.UNKNOWN), "", now, Optional.of(now), List.of()));
         assertThrows(IllegalArgumentException.class,
             () -> new TaskRequest("test", "task", List.of("same", "same"), true));
     }
@@ -100,7 +115,7 @@ class PublicValueContractTest {
         assertDoesNotThrow(() -> new SchemaIdentity("mod", "9".repeat(64), UUID.randomUUID()));
         assertThrows(IllegalArgumentException.class,
             () -> new ProcessSpec(Path.of("relative"), List.of(), Map.of(), Path.of("."), Duration.ofSeconds(10)));
-        assertThrows(IllegalArgumentException.class, () -> new ServerInfo(new ServerRef("id"), "name", "host", 65536,
+        assertThrows(IllegalArgumentException.class, () -> new ServerInfo(new ServerId("id"), "name", "host", 65536,
             "user", Optional.empty(), Optional.empty()));
     }
 

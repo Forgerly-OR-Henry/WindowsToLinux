@@ -1,19 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ManagedProcess;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-import gold.debug.windowstolinux.appapi.task.ProcessSpec;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.mod.process.ProcessProtocol.Kind;
 import static org.junit.jupiter.api.Assertions.*;
@@ -26,10 +12,21 @@ import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.mod.process.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.process.ManagedProcess;
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.process.ProcessSpec;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -59,7 +56,7 @@ class PlatformProcessServiceTest {
     }
 
     static OperationResult<Void> reconciledFailure() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
             "FIXTURE_RECONCILED", "No fixture business effect was performed", Map.of(), Optional.empty())));
     }
 
@@ -84,7 +81,7 @@ class PlatformProcessServiceTest {
                         ProcessHandle.of(checkpoint.pid().orElseThrow()).orElseThrow().info().startInstant());
                     var result = child.request(MESSAGE, Duration.ofSeconds(3)).toCompletableFuture().get(4,
                         TimeUnit.SECONDS);
-                    assertEquals(Outcome.SUCCEEDED, result.outcome());
+                    assertEquals(TaskResult.SUCCEEDED, result.outcome());
                     var output = new com.fasterxml.jackson.databind.ObjectMapper()
                         .readTree(result.value().orElseThrow().jsonObject());
                     assertEquals(checkpoint.pid().getAsLong(), output.path("pid").asLong());
@@ -94,11 +91,11 @@ class PlatformProcessServiceTest {
                 }
                 return success(null);
             });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             assertEquals(0, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='PROCESS' AND released_at IS NULL"));
-            var diagnostics = new gold.debug.windowstolinux.app.db.log.LogRepository(runtime.persistence().database());
+            var diagnostics = new gold.debug.windowstolinux.app.db.log.LogStore(runtime.persistence().database());
             var target = diagnostics.targets().stream().filter(t -> t.owner().equals(OWNER)).findFirst().orElseThrow();
             var records = diagnostics.read(target);
             assertTrue(records.stream().anyMatch(r -> r.eventCode().equals("PROCESS_STDERR")));
@@ -126,7 +123,7 @@ class PlatformProcessServiceTest {
             assertThrows(ApiException.class, () -> child.get().request(MESSAGE, Duration.ofSeconds(1)));
             child.get().close();
             state(handle, TaskState.ENDED);
-            assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get().outcome());
+            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get().outcome());
         }
     }
 
@@ -143,7 +140,7 @@ class PlatformProcessServiceTest {
                 try (var child = processes.start(spec("hold"), task)) {
                     var response = child.request(MESSAGE, Duration.ofSeconds(30));
                     requested.countDown();
-                    assertEquals(Outcome.UNKNOWN, response.toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
+                    assertEquals(TaskResult.UNKNOWN, response.toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                 }
                 return success(null);
             });
@@ -218,7 +215,7 @@ class PlatformProcessServiceTest {
         var child = new ProcessBuilder(command).start();
         try {
             try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
-                var persistence = new PlatformPersistence(db);
+                var persistence = new PlatformStorage(db);
                 try (var security = new DesktopSecurityService(persistence.security())) {
                     security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
                 }
@@ -266,7 +263,7 @@ class PlatformProcessServiceTest {
         var data = root.resolve("data");
         var current = ProcessHandle.current();
         try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(db);
+            var persistence = new PlatformStorage(db);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }

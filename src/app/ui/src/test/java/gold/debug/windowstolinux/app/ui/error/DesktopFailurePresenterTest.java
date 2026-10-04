@@ -14,20 +14,20 @@ class DesktopFailurePresenterTest {
     @Test
     void publicCredentialProblemsKeepIdentityWithOneOriginalReportAndReadOnlySnapshotRefresh() {
         var identity = java.util.UUID.randomUUID();
-        var problem = new gold.debug.windowstolinux.appapi.task.Problem(
-            gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE, "secret.persistence.decrypt-failed",
+        var problem = new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE, "secret.persistence.decrypt-failed",
             "password=private-fixture", java.util.Map.of(), java.util.Optional.of(identity));
         for (var language : java.util.List.of("en", "zh-CN")) {
             var recorded = new java.util.concurrent.atomic.AtomicInteger();
             var presenter = new DesktopFailurePresenter(MessageCatalog.forLanguageTag(language)::text, failure -> {
                 recorded.incrementAndGet();
                 org.junit.jupiter.api.Assertions.assertSame(problem,
-                    ((gold.debug.windowstolinux.appapi.task.ApiException) failure).problem());
+                    ((gold.debug.windowstolinux.appapi.task.result.ApiException) failure).problem());
                 return java.util.Optional.of(new FailureReportRecord(problem, java.nio.file.Path.of("reports"),
                     java.util.Optional.of(java.nio.file.Path.of("reports", "original-sdk.txt"))));
             });
             String rendered = presenter
-                .present(new CompletionException(new gold.debug.windowstolinux.appapi.task.ApiException(problem)));
+                .present(new CompletionException(new gold.debug.windowstolinux.appapi.task.result.ApiException(problem)));
             assertTrue(rendered.contains(problem.eventCode()));
             assertTrue(rendered.contains(identity.toString()));
             assertTrue(rendered.contains(language.equals("en") ? "decrypted" : "解密"));
@@ -35,7 +35,7 @@ class DesktopFailurePresenterTest {
             assertTrue(rendered.contains("original-sdk.txt"));
             assertTrue(presenter.present(problem).contains(identity.toString()));
             org.junit.jupiter.api.Assertions.assertEquals(1, recorded.get());
-            var unknown = new gold.debug.windowstolinux.appapi.task.Problem(problem.code(), "fixture.unknown",
+            var unknown = new gold.debug.windowstolinux.appapi.task.result.Problem(problem.code(), "fixture.unknown",
                 "api-key=private-fallback", java.util.Map.of(), problem.diagnosticId());
             assertFalse(presenter.present(unknown).contains("private-fallback"));
             assertTrue(presenter.present(unknown).contains("[REDACTED]"));

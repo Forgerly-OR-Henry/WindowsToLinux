@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -16,27 +9,36 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
-import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Verifies normal CLASS shutdown after a fully committed running publication. / 验证完整提交且运行的发布之后正常CLASS停用。 */
-class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAcceptanceFixture {
+class DeploymentPublishedApplicationStopTest extends DeploymentPublishAcceptanceFixture {
     /** Keeps single and whole-graph applications running when their author Mod stops normally. / 作者Mod正常停止时保持单应用与整图应用运行。
      * @param count actual discovered component count / 实际发现组件数
      * @throws Exception if actual publication, lifecycle or retained data cannot be verified / 实际发布、生命周期或留存数据无法核实时 */
@@ -57,11 +59,11 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
             peer.publicationAttempts = true;
             var running = new HashSet<String>();
             var bound = bind(original, peer, running);
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
-            var handle = workflow.submit(new ServerRef("server"),
+            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
+            var handle = workflow.submit(new ServerId("server"),
                 new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536), Optional.empty(), reviewer(count), false,
                 "MANUAL_REVIEW");
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(60, TimeUnit.SECONDS).outcome());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(count, running.size());
@@ -103,7 +105,7 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
      * @return context with only its remote boundary controlled / 仅远端边界受控的上下文 */
     private ModContext bind(ModContext original, DeploymentAssistedBuildPeer peer, Set<String> running) {
         LinuxService linux = new LinuxService() {
-            public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+            public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 var session = peer.session(task);
                 return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                     new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
@@ -121,7 +123,7 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublicationAccept
                             throw failure.getCause();
                         }
                         if (arguments.size() > 2 && arguments.get(1).equals("publish-deployment")) {
-                            assertEquals(Outcome.SUCCEEDED, ((OperationResult<?>) result).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, ((OperationResult<?>) result).outcome());
                             assertTrue(running.add(arguments.get(2)));
                         }
                         return result;

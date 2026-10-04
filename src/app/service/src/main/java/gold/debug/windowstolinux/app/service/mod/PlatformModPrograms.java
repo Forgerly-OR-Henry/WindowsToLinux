@@ -8,10 +8,10 @@ import java.util.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.config.ModManifest;
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /** Resolves exact registered code for the common lifecycle without mixing source modes. / 为共用生命周期解析精确登记代码，不混用来源模式。 */
 public final class PlatformModPrograms {

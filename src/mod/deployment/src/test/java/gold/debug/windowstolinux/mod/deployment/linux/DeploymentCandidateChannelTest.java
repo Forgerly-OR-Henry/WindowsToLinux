@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -17,8 +7,20 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +35,7 @@ class DeploymentCandidateChannelTest {
             return reply(0, "99999999999999999999 4096\n");
         });
         var result = channel.availableBytes();
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("DEPLOYMENT_CAPACITY_INVALID", result.problem().orElseThrow().eventCode());
         assertEquals(1, script.size());
         assertTrue(script.getFirst().contains("test -d '/var/lib' && test ! -L '/var/lib'"));
@@ -44,9 +46,9 @@ class DeploymentCandidateChannelTest {
     /** Refuses a successful transport envelope without a capacity payload. / 拒绝缺容量载荷的成功传输封套。 */
     @Test
     void missingSuccessfulCapacityPayloadDoesNotBecomeSuccess() throws Exception {
-        var channel = channel(command -> new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty()));
+        var channel = channel(command -> new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty()));
         var result = channel.availableBytes();
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("DEPLOYMENT_CAPACITY_MISSING", result.problem().orElseThrow().eventCode());
     }
 
@@ -61,7 +63,7 @@ class DeploymentCandidateChannelTest {
             return reply(1, "CANDIDATE=" + workspace.candidateRoot() + "\n");
         });
         var result = channel.create(workspace, 64L * 1024 * 1024);
-        assertEquals(Outcome.UNKNOWN, result.outcome());
+        assertEquals(TaskResult.UNKNOWN, result.outcome());
         assertEquals("DEPLOYMENT_CANDIDATE_CREATE_UNCONFIRMED", result.problem().orElseThrow().eventCode());
         assertEquals(1, calls.get());
     }
@@ -91,7 +93,7 @@ class DeploymentCandidateChannelTest {
         var interaction = new InteractionService() {
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext actual) {
                 assertSame(task, actual);
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
                     Optional.empty());
             }
 
@@ -106,7 +108,7 @@ class DeploymentCandidateChannelTest {
                     return responder.apply((CommandRequest) args[0]);
                 throw new AssertionError(method.getName());
             });
-        return new DeploymentCandidateChannel(session, interaction, new ServerRef("server"), task, "f".repeat(64),
+        return new DeploymentCandidateChannel(session, interaction, new ServerId("server"), task, "f".repeat(64),
             new DeploymentBuildBudget(3600));
     }
 
@@ -115,7 +117,7 @@ class DeploymentCandidateChannelTest {
      * @param stdout output text / 输出文本
      * @return complete host observation / 完整宿主观测 */
     private static OperationResult<CommandResult> reply(int exit, String stdout) {
-        return new OperationResult<>(exit == 0 ? Outcome.SUCCEEDED : Outcome.FAILED,
+        return new OperationResult<>(exit == 0 ? TaskResult.SUCCEEDED : TaskResult.FAILED,
             Optional.of(new CommandResult(Optional.of(exit), stdout, "", false)),
             exit == 0
                 ? Optional.empty()

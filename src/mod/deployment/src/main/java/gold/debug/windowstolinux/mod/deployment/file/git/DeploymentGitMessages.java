@@ -1,14 +1,13 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-
 import java.io.IOException;
 import java.net.URI;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Exact business messages and exit receipts for one Git preparation request. / 一次 Git 准备请求的精确业务消息及退出凭据。 */
 public final class DeploymentGitMessages {
@@ -24,10 +23,10 @@ public final class DeploymentGitMessages {
      * @return exact business JSON / 精确业务 JSON */
     public static String encode(DeploymentGitRequest request) {
         String kind = switch (request.reference()) {
-            case DeploymentGitReference.DefaultBranch ignored -> "DEFAULT";
-            case DeploymentGitReference.Branch ignored -> "BRANCH";
-            case DeploymentGitReference.Tag ignored -> "TAG";
-            case DeploymentGitReference.Commit ignored -> "COMMIT";
+            case DeploymentGitRef.DefaultBranch ignored -> "DEFAULT";
+            case DeploymentGitRef.Branch ignored -> "BRANCH";
+            case DeploymentGitRef.Tag ignored -> "TAG";
+            case DeploymentGitRef.Commit ignored -> "COMMIT";
         };
         var node = DeploymentGitProtocol.empty().put("remote", request.remote().location().toString()).put("kind", kind)
             .put("reference", request.reference().value()).put("maximumArchiveBytes", request.maximumArchiveBytes())
@@ -47,15 +46,15 @@ public final class DeploymentGitMessages {
             DeploymentGitProtocol.fields(node, Set.of("remote", "kind", "reference", "allowedHosts",
                 "maximumArchiveBytes", "permitLocalFileRemote"));
             String value = DeploymentGitProtocol.text(node, "reference");
-            DeploymentGitReference reference = switch (DeploymentGitProtocol.text(node, "kind")) {
+            DeploymentGitRef reference = switch (DeploymentGitProtocol.text(node, "kind")) {
                 case "DEFAULT" -> {
                     if (!value.equals("HEAD"))
                         throw new IllegalArgumentException();
-                    yield new DeploymentGitReference.DefaultBranch();
+                    yield new DeploymentGitRef.DefaultBranch();
                 }
-                case "BRANCH" -> new DeploymentGitReference.Branch(value);
-                case "TAG" -> new DeploymentGitReference.Tag(value);
-                case "COMMIT" -> new DeploymentGitReference.Commit(value);
+                case "BRANCH" -> new DeploymentGitRef.Branch(value);
+                case "TAG" -> new DeploymentGitRef.Tag(value);
+                case "COMMIT" -> new DeploymentGitRef.Commit(value);
                 default -> throw new IllegalArgumentException();
             };
             if (!node.get("allowedHosts").isArray() || node.get("allowedHosts").size() > 1024

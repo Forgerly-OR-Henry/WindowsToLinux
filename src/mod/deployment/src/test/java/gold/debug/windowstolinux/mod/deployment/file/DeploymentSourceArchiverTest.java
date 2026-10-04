@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.file;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -23,10 +13,18 @@ import java.util.concurrent.atomic.*;
 import java.util.zip.GZIPInputStream;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.file.FileSelection;
 import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.file.FileWorkspace;
-
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -47,12 +45,12 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
     }
 
     DeploymentSourceMaterial material(FileService source, TaskContext task) throws Exception {
-        return new DeploymentSourcePreparer(source).prepare(source.selectDirectory("Source", task), 2 * 1024 * 1024,
+        return new DeploymentSourceSetup(source).prepare(source.sources().selectDirectory("Source", task), 2 * 1024 * 1024,
             100, task);
     }
 
     OperationResult<Void> success() {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     void run(PlatformRuntime runtime, TaskWork<Void> work) throws Exception {
@@ -76,7 +74,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
         }
         if (failure.get() != null)
             throw new AssertionError(failure.get());
-        assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+        assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
     }
 
     long files(PlatformRuntime runtime) throws Exception {
@@ -85,14 +83,13 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
     }
 
     FileService intercept(FileService original, InvocationHandler handler) {
-        return (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
-            new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
-                try {
-                    return handler.invoke(original, method, arguments);
-                } catch (InvocationTargetException failure) {
-                    throw failure.getCause();
-                }
-            });
+        return gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.create(FileService.class.getClassLoader(), (proxy, method, arguments) -> {
+            try {
+                return handler.invoke(DeploymentFileServiceFixture.view(method, original), method, arguments);
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
     }
 
     @Test
@@ -394,7 +391,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
                             assertEquals(1, files(runtime));
                         }
                         assertEquals(0, files(runtime));
-                        return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError error) {
                         failure.set(error);
                         throw error;
@@ -404,7 +401,7 @@ class DeploymentSourceArchiverTest extends DeploymentRuntimeFixture {
             var result = handle.get().completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             if (failure.get() != null)
                 throw new AssertionError(failure.get());
-            assertEquals(Outcome.CANCELLED, result.outcome());
+            assertEquals(TaskResult.CANCELLED, result.outcome());
         }
     }
 }

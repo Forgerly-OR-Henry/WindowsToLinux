@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.time.Instant;
@@ -13,8 +7,13 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import gold.debug.windowstolinux.appapi.server.*;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +25,7 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
-            var journal = new DeploymentAgentJournal(context.db());
+            var journal = new DeploymentAgentActionLog(context.db());
             String first = target("profile-first", "SAME.EXAMPLE", 22), second = target("profile-second", "same.example", 22);
             assertEquals(first, second);
             assertNotEquals(first, target("profile-second", "same.example", 23));
@@ -56,7 +55,7 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
                     return success();
                 }));
             for (var handle : handles)
-                assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+                assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
             assertEquals(1, accepted.get());
             assertEquals(1, originals.size());
             try (var reader = scope(runtime, true); var connection = reader.openConnection(); var query = connection.createStatement();
@@ -85,7 +84,7 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
-            var journal = new DeploymentAgentJournal(context.db());
+            var journal = new DeploymentAgentActionLog(context.db());
             var seed = context.tasks().submit(request(), task -> {
                 journal.create(task, identity("original-profile"), opaque ? Optional.empty() : Optional.of(endpoint));
                 journal.event(task, "COMMAND_EXECUTING", "owned-build", "original-intent");
@@ -94,12 +93,12 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
                 return success();
             });
             original = seed.id();
-            assertEquals(Outcome.SUCCEEDED, seed.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, seed.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
         }
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
-            var journal = new DeploymentAgentJournal(context.db());
+            var journal = new DeploymentAgentActionLog(context.db());
             var attempt = context.tasks().submit(request(), task -> {
                 var denied = assertThrows(ApiException.class, () -> journal.create(task, identity("alias-profile"), Optional.of(endpoint)));
                 assertEquals(expected, denied.problem().eventCode());
@@ -108,10 +107,10 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
                 assertTrue(journal.find(task).isEmpty());
                 var originalFacts = journal.find(task, original).orElseThrow();
                 assertEquals("FAILED", originalFacts.state());
-                assertFalse(DeploymentAgentJournal.effectsSettled(journal.events(task, original)));
+                assertFalse(DeploymentAgentActionLog.effectsSettled(journal.events(task, original)));
                 return success();
             });
-            assertEquals(Outcome.SUCCEEDED, attempt.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, attempt.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         }
     }
@@ -120,16 +119,16 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
         return new TaskRequest(DeploymentAgentWorkflow.TASK_TYPE, "Agent admission evidence", List.of(), true);
     }
 
-    private static DeploymentAgentJournal.Identity identity(String profile) {
-        return new DeploymentAgentJournal.Identity(profile, "a".repeat(64), "b".repeat(64), "MANUAL_REVIEW");
+    private static DeploymentAgentActionLog.Identity identity(String profile) {
+        return new DeploymentAgentActionLog.Identity(profile, "a".repeat(64), "b".repeat(64), "MANUAL_REVIEW");
     }
 
     private static OperationResult<Void> success() {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     private static String target(String profile, String host, int port) {
-        return DeploymentAgentWorkflow.physicalTarget(new ServerInfo(new ServerRef(profile), profile, host, port, "different-account",
+        return DeploymentAgentWorkflow.physicalTarget(new ServerInfo(new ServerId(profile), profile, host, port, "different-account",
             Optional.of("SHA256:original-fingerprint"), Optional.of(Instant.EPOCH)));
     }
 }

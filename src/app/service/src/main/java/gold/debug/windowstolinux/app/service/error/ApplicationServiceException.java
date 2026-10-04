@@ -4,8 +4,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Unchecked structured failure at a desktop application-service boundary. / 桌面应用服务边界的非受检结构化失败。

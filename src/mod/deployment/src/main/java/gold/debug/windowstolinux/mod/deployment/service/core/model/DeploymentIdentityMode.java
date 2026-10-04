@@ -5,10 +5,6 @@ package gold.debug.windowstolinux.mod.deployment.service.core.model;
  */
 public enum DeploymentIdentityMode {
     /**
-     * Historical record that did not declare an isolation policy. / 未声明隔离策略的历史记录。
-     */
-    LEGACY_UNSPECIFIED,
-    /**
      * Native service with a fixed, non-login per-application account. / 使用应用独占固定不可登录账号的原生服务。
      */
     SYSTEMD_STATIC,

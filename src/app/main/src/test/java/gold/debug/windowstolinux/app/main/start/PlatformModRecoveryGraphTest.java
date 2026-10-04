@@ -1,15 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformModCoordinatorTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformModFlowTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,14 +11,20 @@ import java.util.concurrent.TimeUnit;
 
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskManagement;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,7 +32,7 @@ class PlatformModRecoveryGraphTest {
     @TempDir
     Path root;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
     final Map<UUID, TaskRecoveryGraph> originals = new LinkedHashMap<>();
 
@@ -43,7 +40,7 @@ class PlatformModRecoveryGraphTest {
 
     @BeforeEach
     void setup() throws Exception {
-        fixture = new PlatformModCoordinatorTest();
+        fixture = new PlatformModFlowTest();
         fixture.root = root;
         fixture.workspace();
         module(P, Map.of());
@@ -62,10 +59,10 @@ class PlatformModRecoveryGraphTest {
                 package %s;
                 import java.nio.file.*;
                 import java.util.*;
-                import gold.debug.windowstolinux.appapi.mod.*;
-                import gold.debug.windowstolinux.appapi.task.*;
+                import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+                import gold.debug.windowstolinux.appapi.task.result.ApiException; import gold.debug.windowstolinux.appapi.task.result.OperationResult; import gold.debug.windowstolinux.appapi.task.result.Problem; import gold.debug.windowstolinux.appapi.task.result.ProblemCode; import gold.debug.windowstolinux.appapi.task.model.TaskRequest; import gold.debug.windowstolinux.appapi.task.result.TaskResult;
                 
-                import gold.debug.windowstolinux.appapi.ui.*;
+                import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
                 public final class Mod implements ModEntrypoint {
                     private static final Path ROOT=Path.of("%s");
                     private static void record(String action) throws Exception {
@@ -77,8 +74,8 @@ class PlatformModRecoveryGraphTest {
                         context.tasks().registerRecovery("fixture",(snapshot,task)->{
                             record("recover:"+snapshot.id());
                             if(Files.exists(ROOT.resolve("%s.recover.unknown")))
-                                return new OperationResult<Void>(Outcome.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"FIXTURE_UNKNOWN","Fixture unknown",Map.of(),Optional.empty())));
-                            return new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty());
+                                return new OperationResult<Void>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"FIXTURE_UNKNOWN","Fixture unknown",Map.of(),Optional.empty())));
+                            return new OperationResult<Void>(TaskResult.SUCCEEDED,Optional.empty(),Optional.empty());
                         });
                         context.ui().register(new PageSpec("main","main","Fixture",false),()->{throw new AssertionError("Recovery page mounted");});
                         if(context.launchMode()==ModLaunchMode.RECOVERY) {
@@ -101,7 +98,7 @@ class PlatformModRecoveryGraphTest {
         Files.writeString(module.resolve("pom.xml"), "<project/>\n");
         Files.writeString(module.resolve("mod.json"),
             PlatformModIntentsTest.manifest(owner, VERSION, dependencies, null, List.of()));
-        DevelopmentDescriptor.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
+        DevelopmentInfo.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
             List.of(fixture.workspace.resolve("pom.xml"), fixture.workspace.resolve("src/mod/pom.xml"),
                 module.resolve("pom.xml")),
             List.of());
@@ -153,7 +150,7 @@ class PlatformModRecoveryGraphTest {
                 }
             });
         assertTrue(ledger.tryStart(id));
-        assertFalse(ledger.complete(id, Outcome.UNKNOWN, "fixture", false));
+        assertFalse(ledger.complete(id, TaskResult.UNKNOWN, "fixture", false));
     }
 
     PlatformTaskManagement management(PlatformRuntime runtime) {
@@ -199,7 +196,7 @@ class PlatformModRecoveryGraphTest {
         var runtime = fixture.open(true);
         try {
             var pages = fixture.pages(false);
-            var report = DesktopMain
+            var report = ApplicationLauncher
                 .startMods(
                     runtime, new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS,
                         fixture.workspace, runtime.persistence().database().root()),
@@ -211,7 +208,7 @@ class PlatformModRecoveryGraphTest {
                 .indexOf(C + ":start:RECOVERY"));
             assertTrue(fixture.actions().contains(C + ":submit-denied"));
             assertFalse(fixture.actions().stream().anyMatch(value -> value.contains(":recover:")));
-            assertEquals("UNKNOWN", PlatformModCoordinatorTest.state(runtime, C));
+            assertEquals("UNKNOWN", PlatformModFlowTest.state(runtime, C));
             assertEquals("2.0.0", PlatformModIntentsTest.text(runtime,
                 "SELECT selected_version FROM mod_registry WHERE mod_id='" + C + "'"));
             assertEquals(2, count(runtime.persistence().database(),
@@ -221,7 +218,7 @@ class PlatformModRecoveryGraphTest {
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertEquals(List.of(C + ":stop:RECOVERY_FINISHED", P + ":stop:RECOVERY_FINISHED"),
                 fixture.actions().stream().filter(value -> value.endsWith(":stop:RECOVERY_FINISHED")).toList());
-            assertEquals("STOPPED", PlatformModCoordinatorTest.state(runtime, C));
+            assertEquals("STOPPED", PlatformModFlowTest.state(runtime, C));
             assertFalse(fixture.actions().contains(C + ":start:NORMAL"));
         } finally {
             cleanup(runtime);
@@ -261,7 +258,7 @@ class PlatformModRecoveryGraphTest {
             assertFalse(fixture.actions().contains(P + ":construct"));
             assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
-            assertEquals("UNKNOWN", PlatformModCoordinatorTest.state(runtime, C));
+            assertEquals("UNKNOWN", PlatformModFlowTest.state(runtime, C));
         } finally {
             cleanup(runtime);
         }
@@ -273,7 +270,7 @@ class PlatformModRecoveryGraphTest {
         try (var db = PlatformDatabase.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             var graph = originals.values().iterator().next();
             new ModRecoveryLedger(db).retain(graph);
-            new TaskLedger(db).completeAndArchive(originals.keySet().iterator().next(), Outcome.SUCCEEDED,
+            new TaskLedger(db).completeAndArchive(originals.keySet().iterator().next(), TaskResult.SUCCEEDED,
                 "Explicit fixture recovery", true, () -> {
                 });
         }
@@ -330,7 +327,7 @@ class PlatformModRecoveryGraphTest {
             assertEquals(Set.of(F), runtime.modContexts().keySet());
             assertEquals(2, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM mod_operation WHERE phase='VERIFIED'"));
-            assertEquals("UNKNOWN", PlatformModCoordinatorTest.state(runtime, C));
+            assertEquals("UNKNOWN", PlatformModFlowTest.state(runtime, C));
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT fixture_recovery_archive");
             runtime.modRecovery().release();
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));

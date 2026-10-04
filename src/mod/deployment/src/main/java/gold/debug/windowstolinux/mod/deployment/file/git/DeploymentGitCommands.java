@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -11,6 +7,10 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Runs fixed Git argv inside the worker and waits for the original process, observed descendants and pipes. / 在 worker 内运行固定 Git 参数并等待原进程、已观察后代及管道退出。 */
 final class DeploymentGitCommands {

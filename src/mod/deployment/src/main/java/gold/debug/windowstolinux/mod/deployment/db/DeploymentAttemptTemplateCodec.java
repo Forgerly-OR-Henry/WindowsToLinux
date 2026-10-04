@@ -26,7 +26,7 @@ final class DeploymentAttemptTemplateCodec {
      * @param next actual newly reviewed proposal / 实际新审阅提案
      * @return canonical bounded compact proposal / 规范有界紧凑提案
      * @throws SQLException if fixed bindings or encoding differ / 固定绑定或编码不符时 */
-    static String encodeCompact(DeploymentPublicationProposal first, DeploymentPublicationProposal next) throws SQLException {
+    static String encodeCompact(DeploymentPublishProposal first, DeploymentPublishProposal next) throws SQLException {
         return encodeCompact(first, next, LIMIT);
     }
 
@@ -36,11 +36,11 @@ final class DeploymentAttemptTemplateCodec {
      * @param limit admitted compact UTF-8 byte bound / 紧凑UTF-8字节边界
      * @return complete compact encoding / 完整紧凑编码
      * @throws SQLException if an identity or byte bound conflicts / 身份或字节边界冲突时 */
-    static String encodeCompact(DeploymentPublicationProposal first, DeploymentPublicationProposal next, int limit) throws SQLException {
+    static String encodeCompact(DeploymentPublishProposal first, DeploymentPublishProposal next, int limit) throws SQLException {
         if (limit < 1 || limit > LIMIT) throw new SQLException("Invalid compact proposal byte bound");
         requireFixed(first, next);
-        String complete = DeploymentPublicationTemplateCodec.encodeTemplate(next);
-        var template = parse(complete, DeploymentPublicationTemplateCodec.LIMIT);
+        String complete = DeploymentPublishTemplateCodec.encodeTemplate(next);
+        var template = parse(complete, DeploymentPublishTemplateCodec.LIMIT);
         if (template.path("formatVersion").intValue() == 1) template.remove("configuration");
         else for (var unit : template.withArray("units")) ((ObjectNode) unit).remove("configuration");
         var node = object().put("formatVersion", 1).put("templateSha256", digest(complete));
@@ -54,7 +54,7 @@ final class DeploymentAttemptTemplateCodec {
      * @param executionId authentic original formal identity / 真实原正式身份
      * @return exact complete later immutable proposal / 精确完整后续不可变提案
      * @throws SQLException if any original field, configuration or SHA differs / 任一原字段、配置或SHA不符时 */
-    static DeploymentPublicationProposal decodeCompact(DeploymentPublicationProposal first, String text, UUID executionId) throws SQLException {
+    static DeploymentPublishProposal decodeCompact(DeploymentPublishProposal first, String text, UUID executionId) throws SQLException {
         var node = parse(text, LIMIT);
         fields(node, Set.of("formatVersion", "templateSha256", "template"));
         if (node.path("formatVersion").intValue() != 1 || !node.path("template").isObject())
@@ -62,7 +62,7 @@ final class DeploymentAttemptTemplateCodec {
         String expected = string(node, "templateSha256");
         if (!expected.matches("[0-9a-f]{64}")) throw new SQLException("Invalid compact proposal SHA");
         var template = ((ObjectNode) node.path("template")).deepCopy();
-        var original = parse(DeploymentPublicationTemplateCodec.encodeTemplate(first), DeploymentPublicationTemplateCodec.LIMIT);
+        var original = parse(DeploymentPublishTemplateCodec.encodeTemplate(first), DeploymentPublishTemplateCodec.LIMIT);
         int version = template.path("formatVersion").isInt() ? template.path("formatVersion").intValue() : -1;
         if (version != original.path("formatVersion").intValue())
             throw new SQLException("Compact proposal changed the complete unit scope");
@@ -84,10 +84,10 @@ final class DeploymentAttemptTemplateCodec {
             }
             if (!seen.equals(configurations.keySet())) throw new SQLException("Compact proposal lost an original unit");
         } else throw new SQLException("Unsupported original complete proposal");
-        String complete = encode(template, DeploymentPublicationTemplateCodec.LIMIT);
+        String complete = encode(template, DeploymentPublishTemplateCodec.LIMIT);
         if (!digest(complete).equals(expected))
             throw new SQLException("Compact proposal differs from its complete canonical SHA");
-        var next = DeploymentPublicationTemplateCodec.decodeTemplate(complete, executionId);
+        var next = DeploymentPublishTemplateCodec.decodeTemplate(complete, executionId);
         requireFixed(first, next);
         if (!encodeCompact(first, next).equals(text)) throw new SQLException("Compact proposal is not canonical");
         return next;
@@ -97,7 +97,7 @@ final class DeploymentAttemptTemplateCodec {
      * @param first original complete proposal / 原完整提案
      * @param next actual later proposal / 实际后续提案
      * @throws SQLException if any fixed formal binding changed / 任一固定正式绑定改变时 */
-    private static void requireFixed(DeploymentPublicationProposal first, DeploymentPublicationProposal next) throws SQLException {
+    private static void requireFixed(DeploymentPublishProposal first, DeploymentPublishProposal next) throws SQLException {
         Objects.requireNonNull(first);
         Objects.requireNonNull(next);
         var before = first.graph();
@@ -126,8 +126,8 @@ final class DeploymentAttemptTemplateCodec {
                 throw new SQLException("Attempt changed an original unit or secret revision");
             var oldConfig = object();
             var nextConfig = object();
-            DeploymentPublicationTemplateCodec.configuration(oldConfig, original.configuration());
-            DeploymentPublicationTemplateCodec.configuration(nextConfig, unit.configuration());
+            DeploymentPublishTemplateCodec.configuration(oldConfig, original.configuration());
+            DeploymentPublishTemplateCodec.configuration(nextConfig, unit.configuration());
             if (!oldConfig.equals(nextConfig))
                 throw new SQLException("Attempt changed original complete configuration");
         }

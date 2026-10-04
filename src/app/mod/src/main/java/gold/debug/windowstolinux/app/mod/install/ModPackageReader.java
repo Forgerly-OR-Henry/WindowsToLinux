@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.mod.install;
 
-import gold.debug.windowstolinux.appapi.file.FileEntry;
-
 import java.io.*;
 import java.nio.*;
 import java.nio.channels.FileChannel;
@@ -13,10 +11,11 @@ import java.util.*;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
-import gold.debug.windowstolinux.app.mod.load.ModCodeInspection;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.config.ModManifest;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.load.ModCodeChecker;
+import gold.debug.windowstolinux.appapi.file.source.FileEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 
 /** Reads and stages original packages without loading author classes or changing installed state. / 读取并暂存原包，不加载作者类或改变已安装状态。 */
@@ -351,7 +350,7 @@ public final class ModPackageReader {
             .filter(name -> name.startsWith("main/") && !name.equals(manifest.mainJar())).forEach(jars::add);
         sorted.stream().map(FileEntry::path).filter(name -> name.startsWith("lib/")).forEach(jars::add);
         var sources = jars.stream().map(directory::resolve).toList();
-        ModCodeInspection.read(manifest, sources).validate(false, Map.of());
+        ModCodeChecker.read(manifest, sources).validate(false, Map.of());
         return sources;
     }
 
@@ -367,7 +366,7 @@ public final class ModPackageReader {
         var classes = new HashMap<String, String>();
         int count = 0;
         boolean mainEntry = false;
-        var code = new ModCodeInspection(manifest);
+        var code = new ModCodeChecker(manifest);
         for (String path : jars) {
             var source = entries.get(path);
             try (var jar = new ModZip(file, source.getDataOffset(), source.getSize(), MAX_JAR_ENTRIES - count, false)) {
@@ -390,7 +389,7 @@ public final class ModPackageReader {
                     if (entry.isDirectory())
                         continue;
                     String name = ModZip.name(entry, false);
-                    int release = ModCodeInspection.release(name, multiRelease);
+                    int release = ModCodeChecker.release(name, multiRelease);
                     if (name.startsWith("META-INF/versions/")) {
                         String[] parts = name.split("/", 4);
                         if (parts.length != 4 || !parts[2].matches("[1-9][0-9]*"))

@@ -1,18 +1,16 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.io.IOException;
 import java.util.*;
 import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 
@@ -32,7 +30,7 @@ public final class DeploymentAgentReview {
     private final DeploymentAiJson ai;
 
     /** Exact admitted target server reference. / 精确已准入目标服务器引用。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Authentic original platform task context. / 真实原平台任务上下文。 */
     private final TaskContext task;
@@ -47,7 +45,7 @@ public final class DeploymentAgentReview {
     private final Supplier<String> currentRevision;
 
     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
-    private final DeploymentAgentJournal journal;
+    private final DeploymentAgentActionLog journal;
 
     /** One task-only explicit source authority. / 一次任务专属明确源码授权。 */
     private boolean sourceAuthorized;
@@ -60,8 +58,8 @@ public final class DeploymentAgentReview {
      * @param revision frozen all-purpose configuration / 冻结全用途配置
      * @param currentRevision live revision / 实时修订
      * @param journal original durable ledger / 原持久账本 */
-    public DeploymentAgentReview(ModContext context, ServerRef server, TaskContext task, String mode, String revision,
-                                 Supplier<String> currentRevision, DeploymentAgentJournal journal) {
+    public DeploymentAgentReview(ModContext context, ServerId server, TaskContext task, String mode, String revision,
+                                 Supplier<String> currentRevision, DeploymentAgentActionLog journal) {
         this.context = Objects.requireNonNull(context);
         this.ai = new DeploymentAiJson(context);
         this.server = Objects.requireNonNull(server);
@@ -148,7 +146,7 @@ public final class DeploymentAgentReview {
         var intent = new ActionIntent(kind, List.of(server.id()), subject, revision, evidence,
             "Review exact autonomous action and current evidence");
         var result = context.interaction().approve(intent, task);
-        if (result.outcome() != Outcome.SUCCEEDED)
+        if (result.outcome() != TaskResult.SUCCEEDED)
             throw new DeploymentAiJson.CapabilityOutcomeException(result.outcome(), result.problem());
         requireRevision();
     }

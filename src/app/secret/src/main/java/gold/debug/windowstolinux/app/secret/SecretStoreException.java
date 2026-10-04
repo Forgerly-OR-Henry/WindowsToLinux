@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.app.secret;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /** Reports credential failures without copying secret input or provider messages. / 报告凭据失败，不复制秘密输入或提供方消息。 */
 public final class SecretStoreException extends ApiException {

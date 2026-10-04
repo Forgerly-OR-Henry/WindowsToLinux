@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -27,15 +18,33 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -112,7 +121,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 statusStage.set(2);
                 var recovered = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
                 assertEquals(TaskState.ENDED, recovered.state(), recovered.toString());
-                assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
+                assertEquals(Optional.of(TaskResult.FAILED), recovered.outcome());
                 assertEquals(3, statusCalls.get());
                 assertEquals(0, replayCalls.get());
                 assertEquals(0,
@@ -153,9 +162,9 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertEquals(List.of("MOD_RECOVERY_READY"),
                     report.problems().stream().map(Problem::eventCode).toList());
                 var original = new TaskLedger(runtime.persistence().database()).queries().unfinished().getFirst();
-                var address = new DeploymentDatabasePlanJournal.Entry("service", "main").key();
-                assertEquals(1, checkpoint(runtime, original, DeploymentDatabasePlanJournal.KEY));
-                assertEquals(1, checkpoint(runtime, original, DeploymentNativeDatabaseJournal.KEY + "." + address));
+                var address = new DeploymentDatabasePlanActionLog.Entry("service", "main").key();
+                assertEquals(1, checkpoint(runtime, original, DeploymentDatabasePlanActionLog.KEY));
+                assertEquals(1, checkpoint(runtime, original, DeploymentNativeDatabaseActionLog.KEY + "." + address));
                 assertEquals(TaskState.UNKNOWN,
                     runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 statusStage.set(1);
@@ -164,7 +173,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 statusStage.set(2);
                 var settled = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
                 assertEquals(TaskState.ENDED, settled.state(), settled.toString());
-                assertEquals(Optional.of(Outcome.FAILED), settled.outcome());
+                assertEquals(Optional.of(TaskResult.FAILED), settled.outcome());
                 assertEquals(3, statusCalls.get());
                 assertEquals(0, replayCalls.get());
                 assertEquals(0,
@@ -209,7 +218,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 assertEquals(TaskState.UNKNOWN,
                     runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
                 assertEquals(1, statusCalls.get());
-                assertEquals(1, checkpoint(runtime, original, DeploymentProtocolBootstrapJournal.KEY));
+                assertEquals(1, checkpoint(runtime, original, DeploymentProtocolBootstrapActionLog.KEY));
                 statusStage.set(1);
                 assertEquals(TaskState.UNKNOWN,
                     runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS).state());
@@ -217,7 +226,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 statusStage.set(2);
                 var settled = runtime.tasks().reconcile(original).toCompletableFuture().get(25, TimeUnit.SECONDS);
                 assertEquals(TaskState.ENDED, settled.state(), settled.toString());
-                assertEquals(Optional.of(Outcome.FAILED), settled.outcome());
+                assertEquals(Optional.of(TaskResult.FAILED), settled.outcome());
                 assertEquals(3, statusCalls.get());
                 assertEquals(0, replayCalls.get());
                 assertEquals(0,
@@ -275,7 +284,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         enable();
         var runtime = open();
         start(runtime, true);
-        var server = new ServerRef("native-database-server");
+        var server = new ServerId("native-database-server");
         runtime.servers().saveServerProfile(
             ServerProfile.fromStored(
                 new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
@@ -287,18 +296,18 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                     return null;
                 var request = (CommandRequest) arguments[0];
                 if (request.script().contains("--noprofile"))
-                    return new OperationResult<CommandResult>(Outcome.UNKNOWN, Optional.empty(),
+                    return new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_INSTALL_REPLY_LOST",
                             "Original installer reply was not observed", Map.of(), Optional.empty())));
-                return new OperationResult<CommandResult>(Outcome.SUCCEEDED,
+                return new OperationResult<CommandResult>(TaskResult.SUCCEEDED,
                     Optional.of(new CommandResult(Optional.of(1), "", "", false)), Optional.empty());
             });
-        var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+        var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original helper installation", List.of(server.id()), true), task -> {
-            DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
+            DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
             var outcome = new DeploymentProtocolBootstrap(context.tasks(), task, server, session,
                 context.interaction()).ensure();
-            var facts = DeploymentProtocolBootstrapJournal.find(context.tasks(), task).orElseThrow().facts();
+            var facts = DeploymentProtocolBootstrapActionLog.find(context.tasks(), task).orElseThrow().facts();
             assertEquals("DISPATCHED", facts.phase());
             Files.writeString(remote.resolve("bootstrap-receipt"), DeploymentHelperInstallerScript.receipt(
                 task.id(), facts.operationId(), facts.serverDigest(), facts.bodyDigest(), "SUCCEEDED"));
@@ -307,14 +316,14 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
             Thread.sleep(50);
         assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
-        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentProtocolBootstrapJournal.KEY));
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentProtocolBootstrapActionLog.KEY));
     }
 
     private void original(int port, boolean knownFailure) throws Exception {
         enable();
         var runtime = open();
         start(runtime, true);
-        var server = new ServerRef("native-database-server");
+        var server = new ServerId("native-database-server");
         runtime.servers().saveServerProfile(
             ServerProfile.fromStored(
                 new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
@@ -328,16 +337,16 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 var request = (CommandRequest) arguments[0];
                 if (request.script().contains("native-db start")) {
                     peer(remote, knownFailure ? "start-failed" : "start", request.stdin());
-                    return new OperationResult<CommandResult>(Outcome.UNKNOWN, Optional.empty(),
+                    return new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
                             "Original helper reply was not observed", Map.of(), Optional.empty())));
                 }
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
-        var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+        var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original native DB operation", List.of(server.id()), true), task -> {
-            DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
+            DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
             return new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
                 .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64));
         });
@@ -354,7 +363,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         enable();
         var runtime = open();
         start(runtime, true);
-        var server = new ServerRef("native-database-server");
+        var server = new ServerId("native-database-server");
         runtime.servers().saveServerProfile(
             ServerProfile.fromStored(
                 new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
@@ -367,26 +376,26 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                 var request = (CommandRequest) arguments[0];
                 if (request.script().contains("native-db start")) {
                     peer(remote, "start", request.stdin());
-                    return new OperationResult<CommandResult>(Outcome.UNKNOWN, Optional.empty(),
+                    return new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
                             "Original helper reply was not observed", Map.of(), Optional.empty())));
                 }
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
-        var entry = new DeploymentDatabasePlanJournal.Entry("service", "main");
-        var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+        var entry = new DeploymentDatabasePlanActionLog.Entry("service", "main");
+        var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original indexed native database", List.of(server.id()), true), task -> {
-            DeploymentStaticPreparationJournal.begin(context.tasks(), task, server);
-            var plan = DeploymentDatabasePlanJournal.begin(context.tasks(), task, server, "a".repeat(64),
+            DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
+            var plan = DeploymentDatabasePlanActionLog.begin(context.tasks(), task, server, "a".repeat(64),
                 List.of(entry));
             byte[] password = "controlled-password".getBytes(StandardCharsets.UTF_8);
             try {
                 var saved = new DeploymentSecretProvisionFlow(context).saveBorrowedWithinTask(task, server,
                     "deployment-secret-revision." + entry.key(),
-                    new DeploymentSecretReference("controlled-database", 1), "deployment-database",
+                    new DeploymentSecretRef("controlled-database", 1), "deployment-database",
                     java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS), password);
-                assertEquals(Outcome.SUCCEEDED, saved.outcome(), saved.toString());
+                assertEquals(TaskResult.SUCCEEDED, saved.outcome(), saved.toString());
             } finally {
                 Arrays.fill(password, (byte) 0);
             }
@@ -395,18 +404,18 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
                     Map.of("engine", "POSTGRESQL", "instanceId", "postgresql-16", "fingerprint",
                         "a".repeat(64)),
                     Map.of(), "service/main")
-                .outcome() == Outcome.UNKNOWN
-                ? new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                .outcome() == TaskResult.UNKNOWN
+                ? new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_ORIGINAL_REPLY_LOST",
                     "Original helper reply was not observed", Map.of(),
                     Optional.empty())))
-                : new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.empty());
+                : new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
         });
         for (int attempt = 0; attempt < 100 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
             Thread.sleep(50);
         assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
-        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentDatabasePlanJournal.KEY));
-        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentNativeDatabaseJournal.KEY + "." + entry.key()));
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentDatabasePlanActionLog.KEY));
+        assertEquals(1, checkpoint(runtime, handle.id(), DeploymentNativeDatabaseActionLog.KEY + "." + entry.key()));
     }
 
     @Override
@@ -417,12 +426,12 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         else
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken cancellation) {
                 throw new AssertionError();
             }
@@ -465,7 +474,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
     }
 
     private static long checkpoint(PlatformRuntime runtime, UUID task) throws Exception {
-        return checkpoint(runtime, task, DeploymentNativeDatabaseJournal.KEY);
+        return checkpoint(runtime, task, DeploymentNativeDatabaseActionLog.KEY);
     }
 
     private static long checkpoint(PlatformRuntime runtime, UUID task, String key) throws Exception {
@@ -482,7 +491,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
     }
 
     private static OperationResult<CommandResult> reply(String stdout) {
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
     }
 

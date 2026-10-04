@@ -19,7 +19,7 @@ public final class DeploymentAgentPlanProtocol {
     public static DeploymentAgentPlan parse(JsonNode node) {
         JsonNode gate = node.get("applicationHealth");
         DeploymentAgentProtocol.exact(gate, Set.of("component", "health"));
-        var components = new ArrayList<DeploymentAgentPlan.Component>();
+        var components = new ArrayList<DeploymentAgentPlan.Part>();
         for (JsonNode item : array(node.get("components"), 16))
             components.add(component(item));
         return new DeploymentAgentPlan(DeploymentAiJson.text(node, "applicationId", 63),
@@ -29,7 +29,7 @@ public final class DeploymentAgentPlanProtocol {
     /** Parses one declared component and its exact runtime. / 解析一个声明组件及其精确运行定义。
      * @param node component object / 组件对象
      * @return typed component / 类型化组件 */
-    private static DeploymentAgentPlan.Component component(JsonNode node) {
+    private static DeploymentAgentPlan.Part component(JsonNode node) {
         DeploymentAgentProtocol.exact(node, Set.of("id", "dependencies", "evidence", "backend", "mode", "entrypoint",
             "arguments", "workingDirectory", "health", "ports", "resources", "configuration"));
         String id = DeploymentAiJson.text(node, "id", 63);
@@ -69,7 +69,7 @@ public final class DeploymentAgentPlanProtocol {
                 published, List.of(), health, DeploymentIdentityMode.CONTAINER_NON_ROOT, workload);
             default -> throw new IllegalArgumentException("Unsupported agent backend");
         };
-        return new DeploymentAgentPlan.Component(id, dependencies, evidence, runtime, resources(node.get("resources")),
+        return new DeploymentAgentPlan.Part(id, dependencies, evidence, runtime, resources(node.get("resources")),
             configuration(node.get("configuration")));
     }
 
@@ -133,24 +133,24 @@ public final class DeploymentAgentPlanProtocol {
     /** Parses nonsecret typed runtime configuration. / 解析不含秘密的类型化运行配置。
      * @param node configuration array / 配置数组
      * @return checked entries / 已检查条目 */
-    private static List<DeploymentConfigurationEntry> configuration(JsonNode node) {
-        var entries = new ArrayList<DeploymentConfigurationEntry>();
+    private static List<DeploymentConfigEntry> configuration(JsonNode node) {
+        var entries = new ArrayList<DeploymentConfigEntry>();
         for (JsonNode item : array(node, 64)) {
             DeploymentAgentProtocol.exact(item, Set.of("key", "value"));
             String key = DeploymentAiJson.text(item, "key", 64);
             if (key.matches("(?i).*(password|passwd|secret|token|api_?key|private_?key).*"))
                 throw new IllegalArgumentException("Agent credentials require a separate user secret workflow");
             JsonNode value = item.get("value");
-            DeploymentConfigurationValue typed;
+            DeploymentConfigValue typed;
             if (value.isTextual())
-                typed = new DeploymentConfigurationValue.Text(value.textValue());
+                typed = new DeploymentConfigValue.Text(value.textValue());
             else if (value.isIntegralNumber() && value.canConvertToLong())
-                typed = new DeploymentConfigurationValue.Number(value.longValue());
+                typed = new DeploymentConfigValue.Number(value.longValue());
             else if (value.isBoolean())
-                typed = new DeploymentConfigurationValue.Flag(value.booleanValue());
+                typed = new DeploymentConfigValue.Flag(value.booleanValue());
             else
                 throw new IllegalArgumentException("Agent configuration must be literal");
-            entries.add(new DeploymentConfigurationEntry(key, DeploymentConfigurationScopeType.RUNTIME, typed));
+            entries.add(new DeploymentConfigEntry(key, DeploymentConfigScopeType.RUNTIME, typed));
         }
         return List.copyOf(entries);
     }

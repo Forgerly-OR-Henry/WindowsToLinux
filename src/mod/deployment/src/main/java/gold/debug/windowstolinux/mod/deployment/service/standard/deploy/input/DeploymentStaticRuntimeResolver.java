@@ -24,7 +24,7 @@ public final class DeploymentStaticRuntimeResolver {
      * @param root root directory defining the filesystem boundary / 定义文件系统边界的根目录
      * @return constructed or resolved map / 构造或解析得到的映射
      */
-    public Map<String, String> defaults(DeploymentProjectKind type, DeploymentRuntimeAssessment suggested, Path root) {
+    public Map<String, String> defaults(DeploymentProjectKind type, DeploymentRuntimeReport suggested, Path root) {
         Map<String, String> values = new LinkedHashMap<>();
         values.put("healthMode",
             type == DeploymentProjectKind.STATIC_SITE || type == DeploymentProjectKind.SPRING_BOOT
@@ -68,7 +68,7 @@ public final class DeploymentStaticRuntimeResolver {
             values.put("healthMode", "PROCESS");
         if (type == DeploymentProjectKind.STATIC_SITE)
             values.put("exposure", "EXTERNAL");
-        ApplicationDeclaration.read(root, values);
+        ApplicationSpec.read(root, values);
         return values;
     }
 
@@ -82,7 +82,7 @@ public final class DeploymentStaticRuntimeResolver {
      */
     public List<DeploymentReviewField> missing(String component, DeploymentProjectKind type,
                                                Map<String, String> values) {
-        var completed = ApplicationDeclaration.completed(values);
+        var completed = ApplicationSpec.completed(values);
         return missingCompleted(component, type, completed);
     }
 
@@ -199,7 +199,7 @@ public final class DeploymentStaticRuntimeResolver {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public DeploymentRuntimeDefinition runtime(DeploymentProjectKind type, Map<String, String> v) {
-        v = ApplicationDeclaration.completed(v);
+        v = ApplicationSpec.completed(v);
         DeploymentHealthCheck health = health(v);
         if (type == DeploymentProjectKind.STATIC_SITE && !(health instanceof DeploymentHealthCheck.Http))
             throw new IllegalArgumentException("static sites require HTTP health checks");
@@ -232,7 +232,7 @@ public final class DeploymentStaticRuntimeResolver {
                 throw new IllegalArgumentException("generic delivery is outside standard recognition");
             case RECOGNITION_PREVIEW -> throw new IllegalArgumentException("recognition preview cannot deploy");
         };
-        return result.withWorkload(ApplicationDeclaration.resolve(v));
+        return result.withWorkload(ApplicationSpec.resolve(v));
     }
 
     /**
@@ -269,11 +269,11 @@ public final class DeploymentStaticRuntimeResolver {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public DeploymentHealthCheck health(Map<String, String> v) {
-        v = ApplicationDeclaration.completed(v);
+        v = ApplicationSpec.completed(v);
         int timeout = Integer.parseInt(v.getOrDefault("timeout", "10"));
         String mode = v.getOrDefault("healthMode", "TCP");
         if (v.getOrDefault("executionMode", "DAEMON").equals("ON_DEMAND") || mode.equals("COMMAND"))
-            return new DeploymentHealthCheck.Command(ApplicationDeclaration.command(v, "verification"),
+            return new DeploymentHealthCheck.Command(ApplicationSpec.command(v, "verification"),
                 v.getOrDefault("application.expectedOutput", ""), timeout);
         if (mode.equals("PROCESS"))
             return new DeploymentHealthCheck.Process(timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
@@ -282,7 +282,7 @@ public final class DeploymentStaticRuntimeResolver {
             return new DeploymentHealthCheck.Udp(port, v.getOrDefault("requestHex", ""),
                 v.getOrDefault("responseHex", ""),
                 v.keySet().stream().anyMatch(key -> key.startsWith("application.verification."))
-                    ? Optional.of(ApplicationDeclaration.command(v, "verification"))
+                    ? Optional.of(ApplicationSpec.command(v, "verification"))
                     : Optional.empty(),
                 timeout);
         if (mode.equals("HTTP"))
@@ -303,8 +303,8 @@ public final class DeploymentStaticRuntimeResolver {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public Optional<DeploymentAccessUrl> access(Map<String, String> v, String host) {
-        v = ApplicationDeclaration.completed(v);
-        var external = ApplicationDeclaration.resolve(v).endpoints().stream()
+        v = ApplicationSpec.completed(v);
+        var external = ApplicationSpec.resolve(v).endpoints().stream()
             .filter(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL)
             .filter(endpoint -> endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTP
                 || endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTPS)

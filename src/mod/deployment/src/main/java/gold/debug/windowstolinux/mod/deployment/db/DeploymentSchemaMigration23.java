@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.SchemaMigration;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaMigration;
 
 /** Copies exact schema 2 into a separate schema 3 generation without changing its source. / 将精确结构2复制到独立结构3代次，不改变来源。 */
 public final class DeploymentSchemaMigration23 implements SchemaMigration {

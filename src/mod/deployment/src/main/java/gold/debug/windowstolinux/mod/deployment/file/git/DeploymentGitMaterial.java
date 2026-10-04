@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.file.git;
 
 import java.util.Objects;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 
 /** Immutable resolved Git identity with separately owned analysis material and archive. / 不可变解析 Git 身份及分别所属的分析素材和归档。

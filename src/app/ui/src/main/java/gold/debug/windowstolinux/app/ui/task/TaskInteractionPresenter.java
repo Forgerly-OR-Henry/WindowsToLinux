@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.ui.task;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import java.awt.*;
 import java.util.concurrent.FutureTask;
 
@@ -10,9 +7,15 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** Presents full task review in dialogs owned by the platform privacy window. / 在平台隐私窗口所属对话框内呈现完整任务审核。 */
 public final class TaskInteractionPresenter
@@ -43,8 +46,8 @@ public final class TaskInteractionPresenter
      * @param cancellation original cancellation / 原取消
      * @return explicit choice or skip on dismissal / 明确选择，关闭时不处理 */
     @Override
-    public int fileConflict(gold.debug.windowstolinux.appapi.file.FileInfo source,
-                            gold.debug.windowstolinux.appapi.file.FileInfo target, boolean directory,
+    public int fileConflict(gold.debug.windowstolinux.appapi.file.model.FileInfo source,
+                            gold.debug.windowstolinux.appapi.file.model.FileInfo target, boolean directory,
                             TaskSnapshot task, CancelToken cancellation) {
         return onEdt(() -> {
             var description = new JTextArea(messages.text(directory ? "file.conflict.directory" : "file.conflict.file") + "\n\n"
@@ -71,7 +74,7 @@ public final class TaskInteractionPresenter
      * @param cancellation cooperative cancellation / 协作取消
      * @return explicit user choice / 明确用户选择 */
     @Override
-    public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server, TaskSnapshot task,
+    public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server, TaskSnapshot task,
                                                    CancelToken cancellation) {
         return onEdt(() -> {
             var description = new JTextArea(messages.text("transfer.conflict.explanation") + "\n\n"
@@ -105,7 +108,7 @@ public final class TaskInteractionPresenter
      * @param cancellation cooperative cancellation / 协作取消
      * @return explicit retry or termination / 明确重试或终止 */
     @Override
-    public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+    public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                CancelToken cancellation) {
         return onEdt(() -> {
             var description = new JTextArea(messages.text("transfer.stall.explanation") + "\n\n"

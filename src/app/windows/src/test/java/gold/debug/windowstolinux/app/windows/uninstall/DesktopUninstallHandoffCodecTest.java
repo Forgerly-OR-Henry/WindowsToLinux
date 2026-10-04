@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.windows.uninstall;
 
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallDecisionType;
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallEvent;
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallState;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -12,8 +16,8 @@ import java.util.UUID;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
-import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffEnvelopeCodec;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -29,7 +33,7 @@ class DesktopUninstallHandoffCodecTest {
         byte[] document = codec.write(handoff, key(4));
 
         assertEquals(handoff, codec.read(document, key(4)));
-        WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
+        DesktopHandoffException failure = assertThrows(DesktopHandoffException.class,
             () -> codec.read(document, key(5)));
         assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
@@ -39,7 +43,7 @@ class DesktopUninstallHandoffCodecTest {
         byte[] document = new DesktopHandoffEnvelopeCodec().write(DesktopHandoffEnvelopeCodec.PurposeType.UNINSTALL,
             new byte[]{0, 0, 0, 2}, key(4));
 
-        WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
+        DesktopHandoffException failure = assertThrows(DesktopHandoffException.class,
             () -> new DesktopUninstallHandoffCodec().read(document, key(4)));
 
         assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());

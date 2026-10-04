@@ -77,7 +77,7 @@ public final class ModClassLoader extends PluginClassLoader {
     /** Rechecks original code and exact provider signatures before author execution. / 作者执行前重检原代码及精确提供方签名。
      * @return inspected owner metadata / 已检验所有者元数据
      * @throws IOException if code admission fails / 代码准入失败时 */
-    public ModCodeInspection inspectCode() throws IOException {
+    public ModCodeChecker inspectCode() throws IOException {
         return inspectCode(new IdentityHashMap<>(), Collections.newSetFromMap(new IdentityHashMap<>()));
     }
 
@@ -86,8 +86,8 @@ public final class ModClassLoader extends PluginClassLoader {
      * @param visiting active recursion path / 活动递归路径
      * @return inspected metadata / 已检验元数据
      * @throws IOException if unavailable, cyclic or invalid / 不可用、循环或无效时 */
-    private ModCodeInspection inspectCode(Map<ModClassLoader, ModCodeInspection> inspected,
-                                          Set<ModClassLoader> visiting) throws IOException {
+    private ModCodeChecker inspectCode(Map<ModClassLoader, ModCodeChecker> inspected,
+                                       Set<ModClassLoader> visiting) throws IOException {
         if (isClosed())
             throw new IOException("Mod loader is closed");
         if (inspected.containsKey(this))
@@ -103,11 +103,11 @@ public final class ModClassLoader extends PluginClassLoader {
                     throw new IOException("Invalid code source", invalid);
                 }
             }
-            var bindings = new HashMap<String, ModCodeInspection>();
+            var bindings = new HashMap<String, ModCodeChecker>();
             for (var entry : exports.entrySet()) {
                 bindings.put(entry.getKey(), entry.getValue().inspectCode(inspected, visiting));
             }
-            var code = ModCodeInspection.read(manifest, sources);
+            var code = ModCodeChecker.read(manifest, sources);
             code.validate(true, bindings);
             inspected.put(this, code);
             return code;

@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.app.main.mod;
 
-import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -24,26 +14,41 @@ import java.util.jar.*;
 import javax.swing.*;
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.mod.ModHostLease;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
-import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.ExtensionPagePane;
-
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
-
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -51,8 +56,8 @@ class ModLifecycleIntegrationTest {
     static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
         throws Exception {
         var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
-            new gold.debug.windowstolinux.app.db.security.SecurityRepository(
-                new gold.debug.windowstolinux.app.db.connect.RepositoryConnections(
+            new gold.debug.windowstolinux.app.db.security.SecurityStore(
+                new gold.debug.windowstolinux.app.db.connect.StoreConnections(
                     db::openConnection)));
         if (security.securityState().configured())
             security.unlock("fixture-password".toCharArray());
@@ -79,10 +84,10 @@ class ModLifecycleIntegrationTest {
 
     static final String SOURCE = """
         package example.fixture;
-        import gold.debug.windowstolinux.appapi.mod.*;
-        import gold.debug.windowstolinux.appapi.task.*;
-        
-        import gold.debug.windowstolinux.appapi.ui.*;
+        import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+        import gold.debug.windowstolinux.appapi.task.result.ApiException; import gold.debug.windowstolinux.appapi.task.result.OperationResult; import gold.debug.windowstolinux.appapi.task.result.Problem; import gold.debug.windowstolinux.appapi.task.result.ProblemCode; import gold.debug.windowstolinux.appapi.task.run.TaskHandle; import gold.debug.windowstolinux.appapi.task.model.TaskRequest; import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+
+        import gold.debug.windowstolinux.appapi.ui.page.ModPage; import gold.debug.windowstolinux.appapi.ui.page.PageRegistration; import gold.debug.windowstolinux.appapi.ui.page.PageSpec; import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
         import java.util.*;
         import java.util.concurrent.*;
         import javax.swing.*;
@@ -96,8 +101,8 @@ class ModLifecycleIntegrationTest {
             context.tasks().registerRecovery("insert",(previous,original)->{
               try(var connection=context.db().openConnection(original);var statement=connection.prepareStatement("SELECT payload FROM records WHERE task_id=?")){
                 statement.setObject(1,original.id());try(var rows=statement.executeQuery()){
-                  if(!rows.next())return new OperationResult<Void>(Outcome.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"MISSING_RECORD","Business row is absent",Map.of(),Optional.empty())));
-                  return new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty());
+                  if(!rows.next())return new OperationResult<Void>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"MISSING_RECORD","Business row is absent",Map.of(),Optional.empty())));
+                  return new OperationResult<Void>(TaskResult.SUCCEEDED,Optional.empty(),Optional.empty());
                 }
               }
             });
@@ -112,7 +117,7 @@ class ModLifecycleIntegrationTest {
                     if(!release.await(8,TimeUnit.SECONDS))throw new IllegalStateException("Test release timed out");
                     if(failAfterCommit)throw new IllegalStateException("Unacknowledged committed effect");
                   }
-                  return new OperationResult<Integer>(Outcome.SUCCEEDED,Optional.of(42),Optional.empty());
+                  return new OperationResult<Integer>(TaskResult.SUCCEEDED,Optional.of(42),Optional.empty());
                 });}catch(ApiException failure){throw new IllegalStateException(failure);}});
                 return panel;
               }
@@ -259,7 +264,7 @@ class ModLifecycleIntegrationTest {
                     });
                     assertThrows(ApiException.class, () -> authorTasks.submit(
                         new TaskRequest("prestart", "Denied", List.of(), true),
-                        task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                        task -> new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())));
                     session.start();
                     assertEquals(1, pages.contributions().size());
                     scope.open("main");
@@ -366,9 +371,9 @@ class ModLifecycleIntegrationTest {
                 assertTrue(session.resourcesClosed());
                 assertThrows(ApiException.class, () -> authorTasks.submit(
                     new TaskRequest("insert", "Denied", List.of(), true),
-                    task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                    task -> new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())));
                 assertThrows(ApiException.class, () -> authorTasks.registerRecovery("insert", (previous,
-                                                                                               task) -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                                                                                               task) -> new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())));
             }
         }
     }
@@ -391,7 +396,7 @@ class ModLifecycleIntegrationTest {
                 p.setObject(1, original);
                 p.executeUpdate();
             }
-            assertFalse(ledger.complete(original, Outcome.UNKNOWN, "{\"outcome\":\"UNKNOWN\"}", false));
+            assertFalse(ledger.complete(original, TaskResult.UNKNOWN, "{\"outcome\":\"UNKNOWN\"}", false));
         }
         try (var db = PlatformDatabase.open(work.resolve("data"), PROTECTION);
              var security = security(db);
@@ -414,7 +419,7 @@ class ModLifecycleIntegrationTest {
             assertThrows(ApiException.class, () -> scope.open("main"));
             assertThrows(ApiException.class,
                 () -> authorTasks.submit(new TaskRequest("insert", "Denied", List.of(), true),
-                    task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                    task -> new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())));
             assertEquals(TaskState.ENDED,
                 tasks.reconcile(original).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
             session.stop(StopReason.RECOVERY_FINISHED);
@@ -422,7 +427,7 @@ class ModLifecycleIntegrationTest {
             var normal = tasks.bind(identity.ownerId(), "1.0.0", false);
             assertThrows(ApiException.class,
                 () -> normal.submit(new TaskRequest("insert", "Restart required", List.of(), true),
-                    task -> new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty())));
+                    task -> new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())));
         }
         Files.delete(work.resolve("fixture.jar"));
     }

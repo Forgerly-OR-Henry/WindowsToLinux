@@ -10,10 +10,10 @@ import java.util.List;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.DeploymentProjectAssessment;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.DeploymentProjectReport;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.language.SourceLanguageType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,7 +26,7 @@ class NativeArchitectureInspectionTest {
     @Test
     void admitsEveryDependencyFreeNativeArchitecture() throws Exception {
         for (Fixture fixture : List.of(javaSource(), kotlin(), php(), ruby(), cmake())) {
-            DeploymentProjectAssessment assessment = analyze(fixture);
+            DeploymentProjectReport assessment = analyze(fixture);
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(), fixture.type().name());
             assertEquals(fixture.tool(), assessment.facts().orElseThrow().buildTool(), fixture.type().name());
             assertTrue(assessment.facts().orElseThrow().conflicts().isEmpty(), fixture.type().name());
@@ -70,7 +70,7 @@ class NativeArchitectureInspectionTest {
                 + "add_executable(second src/main.c)\n");
 
         for (Fixture fixture : List.of(java, kotlin, php, ruby, cmake)) {
-            DeploymentProjectAssessment assessment = analyze(fixture);
+            DeploymentProjectReport assessment = analyze(fixture);
             assertFalse(assessment.admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING, fixture.type().name());
         }
     }
@@ -83,7 +83,7 @@ class NativeArchitectureInspectionTest {
             .replace(" CXX", "").replace(" cxx_std_20", "");
         Files.writeString(cmake.root().resolve("CMakeLists.txt"), lists);
 
-        DeploymentProjectAssessment assessment = analyze(cmake);
+        DeploymentProjectReport assessment = analyze(cmake);
 
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
         assertEquals(java.util.Set.of(SourceLanguageType.C),
@@ -113,8 +113,8 @@ class NativeArchitectureInspectionTest {
         assertFalse(analyze(preset).admission() == DeploymentAdmissionStatus.READY_FOR_PLANNING);
     }
 
-    private DeploymentProjectAssessment analyze(Fixture fixture) throws Exception {
-        return new DeploymentAnalysisCoordinator().analyze(fixture.root(), fixture.type());
+    private DeploymentProjectReport analyze(Fixture fixture) throws Exception {
+        return new DeploymentAnalysisFlow().analyze(fixture.root(), fixture.type(), (fixture.root()).getFileName().toString());
     }
 
     @Test

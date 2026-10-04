@@ -86,7 +86,7 @@ class ModReinstallationLedgerTest {
             assertEquals(SCOPE, ledger.execution(id).files());
             assertEquals(CHECKPOINT, ledger.execution(id).checkpoint());
             assertThrows(SQLException.class, () -> review(ledger));
-            assertThrows(SQLException.class, () -> new ModDeletionLedger(db, root).review(OWNER));
+            assertThrows(SQLException.class, () -> new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files()).review(OWNER));
             published(ledger, id);
             ledger.registered(id, CHECKPOINT);
             assertEquals("READY", value(db, "SELECT state FROM mod_version WHERE version=?", VERSION));

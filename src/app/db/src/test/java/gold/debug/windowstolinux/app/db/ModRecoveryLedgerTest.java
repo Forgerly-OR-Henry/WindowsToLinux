@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static gold.debug.windowstolinux.app.db.ModActivationLedgerTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -13,12 +7,15 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.app.db.mod.ModRecoveryLedger;
+import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -154,7 +151,7 @@ class ModRecoveryLedgerTest {
             var dependency = tasks.retain(task, new TaskResource("MOD", PROVIDER, PROVIDER, false));
             assertThrows(SQLException.class, () -> ledger.released(retained));
             tasks.release(task, dependency);
-            tasks.completeAndArchive(task, Outcome.SUCCEEDED, "fixture", false, () -> {
+            tasks.completeAndArchive(task, TaskResult.SUCCEEDED, "fixture", false, () -> {
             });
             ledger.archive(ledger.released(retained));
             assertEquals(0, count(db, "mod_operation"));

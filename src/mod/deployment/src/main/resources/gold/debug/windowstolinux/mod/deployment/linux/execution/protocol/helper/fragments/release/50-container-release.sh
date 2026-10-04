@@ -66,7 +66,7 @@ parse_container_parameters() {
 save_container_parameters() {
     local target="$1" spec source destination mode
     {
-        if [ "$runtime_identity_policy" != LEGACY_UNSPECIFIED ]; then printf 'identity-v2\n%s\n%s\n' "$runtime_identity_policy" "$application_payload"; fi
+        printf 'identity-v2\n%s\n%s\n' "$runtime_identity_policy" "$application_payload"
         printf '%s\n' "$deployment_configuration_digest"
         printf '%s\n' "${#deployment_secret_identifiers[@]}"
         local index=0

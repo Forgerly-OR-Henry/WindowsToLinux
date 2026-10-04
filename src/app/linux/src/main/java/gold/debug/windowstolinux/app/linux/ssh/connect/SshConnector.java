@@ -1,28 +1,26 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
-import gold.debug.windowstolinux.app.linux.sftp.SftpTransfer;
-import gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver;
-import gold.debug.windowstolinux.app.linux.sftp.TransferJournal;
-import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
-import gold.debug.windowstolinux.app.linux.sftp.TransferProgressListener;
-
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.*;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.TransferRequest;
-import gold.debug.windowstolinux.appapi.linux.TransferResult;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.app.linux.sftp.SftpTransfer;
+import gold.debug.windowstolinux.app.linux.sftp.TransferActionLog;
+import gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver;
+import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
+import gold.debug.windowstolinux.app.linux.sftp.TransferProgressListener;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import org.apache.sshd.client.SshClient;
 import org.apache.sshd.client.auth.keyboard.UserAuthKeyboardInteractiveFactory;
 import org.apache.sshd.client.auth.keyboard.UserInteraction;
@@ -38,6 +36,9 @@ import org.apache.sshd.core.CoreModuleProperties;
 
 /** Owns platform SSH clients without importing deployment code or ambient credentials. / 持有平台 SSH 客户端，不引入部署代码或环境凭据。 */
 public final class SshConnector implements AutoCloseable {
+    /** Configured SSH heartbeat interval in seconds. / 已配置的 SSH 心跳间隔秒数。 */
+    private final int heartbeatSeconds;
+
     /** Connections retained until client and trust callbacks have actually closed. / 客户端及信任回调实际结束前保留的连接。 */
     private final Set<Connection> connections = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -46,6 +47,14 @@ public final class SshConnector implements AutoCloseable {
 
     /** Creates a connector without starting network or background resources. / 创建连接器，不启动网络或后台资源。 */
     public SshConnector() {
+        this(30);
+    }
+
+    /** Captures the startup configuration. / 捕获启动配置。
+     * @param heartbeatSeconds supplied startup dependency / 启动依赖
+     */
+    public SshConnector(int heartbeatSeconds) {
+        this.heartbeatSeconds = heartbeatSeconds;
     }
 
     /**
@@ -223,7 +232,7 @@ public final class SshConnector implements AutoCloseable {
             client.setUserInteraction(UserInteraction.NONE);
             client.setUserAuthFactories(
                 List.of(UserAuthPasswordFactory.INSTANCE, UserAuthKeyboardInteractiveFactory.INSTANCE));
-            CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, Duration.ofSeconds(30));
+            CoreModuleProperties.HEARTBEAT_INTERVAL.set(client, Duration.ofSeconds(heartbeatSeconds));
             CoreModuleProperties.HEARTBEAT_NO_REPLY_MAX.set(client, 3);
             client.setServerKeyVerifier((ignored, address, key) -> {
                 callbacks.incrementAndGet();
@@ -339,7 +348,7 @@ public final class SshConnector implements AutoCloseable {
                         "SSH connection requires closure after unfinished work");
                 command = new SshCommandExecution(session, request);
                 var result = command.run(cancellation);
-                uncertain = result.outcome() == Outcome.UNKNOWN;
+                uncertain = result.outcome() == TaskResult.UNKNOWN;
                 if (command.close())
                     command = null;
                 return result;
@@ -363,7 +372,7 @@ public final class SshConnector implements AutoCloseable {
          */
         public OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
                                                         Duration timeout, CancelToken cancellation, TransferProgressListener progress,
-                                                        TransferConflictResolver conflicts, TransferJournal journal) throws ApiException {
+                                                        TransferConflictResolver conflicts, TransferActionLog journal) throws ApiException {
             return transfer(request, sha256, upload, timeout, cancellation, progress, conflicts, journal, null, false);
         }
 
@@ -377,7 +386,7 @@ public final class SshConnector implements AutoCloseable {
          * @return verified recovery result or uncertainty / 经核验恢复结果或不确定性
          * @throws ApiException if admission fails / 准入失败时 */
         public OperationResult<TransferResult> recoverTransfer(TransferPlan plan, boolean discard, Duration timeout,
-                                                               CancelToken cancellation, TransferProgressListener progress, TransferJournal journal)
+                                                               CancelToken cancellation, TransferProgressListener progress, TransferActionLog journal)
             throws ApiException {
             Objects.requireNonNull(plan);
             return transfer(plan.request(), plan.source().sha256(), plan.upload(), timeout, cancellation, progress,
@@ -399,7 +408,7 @@ public final class SshConnector implements AutoCloseable {
          * @throws ApiException if transport admission fails / 传输准入失败时 */
         private OperationResult<TransferResult> transfer(TransferRequest request, String sha256, boolean upload,
                                                          Duration timeout, CancelToken cancellation, TransferProgressListener progress,
-                                                         TransferConflictResolver conflicts, TransferJournal journal, TransferPlan recovery, boolean discard)
+                                                         TransferConflictResolver conflicts, TransferActionLog journal, TransferPlan recovery, boolean discard)
             throws ApiException {
             worker();
             boolean nestedFile = fileOwner == Thread.currentThread();
@@ -414,10 +423,10 @@ public final class SshConnector implements AutoCloseable {
                 transfer = new SftpTransfer(session, request, sha256, upload, timeout, cancellation, conflicts, journal,
                     progress, recovery, discard);
                 var result = transfer.run();
-                uncertain = result.outcome() == Outcome.UNKNOWN;
+                uncertain = result.outcome() == TaskResult.UNKNOWN;
                 if (transfer.close()) {
                     result = transfer.afterClose(result);
-                    uncertain = result.outcome() == Outcome.UNKNOWN;
+                    uncertain = result.outcome() == TaskResult.UNKNOWN;
                     transfer = null;
                 } else {
                     uncertain = true;

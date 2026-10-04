@@ -1,37 +1,35 @@
 package gold.debug.windowstolinux.app.service.task;
 
+import java.sql.SQLException;
+import java.util.*;
+import java.util.concurrent.*;
+
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.db.task.TaskResourceObservation;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.RecoveryRegistration;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
-import java.sql.SQLException;
-import java.util.*;
-import java.util.concurrent.*;
-
-import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.recover.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 
 /** Runs caller-bound author work after durable admission and preserves unfinished ownership. / 在持久化准入后运行绑定调用方的作者工作，并保留未完成归属。 */
 public final class PlatformTaskRuntime implements AutoCloseable {
@@ -120,6 +118,37 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
+        /** Records an original callback exception without trusting its message or inventing a saved identifier. / 记录原回调异常，不信任异常消息或虚构已保存编号。
+         * @param context authentic current task / 真实当前任务
+         * @param failure original cause and stack / 原原因及堆栈
+         * @param code preserved public outcome category / 保留的公开结果类别
+         * @param event stable host event / 稳定宿主事件
+         * @param message fixed non-secret explanation / 固定非秘密说明
+         * @return safe public evidence, with a saved identifier when available / 安全公开依据，可用时含已保存编号 */
+        public Problem recordFailure(TaskContext context, Throwable failure, ProblemCode code, String event, String message) {
+            Map<String, String> identity;
+            synchronized (PlatformTaskRuntime.this) {
+                var execution = executions.get(context.id());
+                identity = execution != null && execution.context == context
+                    ? Map.of("taskId", context.id().toString(), "ownerId", execution.snapshot.ownerId()) : Map.of();
+            }
+            var problem = new Problem(code, event, message, identity, Optional.empty());
+            try {
+                var saved = observation.diagnostics.apply(failure, problem);
+                synchronized (PlatformTaskRuntime.this) {
+                    var execution = executions.get(context.id());
+                    if (saved.isPresent() && execution != null && execution.context == context)
+                        execution.lastDiagnostic = saved;
+                }
+                return new Problem(code, event, message, identity, saved);
+            } catch (RuntimeException | Error recorderFailure) {
+                var fatal = TaskConclusion.fatal(recorderFailure);
+                if (fatal != null)
+                    throw fatal;
+                return problem;
+            }
+        }
+
         /** Executes one admitted synchronous dependency call using the original credential and server scope. / 使用原凭据及服务器范围执行一次已准入同步依赖调用。
          * @param <T> copied synchronous result / 复制的同步结果
          * @param context original task / 原任务
@@ -134,7 +163,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @return copied result / 复制结果
          * @throws Exception if authority, work or complete cleanup fails / 授权、工作或完整清理失败时 */
         public <T> T dependencyCall(TaskContext context, String caller, String callerVersion, String provider,
-                                    String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
+                                    String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
                                     boolean recoveryOnly, DependencyAdmission resolver, Callable<T> work) throws Exception {
             if (javax.swing.SwingUtilities.isEventDispatchThread())
                 throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER",
@@ -183,25 +212,52 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
             var stack = dependencyStack.get();
             stack.push(scope);
+            Throwable original = null;
             try {
                 return authorized(context, caller, callerVersion, work);
             } catch (Exception | Error failure) {
-                reportUncertainEffect(context);
+                original = failure;
+                try {
+                    reportUncertainEffect(context);
+                } catch (RuntimeException | Error recorderFailure) {
+                    var fatal = TaskConclusion.fatal(failure);
+                    if (fatal == null)
+                        throw recorderFailure;
+                    if (recorderFailure != fatal)
+                        fatal.addSuppressed(recorderFailure);
+                    throw fatal;
+                }
                 throw failure;
             } finally {
                 stack.pop();
                 if (stack.isEmpty())
                     dependencyStack.remove();
-                synchronized (PlatformTaskRuntime.this) {
-                    scope.active = false;
-                    var execution = executions.get(context.id());
-                    if (!scope.resources.isEmpty() || execution.uncertainEffect) {
-                        execution.uncertainEffect = true;
-                        conclusion.uncertain(execution, "Dependency call resources or effects require reconciliation");
-                        throw TaskConclusion.error(ProblemCode.UNKNOWN, "SERVICE_RELEASE_PENDING",
-                            "Dependency resources or effects remain unconfirmed");
+                try {
+                    synchronized (PlatformTaskRuntime.this) {
+                        scope.active = false;
+                        var execution = executions.get(context.id());
+                        if (!scope.resources.isEmpty() || execution.uncertainEffect) {
+                            execution.uncertainEffect = true;
+                            conclusion.uncertain(execution, "Dependency call resources or effects require reconciliation");
+                            throw TaskConclusion.error(ProblemCode.UNKNOWN, "SERVICE_RELEASE_PENDING",
+                                "Dependency resources or effects remain unconfirmed");
+                        }
+                        dependenciesSupport.releaseDependency(scope, scope.leases);
                     }
-                    dependenciesSupport.releaseDependency(scope, scope.leases);
+                } catch (ApiException | RuntimeException | Error cleanup) {
+                    var fatal = TaskConclusion.fatal(original);
+                    if (fatal != null) {
+                        if (cleanup != fatal)
+                            fatal.addSuppressed(cleanup);
+                        throw fatal;
+                    }
+                    fatal = TaskConclusion.fatal(cleanup);
+                    if (fatal != null)
+                        throw fatal;
+                    if (original == null)
+                        throw cleanup;
+                    if (cleanup != original)
+                        original.addSuppressed(cleanup);
                 }
             }
         }
@@ -285,6 +341,19 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      */
     public PlatformTaskRuntime(PlatformDatabase database, Admission admission, DesktopSecurityService security)
         throws SQLException {
+        this(database, admission, security, (failure, problem) -> Optional.empty());
+    }
+
+    /** Creates the runtime with the host's actual diagnostic recorder. / 使用宿主实际诊断记录器创建运行时。
+     * @param database original ledger / 原账本
+     * @param admission original resource admission / 原资源准入
+     * @param security original credential authority / 原凭据授权
+     * @param diagnostics returns an identifier only after bounded evidence was saved / 仅有界依据保存后返回编号
+     * @throws SQLException if original task recovery fails / 原任务恢复失败时 */
+    public PlatformTaskRuntime(PlatformDatabase database, Admission admission, DesktopSecurityService security,
+                               java.util.function.BiFunction<Throwable, Problem, Optional<UUID>> diagnostics)
+        throws SQLException {
+        this.observation = new TaskObservations(diagnostics);
         ledger = new TaskLedger(database);
         resourceObservation = new TaskResourceObservation(database);
         authorCheckpoints = new TaskAuthorCheckpoint(database);
@@ -302,8 +371,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     ledger.retryFinalization(original, () -> {
                     });
                 } catch (SQLException unconfirmed) {
-                    if (!conclusion.retainFinalization(execution, original))
+                    if (!conclusion.retainFinalization(execution, original)) {
                         executions.put(id, execution);
+                        observation.publish();
+                    }
                 }
                 continue;
             }
@@ -312,6 +383,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             var execution = new Execution<Void>(snapshot, null, true);
             execution.returned = true;
             executions.put(id, execution);
+            observation.publish();
         }
         authorizationSupport.refreshAuthorizationBlockers();
         securityRegistration = security.trackRetainedTasks(() -> uncredentialedTasks);
@@ -454,7 +526,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 throw TaskConclusion.error(ProblemCode.BUSY, "TASK_WAIT_DUPLICATE", "The original callback is already waiting");
             try {
                 ledger.waiting(context.id(), true, reason);
-                executions.get(context.id()).snapshot = ledger.queries().snapshot(context.id());
+                executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
                 waiting.put(context, decision);
             } catch (SQLException failure) {
                 throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_WAIT_PERSISTENCE", "Task waiting could not be saved");
@@ -493,7 +565,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             throw TaskConclusion.error(ProblemCode.BUSY, "TASK_WAIT_UNAVAILABLE", "The original callback cannot be continued");
         try {
             ledger.waiting(id, false, execution.snapshot.progressText());
-            execution.snapshot = ledger.queries().snapshot(id);
+            execution.setSnapshot(ledger.queries().snapshot(id));
             decision.complete(true);
             return execution.snapshot;
         } catch (SQLException failure) {
@@ -665,7 +737,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         requireCleanup(context, owner, version);
         try {
             ledger.releasePreviousSshConnections(context.id(), owner, version);
-            executions.get(context.id()).snapshot = ledger.queries().snapshot(context.id());
+            executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
         } catch (SQLException failure) {
             throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SSH_PREVIOUS_RELEASE",
                 "Previous SSH ownership could not be reconciled");
@@ -699,7 +771,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * @throws ApiException if the task lacks either required claim / 任务缺少任一必需占用时
      */
     public synchronized ResourceLease retainSchemaConnection(TaskContext context,
-                                                             gold.debug.windowstolinux.appapi.db.SchemaIdentity identity) throws ApiException {
+                                                             gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity) throws ApiException {
         var caller = requireContext(context);
         if (!caller.ownerId().equals(identity.ownerId())
             && !dependenciesSupport.delegated(context, identity.ownerId(), null))
@@ -799,7 +871,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
             for (var scope : scopes)
                 dependencyScopes.remove(scope.recovery.call());
-            executions.get(context.id()).snapshot = ledger.queries().snapshot(context.id());
+            executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
         } catch (SQLException uncertain) {
             reportUncertainEffect(context);
             throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_RECOVERY_PERSISTENCE",
@@ -848,8 +920,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * Returns all current-session snapshots for the host task page. / 返回所有当前会话快照，供宿主任务页面使用。
      * @return immutable task snapshots / 不可变任务快照
      */
-    public synchronized List<TaskSnapshot> snapshots() {
-        return executions.values().stream().map(t -> t.snapshot).toList();
+    public List<TaskSnapshot> snapshots() {
+        return observation.snapshots;
     }
 
     /** Observes exact original recovery registrations and live execution ownership. / 观察精确原恢复登记及活动执行归属。
@@ -920,30 +992,48 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 task.uncertainEffect = false;
                 var completion = new CompletableFuture<TaskSnapshot>();
                 workers.execute(() -> {
-                    OperationResult<Void> result;
+                    OperationResult<Void> result = TaskConclusion.unknown("TASK_RECOVERY_FAILED",
+                        "Recovery did not establish a known result");
+                    Error fatal = null;
                     try {
                         result = task.finalization != null
                             ? new OperationResult<>(task.observed.outcome(), Optional.empty(),
                             task.observed.problem())
                             : task.authorization.execute(
                             () -> Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context)));
-                        if (task.finalization == null && result.outcome() != Outcome.UNKNOWN)
+                        if (task.finalization == null && result.outcome() != TaskResult.UNKNOWN)
                             closeDependencyResources(task.context, task.snapshot.ownerId(),
                                 task.snapshot.ownerVersion());
-                    } catch (Exception | LinkageError | AssertionError failure) {
+                    } catch (Exception | Error failure) {
+                        fatal = TaskConclusion.fatal(failure);
                         result = TaskConclusion.unknown("TASK_RECOVERY_FAILED",
                             "Recovery did not establish a known result");
+                    } finally {
+                        try {
+                            boolean ended;
+                            synchronized (this) {
+                                task.reconciling = false;
+                                task.observed = new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                                ended = conclusion.record(task, true);
+                                conclusion.dispatch();
+                            }
+                            if (ended)
+                                task.completeObserved();
+                        } catch (RuntimeException | Error cleanup) {
+                            if (fatal == null) {
+                                completion.completeExceptionally(cleanup);
+                                throw cleanup;
+                            }
+                            if (cleanup != fatal)
+                                fatal.addSuppressed(cleanup);
+                        }
+                        if (fatal == null)
+                            completion.complete(task.snapshot);
+                        else
+                            completion.completeExceptionally(fatal);
                     }
-                    boolean ended;
-                    synchronized (this) {
-                        task.reconciling = false;
-                        task.observed = new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
-                        ended = conclusion.record(task, true);
-                        conclusion.dispatch();
-                    }
-                    if (ended)
-                        task.completeObserved();
-                    completion.complete(task.snapshot);
+                    if (fatal != null)
+                        throw fatal;
                 });
                 return completion.minimalCompletionStage();
             }
@@ -1072,6 +1162,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             this.recoveryOnly = recoveryOnly;
         }
 
+        /** Cursor ownership belongs to this exact activation, not only its stable Mod name. / 游标归属此精确启用，而非仅稳定 Mod 名称。 */
+        private final UUID cursorBinding = UUID.randomUUID();
+
         /**
          * Persists admission before returning a new task handle. / 返回新任务句柄前持久化准入。
          * @param <T> public result type / 公开结果类型
@@ -1134,6 +1227,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                         var task = new Execution<>(ledger.queries().snapshot(id), work, request.cancellable());
                         task.authorization = authorization;
                         executions.put(id, task);
+                        observation.publish();
                         retained = true;
                         conclusion.dispatch();
                         return task;
@@ -1147,6 +1241,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                             pending.returned = true;
                             conclusion.uncertain(pending, "Task admission could not be confirmed");
                             executions.put(id, pending);
+                            observation.publish();
                             retained = true;
                         } catch (SQLException unavailable) {
                             /* The persisted identity remains available after the engine is recovered. / 引擎恢复后仍可通过持久化身份核对。 */
@@ -1163,33 +1258,46 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
         /**
          * Returns only caller-owned active in-memory snapshots. / 仅返回调用方所属的活动内存快照。
-         * @param cursor optional decimal offset / 可选的十进制偏移
+         * @param cursor opaque binding-bound submission continuation / 绑定服务的不可见提交后续游标
          * @param limit bounded page size / 有界页容量
          * @return copied active snapshot page / 活动快照页副本
          * @throws ApiException if pagination is invalid / 分页无效时
          */
         @Override
         public PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException {
-            if (limit < 1 || limit > 200)
+            if (cursor == null || limit < 1 || limit > 200)
                 throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_PAGE", "Invalid task page size");
-            int offset;
-            try {
-                offset = cursor.map(Integer::parseInt).orElse(0);
-                if (offset < 0)
-                    throw new NumberFormatException();
-            } catch (NumberFormatException failure) {
-                throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_CURSOR", "Invalid task cursor");
-            }
             synchronized (PlatformTaskRuntime.this) {
                 if (revoked)
                     throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
                         "The owning Mod activation has closed");
-                var all = executions.values().stream().map(t -> t.snapshot)
-                    .filter(s -> s.ownerId().equals(owner) && s.state() != TaskState.ENDED).toList();
-                int start = Math.min(offset, all.size());
-                int end = (int) Math.min((long) start + limit, all.size());
-                return new PageSlice<>(all.subList(start, end),
-                    end < all.size() ? Optional.of(Integer.toString(end)) : Optional.empty());
+                long after = 0, upper = observation.sequence;
+                if (cursor.isPresent()) {
+                    try {
+                        String encoded = cursor.orElseThrow();
+                        if (encoded.isEmpty() || encoded.length() > 256) throw new IllegalArgumentException();
+                        var fields = new String(Base64.getUrlDecoder().decode(encoded), java.nio.charset.StandardCharsets.UTF_8).split(":", -1);
+                        if (fields.length != 3 || !cursorBinding.toString().equals(fields[0]))
+                            throw new IllegalArgumentException();
+                        after = Long.parseLong(fields[1]);
+                        upper = Long.parseLong(fields[2]);
+                        if (after < 0 || upper < after || upper > observation.sequence)
+                            throw new IllegalArgumentException();
+                    } catch (IllegalArgumentException invalid) {
+                        throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_CURSOR", "Invalid or expired task cursor");
+                    }
+                }
+                long lowerBound = after, upperBound = upper;
+                var page = executions.values().stream()
+                    .filter(t -> t.sequence > lowerBound && t.sequence <= upperBound
+                        && t.snapshot.ownerId().equals(owner) && t.snapshot.state() != TaskState.ENDED)
+                    .sorted(Comparator.comparingLong(t -> t.sequence)).limit(limit + 1L).toList();
+                boolean more = page.size() > limit;
+                var visible = more ? page.subList(0, limit) : page;
+                var next = more ? Optional.of(Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    (cursorBinding + ":" + visible.getLast().sequence + ":" + upperBound)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8))) : Optional.<String>empty();
+                return new PageSlice<>(visible.stream().map(t -> t.snapshot).toList(), next);
             }
         }
 
@@ -1431,6 +1539,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
      * @param <T> public result payload type / 公开结果载荷类型
      */
     private final class Execution<T> implements TaskHandle<T> {
+        /** Last actually saved exception receipt for this original task. / 此原任务最近实际保存的异常凭据。 */
+        private Optional<UUID> lastDiagnostic = Optional.empty();
+
         /** Last verified snapshot, or an explicit persistence uncertainty snapshot. / 最近核实的快照或明确的持久化不确定快照。 */
         private volatile TaskSnapshot snapshot;
 
@@ -1460,6 +1571,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
         /** Authentic host context associated with this execution. / 与此执行关联的真实宿主上下文。 */
         private final ExecutionContext context = new ExecutionContext(this);
+
+        /** Stable ordering while this original task identity remains registered. / 原任务身份保持登记期间的稳定顺序。 */
+        private final long sequence = ++observation.sequence;
 
         /** Original known result awaiting only platform archival. / 仅等待平台归档的原已知结果。 */
         private TaskLedger.Finalization finalization;
@@ -1493,6 +1607,13 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             return snapshot;
         }
 
+        /** Updates the original state and publishes its immutable observation. / 更新原状态并发布其不可变观察。
+         * @param value new authoritative task observation / 新权威任务观察 */
+        private void setSnapshot(TaskSnapshot value) {
+            snapshot = value;
+            observation.publish();
+        }
+
         /** Exposes observation without allowing author completion of the host promise. / 暴露观察，不允许作者完成宿主承诺。
          * @return read-only completion stage / 只读完成阶段 */
         @Override
@@ -1524,19 +1645,19 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 try {
                     if (snapshot.state() == TaskState.ENDED)
                         return;
-                    snapshot = ledger.cancelAndArchive(id(), this::releaseAuthorization);
+                    setSnapshot(ledger.cancelAndArchive(id(), this::releaseAuthorization));
                     ended = snapshot.state() == TaskState.ENDED;
                     cancelled = true;
                     authorizationSupport.refreshAuthorizationBlockers();
                     if (ended) {
                         returned = true;
-                        observed = new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                        observed = new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                     }
                     conclusion.dispatch();
                 } catch (TaskLedger.FinalizationException failure) {
                     cancelled = true;
                     returned = true;
-                    observed = new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                    observed = new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                     ended = conclusion.retainFinalization(this, failure.finalization());
                     conclusion.dispatch();
                 } catch (SQLException failure) {
@@ -1557,6 +1678,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         private void completeObserved() {
             synchronized (PlatformTaskRuntime.this) {
                 executions.remove(id(), this);
+                observation.publish();
                 authorizationSupport.refreshAuthorizationBlockers();
             }
             completion.complete(observed);
@@ -1614,7 +1736,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 requireContext(this);
                 try {
                     ledger.progress(id(), text);
-                    execution.snapshot = ledger.queries().snapshot(id());
+                    execution.setSnapshot(ledger.queries().snapshot(id()));
                 } catch (SQLException failure) {
                     throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_PROGRESS_PERSISTENCE",
                         "Task progress could not be saved");
@@ -1691,7 +1813,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                         && execution.snapshot.state() == TaskState.FINISHING)
                         ended = conclusion.record(execution, false);
                     else
-                        execution.snapshot = ledger.queries().snapshot(execution.id());
+                        execution.setSnapshot(ledger.queries().snapshot(execution.id()));
                     conclusion.dispatch();
                 } catch (SQLException failure) {
                     throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_RELEASE_PERSISTENCE",
@@ -1705,6 +1827,14 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
     /** Owns actual callback completion, original archival receipts and public diagnostics. / 持有实际回调完成、原归档凭据及公开诊断。 */
     private final class TaskConclusion {
+
+        /** Identifies errors that must leave the callback boundary without conversion. / 识别不可转换为普通回调失败的错误。
+         * @param failure original callback or cleanup failure / 原回调或清理失败
+         * @return fatal error, otherwise null / 致命错误，否则为空 */
+        private static Error fatal(Throwable failure) {
+            return failure instanceof VirtualMachineError || failure instanceof ThreadDeath ? (Error) failure : null;
+        }
+
         /** Creates this ledger/runtime collaborator. / 创建此账本或运行时职责协作者。 */
         private TaskConclusion() {
         }
@@ -1725,7 +1855,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 if (task.snapshot.state() == TaskState.QUEUED) {
                     try {
                         if (ledger.tryStart(task.snapshot.id())) {
-                            task.snapshot = ledger.queries().snapshot(task.snapshot.id());
+                            task.setSnapshot(ledger.queries().snapshot(task.snapshot.id()));
                             workers.execute(() -> conclusion.run(task));
                         }
                     } catch (SQLException | RejectedExecutionException failure) {
@@ -1741,22 +1871,46 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @param task admitted execution / 已准入执行
          */
         private <T> void run(Execution<T> task) {
-            OperationResult<T> result;
+            OperationResult<T> result = TaskConclusion.unknown("TASK_CALLBACK_UNCERTAIN",
+                "The callback did not establish a business outcome");
+            Error fatal = null;
             try {
-                result = task.authorization.execute(() -> Objects.requireNonNull(task.work.run(task.context)));
-            } catch (Exception | LinkageError | AssertionError failure) {
-                result = TaskConclusion.unknown("TASK_CALLBACK_UNCERTAIN",
-                    "The callback did not establish a business outcome");
+                try {
+                    result = task.authorization.execute(() -> Objects.requireNonNull(task.work.run(task.context)));
+                } catch (Exception | Error failure) {
+                    var fatalFailure = TaskConclusion.fatal(failure);
+                    if (fatalFailure != null)
+                        throw fatalFailure;
+                    var problem = failure instanceof ApiException api && api.problem().diagnosticId().isPresent()
+                        && task.lastDiagnostic.equals(api.problem().diagnosticId())
+                        ? new Problem(ProblemCode.UNKNOWN, "TASK_CALLBACK_UNCERTAIN",
+                        "The callback did not establish a business outcome", api.problem().context(), api.problem().diagnosticId())
+                        : capabilityCallbacks.recordFailure(task.context, failure, ProblemCode.UNKNOWN, "TASK_CALLBACK_UNCERTAIN",
+                        "The callback did not establish a business outcome");
+                    result = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(problem));
+                }
+            } catch (VirtualMachineError | ThreadDeath failure) {
+                fatal = failure;
+            } finally {
+                try {
+                    boolean ended;
+                    synchronized (PlatformTaskRuntime.this) {
+                        task.returned = true;
+                        task.observed = result;
+                        ended = conclusion.record(task, false);
+                        conclusion.dispatch();
+                    }
+                    if (ended)
+                        task.completeObserved();
+                } catch (RuntimeException | Error cleanup) {
+                    if (fatal == null)
+                        throw cleanup;
+                    if (cleanup != fatal)
+                        fatal.addSuppressed(cleanup);
+                }
             }
-            boolean ended;
-            synchronized (PlatformTaskRuntime.this) {
-                task.returned = true;
-                task.observed = result;
-                ended = conclusion.record(task, false);
-                conclusion.dispatch();
-            }
-            if (ended)
-                task.completeObserved();
+            if (fatal != null)
+                throw fatal;
         }
 
         /**
@@ -1767,13 +1921,18 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          */
         private boolean record(Execution<?> task, boolean reconciliation) {
             try {
-                if (task.uncertainEffect)
-                    task.observed = TaskConclusion.unknown("TASK_EFFECT_UNCERTAIN",
-                        "A platform operation requires explicit reconciliation");
-                task.snapshot = task.finalization == null
+                if (task.uncertainEffect) {
+                    var original = task.observed.problem();
+                    var problem = new Problem(ProblemCode.UNKNOWN, "TASK_EFFECT_UNCERTAIN",
+                        "A platform operation requires explicit reconciliation",
+                        original.map(Problem::context).orElse(Map.of("taskId", task.id().toString(), "ownerId", task.snapshot.ownerId())),
+                        original.flatMap(Problem::diagnosticId).or(() -> task.lastDiagnostic));
+                    task.observed = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(problem));
+                }
+                task.setSnapshot(task.finalization == null
                     ? ledger.completeAndArchive(task.snapshot.id(), task.observed.outcome(),
                     conclusion.evidence(task.observed), reconciliation, task::releaseAuthorization)
-                    : ledger.retryFinalization(task.finalization, task::releaseAuthorization);
+                    : ledger.retryFinalization(task.finalization, task::releaseAuthorization));
                 task.finalization = null;
                 authorizationSupport.refreshAuthorizationBlockers();
                 return task.snapshot.state() == TaskState.ENDED;
@@ -1793,7 +1952,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             task.finalization = original;
             try {
                 if (!ledger.retainFinalization(original)) {
-                    task.snapshot = original.snapshot();
+                    task.setSnapshot(original.snapshot());
                     task.finalization = null;
                     authorizationSupport.refreshAuthorizationBlockers();
                     return true;
@@ -1802,10 +1961,10 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 /* The in-memory receipt remains owned even when storage is unavailable. / 存储不可用时仍持有内存原凭据。 */
             }
             var previous = original.snapshot();
-            task.snapshot = new TaskSnapshot(previous.id(), previous.ownerId(), previous.ownerVersion(),
+            task.setSnapshot(new TaskSnapshot(previous.id(), previous.ownerId(), previous.ownerVersion(),
                 previous.type(), TaskState.FINISHING, Optional.empty(), previous.progressText(),
                 previous.startedAt(), Optional.empty(),
-                List.of("Original platform task summary requires finalization"));
+                List.of("Original platform task summary requires finalization")));
             authorizationSupport.refreshAuthorizationBlockers();
             return false;
         }
@@ -1813,8 +1972,8 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Recreates no business payload when completing a prior boot's known result. / 完成前次启动已知结果时不重建业务载荷。
          * @param outcome original committed business conclusion / 原已提交业务结论
          * @return keyless observation; original diagnostics remain in the summary / 无密钥观察，原诊断仍保存在摘要中 */
-        private static OperationResult<Void> recordedConclusion(Outcome outcome) {
-            return new OperationResult<>(outcome, Optional.empty(), outcome == Outcome.FAILED
+        private static OperationResult<Void> recordedConclusion(TaskResult outcome) {
+            return new OperationResult<>(outcome, Optional.empty(), outcome == TaskResult.FAILED
                 ? Optional.of(new Problem(ProblemCode.UNKNOWN, "TASK_RECORDED_FAILURE",
                 "The recorded task failed; consult its original summary", Map.of(), Optional.empty()))
                 : Optional.empty());
@@ -1856,9 +2015,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 /* Keep the local blocker even when the database is unavailable. / 数据库不可用时仍保留本地阻断原因。 */
             }
             var previous = task.snapshot;
-            task.snapshot = new TaskSnapshot(previous.id(), previous.ownerId(), previous.ownerVersion(),
+            task.setSnapshot(new TaskSnapshot(previous.id(), previous.ownerId(), previous.ownerVersion(),
                 previous.type(), TaskState.UNKNOWN, Optional.empty(), previous.progressText(), previous.startedAt(),
-                Optional.empty(), List.of(message));
+                Optional.empty(), List.of(message)));
         }
 
         /**
@@ -1880,10 +2039,36 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @return unknown result requiring reconciliation / 需要核对的未知结果
          */
         private static <T> OperationResult<T> unknown(String event, String message) {
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(TaskConclusion.error(ProblemCode.UNKNOWN, event, message).problem()));
         }
 
+    }
+
+    /** Keyless publication and cursor order with one actual owner. / 具有唯一实际所有者的无密钥发布及游标顺序。 */
+    private final TaskObservations observation;
+
+    /** Publishes task observations without exposing runtime locks to readers. / 发布任务观察，不向读取者暴露运行时锁。 */
+    private final class TaskObservations {
+        /** Immutable last published observations. / 最近发布的不可变观察。 */
+        private volatile List<TaskSnapshot> snapshots = List.of();
+
+        /** Monotonic admission order within this boot. / 本次启动内的单调准入顺序。 */
+        private long sequence;
+
+        /** Host's bounded saved-evidence recorder. / 宿主有界已保存依据记录器。 */
+        private final java.util.function.BiFunction<Throwable, Problem, Optional<UUID>> diagnostics;
+
+        /** Captures the actual host recorder. / 捕获实际宿主记录器。
+         * @param diagnostics saved-evidence sink / 已保存依据入口 */
+        private TaskObservations(java.util.function.BiFunction<Throwable, Problem, Optional<UUID>> diagnostics) {
+            this.diagnostics = Objects.requireNonNull(diagnostics);
+        }
+
+        /** Publishes observations after a monitor-owned state update; never used as authority. / 在监视器所属状态更新后发布观察，不用作授权依据。 */
+        private void publish() {
+            snapshots = executions.values().stream().map(t -> t.snapshot).toList();
+        }
     }
 
     /** Retains current-user authorization and publishes keyless task blockers. / 保留当前用户授权并发布无密钥任务阻断。 */
@@ -1939,7 +2124,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             try {
                 ledger.releaseDependency(scope.context.id(), scope.recovery, leases);
                 dependencyScopes.remove(scope.recovery.call());
-                executions.get(scope.context.id()).snapshot = ledger.queries().snapshot(scope.context.id());
+                executions.get(scope.context.id()).setSnapshot(ledger.queries().snapshot(scope.context.id()));
             } catch (SQLException failure) {
                 var execution = executions.get(scope.context.id());
                 execution.uncertainEffect = true;

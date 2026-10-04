@@ -4,7 +4,7 @@
   "name": "部署",
   "version": "1.1.0-dev.1",
   "description": "官方部署业务；当前源码阶段已接数据初始化，部署流程迁移进行中。",
-  "platformApiRange": "[1.0.0-dev.1,1.0.0)",
+  "platformApiRange": "[1.0.0-dev.2,1.0.0)",
   "minJavaVersion": 21,
   "mainJar": "main/deployment.jar",
   "entryClass": "gold.debug.windowstolinux.mod.deployment.Mod",

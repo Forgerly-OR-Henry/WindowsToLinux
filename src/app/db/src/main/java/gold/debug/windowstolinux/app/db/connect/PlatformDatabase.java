@@ -7,7 +7,6 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.init.DatabaseBootstrap;
 import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
-import org.h2.tools.RunScript;
 
 /** Owns one embedded H2 engine and its protected bootstrap material. / 持有唯一嵌入式 H2 引擎及受保护引导材料。 */
 public final class PlatformDatabase implements AutoCloseable {
@@ -65,32 +64,54 @@ public final class PlatformDatabase implements AutoCloseable {
      * @throws Exception if paths, pairing, locks, DDL or database identity fail / 路径、配对、锁、DDL 或数据库身份失败时
      */
     public static PlatformDatabase open(Path directory, DatabaseProtection protection) throws Exception {
+        return open(directory, protection, java.util.Map.of());
+    }
+
+    /** Seeds only a newly created database. / 仅为新数据库写入初始偏好。
+     * @param directory selected root / 数据根
+     * @param protection original protector / 原保护器
+     * @param initialPreferences non-secret initial preferences / 非秘密初始偏好
+     * @return owned engine / 所属引擎
+     * @throws Exception if bootstrap fails / 引导失败时 */
+    public static PlatformDatabase open(Path directory, DatabaseProtection protection, java.util.Map<String, String> initialPreferences) throws Exception {
+        return open(directory, protection, initialPreferences, true);
+    }
+
+    /** Opens APP storage while optionally deferring Mod recovery queries. / 打开 APP 存储，可延后 Mod 恢复查询。
+     * @param directory selected data root / 数据根
+     * @param protection user protection / 用户保护
+     * @param initialPreferences new-database preferences / 新库偏好
+     * @param modLoading whether Mod recovery is enabled / 是否启用 Mod 恢复
+     * @return owned database / 所属数据库
+     * @throws Exception if opening fails / 打开失败时 */
+    public static PlatformDatabase open(Path directory, DatabaseProtection protection,
+                                        java.util.Map<String, String> initialPreferences, boolean modLoading) throws Exception {
         try {
-            return openOwned(directory, protection);
-        } catch (gold.debug.windowstolinux.app.db.error.DesktopPersistenceException classified) {
+            return openOwned(directory, protection, java.util.Map.copyOf(initialPreferences), modLoading);
+        } catch (gold.debug.windowstolinux.app.db.error.DesktopStorageException classified) {
             throw classified;
         } catch (FileAlreadyExistsException | NotDirectoryException unavailable) {
-            throw gold.debug.windowstolinux.app.db.error.DesktopPersistenceException.create(
-                gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATA_DIRECTORY_UNAVAILABLE,
+            throw gold.debug.windowstolinux.app.db.error.DesktopStorageException.create(
+                gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATA_DIRECTORY_UNAVAILABLE,
                 "The platform data directory is unavailable", unavailable);
         } catch (OverlappingFileLockException active) {
-            throw gold.debug.windowstolinux.app.db.error.DesktopPersistenceException.create(
-                gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_LOCKED,
+            throw gold.debug.windowstolinux.app.db.error.DesktopStorageException.create(
+                gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_LOCKED,
                 "Another application owns the original platform database", active);
         } catch (SQLException failure) {
             var type = switch (failure.getErrorCode()) {
                 case org.h2.api.ErrorCode.FILE_CORRUPTED_1 ->
-                    gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_CORRUPTED;
+                    gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_CORRUPTED;
                 case org.h2.api.ErrorCode.IO_EXCEPTION_1 -> corruptStore(failure)
-                    ? gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_CORRUPTED
-                    : gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_OPEN_FAILED;
+                    ? gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_CORRUPTED
+                    : gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_OPEN_FAILED;
                 case org.h2.api.ErrorCode.DATABASE_ALREADY_OPEN_1 ->
-                    gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_LOCKED;
+                    gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_LOCKED;
                 case org.h2.api.ErrorCode.FILE_VERSION_ERROR_1 ->
-                    gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE;
-                default -> gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_OPEN_FAILED;
+                    gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.SCHEMA_INCOMPATIBLE;
+                default -> gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_OPEN_FAILED;
             };
-            throw gold.debug.windowstolinux.app.db.error.DesktopPersistenceException.create(type,
+            throw gold.debug.windowstolinux.app.db.error.DesktopStorageException.create(type,
                 "The original platform database could not be opened safely", failure);
         }
     }
@@ -110,8 +131,11 @@ public final class PlatformDatabase implements AutoCloseable {
      * @param directory selected data root / 已选数据根
      * @param protection original bootstrap protector / 原引导保护器
      * @return exclusive engine owner / 独占引擎所有者
-     * @throws Exception if original acquisition or validation fails / 原取得或校验失败时 */
-    private static PlatformDatabase openOwned(Path directory, DatabaseProtection protection) throws Exception {
+     * @throws Exception if original acquisition or validation fails / 原取得或校验失败时
+     * @param initialPreferences initial values for absent desktop keys / 缺失桌面字段的初始值
+     * @param modLoading whether startup validates Mod records / 启动是否校验 Mod 记录
+     */
+    private static PlatformDatabase openOwned(Path directory, DatabaseProtection protection, java.util.Map<String, String> initialPreferences, boolean modLoading) throws Exception {
         Objects.requireNonNull(directory);
         Objects.requireNonNull(protection);
         if (!directory.isAbsolute())
@@ -122,7 +146,7 @@ public final class PlatformDatabase implements AutoCloseable {
         Files.createDirectories(root);
         if (Files.isSymbolicLink(root) || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS))
             throw new java.io.IOException("Unsafe database root");
-        var channel = FileChannel.open(root.resolve("platform.lock"), StandardOpenOption.CREATE,
+        var channel = FileChannel.open(root.resolve("windowstolinux.lock"), StandardOpenOption.CREATE,
             StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
         FileLock lock = null;
         DatabaseBootstrap material = null;
@@ -130,17 +154,18 @@ public final class PlatformDatabase implements AutoCloseable {
         try {
             lock = channel.tryLock();
             if (lock == null)
-                throw gold.debug.windowstolinux.app.db.error.DesktopPersistenceException.create(
-                    gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.DATABASE_LOCKED,
+                throw gold.debug.windowstolinux.app.db.error.DesktopStorageException.create(
+                    gold.debug.windowstolinux.app.db.error.DesktopStorageFailureType.DATABASE_LOCKED,
                     "Another application owns the original platform database", null);
             material = DatabaseBootstrap.load(root, protection);
-            String url = "jdbc:h2:" + root.resolve("platform")
+            String url = "jdbc:h2:" + root.resolve("windowstolinux")
                 + ";DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0"
                 + (material.fresh() ? "" : ";IFEXISTS=TRUE");
             anchor = DriverManager.getConnection(url, "app_internal", material.password());
             var database = new PlatformDatabase(root, channel, lock, material, anchor,
-                "jdbc:h2:" + root.resolve("platform") + ";DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE;LOCK_TIMEOUT=5000");
-            database.initialize();
+                "jdbc:h2:" + root.resolve("windowstolinux") + ";DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE;LOCK_TIMEOUT=5000");
+            gold.debug.windowstolinux.app.db.init.PlatformDatabaseInitializer.initialize(anchor, material.fresh(),
+                material.generation(), database.bootId, modLoading, initialPreferences);
             return database;
         } catch (Exception failure) {
             if (anchor != null)
@@ -163,93 +188,6 @@ public final class PlatformDatabase implements AutoCloseable {
                 failure.addSuppressed(closing);
             }
             throw failure;
-        }
-    }
-
-    /**
-     * Initializes once and validates existing identity before updating the boot marker. / 仅首次初始化，并在更新启动标记前校验已有身份。
-     * @throws Exception if schema or protected identity does not match / 数据结构或受保护身份不匹配时
-     */
-    private void initialize() throws Exception {
-        byte[] ddl;
-        try (var stream = Objects.requireNonNull(
-            getClass().getResourceAsStream("/gold/debug/windowstolinux/app/db/schema/platform-v1.sql"))) {
-            ddl = stream.readAllBytes();
-        }
-        String digest = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(ddl));
-        if (bootstrap.fresh()) {
-            try (var s = anchor.createStatement()) {
-                s.execute("CREATE SCHEMA app AUTHORIZATION app_internal");
-            }
-            anchor.setSchema("app");
-            RunScript.execute(anchor,
-                new java.io.StringReader(new String(ddl, java.nio.charset.StandardCharsets.UTF_8)));
-            try (var p = anchor.prepareStatement(
-                "INSERT INTO app_state(singleton_id,database_generation,boot_id,shutdown_state,intent_revision,updated_at) VALUES(1,?,?,'STARTING',0,?)")) {
-                p.setObject(1, bootstrap.generation());
-                p.setObject(2, bootId);
-                p.setLong(3, System.currentTimeMillis());
-                p.executeUpdate();
-            }
-            try (var p = anchor.prepareStatement(
-                "INSERT INTO app_schema_history(schema_version,script_sha256,state,started_at,ended_at) VALUES(1,?,'READY',?,?)")) {
-                p.setString(1, digest);
-                p.setLong(2, System.currentTimeMillis());
-                p.setLong(3, System.currentTimeMillis());
-                p.executeUpdate();
-            }
-        } else {
-            anchor.setSchema("app");
-            try (var s = anchor.createStatement();
-                 var r = s.executeQuery("SELECT database_generation FROM app_state WHERE singleton_id=1")) {
-                if (!r.next() || !bootstrap.generation().equals(r.getObject(1, UUID.class)))
-                    throw new SQLException("Protected database identity mismatch");
-            }
-            try (var s = anchor.createStatement();
-                 var r = s.executeQuery(
-                     "SELECT schema_version,script_sha256,state FROM app_schema_history ORDER BY schema_version DESC")) {
-                if (!r.next() || r.getInt(1) != 1 || !r.getString(2).equals(digest) || !r.getString(3).equals("READY"))
-                    throw gold.debug.windowstolinux.app.db.error.DesktopPersistenceException.create(
-                        gold.debug.windowstolinux.app.db.error.DesktopPersistenceFailureType.SCHEMA_INCOMPATIBLE,
-                        "Unsupported or incomplete platform schema", null);
-            }
-            PlatformSchemaInventory.validate(anchor, ddl);
-            anchor.setAutoCommit(false);
-            try {
-                try (var p = anchor.prepareStatement(
-                    "UPDATE app_state SET boot_id=?,shutdown_state='STARTING',updated_at=? WHERE singleton_id=1")) {
-                    p.setObject(1, bootId);
-                    p.setLong(2, System.currentTimeMillis());
-                    p.executeUpdate();
-                }
-                try (var s = anchor.createStatement()) {
-                    s.executeUpdate(
-                        "UPDATE platform_task SET state='UNKNOWN',outcome=NULL,ended_at=NULL WHERE state<>'ENDED' AND NOT(state='FINISHING' AND outcome IS NOT NULL AND ended_at IS NOT NULL)");
-                    s.executeUpdate("UPDATE mod_operation SET state='UNKNOWN',updated_at=" + System.currentTimeMillis()
-                        + " WHERE operation_type IN ('ENABLE','DISABLE','SWITCH') AND state='RUNNING' AND phase='APPLYING' AND outcome IS NULL");
-                    s.executeUpdate(
-                        "UPDATE mod_schema SET state='UNKNOWN' WHERE state='PREPARING' AND generation IN (SELECT target_generation FROM mod_operation WHERE operation_type='MIGRATE' AND outcome IS NULL)");
-                    s.executeUpdate("UPDATE mod_operation SET state='UNKNOWN',updated_at=" + System.currentTimeMillis()
-                        + " WHERE operation_type='MIGRATE' AND state='RUNNING' AND outcome IS NULL");
-                    s.executeUpdate("UPDATE mod_migration_step SET state='UNKNOWN' WHERE state='RUNNING'");
-                    s.executeUpdate(
-                        "UPDATE mod_operation SET state='UNKNOWN' WHERE operation_type='RECONCILE' AND state='RUNNING' AND outcome IS NULL");
-                    s.executeUpdate(
-                        "UPDATE mod_operation SET state='UNKNOWN' WHERE operation_type IN ('INSTALL','REINSTALL') AND state='RUNNING' AND outcome IS NULL");
-                    s.executeUpdate(
-                        "UPDATE mod_operation SET state='UNKNOWN' WHERE operation_type IN ('DELETE_VERSION','DELETE_MOD') AND state='RUNNING' AND outcome IS NULL");
-                }
-                anchor.commit();
-            } catch (SQLException failure) {
-                try {
-                    anchor.rollback();
-                } catch (SQLException rollback) {
-                    failure.addSuppressed(rollback);
-                }
-                throw failure;
-            } finally {
-                anchor.setAutoCommit(true);
-            }
         }
     }
 

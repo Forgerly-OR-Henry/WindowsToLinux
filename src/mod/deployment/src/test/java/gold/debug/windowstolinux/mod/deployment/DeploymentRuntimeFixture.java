@@ -1,11 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
+
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+
+import java.util.concurrent.TimeUnit;
 import java.util.*;
 
 import javax.swing.JComponent;
@@ -16,10 +20,18 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -46,6 +58,28 @@ public class DeploymentRuntimeFixture {
     @TempDir
     protected Path root;
 
+    /** Retains the existing twenty-second recovery bound. / 保留既有二十秒恢复限时。 */
+    protected static TaskSnapshot reconcileReady(PlatformRuntime runtime, TaskHandle<?> handle) throws Exception {
+        return reconcileReady(runtime, handle, 20);
+    }
+
+    /** Waits only for host refusal before any reconciliation dispatch, within the original bound. / 仅等待未派发的宿主拒绝结束，不扩大原限时。 */
+    protected static TaskSnapshot reconcileReady(PlatformRuntime runtime, TaskHandle<?> handle, int seconds) throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (true) {
+            long remaining = until - System.nanoTime();
+            assertTrue(remaining > 0, "The original callback must return within the existing reconciliation bound");
+            try {
+                return runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(remaining, TimeUnit.NANOSECONDS);
+            } catch (ApiException refusal) {
+                if (refusal.problem().code() != ProblemCode.BUSY || !refusal.problem().eventCode().equals("TASK_RECOVERY_BUSY"))
+                    throw refusal;
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+                Thread.sleep(20);
+            }
+        }
+    }
+
     protected Path workspace() throws Exception {
         Path path = Path.of("").toRealPath();
         while (path != null && !Files.isRegularFile(path.resolve("src/mod/deployment/mod.json")))
@@ -69,12 +103,12 @@ public class DeploymentRuntimeFixture {
      * @return default refusal presenter or a scenario's controlled presenter / 默认拒绝呈现器或场景受控呈现器 */
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No remote interaction expected");
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken cancellation) {
                 throw new AssertionError("No remote interaction expected");
             }

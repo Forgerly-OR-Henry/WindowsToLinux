@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskCheckpoint;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -25,25 +15,33 @@ import com.sun.net.httpserver.HttpServer;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
-import gold.debug.windowstolinux.mod.deployment.file.*;
 import org.junit.jupiter.api.Test;
 
 /** Preserves local static boundaries through actual CLASS/H2 tasks without the retired facade. / 经真实 CLASS/H2 任务保留本地静态边界，不恢复旧门面。 */
@@ -93,10 +91,10 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                     return invoke(actual, method, arguments);
                 });
             var reviews = new AtomicInteger();
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
-            var handle = workflow.submit(new ServerRef("server"), draft(), refusalReviewer(reviews));
+            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
+            var handle = workflow.submit(new ServerId("server"), draft(), refusalReviewer(reviews));
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(1, reviews.get());
             assertEquals(1, selections.get());
@@ -124,20 +122,20 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                 var checkpoint = context.tasks().findCheckpoint(task, "occupancy").orElseThrow();
                 assertEquals(new TaskCheckpoint.Snapshot(0, "{\"original\":true}", false), checkpoint.snapshot());
                 checkpoint.close();
-                return new OperationResult<Void>(Outcome.FAILED, Optional.empty(),
+                return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.IO_FAILURE, "TEST_ORIGINAL_ABANDONED",
                         "Original local work explicitly abandoned", Map.of(), Optional.empty())));
             })) {
                 var original = context.tasks().submit(
                     new TaskRequest("legacy-occupied", "Original retained work", List.of("server"), true), task -> {
                         context.tasks().beginCheckpoint(task, "occupancy", "{\"original\":true}");
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty());
                     });
                 awaitUnknown(original);
                 var retained = leases(runtime, original.id());
                 assertFalse(retained.isEmpty());
-                var workflow = new DeploymentStaticWorkflow(context, new DeploymentReferenceFlow(context));
-                var waiting = workflow.submit(new ServerRef("server"), draft(), refusalReviewer(new AtomicInteger()));
+                var workflow = new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context));
+                var waiting = workflow.submit(new ServerId("server"), draft(), refusalReviewer(new AtomicInteger()));
                 try {
                     assertEquals(TaskState.QUEUED, waiting.snapshot().state());
                     assertFalse(waiting.completion().toCompletableFuture().isDone());
@@ -148,12 +146,11 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                     assertEquals(0, selections.get(),
                         "Occupied original server prevents the queued callback from selecting source");
                 } finally {
-                    var settled = runtime.tasks().reconcile(original.id()).toCompletableFuture().get(20,
-                        TimeUnit.SECONDS);
+                    var settled = reconcileReady(runtime, original);
                     assertEquals(original.id(), settled.id());
                     assertEquals(TaskState.ENDED, settled.state());
-                    assertEquals(Optional.of(Outcome.FAILED), settled.outcome());
-                    assertEquals(Outcome.CANCELLED,
+                    assertEquals(Optional.of(TaskResult.FAILED), settled.outcome());
+                    assertEquals(TaskResult.CANCELLED,
                         waiting.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome());
                 }
                 assertEquals(TaskState.ENDED, waiting.snapshot().state());
@@ -177,8 +174,8 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                 new TaskRequest("legacy-root-request", "Review restricted build", List.of("server"), true),
                 task -> {
                     try {
-                        var selected = context.file().selectDirectory("Actual source", task);
-                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selected, 65536,
+                        var selected = context.file().sources().selectDirectory("Actual source", task);
+                        try (var material = new DeploymentSourceSetup(context.file()).prepare(selected, 65536,
                             100, task);
                              var archive = new DeploymentSourceArchiver(context.file()).prepare(material,
                                  65536, task)) {
@@ -186,18 +183,18 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                                 new DeploymentHealthCheck.Tcp(8080, 10, 2));
                             var analyzed = new DeploymentStandardAnalyzer().analyze(material, "demo",
                                 DeploymentProjectKind.GO_SERVICE, Optional.empty(), false, task);
-                            assertEquals(Outcome.SUCCEEDED, analyzed.outcome(), analyzed.toString());
+                            assertEquals(TaskResult.SUCCEEDED, analyzed.outcome(), analyzed.toString());
                             var facts = analyzed.value().orElseThrow().assessment().facts().orElseThrow();
-                            var config = DeploymentConfigurationSnapshot.create(facts.applicationId(), 1, "v1",
+                            var config = DeploymentConfigSnapshot.create(facts.applicationId(), 1, "v1",
                                 Instant.now(), List.of());
                             var consent = new DeploymentReviewConsent(facts.applicationId(), "server",
                                 material.snapshot().sha256(), archive.sha256(), Instant.now());
                             var limits = DeploymentBuildLimits.defaultNonRoot();
                             var resources = new DeploymentResourceBindings(List.of(), Optional.of(List.of()));
-                            var safe = new ReviewedDeploymentRequest(new ServerRef("server"), facts, material,
+                            var safe = new ReviewedDeploymentRequest(new ServerId("server"), facts, material,
                                 archive, config, List.of(), resources, run, Optional.empty(), limits, consent,
                                 false, true);
-                            assertEquals(Outcome.SUCCEEDED, new DeploymentStandardPlanner()
+                            assertEquals(TaskResult.SUCCEEDED, new DeploymentStandardPlanner()
                                 .plan(material, analyzed.value().orElseThrow(), safe, task).outcome());
                             var unsafe = new DeploymentBuildLimits(limits.timeoutSeconds(), limits.maxProcesses(),
                                 limits.maxMemoryMiB(), limits.maxOutputBytes(), limits.maxWorkspaceBytes(),
@@ -211,7 +208,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                             assertEquals(limits, safe.limits());
                             assertFalse(safe.limits().runAsRoot());
                         }
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError error) {
                         failure.set(error);
                         throw error;
@@ -220,7 +217,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             if (failure.get() != null)
                 throw new AssertionError("Original reviewed request failed", failure.get());
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             try (var access = scope(runtime, true);
                  var connection = access.openConnection();
                  var statement = connection.createStatement();
@@ -258,7 +255,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
             }
         }
         runtime.persistence().aiProfiles().saveVerified(
-            new StoredAiProviderProfile(id, endpoint, "fixture/" + id, credential), id, Instant.now(),
+            new StoredAiModelProfile(id, endpoint, "fixture/" + id, credential), id, Instant.now(),
             AiCapabilityType.TEXT);
         runtime.persistence().aiProfiles().saveOutputLimit(id, 1600);
     }
@@ -269,8 +266,8 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
 
     private static DeploymentStaticWorkflow.Reviewer refusalReviewer(AtomicInteger reviews) {
         return new DeploymentStaticWorkflow.Reviewer() {
-            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                                                                              List<DiscoveredProjectComponent> discovered, TaskContext task) {
+            public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+                                                                              List<DiscoveredProjectPart> discovered, TaskContext task) {
                 assertEquals(1, discovered.size());
                 return success(new DeploymentStaticWorkflow.Selection("demo",
                     Map.of(discovered.getFirst().id(),
@@ -278,7 +275,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                     Optional.empty()));
             }
 
-            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server, String sha,
+            public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server, String sha,
                                                                                          List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                 assertEquals(1, prompts.size());
                 reviews.incrementAndGet();
@@ -294,7 +291,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                     DeploymentBuildLimits.defaultNonRoot(), false, true)));
             }
 
-            public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
+            public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
                                                     Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                     Map<String, DeploymentPreparedDatabase> databases, Optional<DeploymentStaticWorkflow.GitReview> git,
                                                     TaskContext task) {
@@ -303,7 +300,7 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
                 assertEquals(archives.keySet(), databases.keySet());
                 assertTrue(databases.values().stream()
                     .allMatch(value -> value.bindings().isEmpty() && value.schemaReview().isEmpty()));
-                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             }
         };
     }
@@ -351,6 +348,6 @@ class DeploymentRetainedModeContractsTest extends DeploymentRuntimeFixture {
     }
 
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 }

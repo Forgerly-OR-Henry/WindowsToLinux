@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -23,10 +17,14 @@ import java.util.UUID;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublishChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader.ApplicationFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph;
 
@@ -47,7 +45,7 @@ final class DeploymentCollectionEvidence {
      * @param data complete original release / 完整原发布
      * @param component original component identity / 原组件身份
      * @return exact original unit release digest / 精确原单元发布摘要 */
-    static String unitRelease(ApplicationFacts data, DeploymentApplicationGraph.Component component) {
+    static String unitRelease(ApplicationFacts data, DeploymentApplicationGraph.Part component) {
         return data.release().bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
             .findFirst().orElseThrow().releaseSha256();
     }
@@ -58,7 +56,7 @@ final class DeploymentCollectionEvidence {
      * @param operation original producer operation / 原生产者操作
      * @return confirmed presence, absence or uncertainty / 已确证存在、不存在或未知
      * @throws ApiException if provider authority is unavailable / 提供方权限不可用时 */
-    static Optional<Boolean> marker(DeploymentHandoffChannel channel, DeploymentApplicationGraph.Component component,
+    static Optional<Boolean> marker(DeploymentHandoffChannel channel, DeploymentApplicationGraph.Part component,
                                     String operation) throws ApiException {
         var result = channel.execute("handoff-maintenance-status",
             List.of(component.unit().id(), component.unit().ownershipManifestSha256(), operation), new byte[0],
@@ -77,9 +75,9 @@ final class DeploymentCollectionEvidence {
      * @param application original application ID / 原应用ID
      * @return verified original artifact or unconfirmed status / 已核实原产物或未确证状态 */
     static Optional<DeploymentArtifact> parseStatus(
-        OperationResult<gold.debug.windowstolinux.appapi.linux.CommandResult> result,
+        OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> result,
         DeploymentCollectionPlan.ArtifactPlan plan, String operation, String application) {
-        if (result.outcome() != Outcome.SUCCEEDED || result.value().isEmpty())
+        if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty())
             return Optional.empty();
         var reply = result.value().orElseThrow();
         if (reply.truncated() || !reply.exitCode().equals(Optional.of(0)))
@@ -147,10 +145,10 @@ final class DeploymentCollectionEvidence {
             var release = data.release().bindings().stream()
                 .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
             var verified = channel.current(component, release.releaseSha256());
-            if (verified.outcome() != Outcome.SUCCEEDED)
+            if (verified.outcome() != TaskResult.SUCCEEDED)
                 return verified;
         }
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     /** Verifies the completed original producer receipt without accepting mere file presence. / 核实原生产者完成回执而不将文件存在视为成功。
@@ -160,7 +158,7 @@ final class DeploymentCollectionEvidence {
      * @param application original application ID / 原应用ID
      * @return verified complete original artifact or unconfirmed receipt / 已核实完整原产物或未确证回执 */
     static Optional<DeploymentArtifact> parseArtifact(
-        OperationResult<gold.debug.windowstolinux.appapi.linux.CommandResult> result,
+        OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> result,
         DeploymentCollectionPlan.ArtifactPlan plan, String operation, String application) {
         var reply = result.value().orElseThrow();
         if (reply.truncated() || !reply.exitCode().equals(Optional.of(0)))
@@ -215,8 +213,8 @@ final class DeploymentCollectionEvidence {
     /** Resolves validated dependency order and rejects cycles before effects. / 副作用前解析已校验依赖顺序并拒绝环。
      * @param graph original application graph / 原应用图
      * @return dependency-ordered original components / 按依赖排序的原组件 */
-    static List<DeploymentApplicationGraph.Component> order(DeploymentApplicationGraph graph) {
-        var result = new ArrayList<DeploymentApplicationGraph.Component>();
+    static List<DeploymentApplicationGraph.Part> order(DeploymentApplicationGraph graph) {
+        var result = new ArrayList<DeploymentApplicationGraph.Part>();
         Set<String> done = new HashSet<>();
         while (result.size() < graph.components().size()) {
             int before = result.size();
@@ -244,7 +242,7 @@ final class DeploymentCollectionEvidence {
      * @param value confirmed original payload / 已确证原载荷
      * @return known successful result / 已知成功结果 */
     static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     /** Rejects known incompatible collection input before effects. / 副作用前拒绝已知不兼容采集输入。
@@ -252,7 +250,7 @@ final class DeploymentCollectionEvidence {
      * @param event original incompatibility event / 原不兼容事件
      * @return known failed result / 已知失败结果 */
     static <T> OperationResult<T> failed(String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
             event, "Collection differs from the original reviewed release", Map.of(), Optional.empty())));
     }
 
@@ -261,7 +259,7 @@ final class DeploymentCollectionEvidence {
      * @param event original uncertainty event / 原未知事件
      * @return retained unknown result / 留存未知结果 */
     static <T> OperationResult<T> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
             event, "Collection requires original-task read-only reconciliation", Map.of(), Optional.empty())));
     }
 

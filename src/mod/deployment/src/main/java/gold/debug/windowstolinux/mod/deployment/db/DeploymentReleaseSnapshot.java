@@ -49,7 +49,7 @@ public record DeploymentReleaseSnapshot(DeploymentApplicationGraph graph, List<B
      * @param configurationSha256 original configuration digest / 原配置摘要
      * @param secrets original complete secret revision set / 原完整秘密修订集合 */
     public record Binding(String unitId, String releaseSha256, int configurationRevision, String configurationSha256,
-                          List<DeploymentSecretReference> secrets) {
+                          List<DeploymentSecretRef> secrets) {
         /** Validates and canonicalizes an unordered set without altering identities. / 校验并规范化无序集合，不改变身份。
          * @param unitId exact unit identity / 精确单元身份
          * @param releaseSha256 original component release digest / 原组件发布摘要
@@ -62,8 +62,8 @@ public record DeploymentReleaseSnapshot(DeploymentApplicationGraph graph, List<B
             for (var digest : List.of(releaseSha256, configurationSha256))
                 if (!digest.matches("[0-9a-f]{64}"))
                     throw new IllegalArgumentException("Invalid release binding digest");
-            secrets = List.copyOf(secrets).stream().sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                .thenComparingLong(DeploymentSecretReference::revision)).toList();
+            secrets = List.copyOf(secrets).stream().sorted(Comparator.comparing(DeploymentSecretRef::identifier)
+                .thenComparingLong(DeploymentSecretRef::revision)).toList();
             if (secrets.size() != new HashSet<>(secrets).size()
                 || secrets.stream().anyMatch(s -> s.revision() > Integer.MAX_VALUE))
                 throw new IllegalArgumentException("Invalid release secret set");

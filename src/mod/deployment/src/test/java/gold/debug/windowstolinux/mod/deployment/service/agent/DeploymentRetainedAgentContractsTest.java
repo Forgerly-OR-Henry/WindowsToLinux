@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -19,21 +15,23 @@ import com.sun.net.httpserver.HttpServer;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.ai.AiService;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.file.FileService;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 /** Checks the real model-purpose admission before user source or remote work. / 在用户来源和远端工作前核对真实模型用途准入。 */
 class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
-    enum ConfigurationType {
+    enum ConfigType {
         LANGUAGE_MISSING_MANUAL("MANUAL_REVIEW", false, null), LANGUAGE_MISSING_AUTOMATIC("AUTOMATIC", false,
             true), LANGUAGE_MISSING_FULL("FULL_CONTROL", false, true), APPROVAL_MISSING_AUTOMATIC("AUTOMATIC", true,
             null), APPROVAL_MISSING_FULL("FULL_CONTROL", true, null), APPROVAL_DISABLED_AUTOMATIC(
@@ -46,7 +44,7 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
 
         final Boolean approval;
 
-        ConfigurationType(String policy, boolean language, Boolean approval) {
+        ConfigType(String policy, boolean language, Boolean approval) {
             this.policy = policy;
             this.language = language;
             this.approval = approval;
@@ -62,9 +60,9 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
     }
 
     @ParameterizedTest(name = "original policy configuration {0}")
-    @EnumSource(ConfigurationType.class)
+    @EnumSource(ConfigType.class)
     void requiredPurposesRejectBeforeSourceCaptureArchiveSshOrSendWhileManualNeedsOnlyLanguage(
-        ConfigurationType selected) throws Exception {
+        ConfigType selected) throws Exception {
         enable();
         var httpCalls = new AtomicInteger();
         var http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -94,7 +92,7 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
                 }
             }
             runtime.persistence().aiProfiles()
-                .saveVerified(new StoredAiProviderProfile("model",
+                .saveVerified(new StoredAiModelProfile("model",
                         "http://127.0.0.1:" + http.getAddress().getPort() + "/chat", "fixture/model", credential),
                     "model", Instant.now(), AiCapabilityType.TEXT);
             runtime.persistence().aiProfiles().saveOutputLimit("model", 1600);
@@ -112,17 +110,16 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             var sends = new AtomicInteger();
             var purposes = new CopyOnWriteArrayList<String>();
             var actual = runtime.modContexts().get(OWNER).context();
-            var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
-                new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
-                    switch (method.getName()) {
-                        case "selectDirectory" -> selections.incrementAndGet();
-                        case "snapshot" -> captures.incrementAndGet();
-                        case "workspace" -> workspaces.incrementAndGet();
-                        default -> {
-                        }
+            var source = gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.create(FileService.class.getClassLoader(), (proxy, method, arguments) -> {
+                switch (method.getName()) {
+                    case "selectDirectory" -> selections.incrementAndGet();
+                    case "snapshot" -> captures.incrementAndGet();
+                    case "workspace" -> workspaces.incrementAndGet();
+                    default -> {
                     }
-                    return invoke(actual.file(), method, arguments);
-                });
+                }
+                return invoke(actual.file(), method, arguments);
+            });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
                 new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals("connect"))
@@ -149,18 +146,18 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             var request = new DeploymentAgentWorkflow.Request(Map.of("goal", "Actual original task"), selected.policy,
                 65536, 100, 65536);
             var handle = new DeploymentAgentWorkflow(bound)
-                .submitLocal(new gold.debug.windowstolinux.appapi.server.ServerRef("server"), request);
+                .submitLocal(new gold.debug.windowstolinux.appapi.server.model.ServerId("server"), request);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
             assertEquals(OWNER, handle.snapshot().ownerId());
             assertEquals(VERSION, handle.snapshot().ownerVersion());
-            if (selected == ConfigurationType.MANUAL_LANGUAGE_ONLY) {
-                assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            if (selected == ConfigType.MANUAL_LANGUAGE_ONLY) {
+                assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
                 assertEquals(1, selections.get());
                 assertEquals(1, pickerCalls.get());
                 assertEquals(List.of("LANGUAGE"), purposes, "Manual mode never requires the approval purpose");
             } else {
-                assertEquals(Outcome.FAILED, result.outcome(), result.toString());
+                assertEquals(TaskResult.FAILED, result.outcome(), result.toString());
                 assertEquals(ProblemCode.UNAVAILABLE, result.problem().orElseThrow().code());
                 assertEquals("AI_PURPOSE_UNAVAILABLE", result.problem().orElseThrow().eventCode());
                 assertEquals(0, selections.get());

@@ -13,7 +13,7 @@ class PlatformAnchorsTest {
     Path root;
 
     @Test
-    void jarProgramRootUsesMainWhileDataUsesDbAcrossUnrelatedWorkingDirectories() throws Exception {
+    void jarProgramAndDataUseMainAcrossSeparateDbAndUnrelatedWorkingDirectories() throws Exception {
         var program = Files.createDirectories(root.resolve("程序 with spaces"));
         var libraries = Files.createDirectories(root.resolve("separate database module"));
         var main = Files.createFile(program.resolve("main.jar"));
@@ -23,7 +23,7 @@ class PlatformAnchorsTest {
             Optional.of(main), Optional.of(unrelated)).orElseThrow();
         assertEquals(RunModeResolver.RunMode.RUN_JAR, layout.mode());
         assertEquals(program, layout.applicationHome());
-        assertEquals(libraries.resolve("data"), layout.dataDirectory());
+        assertEquals(program.resolve("data"), layout.dataDirectory());
         assertTrue(RunModeResolver.resolveStartupFromEvidence(Optional.empty(), Optional.of(database), Optional.empty(),
             Optional.of(program)).isEmpty());
     }

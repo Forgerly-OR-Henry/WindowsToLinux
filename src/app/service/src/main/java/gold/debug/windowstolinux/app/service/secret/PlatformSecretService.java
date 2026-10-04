@@ -1,21 +1,23 @@
 package gold.debug.windowstolinux.app.service.secret;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository;
+import gold.debug.windowstolinux.app.db.security.SecretRefStore;
 import gold.debug.windowstolinux.app.secret.SecretStore;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.secret.*;
-import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
+import gold.debug.windowstolinux.appapi.secret.access.SecretConsumer;
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.secret.ref.SecretRef;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Provides owner-bound protected bytes and generation-owned references through accepted tasks. / 经已接纳任务提供所有者绑定的受保护字节及代次所属引用。 */
 public final class PlatformSecretService implements SecretService, AutoCloseable {
@@ -29,7 +31,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
     private final DesktopSecurityService security;
 
     /** Persistent association transactions. / 持久关联事务。 */
-    private final CredentialReferenceRepository references;
+    private final SecretRefStore references;
 
     /** Exact Mod owner. / 精确 Mod 所有者。 */
     private final String owner;
@@ -54,7 +56,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @param schema selected optional data generation / 可选的选定数据代次
      */
     public PlatformSecretService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
-                                 CredentialReferenceRepository references, String owner, String version, Optional<SchemaIdentity> schema) {
+                                 SecretRefStore references, String owner, String version, Optional<SchemaIdentity> schema) {
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.references = Objects.requireNonNull(references);
@@ -73,14 +75,14 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if input, authorization or persistence fails / 输入、授权或持久化失败时
      */
     @Override
-    public SecretRef create(String purpose, byte[] value, TaskContext task) throws ApiException {
+    public SecretId create(String purpose, byte[] value, TaskContext task) throws ApiException {
         requirePurpose(purpose);
         if (value == null || value.length > MAX_BYTES)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_SIZE", "A secret must contain at most one MiB");
         byte[] copy = value.clone();
         try {
             return access(task, false, true, () -> credentials(task, store -> {
-                var secret = CredentialReferenceRepository.newSecret(owner, purpose);
+                var secret = SecretRefStore.newSecret(owner, purpose);
                 char[] encoded = encode(copy);
                 try {
                     store.save(secret.id(), encoded);
@@ -103,7 +105,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if ownership, schema or persistence fails / 归属、数据结构或持久化失败时
      */
     @Override
-    public SecretReference reserve(SecretRef secret, String businessKey, TaskContext task) throws ApiException {
+    public SecretRef reserve(SecretId secret, String businessKey, TaskContext task) throws ApiException {
         requireSecret(secret);
         if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_REFERENCE_KEY", "Invalid secret business key");
@@ -120,7 +122,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
      */
     @Override
-    public Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task)
+    public Optional<SecretRef> findReference(SecretId secret, String businessKey, TaskContext task)
         throws ApiException {
         requireSecret(secret);
         if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
@@ -137,7 +139,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if ownership or persistence fails / 归属或持久化失败时
      */
     @Override
-    public void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException {
+    public void resolve(UUID referenceId, ResourceRefResult result, TaskContext task) throws ApiException {
         if (referenceId == null || result == null)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_REFERENCE_RESULT",
                 "A reference and resolution are required");
@@ -159,7 +161,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
      * @throws ApiException if authorization, storage or callback fails / 授权、存储或回调失败时
      */
     @Override
-    public <T> T use(SecretRef secret, String purpose, TaskContext task, SecretConsumer<T> consumer)
+    public <T> T use(SecretId secret, String purpose, TaskContext task, SecretConsumer<T> consumer)
         throws ApiException {
         requireSecret(secret);
         requirePurpose(purpose);
@@ -168,7 +170,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
         if (consumer == null)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_CONSUMER", "A secret consumer is required");
         return access(task, false, false, () -> {
-            CredentialReferenceRepository.requireOwned(owner, secret);
+            SecretRefStore.requireOwned(owner, secret);
             return credentials(task, store -> {
                 char[] encoded = store.read(secret.id()).orElseThrow(
                     () -> error(ProblemCode.NOT_FOUND, "SECRET_MISSING", "The requested secret is unavailable"));
@@ -321,7 +323,7 @@ public final class PlatformSecretService implements SecretService, AutoCloseable
     /** Validates public reference size and purpose. / 校验公开引用大小和用途。
      * @param secret supplied reference / 提供的引用
      * @throws ApiException if the reference is invalid / 引用无效时 */
-    private static void requireSecret(SecretRef secret) throws ApiException {
+    private static void requireSecret(SecretId secret) throws ApiException {
         if (secret == null || secret.id().isBlank() || secret.id().length() > 240)
             throw error(ProblemCode.INVALID_INPUT, "SECRET_ID", "Invalid secret identity");
         requirePurpose(secret.purpose());

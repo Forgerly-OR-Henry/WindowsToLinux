@@ -244,7 +244,7 @@ public final class DeploymentSourceBrowser {
         return value;
     }
 
-    /** Enforces old bounded pagination. / 执行旧有界分页限制。
+    /** Enforces current bounded pagination. / 执行当前有界分页限制。
      * @param offset first item / 首项
      * @param limit page size / 页大小 */
     private static void page(int offset, int limit) {

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,7 +21,16 @@ import gold.debug.windowstolinux.app.ai.model.*;
 import gold.debug.windowstolinux.app.db.ai.*;
 import gold.debug.windowstolinux.app.service.ai.*;
 import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceEvent;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceSession;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,7 +49,7 @@ class VoiceServiceTest {
     }
 
     static OperationResult<Void> success() {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     static void model(PlatformRuntime runtime, String id, String file, String realtime, AiCapabilityType... capabilities)
@@ -54,7 +63,7 @@ class VoiceServiceTest {
                 Arrays.fill(key, '\0');
             }
         }
-        var profile = new StoredAiProviderProfile(id, "", "model-" + id, credential, file, realtime);
+        var profile = new StoredAiModelProfile(id, "", "model-" + id, credential, file, realtime);
         runtime.persistence().aiProfiles().saveNamed(profile);
         for (var capability : capabilities)
             runtime.persistence().aiProfiles().saveVerified(profile, id, Instant.now(), capability);
@@ -77,7 +86,7 @@ class VoiceServiceTest {
                 assertEquals("AI_PURPOSE_UNAVAILABLE", assertThrows(ApiException.class, () -> ai.call(audio(), task)).problem().eventCode());
                 return success();
             });
-            assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(6, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(6, TimeUnit.SECONDS).outcome());
             assertEquals(0, endpoint.httpCalls.get());
             route(runtime, "live", "file");
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(audio(), task)));
@@ -99,7 +108,7 @@ class VoiceServiceTest {
             var events = new CopyOnWriteArrayList<VoiceEvent>();
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 try (var session = ai.openVoice(new VoiceOptions(Duration.ofSeconds(5), 65_536), events::add, task)) {
-                    runtime.persistence().aiProfiles().saveNamed(new StoredAiProviderProfile("live", "", "changed",
+                    runtime.persistence().aiProfiles().saveNamed(new StoredAiModelProfile("live", "", "changed",
                         "ai/fixture/live", "", "ws://127.0.0.1:1/elsewhere"));
                     session.send(audio().pcm()).toCompletableFuture().get(2, TimeUnit.SECONDS);
                     return session.finish().toCompletableFuture().get(6, TimeUnit.SECONDS);
@@ -125,13 +134,13 @@ class VoiceServiceTest {
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 assertEquals("VOICE_MODE_UNAVAILABLE", assertThrows(ApiException.class, () -> ai.call(audio(), task)).problem().eventCode());
                 String revision = ai.configurationRevision(AiPurpose.VOICE, task);
-                runtime.persistence().aiProfiles().saveNamed(new StoredAiProviderProfile("live", "", "changed",
+                runtime.persistence().aiProfiles().saveNamed(new StoredAiModelProfile("live", "", "changed",
                     "ai/fixture/live", "", endpoint.ws()));
                 assertEquals("AI_CONFIGURATION_CHANGED", assertThrows(ApiException.class,
                     () -> ai.call(audio(), revision, task)).problem().eventCode());
                 return success();
             });
-            assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(6, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(6, TimeUnit.SECONDS).outcome());
             assertEquals(0, endpoint.httpCalls.get());
             assertNull(endpoint.socketModel.get());
         }
@@ -149,7 +158,7 @@ class VoiceServiceTest {
                 endpoint.httpStatus.set(422);
                 var failure = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(audio(), task))
                     .completion().toCompletableFuture().get(6, TimeUnit.SECONDS);
-                assertEquals(Outcome.FAILED, failure.outcome());
+                assertEquals(TaskResult.FAILED, failure.outcome());
                 assertEquals(1, endpoint.httpCalls.get());
             }
             try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {

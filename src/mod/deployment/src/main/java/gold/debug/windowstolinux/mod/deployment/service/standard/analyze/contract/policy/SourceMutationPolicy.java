@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.message.DeploymentLocalizedMessage;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceInspectionFacts;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.source.SourceCheckFacts;
 
 /**
  * Rejects source declarations that could mutate a managed database automatically.
@@ -30,7 +30,7 @@ public final class SourceMutationPolicy {
      * @param source source identity or content read by the operation / 操作读取的源身份或内容
      * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
      */
-    public void validate(SourceInspectionFacts source, List<RejectionReason> rejections) {
+    public void validate(SourceCheckFacts source, List<RejectionReason> rejections) {
         validate(source, rejections, java.util.Optional.empty());
     }
 
@@ -41,7 +41,7 @@ public final class SourceMutationPolicy {
      * @param rejections reasons preventing admission to the next stage / 阻止进入下一阶段的原因
      * @param review review / 审阅
      */
-    public void validate(SourceInspectionFacts source, List<RejectionReason> rejections,
+    public void validate(SourceCheckFacts source, List<RejectionReason> rejections,
                          java.util.Optional<gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview> review) {
         if (review.filter(value -> value.inspectionSha256().equals(inspectionDigest(source)))
             .filter(value -> !DATABASE_MIGRATION.matcher(source.scannedText()).find()
@@ -66,7 +66,7 @@ public final class SourceMutationPolicy {
      * @param source source identity or content read by the operation / 操作读取的源身份或内容
      * @return true when detects review needs during static discovery without authorizing a deployment, false otherwise / 在静态发现中检测审阅需求，不授权部署时为 true，否则为 false
      */
-    public boolean requiresReview(SourceInspectionFacts source) {
+    public boolean requiresReview(SourceCheckFacts source) {
         return source.relativeFiles().stream().anyMatch(SourceMutationPolicy::databaseChangePath)
             || DATABASE_MIGRATION.matcher(source.scannedText()).find();
     }
@@ -78,7 +78,7 @@ public final class SourceMutationPolicy {
      * @return inspection digest text / 检查摘要文本
      * @throws IllegalStateException if the required state or runtime facility is unavailable / 所需状态或运行设施不可用时
      */
-    public static String inspectionDigest(SourceInspectionFacts source) {
+    public static String inspectionDigest(SourceCheckFacts source) {
         try {
             String content = source.relativeFiles().stream().map(path -> path.toString().replace('\\', '/')).sorted()
                 .collect(java.util.stream.Collectors.joining("\n")) + "\0" + source.scannedText();

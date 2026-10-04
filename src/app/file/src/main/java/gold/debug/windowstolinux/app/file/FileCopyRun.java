@@ -1,12 +1,18 @@
 package gold.debug.windowstolinux.app.file;
 
+import static gold.debug.windowstolinux.app.file.FileEngine.*;
+
 import java.io.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
-
-import static gold.debug.windowstolinux.app.file.FileEngine.*;
+import gold.debug.windowstolinux.app.file.model.FileActionLog;
+import gold.debug.windowstolinux.app.file.model.FileLinkMaintenance;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** FileCopyRun owns the documented exact file responsibility. / FileCopyRun负责已描述的精确文件职责。
  */
@@ -26,7 +32,7 @@ final class FileCopyRun {
 
     /** durable operation and link registry / 持久操作及链接登记.
      */
-    private final FileJournal journal;
+    private final FileActionLog journal;
 
     /** original cooperative cancellation / 原协作取消.
      */
@@ -69,7 +75,7 @@ final class FileCopyRun {
      * @param progress actual byte progress callback / 实际字节进度回调
      * @param transfer original resumable cross-host transport / 原可恢复跨主机传输
      */
-    FileCopyRun(FileEngine origin, FileEngine destination, FileCopyPlan plan, boolean move, FileJournal journal, CancelToken cancel, Progress progress, ContentTransfer transfer) {
+    FileCopyRun(FileEngine origin, FileEngine destination, FileCopyPlan plan, boolean move, FileActionLog journal, CancelToken cancel, Progress progress, ContentTransfer transfer) {
         this.origin = origin;
         this.destination = destination;
         this.plan = plan;
@@ -96,12 +102,12 @@ final class FileCopyRun {
         for (var maintenance : plan.managed)
             journal.record(operation, "PLANNED_LINK", maintenance.link().actual(), Optional.of(maintenance.newTarget()), new FileLinkMaintenance(maintenance.link().actual(), maintenance.target(), maintenance.newTarget(), maintenance.link().identity(), maintenance.targetIdentity(), maintenance.link().target().orElseThrow()).encode());
         for (var step : plan.steps) if (!step(step)) break;
-        if (move && results.stream().noneMatch(r -> r.outcome() == Outcome.UNKNOWN || r.outcome() == Outcome.CANCELLED)) {
+        if (move && results.stream().noneMatch(r -> r.outcome() == TaskResult.UNKNOWN || r.outcome() == TaskResult.CANCELLED)) {
             removeDirectories();
             maintainLinks();
         }
-        Outcome outcome = aggregate(results);
-        journal.record(operation, outcome == Outcome.UNKNOWN ? "UNKNOWN" : "COMPLETE", from, Optional.of(plan.target), outcome.name());
+        TaskResult outcome = aggregate(results);
+        journal.record(operation, outcome == TaskResult.UNKNOWN ? "UNKNOWN" : "COMPLETE", from, Optional.of(plan.target), outcome.name());
         return new FileReport(operation, outcome, results);
     }
 
@@ -115,7 +121,7 @@ final class FileCopyRun {
         FilePath original = step.original;
         if (step.failed) {
             failed.add(original);
-            results.add(item(original, step.target, Outcome.FAILED, step.detail));
+            results.add(item(original, step.target, TaskResult.FAILED, step.detail));
             return true;
         }
         boolean dispatched = false;
@@ -129,30 +135,30 @@ final class FileCopyRun {
             journal.record(operation, "BEFORE_WRITE", original, Optional.of(step.target), step.source.identity());
             dispatched = true;
             if (!publish(step))
-                return results.getLast().outcome() != Outcome.UNKNOWN && results.getLast().outcome() != Outcome.CANCELLED;
+                return results.getLast().outcome() != TaskResult.UNKNOWN && results.getLast().outcome() != TaskResult.CANCELLED;
             FileInfo written = destination.inspect(step.target, step.source.kind() == FileInfo.Kind.LINK, cancel);
             journal.record(operation, "WRITTEN", original, Optional.of(step.target), written.identity());
             if (written.kind() == FileInfo.Kind.DIRECTORY) directories.put(step.target, written);
             succeeded.add(original);
             finishStep(step);
-            results.add(item(original, step.target, Outcome.SUCCEEDED, move ? "Moved and verified" : "Copied and verified"));
+            results.add(item(original, step.target, TaskResult.SUCCEEDED, move ? "Moved and verified" : "Copied and verified"));
             return true;
         } catch (FilePreconditionException error) {
             failed.add(original);
-            results.add(item(original, step.target, Outcome.FAILED, error.getMessage()));
+            results.add(item(original, step.target, TaskResult.FAILED, error.getMessage()));
             journal.record(operation, "FAILED", original, Optional.of(step.target), error.getMessage());
             return true;
         } catch (java.util.concurrent.CancellationException cancelled) {
-            Outcome state = dispatched ? Outcome.UNKNOWN : Outcome.CANCELLED;
+            TaskResult state = dispatched ? TaskResult.UNKNOWN : TaskResult.CANCELLED;
             results.add(item(original, step.target, state, "Cancelled; dispatched effects require reconciliation"));
             journal.record(operation, state.name(), original, Optional.of(step.target), "cancelled");
             return false;
         } catch (IOException error) {
             failed.add(original);
-            Outcome state = dispatched ? Outcome.UNKNOWN : Outcome.FAILED;
+            TaskResult state = dispatched ? TaskResult.UNKNOWN : TaskResult.FAILED;
             results.add(item(original, step.target, state, dispatched ? "Effect requires reconciliation" : "Object, permission or identity check failed"));
             journal.record(operation, state.name(), original, Optional.of(step.target), error.getClass().getSimpleName());
-            return state != Outcome.UNKNOWN;
+            return state != TaskResult.UNKNOWN;
         }
     }
 
@@ -166,13 +172,13 @@ final class FileCopyRun {
         if (step.source.kind() == FileInfo.Kind.DIRECTORY) {
             if (step.existing == null) destination.backend().mkdir(step.target);
         } else if (step.source.kind() == FileInfo.Kind.LINK)
-            FileContentPublication.link(step, linkTarget(step), destination, cancel, journal, operation);
+            FileContentPublish.link(step, linkTarget(step), destination, cancel, journal, operation);
         else {
             if (transfer == null)
-                FileContentPublication.copy(step, origin, destination, cancel, progress, completed, plan.total, journal, operation);
+                FileContentPublish.copy(step, origin, destination, cancel, progress, completed, plan.total, journal, operation);
             else {
                 FileReport.Item result = transfer.transfer(step.source, step.target, Optional.ofNullable(step.existing));
-                if (result.outcome() != Outcome.SUCCEEDED) {
+                if (result.outcome() != TaskResult.SUCCEEDED) {
                     results.add(result);
                     failed.add(step.original);
                     journal.record(operation, result.outcome().name(), step.original, Optional.of(step.target), result.detail());
@@ -239,7 +245,7 @@ final class FileCopyRun {
                 origin.backend().remove(directory.source.actual());
                 journal.record(operation, "SOURCE_REMOVED", directory.source.actual(), Optional.of(directory.target), "confirmed");
             } catch (Exception failure) {
-                results.add(item(directory.source.actual(), directory.target, Outcome.UNKNOWN, "Source directory removal requires reconciliation"));
+                results.add(item(directory.source.actual(), directory.target, TaskResult.UNKNOWN, "Source directory removal requires reconciliation"));
                 break;
             }
         }
@@ -249,7 +255,7 @@ final class FileCopyRun {
      * @throws IOException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
     private void maintainLinks() throws IOException {
-        boolean complete = results.stream().allMatch(r -> r.outcome() == Outcome.SUCCEEDED) && origin.backend().stat(plan.source.actual()).isEmpty();
+        boolean complete = results.stream().allMatch(r -> r.outcome() == TaskResult.SUCCEEDED) && origin.backend().stat(plan.source.actual()).isEmpty();
         for (var maintenance : plan.managed) {
             if (maintenance.target().equals(plan.source.actual()) && plan.source.kind() == FileInfo.Kind.DIRECTORY && !complete)
                 continue;
@@ -259,12 +265,12 @@ final class FileCopyRun {
             try {
                 same(maintenance.link(), origin.inspect(maintenance.link().actual(), true, cancel));
                 journal.record(operation, "BEFORE_LINK_UPDATE", maintenance.link().actual(), Optional.of(maintenance.newTarget()), maintenance.link().identity());
-                FileContentPublication.retarget(maintenance.link(), maintenance.newTarget(), origin, cancel, journal, operation);
+                FileContentPublish.retarget(maintenance.link(), maintenance.newTarget(), origin, cancel, journal, operation);
                 FileInfo updated = origin.inspect(maintenance.link().actual(), true, cancel);
                 journal.saveLink(updated, origin.optionalTarget(updated, cancel));
                 journal.record(operation, "LINK_UPDATED", updated.actual(), Optional.of(maintenance.newTarget()), updated.identity());
             } catch (IOException error) {
-                results.add(item(maintenance.link().actual(), maintenance.newTarget(), Outcome.UNKNOWN, "File moved; registered link maintenance requires reconciliation"));
+                results.add(item(maintenance.link().actual(), maintenance.newTarget(), TaskResult.UNKNOWN, "File moved; registered link maintenance requires reconciliation"));
             }
         }
     }

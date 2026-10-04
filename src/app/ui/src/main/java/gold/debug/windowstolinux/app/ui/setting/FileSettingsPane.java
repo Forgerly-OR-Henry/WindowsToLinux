@@ -4,10 +4,10 @@ import java.awt.*;
 import java.util.Objects;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.file.FileSettingsService;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.service.setting.FileSettingsService;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 
 /** Edits only the optional explanation preference, with confirmed persistence and privacy gating. / 仅编辑可选说明偏好，保留持久确认及隐私门禁。 */
 public final class FileSettingsPane extends JPanel implements AutoCloseable {
@@ -36,7 +36,7 @@ public final class FileSettingsPane extends JPanel implements AutoCloseable {
      * @param service preference owner / 偏好所有者
      * @param components styled controls / 样式控件
      * @param messages text catalog / 文字目录 */
-    public FileSettingsPane(FileSettingsService service, DesktopComponentFactory components, PageMessagePresenter messages) {
+    public FileSettingsPane(FileSettingsService service, DesktopPartFactory components, PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread()) throw new IllegalStateException("File settings require EDT");
         this.service = Objects.requireNonNull(service);
@@ -85,7 +85,7 @@ public final class FileSettingsPane extends JPanel implements AutoCloseable {
         busy = true;
         controls();
         status.setText(messages.text("file.settings.loading"));
-        DesktopTaskExecutor.run(service::enabled, value -> completed(value, "file.settings.loaded"), this::failed);
+        DesktopTaskRunner.run(service::enabled, value -> completed(value, "file.settings.loaded"), this::failed);
     }
 
     /** Saves one user toggle and waits for durable success. / 保存一次用户切换并等待持久成功。 */
@@ -96,7 +96,7 @@ public final class FileSettingsPane extends JPanel implements AutoCloseable {
         busy = true;
         controls();
         status.setText(messages.text("file.settings.saving"));
-        DesktopTaskExecutor.run(() -> service.save(value), saved -> completed(saved, "file.settings.saved"), this::failed);
+        DesktopTaskRunner.run(() -> service.save(value), saved -> completed(saved, "file.settings.saved"), this::failed);
     }
 
     /** Publishes a confirmed storage result. / 发布已确认存储结果。

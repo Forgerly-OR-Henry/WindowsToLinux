@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ManagedProcess;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-import gold.debug.windowstolinux.appapi.task.ProcessService;
-import gold.debug.windowstolinux.appapi.task.ProcessSpec;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.DataInputStream;
@@ -41,7 +28,18 @@ import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.process.ManagedProcess;
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.process.ProcessService;
+import gold.debug.windowstolinux.appapi.task.process.ProcessSpec;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import org.junit.jupiter.api.Test;
@@ -89,14 +87,14 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
     }
 
     @Test
-    void productionGitTaskRetainsOriginalJournalUntilNativeCancellationAndExplicitRecovery() throws Exception {
+    void productionGitTaskRetainsOriginalJournalUntilNativeCancellationAndConfirmsOriginalResult() throws Exception {
         enable();
         try (var transport = new HeldTlsTransport(); var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var request = new DeploymentGitRequest(
                 DeploymentGitRemote.parse("https://127.0.0.1:" + transport.port() + "/source"),
-                new DeploymentGitReference.DefaultBranch(), Set.of("127.0.0.1"), 2 * 1024 * 1024, false);
+                new DeploymentGitRef.DefaultBranch(), Set.of("127.0.0.1"), 2 * 1024 * 1024, false);
             var handle = new DeploymentGitSourceFlow(context).submit(request, GIT, UUID.randomUUID(),
                 "Cancelled Git project", Optional.empty(), java.time.Instant.parse("2026-09-28T00:00:00Z"),
                 2 * 1024 * 1024, 100);
@@ -105,6 +103,11 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 assertEquals(4, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
                 handle.requestCancel();
+                long cancellationDeadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
+                while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < cancellationDeadline)
+                    Thread.sleep(10);
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state(),
+                    "Original cancellation must be observed before releasing the held transport");
                 assertFalse(handle.completion().toCompletableFuture().isDone());
                 assertEquals(4, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
@@ -112,18 +115,25 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 transport.release();
             }
             long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-            while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
-                Thread.onSpinWait();
-            assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+            while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED
+                && System.nanoTime() < deadline)
+                Thread.sleep(10);
+            assertTrue(Set.of(TaskState.UNKNOWN, TaskState.ENDED).contains(handle.snapshot().state()));
             while (scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')") != 0
                 && System.nanoTime() < deadline)
                 Thread.sleep(10);
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
-            var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+            var recovered = handle.snapshot();
+            if (recovered.state() == TaskState.UNKNOWN) {
+                assertFalse(handle.completion().toCompletableFuture().isDone());
+                recovered = reconcileReady(runtime, handle);
+            }
             assertEquals(TaskState.ENDED, recovered.state());
-            assertEquals(Optional.of(Outcome.CANCELLED), recovered.outcome());
+            assertEquals(Optional.of(TaskResult.CANCELLED), recovered.outcome());
+            assertEquals(TaskResult.CANCELLED,
+                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
         }
@@ -137,7 +147,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
             ModContext original = runtime.modContexts().get(OWNER).context();
             var request = new DeploymentGitRequest(
                 DeploymentGitRemote.parse("https://127.0.0.1:" + transport.port() + "/source"),
-                new DeploymentGitReference.DefaultBranch(), Set.of("127.0.0.1"), 2 * 1024 * 1024, false);
+                new DeploymentGitRef.DefaultBranch(), Set.of("127.0.0.1"), 2 * 1024 * 1024, false);
             var job = new AtomicReference<UUID>();
             var processId = new AtomicReference<UUID>();
             var taskId = new AtomicReference<UUID>();
@@ -179,7 +189,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                                                                                         Duration timeout) throws ApiException {
                             requestCount.incrementAndGet();
                             return actual.request(message, timeout).whenComplete((result, failure) -> {
-                                if (result != null && result.outcome() == Outcome.UNKNOWN)
+                                if (result != null && result.outcome() == TaskResult.UNKNOWN)
                                     callerObservation.countDown();
                             });
                         }
@@ -217,7 +227,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                         throw failure.getCause();
                     }
                 });
-            var preparer = new DeploymentGitPreparer(intercepted, GIT);
+            var preparer = new DeploymentGitSetup(intercepted, GIT);
             var authorFailure = new AtomicReference<Throwable>();
             var preparationProblem = new AtomicReference<Problem>();
             var callbackFinished = new CountDownLatch(1);
@@ -226,25 +236,25 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 var receipt = physicalReceipt.get();
                 assertNotNull(receipt);
                 var outcome = DeploymentGitProtocol.result(receipt).outcome();
-                assertTrue(outcome == Outcome.CANCELLED || outcome == Outcome.FAILED);
+                assertTrue(outcome == TaskResult.CANCELLED || outcome == TaskResult.FAILED);
                 return new OperationResult<Void>(outcome, Optional.empty(),
                     Optional.of(new Problem(
-                        outcome == Outcome.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
+                        outcome == TaskResult.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
                         "TEST_GIT_RESULT", "Original local Git result was confirmed", Map.of(),
                         Optional.empty())));
             });
             var handle = original.tasks()
                 .submit(new TaskRequest("git-native-cancel", "Native Git cancellation", List.of(), true), task -> {
                     try {
-                        preparer.prepare(request, 2 * 1024 * 1024, 100, task);
+                        preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(original, task, request));
                         throw new AssertionError("The held native Git fetch completed without cancellation");
                     } catch (ApiException failure) {
                         preparationProblem.set(failure.problem());
-                        return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+                        return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(),
                             Optional.of(failure.problem()));
                     } catch (Throwable failure) {
                         authorFailure.set(failure);
-                        return new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
                     } finally {
                         callbackFinished.countDown();
                     }
@@ -290,7 +300,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                         DeploymentGitProtocol.object(
                             DeploymentGitProtocol.result(receipt).value().orElseThrow().jsonObject()),
                         "jobId"));
-                assertEquals(Outcome.CANCELLED, DeploymentGitProtocol.result(receipt).outcome());
+                assertEquals(TaskResult.CANCELLED, DeploymentGitProtocol.result(receipt).outcome());
                 assertFalse(nativeGit.isAlive());
                 assertFalse(worker.isAlive());
                 assertEquals(1, requestCount.get());
@@ -300,14 +310,14 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 assertFalse(Files.exists(controlPath.get()));
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
                 assertFalse(handle.completion().toCompletableFuture().isDone());
-                runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
-                assertEquals(Outcome.CANCELLED,
+                reconcileReady(runtime, handle);
+                assertEquals(TaskResult.CANCELLED,
                     handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             } finally {
                 transport.release();
                 assertTrue(callbackFinished.await(35, TimeUnit.SECONDS), "Original Git callback did not return");
                 if (handle.snapshot().state() == TaskState.UNKNOWN)
-                    runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+                    reconcileReady(runtime, handle);
                 registration.close();
             }
         }

@@ -1,27 +1,34 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.LogService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessService;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.ai.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.*;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.mod.service.ModServices;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.file.FileService;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
+import gold.debug.windowstolinux.appapi.task.process.ProcessService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
 /** Freezes one original assisted task and its language-call budget without replacing platform authority. / 冻结一项原辅助任务及语言调用预算，不替换平台权限。 */
@@ -121,7 +128,7 @@ public final class DeploymentAssistedScope implements ModContext {
              * @param supplied original task / 原任务
              * @return actual guarded connection / 实际带校验连接
              * @throws ApiException on drift or failed connection / 漂移或连接失败时 */
-            public RemoteSession connect(ServerRef server, TaskContext supplied) throws ApiException {
+            public RemoteSession connect(ServerId server, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
                 verify();
                 return new DeploymentAssistedSession(original.linux().connect(server, supplied),
@@ -149,8 +156,8 @@ public final class DeploymentAssistedScope implements ModContext {
              * @param supplied original task / 原任务
              * @return no audio dispatch / 不发送音频
              * @throws ApiException because this workflow did not admit audio / 此流程未准入音频 */
-            public OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, TaskContext supplied) throws ApiException {
+            public OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, TaskContext supplied) throws ApiException {
                 sameTask(supplied);
                 verify();
                 throw voiceDenied();
@@ -162,8 +169,8 @@ public final class DeploymentAssistedScope implements ModContext {
              * @param supplied original task / 原任务
              * @return no audio dispatch / 不发送音频
              * @throws ApiException because audio was not admitted / 音频未准入 */
-            public OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expected, TaskContext supplied) throws ApiException {
+            public OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, String expected, TaskContext supplied) throws ApiException {
                 return call(request, supplied);
             }
 
@@ -173,8 +180,8 @@ public final class DeploymentAssistedScope implements ModContext {
              * @param supplied original task / 原任务
              * @return no realtime session / 不创建实时会话
              * @throws ApiException because audio was not admitted / 音频未准入 */
-            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
-                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
+            public gold.debug.windowstolinux.appapi.ai.voice.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.voice.VoiceListener listener,
                 TaskContext supplied) throws ApiException {
                 sameTask(supplied);
                 verify();

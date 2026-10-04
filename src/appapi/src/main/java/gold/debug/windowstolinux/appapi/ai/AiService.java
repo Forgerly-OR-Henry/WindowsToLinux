@@ -1,8 +1,17 @@
 package gold.debug.windowstolinux.appapi.ai;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceListener;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceSession;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /**
  * Caller-bound model access with task authorization and budgets. / 绑定调用方并校验任务授权及预算的模型能力。

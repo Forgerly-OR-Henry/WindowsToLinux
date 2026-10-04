@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 /** Keeps implemented packages and planned document nodes distinct. / 区分已实现包与文档中的规划节点。 */
@@ -19,9 +20,12 @@ class DocumentStructureArchitectureTest {
 
     @Test
     void everyProductionPackageHasADocumentedCurrentNode() throws Exception {
-        var violations = structureViolations(document(), productionPackages(),
+        String current = document();
+        var violations = structureViolations(current, productionPackages(),
             ModuleDependencyArchitectureTest.declaredDependencies().keySet());
         assertTrue(violations.isEmpty(), () -> "document structure violations: " + violations);
+        var presentation = presentationViolations(currentTree(current), expectedNodeKinds());
+        assertTrue(presentation.isEmpty(), () -> "current tree presentation violations: " + presentation);
     }
 
     @Test
@@ -60,14 +64,106 @@ class DocumentStructureArchitectureTest {
             () -> targetNodes(CURRENT_TREE_ANCHOR + "\n" + fence + "text\n└─ src/\n"));
     }
 
+    @Test
+    void wrongNodeKindsMissingChineseResponsibilitiesAndMisalignmentFail() {
+        String root = "WindowsToLinux/";
+        String child = "└─ src/";
+        String tree = root + " ".repeat(24 - root.length()) + "# [聚合]  测试工程\n"
+            + child + " ".repeat(24 - child.length()) + "# [目录]  测试源码\n";
+        Map<String, String> expected = Map.of("", "[聚合]", "src", "[目录]");
+        assertEquals(List.of(), presentationViolations(tree, expected));
+        assertFalse(presentationViolations(tree.replace("[目录]", "[模块]"), expected).isEmpty());
+        assertFalse(presentationViolations(tree.replace("# [目录]", "#"), expected).isEmpty());
+        assertFalse(presentationViolations(tree.replace("测试源码", "source"), expected).isEmpty());
+        assertFalse(presentationViolations(tree.replace("└─ src/ ", "└─ src/"), expected).isEmpty());
+        assertFalse(presentationViolations(tree.replace("[目录]  ", "[目录] "), expected).isEmpty());
+        assertFalse(presentationViolations(tree.replace("└─ src/ ", "└─ src/\t"), expected).isEmpty());
+    }
+
+    private static Map<String, String> expectedNodeKinds() throws Exception {
+        var root = ArchitectureSourceChecker.projectRoot();
+        Map<String, String> kinds = new LinkedHashMap<>();
+        kinds.put("docs", "[目录]");
+        kinds.put("history-src", "[归档]");
+        kinds.put("src", "[目录]");
+        for (var module : MavenModuleGraph.read(root)) {
+            String path = root.relativize(module.pom().getParent()).toString().replace('\\', '/');
+            kinds.put(path, module.aggregate() ? "[聚合]" : "[模块]");
+            kinds.put(path.isEmpty() ? "pom.xml" : path + "/pom.xml", "[构建文件]");
+            if (!path.startsWith("src/mod/") || !Files.isRegularFile(module.pom().getParent().resolve("mod.json")))
+                continue;
+            kinds.put(path + "/Mod.java", "[入口类]");
+            var descriptor = new ObjectMapper().readTree(module.pom().getParent().resolve("mod.json").toFile());
+            String base = "gold.debug.windowstolinux." + module.path().replace('/', '.');
+            for (var exported : descriptor.path("exports")) {
+                String name = exported.asText();
+                assertTrue(name.startsWith(base + "."), "Mod export must belong to its root package");
+                kinds.put(path + name.substring(base.length()).replace('.', '/'), "[公开包]");
+            }
+        }
+        for (String path : productionPackages())
+            kinds.putIfAbsent(path, path.startsWith("src/appapi/") ? "[公开包]" : "[包]");
+        return kinds;
+    }
+
+    private static List<String> presentationViolations(String tree, Map<String, String> kinds) {
+        var node = Pattern.compile("^([│ ]*)(?:├─|└─) ([^\\s]+).*$");
+        var presentation = Pattern.compile("^(.+?) +# (\\[[^\\]]+\\]) +(.*)$");
+        List<String> stack = new ArrayList<>();
+        List<String> violations = new ArrayList<>();
+        Integer commentColumn = null;
+        Integer responsibilityColumn = null;
+        for (String line : tree.lines().filter(value -> !value.isBlank()).toList()) {
+            String path = "";
+            var entry = node.matcher(line);
+            if (entry.matches()) {
+                int depth = entry.group(1).length() / 3;
+                while (stack.size() > depth)
+                    stack.removeLast();
+                if (depth != stack.size()) {
+                    violations.add("Invalid node indentation: " + line);
+                    continue;
+                }
+                stack.add(entry.group(2).replaceFirst("/$", ""));
+                path = String.join("/", stack);
+            }
+            var match = presentation.matcher(line);
+            if (!match.matches()) {
+                violations.add("Node needs a type and Chinese responsibility: " + line);
+                continue;
+            }
+            String expected = kinds.getOrDefault(path, path.startsWith("src/") && entry.group(2).endsWith("/")
+                ? "[包]" : "");
+            if (!match.group(2).equals(expected))
+                violations.add("Incorrect node type for " + path + ": " + match.group(2) + " expected " + expected);
+            if (!match.group(3).matches(".*\\p{IsHan}.*"))
+                violations.add("Node needs a Chinese responsibility: " + line);
+            int comment = displayWidth(line.substring(0, line.indexOf('#')));
+            int responsibility = displayWidth(line.substring(0, match.start(3)));
+            if (commentColumn == null) {
+                commentColumn = comment;
+                responsibilityColumn = responsibility;
+            } else if (comment != commentColumn || responsibility != responsibilityColumn)
+                violations.add("Comment columns must align: " + line);
+            if (line.indexOf('\t') >= 0)
+                violations.add("Tree padding must use spaces: " + line);
+        }
+        return violations;
+    }
+
+    private static int displayWidth(String value) {
+        return value.codePoints().map(point -> Character.UnicodeScript.of(point) == Character.UnicodeScript.HAN
+            ? 2 : 1).sum();
+    }
+
     private static String document() throws Exception {
-        return Files.readString(ArchitectureSourceInspector.projectRoot().resolve("docs/File.md"));
+        return Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md"));
     }
 
     private static Set<String> productionPackages() throws Exception {
         Set<String> packages = new HashSet<>();
-        var root = ArchitectureSourceInspector.projectRoot();
-        for (var source : ArchitectureSourceInspector.production()) {
+        var root = ArchitectureSourceChecker.projectRoot();
+        for (var source : ArchitectureSourceChecker.production()) {
             String relative = root.relativize(source.path()).toString().replace('\\', '/');
             String module = relative.substring(0, relative.indexOf("/src/main/java/"));
             String base = "gold.debug.windowstolinux." + module.substring(4).replace('/', '.').replace('-', '.');
@@ -92,7 +188,7 @@ class DocumentStructureArchitectureTest {
         return violations;
     }
 
-    private static Map<String, Boolean> targetNodes(String document) {
+    private static String currentTree(String document) {
         document = document.replace("\r\n", "\n");
         String fence = String.valueOf((char) 96).repeat(3);
         int anchor = document.indexOf(CURRENT_TREE_ANCHOR);
@@ -104,7 +200,11 @@ class DocumentStructureArchitectureTest {
         assertTrue(start >= 0, "Current source tree must exist in the anchored section");
         int end = section.indexOf(fence, start + fence.length());
         assertTrue(end >= 0, "Current source tree fence must close in the anchored section");
-        String tree = section.substring(start + fence.length() + 5, end);
+        return section.substring(start + fence.length() + 5, end);
+    }
+
+    private static Map<String, Boolean> targetNodes(String document) {
+        String tree = currentTree(document);
         var pattern = Pattern.compile("^([│ ]*)(?:├─|└─) ([^\\s]+)(.*)$");
         List<String> stack = new ArrayList<>();
         List<Boolean> plans = new ArrayList<>();

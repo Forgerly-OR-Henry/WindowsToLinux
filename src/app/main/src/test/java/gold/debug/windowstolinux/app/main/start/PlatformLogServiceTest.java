@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogEvent;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.LogStorage;
-import gold.debug.windowstolinux.appapi.task.LogTarget;
-import gold.debug.windowstolinux.appapi.task.LogWriteResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,7 +13,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.log.LogStorage;
+import gold.debug.windowstolinux.appapi.task.log.LogTarget;
+import gold.debug.windowstolinux.appapi.task.log.LogWriteResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -37,8 +35,8 @@ class PlatformLogServiceTest {
             Optional.empty());
     }
 
-    static LogRepository.Target target(PlatformRuntime runtime, LogTarget handle) throws Exception {
-        return new LogRepository(runtime.persistence().database()).targets().stream()
+    static LogStore.Target target(PlatformRuntime runtime, LogTarget handle) throws Exception {
+        return new LogStore(runtime.persistence().database()).targets().stream()
             .filter(t -> t.key().equals(handle.key())).findFirst().orElseThrow();
     }
 
@@ -80,7 +78,7 @@ class PlatformLogServiceTest {
                 assertEquals(LogStorage.DATABASE, first.write(a, event("record-" + i)).storage());
             assertEquals(LogStorage.DATABASE, second.write(b, event("other owner")).storage());
             assertFalse(Files.exists(root.resolve("log")), "Ordinary database writes must not create log copies");
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             assertEquals(100, repository.read(target(runtime, a)).size());
             var report = runtime.logs().cleanHistory();
             assertTrue(report.stream().allMatch(r -> r.problem().isEmpty()));
@@ -119,7 +117,7 @@ class PlatformLogServiceTest {
             assertTrue(result.problem().isPresent());
             assertArrayEquals(originalBytes, Files.readAllBytes(active));
             assertArrayEquals(partialReplacement, Files.readAllBytes(pending));
-            assertEquals(1, new LogRepository(runtime.persistence().database()).read(target).size());
+            assertEquals(1, new LogStore(runtime.persistence().database()).read(target).size());
         }
     }
 
@@ -132,11 +130,11 @@ class PlatformLogServiceTest {
             var detail = "password=SECRET123 token:ABC999 Authorization: Bearer BEARER987 https://user:pw@example.invalid/private \"api_key\":\"KEYSECRET\"\n-----BEGIN PRIVATE KEY-----\nPRIVATEBYTES\n-----END PRIVATE KEY-----\n"
                 + "😀\n\\\"".repeat(20000);
             var result = logger.write(handle, new LogEvent(LogLevel.INFO, "ENCODING", "中文😀".repeat(1000),
-                Optional.of(detail), Optional.empty(), Optional.empty(), Optional.of(Outcome.SUCCEEDED)));
+                Optional.of(detail), Optional.empty(), Optional.empty(), Optional.of(TaskResult.SUCCEEDED)));
             assertEquals(LogStorage.DATABASE, result.storage(), result.toString());
             assertTrue(result.truncated());
             var t = target(runtime, handle);
-            var record = new LogRepository(runtime.persistence().database()).read(t).getFirst();
+            var record = new LogStore(runtime.persistence().database()).read(t).getFirst();
             byte[] encoded = LogRecordCodec.encode(t.key(), record);
             assertTrue(encoded.length <= 16384);
             assertTrue(record.message().getBytes(StandardCharsets.UTF_8).length <= 2048);
@@ -153,7 +151,7 @@ class PlatformLogServiceTest {
                 LogStorage.NOT_SAVED, logger
                     .write(handle,
                         new LogEvent(LogLevel.INFO, "UNKNOWN", "unfinished", Optional.empty(),
-                            Optional.empty(), Optional.empty(), Optional.of(Outcome.UNKNOWN)))
+                            Optional.empty(), Optional.empty(), Optional.of(TaskResult.UNKNOWN)))
                     .storage());
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
@@ -161,7 +159,7 @@ class PlatformLogServiceTest {
             var handle = logger.register(CATEGORY);
             assertEquals(LogStorage.NOT_SAVED, logger.write(handle, new LogEvent(LogLevel.DEBUG, "DEBUG_TEST",
                 "not retained", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())).storage());
-            assertEquals(2, new LogRepository(runtime.persistence().database()).read(target(runtime, handle)).size());
+            assertEquals(2, new LogStore(runtime.persistence().database()).read(target(runtime, handle)).size());
         }
     }
 
@@ -191,7 +189,7 @@ class PlatformLogServiceTest {
             var handle = logger.register(CATEGORY);
             assertEquals(original.key(), handle.key());
             var target = target(runtime, handle);
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             var records = repository.read(target);
             assertEquals(1, records.size());
             assertEquals(id, records.getFirst().id());
@@ -208,7 +206,7 @@ class PlatformLogServiceTest {
              var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             for (int i = 0; i < 100; i++)
                 assertEquals(LogStorage.DATABASE, logger.write(handle, event("before-" + i)).storage());
             var before = repository.read(target);
@@ -235,7 +233,7 @@ class PlatformLogServiceTest {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var handle = logger.register(CATEGORY);
             var target = target(runtime, handle);
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             for (int i = 0; i < 20; i++)
                 logger.write(handle, event("original-" + i));
             var original = repository.read(target).getFirst();
@@ -317,9 +315,28 @@ class PlatformLogServiceTest {
                 sql(runtime.persistence().database(), "ALTER TABLE unavailable_log RENAME TO runtime_log");
             }
             runtime.logs().replayAll();
-            assertEquals(10, new LogRepository(runtime.persistence().database()).read(target).size());
+            assertEquals(10, new LogStore(runtime.persistence().database()).read(target).size());
             assertTrue(new EmergencyLogs(root).read(target).isEmpty());
             assertEquals("retained unknown owner", Files.readString(orphan));
+        }
+    }
+
+    @Test
+    void lowerEmergencyRetentionStillReadsOldRecordsAndOnlyTrimsOnWrite() throws Exception {
+        try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION);
+             var logger = runtime.capabilities().logs(OWNER, VERSION, Optional.empty())) {
+            runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+            var handle = logger.register(CATEGORY);
+            var target = target(runtime, handle);
+            for (int index = 0; index < 8; index++)
+                new EmergencyLogs(root).append(target, LogRecordCodec.create(target, VERSION, event("old-" + index)));
+            var reduced = new EmergencyLogs(root, 3);
+            assertEquals(8, reduced.read(target).size());
+            reduced.replace(target, reduced.read(target));
+            assertEquals(8, reduced.read(target).size());
+            reduced.append(target, LogRecordCodec.create(target, VERSION, event("new")));
+            assertEquals(3, reduced.read(target).size());
+            assertThrows(IllegalArgumentException.class, () -> new EmergencyLogs(root, 0));
         }
     }
 
@@ -342,7 +359,7 @@ class PlatformLogServiceTest {
             });
             one.get(10, TimeUnit.SECONDS);
             two.get(10, TimeUnit.SECONDS);
-            var records = new LogRepository(runtime.persistence().database()).read(target(runtime, a));
+            var records = new LogStore(runtime.persistence().database()).read(target(runtime, a));
             assertEquals(100, records.size());
             assertEquals(100, records.stream().map(LogRecordCodec.Record::id).distinct().count());
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log ALTER COLUMN owner_id DROP NOT NULL");

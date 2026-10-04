@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Result of a best-effort local diagnostic write. / 本地诊断尽力写入的结果。

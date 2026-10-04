@@ -64,11 +64,11 @@ final class DeploymentAgentGitForm {
         String projectName = name.getText().trim();
         if (projectName.isBlank()) throw new IllegalArgumentException("Project name missing");
         var remote = DeploymentGitRemote.parse(url.getText().trim());
-        DeploymentGitReference ref = switch ((String) kind.getSelectedItem()) {
-            case "DEFAULT" -> new DeploymentGitReference.DefaultBranch();
-            case "BRANCH" -> new DeploymentGitReference.Branch(reference.getText().trim());
-            case "TAG" -> new DeploymentGitReference.Tag(reference.getText().trim());
-            case "COMMIT" -> new DeploymentGitReference.Commit(reference.getText().trim());
+        DeploymentGitRef ref = switch ((String) kind.getSelectedItem()) {
+            case "DEFAULT" -> new DeploymentGitRef.DefaultBranch();
+            case "BRANCH" -> new DeploymentGitRef.Branch(reference.getText().trim());
+            case "TAG" -> new DeploymentGitRef.Tag(reference.getText().trim());
+            case "COMMIT" -> new DeploymentGitRef.Commit(reference.getText().trim());
             default -> throw new IllegalArgumentException("Git reference missing");
         };
         var request = new DeploymentGitRequest(remote, ref, remote.host().map(Set::of).orElseGet(Set::of),

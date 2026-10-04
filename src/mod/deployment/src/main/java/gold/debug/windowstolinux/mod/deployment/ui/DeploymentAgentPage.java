@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
 import java.awt.BorderLayout;
 import java.awt.GridLayout;
 import java.nio.file.Path;
@@ -14,11 +10,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerInfo;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
-import gold.debug.windowstolinux.mod.deployment.service.agent.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.file.git.*;
+import gold.debug.windowstolinux.mod.deployment.service.agent.*;
 
 /** Agent-only owner-bound page for local or pinned Git tasks. / 用于本地或固定 Git 任务的自主专属所属页面。 */
 public final class DeploymentAgentPage implements ModPage {
@@ -230,7 +230,7 @@ public final class DeploymentAgentPage implements ModPage {
                 handle.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                     if (closed || locked || generation.get() != view)
                         return;
-                    if (error != null || result.outcome() != Outcome.SUCCEEDED) {
+                    if (error != null || result.outcome() != TaskResult.SUCCEEDED) {
                         status.setText(text("preferenceError"));
                         return;
                     }
@@ -260,7 +260,7 @@ public final class DeploymentAgentPage implements ModPage {
                         lookup = null;
                     if (closed || locked || generation.get() != view)
                         return;
-                    if (error != null || result.outcome() != Outcome.SUCCEEDED) {
+                    if (error != null || result.outcome() != TaskResult.SUCCEEDED) {
                         status.setText(text("serverError"));
                         return;
                     }

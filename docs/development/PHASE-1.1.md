@@ -2,6 +2,8 @@
 
 > 当前活动根为 APP/appapi/deployment Mod，helper 协议 14、业务 Schema 3。15 模块根测试编译已首次完整通过；S3 平台与 CLASS 界面、S4 能力与原任务生命周期、S5 三模式部署、数据库、应用管理和公开协作的本机适用合同按有效实际结果合集验收。取消与非法输入在 EDT/工作线程间保留原异常身份。接口外形、动画和非必要调试展示精修后置，S6/S7、真实远端与 SSH Git 凭据接线不属于本次已验证交付。
 
+历史部署功能及界面的完整对照和补齐进入 [1.3 期部署迁移计划](PHASE-1.3.md#deployment-migration)；本期已有验收结果及 S6/S7 后置边界继续保留，不以新增计划改写既有交付。
+
 ## 状态与阅读顺序
 
 ### 本次本机验证边界（2026-10-01）
@@ -199,7 +201,7 @@
 - S3 常驻模型配置：默认窗口已接模型清单、明确输出上限、文字/视觉单独验证及用途排序。新 PlatformModelService 复用中央任务和公开 AI 相同的传输/释放实现；通用随机回显及图片颜色挑战替代配置验证中的部署上下文，验证成功且配置未变才提交。留空密钥保留原引用和另一项能力，更新密钥使旧能力证据失效；新模型凭据 ID 由宿主生成。原任务取消/提交未知可明确核对，不重发；HostTaskRecovery 与 SSH 检查共享前次进程资源核验。7 项新配置集成、2 项真实窗口流程与 28 项受影响回归通过，共 37、零跳过；14 个生产文件 256 声明双语覆盖、doclint 和 Java 格式通过。已查看模型页截图；默认入口既有隔离 CLASS/JAR 机制测试通过，不是发行物验收。仅本机模拟提供者，无真实模型服务或远端 Linux 验证。Source、救援、Mod 自动启用协调、活动模块切换及 S4～S6 仍未完成，S7 暂缓。
 - 工程编号与软件版本、数据库 schema、helper 协议版本各自独立。原一期至六期改称 0.1～0.6，见[编号对应表](DEVELOPMENT.md#phase-numbering)。
 - 本文的“已确认”指产品方向和约束已确认，**不表示实现已经完成**；工程规格与验证工作见[实施清单](#review-decisions)，具体完成项不等于代码已经实现。
-- [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目标目录](../File.md#phase-1-1-target) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)
+- [开发总纲](DEVELOPMENT.md) · [当前结构与唯一详细目录](../File.md#current-source-tree) · [当前文件索引](../AllFile.md) · [当前产品手册](../PRODUCT-MANUAL.md) · [现行数据库与安全](../Runtime.md#app-security-database)
 - 作者规范：[Mod 开发与包格式](../Mod.md)、[身份与版本](../Mod.md#mod-identity-version)、[三种加载模式](../Mod.md#loading-modes)、[数据库与迁移](../Mod.md#mod-database)、[用户操作与生命周期](../Mod.md#mod-lifecycle)。
 - 结构与交付：[源码结构](../File.md#mod-source-layout)、[标准包名](../File.md#mod-package-naming)、[APP/JAR 发布布局](../APP.md)。工程规格按 D1～D7 索引，实现与验证按独立任务记录。
 
@@ -244,7 +246,7 @@
 
 ## 2. 迁移时的结构依据
 
-模块、包及依赖的唯一正文为 [File.md 目标依赖](../File.md#phase-1-1-dependencies)，公开能力与跨 Mod 协作为 [Mod.md](../Mod.md#platform-api)。按下节逐项迁移，不把旧 `shared` 整体改名为 API，不把旧 `linux-sshd` 整体搬进平台，也不以动态菜单掩盖主体对业务实现的直接依赖。
+模块、包及依赖的唯一正文为 [File.md 统一依赖](../File.md#module-dependencies)，公开能力与跨 Mod 协作为 [Mod.md](../Mod.md#platform-api)。按下节逐项迁移，不把旧 `shared` 整体改名为 API，不把旧 `linux-sshd` 整体搬进平台，也不以动态菜单掩盖主体对业务实现的直接依赖。
 
 API 仅提取真实调用方需要的最小契约；Linux 通用连接与业务 helper 分开归属。迁移保留标准、辅助、自主模式的差异，测试分别验证调用路径。具体签名见 [作者 API](../Mod.md#public-api-spec)，类型共享和适配在 S2 验证。
 
@@ -484,10 +486,12 @@ S0 的规范入口维护在[第 9 节规格索引](#implementation-specification
 
 - 按 File.md 的已确认目标实施，不为包名对称额外建立模块。超出目标确需新增模块时，先说明现有模块内替代方案、依赖、迁移成本及文档影响，再确定调整；已经批准的目标模块不重复确认。
 - 根 POM、IDE 输出和代码实际位置一致，结构改动同时更新 File 的当前树、依赖解析区域及受影响开发文档；AllFile 只列真实生产文件。归档排除按第 6 节执行。
-- `PackageStructureArchitectureTest` 当前要求全部顶级类型简单名唯一。新规则只对已登记的 Mod 入口按完整限定名、实际路径和唯一指定入口作限定例外，其他类型唯一性与禁限用词检查保留。
-- 把当前五个功能组、包深度、测试镜像和导入图约束逐项映射到目标结构；保留 standard/agent/core 独立性及反向依赖检查，不用全面放宽门禁消除冲突。
+- 早期迁移采用全工程顶级简单名唯一及指定 Mod 入口例外；现行 1.2 门禁按 APP/appapi 简单名与 Mod 完整限定名区分，Mod 第一层之后由作者自主组织。实际入口、导出、依赖和权限检查保留，正文见 [结构检查](../File.md#structure-checks)。
+- 早期功能组和包深度模板已由 [1.2 现行分包规则](../File.md#package-boundaries)取代；继续保留测试镜像、生产依赖环、standard/agent/core 独立性及反向依赖检查，不用放宽权限或依赖检查消除结构冲突。
 - `.mvn/formatting/format.py`、架构扫描、索引生成和发布均在含 `history-src` 的真实工作区验证排除效果；只写 IDEA Excluded 或 Git 忽略都不能替代构建/扫描排除。
 - helper 首轮保留完整组装和既有协议；Java 包迁移不自动升级 helper/备份格式。资源字节变化时校验摘要与兼容性，不通过旧产物遮掩迁移问题。
+
+**历史资源核对依据：** `DeploymentManagedHelperBundle` 以显式顺序组装固定资源，`DeploymentPublishEvidenceChannel` 与 `DeploymentPublishReceipt` 分担原任务／独立操作证据和固定回执解析；Channel 保留实际远程准入与发送。该轮协议 14 有 58 个维护资源，组装 SHA 与资源集合分别核对。37 项未改资源的完整路径和原始 SHA 对应已提交 081 基线，不能用更早 shared 版本代替。 此处保留该轮结构检查的资源身份，不据此推定新的远端验收或后续协议版本。
 
 <a id="remaining-review"></a>
 
@@ -521,7 +525,7 @@ S0 的规范入口维护在[第 9 节规格索引](#implementation-specification
 - 用户确认 H2 统一使用 `com.h2database:h2:2.5.250`，由现有 Maven 仓库管理。2.5.252 手动下载包及本次手动安装缓存已移除；冻结归档保留其基线文字，不参与活动依赖。
 - 首轮数据库探针在 JDK 21 / H2 2.5.250 下 5 项通过，零失败、错误或跳过：44 张目标表初始化及重开、Schema 读写/外键/管理员权限拒绝、批处理/保存点/LOB/关闭回滚、迁移只读来源及 DDL 自提交、缺库拒绝与旧 SQLite 字节保全。该结果尚不关闭完整 S2-02 或生产功能验收。
 - 已按运行证据修正 DDL：凭据 nonce 使用 `BINARY VARYING(12)` 支持唯一约束并保留长度校验；引导与普通连接分离引擎设置，普通连接保留 `DATABASE_TO_LOWER=TRUE`，不执行管理员级 `WRITE_DELAY` 设置。
-- 完整隔离探针现为 28 项 Java 测试，全部通过；PF4J 固定 `3.13.0`，H2 固定 `2.5.250`。可复跑的代码、命令及逐组范围见 [S2 验证工程](../../.mvn/probes/phase11/README.md)，不挂旧根 reactor。DPAPI CurrentUser 往返与篡改拒绝在普通 Windows 用户上下文另行通过。
+- 完整隔离探针现为 28 项 Java 测试，全部通过；PF4J 固定 `3.13.0`，H2 固定 `2.5.250`。该28项结果保留为当时的探针事实；旧 API/SQL 独立工程已移除。当前隔离、共享加载、JAR释放、JDBC占用、页面生命周期及子进程场景纳入主工程对应测试，后续以当前根工程验证为准。DPAPI CurrentUser 往返与篡改拒绝在普通 Windows 用户上下文另行通过。
 - 额外负向验证包括真实子进程异常退出后的 H2 目标核对、第二进程开库拒绝、提交应答丢失、连接关闭失败后保留占用、关闭页面后的任务完成、进程 EOF/错误协议及 STOPPED 后仍未退出。探针资源已释放；不据此宣称生产生命周期、迁移管理、GUI 实际操作或远端业务完成。
 - 冻结归档的工作区 2,836 项与 Git 原始 blob 2,837 项（含摘要清单本身）均通过核对。归档恢复必须保留原始字节，不能由新工作区的自动行尾转换推断一致。
 
@@ -664,7 +668,7 @@ Maven 同步和 `verify` 使用系统 Maven 本地仓库。依赖尚未同步时
 
 ### 12.1 H2 物理组织与初始化
 
-数据库为 `data/platform.mv.db`，普通模式、嵌入式、单 APP 进程持有引擎。管理员引导连接参数固定 `DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0`，已有库使用 `IFEXISTS=TRUE`；只有确认文件从未存在的首次初始化允许创建，损坏或不可访问不能当作新库。Mod/迁移非管理员连接使用同一数据库的 `DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE;LOCK_TIMEOUT=5000`，保留名称解析规则，不重复设置需要管理员权限的引擎选项。由 main 的装配调用 app/db，引导完成后才开放 Mod 连接；最后一个受管理连接释放后按正常关闭流程关闭引擎。
+数据库为 `data/windowstolinux.mv.db`，普通模式、嵌入式、单 APP 进程持有引擎。管理员引导连接参数固定 `DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=FALSE;LOCK_TIMEOUT=5000;WRITE_DELAY=0`，已有库使用 `IFEXISTS=TRUE`；只有确认文件从未存在的首次初始化允许创建，损坏或不可访问不能当作新库。Mod/迁移非管理员连接使用同一数据库的 `DATABASE_TO_LOWER=TRUE;IFEXISTS=TRUE;LOCK_TIMEOUT=5000`，保留名称解析规则，不重复设置需要管理员权限的引擎选项。由 main 的装配调用 app/db，引导完成后才开放 Mod 连接；最后一个受管理连接释放后按正常关闭流程关闭引擎。
 
 物理 Schema 编码为 `m_`＋稳定 ID UTF-8 的完整 SHA-256 小写十六进制＋`_v`＋清单数据版本，按原文精确编码，不小写化 ID。数据版本最多 64 位十进制数字，名称不超过 133 字符；平台保留 Schema 名 `app`，公共 PUBLIC 不授业务建表权限。每个 Schema 创建一个非管理员所有者用户，名称为 `u_`＋SHA-256(Mod ID＋NUL＋数据版本)；物理编码碰撞或已存在但登记不匹配时停止该项，禁止合并。重建同名 Schema 生成新的 UUID generation，所有引用、日志类别和连接都校验代次。
 

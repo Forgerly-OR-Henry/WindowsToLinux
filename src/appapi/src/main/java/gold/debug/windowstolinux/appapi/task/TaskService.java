@@ -2,6 +2,17 @@ package gold.debug.windowstolinux.appapi.task;
 
 import java.util.Optional;
 
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.recover.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
+
 /**
  * Caller-bound task admission, observation and reconciliation. / 绑定调用方的任务准入、观察与核对服务。
  */
@@ -18,7 +29,11 @@ public interface TaskService {
     <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException;
 
     /**
-     * Reads bounded caller-owned snapshots; cursors are not transaction snapshots. / 读取有界的调用方快照；游标不保证事务快照。
+     * Reads unfinished caller-owned tasks in submission order. Cursors retain the first page's admission upper bound,
+     * so earlier completions do not shift later pages and later submissions are excluded. A cursor belongs to this
+     * exact service binding and boot; it is not a transaction snapshot and completed tasks may disappear.
+     * / 按提交顺序读取调用方未结束任务。游标保留首屏准入上限，早期任务结束不挤动后续页，后续提交不纳入；
+     * 游标仅属于本服务绑定及本次启动，不保证事务快照，已结束任务可以消失。
      * @param cursor optional opaque continuation cursor / 可选的不透明后续游标
      * @param limit maximum page size from one to two hundred / 一到二百之间的页容量上限
      * @return the owned result described by this capability / 此能力约定的所属结果

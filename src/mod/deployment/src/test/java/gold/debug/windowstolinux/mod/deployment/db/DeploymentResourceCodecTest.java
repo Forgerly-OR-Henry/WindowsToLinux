@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDat
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentFileBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 import org.junit.jupiter.api.Test;
 
@@ -25,10 +25,10 @@ class DeploymentResourceCodecTest {
     @Test
     void redisBindingIsPersistedAlongsideSqlWithoutOmittingItsSecretReference() throws Exception {
         var connection = new DeploymentDatabaseConnection.Server(DeploymentDatabaseEngineType.REDIS, "127.0.0.1", 6379,
-            "cache", "cache_user", new DeploymentSecretReference("cache-password", 1), false);
+            "cache", "cache_user", new DeploymentSecretRef("cache-password", 1), false);
         var bindings = new DeploymentResourceBindings(List.of(),
             Optional.of(List.of(new DeploymentDatabaseBinding("cache", connection))));
-        assertEquals(bindings, codec.read(DeploymentCodecCompatibility.write(bindings)));
+        assertEquals(bindings, codec.read(DeploymentCodecMatch.write(bindings)));
     }
 
     @Test
@@ -41,11 +41,11 @@ class DeploymentResourceCodecTest {
                 new DeploymentDatabaseBinding("orders",
                     new DeploymentDatabaseConnection.Server(DeploymentDatabaseEngineType.POSTGRESQL,
                         "db.internal", 5432, "orders", "application",
-                        new DeploymentSecretReference("database-password", 7), true)),
+                        new DeploymentSecretRef("database-password", 7), true)),
                 new DeploymentDatabaseBinding("cache",
                     new DeploymentDatabaseConnection.Sqlite("application.db")))));
 
-        assertEquals(bindings, codec.read(DeploymentCodecCompatibility.write(bindings)));
+        assertEquals(bindings, codec.read(DeploymentCodecMatch.write(bindings)));
     }
 
     @Test
@@ -56,7 +56,7 @@ class DeploymentResourceCodecTest {
             "db/shop.db", "seed/shop.db", List.of("schema.sql"));
         var binding = new DeploymentResourceBindings(List.of(),
             Optional.of(List.of(new DeploymentDatabaseBinding("main", sqlite))));
-        byte[] bytes = DeploymentCodecCompatibility.write(binding);
+        byte[] bytes = DeploymentCodecMatch.write(binding);
         assertEquals(binding, codec.read(bytes));
         bytes[4] = 1;
         assertThrows(IOException.class, () -> codec.read(bytes));
@@ -67,15 +67,15 @@ class DeploymentResourceCodecTest {
         DeploymentResourceBindings unknown = new DeploymentResourceBindings(List.of(), Optional.empty());
         DeploymentResourceBindings empty = new DeploymentResourceBindings(List.of(), Optional.of(List.of()));
 
-        assertEquals(unknown, codec.read(DeploymentCodecCompatibility.write(unknown)));
-        assertEquals(empty, codec.read(DeploymentCodecCompatibility.write(empty)));
-        assertNotEquals(Arrays.toString(DeploymentCodecCompatibility.write(unknown)),
-            Arrays.toString(DeploymentCodecCompatibility.write(empty)));
+        assertEquals(unknown, codec.read(DeploymentCodecMatch.write(unknown)));
+        assertEquals(empty, codec.read(DeploymentCodecMatch.write(empty)));
+        assertNotEquals(Arrays.toString(DeploymentCodecMatch.write(unknown)),
+            Arrays.toString(DeploymentCodecMatch.write(empty)));
     }
 
     @Test
     void rejectsTrailingOrTruncatedDocuments() throws Exception {
-        byte[] valid = DeploymentCodecCompatibility
+        byte[] valid = DeploymentCodecMatch
             .write(new DeploymentResourceBindings(List.of(), Optional.of(List.of())));
         byte[] trailing = Arrays.copyOf(valid, valid.length + 1);
         byte[] truncated = Arrays.copyOf(valid, valid.length - 1);
@@ -89,6 +89,6 @@ class DeploymentResourceCodecTest {
         assertThrows(IllegalArgumentException.class, () -> new DeploymentDatabaseConnection.Sqlite("../outside.db"));
         assertThrows(IllegalArgumentException.class,
             () -> new DeploymentDatabaseConnection.Server(DeploymentDatabaseEngineType.POSTGRESQL, "db host", 5432,
-                "orders", "application", new DeploymentSecretReference("database-password", 1), true));
+                "orders", "application", new DeploymentSecretRef("database-password", 1), true));
     }
 }

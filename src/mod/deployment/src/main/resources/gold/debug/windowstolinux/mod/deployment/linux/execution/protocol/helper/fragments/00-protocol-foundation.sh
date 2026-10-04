@@ -86,25 +86,6 @@ assert_candidate_for_deployer() {
     assert_root_owned_regular "$candidate/.deployer"
     [ "$(cat -- "$candidate/.deployer")" = "$deployer" ] || reject candidate-deployer
 }
-render_unit() {
-    local app="$1"
-    local root
-    root="$(app_root "$app")"
-    cat <<UNIT
-[Unit]
-Description=WindowsToLinux managed $app
-After=network.target
-[Service]
-Type=simple
-User=${legacy_runtime_user:-$deployer}
-WorkingDirectory=$root/current
-ExecStart=/usr/local/lib/windowstolinux/java-21 -jar $root/current/app.jar
-Restart=on-failure
-RestartSec=5
-SuccessExitStatus=143
-UNIT
-    if [ "$application_mode" = DAEMON ]; then printf '[Install]\nWantedBy=multi-user.target\n'; fi
-}
 require_relative_path() {
     [[ "$1" =~ ^[A-Za-z0-9._/-]{1,255}$ ]] || reject relative-path
     [[ "$1" != /* && "$1" != *..* && "$1" != *//* ]] || reject relative-path
@@ -139,10 +120,6 @@ render_deployment_unit() {
     local root command argument_count argument config index secret name
     root="${deployment_root_override:-$(app_root "$app")}"
     case "$kind" in
-        gradle)
-            [ "$#" -eq 0 ] || reject runtime-arguments
-            command="$toolchain_java -jar $root/current/app.jar"
-            ;;
         springboot)
             [ "$#" -eq 1 ] || reject runtime-arguments
             case "$1" in GRADLE_WRAPPER | MAVEN_WRAPPER | MAVEN) ;; *) reject springboot-build-tool ;; esac
@@ -189,7 +166,7 @@ render_deployment_unit() {
                 node_yarn_environment="PATH=$node_manager_path YARN_IGNORE_PATH=1"
             fi
             [ "$#" -eq 2 ] || reject runtime-arguments
-            require_bound_version NODE "$1" '^(18|19|20|21|22|23|24)$'
+            require_bound_version NODE "$1"
             case "$2" in
                 NPM) command="/usr/bin/env PATH=${node_manager_path:-$toolchain_path} npm --prefix $root/current/source start" ;;
                 PNPM) command="/usr/bin/env PATH=${node_manager_path:-$toolchain_path} pnpm --dir $root/current/source start" ;;
@@ -199,7 +176,7 @@ render_deployment_unit() {
             ;;
         python)
             [ "$#" -eq 3 ] || reject runtime-arguments
-            require_bound_version PYTHON "$1" '^3\.(10|11|12|13)$'
+            require_bound_version PYTHON "$1"
             [[ "$2" =~ ^[A-Za-z_][A-Za-z0-9_.]{0,127}$ ]] || reject python-entrypoint
             case "$3" in PIP_LOCKED | PIPENV_LOCKED | POETRY_LOCKED | UV_LOCKED | PYTHON_STDLIB) ;; *) reject python-build-tool ;; esac
             command="$root/current/source/.venv/bin/python -m $2"
@@ -222,9 +199,7 @@ render_deployment_unit() {
             ;;
         *) reject runtime-kind ;;
     esac
-    if [ -n "$toolchain_binding" ]; then
-        case "$kind" in springboot | java | javasource) require_bound_version JAVA 0 '^0$' ;; esac
-    fi
+    case "$kind" in springboot | java | javasource) require_bound_version JAVA 0 ;; esac
     config="$(configuration_path "$app" "$deployment_configuration_digest" systemd)"
     prepare_application_primary_argv "$root"
     application_runtime_kind="$kind"
@@ -244,10 +219,8 @@ After=network.target
 [Service]
 Type=$service_type
 UNIT
-    if [ "$runtime_identity_policy" = LEGACY_UNSPECIFIED ]; then printf 'User=%s\n' "${legacy_runtime_user:-$deployer}"; fi
-    if [ "$runtime_identity_policy" = SYSTEMD_STATIC ]; then
-        render_service_runtime_identity "$app"
-    fi
+    [ "$runtime_identity_policy" = SYSTEMD_STATIC ] || reject runtime-identity-policy
+    render_service_runtime_identity "$app"
     printf 'WorkingDirectory=%s\nEnvironmentFile=%s\n' "$root/current/source${application_workdir:+/$application_workdir}" "$config"
     render_application_bindings "$root"
     index=0

@@ -13,8 +13,8 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfileEditor;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /**
@@ -49,7 +49,7 @@ public final class ServerProfileDialog extends JDialog {
      * Swing control for status.
      * <p>状态对应的 Swing 控件。
      */
-    private final JTextArea status = DesktopComponentFactory.outputArea();
+    private final JTextArea status = DesktopPartFactory.outputArea();
 
     /**
      * Validates and saves server connection metadata and its database credential, then notifies the owning page.
@@ -112,7 +112,7 @@ public final class ServerProfileDialog extends JDialog {
      * @param profile connection or provider settings supplied to the operation / 提供给操作的连接或提供者设置
      * @param saved saved / 已保存
      */
-    public ServerProfileDialog(Window owner, ServerProfileEditor service, DesktopComponentFactory c,
+    public ServerProfileDialog(Window owner, ServerProfileEditor service, DesktopPartFactory c,
                                PageMessagePresenter messages, ServerProfile profile, Consumer<ServerProfile> saved) {
         super(owner, messages.text(profile == null ? "auto.addServer" : "server.edit"), ModalityType.APPLICATION_MODAL);
         gold.debug.windowstolinux.app.ui.language.LocaleBinding.title(this,
@@ -215,7 +215,7 @@ public final class ServerProfileDialog extends JDialog {
             save.setEnabled(false);
             setInputs(false);
             status.setText(messages.text("server.saving"));
-            DesktopTaskExecutor.run(() -> {
+            DesktopTaskRunner.run(() -> {
                 try {
                     service.saveServerProfile(profile, secret);
                     return profile;
