@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.db.mod;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.db.mod.ModProgramMaintenance.*;
 
 import java.io.IOException;
@@ -14,9 +10,12 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Owns same-release replacement checkpoints without modifying Mod data or user choices. / 持有同版本替换检查点，不修改 Mod 数据或用户选择。 */
 public final class ModReinstallationLedger {
@@ -27,13 +26,13 @@ public final class ModReinstallationLedger {
     private final Path home;
 
     /** Serializes short platform transactions. / 串行化短平台事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Retains fixed terminal receipts in the platform log. / 在平台日志保留固定终态凭据。 */
-    private final LogRepository logs;
+    private final LogStore logs;
 
     /** Original archive category. / 原归档类别。 */
-    private final LogRepository.Target archive;
+    private final LogStore.Target archive;
 
     /** Strict original request and recovery decoder. / 严格原请求及恢复解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -54,8 +53,8 @@ public final class ModReinstallationLedger {
         this.home = Objects.requireNonNull(home);
         require(home.isAbsolute() && home.normalize().equals(home), "Explicit installed home required");
         ordinary(home);
-        connections = new RepositoryConnections(database::openConnection);
-        logs = new LogRepository(database);
+        connections = new StoreConnections(database::openConnection);
+        logs = new LogStore(database);
         archive = logs.register("app", Optional.empty(),
             new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
@@ -305,7 +304,7 @@ public final class ModReinstallationLedger {
                 ordinary(Path.of(row.request().release().path()));
                 absent(home.resolve(".mod-staging").resolve(operation.toString()));
                 boolean restored = row.phase().equals("RESTORED");
-                var outcome = restored ? Outcome.FAILED : Outcome.SUCCEEDED;
+                var outcome = restored ? TaskResult.FAILED : TaskResult.SUCCEEDED;
                 logs.store(c, archive, List.of(new LogRecordCodec.Record(row.archive(), row.created(), "app",
                         "mod_operation", restored ? LogLevel.WARN : LogLevel.INFO,
                         restored ? "MOD_REINSTALL_RESTORED" : "MOD_REINSTALLED",
@@ -602,7 +601,7 @@ public final class ModReinstallationLedger {
         var result = new AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 require(count(c,
                     "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state IN ('STARTING','RUNNING')",
                     database.bootId()) == 1, "Original application boot is unavailable");

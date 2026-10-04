@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.start;
 
 import static gold.debug.windowstolinux.app.main.start.PlatformAiServiceTest.*;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.completed;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.completed;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -11,8 +11,8 @@ import java.util.List;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

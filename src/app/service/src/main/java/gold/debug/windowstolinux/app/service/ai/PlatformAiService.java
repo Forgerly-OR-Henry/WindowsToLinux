@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.service.ai;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -19,22 +11,44 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.app.ai.http.ModelMessageCodec;
-import gold.debug.windowstolinux.app.ai.http.ModelHttpCall;
-import gold.debug.windowstolinux.app.ai.voice.*;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderConfiguration;
+import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.ai.model.ModelHttpCall;
+import gold.debug.windowstolinux.app.ai.model.ModelMessageCodec;
+import gold.debug.windowstolinux.app.ai.voice.*;
+import gold.debug.windowstolinux.app.ai.voice.VoiceHttpCall;
+import gold.debug.windowstolinux.app.ai.voice.VoiceSocketSession;
+import gold.debug.windowstolinux.app.db.ai.AiModelStore;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelInfo;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.ai.AiProfileRepository;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
+import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
 import gold.debug.windowstolinux.appapi.ai.*;
-
-import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceEvent;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceListener;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceSession;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Routes generic model calls through frozen purpose selections and original task credentials. / 经冻结用途选择及原任务凭据路由通用模型调用。 */
 public final class PlatformAiService implements AiService, AutoCloseable {
+    /** Configured model connection timeout in seconds. / 已配置的模型连接超时秒数。 */
+    private final int connectSeconds;
+
     /** Actual task identity and resource authority. / 实际任务身份及资源授权方。 */
     private final PlatformTaskRuntime tasks;
 
@@ -42,7 +56,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
     private final DesktopSecurityService security;
 
     /** Authoritative model configuration. / 权威模型配置。 */
-    private final AiProfileRepository profiles;
+    private final AiModelStore profiles;
 
     /** Exact activating Mod. / 精确正在启用的 Mod。 */
     private final String owner;
@@ -69,7 +83,22 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param version loaded release / 已加载版本
      */
     public PlatformAiService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
-                             AiProfileRepository profiles, String owner, String version) {
+                             AiModelStore profiles, String owner, String version) {
+        this(database, tasks, security, profiles, owner, version, 10);
+    }
+
+    /** Captures the startup configuration. / 捕获启动配置。
+     * @param database supplied startup dependency / 启动依赖
+     * @param tasks supplied startup dependency / 启动依赖
+     * @param security supplied startup dependency / 启动依赖
+     * @param profiles supplied startup dependency / 启动依赖
+     * @param owner supplied startup dependency / 启动依赖
+     * @param version supplied startup dependency / 启动依赖
+     * @param connectSeconds supplied startup dependency / 启动依赖
+     */
+    public PlatformAiService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
+                             AiModelStore profiles, String owner, String version, int connectSeconds) {
+        this.connectSeconds = connectSeconds;
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.profiles = Objects.requireNonNull(profiles);
@@ -165,7 +194,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @return selected frozen configuration / 所选冻结配置
      * @throws SQLException if route storage cannot be read / 路由存储无法读取时
      * @throws ApiException if mode, route or revision is unavailable / 方式、路由或修订不可用时 */
-    private StoredAiProviderConfiguration voiceCandidate(AiCapabilityType capability, Optional<String> revision)
+    private StoredAiModelInfo voiceCandidate(AiCapabilityType capability, Optional<String> revision)
         throws SQLException, ApiException {
         var candidates = revision.isPresent() ? routingSnapshotFor(revision.orElseThrow(), AiPurposeType.VOICE)
             : profiles.configuredFor(AiPurposeType.VOICE);
@@ -190,7 +219,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param task original verification task / 原验证任务
      * @return actual classified probe result / 实际分类探测结果
      * @throws ApiException if authority, resource storage or cleanup fails / 授权、资源存储或清理失败时 */
-    OperationResult<VoiceResponse> probeVoice(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
+    OperationResult<VoiceResponse> probeVoice(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                               char[] key, VoiceRequest request, TaskContext task) throws ApiException {
         long start = System.nanoTime();
         try (var prepared = new Prepared(key.clone(), 1)) {
@@ -208,7 +237,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param task original verification task / 原验证任务
      * @return actual classified transcript result / 实际分类转写结果
      * @throws ApiException if authority, opening, observation or cleanup fails / 授权、打开、观测或清理失败时 */
-    OperationResult<VoiceResponse> probeRealtime(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
+    OperationResult<VoiceResponse> probeRealtime(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                                  char[] key, VoiceOptions options, byte[] pcm, TaskContext task) throws ApiException {
         long start = System.nanoTime();
         try (var prepared = new Prepared(key.clone(), 1)) {
@@ -253,7 +282,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param start original monotonic deadline start / 原单调期限起点
      * @return classified actual file result / 分类后的实际文件结果
      * @throws ApiException if admission, configuration or cleanup fails / 准入、配置或清理失败时 */
-    private OperationResult<VoiceResponse> sendVoice(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
+    private OperationResult<VoiceResponse> sendVoice(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                                      char[] key, VoiceRequest request, TaskContext task, long start) throws ApiException {
         ResourceLease lease = tasks.retain(task, new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false));
         var pending = new PendingCall(task, lease);
@@ -263,12 +292,12 @@ public final class PlatformAiService implements AiService, AutoCloseable {
         try {
             try {
                 pending.voiceCall = new VoiceHttpCall(URI.create(profile.fileEndpoint()), key, profile.model(), profile.id(), request,
-                    VoiceBudget.remaining(request.timeout(), start));
+                    VoiceBudget.remaining(request.timeout(), start), connectSeconds);
             } catch (IllegalArgumentException invalid) {
                 throw error(ProblemCode.UNAVAILABLE, "VOICE_CONFIGURATION_INVALID", "The file transcription configuration is invalid");
             }
             var result = pending.voiceCall.execute(tasks.operationCancellation(task));
-            if (result.outcome() == Outcome.UNKNOWN) tasks.reportUncertainEffect(task);
+            if (result.outcome() == TaskResult.UNKNOWN) tasks.reportUncertainEffect(task);
             return result;
         } finally {
             synchronized (pending) {
@@ -315,7 +344,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param task authentic executing task / 真实执行任务
      * @return task-owned ready session / 任务所属就绪会话
      * @throws ApiException if callback admission, connection or cleanup fails / 回调准入、连接或清理失败时 */
-    private ManagedVoiceSession openVoice(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
+    private ManagedVoiceSession openVoice(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                           char[] key, VoiceOptions options, VoiceListener listener, TaskContext task) throws ApiException {
         var callback = tasks.callbacks().<VoiceEvent, Void, Void>hostCallback(task, owner, version, (event, ignored) -> {
             listener.onEvent(event);
@@ -334,7 +363,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                     } catch (ApiException expired) {
                         throw new IllegalStateException("Original voice callback scope ended");
                     }
-                }, tasks.operationCancellation(task), session -> managed.session = session);
+                }, tasks.operationCancellation(task), session -> managed.session = session, connectSeconds);
             managed.session.completion().whenComplete((result, failure) -> managed.complete(result, failure));
             return managed;
         } catch (ApiException | RuntimeException failure) {
@@ -454,7 +483,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
                             : request;
                         result = send(candidate.profile(), prepared, effective, task, start, timeout);
                     }
-                    if (result.outcome() != Outcome.FAILED || result.problem().isEmpty()
+                    if (result.outcome() != TaskResult.FAILED || result.problem().isEmpty()
                         || !result.problem().orElseThrow().eventCode().equals("AI_HTTP_REJECTED"))
                         return result;
                 }
@@ -469,10 +498,10 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @return single selected language configuration / 唯一所选语言配置
      * @throws SQLException if routing storage cannot be read / 路由存储无法读取时
      * @throws ApiException if the first member is absent or unverified / 首个成员缺失或未验证时 */
-    private List<StoredAiProviderConfiguration> firstLanguage() throws SQLException, ApiException {
+    private List<StoredAiModelInfo> firstLanguage() throws SQLException, ApiException {
         var first = profiles.routingState().members().get(AiPurposeType.DEPLOYMENT).stream()
-            .filter(gold.debug.windowstolinux.app.db.ai.AiProfileRepository.RoutingMember::enabled)
-            .findFirst().map(gold.debug.windowstolinux.app.db.ai.AiProfileRepository.RoutingMember::configuration);
+            .filter(gold.debug.windowstolinux.app.db.ai.AiModelStore.RoutingMember::enabled)
+            .findFirst().map(gold.debug.windowstolinux.app.db.ai.AiModelStore.RoutingMember::configuration);
         if (first.isEmpty() || !first.orElseThrow().verified(AiCapabilityType.TEXT))
             throw error(ProblemCode.UNAVAILABLE, "AI_FIRST_LANGUAGE_UNAVAILABLE", "The first enabled language model is unavailable");
         return List.of(first.orElseThrow());
@@ -485,7 +514,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param task original host task / 原宿主任务
      * @return actual probe outcome / 实际探测结果
      * @throws ApiException if authorization or cleanup fails / 授权或清理失败时 */
-    OperationResult<AiResponse> probe(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
+    OperationResult<AiResponse> probe(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                       char[] key, AiRequest request, TaskContext task) throws ApiException {
         long start = System.nanoTime();
         try (var prepared = new Prepared(key.clone(), request.maxOutputTokens())) {
@@ -505,7 +534,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param timeout whole operation budget / 整体操作预算
      * @return classified provider result / 已分类提供者结果
      * @throws ApiException if input, authorization or cleanup fails / 输入、授权或清理失败时 */
-    private OperationResult<AiResponse> send(gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile profile,
+    private OperationResult<AiResponse> send(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
                                              Prepared prepared, AiRequest request, TaskContext task, long start, long timeout) throws ApiException {
         byte[] body;
         try {
@@ -525,20 +554,20 @@ public final class PlatformAiService implements AiService, AutoCloseable {
             try {
                 long remaining = timeout - (System.nanoTime() - start);
                 if (remaining <= 0)
-                    return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
                             "The request budget ended before another model request was sent", Map.of(),
                             Optional.empty())));
                 try {
                     pending.call = new ModelHttpCall(URI.create(profile.endpoint()), prepared.key(), body,
-                        Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse());
+                        Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse(), connectSeconds);
                     transferred = true;
                 } catch (IllegalArgumentException invalid) {
                     throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
                         "The configured endpoint or credential is invalid");
                 }
                 var result = pending.call.execute(tasks.operationCancellation(task));
-                if (result.outcome() == Outcome.UNKNOWN)
+                if (result.outcome() == TaskResult.UNKNOWN)
                     tasks.reportUncertainEffect(task);
                 return result;
             } finally {
@@ -574,7 +603,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @param revision opaque digest / 不透明摘要
      * @param routes exact ordered candidates / 精确有序候选
      * @param limits atomically captured model output limits / 原子捕获的模型输出限额 */
-    private record RoutingSnapshot(String revision, Map<AiPurposeType, List<StoredAiProviderConfiguration>> routes,
+    private record RoutingSnapshot(String revision, Map<AiPurposeType, List<StoredAiModelInfo>> routes,
                                    Map<String, Integer> limits) {
     }
 
@@ -584,7 +613,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @return original selected candidates / 原已选候选
      * @throws SQLException if routing cannot be read / 路由无法读取时
      * @throws ApiException if the revision changed / 修订改变时 */
-    private List<StoredAiProviderConfiguration> routingSnapshotFor(String expected, AiPurposeType purpose)
+    private List<StoredAiModelInfo> routingSnapshotFor(String expected, AiPurposeType purpose)
         throws SQLException, ApiException {
         var snapshot = routingSnapshot();
         if (!expected.equals(snapshot.revision()))
@@ -646,7 +675,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
      * @return copied credential and configured limit / 复制的凭据和已配置上限
      * @throws ApiException if configuration or credential authorization fails / 配置或凭据授权失败时
      */
-    private Prepared capture(StoredAiProviderConfiguration expected, AiPurposeType purpose, TaskContext task,
+    private Prepared capture(StoredAiModelInfo expected, AiPurposeType purpose, TaskContext task,
                              Optional<String> expectedRevision) throws ApiException {
         char[][] key = new char[1][];
         int[] limit = new int[1];
@@ -845,7 +874,7 @@ public final class PlatformAiService implements AiService, AutoCloseable {
          * @param failure asynchronous transport failure / 异步传输失败 */
         private void complete(OperationResult<VoiceResponse> result, Throwable failure) {
             try {
-                if (failure != null || result.outcome() == Outcome.UNKNOWN) tasks.reportUncertainEffect(task);
+                if (failure != null || result.outcome() == TaskResult.UNKNOWN) tasks.reportUncertainEffect(task);
                 if (result != null && result.problem().map(Problem::eventCode).filter("VOICE_CLOSE_UNKNOWN"::equals).isPresent()) {
                     complete.complete(result);
                     return;

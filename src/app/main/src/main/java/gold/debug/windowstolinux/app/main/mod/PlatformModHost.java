@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.main.mod;
 
 import java.sql.SQLException;
 
-import gold.debug.windowstolinux.app.db.PlatformPersistence;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 
@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 public interface PlatformModHost {
     /** Returns the platform repositories for startup composition. / 返回供启动装配使用的平台仓库。
      * @return owned platform repositories / 所属平台仓库 */
-    PlatformPersistence persistence();
+    PlatformStorage persistence();
 
     /** Returns the current security boundary without key material. / 返回不含密钥材料的当前安全边界。
      * @return security session owner / 安全会话所有者 */
@@ -34,8 +34,8 @@ public interface PlatformModHost {
      * @throws Exception if context preparation or duplicate ownership prevents construction / 上下文准备或重复归属阻止构造时 */
     gold.debug.windowstolinux.app.mod.run.ModRuntimeSession modSession(
         gold.debug.windowstolinux.app.mod.load.ModClassLoader loader,
-        java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema,
-        gold.debug.windowstolinux.appapi.mod.ModLaunchMode mode,
+        java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
+        gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode mode,
         gold.debug.windowstolinux.app.ui.mod.ModPageRegistry pages,
         gold.debug.windowstolinux.app.mod.version.SemanticVersion platformApi) throws Exception;
 
@@ -58,7 +58,7 @@ public interface PlatformModHost {
      * @param schema optional business generation / 可选业务代次
      * @return original activation's logger / 原启用日志器 */
     gold.debug.windowstolinux.app.service.log.PlatformLogService.Binding logs(String owner, String version,
-                                                                              java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
+                                                                              java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema);
 
     /** Creates task-bound file access sharing the original activation's interaction and transport. / 创建与原启用共享交互及传输的任务绑定文件访问。
      * @param owner exact Mod identity / 精确 Mod 身份
@@ -75,7 +75,7 @@ public interface PlatformModHost {
      * @return host-owned server adapter / 宿主持有的服务器适配器
      */
     gold.debug.windowstolinux.app.service.server.PlatformServerAccess serverAccess(String owner, String version,
-                                                                                   java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
+                                                                                   java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema);
 
     /**
      * Creates protected-byte and reference access for one Mod activation. / 为一次 Mod 启用创建受保护字节及引用访问。
@@ -85,7 +85,7 @@ public interface PlatformModHost {
      * @return host-owned secret adapter / 宿主持有的秘密适配器
      */
     gold.debug.windowstolinux.app.service.secret.PlatformSecretService secrets(String owner, String version,
-                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.SchemaIdentity> schema);
+                                                                               java.util.Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema);
 
     /**
      * Creates task-owned generic model access for one Mod activation. / 为一次 Mod 启用创建任务所属通用模型访问。
@@ -113,7 +113,7 @@ public interface PlatformModHost {
     interface Remote extends AutoCloseable {
         /** Returns the bound review capability. / 返回绑定审核能力。
          * @return review service / 审核服务 */
-        gold.debug.windowstolinux.appapi.task.InteractionService interaction();
+        gold.debug.windowstolinux.appapi.task.action.InteractionService interaction();
 
         /** Returns the bound transport capability. / 返回绑定传输能力。
          * @return transport service / 传输服务 */
@@ -121,13 +121,13 @@ public interface PlatformModHost {
 
         /** Releases retained physical connections of only the original task before author recovery. / 作者恢复前仅释放原任务留存的物理连接。
          * @param task authentic original recovery context / 真实原任务恢复上下文
-         * @throws gold.debug.windowstolinux.appapi.task.ApiException if physical release is unconfirmed / 物理释放未确认时 */
-        void closeTaskResources(gold.debug.windowstolinux.appapi.task.TaskContext task)
-            throws gold.debug.windowstolinux.appapi.task.ApiException;
+         * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if physical release is unconfirmed / 物理释放未确认时 */
+        void closeTaskResources(gold.debug.windowstolinux.appapi.task.run.TaskContext task)
+            throws gold.debug.windowstolinux.appapi.task.result.ApiException;
 
         /** Releases the original capabilities after actual resource cleanup. / 实际资源清理后释放原能力。
-         * @throws gold.debug.windowstolinux.appapi.task.ApiException if cleanup remains / 仍有清理残留时 */
+         * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if cleanup remains / 仍有清理残留时 */
         @Override
-        void close() throws gold.debug.windowstolinux.appapi.task.ApiException;
+        void close() throws gold.debug.windowstolinux.appapi.task.result.ApiException;
     }
 }

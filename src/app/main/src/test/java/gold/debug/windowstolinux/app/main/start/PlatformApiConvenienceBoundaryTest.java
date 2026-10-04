@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.start;
 
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.completed;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.completed;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -11,8 +11,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
-import gold.debug.windowstolinux.appapi.server.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,7 +52,7 @@ class PlatformApiConvenienceBoundaryTest {
                     assertEquals(ProblemCode.INVALID_INPUT, assertThrows(ApiException.class, () -> tasks.list(limit)).problem().code());
                 release.countDown();
                 for (var handle : handles)
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
                 assertTrue(tasks.list(1).items().isEmpty());
                 runtime.tasks().revokeOwnerServices(OWNER, VERSION);
@@ -82,7 +87,7 @@ class PlatformApiConvenienceBoundaryTest {
                 var last = access.listConfigured(middle.nextCursor(), 1, task);
                 assertEquals("server-z", last.items().getFirst().ref().id());
                 assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class,
-                    () -> access.get(new ServerRef("server-z"), task)).problem().code());
+                    () -> access.get(new ServerId("server-z"), task)).problem().code());
                 assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class,
                     () -> foreign.list(1, task)).problem().code());
                 assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class,

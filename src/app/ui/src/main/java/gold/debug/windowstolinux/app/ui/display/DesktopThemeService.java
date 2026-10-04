@@ -33,29 +33,20 @@ public final class DesktopThemeService {
      * @param effectiveTheme effective theme / 生效主题
      */
     public static void install(ThemeMode effectiveTheme) {
+        install(effectiveTheme, Math.round(com.formdev.flatlaf.util.UIScale.getZoomFactor() * 100));
+    }
+
+    /** Installs system-aware application zoom before creating controls. / 创建控件前安装保留系统缩放的应用缩放。
+     * @param effectiveTheme effective theme / 生效主题
+     * @param scalePercent application zoom percentage / 应用缩放百分比 */
+    public static void install(ThemeMode effectiveTheme, int scalePercent) {
+        com.formdev.flatlaf.util.UIScale.setZoomFactor(1f);
         if (effectiveTheme == ThemeMode.DARK) {
             FlatDarkLaf.setup();
         } else {
             FlatLightLaf.setup();
         }
-        UIManager.put("Component.arc", 12);
-        UIManager.put("Button.arc", 12);
-        UIManager.put("TextComponent.arc", 10);
-        UIManager.put("Component.focusWidth", 1);
-        UIManager.put("Component.innerFocusWidth", 0);
-        UIManager.put("Button.borderWidth", 0);
-        UIManager.put("Button.default.borderWidth", 0);
-        UIManager.put("ComboBoxUI", DesktopComboBoxUi.class.getName());
-        UIManager.put("ComboBox.border", (javax.swing.UIDefaults.ActiveValue) defaults -> {
-            FlatRoundBorder border = new FlatRoundBorder();
-            border.applyStyleProperty("borderWidth", 0f);
-            return border;
-        });
-        // Empty borders also suppress the Windows-native popup outline while retaining rounded corners. / 空边框同时关闭 Windows 原生弹层描边，保留圆角。
-        UIManager.put("PopupMenu.border", new FlatEmptyBorder(4, 1, 4, 1));
-        UIManager.put("ToolTip.border", new FlatEmptyBorder(4, 6, 4, 6));
-        UIManager.put("ScrollBar.width", 14);
-        UIManager.put("TitlePane.unifiedBackground", true);
+        installControlDefaults();
 
         ThemePalette palette = effectiveTheme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light();
         ColorUIResource buttonBackground = new ColorUIResource(palette.secondaryButtonBackground());
@@ -74,6 +65,8 @@ public final class DesktopThemeService {
         UIManager.put("Button.disabledSelectedBackground", disabledButtonBackground);
         UIManager.put("Button.disabledText", disabledButtonText);
         UIManager.put("Button.disabledSelectedForeground", disabledButtonText);
+        UIManager.put("CheckBox.icon.background", buttonBackground);
+        UIManager.put("RadioButton.icon.background", buttonBackground);
         for (String surface : java.util.List.of("Panel", "Viewport", "ScrollPane", "TabbedPane"))
             UIManager.put(surface + ".background", new ColorUIResource(palette.pageBackground()));
         for (String surface : java.util.List.of("List", "Table")) {
@@ -87,13 +80,13 @@ public final class DesktopThemeService {
         UIManager.put("Component.focusColor", new ColorUIResource(palette.accent()));
         for (String type : java.util.List.of("TextField", "PasswordField", "FormattedTextField", "TextArea", "ComboBox",
             "Spinner")) {
-            UIManager.put(type + ".background", new ColorUIResource(palette.cardBackground()));
+            UIManager.put(type + ".background", new ColorUIResource(palette.secondaryButtonBackground()));
             UIManager.put(type + ".foreground", new ColorUIResource(palette.sidebarForeground()));
         }
         UIManager.put("ComboBox.padding", new InsetsUIResource(5, 10, 5, 8));
         UIManager.put("ComboBox.buttonStyle", "none");
-        UIManager.put("ComboBox.buttonBackground", new ColorUIResource(palette.cardBackground()));
-        UIManager.put("ComboBox.buttonFocusedBackground", new ColorUIResource(palette.cardBackground()));
+        UIManager.put("ComboBox.buttonBackground", new ColorUIResource(palette.secondaryButtonBackground()));
+        UIManager.put("ComboBox.buttonFocusedBackground", new ColorUIResource(palette.secondaryButtonBackground()));
         UIManager.put("ComboBox.buttonArrowColor", new ColorUIResource(palette.subduedText()));
         UIManager.put("ComboBox.buttonHoverArrowColor", new ColorUIResource(palette.accent()));
         UIManager.put("ComboBox.buttonPressedArrowColor", new ColorUIResource(palette.accentDark()));
@@ -109,8 +102,49 @@ public final class DesktopThemeService {
 
         Font defaultFont = UIManager.getFont("defaultFont");
         if (defaultFont != null) {
-            UIManager.put("defaultFont", defaultFont.deriveFont(13f));
+            UIManager.put("defaultFont", new javax.swing.plaf.FontUIResource(defaultFont.deriveFont(13f)));
         }
+        com.formdev.flatlaf.util.UIScale.getUserScaleFactor();
+        com.formdev.flatlaf.util.UIScale.setZoomFactor(scalePercent / 100f);
+    }
+
+    /** Installs shape, borders and delegates shared by both themes. / 安装浅深主题共用的形状、边框及委托。 */
+    private static void installControlDefaults() {
+        UIManager.put("Component.arc", 8);
+        UIManager.put("Button.arc", 8);
+        UIManager.put("TextComponent.arc", 6);
+        UIManager.put("Component.focusWidth", 1);
+        UIManager.put("Component.innerFocusWidth", 0);
+        UIManager.put("Component.borderWidth", 0);
+        UIManager.put("Button.borderWidth", 0);
+        UIManager.put("Button.default.borderWidth", 0);
+        UIManager.put("ComboBoxUI", DesktopComboBoxUi.class.getName());
+        UIManager.put("ComboBox.border", (javax.swing.UIDefaults.ActiveValue) defaults -> {
+            FlatRoundBorder border = new FlatRoundBorder();
+            border.applyStyleProperty("borderWidth", 0f);
+            return border;
+        });
+        // Empty borders also suppress the Windows-native popup outline while retaining rounded corners. / 空边框同时关闭 Windows 原生弹层描边，保留圆角。
+        UIManager.put("PopupMenu.border", new FlatEmptyBorder(4, 1, 4, 1));
+        UIManager.put("ToolTip.border", new FlatEmptyBorder(4, 6, 4, 6));
+        UIManager.put("ScrollBar.width", 14);
+        UIManager.put("TitlePane.unifiedBackground", true);
+        UIManager.put("ScrollPane.border", new FlatEmptyBorder(0, 0, 0, 0));
+        UIManager.put("Table.showHorizontalLines", false);
+        UIManager.put("Table.showVerticalLines", false);
+        var noOutline = new ColorUIResource(new Color(0, 0, 0, 0));
+        UIManager.put("TableHeader.bottomSeparatorColor", noOutline);
+        UIManager.put("TableHeader.separatorColor", noOutline);
+        UIManager.put("Table.focusCellHighlightBorder", new FlatEmptyBorder(0, 0, 0, 0));
+        UIManager.put("Table.focusSelectedCellHighlightBorder", new FlatEmptyBorder(0, 0, 0, 0));
+        UIManager.put("TitledBorder.border", new FlatEmptyBorder(0, 0, 0, 0));
+        UIManager.put("SplitPane.border", new FlatEmptyBorder(0, 0, 0, 0));
+        UIManager.put("TabbedPane.contentSeparatorHeight", 0);
+        UIManager.put("Spinner.buttonSeparatorColor", noOutline);
+        UIManager.put("CheckBox.icon.borderWidth", 0);
+        UIManager.put("CheckBox.icon", new gold.debug.windowstolinux.app.ui.display.DesktopSwitchIcon());
+        UIManager.put("RadioButton.icon.borderWidth", 0);
+
     }
 
     /**
@@ -122,6 +156,14 @@ public final class DesktopThemeService {
      */
     public static void apply(ThemeMode effectiveTheme) {
         install(effectiveTheme);
+        com.formdev.flatlaf.FlatLaf.updateUI();
+    }
+
+    /** Updates existing controls with confirmed theme and zoom, preserving their state. / 按已确认主题和缩放更新现有控件并保留状态。
+     * @param effectiveTheme effective theme / 生效主题
+     * @param scalePercent confirmed application zoom / 已确认应用缩放百分比 */
+    public static void apply(ThemeMode effectiveTheme, int scalePercent) {
+        install(effectiveTheme, scalePercent);
         com.formdev.flatlaf.FlatLaf.updateUI();
     }
 }

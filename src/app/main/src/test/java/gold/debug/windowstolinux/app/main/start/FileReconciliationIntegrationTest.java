@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.main.start;
 
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -11,8 +11,15 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.h2.api.Trigger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -31,7 +38,7 @@ class FileReconciliationIntegrationTest {
     }
 
     static OperationResult<Void> abandoned() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_OBSERVED_PENDING_LINK", "Fixture preserved original link evidence for a newly authorized continuation", Map.of(), Optional.empty())));
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_OBSERVED_PENDING_LINK", "Fixture preserved original link evidence for a newly authorized continuation", Map.of(), Optional.empty())));
     }
 
     void createOriginal(gold.debug.windowstolinux.app.service.file.PlatformFileAccess file, PlatformRuntime runtime) throws Exception {
@@ -52,9 +59,9 @@ class FileReconciliationIntegrationTest {
                 completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                     Files.writeString(root.resolve("source"), "original");
                     var report = file.copyFile(path("source"), path("copied"), task);
-                    assertEquals(Outcome.SUCCEEDED, file.checkOperation(report.operationId(), task).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, file.checkOperation(report.operationId(), task).outcome());
                     Files.writeString(root.resolve("copied"), "externally replaced content");
-                    assertEquals(Outcome.UNKNOWN, file.checkOperation(report.operationId(), task).outcome());
+                    assertEquals(TaskResult.UNKNOWN, file.checkOperation(report.operationId(), task).outcome());
                     assertEquals("original", Files.readString(root.resolve("source")));
                     return success(null);
                 }));
@@ -69,7 +76,7 @@ class FileReconciliationIntegrationTest {
             presenters(runtime);
             try (var file = runtime.capabilities().source(OWNER, VERSION)) {
                 completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                    var repository = new gold.debug.windowstolinux.app.db.file.FileRepository(runtime.persistence().database(), OWNER, VERSION);
+                    var repository = new gold.debug.windowstolinux.app.db.file.FileStore(runtime.persistence().database(), OWNER, VERSION);
                     for (String summary : List.of("UNKNOWN", "FAILED", "RECYCLE", "PERMANENT")) {
                         var source = path("external-" + summary);
                         Files.writeString(Path.of(source.path()), "external");
@@ -77,7 +84,7 @@ class FileReconciliationIntegrationTest {
                         repository.record(operation, task.id(), "BEFORE_DELETE", source, Optional.empty(), "RECYCLE");
                         Files.delete(Path.of(source.path()));
                         repository.record(operation, task.id(), "COMPLETE", source, Optional.empty(), summary);
-                        assertEquals(Outcome.UNKNOWN, file.checkOperation(operation, task).outcome());
+                        assertEquals(TaskResult.UNKNOWN, file.checkOperation(operation, task).outcome());
                     }
                     var permanent = path("confirmed-permanent");
                     Files.writeString(Path.of(permanent.path()), "fixture");
@@ -85,9 +92,9 @@ class FileReconciliationIntegrationTest {
                     repository.record(operation, task.id(), "BEFORE_DELETE_ITEM", permanent, Optional.empty(), file.getFile(permanent, task).identity());
                     Files.delete(Path.of(permanent.path()));
                     repository.record(operation, task.id(), "DELETED_ITEM", permanent, Optional.empty(), "confirmed");
-                    assertEquals(Outcome.SUCCEEDED, file.checkOperation(operation, task).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, file.checkOperation(operation, task).outcome());
                     Files.writeString(Path.of(permanent.path()), "new object");
-                    assertEquals(Outcome.UNKNOWN, file.checkOperation(operation, task).outcome());
+                    assertEquals(TaskResult.UNKNOWN, file.checkOperation(operation, task).outcome());
                     return success(null);
                 }));
             }
@@ -101,7 +108,7 @@ class FileReconciliationIntegrationTest {
             presenters(runtime);
             try (var file = runtime.capabilities().source(OWNER, VERSION)) {
                 completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                    var repository = new gold.debug.windowstolinux.app.db.file.FileRepository(runtime.persistence().database(), OWNER, VERSION);
+                    var repository = new gold.debug.windowstolinux.app.db.file.FileStore(runtime.persistence().database(), OWNER, VERSION);
                     // These owned files model persisted receipt fault windows; native recycling is tested separately.
                     for (String fault : List.of("missing-object", "missing-information", "replaced-information", "wrong-original-path", "source-reappeared")) {
                         FilePath source = path(fault + "-source"), recycled = path(fault + "-recycled"), information = path(fault + "-information");
@@ -114,7 +121,7 @@ class FileReconciliationIntegrationTest {
                         repository.record(operation, task.id(), "RECYCLED_ITEM", source, Optional.of(recycled), file.getFile(recycled, task).identity());
                         repository.record(operation, task.id(), "RECYCLE_METADATA", source, Optional.of(information), file.getFile(information, task).identity());
                         if (!fault.equals("wrong-original-path"))
-                            assertEquals(Outcome.SUCCEEDED, file.checkOperation(operation, task).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, file.checkOperation(operation, task).outcome());
                         switch (fault) {
                             case "missing-object" -> Files.delete(Path.of(recycled.path()));
                             case "missing-information" -> Files.delete(Path.of(information.path()));
@@ -126,7 +133,7 @@ class FileReconciliationIntegrationTest {
                             default -> {
                             }
                         }
-                        assertEquals(Outcome.UNKNOWN, file.checkOperation(operation, task).outcome());
+                        assertEquals(TaskResult.UNKNOWN, file.checkOperation(operation, task).outcome());
                         if (!fault.equals("missing-object"))
                             assertEquals("original content", Files.readString(Path.of(recycled.path())));
                         assertEquals(fault.equals("source-reappeared"), Files.exists(Path.of(source.path())));
@@ -154,11 +161,11 @@ class FileReconciliationIntegrationTest {
                 });
                 state(handle, TaskState.UNKNOWN);
                 callbackReturned(runtime, context.get());
-                assertEquals(Outcome.UNKNOWN, report.get().outcome());
+                assertEquals(TaskResult.UNKNOWN, report.get().outcome());
                 String identity = WindowsFileIdentity.read(root.resolve("managed"));
                 try (var registration = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture", (previous, task) -> {
                     assertEquals("TASK_RECOVERY_NEW_WORK", assertThrows(ApiException.class, () -> file.continueOperation(report.get().operationId(), task)).problem().eventCode());
-                    assertEquals(Outcome.SUCCEEDED, file.checkOperation(report.get().operationId(), task).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, file.checkOperation(report.get().operationId(), task).outcome());
                     assertEquals(identity, WindowsFileIdentity.read(root.resolve("managed")));
                     assertEquals(path("moved"), file.getFile(path("managed"), task).actual());
                     return success(null);
@@ -198,7 +205,7 @@ class FileReconciliationIntegrationTest {
                 contentIdentity = WindowsFileIdentity.read(root.resolve("moved/content"));
                 assertFalse(Files.exists(root.resolve("original")));
                 try (var recovery = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture", (previous, task) -> {
-                    assertEquals(Outcome.UNKNOWN, file.checkOperation(report.get().operationId(), task).outcome());
+                    assertEquals(TaskResult.UNKNOWN, file.checkOperation(report.get().operationId(), task).outcome());
                     assertEquals("TASK_RECOVERY_NEW_WORK", assertThrows(ApiException.class, () -> file.continueOperation(report.get().operationId(), task)).problem().eventCode());
                     return abandoned();
                 })) {
@@ -215,13 +222,13 @@ class FileReconciliationIntegrationTest {
                 assertFalse(Files.exists(root.resolve("original")));
                 assertEquals(contentIdentity, WindowsFileIdentity.read(root.resolve("moved/content")));
                 completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                    assertEquals(Outcome.UNKNOWN, file.checkOperation(originalOperation, task).outcome());
+                    assertEquals(TaskResult.UNKNOWN, file.checkOperation(originalOperation, task).outcome());
                     var continued = file.continueOperation(originalOperation, task);
-                    assertEquals(Outcome.SUCCEEDED, continued.outcome());
+                    assertEquals(TaskResult.SUCCEEDED, continued.outcome());
                     assertEquals(path("moved"), file.getFile(path("managed"), task).actual());
                     assertEquals(contentIdentity, WindowsFileIdentity.read(root.resolve("moved/content")));
                     assertFalse(Files.exists(root.resolve("original")));
-                    assertEquals(Outcome.SUCCEEDED, file.checkOperation(originalOperation, task).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, file.checkOperation(originalOperation, task).outcome());
                     assertThrows(ApiException.class, () -> file.continueOperation(originalOperation, task));
                     try (var connection = runtime.persistence().database().openConnection(); var statement = connection.prepareStatement("SELECT parent_operation_id,original_task_id,task_id,owner_version FROM file_operation WHERE operation_id=?")) {
                         statement.setObject(1, continued.operationId());

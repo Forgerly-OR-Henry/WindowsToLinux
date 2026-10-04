@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -11,9 +8,11 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
 import gold.debug.windowstolinux.app.service.mod.PlatformModCatalog;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -43,7 +42,7 @@ class PlatformModCatalogTest {
     }
 
     static void generate(Path workspace, Path module) throws IOException {
-        DevelopmentDescriptor.generate(workspace, module.resolve("mod.json"), module.resolve("target/classes"),
+        DevelopmentInfo.generate(workspace, module.resolve("mod.json"), module.resolve("target/classes"),
             List.of(),
             List.of(workspace.resolve("pom.xml"), workspace.resolve("src/mod/pom.xml"), module.resolve("pom.xml")),
             List.of());
@@ -165,7 +164,7 @@ class PlatformModCatalogTest {
                 assertTrue(catalog.refresh(workspace).builds().isEmpty());
                 assertEquals(original.contentDigest(), text(runtime, "SELECT content_sha256 FROM mod_version"));
             } finally {
-                assertTrue(tasks.complete(task, Outcome.SUCCEEDED, "{}", false));
+                assertTrue(tasks.complete(task, TaskResult.SUCCEEDED, "{}", false));
             }
             assertNotEquals(original.contentDigest(), registered(catalog, workspace).contentDigest());
         }
@@ -220,7 +219,7 @@ class PlatformModCatalogTest {
             assertEquals(1, result.builds().size());
             assertEquals("example.independent", result.builds().getFirst().candidate().manifest().id());
             assertEquals(1, result.rejections().size());
-            assertEquals(gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN,
+            assertEquals(gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN,
                 result.rejections().getFirst().problem().code());
             assertEquals(0, count(db, "SELECT COUNT(*) FROM mod_registry WHERE mod_id='" + OWNER + "'"));
             assertEquals(1, count(db, "SELECT COUNT(*) FROM mod_version"));
@@ -273,10 +272,10 @@ class PlatformModCatalogTest {
                 runtime.setInteractionPresenter(new PlatformRemoteCapabilitiesTest.Reviews());
                 runtime.setSourcePicker((title, task, cancel) -> root);
                 var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new PlatformModContextTest.Host(),
-                    new gold.debug.windowstolinux.appapi.ui.UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT",
+                    new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT",
                         true));
                 var session = runtime.modSession(loader, prepared.schema(),
-                    gold.debug.windowstolinux.appapi.mod.ModLaunchMode.NORMAL, pages, api);
+                    gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.NORMAL, pages, api);
                 var entry = loader.loadClass("example.admission.Mod");
                 entry.getFields();
                 try {
@@ -284,13 +283,13 @@ class PlatformModCatalogTest {
                     assertEquals("RUNNING", text(runtime, "SELECT last_runtime_state FROM mod_registry"));
                     assertTrue(ledger.applied(operation));
                     var context = (gold.debug.windowstolinux.appapi.mod.ModContext) entry.getField("context").get(null);
-                    assertThrows(gold.debug.windowstolinux.appapi.task.ApiException.class,
+                    assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,
                         () -> context.tasks().submit(work(), t -> success(null)));
                     runtime.security().unlock(PASSWORD.toCharArray());
-                    assertEquals(Outcome.SUCCEEDED, context.tasks().submit(work(), t -> success(null)).completion()
+                    assertEquals(TaskResult.SUCCEEDED, context.tasks().submit(work(), t -> success(null)).completion()
                         .toCompletableFuture().get(5, java.util.concurrent.TimeUnit.SECONDS).outcome());
                 } finally {
-                    session.stop(gold.debug.windowstolinux.appapi.mod.StopReason.APPLICATION_EXIT);
+                    session.stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason.APPLICATION_EXIT);
                 }
                 assertEquals(1, entry.getField("instances").getInt(null));
                 assertEquals(1, entry.getField("stops").getInt(null));

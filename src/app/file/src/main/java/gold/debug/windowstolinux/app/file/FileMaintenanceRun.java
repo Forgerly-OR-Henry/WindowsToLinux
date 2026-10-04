@@ -1,12 +1,19 @@
 package gold.debug.windowstolinux.app.file;
 
+import static gold.debug.windowstolinux.app.file.FileEngine.*;
+
 import java.io.IOException;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
-
-import static gold.debug.windowstolinux.app.file.FileEngine.*;
+import gold.debug.windowstolinux.app.file.model.FileActionLog;
+import gold.debug.windowstolinux.app.file.model.FileLinkMaintenance;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** Newly authorizes only unfinished original links whose moved targets remain proved. / 仅对移动目标仍可证明的未完成原链接重新授权。 */
 final class FileMaintenanceRun {
@@ -25,7 +32,7 @@ final class FileMaintenanceRun {
      * @throws IOException if original links, moved targets or durable evidence cannot be verified / 原链接、移动目标或持久依据无法核实时
      * @throws ApiException if fresh approval is rejected / 新审批拒绝时 */
     static FileReport execute(FileEngine engine, List<FileLinkMaintenance> plan, Map<FilePath, String> targets,
-                              Approval approval, FileJournal journal, CancelToken cancel) throws IOException, ApiException {
+                              Approval approval, FileActionLog journal, CancelToken cancel) throws IOException, ApiException {
         if (plan.isEmpty()) throw new IOException("There are no proved unfinished links to continue");
         var observed = new LinkedHashMap<FileLinkMaintenance, FileInfo>();
         var text = new StringBuilder();
@@ -47,20 +54,20 @@ final class FileMaintenanceRun {
                 journal.record(operation, "TARGET_CONFIRMED", item.source(), Optional.of(item.target()), targets.get(item.target()));
                 journal.record(operation, "BEFORE_LINK_UPDATE", item.link(), Optional.of(item.target()), before.identity());
                 dispatched = true;
-                FileContentPublication.retarget(before, item.target(), engine, cancel, journal, operation);
+                FileContentPublish.retarget(before, item.target(), engine, cancel, journal, operation);
                 FileInfo after = engine.inspect(item.link(), true, cancel);
                 journal.saveLink(after, engine.optionalTarget(after, cancel));
                 journal.record(operation, "LINK_UPDATED", item.link(), Optional.of(item.target()), after.identity());
-                results.add(item(item.link(), item.target(), Outcome.SUCCEEDED, "Original unfinished link maintained after new approval"));
+                results.add(item(item.link(), item.target(), TaskResult.SUCCEEDED, "Original unfinished link maintained after new approval"));
             } catch (IOException | java.util.concurrent.CancellationException failure) {
-                Outcome state = dispatched ? Outcome.UNKNOWN : failure instanceof java.util.concurrent.CancellationException ? Outcome.CANCELLED : Outcome.FAILED;
+                TaskResult state = dispatched ? TaskResult.UNKNOWN : failure instanceof java.util.concurrent.CancellationException ? TaskResult.CANCELLED : TaskResult.FAILED;
                 results.add(item(item.link(), item.target(), state, dispatched ? "Link effect requires reconciliation" : "Original link or moved target changed"));
                 journal.record(operation, state.name(), item.link(), Optional.of(item.target()), failure.getClass().getSimpleName());
                 break;
             }
         }
-        Outcome outcome = aggregate(results);
-        journal.record(operation, outcome == Outcome.UNKNOWN ? "UNKNOWN" : "COMPLETE", first.link(), Optional.of(first.target()), outcome.name());
+        TaskResult outcome = aggregate(results);
+        journal.record(operation, outcome == TaskResult.UNKNOWN ? "UNKNOWN" : "COMPLETE", first.link(), Optional.of(first.target()), outcome.name());
         return new FileReport(operation, outcome, results);
     }
 

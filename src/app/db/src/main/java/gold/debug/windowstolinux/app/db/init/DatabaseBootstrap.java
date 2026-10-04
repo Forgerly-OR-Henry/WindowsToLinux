@@ -42,7 +42,7 @@ public final class DatabaseBootstrap implements AutoCloseable {
      * @throws Exception if pairing, decoding or atomic persistence fails / 配对、解码或原子持久化失败时
      */
     public static DatabaseBootstrap load(Path root, DatabaseProtection protection) throws Exception {
-        var database = root.resolve("platform.mv.db");
+        var database = root.resolve("windowstolinux.mv.db");
         var access = root.resolve("db-access.bin");
         boolean hasDatabase = Files.exists(database, LinkOption.NOFOLLOW_LINKS),
             hasAccess = Files.exists(access, LinkOption.NOFOLLOW_LINKS);
@@ -83,8 +83,12 @@ public final class DatabaseBootstrap implements AutoCloseable {
             }
         }
         try (var candidates = Files.list(root)) {
-            if (candidates.anyMatch(path -> path.getFileName().toString().startsWith("platform.")
-                && !path.getFileName().toString().equals("platform.lock")))
+            if (candidates.anyMatch(path -> {
+                var name = path.getFileName().toString();
+                return name.startsWith("windowstolinux.")
+                    && !Set.of("windowstolinux.lock", "windowstolinux.db").contains(name)
+                    || name.startsWith("platform.") && !name.equals("platform.lock");
+            }))
                 throw new java.io.IOException("Unreconciled database artifacts exist");
         }
         var key = new byte[32];

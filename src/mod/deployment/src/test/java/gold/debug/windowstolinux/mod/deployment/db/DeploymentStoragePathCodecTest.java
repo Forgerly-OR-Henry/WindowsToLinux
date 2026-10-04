@@ -18,13 +18,13 @@ class DeploymentStoragePathCodecTest {
             new DeploymentStoragePath("uploads", DeploymentStoragePath.AccessMode.READ_WRITE, "uploads-v2", false),
             new DeploymentStoragePath("cache/index", DeploymentStoragePath.AccessMode.READ_ONLY, "cache-v1", true));
 
-        assertEquals(List.of(paths.get(1), paths.get(0)), codec.read(DeploymentCodecCompatibility.write(paths)));
-        assertEquals(List.of(), codec.read(DeploymentCodecCompatibility.write(List.of())));
+        assertEquals(List.of(paths.get(1), paths.get(0)), codec.read(DeploymentCodecMatch.write(paths)));
+        assertEquals(List.of(), codec.read(DeploymentCodecMatch.write(List.of())));
     }
 
     @Test
     void rejectsUnsupportedTruncatedTrailingAndNonCanonicalDocuments() throws Exception {
-        byte[] valid = DeploymentCodecCompatibility.write(List
+        byte[] valid = DeploymentCodecMatch.write(List
             .of(new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE, "data-v1", true)));
         byte[] unsupported = valid.clone();
         unsupported[4] = 99;
@@ -45,6 +45,6 @@ class DeploymentStoragePathCodecTest {
         DeploymentStoragePath second = new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_ONLY,
             "data-v2", true);
 
-        assertThrows(java.io.IOException.class, () -> DeploymentCodecCompatibility.write(List.of(first, second)));
+        assertThrows(java.io.IOException.class, () -> DeploymentCodecMatch.write(List.of(first, second)));
     }
 }

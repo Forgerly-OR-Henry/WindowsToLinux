@@ -2,23 +2,21 @@ package gold.debug.windowstolinux.app.service.security;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.security.SecurityRepository;
+import gold.debug.windowstolinux.app.db.security.SecurityStore;
 import gold.debug.windowstolinux.app.secret.*;
 import gold.debug.windowstolinux.app.service.error.ApplicationServiceException;
 import gold.debug.windowstolinux.app.service.error.ApplicationServiceFailureType;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityState;
-import gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade;
+import gold.debug.windowstolinux.app.service.security.SecurityAccess;
 
 /** Owns session authorization, accepted task leases and exclusive security changes. / 持有会话授权、已接纳任务句柄及独占安全变更。 */
-public final class DesktopSecurityService implements SecurityApplicationFacade, AutoCloseable {
+public final class DesktopSecurityService implements SecurityAccess, AutoCloseable {
     /** Credential vault that owns key material. / 持有密钥材料的凭据库。
      */
-    /** Native privacy participants registered by accepted recovery sessions. / 已接纳救援会话登记的原生隐私参与者。 */
-    private final Set<java.util.function.Consumer<Boolean>> privacyParticipants = new LinkedHashSet<>();
 
     /** Credential vault that owns key material. / 持有密钥材料的凭据库。
      */
-    private final CredentialVault vault;
+    private final SecretVault vault;
 
     /** Current input or accepted operation context. / 当前输入或已接纳操作上下文。
      */
@@ -26,7 +24,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
 
     /** Interactive key handle, absent while locked. / 交互密钥句柄，锁定时为空。
      */
-    private CredentialVault.Session session;
+    private SecretVault.Session session;
 
     /** Current global credential encryption flag. / 当前全局凭据加密标记。
      */
@@ -52,8 +50,8 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
      * @param repository repository supplied to this boundary / 传入当前边界的repository值
      */
-    public DesktopSecurityService(SecurityRepository repository) {
-        vault = new CredentialVault(repository);
+    public DesktopSecurityService(SecurityStore repository) {
+        vault = new SecretVault(repository);
         try {
             configured = vault.configured();
             encrypted = vault.encryptionEnabled();
@@ -69,6 +67,19 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     @Override
     public synchronized DesktopSecurityState securityState() {
         return new DesktopSecurityState(configured, session != null, encrypted, activeTasks(), changing);
+    }
+
+    /** Reads keyless native confirmation without taking its operation lock. / 不取得原生操作锁地读取无密钥确认。
+     * @return current privacy observation / 当前隐私观察 */
+    @Override
+    public synchronized DesktopPrivacyState privacyState() {
+        return nativePrivacy.privacy;
+    }
+
+    /** Retries hiding owned windows after a failed locked transition. / 锁定转换失败后重试隐藏所属窗口。 */
+    @Override
+    public synchronized void retryPrivacy() {
+        if (!closed && session == null) nativePrivacy.requestPrivacy();
     }
 
     /**
@@ -99,10 +110,10 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     /** Creates the first security profile and unlocks only if no newer lock intervened. / 创建首次安全配置，仅在没有后续锁定时解锁。
      * @param password master-password buffer cleared after use / 使用后清除的主密码缓冲区
      * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
-     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     @Override
-    public void setupAndUnlock(char[] password, char[] confirmation) throws SecretStoreException {
+    public void setupAndUnlock(char[] password, char[] confirmation) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         try {
             long expected;
             synchronized (this) {
@@ -111,7 +122,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
                 changing = true;
                 expected = generation;
             }
-            CredentialVault.Session created = null;
+            SecretVault.Session created = null;
             try {
                 same(password, confirmation);
                 minimumPassword(password);
@@ -119,13 +130,8 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
                 synchronized (this) {
                     configured = true;
                     encrypted = true;
-                    if (!closed && generation == expected) {
-                        notifyPrivacy(false);
-                        session = created;
-                        created = null;
-                    }
-                    notifyAll();
                 }
+                if (nativePrivacy.publishUnlocked(created, expected)) created = null;
             } finally {
                 if (created != null)
                     created.close();
@@ -142,10 +148,10 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
 
     /** Verifies the password and opens a session without exposing the data key. / 验证密码并建立会话，不暴露数据密钥。
      * @param password master-password buffer cleared after use / 使用后清除的主密码缓冲区
-     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     @Override
-    public void unlock(char[] password) throws SecretStoreException {
+    public void unlock(char[] password) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         try {
             long expected;
             synchronized (this) {
@@ -154,23 +160,13 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
                 changing = true;
                 expected = generation;
             }
-            CredentialVault.Session opened = null, old = null;
+            SecretVault.Session opened = null;
             try {
                 opened = vault.unlock(password);
-                synchronized (this) {
-                    if (!closed && generation == expected) {
-                        notifyPrivacy(false);
-                        old = session;
-                        session = opened;
-                        opened = null;
-                    }
-                    notifyAll();
-                }
+                if (nativePrivacy.publishUnlocked(opened, expected)) opened = null;
             } finally {
                 if (opened != null)
                     opened.close();
-                if (old != null)
-                    old.close();
                 synchronized (this) {
                     changing = false;
                     notifyAll();
@@ -185,12 +181,12 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      */
     @Override
     public void lock() {
-        CredentialVault.Session old;
+        SecretVault.Session old;
         synchronized (this) {
-            notifyPrivacy(true);
             old = session;
             session = null;
             generation++;
+            nativePrivacy.requestPrivacy();
             notifyAll();
         }
         if (old != null)
@@ -201,10 +197,10 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      * @param old current master-password buffer / 当前主密码缓冲区
      * @param replacement new master-password buffer / 新主密码缓冲区
      * @param confirmation repeated password or confirmation callback / 重复密码或确认回调
-     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     @Override
-    public void changeMasterPassword(char[] old, char[] replacement, char[] confirmation) throws SecretStoreException {
+    public void changeMasterPassword(char[] old, char[] replacement, char[] confirmation) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         try {
             beginChange();
             try {
@@ -224,10 +220,10 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
     /** Exclusively converts all credentials and the global setting in one transaction. / 独占地在同一事务转换全部凭据及全局设置。
      * @param password master-password buffer cleared after use / 使用后清除的主密码缓冲区
      * @param enabled requested enabled flag / 请求启用标记
-     * @throws SecretStoreException if validation or the scoped operation fails / 校验或限定操作失败时
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if validation or the scoped operation fails / 校验或限定操作失败时
      */
     @Override
-    public void setCredentialEncryption(char[] password, boolean enabled) throws SecretStoreException {
+    public void setCredentialEncryption(char[] password, boolean enabled) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         try {
             beginChange();
             try {
@@ -361,7 +357,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      * @return result accepted within the same unlocked generation / 在同一解锁代次内接受的结果
      */
     public <T> T human(java.util.concurrent.Callable<T> work,
-                       gold.debug.windowstolinux.appapi.task.CancelToken cancellation) {
+                       gold.debug.windowstolinux.appapi.task.run.CancelToken cancellation) {
         for (; ; ) {
             long expected;
             try {
@@ -468,7 +464,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         gold.debug.windowstolinux.app.service.security.DesktopTaskAuthorization {
         /** Retained task credential handle. / 保留的任务凭据句柄。
          */
-        private final CredentialVault.Session credentials;
+        private final SecretVault.Session credentials;
 
         /** Close requested while executions may still be running. / 已请求关闭，执行可能尚未结束。
          */
@@ -483,7 +479,7 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
         /** Binds the validated inputs and owned state for this scope. / 绑定当前作用域的已验证输入及持有状态。
          * @param credentials credentials supplied to this boundary / 传入当前边界的credentials值
          */
-        private Task(CredentialVault.Session credentials) {
+        private Task(SecretVault.Session credentials) {
             this.credentials = credentials;
         }
 
@@ -580,34 +576,152 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
      * @param participant applies native privacy state / 应用原生隐私状态
      * @return registration released after browser cleanup / 浏览器清理后释放的登记
      */
-    public synchronized AutoCloseable observeLock(java.util.function.Consumer<Boolean> participant) {
-        if (closed)
-            throw denied("security is closed");
-        participant.accept(session == null);
-        privacyParticipants.add(participant);
-        return () -> {
-            synchronized (DesktopSecurityService.this) {
-                privacyParticipants.remove(participant);
-            }
-        };
+    public AutoCloseable observeLock(java.util.function.Consumer<Boolean> participant) {
+        return nativePrivacy.register(participant);
     }
 
-    /** Applies native privacy before committing the session transition. / 在提交会话转换前应用原生隐私状态。
-     * @param locked target lock state / 目标锁定状态
-     */
-    private void notifyPrivacy(boolean locked) {
-        try {
-            for (var participant : privacyParticipants)
-                participant.accept(locked);
-        } catch (RuntimeException failure) {
-            for (var participant : privacyParticipants)
-                try {
-                    participant.accept(session == null);
-                } catch (RuntimeException recovery) {
-                    failure.addSuppressed(recovery);
+    /** Native transitions have their own serialized owner, outside credential locks. / 原生转换在凭据锁外具有独立串行所有者。 */
+    private final NativePrivacy nativePrivacy = new NativePrivacy();
+
+    /** Confirms window privacy independently from platform authorization. / 独立于平台授权确认窗口隐私。 */
+    private final class NativePrivacy {
+        /** Native privacy participants registered by accepted recovery sessions. / 已接纳救援会话登记的原生隐私参与者。 */
+        private final Set<java.util.function.Consumer<Boolean>> privacyParticipants = new LinkedHashSet<>();
+
+        /** Serializes native callbacks outside the credential monitor. / 在凭据监视器外串行化原生回调。 */
+        private final Object privacyMonitor = new Object();
+
+        /** One coalescing native transition worker. / 一个合并待处理请求的原生转换工作线程。 */
+        private Thread privacyThread;
+
+        /** Distinguishes a retry requested during an earlier transition. / 区分早期转换期间新请求的重试。 */
+        private long privacyRevision;
+
+        /** Published independently from whether new platform work is authorized. / 独立于新平台工作授权发布。 */
+        private DesktopPrivacyState privacy = new DesktopPrivacyState(false, Optional.empty());
+
+        /** Registers native windows under the same lock transition. / 在同一锁定转换中登记原生窗口。
+         * @param participant applies native privacy state / 应用原生隐私状态
+         * @return registration released after browser cleanup / 浏览器清理后释放的登记
+         */
+        private AutoCloseable register(java.util.function.Consumer<Boolean> participant) {
+            Objects.requireNonNull(participant);
+            synchronized (privacyMonitor) {
+                for (; ; ) {
+                    long expected;
+                    boolean locked;
+                    synchronized (DesktopSecurityService.this) {
+                        if (closed) throw denied("security is closed");
+                        expected = generation;
+                        locked = session == null;
+                    }
+                    participant.accept(locked);
+                    synchronized (DesktopSecurityService.this) {
+                        if (closed) throw denied("security is closed");
+                        if (generation != expected) continue;
+                        privacyParticipants.add(participant);
+                        break;
+                    }
                 }
-            throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_PRIVACY_FAILED,
-                "native recovery window privacy transition failed", failure);
+            }
+            return () -> {
+                synchronized (DesktopSecurityService.this) {
+                    privacyParticipants.remove(participant);
+                }
+            };
+        }
+
+        /** Applies native privacy before committing the session transition. / 在提交会话转换前应用原生隐私状态。
+         * @param locked target lock state / 目标锁定状态
+         */
+        private void notifyPrivacy(boolean locked) {
+            List<java.util.function.Consumer<Boolean>> participants;
+            synchronized (DesktopSecurityService.this) {
+                participants = List.copyOf(privacyParticipants);
+            }
+            Throwable failure = null;
+            for (var participant : participants) {
+                try {
+                    participant.accept(locked);
+                } catch (RuntimeException | LinkageError | AssertionError rejected) {
+                    if (failure == null) failure = rejected;
+                    else failure.addSuppressed(rejected);
+                }
+            }
+            if (failure != null)
+                throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_PRIVACY_FAILED,
+                    "native recovery window privacy transition failed", failure);
+        }
+
+        /** Restores native windows before publishing a still-current credential session. / 发布仍属当前代次的凭据会话前恢复原生窗口。
+         * @param opened verified independent credentials / 已验证的独立凭据
+         * @param expected original desktop generation / 原桌面代次
+         * @return whether the original unlock was accepted / 原解锁是否被接受 */
+        private boolean publishUnlocked(SecretVault.Session opened, long expected) {
+            SecretVault.Session old;
+            synchronized (privacyMonitor) {
+                synchronized (DesktopSecurityService.this) {
+                    if (closed || generation != expected) return false;
+                    privacy = new DesktopPrivacyState(true, privacy.failure());
+                }
+                try {
+                    notifyPrivacy(false);
+                } catch (RuntimeException failure) {
+                    synchronized (DesktopSecurityService.this) {
+                        requestPrivacy();
+                    }
+                    throw failure;
+                }
+                synchronized (DesktopSecurityService.this) {
+                    if (closed || generation != expected) return false;
+                    old = session;
+                    session = opened;
+                    generation++;
+                    privacy = new DesktopPrivacyState(false, Optional.empty());
+                    DesktopSecurityService.this.notifyAll();
+                }
+            }
+            if (old != null) old.close();
+            return true;
+        }
+
+        /** Coalesces lock and retry requests; called under the credential monitor. / 合并锁定及重试请求；在凭据监视器内调用。 */
+        private void requestPrivacy() {
+            privacyRevision++;
+            privacy = new DesktopPrivacyState(true, privacy.failure());
+            if (privacyThread == null)
+                privacyThread = Thread.ofVirtual().name("desktop-privacy").start(this::updatePrivacy);
+        }
+
+        /** Confirms only the newest generation after serialized native work. / 串行原生工作后仅确认最新代次。 */
+        private void updatePrivacy() {
+            for (; ; ) {
+                synchronized (privacyMonitor) {
+                    long expected;
+                    long revision;
+                    boolean locked;
+                    synchronized (DesktopSecurityService.this) {
+                        expected = generation;
+                        revision = privacyRevision;
+                        locked = session == null;
+                    }
+                    Optional<gold.debug.windowstolinux.appapi.task.result.Problem> failure = Optional.empty();
+                    try {
+                        notifyPrivacy(locked);
+                    } catch (RuntimeException rejected) {
+                        failure = Optional.of(ApplicationServiceException.create(
+                            ApplicationServiceFailureType.SECURITY_PRIVACY_FAILED,
+                            "native recovery window privacy transition failed", rejected).problem());
+                    }
+                    synchronized (DesktopSecurityService.this) {
+                        if (generation != expected || privacyRevision != revision) continue;
+                        privacy = new DesktopPrivacyState(false, failure);
+                        privacyThread = null;
+                        DesktopSecurityService.this.notifyAll();
+                        return;
+                    }
+                }
+            }
         }
     }
 
@@ -622,6 +736,20 @@ public final class DesktopSecurityService implements SecurityApplicationFacade, 
             closed = true;
         }
         lock();
+        Thread worker;
+        synchronized (this) {
+            worker = nativePrivacy.privacyThread;
+        }
+        if (worker != null) {
+            try {
+                worker.join(30_000);
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+            }
+            if (worker.isAlive())
+                throw ApplicationServiceException.create(ApplicationServiceFailureType.SECURITY_BUSY,
+                    "native privacy must finish before security shutdown");
+        }
     }
 
     /** Requires matching password entries before changing security state. / 要求两次密码输入一致后才能变更安全状态。

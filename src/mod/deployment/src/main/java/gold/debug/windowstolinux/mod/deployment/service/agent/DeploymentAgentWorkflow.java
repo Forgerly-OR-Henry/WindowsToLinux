@@ -1,34 +1,32 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionStore;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 
 /** Owns one independent agent task and reconciles only its original durable effects. / 持有一项独立自主任务并仅核对其原持久效果。 */
 public final class DeploymentAgentWorkflow implements TaskRecovery {
@@ -39,7 +37,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     private final ModContext context;
 
     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
-    private final DeploymentAgentJournal journal;
+    private final DeploymentAgentActionLog journal;
 
     /** Only live original workers can accept cooperative controls. / 仅活动原工作线程能够接受协作控制。 */
     private final java.util.concurrent.ConcurrentMap<UUID, DeploymentAgentControl> controls = new java.util.concurrent.ConcurrentHashMap<>();
@@ -72,7 +70,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param context original activation / 原启用 */
     public DeploymentAgentWorkflow(ModContext context) {
         this.context = Objects.requireNonNull(context);
-        this.journal = new DeploymentAgentJournal(context.db());
+        this.journal = new DeploymentAgentActionLog(context.db());
     }
 
     /** Requests a control on an actually live worker of this activation. / 请求控制此启用代次的实际活动工作线程。
@@ -97,7 +95,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param request bounded user policy / 有界用户策略
      * @return observable original task / 可观察原任务
      * @throws ApiException on failed task admission / 任务准入失败时 */
-    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerRef server, Request request)
+    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server, Request request)
         throws ApiException {
         Objects.requireNonNull(request);
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous deployment", List.of(server.id()), true),
@@ -113,8 +111,8 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 }
                 final DeploymentSourceMaterial material;
                 try {
-                    var selection = context.file().selectDirectory("Autonomous deployment source", task);
-                    material = new DeploymentSourcePreparer(context.file()).prepare(selection,
+                    var selection = context.file().sources().selectDirectory("Autonomous deployment source", task);
+                    material = new DeploymentSourceSetup(context.file()).prepare(selection,
                         request.sourceBytes(), request.sourceEntries(), task);
                 } catch (ApiException failure) {
                     return finishKnown(failed(task, false, failure), task);
@@ -128,7 +126,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 } catch (ApiException failure) {
                     result = failed(task, false, failure);
                 } finally {
-                    if (result != null && result.outcome() != Outcome.UNKNOWN) {
+                    if (result != null && result.outcome() != TaskResult.UNKNOWN) {
                         try {
                             if (archive != null)
                                 archive.close();
@@ -149,7 +147,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param projectName reviewed project name / 经审核项目名称
      * @return observable original task / 可观察原任务
      * @throws ApiException on failed task admission / 任务准入失败时 */
-    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitGit(ServerRef server, Request request,
+    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitGit(ServerId server, Request request,
                                                                        DeploymentGitRequest git, Path executable, String projectName) throws ApiException {
         Objects.requireNonNull(git);
         return context.tasks()
@@ -175,7 +173,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                         selected.source().snapshot().sha256(), facts,
                         "Review exact pinned Git source before autonomous deployment");
                     var review = context.interaction().approve(intent, task);
-                    if (review.outcome() != Outcome.SUCCEEDED) {
+                    if (review.outcome() != TaskResult.SUCCEEDED) {
                         result = new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
                         return result;
                     }
@@ -184,7 +182,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                     result = execute(server, request, selected.source(), selected.archive(), Optional.of(project),
                         configuration, task);
                 } finally {
-                    if (!publicationStarted || result != null && result.outcome() != Outcome.UNKNOWN) {
+                    if (!publicationStarted || result != null && result.outcome() != TaskResult.UNKNOWN) {
                         try {
                             pinned.close();
                         } finally {
@@ -205,7 +203,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param configuration usable model revision admitted before any source selection / 任一来源选取前准入的可用模型修订
      * @param task original task / 原任务
      * @return observed publication / 已观察发布 */
-    private OperationResult<DeploymentAgentDeliveryPort.Published> execute(ServerRef server, Request request,
+    private OperationResult<DeploymentAgentDeliveryPort.Published> execute(ServerId server, Request request,
                                                                            DeploymentSourceMaterial material, DeploymentSourceArchive archive,
                                                                            Optional<DeploymentProjectRecord> project, String configuration, TaskContext task) {
         boolean created = false;
@@ -219,7 +217,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
             try (var remote = context.linux().connect(server, task)) {
                 String target = targetDigest(server, remote);
                 journal.create(task,
-                    new DeploymentAgentJournal.Identity(server.id(), target, configuration, request.approvalMode()),
+                    new DeploymentAgentActionLog.Identity(server.id(), target, configuration, request.approvalMode()),
                     Optional.of(physicalTarget(context.servers().get(server, task))));
                 created = true;
                 if (controls.putIfAbsent(task.id(), control) != null)
@@ -238,7 +236,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                     var session = new DeploymentAgentSession(context, task, server, request.requirements(), source,
                         tools, journal, request.approvalMode(), configuration, current, control);
                     var result = session.run();
-                    if (result.outcome() == Outcome.FAILED)
+                    if (result.outcome() == TaskResult.FAILED)
                         journal.state(task, "FAILED");
                     return result;
                 }
@@ -257,17 +255,17 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @return same known result or retained uncertainty / 相同已知结果或保留未知 */
     private OperationResult<DeploymentAgentDeliveryPort.Published> finishKnown(
         OperationResult<DeploymentAgentDeliveryPort.Published> result, TaskContext task) {
-        if (result.outcome() == Outcome.UNKNOWN)
+        if (result.outcome() == TaskResult.UNKNOWN)
             return result;
         try {
             context.file().closeTaskResources(task);
-            var executions = new DeploymentExecutionRepository(context.db());
+            var executions = new DeploymentExecutionStore(context.db());
             var formal = executions.findForTask(task);
             if (formal.isEmpty())
                 return result;
-            var finished = new DeploymentOriginalPublicationCommit(context).finishKnown(task, formal.orElseThrow());
-            if (finished.outcome() == Outcome.UNKNOWN)
-                return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), finished.problem());
+            var finished = new DeploymentOriginalPublishCommit(context).finishKnown(task, formal.orElseThrow());
+            if (finished.outcome() == TaskResult.UNKNOWN)
+                return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), finished.problem());
             return result;
         } catch (Exception uncertain) {
             return unknownPublished();
@@ -277,7 +275,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     /** Retains a failed original cleanup without inventing a known result. / 原收尾失败时保留未知而不虚构已知结果。
      * @return classified unknown publication / 分类未知发布 */
     private static OperationResult<DeploymentAgentDeliveryPort.Published> unknownPublished() {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
             Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_FINAL_CLEANUP_UNCONFIRMED",
                 "Original cleanup requires reconciliation", Map.of(), Optional.empty())));
     }
@@ -289,29 +287,29 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @return retained classified result / 留存分类结果 */
     private OperationResult<DeploymentAgentDeliveryPort.Published> failed(TaskContext task, boolean created,
                                                                           Exception failure) {
-        Outcome outcome = failure instanceof IllegalArgumentException || failure instanceof SecurityException
+        TaskResult outcome = failure instanceof IllegalArgumentException || failure instanceof SecurityException
             || failure instanceof IllegalStateException || failure instanceof java.io.IOException
-            ? Outcome.FAILED
-            : Outcome.UNKNOWN;
+            ? TaskResult.FAILED
+            : TaskResult.UNKNOWN;
         Optional<Problem> original = Optional.empty();
         if (failure instanceof DeploymentAiJson.CapabilityOutcomeException classified) {
             outcome = classified.outcome();
             original = classified.problem();
         } else if (failure instanceof CancellationException) {
-            outcome = Outcome.CANCELLED;
+            outcome = TaskResult.CANCELLED;
         } else if (failure instanceof ApiException api) {
             original = Optional.of(api.problem());
             outcome = api.problem().code() == ProblemCode.CANCELLED
-                ? Outcome.CANCELLED
-                : api.problem().code() == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED;
+                ? TaskResult.CANCELLED
+                : api.problem().code() == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED;
         }
         try {
             if (created) {
                 var events = journal.events(task);
-                if (!DeploymentAgentJournal.effectsSettled(events)
+                if (!DeploymentAgentActionLog.effectsSettled(events)
                     || events.stream().anyMatch(event -> event.type().equals("CANDIDATE"))
                     && events.stream().noneMatch(event -> event.type().equals("DELIVERY_RESULT")))
-                    outcome = Outcome.UNKNOWN;
+                    outcome = TaskResult.UNKNOWN;
                 journal.state(task, switch (outcome) {
                     case SUCCEEDED -> "SUCCEEDED";
                     case FAILED -> "FAILED";
@@ -320,16 +318,16 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 });
             }
         } catch (Exception uncertainLedger) {
-            outcome = Outcome.UNKNOWN;
+            outcome = TaskResult.UNKNOWN;
         }
         Problem problem = original.orElse(null);
-        if (outcome == Outcome.UNKNOWN && problem != null && problem.code() != ProblemCode.UNKNOWN)
+        if (outcome == TaskResult.UNKNOWN && problem != null && problem.code() != ProblemCode.UNKNOWN)
             problem = null;
         if (problem == null)
             problem = new Problem(
-                outcome == Outcome.CANCELLED
+                outcome == TaskResult.CANCELLED
                     ? ProblemCode.CANCELLED
-                    : outcome == Outcome.FAILED ? ProblemCode.IO_FAILURE : ProblemCode.UNKNOWN,
+                    : outcome == TaskResult.FAILED ? ProblemCode.IO_FAILURE : ProblemCode.UNKNOWN,
                 "DEPLOYMENT_AGENT_STOPPED", "Autonomous deployment requires original-task review", Map.of(),
                 Optional.empty());
         return new OperationResult<>(outcome, Optional.empty(), Optional.of(problem));
@@ -357,7 +355,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 facts = "UNCONFIRMED:" + unconfirmed.getClass().getSimpleName();
             }
             journal.event(originalTask, "INSPECT_RESULT", Long.toString(inspection.orElseThrow().id()), facts);
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_INSPECTED_UNKNOWN",
                     "Inspection preserves UNKNOWN; recovery requires another explicit original task request",
                     Map.of(), Optional.empty())));
@@ -369,7 +367,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param outcome classified result / 分类结果
      * @param code public problem code / 公开问题代码
      * @return no-payload result / 无载荷结果 */
-    private static OperationResult<Void> result(Outcome outcome, ProblemCode code) {
+    private static OperationResult<Void> result(TaskResult outcome, ProblemCode code) {
         return new OperationResult<>(outcome, Optional.empty(),
             Optional.of(new Problem(code, "DEPLOYMENT_AGENT_RECONCILED",
                 "Original agent task result was reconciled", Map.of(), Optional.empty())));
@@ -378,7 +376,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     /** Retains uncertainty without replay. / 不重放地保留不确定性。
      * @return unknown result / 未知结果 */
     private static OperationResult<Void> unknown() {
-        return result(Outcome.UNKNOWN, ProblemCode.UNKNOWN);
+        return result(TaskResult.UNKNOWN, ProblemCode.UNKNOWN);
     }
 
     /** Hashes exact nonsecret target identity. / 散列精确不含秘密目标身份。
@@ -397,21 +395,21 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param server original profile / 原资料
      * @param session authenticated SSH / 已认证 SSH
      * @return nonsecret target digest / 不含秘密目标摘要 */
-    static String targetDigest(ServerRef server, RemoteSession session) {
+    static String targetDigest(ServerId server, RemoteSession session) {
         return hash(server.id() + ":" + session.facts().fingerprint());
     }
 
     /** Binds the exact nonsecret original endpoint and account for later readonly inspection. / 绑定精确非秘密原端点及账户以供后续只读检查。
      * @param server actually authorized original profile / 实际授权原资料
      * @return exact endpoint and account digest / 精确端点及账户摘要 */
-    static String targetProfile(gold.debug.windowstolinux.appapi.server.ServerInfo server) {
+    static String targetProfile(gold.debug.windowstolinux.appapi.server.model.ServerInfo server) {
         return hash(server.ref().id() + "\n" + server.host() + "\n" + server.port() + "\n" + server.username());
     }
 
     /** Binds the exact canonical endpoint across saved-profile aliases without inferring DNS equivalence. / 跨保存资料别名绑定精确规范端点，不推断DNS等价。
      * @param server actually authorized selected profile / 实际授权所选资料
      * @return non-secret canonical endpoint digest / 非秘密规范端点摘要 */
-    static String physicalTarget(gold.debug.windowstolinux.appapi.server.ServerInfo server) {
+    static String physicalTarget(gold.debug.windowstolinux.appapi.server.model.ServerInfo server) {
         return hash(server.host().toLowerCase(java.util.Locale.ROOT) + "\n" + server.port());
     }
 
@@ -429,7 +427,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         } catch (ApiException unavailable) {
             return Optional.of(failed(task, false, unavailable));
         } catch (java.sql.SQLException unavailable) {
-            return Optional.of(new OperationResult<>(Outcome.FAILED, Optional.empty(),
+            return Optional.of(new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PREFERENCE_SAVE_FAILED",
                     "Deployment preferences could not be saved", Map.of("task", task.id().toString()),
                     Optional.of(task.id())))));
@@ -442,7 +440,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @param task authentic original callback / 真实原回调
      * @return first usable frozen configuration / 首次可用冻结配置
      * @throws ApiException if authorization, routing or a selected purpose is unavailable / 授权、路由或所选用途不可用时 */
-    private String admittedConfiguration(ServerRef server, Request request, TaskContext task) throws ApiException {
+    private String admittedConfiguration(ServerId server, Request request, TaskContext task) throws ApiException {
         context.servers().get(server, task);
         String configuration = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
         if (!configuration.matches("[0-9a-f]{64}") || !request.approvalMode().equals("MANUAL_REVIEW")

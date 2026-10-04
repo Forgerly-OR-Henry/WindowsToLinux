@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.ui.server;
 
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.awt.*;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -16,22 +13,36 @@ import java.util.function.Consumer;
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 
+import gold.debug.windowstolinux.app.service.server.PlatformServerService;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerSummary;
-import gold.debug.windowstolinux.app.service.server.PlatformServerService;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
 
 /** Permanent configuration and authentication-only SSH page with explicit task recovery. / 带显式任务恢复的常驻配置及仅认证 SSH 页面。 */
 public final class PlatformServersPane extends JPanel implements AutoCloseable {
+    /** Current view lifetime and exact request ownership. / 当前视图寿命及精确请求归属。 */
+    private final ViewState view = new ViewState();
+
+    /** Mutable state confined to the EDT. / 限于 EDT 的可变状态。 */
+    private static final class ViewState {
+        /** Rejects earlier view intents and busy owners. / 拒绝早期视图意图及忙碌状态所有者。 */
+        private long epoch, request;
+
+        /** Current privacy, lifetime and active request. / 当前隐私、寿命及活动请求。 */
+        private boolean locked = true, closed, busy;
+    }
+
     /** Immutable original target and completed-failure eligibility. / 不可变原目标及已完成失败准入。
      * @param id original check / 原检查
      * @param profile original endpoint / 原端点
      * @param handle original resource owner / 原资源所有者
      * @param failed definite completed failure / 明确完成失败 */
     private record CheckBinding(UUID id, ServerProfile profile,
-                                gold.debug.windowstolinux.appapi.task.TaskHandle<?> handle, boolean failed) {
+                                gold.debug.windowstolinux.appapi.task.run.TaskHandle<?> handle, boolean failed) {
     }
 
     /** Parent for configuration and confirmation dialogs. / 配置及确认窗口的父级。 */
@@ -41,7 +52,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     private final PlatformServerService service;
 
     /** Actual independent rescue coordinator installed by the platform shell. / 平台外壳安装的实际独立救援协调器。 */
-    private gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService recovery;
+    private gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery recovery;
 
     /** Navigation to permanent model configuration. / 前往常驻模型配置的导航。 */
     private Runnable modelSettings;
@@ -56,7 +67,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     private CheckBinding checkBinding;
 
     /** Current themed controls. / 当前主题控件。 */
-    private final DesktopComponentFactory components;
+    private final DesktopPartFactory components;
 
     /** Localized safe output. / 本地化安全输出。 */
     private final PageMessagePresenter messages;
@@ -74,7 +85,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     private final JComboBox<TaskSnapshot> checks = new JComboBox<>();
 
     /** Safe progress and completion text. / 安全的进度及完成文本。 */
-    private final JTextArea output = DesktopComponentFactory.outputArea();
+    private final JTextArea output = DesktopPartFactory.outputArea();
 
     /** Add configuration action. / 添加配置动作。 */
     private final JButton add;
@@ -100,15 +111,6 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** In-memory task polling, stopped on actual page disposal. / 内存任务轮询，在页面实际销毁时停止。 */
     private final Timer timer;
 
-    /** Whether interactive access is currently blocked. / 当前交互访问是否被阻止。 */
-    private boolean locked = true;
-
-    /** Whether a configuration or submission worker is pending. / 配置或提交工作线程是否待完成。 */
-    private boolean busy;
-
-    /** Whether callbacks must stop touching a disposed view. / 回调是否必须停止访问已销毁视图。 */
-    private boolean closed;
-
     /**
      * Creates the permanent view on the event thread. / 在事件线程创建常驻视图。
      * @param owner actual parent window / 实际父窗口
@@ -116,7 +118,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @param components current themed controls / 当前主题控件
      * @param messages localized safe diagnostics / 本地化安全诊断
      */
-    public PlatformServersPane(Window owner, PlatformServerService service, DesktopComponentFactory components,
+    public PlatformServersPane(Window owner, PlatformServerService service, DesktopPartFactory components,
                                PageMessagePresenter messages) {
         super(new BorderLayout(12, 12));
         if (!SwingUtilities.isEventDispatchThread())
@@ -229,7 +231,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Binds the real rescue entry once without adding a business extension dependency. / 绑定一次真实救援入口，不添加业务扩展依赖。
      * @param service actual platform rescue / 实际平台救援
      * @param modelSettings permanent model-settings navigation / 常驻模型设置导航 */
-    public void installRecovery(gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService service,
+    public void installRecovery(gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery service,
                                 Runnable modelSettings) {
         if (recovery != null || !SwingUtilities.isEventDispatchThread())
             throw new IllegalStateException("Rescue must be installed once on the EDT");
@@ -249,8 +251,8 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     private void rescue(ServerProfile profile) {
         if (profile == null || recovery == null)
             return;
-        work(() -> recovery.start(profile), session -> {
-            gold.debug.windowstolinux.app.ui.sshrecover.SshRecoveryDialog.platform(this, profile, session, modelSettings,
+        work(() -> recovery.start(new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.Server(profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(), profile.displayName())), session -> {
+            gold.debug.windowstolinux.app.ui.server.SshRecoveryDialog.platform(this, profile, session, modelSettings,
                 components, messages);
             poll();
         });
@@ -258,15 +260,18 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /**
      * Applies privacy state and reloads saved profiles after unlocking. / 应用隐私状态并在解锁后重新读取已保存配置。
-     * @param locked whether interactive data must remain hidden / 交互数据是否必须保持隐藏
+     * @param value whether interactive data must remain hidden / 交互数据是否必须保持隐藏
      */
-    public void setLocked(boolean locked) {
-        this.locked = locked;
-        if (locked) {
-            selection.replace(List.of());
-            checks.removeAllItems();
-            output.setText("");
-        } else if (!busy) {
+    public void setLocked(boolean value) {
+        if (view.locked != value) {
+            view.epoch++;
+            view.request++;
+            view.busy = false;
+            checkBinding = null;
+            failedRescue.setVisible(false);
+        }
+        view.locked = value;
+        if (!value && !view.busy) {
             refresh();
         }
         controls();
@@ -300,7 +305,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @param profile selected profile or null for addition / 所选配置，添加时为空
      */
     private void editor(ServerProfile profile) {
-        if (!locked && !busy)
+        if (!view.locked && !view.busy)
             new ServerProfileDialog(owner, service, components, messages, profile, saved -> refresh()).setVisible(true);
     }
 
@@ -312,7 +317,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Confirms removal and delegates task, reference and credential ownership checks. / 确认删除并委派任务、引用及凭据归属检查。 */
     private void delete() {
         var profile = selected();
-        if (profile == null || locked || busy)
+        if (profile == null || view.locked || view.busy)
             return;
         if (JOptionPane.showConfirmDialog(owner,
             messages.text("server.deleteConfirm", Map.of("name", profile.displayName())),
@@ -331,19 +336,20 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         if (profile == null)
             return;
         work(() -> service.check(profile), handle -> {
+            long generation = view.epoch;
             checkBinding = new CheckBinding(handle.id(), profile, handle, false);
             failedRescue.setVisible(false);
             output.setText(messages.text("server.checking"));
             handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
-                if (closed || locked || checkBinding == null || !handle.id().equals(checkBinding.id()))
+                if (view.closed || view.locked || generation != view.epoch || checkBinding == null || !handle.id().equals(checkBinding.id()))
                     return;
                 output.setText(failure != null
                     ? messages.safe(new java.util.concurrent.CompletionException(failure))
                     : messages.text("platform.outcome." + result.outcome())
                     + result.value().map(facts -> "\n" + facts.fingerprint()).orElse("")
                     + result.problem().map(problem -> "\n" + messages.safe(
-                    new gold.debug.windowstolinux.appapi.task.ApiException(problem))).orElse(""));
-                if (failure == null && result.outcome() == gold.debug.windowstolinux.appapi.task.Outcome.FAILED
+                    new gold.debug.windowstolinux.appapi.task.result.ApiException(problem))).orElse(""));
+                if (failure == null && result.outcome() == gold.debug.windowstolinux.appapi.task.result.TaskResult.FAILED
                     && handle.snapshot().state() == TaskState.ENDED) {
                     checkBinding = new CheckBinding(handle.id(), profile, handle, true);
                     failedRescue.setVisible(true);
@@ -361,7 +367,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         if (task != null)
             work(() -> {
                 if (task.type()
-                    .equals(gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService.TASK_TYPE))
+                    .equals(gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.TASK_TYPE))
                     recovery.cancel(task.id());
                 else
                     service.cancel(task.id());
@@ -372,10 +378,10 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Confirms explicit interruption recovery, which never repeats the old connection. / 确认显式中断恢复，绝不重复旧连接。 */
     private void reconcile() {
         var task = (TaskSnapshot) checks.getSelectedItem();
-        if (task == null || locked || busy)
+        if (task == null || view.locked || view.busy)
             return;
         boolean rescueTask = task.type()
-            .equals(gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService.TASK_TYPE);
+            .equals(gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.TASK_TYPE);
         if (JOptionPane.showConfirmDialog(owner,
             messages.text(rescueTask ? "recovery.taskReconcileConfirm" : "server.reconcileConfirm"),
             messages.text("server.reconcile"), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
@@ -392,7 +398,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Updates only in-memory task snapshots on the event thread. / 在事件线程仅更新内存任务快照。 */
     private void poll() {
-        if (locked || closed)
+        if (view.locked || view.closed)
             return;
         var selected = (TaskSnapshot) checks.getSelectedItem();
         UUID id = selected == null ? null : selected.id();
@@ -416,7 +422,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Updates action availability without database or network calls. / 更新动作可用状态，不调用数据库或网络。 */
     private void controls() {
-        boolean enabled = !closed && !locked && !busy;
+        boolean enabled = !view.closed && !view.locked && !view.busy;
         selection.search.setEnabled(enabled);
         add.setEnabled(enabled);
         refresh.setEnabled(enabled);
@@ -440,18 +446,21 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @param <T> operation result type / 操作结果类型
      */
     private <T> void work(Callable<T> operation, Consumer<T> success) {
-        if (closed || locked || busy)
+        if (view.closed || view.locked || view.busy)
             return;
-        busy = true;
+        view.busy = true;
+        long generation = view.epoch, identity = ++view.request;
         controls();
-        DesktopTaskExecutor.run(operation, value -> {
-            busy = false;
-            if (!closed && !locked)
+        DesktopTaskRunner.run(operation, value -> {
+            if (view.closed || view.locked || view.epoch != generation || view.request != identity) return;
+            view.busy = false;
+            if (!view.closed && !view.locked)
                 success.accept(value);
             controls();
         }, failure -> {
-            busy = false;
-            if (!closed && !locked)
+            if (view.closed || view.locked || view.epoch != generation || view.request != identity) return;
+            view.busy = false;
+            if (!view.closed && !view.locked)
                 output.setText(messages.safe(failure));
             controls();
         });
@@ -460,7 +469,10 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Stops view polling while accepted central tasks keep their original ownership. / 停止视图轮询，已接纳中央任务继续保持原归属。 */
     @Override
     public void close() {
-        closed = true;
+        view.closed = true;
+        view.epoch++;
+        view.request++;
+        view.busy = false;
         timer.stop();
         rows.replace(List.of());
         checks.removeAllItems();
@@ -524,7 +536,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             updating = true;
             try {
                 rows.replace(values);
-                if (!locked && !initialized && !values.isEmpty()) {
+                if (!view.locked && !initialized && !values.isEmpty()) {
                     selectedId = values.getFirst().profile().id();
                     initialized = true;
                 }

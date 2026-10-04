@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformRemoteCapabilitiesTest.digest;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,17 +11,27 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.*;
-import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
 import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
 import gold.debug.windowstolinux.app.linux.ssh.connect.SshEndpoint;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,7 @@ class PlatformTransferRecoveryTest {
     @TempDir
     Path root;
 
-    static final ServerRef SERVER = new ServerRef("server");
+    static final ServerId SERVER = new ServerId("server");
 
     static void interruptOnce(PlatformRemoteCapabilitiesTest.Remote remote) {
         var once = new AtomicBoolean(true);
@@ -78,13 +78,13 @@ class PlatformTransferRecoveryTest {
                         var grant = capabilities.interaction().approve(
                             RemoteActions.transfer(SERVER, "original", request, digest(new byte[100000]), true),
                             context).value().orElseThrow();
-                        assertEquals(Outcome.UNKNOWN, session.upload(request, grant).outcome());
+                        assertEquals(TaskResult.UNKNOWN, session.upload(request, grant).outcome());
                         assertEquals(1, capabilities.linux().pendingTransfers(context).size());
                     }
                     return success(null);
                 });
                 state(task, TaskState.UNKNOWN);
-                PlatformServerReferenceTest.callbackReturned(runtime, original.get());
+                PlatformServerRefTest.callbackReturned(runtime, original.get());
                 assertThrows(ApiException.class, () -> capabilities.linux().pendingTransfers(original.get()));
                 try (var recovery = binding.registerRecovery("fixture", (previous, context) -> {
                     capabilities.closeTaskResources(context);
@@ -110,7 +110,7 @@ class PlatformTransferRecoveryTest {
                             assertThrows(ApiException.class,
                                 () -> session.discardTransfer(UUID.randomUUID(), discardGrant)).problem()
                                 .code());
-                        assertEquals(Outcome.SUCCEEDED,
+                        assertEquals(TaskResult.SUCCEEDED,
                             session.discardTransfer(checkpoint.id(), discardGrant).outcome());
                         assertTrue(capabilities.linux().pendingTransfers(context).isEmpty());
                         assertThrows(ApiException.class, () -> session.discardTransfer(checkpoint.id(), discardGrant));
@@ -138,7 +138,7 @@ class PlatformTransferRecoveryTest {
         try (var remote = new PlatformRemoteCapabilitiesTest.Remote(root.resolve("ssh"))) {
             interruptOnce(remote);
             try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
-                var persistence = new PlatformPersistence(db);
+                var persistence = new PlatformStorage(db);
                 try (var security = new DesktopSecurityService(persistence.security())) {
                     security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
                     try (var operation = security.enterOperation(); var credentials = security.openCredentials()) {
@@ -187,7 +187,7 @@ class PlatformTransferRecoveryTest {
                                 }
                             };
                         });
-                    assertEquals(Outcome.UNKNOWN, result.outcome());
+                    assertEquals(TaskResult.UNKNOWN, result.outcome());
                 }
             }
             try (var runtime = PlatformRuntime.open(data, PlatformStartupTest.PROTECTION)) {
@@ -204,7 +204,7 @@ class PlatformTransferRecoveryTest {
                                 .approve(RemoteActions.recoverTransfer(checkpoint, "recovery", true), context)
                                 .value().orElseThrow();
                             var result = session.resumeTransfer(checkpoint.id(), grant);
-                            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                         }
                         assertTrue(capabilities.linux().pendingTransfers(context).isEmpty());
                         return success(null);

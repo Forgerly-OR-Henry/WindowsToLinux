@@ -1,17 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 
 /** Deployment-owned synchronous API; every call remains under the authenticated root task. / 部署所属同步API，每次调用均留在已认证根任务下。 */
@@ -20,13 +18,13 @@ public final class DeploymentApiProvider implements DeploymentApi {
     private final ModContext context;
 
     /** Complete managed application observation and lifecycle. / 完整受管应用观察及生命周期。 */
-    private final DeploymentApplicationExecutor applications;
+    private final DeploymentApplicationRunner applications;
 
     /** Original source collection and verified restoration. / 原来源采集及已核实恢复。 */
-    private final DeploymentCollectionCoordinator collection;
+    private final DeploymentCollectionFlow collection;
 
     /** Original target preparation, activation and cleanup. / 原目标准备、激活及清理。 */
-    private final DeploymentRestoreCoordinator restore;
+    private final DeploymentRestoreFlow restore;
 
     /** Authenticated immutable request and recovery facts. / 已认证不可变请求及恢复事实。 */
     private final DeploymentHandoffLedger ledger;
@@ -35,9 +33,9 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @param context active deployment provider / 活动部署提供方 */
     public DeploymentApiProvider(ModContext context) {
         this.context = Objects.requireNonNull(context);
-        applications = new DeploymentApplicationExecutor(context);
-        collection = new DeploymentCollectionCoordinator(context);
-        restore = new DeploymentRestoreCoordinator(context);
+        applications = new DeploymentApplicationRunner(context);
+        collection = new DeploymentCollectionFlow(context);
+        restore = new DeploymentRestoreFlow(context);
         ledger = new DeploymentHandoffLedger(context);
     }
 
@@ -60,7 +58,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @return verified observation / 已核实观察
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
-    public OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application,
+    public OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationId application,
                                                                   TaskContext task) throws ApiException {
         authenticate(task);
         context.servers().get(application.server(), task);
@@ -75,7 +73,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @return verified original effect / 已核实原效果
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
-    public OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application, String revision,
+    public OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationId application, String revision,
                                                                 DeploymentLifecycleAction action, TaskContext task) throws ApiException {
         authenticate(task);
         context.servers().get(application.server(), task);
@@ -125,7 +123,7 @@ public final class DeploymentApiProvider implements DeploymentApi {
      * @return target review digest / 目标审阅摘要
      * @throws ApiException if authentic task scope or original evidence is unavailable / 真实任务范围或原依据不可用时 */
     @Override
-    public OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archived, ServerRef target,
+    public OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archived, ServerId target,
                                                        String archiveSha, TaskContext task) throws ApiException {
         authenticate(task);
         return restore.review(archived, target, archiveSha, task);

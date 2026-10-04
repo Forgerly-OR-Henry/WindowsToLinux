@@ -1,17 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRecovery;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,13 +8,23 @@ import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerInfo;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretStore;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.secret.SecretValueSource;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRevision;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
 
@@ -48,7 +46,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     private final DeploymentSecretProvisionFlow secrets;
 
     /** Business revision metadata without plaintext. / 不含明文的业务修订元数据。 */
-    private final DeploymentSecretRepository revisions;
+    private final DeploymentSecretStore revisions;
 
     /** Current accepted publication task, independent of an open page. / 当前已接纳发布任务，独立于开放页面。 */
     private TaskHandle<Void> active;
@@ -60,7 +58,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
         this.context = Objects.requireNonNull(context);
         this.workflow = Objects.requireNonNull(workflow);
         this.secrets = new DeploymentSecretProvisionFlow(context);
-        this.revisions = new DeploymentSecretRepository(context.db());
+        this.revisions = new DeploymentSecretStore(context.db());
     }
 
     /** Loads the owned page selection off the EDT, filling only missing defaults. / 在EDT外加载所属页面选择，仅补缺失默认值。
@@ -92,14 +90,14 @@ public final class DeploymentStaticPageService implements TaskRecovery {
                 var repository = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db());
                 if (requested.isPresent()) repository.save(task, requested.orElseThrow());
                 var selection = requested.isPresent() ? requested.orElseThrow() : repository.read(task);
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(selection), Optional.empty());
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(selection), Optional.empty());
             } catch (ApiException failure) {
                 var code = failure.problem().code();
-                return new OperationResult<>(code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN
-                    : code == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                return new OperationResult<>(code == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN
+                    : code == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                     Optional.empty(), Optional.of(failure.problem()));
             } catch (java.sql.SQLException | IllegalArgumentException failure) {
-                return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                     failure instanceof IllegalArgumentException ? ProblemCode.INVALID_INPUT : ProblemCode.IO_FAILURE,
                     "DEPLOYMENT_PREFERENCE_INVALID", "Stored deployment preferences could not be loaded safely", Map.of(), Optional.empty())));
             }
@@ -112,7 +110,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @param value one-shot plaintext input requested only by the admitted task / 仅由已准入任务请求的一次性明文输入
      * @return original secret task / 原秘密任务
      * @throws ApiException if admission fails / 准入失败时 */
-    public TaskHandle<DeploymentSecretRevision> createSecret(ServerRef server, DeploymentSecretReference reference,
+    public TaskHandle<DeploymentSecretRevision> createSecret(ServerId server, DeploymentSecretRef reference,
                                                              SecretValueSource value) throws ApiException {
         return secrets.submitOwned(server, reference, "deployment-application",
             Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS), value);
@@ -125,17 +123,17 @@ public final class DeploymentStaticPageService implements TaskRecovery {
         return context.tasks().submit(new TaskRequest(SECRET_LIST_TASK, "Deployment secret choices", List.of(), true),
             task -> {
                 try {
-                    return new OperationResult<>(Outcome.SUCCEEDED,
+                    return new OperationResult<>(TaskResult.SUCCEEDED,
                         Optional.of(revisions.listReferences(task, 1000)), Optional.empty());
                 } catch (ApiException failure) {
                     var code = failure.problem().code();
                     return new OperationResult<>(
                         code == ProblemCode.CANCELLED
-                            ? Outcome.CANCELLED
-                            : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+                            ? TaskResult.CANCELLED
+                            : code == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED,
                         Optional.empty(), Optional.of(failure.problem()));
                 } catch (java.sql.SQLException failure) {
-                    return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SECRET_LIST_FAILED",
                             "Secret references could not be read", Map.of(), Optional.empty())));
                 }
@@ -153,7 +151,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
                     Optional<String> cursor = Optional.empty();
                     do {
                         if (task.cancelToken().requested())
-                            return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                            return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(),
                                 Optional.of(
                                     new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SERVER_LIST_CANCELLED",
                                         "Server list was cancelled", Map.of(), Optional.empty())));
@@ -162,21 +160,21 @@ public final class DeploymentStaticPageService implements TaskRecovery {
                         cursor = page.nextCursor();
                     } while (cursor.isPresent() && all.size() < 10_000);
                     if (cursor.isPresent())
-                        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                             Optional.of(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SERVER_LIST_LIMIT",
                                 "Server list exceeds page limit", Map.of(), Optional.empty())));
                     if (task.cancelToken().requested())
-                        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(),
                             Optional.of(new Problem(ProblemCode.CANCELLED, "DEPLOYMENT_SERVER_LIST_CANCELLED",
                                 "Server list was cancelled", Map.of(), Optional.empty())));
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(List.copyOf(all)),
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(List.copyOf(all)),
                         Optional.empty());
                 } catch (ApiException failure) {
                     var code = failure.problem().code();
                     return new OperationResult<>(
                         code == ProblemCode.CANCELLED
-                            ? Outcome.CANCELLED
-                            : code == ProblemCode.UNKNOWN ? Outcome.UNKNOWN : Outcome.FAILED,
+                            ? TaskResult.CANCELLED
+                            : code == ProblemCode.UNKNOWN ? TaskResult.UNKNOWN : TaskResult.FAILED,
                         Optional.empty(), Optional.of(failure.problem()));
                 }
             });
@@ -224,7 +222,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @param reviewer current owner review / 当前所属审阅
      * @return original publication task / 原发布任务
      * @throws ApiException if admission fails / 准入失败时 */
-    public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
+    public synchronized TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
                                                 DeploymentStaticWorkflow.Reviewer reviewer) throws ApiException {
         return submit(server, draft, Optional.empty(), reviewer);
     }
@@ -236,7 +234,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @param reviewer current owner review / 当前所属审阅
      * @return original publication task / 原发布任务
      * @throws ApiException if admission fails / 准入失败时 */
-    public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
+    public synchronized TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
                                                 Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer)
         throws ApiException {
         return submit(server, draft, git, reviewer, false);
@@ -250,7 +248,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @param assisted explicitly selected assistant / 明确选择辅助模式
      * @return original publication task / 原发布任务
      * @throws ApiException if admission fails / 准入失败时 */
-    public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
+    public synchronized TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
                                                 Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer,
                                                 boolean assisted) throws ApiException {
         return submit(server, draft, git, reviewer, assisted, "MANUAL_REVIEW");
@@ -265,7 +263,7 @@ public final class DeploymentStaticPageService implements TaskRecovery {
      * @param approvalMode explicit captured policy / 明确已抓取策略
      * @return original publication task / 原发布任务
      * @throws ApiException if admission fails / 准入失败时 */
-    public synchronized TaskHandle<Void> submit(ServerRef server, DeploymentStaticWorkflow.Draft draft,
+    public synchronized TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
                                                 Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer,
                                                 boolean assisted, String approvalMode) throws ApiException {
         if (active != null && active.snapshot().state() != TaskState.ENDED)
@@ -291,10 +289,10 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws ApiException {
         if (!(SERVER_LIST_TASK.equals(previous.type()) || SECRET_LIST_TASK.equals(previous.type()))
             || !previous.id().equals(task.id()) || !context.tasks().resourcesReleased(task))
-            return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_SERVER_LIST_RECOVERY_UNKNOWN",
                     "Original query needs review", Map.of(), Optional.empty())));
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_SERVER_LIST_INTERRUPTED",
                 "Read-only server list was interrupted", Map.of(), Optional.empty())));
     }

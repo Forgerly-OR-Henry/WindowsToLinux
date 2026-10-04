@@ -1,20 +1,19 @@
 package gold.debug.windowstolinux.app.db.mod;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Retains original recovery sessions beyond the lifetime of their tasks. / 在任务生命期之外保留原恢复会话。 */
 public final class ModRecoveryLedger {
@@ -22,13 +21,13 @@ public final class ModRecoveryLedger {
     private final PlatformDatabase database;
 
     /** Serialized platform transactions. / 串行平台事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Existing bounded operation summaries. / 已有有界操作摘要。 */
-    private final LogRepository logs;
+    private final LogStore logs;
 
     /** Fixed platform summary destination. / 固定平台摘要目标。 */
-    private final LogRepository.Target archive;
+    private final LogStore.Target archive;
 
     /** Strict original-fact decoder. / 严格原事实解码器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -39,8 +38,8 @@ public final class ModRecoveryLedger {
      * @throws SQLException if the existing summary destination is unavailable / 已有摘要目标不可用时 */
     public ModRecoveryLedger(PlatformDatabase database) throws SQLException {
         this.database = Objects.requireNonNull(database);
-        connections = new RepositoryConnections(database::openConnection);
-        logs = new LogRepository(database);
+        connections = new StoreConnections(database::openConnection);
+        logs = new LogStore(database);
         archive = logs.register("app", Optional.empty(),
             new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
@@ -189,7 +188,7 @@ public final class ModRecoveryLedger {
                     List.of(new LogRecordCodec.Record(row.archive(), now, "app", "mod_operation", LogLevel.INFO,
                         "MOD_RECOVERY_FINISHED",
                         "Original recovery resources closed; restart is required for normal activation", null,
-                        row.owner(), release.version(), null, row.operation(), Outcome.SUCCEEDED, false)),
+                        row.owner(), release.version(), null, row.operation(), TaskResult.SUCCEEDED, false)),
                     100);
                 update(c,
                     "UPDATE mod_registry SET actual_version=NULL,last_runtime_state='STOPPED',failure_code=NULL,failure_detail=NULL,updated_at=? WHERE mod_id=?",
@@ -410,7 +409,7 @@ public final class ModRecoveryLedger {
         var result = new AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 require(count(c,
                     "SELECT COUNT(*) FROM app_state WHERE singleton_id=1 AND boot_id=? AND shutdown_state IN ('STARTING','RUNNING')",
                     database.bootId()) == 1, "Recovery no longer owns this boot");

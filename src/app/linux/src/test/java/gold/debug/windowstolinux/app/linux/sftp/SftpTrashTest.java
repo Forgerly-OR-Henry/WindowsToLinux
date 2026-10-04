@@ -12,10 +12,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import gold.debug.windowstolinux.app.file.FileEngine;
+import gold.debug.windowstolinux.app.file.model.FileRecycleReceipt;
 import gold.debug.windowstolinux.app.linux.ssh.connect.*;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,7 +28,7 @@ class SftpTrashTest {
     @TempDir
     Path root;
 
-    final ServerRef server = new ServerRef("fixture");
+    final ServerId server = new ServerId("fixture");
 
     FilePath remote(String path) {
         return FilePath.remote(server, path);
@@ -59,10 +62,15 @@ class SftpTrashTest {
                     backend.link(link, "/outside");
                     for (FilePath path : List.of(file, folder, link)) {
                         assertTrue(backend.canRecycle(path));
-                        var report = engine.delete(engine.inspect(path, path.equals(link), () -> false), path.equals(link), DeleteEffect.RECYCLE, new SftpFileBackendTest.Journal(), () -> false);
-                        assertEquals(Outcome.SUCCEEDED, report.outcome(), report.toString());
+                        var report = engine.delete(engine.inspect(path, path.equals(link), () -> false), path.equals(link), DeleteEffect.RECYCLE, new SftpFileBackendTest.ActionLog(), () -> false);
+                        assertEquals(TaskResult.SUCCEEDED, report.outcome(), report.toString());
                         assertTrue(backend.stat(path).isEmpty());
                         Receipt receipt = receipt(backend);
+                        var recovery = new FileRecycleReceipt(receipt.recycled(), backend.stat(receipt.recycled()).orElseThrow().identity(),
+                            Optional.of(receipt.information()), Optional.of(backend.stat(receipt.information()).orElseThrow().identity()));
+                        assertTrue(backend.recoveryInformationMatches(path, recovery));
+                        assertTrue(engine.recoveryInformationMatches(path, recovery));
+                        assertFalse(backend.recoveryInformationMatches(remote("/home/fixture/other"), recovery));
                         String metadata = new String(engine.read(receipt.information(), 8192, () -> false), StandardCharsets.UTF_8);
                         String encoded = metadata.lines().filter(line -> line.startsWith("Path=")).findFirst().orElseThrow().substring(5);
                         assertEquals(path.path(), URLDecoder.decode(encoded, StandardCharsets.UTF_8));
@@ -153,10 +161,10 @@ class SftpTrashTest {
                     var backend = new SftpFileBackend(client, server);
                     var engine = new FileEngine(backend);
                     FilePath path = remote("/home/fixture/keep");
-                    var journal = new SftpFileBackendTest.Journal();
+                    var journal = new SftpFileBackendTest.ActionLog();
                     files.failRename.set(true);
                     var report = engine.delete(engine.inspect(path, false, () -> false), false, DeleteEffect.RECYCLE, journal, () -> false);
-                    assertEquals(Outcome.UNKNOWN, report.outcome());
+                    assertEquals(TaskResult.UNKNOWN, report.outcome());
                     assertTrue(journal.phases.contains("BEFORE_DELETE"));
                     assertTrue(journal.phases.contains("UNKNOWN"));
                     assertEquals(1, files.failedRenames);
@@ -192,7 +200,7 @@ class SftpTrashTest {
             var engine = new FileEngine(new SftpFileBackend(client, server));
             var info = engine.inspect(remote("/home/fixture/keep"), false, () -> false);
             cancelled.set(true);
-            assertThrows(java.util.concurrent.CancellationException.class, () -> engine.delete(info, false, DeleteEffect.RECYCLE, new SftpFileBackendTest.Journal(), cancelled::get));
+            assertThrows(java.util.concurrent.CancellationException.class, () -> engine.delete(info, false, DeleteEffect.RECYCLE, new SftpFileBackendTest.ActionLog(), cancelled::get));
             scope.close();
             assertFalse(client.isOpen());
             assertFalse(Files.exists(home.resolve(".local")));

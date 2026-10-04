@@ -5,10 +5,14 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.app.windows.file.WindowsRecycle;
-import gold.debug.windowstolinux.app.windows.file.WindowsLinks;
+import gold.debug.windowstolinux.app.file.model.FileBackend;
+import gold.debug.windowstolinux.app.file.model.FileRecycleReceipt;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
+import gold.debug.windowstolinux.app.windows.file.WindowsFilePublish;
+import gold.debug.windowstolinux.app.windows.file.WindowsLinks;
+import gold.debug.windowstolinux.app.windows.file.WindowsRecycle;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
 
 /** Actual process-account filesystem access without an artificial global root. / 当前进程账户文件访问，不附加全局根限制。 */
 public final class LocalFileBackend implements FileBackend {
@@ -133,17 +137,23 @@ public final class LocalFileBackend implements FileBackend {
      */
     @Override
     public void publish(FilePath staging, FilePath target, boolean replace) throws IOException {
+        if (com.sun.jna.Platform.isWindows()) {
+            boolean link = WindowsLinks.target(local(staging)).isPresent();
+            if (link && replace) {
+                var attributes = Files.readAttributes(local(target), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (attributes.isDirectory() && !attributes.isSymbolicLink() && WindowsLinks.target(local(target)).isPresent()) {
+                    Path text = Path.of(WindowsLinks.target(local(staging)).orElseThrow());
+                    WindowsLinks.retargetDirectoryJunction(local(target), text.isAbsolute() ? text : local(staging).getParent().resolve(text).normalize());
+                    Files.delete(local(staging));
+                    return;
+                }
+            }
+            if (link) WindowsFilePublish.publishLink(local(staging), local(target), replace);
+            else WindowsFilePublish.publish(local(staging), local(target), replace);
+            return;
+        }
         if (!replace && Files.exists(local(target), LinkOption.NOFOLLOW_LINKS))
             throw new FileAlreadyExistsException(target.path());
-        if (replace && com.sun.jna.Platform.isWindows() && WindowsLinks.target(local(staging)).isPresent()) {
-            var attributes = Files.readAttributes(local(target), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-            if (attributes.isDirectory() && !attributes.isSymbolicLink() && WindowsLinks.target(local(target)).isPresent()) {
-                Path text = Path.of(WindowsLinks.target(local(staging)).orElseThrow());
-                WindowsLinks.retargetDirectoryJunction(local(target), text.isAbsolute() ? text : local(staging).getParent().resolve(text).normalize());
-                Files.delete(local(staging));
-                return;
-            }
-        }
         if (replace)
             Files.move(local(staging), local(target), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         else Files.move(local(staging), local(target), StandardCopyOption.ATOMIC_MOVE);
@@ -198,7 +208,7 @@ public final class LocalFileBackend implements FileBackend {
             return WindowsRecycle.validateInformation(information, expected.substring(0, separator), local(original))
                 && stat(receipt.information().orElseThrow()).map(info -> info.identity().equals(expected)).orElse(false);
         }
-        return FileBackend.super.recoveryInformationMatches(original, receipt);
+        return new FileEngine(this).recoveryInformationMatches(original, receipt);
     }
 
     /** Copies the supported original native kind, including a broken directory junction. / 复制受支持原生类型，包括已断开的目录联接点。

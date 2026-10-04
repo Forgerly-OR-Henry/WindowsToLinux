@@ -1,23 +1,21 @@
 package gold.debug.windowstolinux.app.db.task;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogEvent;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
-import gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryArchival;
-
 import java.sql.*;
 import java.time.Instant;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.sshrecover.BrowserRecoveryArchival;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Persists atomic admission and actual resource release independently of business SQL. / 独立于业务 SQL 持久化原子准入及实际资源释放。 */
 public final class TaskLedger {
@@ -34,7 +32,7 @@ public final class TaskLedger {
     private final UUID bootId;
 
     /** Scoped transactions sharing a single platform connection. / 共享单个平台连接的作用域事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Fixed internal JSON encoding, never arbitrary business serialization. / 固定内部 JSON 编码，不序列化任意业务对象。 */
     private final ObjectMapper json = new ObjectMapper()
@@ -48,7 +46,7 @@ public final class TaskLedger {
     public TaskLedger(PlatformDatabase database) {
         this.database = database;
         bootId = database.bootId();
-        connections = new RepositoryConnections(database::openConnection);
+        connections = new StoreConnections(database::openConnection);
     }
 
     /**
@@ -662,7 +660,7 @@ public final class TaskLedger {
                         throw new SQLException("Task does not support cancellation");
                     if (state.equals("QUEUED")) {
                         beforeEnd.run();
-                        finalizationSupport.finish(c, taskId, Outcome.CANCELLED);
+                        finalizationSupport.finish(c, taskId, TaskResult.CANCELLED);
                         return true;
                     }
                     if (state.equals("RUNNING") || state.equals("WAITING"))
@@ -682,7 +680,7 @@ public final class TaskLedger {
      * @return true only after durable terminal completion / 仅在持久化终态完成后为真
      * @throws SQLException if transition or persistence fails / 状态转换或持久化失败时
      */
-    public boolean complete(UUID taskId, Outcome outcome, String resultJson, boolean reconciliation)
+    public boolean complete(UUID taskId, TaskResult outcome, String resultJson, boolean reconciliation)
         throws SQLException {
         return complete(taskId, outcome, resultJson, reconciliation, () -> {
         });
@@ -698,7 +696,7 @@ public final class TaskLedger {
      * @return whether all resources and the known outcome reached terminal state / 全部资源及已知结果是否到达终态
      * @throws SQLException if state or persistence fails / 状态或持久化失败时
      */
-    public boolean complete(UUID taskId, Outcome outcome, String resultJson, boolean reconciliation, Runnable beforeEnd)
+    public boolean complete(UUID taskId, TaskResult outcome, String resultJson, boolean reconciliation, Runnable beforeEnd)
         throws SQLException {
         Objects.requireNonNull(beforeEnd);
         if (resultJson.length() > 65536)
@@ -725,7 +723,7 @@ public final class TaskLedger {
                     p.setObject(2, taskId);
                     p.executeUpdate();
                 }
-                if (outcome == Outcome.UNKNOWN) {
+                if (outcome == TaskResult.UNKNOWN) {
                     setState(c, taskId, "UNKNOWN");
                     return false;
                 }
@@ -809,7 +807,7 @@ public final class TaskLedger {
      * @param beforeEnd nonblocking host cleanup / 非阻塞宿主清理
      * @return committed current observation, including unfinished resources / 已提交当前观察，含未收尾资源
      * @throws SQLException if the observation or archival cannot be confirmed / 观察或归档无法确认时 */
-    public TaskSnapshot completeAndArchive(UUID taskId, Outcome outcome, String evidence, boolean reconciliation,
+    public TaskSnapshot completeAndArchive(UUID taskId, TaskResult outcome, String evidence, boolean reconciliation,
                                            Runnable beforeEnd) throws SQLException {
         return finalizationSupport.finalizeTransaction(taskId, () -> complete(taskId, outcome, evidence, reconciliation, beforeEnd));
     }
@@ -942,7 +940,7 @@ public final class TaskLedger {
         var result = new java.util.concurrent.atomic.AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
             }
             result.set(work.run());
         });
@@ -1187,7 +1185,7 @@ public final class TaskLedger {
                         if (!value.blockers().isEmpty())
                             throw new SQLException("Finalization still has explicit resources");
                         var terminal = new TaskSnapshot(value.id(), value.ownerId(), value.ownerVersion(), value.type(),
-                            TaskState.ENDED, Optional.of(Outcome.valueOf(r.getString(2))), value.progressText(),
+                            TaskState.ENDED, Optional.of(TaskResult.valueOf(r.getString(2))), value.progressText(),
                             value.startedAt(), Optional.of(Instant.ofEpochMilli(r.getLong(3))), List.of());
                         return Optional.of(finalizationSupport.finalization(c, terminal));
                     }
@@ -1226,7 +1224,7 @@ public final class TaskLedger {
                         String result = r.getString(4).equals("ENDED") ? r.getString(5) : null;
                         return new TaskSnapshot(taskId, r.getString(1), r.getString(2), r.getString(3),
                             TaskState.valueOf(r.getString(4)),
-                            result == null ? Optional.empty() : Optional.of(Outcome.valueOf(result)), r.getString(6),
+                            result == null ? Optional.empty() : Optional.of(TaskResult.valueOf(result)), r.getString(6),
                             Instant.ofEpochMilli(r.getLong(7)),
                             ended == null ? Optional.empty() : Optional.of(Instant.ofEpochMilli(ended)), blockers);
                     }
@@ -1383,10 +1381,10 @@ public final class TaskLedger {
         }
 
         /** Stable original platform summary category. / 稳定原平台摘要类别。 */
-        private LogRepository.Target summaryTarget;
+        private LogStore.Target summaryTarget;
 
         /** Original host recovery summary category. / 原宿主恢复摘要类别。 */
-        private LogRepository.Target recoverySummaryTarget;
+        private LogStore.Target recoverySummaryTarget;
 
         /** Shares the original outer commit across conclusion and archive. / 结论及归档共用原最外层提交。
          * @param taskId original identity / 原身份
@@ -1419,10 +1417,10 @@ public final class TaskLedger {
         /** Obtains the stable summary category outside the outer task transaction. / 在最外层任务事务之外取得稳定摘要类别。
          * @return verified platform category / 已验证平台类别
          * @throws SQLException if registration cannot be confirmed / 登记无法确认时 */
-        private LogRepository.Target summaryTarget() throws SQLException {
+        private LogStore.Target summaryTarget() throws SQLException {
             synchronized (TaskLedger.this) {
                 if (summaryTarget == null)
-                    summaryTarget = new LogRepository(database).register("app", Optional.empty(),
+                    summaryTarget = new LogStore(database).register("app", Optional.empty(),
                         new LogCategory("platform_task", "platform_task", Optional.empty()));
                 return summaryTarget;
             }
@@ -1432,12 +1430,12 @@ public final class TaskLedger {
          * @param task original task observation / 原任务观察
          * @return original rescue target, or null for other tasks / 原救援目标，其他任务为空
          * @throws SQLException if original registration cannot be confirmed / 无法确认原登记时 */
-        private LogRepository.Target recoverySummaryTarget(TaskSnapshot task) throws SQLException {
+        private LogStore.Target recoverySummaryTarget(TaskSnapshot task) throws SQLException {
             synchronized (TaskLedger.this) {
                 if (!BrowserRecoveryArchival.owns(task))
                     return null;
                 if (recoverySummaryTarget == null)
-                    recoverySummaryTarget = new LogRepository(database).register("app", Optional.empty(),
+                    recoverySummaryTarget = new LogStore(database).register("app", Optional.empty(),
                         new LogCategory("browser_recovery", "browser_recovery", Optional.empty()));
                 return recoverySummaryTarget;
             }
@@ -1473,7 +1471,7 @@ public final class TaskLedger {
          * @param recoveryTarget rescue category if applicable / 适用时的救援类别
          * @param original original concluded execution / 原已得出结论执行
          * @throws SQLException if summary, retained ownership or cleanup fails / 摘要、保留归属或清理失败时 */
-        private void archive(Connection c, LogRepository.Target target, LogRepository.Target recoveryTarget,
+        private void archive(Connection c, LogStore.Target target, LogStore.Target recoveryTarget,
                              Finalization original) throws SQLException {
             var value = original.snapshot;
             try (var p = c.prepareStatement(
@@ -1493,7 +1491,7 @@ public final class TaskLedger {
             LogRecordCodec.Record record;
             try {
                 record = LogRecordCodec.createSummary(target, value.ownerVersion(),
-                    new LogEvent(outcome == Outcome.FAILED ? LogLevel.ERROR : LogLevel.INFO, "PLATFORM_TASK_" + outcome,
+                    new LogEvent(outcome == TaskResult.FAILED ? LogLevel.ERROR : LogLevel.INFO, "PLATFORM_TASK_" + outcome,
                         "Platform task finished: " + outcome, Optional.of(details), Optional.of(value.id()),
                         Optional.empty(), Optional.of(outcome)),
                     original.archive, value.endedAt().orElseThrow().toEpochMilli(),
@@ -1501,7 +1499,7 @@ public final class TaskLedger {
             } catch (IllegalArgumentException invalid) {
                 throw new SQLException("Original task summary cannot be encoded", invalid);
             }
-            new LogRepository(database).store(c, target, List.of(record), 100);
+            new LogStore(database).store(c, target, List.of(record), 100);
             BrowserRecoveryArchival.archive(database, c, recoveryTarget, original.archive, value);
             try (var p = c
                 .prepareStatement("DELETE FROM platform_task_resource WHERE task_id=? AND released_at IS NOT NULL")) {
@@ -1550,7 +1548,7 @@ public final class TaskLedger {
          * @param outcome known terminal outcome / 已知终态结果
          * @throws SQLException if persistence fails / 持久化失败时
          */
-        private void finish(Connection c, UUID taskId, Outcome outcome) throws SQLException {
+        private void finish(Connection c, UUID taskId, TaskResult outcome) throws SQLException {
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
                 "UPDATE platform_task_resource SET released_at=? WHERE task_id=? AND released_at IS NULL AND recovery_json=?")) {

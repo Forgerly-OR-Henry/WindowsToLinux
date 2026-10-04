@@ -1,19 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.net.URI;
 import java.sql.SQLException;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
-import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentAccessUrl;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload;
@@ -45,7 +43,7 @@ public final class DeploymentApplicationPresentation {
      * @param task original query / 原查询
      * @return original editor values / 原编辑器值
      * @throws ApiException if the selected identity differs / 所选身份不符时 */
-    public Values values(DeploymentApplicationRef application, String revision, TaskContext task) throws ApiException {
+    public Values values(DeploymentApplicationId application, String revision, TaskContext task) throws ApiException {
         var data = reader.find(application, task);
         if (!data.snapshot().revisionSha256().equals(revision))
             throw unknown();
@@ -75,7 +73,7 @@ public final class DeploymentApplicationPresentation {
      * @param task original task / 原任务
      * @return saved name / 已存名称
      * @throws ApiException if evidence is unavailable / 依据不可用时 */
-    public OperationResult<String> editName(DeploymentApplicationRef application, String revision, String name,
+    public OperationResult<String> editName(DeploymentApplicationId application, String revision, String name,
                                             TaskContext task) throws ApiException {
         var data = reader.find(application, task);
         var owner = data.graph().components().stream()
@@ -107,7 +105,7 @@ public final class DeploymentApplicationPresentation {
      * @param task original accepted task / 原已接纳任务
      * @return saved display name / 已保存展示名称
      * @throws ApiException if identity or transaction cannot be confirmed / 身份或事务无法确认时 */
-    public OperationResult<String> edit(DeploymentApplicationRef application, String expectedRevisionSha256,
+    public OperationResult<String> edit(DeploymentApplicationId application, String expectedRevisionSha256,
                                         String name, String category, Optional<String> accessUrl, TaskContext task) throws ApiException {
         var data = reader.find(application, task);
         if (!data.snapshot().revisionSha256().equals(expectedRevisionSha256))
@@ -167,14 +165,14 @@ public final class DeploymentApplicationPresentation {
         } catch (SQLException failure) {
             throw unknown();
         }
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(name.trim()), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(name.trim()), Optional.empty());
     }
 
     /** Returns an exact known local validation rejection. / 返回精确的已知本地校验拒绝。
      * @param event stable known refusal / 稳定已知拒绝
      * @return known local failure / 已知本地失败 */
     private static OperationResult<String> failure(String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.INCOMPATIBLE,
             event, "Presentation differs from the reviewed application", java.util.Map.of(), Optional.empty())));
     }
 

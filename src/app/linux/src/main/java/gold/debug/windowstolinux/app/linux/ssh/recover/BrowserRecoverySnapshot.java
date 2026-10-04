@@ -18,7 +18,7 @@ import java.util.Optional;
 public record BrowserRecoverySnapshot(String id, State state, String messageCode, Optional<Action> action,
                                       String confirmation,
                                       boolean resultUnknown, int decisions, java.util.Map<String, String> modelAttempts,
-                                      Optional<gold.debug.windowstolinux.appapi.task.Problem> failure) {
+                                      Optional<gold.debug.windowstolinux.appapi.task.result.Problem> failure) {
     /**
      * Copies non-secret attempt classifications; never stores response text. / 复制无秘密的调用分类，不保存响应原文。
      *

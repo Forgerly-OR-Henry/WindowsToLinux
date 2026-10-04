@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.db;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 
 /** Immutable identity of the original reviewed operation. / 原审阅操作的不可变身份。
  * @param executionId business operation ID / 业务操作ID
@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.appapi.server.ServerRef;
  * @param reviewedRevision original reviewed digest / 原审阅摘要
  */
 public record DeploymentExecutionIdentity(UUID executionId, UUID taskId, Optional<UUID> projectId, String applicationId,
-                                          ServerRef server, DeploymentExecutionMode mode, String reviewedRevision) {
+                                          ServerId server, DeploymentExecutionMode mode, String reviewedRevision) {
     /** Validates exact immutable metadata without normalizing identifiers. / 校验精确不可变元数据，不规范化标识。
      * @param executionId business operation ID / 业务操作ID
      * @param taskId original platform task / 原平台任务
@@ -30,7 +30,7 @@ public record DeploymentExecutionIdentity(UUID executionId, UUID taskId, Optiona
         Objects.requireNonNull(projectId);
         Objects.requireNonNull(server);
         Objects.requireNonNull(mode);
-        if (!DeploymentConfigurationRepository.boundedIdentity(applicationId, "applicationId").equals(applicationId))
+        if (!DeploymentConfigStore.boundedIdentity(applicationId, "applicationId").equals(applicationId))
             throw new IllegalArgumentException("Application identity must be exact");
         if (server.id().isBlank() || server.id().length() > 512 || server.id().indexOf(0) >= 0)
             throw new IllegalArgumentException("Invalid execution server");

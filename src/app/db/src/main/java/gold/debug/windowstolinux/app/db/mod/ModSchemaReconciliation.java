@@ -1,22 +1,21 @@
 package gold.debug.windowstolinux.app.db.mod;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Reconciles original unknown data without running migration or changing user choices. / 核对原未知数据，不运行迁移或改变用户选择。 */
 public final class ModSchemaReconciliation {
@@ -24,13 +23,13 @@ public final class ModSchemaReconciliation {
     private final PlatformDatabase database;
 
     /** Serialized platform transaction scope. / 串行平台事务作用域。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Original platform operation archive. / 原平台操作归档。 */
-    private final LogRepository logs;
+    private final LogStore logs;
 
     /** Registered operation category. / 已登记操作类别。 */
-    private final LogRepository.Target archive;
+    private final LogStore.Target archive;
 
     /** Strict bounded recovery parser. / 严格有界恢复解析器。 */
     private static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
@@ -41,8 +40,8 @@ public final class ModSchemaReconciliation {
      * @throws SQLException if the archive cannot be registered / 无法登记归档时 */
     public ModSchemaReconciliation(PlatformDatabase database) throws SQLException {
         this.database = database;
-        connections = new RepositoryConnections(database::openConnection);
-        logs = new LogRepository(database);
+        connections = new StoreConnections(database::openConnection);
+        logs = new LogStore(database);
         archive = logs.register("app", Optional.empty(),
             new LogCategory("mod_operation", "mod_operation", Optional.empty()));
     }
@@ -50,7 +49,7 @@ public final class ModSchemaReconciliation {
     /** Immutable original operation evidence; only this ledger can construct it. / 不可变原操作证据，仅此账本可构造。 */
     public static final class Review {
         /** Original preparation identities. / 原准备身份。 */
-        private final ModRestartLedger.Preparation plan;
+        private final ModRestartLedger.Setup plan;
 
         /** Exact original selected program. / 精确原选定程序。 */
         private final String version, manifest, digest;
@@ -73,7 +72,7 @@ public final class ModSchemaReconciliation {
          * @param request original parent request / 原父请求
          * @param revision original accepted revision / 原接纳修订
          * @param boot original boot / 原启动 */
-        private Review(ModRestartLedger.Preparation plan, String version, String manifest, String digest,
+        private Review(ModRestartLedger.Setup plan, String version, String manifest, String digest,
                        String recovery, String request, long revision, UUID boot) {
             this.plan = plan;
             this.version = version;
@@ -87,7 +86,7 @@ public final class ModSchemaReconciliation {
 
         /** Returns the original immutable identities. / 返回原不可变身份。
          * @return original preparation / 原准备 */
-        public ModRestartLedger.Preparation plan() {
+        public ModRestartLedger.Setup plan() {
             return plan;
         }
 
@@ -275,10 +274,10 @@ public final class ModSchemaReconciliation {
      * @param outcome proven success, failure, or unknown / 已证明成功、失败或未知
      * @param digest successful author and structural receipt / 成功作者及结构凭据
      * @throws SQLException if cleanup, identity or archive remains unconfirmed / 清理、身份或归档仍未确认时 */
-    public void finish(Attempt attempt, Outcome outcome, String digest) throws SQLException {
-        require(Set.of(Outcome.SUCCEEDED, Outcome.FAILED, Outcome.UNKNOWN).contains(outcome),
+    public void finish(Attempt attempt, TaskResult outcome, String digest) throws SQLException {
+        require(Set.of(TaskResult.SUCCEEDED, TaskResult.FAILED, TaskResult.UNKNOWN).contains(outcome),
             "Invalid reconciliation result");
-        require(outcome != Outcome.SUCCEEDED || digest != null && digest.matches("[0-9a-f]{64}"),
+        require(outcome != TaskResult.SUCCEEDED || digest != null && digest.matches("[0-9a-f]{64}"),
             "Successful validation receipt missing");
         locked(c -> {
             if (finished(c, attempt, outcome, digest))
@@ -298,7 +297,7 @@ public final class ModSchemaReconciliation {
                     }
                 }
             }
-            if (outcome == Outcome.UNKNOWN) {
+            if (outcome == TaskResult.UNKNOWN) {
                 try (var p = c.prepareStatement(
                     "UPDATE mod_operation SET state='UNKNOWN',failure_code='MOD_SCHEMA_RECONCILIATION_UNKNOWN',updated_at=? WHERE operation_id=?")) {
                     p.setLong(1, System.currentTimeMillis());
@@ -322,13 +321,13 @@ public final class ModSchemaReconciliation {
             long now = System.currentTimeMillis();
             try (var p = c.prepareStatement(
                 "UPDATE mod_schema SET state=?,validated_at=?,validation_digest=? WHERE generation=? AND state='UNKNOWN' AND NOT ever_used")) {
-                p.setString(1, outcome == Outcome.SUCCEEDED ? "READY" : "FAILED");
-                p.setObject(2, outcome == Outcome.SUCCEEDED ? now : null);
+                p.setString(1, outcome == TaskResult.SUCCEEDED ? "READY" : "FAILED");
+                p.setObject(2, outcome == TaskResult.SUCCEEDED ? now : null);
                 p.setString(3, digest);
                 p.setObject(4, plan.target().generation());
                 require(p.executeUpdate() == 1, "Original target changed");
             }
-            String event = outcome == Outcome.SUCCEEDED
+            String event = outcome == TaskResult.SUCCEEDED
                 ? "MOD_SCHEMA_RECONCILED_READY"
                 : "MOD_SCHEMA_RECONCILED_FAILED";
             logs.store(c, archive,
@@ -347,7 +346,7 @@ public final class ModSchemaReconciliation {
                         logs.store(c, archive, List.of(new LogRecordCodec.Record(UUID.fromString(r.getString(1)), now,
                                 "app", "mod_operation", LogLevel.WARN, "MOD_ACTIVATION_INTERRUPTED",
                                 "Original startup was interrupted; data reconciliation does not start business", null,
-                                plan.target().ownerId(), review.version, null, plan.intent(), Outcome.FAILED, false)),
+                                plan.target().ownerId(), review.version, null, plan.intent(), TaskResult.FAILED, false)),
                             100);
                     }
                 }
@@ -355,7 +354,7 @@ public final class ModSchemaReconciliation {
                 "UPDATE mod_registry SET last_runtime_state='FAILED',actual_version=NULL,last_boot_id=?,failure_code=?,failure_detail=NULL WHERE mod_id=? AND revision=?")) {
                 p.setObject(1, database.bootId());
                 p.setString(2,
-                    outcome == Outcome.SUCCEEDED
+                    outcome == TaskResult.SUCCEEDED
                         ? "MOD_DATA_READY_RESTART_REQUIRED"
                         : "MOD_SCHEMA_MIGRATION_FAILED");
                 p.setString(3, plan.target().ownerId());
@@ -435,7 +434,7 @@ public final class ModSchemaReconciliation {
                 }
                 require(source.isPresent() == !steps.isEmpty() && steps.size() <= 256,
                     "Original chain inventory changed");
-                var plan = new ModRestartLedger.Preparation(uuid(node, "intent"), operation, target,
+                var plan = new ModRestartLedger.Setup(uuid(node, "intent"), operation, target,
                     uuid(node, "writer"), uuid(node, "reader"), UUID.fromString(r.getString(7)), source, steps);
                 verifyMigrationInventory(c, plan, node);
                 String request = originalRequest(c, plan, r.getLong(5));
@@ -552,8 +551,8 @@ public final class ModSchemaReconciliation {
      * @param digest original validation receipt / 原验证凭据
      * @return whether the exact terminal state is already present / 精确终态是否已经存在
      * @throws SQLException if evidence cannot be read / 无法读取证据时 */
-    private boolean finished(Connection c, Attempt attempt, Outcome outcome, String digest) throws SQLException {
-        if (outcome == Outcome.UNKNOWN) {
+    private boolean finished(Connection c, Attempt attempt, TaskResult outcome, String digest) throws SQLException {
+        if (outcome == TaskResult.UNKNOWN) {
             try (var p = c.prepareStatement(
                 "SELECT recovery_json FROM mod_operation WHERE operation_id=? AND state='UNKNOWN' AND archive_log_id=? AND target_generation=?")) {
                 p.setObject(1, attempt.operation);
@@ -575,7 +574,7 @@ public final class ModSchemaReconciliation {
             p.setObject(3, attempt.review.plan.intent());
             p.setObject(4, attempt.review.plan.target().generation());
             try (var r = p.executeQuery()) {
-                return r.next() && (outcome == Outcome.SUCCEEDED ? "READY" : "FAILED").equals(r.getString(1))
+                return r.next() && (outcome == TaskResult.SUCCEEDED ? "READY" : "FAILED").equals(r.getString(1))
                     && Objects.equals(digest, r.getString(2)) && r.getLong(3) == 0;
             }
         }
@@ -640,7 +639,7 @@ public final class ModSchemaReconciliation {
         var result = new AtomicReference<T>();
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 try (var s = c.createStatement();
                      var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                     require(r.next() && database.bootId().equals(r.getObject(1, UUID.class))
@@ -669,7 +668,7 @@ public final class ModSchemaReconciliation {
      * @param plan original preparation / 原准备
      * @param node original recovery inventory / 原恢复清单
      * @throws SQLException if an edge or coordinate changed / 边或坐标变化时 */
-    private void verifyMigrationInventory(Connection c, ModRestartLedger.Preparation plan, JsonNode node)
+    private void verifyMigrationInventory(Connection c, ModRestartLedger.Setup plan, JsonNode node)
         throws SQLException {
         var steps = plan.steps();
         UUID operation = plan.operation();
@@ -702,7 +701,7 @@ public final class ModSchemaReconciliation {
      * @param revision original accepted revision / 原接纳修订
      * @return exact original request text / 精确原请求文本
      * @throws SQLException if the intent or runtime changed / 意图或运行态变化时 */
-    private String originalRequest(Connection c, ModRestartLedger.Preparation plan, long revision) throws SQLException {
+    private String originalRequest(Connection c, ModRestartLedger.Setup plan, long revision) throws SQLException {
         String owner = plan.target().ownerId();
         UUID operation = plan.operation();
         var target = plan.target();
@@ -726,7 +725,7 @@ public final class ModSchemaReconciliation {
      * @param version original selected program version / 原选定程序版本
      * @param declarations original manifest migration edges / 原清单迁移边
      * @throws SQLException if the confirmed source or chain changed / 确认来源或链变化时 */
-    private void verifyOriginalChain(ModRestartLedger.Preparation plan, JsonNode parent, String version,
+    private void verifyOriginalChain(ModRestartLedger.Setup plan, JsonNode parent, String version,
                                      JsonNode declarations) throws SQLException {
         var target = plan.target();
         String owner = target.ownerId();

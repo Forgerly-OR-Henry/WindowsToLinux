@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.linux.sftp;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -17,8 +10,18 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.sftp.client.*;
 import org.apache.sshd.sftp.common.*;
@@ -59,7 +62,7 @@ public final class SftpTransfer {
     private final TransferConflictResolver conflicts;
 
     /** Durable ownership gate before any staging mutation. / 暂存变更前的持久归属门禁。 */
-    private final TransferJournal journal;
+    private final TransferActionLog journal;
 
     /** File occupancy independent of the live connection. / 独立于活动连接的文件占用。 */
     private ResourceLease fileLease;
@@ -116,7 +119,7 @@ public final class SftpTransfer {
      * @throws ApiException if an input boundary is invalid / 输入边界无效时
      */
     public SftpTransfer(ClientSession session, TransferRequest request, String digest, boolean upload, Duration timeout,
-                        CancelToken cancellation, TransferConflictResolver conflicts, TransferJournal journal,
+                        CancelToken cancellation, TransferConflictResolver conflicts, TransferActionLog journal,
                         TransferProgressListener listener, TransferPlan recovery, boolean discard) throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.request = Objects.requireNonNull(request);
@@ -208,7 +211,7 @@ public final class SftpTransfer {
             if (recovery != null)
                 return recover();
             Path path = request.localPath();
-            var source = new SftpSourcePreparation(path);
+            var source = new SftpSourceSetup(path);
             source.open();
             BasicFileAttributes before = source.before;
             String sourceIdentity = source.identity;
@@ -275,7 +278,7 @@ public final class SftpTransfer {
             return completion.publishVerified(destination, size);
         } catch (Exception failure) {
             if (failure instanceof ApiException skipped && skipped.problem().eventCode().equals("SFTP_CONFLICT_SKIPPED"))
-                return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(skipped.problem()));
+                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(skipped.problem()));
             var result = problem("SFTP_NOT_VERIFIED",
                 cancellation.requested() || failure instanceof CancellationException
                     ? ProblemCode.CANCELLED
@@ -451,7 +454,7 @@ public final class SftpTransfer {
      * @param destination original actual endpoints / 原实际端点
      * @return known recovery result / 已知恢复结果 */
     private OperationResult<TransferResult> recoveredResult(SftpDestination destination) {
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             discard
                 ? Optional.empty()
                 : Optional.of(new TransferResult(recovery.source().size(), digest, destination.local(),
@@ -715,9 +718,9 @@ public final class SftpTransfer {
      * @return result without file contents or provider exceptions / 不含文件内容或提供方异常的结果
      */
     public synchronized OperationResult<TransferResult> problem(String event, ProblemCode code) {
-        Outcome outcome = mutation
-            ? Outcome.UNKNOWN
-            : code == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED;
+        TaskResult outcome = mutation
+            ? TaskResult.UNKNOWN
+            : code == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED;
         return new OperationResult<>(outcome, Optional.empty(),
             Optional.of(new Problem(mutation ? ProblemCode.UNKNOWN : code, event,
                 mutation
@@ -819,7 +822,7 @@ public final class SftpTransfer {
     }
 
     /** Opens and revalidates the upload source while the transfer retains actual channel ownership. / 传输保留实际通道归属期间打开及重新核验上传源。 */
-    private final class SftpSourcePreparation {
+    private final class SftpSourceSetup {
         /** Exact local source or download position. / 精确本机来源或下载位置。 */
         private final Path path;
 
@@ -831,7 +834,7 @@ public final class SftpTransfer {
 
         /** Retains the original request path. / 保留原请求位置。
          * @param path original local request position / 原本机请求位置 */
-        private SftpSourcePreparation(Path path) {
+        private SftpSourceSetup(Path path) {
             this.path = path;
         }
 
@@ -887,7 +890,7 @@ public final class SftpTransfer {
                 local.close();
             }
             resolved = true;
-            return new OperationResult<>(Outcome.SUCCEEDED,
+            return new OperationResult<>(TaskResult.SUCCEEDED,
                 Optional.of(new TransferResult(size, digest, destination.local(), destination.remote())),
                 Optional.empty());
         }

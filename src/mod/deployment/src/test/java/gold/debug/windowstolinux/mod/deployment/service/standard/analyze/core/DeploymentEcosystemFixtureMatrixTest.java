@@ -18,7 +18,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentSupportCatalog;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
@@ -34,7 +34,7 @@ class DeploymentEcosystemFixtureMatrixTest {
         return fixtures().stream().flatMap(fixture -> SCENARIOS.stream().sorted()
             .map(scenario -> DynamicTest.dynamicTest(fixture.path() + "/" + scenario, () -> {
                 Path root = repository.resolve("test/single-language").resolve(fixture.path()).resolve(scenario);
-                var result = new DeploymentAnalysisCoordinator().analyze(root, fixture.projectType());
+                var result = new DeploymentAnalysisFlow().analyze(root, fixture.projectType(), (root).getFileName().toString());
                 if (scenario.equals("failure-configuration-rejected")) {
                     assertTrue(Set.of(DeploymentAdmissionStatus.REJECTED, DeploymentAdmissionStatus.REQUIRES_INPUT)
                         .contains(result.admission()), result.toString());

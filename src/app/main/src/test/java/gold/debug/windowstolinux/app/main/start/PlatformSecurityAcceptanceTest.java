@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,12 +14,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -89,7 +87,7 @@ class PlatformSecurityAcceptanceTest {
                 return dialog;
             });
             var privateDialog = owned;
-            await(() -> !frame.getContentPane().isVisible() && !privateDialog.getContentPane().isVisible());
+            await(() -> frame.getGlassPane().isVisible() && !privateDialog.getContentPane().isVisible());
             assertTrue(runtime.security().securityState().activeTasks() > 0);
             var callbacks = new AtomicInteger();
             var refused = assertThrows(ApiException.class, () -> binding.submit(request(), context -> {
@@ -106,7 +104,7 @@ class PlatformSecurityAcceptanceTest {
             });
             release.countDown();
             var result = task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals(task.id(), result.value().orElseThrow());
             assertEquals(0, runtime.security().securityState().activeTasks());
             assertEquals(0, count(runtime.persistence().database(),
@@ -114,11 +112,9 @@ class PlatformSecurityAcceptanceTest {
             assertFalse(runtime.security().securityState().unlocked());
             onEdt(() -> {
                 privateDialog.dispose();
-                ((JButton) named(frame, "security.enter")).doClick(0);
-                ((JPasswordField) named(frame, "security.password")).setText(PASSWORD);
-                ((JButton) named(frame, "security.submit")).doClick(0);
                 return null;
             });
+            unlockPassword(frame, PASSWORD);
             await(() -> runtime.security().securityState().unlocked()
                 && !runtime.security().securityState().changing());
             onEdt(() -> {

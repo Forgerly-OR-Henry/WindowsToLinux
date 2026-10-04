@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,18 +10,24 @@ import java.util.concurrent.*;
 
 import javax.imageio.ImageIO;
 
-import gold.debug.windowstolinux.app.db.*;
-import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
-import gold.debug.windowstolinux.app.service.ai.*;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
-
+import gold.debug.windowstolinux.app.ai.model.AiCapabilityStatus;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
-import gold.debug.windowstolinux.app.ai.model.AiCapabilityStateType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.db.*;
+import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.service.ai.*;
+import gold.debug.windowstolinux.app.service.ai.AiModelProfile;
+import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,8 +41,8 @@ class PlatformModelServiceTest {
         return runtime.models();
     }
 
-    static AiProviderProfile profile(PlatformAiServiceTest.Fixture fixture) {
-        return new AiProviderProfile("sample", fixture.uri("/chat"), "fixture-model", "ai/provider/sample/key");
+    static AiModelProfile profile(PlatformAiServiceTest.Fixture fixture) {
+        return new AiModelProfile("sample", fixture.uri("/chat"), "fixture-model", "ai/provider/sample/key");
     }
 
     static void answer(PlatformAiServiceTest.Fixture fixture) {
@@ -82,7 +79,7 @@ class PlatformModelServiceTest {
         return handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
     }
 
-    static TaskHandle<Void> saveAndVerify(PlatformModelService service, AiProviderProfile profile, String name,
+    static TaskHandle<Void> saveAndVerify(PlatformModelService service, AiModelProfile profile, String name,
                                           char[] key, AiCapabilityType capability, int outputLimit) throws Exception {
         service.save(profile, name, key, outputLimit);
         return service.verify(profile.id(), capability, null, "");
@@ -111,7 +108,7 @@ class PlatformModelServiceTest {
             try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
                 var service = setup(runtime);
                 char[] key = "fixture-model-key".toCharArray();
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     done(saveAndVerify(service, profile(fixture), "测试模型", key, AiCapabilityType.TEXT, 128))
                         .outcome());
                 assertArrayEquals(new char[key.length], key);
@@ -121,7 +118,7 @@ class PlatformModelServiceTest {
                 assertTrue(service.listAiPurpose(AiPurposeType.DEPLOYMENT).isEmpty());
                 assertEquals(128, service.outputLimit("sample").orElseThrow());
                 assertNotEquals(profile(fixture).credentialKey(), text.profile().credentialKey());
-                assertEquals(Outcome.SUCCEEDED, done(
+                assertEquals(TaskResult.SUCCEEDED, done(
                     saveAndVerify(service, text.profile(), text.name(), new char[0], AiCapabilityType.VISION, 128))
                     .outcome());
                 var both = service.listAiConfigurations().getFirst();
@@ -152,7 +149,7 @@ class PlatformModelServiceTest {
             var service = setup(runtime);
             answer(fixture);
             char[] firstKey = "first-key".toCharArray();
-            assertEquals(Outcome.SUCCEEDED, done(saveAndVerify(service, profile(fixture), "First", firstKey,
+            assertEquals(TaskResult.SUCCEEDED, done(saveAndVerify(service, profile(fixture), "First", firstKey,
                 AiCapabilityType.TEXT, 128)).outcome());
             assertArrayEquals(new char[firstKey.length], firstKey);
             var first = service.listAiConfigurations().getFirst();
@@ -162,7 +159,7 @@ class PlatformModelServiceTest {
             try (var stored = runtime.persistence().security().find(first.profile().credentialKey()).orElseThrow()) {
                 original = stored.payload();
             }
-            assertEquals(Outcome.SUCCEEDED, done(saveAndVerify(service, first.profile(), "Renamed", new char[0],
+            assertEquals(TaskResult.SUCCEEDED, done(saveAndVerify(service, first.profile(), "Renamed", new char[0],
                 AiCapabilityType.TEXT, 128)).outcome());
             var renamed = service.listAiConfigurations().getFirst();
             assertEquals(first.revision(), renamed.revision());
@@ -173,7 +170,7 @@ class PlatformModelServiceTest {
             }
             assertEquals(assignments, service.listAiPurpose(AiPurposeType.DEPLOYMENT));
             char[] secondKey = "second-key".toCharArray();
-            assertEquals(Outcome.SUCCEEDED, done(saveAndVerify(service, renamed.profile(), "Renamed", secondKey,
+            assertEquals(TaskResult.SUCCEEDED, done(saveAndVerify(service, renamed.profile(), "Renamed", secondKey,
                 AiCapabilityType.TEXT, 128)).outcome());
             assertArrayEquals(new char[secondKey.length], secondKey);
             var changed = service.listAiConfigurations().getFirst();
@@ -199,18 +196,18 @@ class PlatformModelServiceTest {
              var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             var service = setup(runtime);
             answer(fixture);
-            assertEquals(Outcome.SUCCEEDED, done(saveAndVerify(service, profile(fixture), "Original",
+            assertEquals(TaskResult.SUCCEEDED, done(saveAndVerify(service, profile(fixture), "Original",
                 "original-key".toCharArray(), AiCapabilityType.TEXT, 128)).outcome());
             var before = service.listAiConfigurations().getFirst();
             fixture.handler.set(exchange -> reply(exchange, "wrong-answer"));
             var result = done(saveAndVerify(service, before.profile(), "Changed", "replacement-key".toCharArray(),
                 AiCapabilityType.TEXT, 256));
-            assertEquals(Outcome.FAILED, result.outcome());
+            assertEquals(TaskResult.FAILED, result.outcome());
             assertEquals("MODEL_PROBE_ANSWER", result.problem().orElseThrow().eventCode());
             var failed = service.listAiConfigurations().getFirst();
             assertEquals("Changed", failed.name());
             assertTrue(failed.revision() > before.revision());
-            assertEquals(AiCapabilityStateType.FAILED, failed.checks().get(AiCapabilityType.TEXT).state());
+            assertEquals(AiCapabilityStatus.FAILED, failed.checks().get(AiCapabilityType.TEXT).state());
             assertEquals("MODEL_PROBE_ANSWER", failed.checks().get(AiCapabilityType.TEXT).reason());
             assertTrue(failed.textVerifiedAt().isEmpty());
             assertEquals(256, service.outputLimit("sample").orElseThrow());
@@ -222,7 +219,7 @@ class PlatformModelServiceTest {
                     Arrays.fill(key, '\0');
                 }
             }
-            assertThrows(IllegalArgumentException.class, () -> new AiProviderProfile("invalid",
+            assertThrows(IllegalArgumentException.class, () -> new AiModelProfile("invalid",
                 java.net.URI.create("http://example.com/chat"), "model", "ai/key"));
         }
     }
@@ -295,7 +292,7 @@ class PlatformModelServiceTest {
             } finally {
                 release.countDown();
             }
-            assertEquals(Outcome.SUCCEEDED, done(handle).outcome());
+            assertEquals(TaskResult.SUCCEEDED, done(handle).outcome());
             runtime.security().unlock(PASSWORD.toCharArray());
             assertEquals(1, service.listAiConfigurations().size());
         }
@@ -357,7 +354,7 @@ class PlatformModelServiceTest {
     void previousVersionProbeReleasesOnlyKnownVanishedProcessResources() throws Exception {
         UUID known;
         try (var db = PlatformDatabase.open(root, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(db);
+            var persistence = new PlatformStorage(db);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }
@@ -372,7 +369,7 @@ class PlatformModelServiceTest {
             runtime.security().unlock(PASSWORD.toCharArray());
             var result = runtime.models().reconcile(known).toCompletableFuture().get(8, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, result.state());
-            assertEquals(Outcome.FAILED, result.outcome().orElseThrow());
+            assertEquals(TaskResult.FAILED, result.outcome().orElseThrow());
             assertEquals("0.0.1-original", result.ownerVersion());
             assertEquals(0, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));

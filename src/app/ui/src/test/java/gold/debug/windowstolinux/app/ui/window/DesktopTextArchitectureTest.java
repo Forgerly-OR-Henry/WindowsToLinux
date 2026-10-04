@@ -165,7 +165,8 @@ class DesktopTextArchitectureTest {
 
     private boolean isProductionText(Path path) {
         String normalized = path.toAbsolutePath().normalize().toString().replace('\\', '/');
-        return normalized.contains("/src/main/") && !normalized.matches(".*_zh(?:_CN)?\\.properties$");
+        return normalized.contains("/src/main/") && !normalized.endsWith(".png")
+            && !normalized.matches(".*_zh(?:_CN)?\\.properties$");
     }
 
     private static java.util.List<Path> activeModules(Path root) throws Exception {

@@ -5,7 +5,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallEvent;
+import gold.debug.windowstolinux.app.windows.uninstall.model.DesktopUninstallStatus;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Desktop uninstall result with exact failed residual items. / 带精确失败残留项目的桌面卸载结果。

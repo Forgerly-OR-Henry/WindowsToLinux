@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,12 +11,30 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
+import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
-import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.shell.ProcessShellFactory;
@@ -39,14 +46,14 @@ class PlatformRemoteCapabilitiesTest {
     @TempDir
     Path root;
 
-    static final ServerRef SERVER = new ServerRef("server");
+    static final ServerId SERVER = new ServerId("server");
 
     static final class Reviews implements PlatformInteractionService.Prompts {
-        java.util.function.Function<gold.debug.windowstolinux.appapi.linux.TransferConflict, gold.debug.windowstolinux.appapi.linux.TransferConflictChoice> conflictPolicy = conflict -> gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.SKIP;
+        java.util.function.Function<gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict, gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice> conflictPolicy = conflict -> gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP;
 
-        public gold.debug.windowstolinux.appapi.linux.TransferConflictChoice transferConflict(
-            gold.debug.windowstolinux.appapi.linux.TransferConflict conflict,
-            gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+        public gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice transferConflict(
+            gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict conflict,
+            gold.debug.windowstolinux.appapi.server.model.ServerId server, TaskSnapshot task,
             CancelToken cancellation) {
             return conflictPolicy.apply(conflict);
         }
@@ -57,14 +64,14 @@ class PlatformRemoteCapabilitiesTest {
 
         java.util.function.Function<TransferStall, TransferStallChoice> stallPolicy = stall -> TransferStallChoice.TERMINATE;
 
-        public gold.debug.windowstolinux.appapi.linux.TransferStallChoice transferStalled(
-            gold.debug.windowstolinux.appapi.linux.TransferStall stall,
-            gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+        public gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice transferStalled(
+            gold.debug.windowstolinux.appapi.linux.transfer.TransferStall stall,
+            gold.debug.windowstolinux.appapi.server.model.ServerId server, TaskSnapshot task,
             CancelToken cancellation) {
             return stallPolicy.apply(stall);
         }
 
-        public String transferProgress(gold.debug.windowstolinux.appapi.linux.TransferProgress progress) {
+        public String transferProgress(gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress progress) {
             return progress.stage().name();
         }
 
@@ -174,7 +181,7 @@ class PlatformRemoteCapabilitiesTest {
                     assertEquals(0, failure.getSuppressed().length);
                     return success(null);
                 });
-                assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
                 assertEquals(0, remote.authentications.get());
                 assertEquals(0, remote.commands.get());
                 assertTrue(reviews.approved.isEmpty());
@@ -227,13 +234,13 @@ class PlatformRemoteCapabilitiesTest {
                         assertThrows(ApiException.class, () -> session.download(upload, uploadGrant));
                         assertThrows(ApiException.class, () -> session
                             .upload(new TransferRequest(source, "/unreviewed", bytes.length), uploadGrant));
-                        assertEquals(Outcome.SUCCEEDED, session.upload(upload, uploadGrant).outcome());
+                        assertEquals(TaskResult.SUCCEEDED, session.upload(upload, uploadGrant).outcome());
                         var download = new TransferRequest(received, "/远端 文件.bin", bytes.length);
                         var downloadGrant = capabilities.interaction()
                             .approve(RemoteActions.transfer(SERVER, "revision-3", download, digest(bytes), false),
                                 context)
                             .value().orElseThrow();
-                        assertEquals(Outcome.SUCCEEDED, session.download(download, downloadGrant).outcome());
+                        assertEquals(TaskResult.SUCCEEDED, session.download(download, downloadGrant).outcome());
 
                         try (var c = runtime.persistence().database().openConnection();
                              var p = c.prepareStatement(
@@ -259,7 +266,7 @@ class PlatformRemoteCapabilitiesTest {
                         return success(null);
                     }
                 });
-                assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
                 assertArrayEquals(bytes, Files.readAllBytes(remote.files.resolve("远端 文件.bin")));
                 assertEquals(4, reviews.approved.size());
@@ -335,7 +342,7 @@ class PlatformRemoteCapabilitiesTest {
                         return success(null);
                     }
                 });
-                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                 assertEquals(1, remote.commands.get());
             }
         }
@@ -362,13 +369,13 @@ class PlatformRemoteCapabilitiesTest {
                             RemoteActions.transfer(SERVER, "revision", request, digest("new".getBytes()), true),
                             task).value().orElseThrow();
                         var result = session.upload(request, grant);
-                        assertEquals(Outcome.FAILED, result.outcome(), result.toString());
+                        assertEquals(TaskResult.FAILED, result.outcome(), result.toString());
                         assertEquals("checkpoint", result.problem().orElseThrow().context().get("phase"));
                     }
                     return success(null);
                 });
                 state(handle, TaskState.UNKNOWN);
-                PlatformServerReferenceTest.callbackReturned(runtime, original.get());
+                PlatformServerRefTest.callbackReturned(runtime, original.get());
                 try (var files = Files.list(remote.files)) {
                     assertEquals(0, files.count());
                 }
@@ -418,7 +425,7 @@ class PlatformRemoteCapabilitiesTest {
                                 .approve(RemoteActions.transfer(SERVER, "revision", request, digest, true), task)
                                 .value().orElseThrow();
                             var transferred = session.upload(request, grant);
-                            assertEquals(i == 2 ? Outcome.FAILED : Outcome.SUCCEEDED, transferred.outcome(),
+                            assertEquals(i == 2 ? TaskResult.FAILED : TaskResult.SUCCEEDED, transferred.outcome(),
                                 transferred.toString());
                             if (i == 2) {
                                 assertEquals("SFTP_CONFLICT_SKIPPED", transferred.problem().orElseThrow().eventCode());
@@ -430,7 +437,7 @@ class PlatformRemoteCapabilitiesTest {
                     }
                     return success(null);
                 });
-                assertEquals(Outcome.SUCCEEDED, result(handle).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(handle).outcome());
                 assertEquals(3, choices.get());
                 assertEquals("new", Files.readString(remote.files.resolve("file.txt")));
                 assertEquals("new", Files.readString(remote.files.resolve("file (1).txt")));
@@ -467,12 +474,12 @@ class PlatformRemoteCapabilitiesTest {
                         var grant = capabilities.interaction().approve(
                             RemoteActions.transfer(SERVER, "revision", request, digest(new byte[100000]), true),
                             context).value().orElseThrow();
-                        assertEquals(Outcome.UNKNOWN, session.upload(request, grant).outcome());
+                        assertEquals(TaskResult.UNKNOWN, session.upload(request, grant).outcome());
                     }
                     return success(null);
                 });
                 state(task, TaskState.UNKNOWN);
-                PlatformServerReferenceTest.callbackReturned(runtime, original.get());
+                PlatformServerRefTest.callbackReturned(runtime, original.get());
                 Path temporary;
                 try (var c = runtime.persistence().database().openConnection();
                      var p = c.prepareStatement(
@@ -504,7 +511,7 @@ class PlatformRemoteCapabilitiesTest {
                             var grant = capabilities.interaction()
                                 .approve(RemoteActions.recoverTransfer(checkpoint, "recovery", true), context)
                                 .value().orElseThrow();
-                            assertEquals(Outcome.SUCCEEDED, session.resumeTransfer(checkpoint.id(), grant).outcome());
+                            assertEquals(TaskResult.SUCCEEDED, session.resumeTransfer(checkpoint.id(), grant).outcome());
                             assertTrue(capabilities.linux().pendingTransfers(context).isEmpty());
                         }
                     }
@@ -538,16 +545,16 @@ class PlatformRemoteCapabilitiesTest {
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
                     assertThrows(ApiException.class, () -> foreign.linux().connect(SERVER, context));
                     assertThrows(ApiException.class,
-                        () -> capabilities.linux().connect(new ServerRef("missing"), context));
+                        () -> capabilities.linux().connect(new ServerId("missing"), context));
                     try (var session = capabilities.linux().connect(SERVER, context)) {
-                        assertEquals(Outcome.CANCELLED,
+                        assertEquals(TaskResult.CANCELLED,
                             capabilities.interaction()
                                 .approve(RemoteActions.command(SERVER, "1", command("echo refused")), context)
                                 .outcome());
                     }
                     return success(null);
                 });
-                assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
                 assertEquals(0, remote.commands.get());
                 assertEquals(1, remote.authentications.get());
             }
@@ -570,7 +577,7 @@ class PlatformRemoteCapabilitiesTest {
                     assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
                     return success(null);
                 });
-                assertEquals(Outcome.SUCCEEDED, result(failed).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(failed).outcome());
                 assertTrue(runtime.persistence().servers().findServer("server").isEmpty());
                 runtime.persistence().servers().saveServer(
                     new StoredServerIdentity("server", "127.0.0.1", remote.listener.server().getPort(), "SHA256:wrong"));
@@ -579,7 +586,7 @@ class PlatformRemoteCapabilitiesTest {
                     assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
                     return success(null);
                 });
-                assertEquals(Outcome.SUCCEEDED, result(changed).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(changed).outcome());
                 assertTrue(reviews.approved.isEmpty());
                 assertEquals(0, runtime.security().securityState().activeTasks());
             }
@@ -611,7 +618,7 @@ class PlatformRemoteCapabilitiesTest {
                     if (retained.get() != null)
                         retained.get().close();
                 }
-                assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
                 assertEquals(0, remote.commands.get());
             }
         }
@@ -633,7 +640,7 @@ class PlatformRemoteCapabilitiesTest {
                         var slow = new CommandRequest(
                             "deadline=$((SECONDS+2)); while ((SECONDS < deadline)); do :; done", new byte[0],
                             Duration.ofMillis(300), 16);
-                        assertEquals(Outcome.UNKNOWN,
+                        assertEquals(TaskResult.UNKNOWN,
                             session.execute(slow, approve(capabilities, slow, context)).outcome());
                         assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
                     } finally {
@@ -669,7 +676,7 @@ class PlatformRemoteCapabilitiesTest {
                     assertEquals(TaskState.ENDED,
                         reconciliation.toCompletableFuture().get(10, TimeUnit.SECONDS).state());
                 }
-                assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
                 assertEquals(2, remote.commands.get());
                 assertEquals(0, runtime.security().securityState().activeTasks());
             }

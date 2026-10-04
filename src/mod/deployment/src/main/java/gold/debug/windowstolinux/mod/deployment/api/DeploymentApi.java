@@ -1,12 +1,12 @@
 package gold.debug.windowstolinux.mod.deployment.api;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.util.Optional;
 import java.util.UUID;
+
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Public deployment snapshot, lifecycle and backup handoff service. / 公开部署快照、生命周期与备份交接服务。
  * <p>The original caller must retain its own root checkpoint across the complete handoff sequence,
@@ -23,7 +23,7 @@ public interface DeploymentApi {
      * @return target revision bound to the exact archive and current host trust / 绑定精确归档及当前主机信任的目标修订
      * @throws ApiException if scope or observed target is unavailable / 范围或已观察目标不可用时 */
     OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archived,
-                                                gold.debug.windowstolinux.appapi.server.ServerRef target, String archiveSha256, TaskContext task)
+                                                gold.debug.windowstolinux.appapi.server.model.ServerId target, String archiveSha256, TaskContext task)
         throws ApiException;
 
     /** Lists persisted application summaries. / 列出持久应用摘要。
@@ -40,7 +40,7 @@ public interface DeploymentApi {
      * @param task original caller task / 原调用任务
      * @return current observation / 当前观察
      * @throws ApiException if access fails / 访问失败时 */
-    OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application, TaskContext task)
+    OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationId application, TaskContext task)
         throws ApiException;
 
     /** Performs one approved managed lifecycle action. / 执行一次已批准受管生命周期动作。
@@ -50,7 +50,7 @@ public interface DeploymentApi {
      * @param task original caller task / 原调用任务
      * @return verified action result / 已验证动作结果
      * @throws ApiException if access fails / 访问失败时 */
-    OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application,
+    OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationId application,
                                                          String expectedRevisionSha256, DeploymentLifecycleAction action, TaskContext task)
         throws ApiException;
 

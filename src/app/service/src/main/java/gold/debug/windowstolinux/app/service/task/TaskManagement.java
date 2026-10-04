@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
 /** Host task inventory and explicit original-task actions. / 宿主任务清单及明确原任务操作。 */
 public interface TaskManagement {

@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.mod.deployment.file;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.FileSnapshot;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
 /** Source-only frozen material shared by subsequent analysis and deployment steps. / 供后续分析及部署步骤共用的纯源码冻结素材。
  * @param displayName original selected source name / 原选定来源名称

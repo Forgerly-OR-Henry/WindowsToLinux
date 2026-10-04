@@ -1,13 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.completed;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.completed;
 import static gold.debug.windowstolinux.app.main.start.PlatformServersWindowTest.dialog;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
@@ -20,14 +13,19 @@ import java.util.concurrent.TimeUnit;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.file.FileReadRequest;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.file.source.FileReadRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -91,7 +89,7 @@ class PlatformSourceWindowTest {
                         var cancelled = assertThrows(ApiException.class, () -> source.selectDirectory("取消目录选择", task));
                         cancellationProblem.set(cancelled.problem());
                         assertEquals(ProblemCode.CANCELLED, cancelled.problem().code());
-                        return new OperationResult<>(Outcome.CANCELLED, java.util.Optional.empty(), java.util.Optional.of(cancelled.problem()));
+                        return new OperationResult<>(TaskResult.CANCELLED, java.util.Optional.empty(), java.util.Optional.of(cancelled.problem()));
                     } catch (RuntimeException | Error failure) {
                         callbackThrowable.set(failure);
                         throw failure;
@@ -100,7 +98,7 @@ class PlatformSourceWindowTest {
                 pending = cancel;
                 await(() -> dialog("task.interaction.dialog") != null);
                 cancel.requestCancel();
-                assertEquals(Outcome.CANCELLED,
+                assertEquals(TaskResult.CANCELLED,
                     completedWithDiagnostics(runtime, cancel, callbackThrowable, cancellationProblem).outcome());
                 assertNull(onEdt(() -> dialog("task.interaction.dialog")));
                 assertEquals(0, count(runtime.persistence().database(),

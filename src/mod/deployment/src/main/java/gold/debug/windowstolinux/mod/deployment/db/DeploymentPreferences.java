@@ -6,8 +6,8 @@ import java.util.Objects;
 import java.util.Set;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Stores the actual deployment-page selection in this Mod's owned preference table. / 在此Mod所属偏好表保存实际部署页面选择。 */
 public final class DeploymentPreferences {

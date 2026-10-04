@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -19,17 +8,25 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
-import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-
+import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.db.TaskModDatabase;
 import gold.debug.windowstolinux.app.service.task.*;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
-import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,7 +41,7 @@ class PlatformTaskAdmissionIntegrationTest {
     static final String PASSWORD = "fixture-password";
 
     static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
     }
 
     static TaskRequest request(String... servers) {
@@ -146,7 +143,7 @@ class PlatformTaskAdmissionIntegrationTest {
                 });
                 assertEquals(TaskState.QUEUED, queued.snapshot().state());
                 queued.requestCancel();
-                assertEquals(Outcome.CANCELLED,
+                assertEquals(TaskResult.CANCELLED,
                     queued.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 for (var changed : List.of(profile("new.example", 22, "alice", "credential", "Server"),
                     profile("host.example", 2222, "alice", "credential", "Server"),
@@ -262,7 +259,7 @@ class PlatformTaskAdmissionIntegrationTest {
                     releaseWork.countDown();
                     if (task == null)
                         task = submitted.get(8, TimeUnit.SECONDS);
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                     if (mutation != null && !mutation.isDone())
                         mutation.get(8, TimeUnit.SECONDS);
@@ -293,7 +290,7 @@ class PlatformTaskAdmissionIntegrationTest {
                 sql(db, "UPDATE platform_task SET request_json='{}' WHERE task_id=?", id);
                 assertThrows(SQLException.class, () -> runtime.persistence().servers().saveServerProfile(changed));
             } finally {
-                assertTrue(ledger.complete(id, Outcome.CANCELLED, "{}", true));
+                assertTrue(ledger.complete(id, TaskResult.CANCELLED, "{}", true));
             }
             runtime.persistence().servers()
                 .saveServerProfile(profile("host.example", 22, "bob", "credential", "Server"));
@@ -305,8 +302,8 @@ class PlatformTaskAdmissionIntegrationTest {
         UUID taskId;
         try (var db = PlatformDatabase.open(root, PlatformStartupTest.PROTECTION)) {
             try (var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
-                new gold.debug.windowstolinux.app.db.security.SecurityRepository(
-                    new gold.debug.windowstolinux.app.db.connect.RepositoryConnections(
+                new gold.debug.windowstolinux.app.db.security.SecurityStore(
+                    new gold.debug.windowstolinux.app.db.connect.StoreConnections(
                         db::openConnection)))) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }

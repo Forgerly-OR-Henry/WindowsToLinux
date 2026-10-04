@@ -10,5 +10,5 @@ public enum DeploymentHandoffState {
     /** Target is verified active. / 目标已验证激活。 */ ACTIVE,
     /** Explicit compensation is underway. / 明确补偿正在进行。 */ COMPENSATING,
     /** Handoff cleanup is complete. / 交接清理已完成。 */ FINISHED,
-    /** Outcome must be reconciled before a new effect. / 新副作用前必须核对未知结果。 */ UNKNOWN
+    /** TaskResult must be reconciled before a new effect. / 新副作用前必须核对未知结果。 */ UNKNOWN
 }

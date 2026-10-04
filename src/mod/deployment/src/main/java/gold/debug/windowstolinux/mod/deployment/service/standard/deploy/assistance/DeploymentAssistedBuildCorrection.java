@@ -1,11 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.util.Map;
 
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.ReviewedDeploymentPlan;
 
 /** Reopens only the four typed technical fields after a physically confirmed build failure. / 物理确认构建失败后仅重开四项类型化技术字段。 */

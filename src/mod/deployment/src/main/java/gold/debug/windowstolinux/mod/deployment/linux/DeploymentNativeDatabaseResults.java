@@ -8,7 +8,7 @@ import java.util.Optional;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Inventory;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.InstanceList;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Target;
 
 /** Strictly decodes non-secret facts returned by the fixed native DB helper. / 严格解码固定原生数据库 helper 返回的非秘密事实。 */
@@ -21,7 +21,7 @@ public final class DeploymentNativeDatabaseResults {
      * @param fields exact helper fields / 精确 helper 字段
      * @param prefix empty for direct replies or result. for receipts / 直接回包为空，回执为 result.
      * @return observed inventory / 已观察库存 */
-    public static Inventory inventory(Map<String, String> fields, String prefix) {
+    public static InstanceList inventory(Map<String, String> fields, String prefix) {
         DeploymentDatabaseEngineType engine = engine(required(fields, prefix + "engine"));
         int count = count(fields, prefix + "instanceCount");
         int conflicts = count(fields, prefix + "conflictCount");
@@ -36,7 +36,7 @@ public final class DeploymentNativeDatabaseResults {
             || fields.containsKey(prefix + "engineVersion"))
             candidate = Optional.of(new Candidate(required(fields, prefix + "package"),
                 required(fields, prefix + "packageVersion"), required(fields, prefix + "engineVersion")));
-        return new Inventory(engine, instances, candidate, warnings);
+        return new InstanceList(engine, instances, candidate, warnings);
     }
 
     /** Decodes the exact selected instance. / 解码精确选中实例。

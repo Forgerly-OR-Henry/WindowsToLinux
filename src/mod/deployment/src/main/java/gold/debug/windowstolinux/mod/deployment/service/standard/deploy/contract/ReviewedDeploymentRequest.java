@@ -2,14 +2,14 @@ package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contrac
 
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentSupportLevel;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStoragePlan;
-import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
-import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 
 /** Complete reviewed standard candidate using two distinct source digests and original platform handles. / 使用两种独立来源摘要及原平台句柄的完整已审阅标准候选。
  * @param server exact selected platform server / 精确选定的平台服务器
@@ -25,10 +25,10 @@ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
  * @param review source and server review, not a remote grant / 来源与服务器审阅，非远端授权
  * @param containerDaemonRiskAccepted explicit container risk decision / 显式容器风险决定
  * @param experimentalAdapterRiskAccepted explicit experimental decision / 显式试验适配器决定 */
-public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts facts,
+public record ReviewedDeploymentRequest(ServerId server, DeploymentProjectFacts facts,
                                         DeploymentSourceMaterial material, DeploymentSourceArchive archive,
-                                        DeploymentConfigurationSnapshot configuration,
-                                        List<DeploymentSecretReference> secretReferences,
+                                        DeploymentConfigSnapshot configuration,
+                                        List<DeploymentSecretRef> secretReferences,
                                         DeploymentResourceBindings resources, DeploymentRuntimeDefinition runtime,
                                         Optional<DeploymentAccessUrl> userAccessUrl, DeploymentBuildLimits limits,
                                         DeploymentReviewConsent review,
@@ -97,7 +97,7 @@ public record ReviewedDeploymentRequest(ServerRef server, DeploymentProjectFacts
             || !source.sha256().equals(review.sourceManifestSha256())
             || !archive.sha256().equals(review.archiveSha256()))
             throw new IllegalArgumentException("Reviewed application, server or source identity differs");
-        if (runtime.identityPolicy() == DeploymentIdentityMode.LEGACY_UNSPECIFIED || limits.runAsRoot())
+        if (limits.runAsRoot())
             throw new IllegalArgumentException("New deployment requires a restricted build identity");
         if (runtime instanceof DeploymentRuntimeDefinition.Container container
             && container.engine() == DeploymentRuntimeDefinition.ContainerEngineType.DOCKER

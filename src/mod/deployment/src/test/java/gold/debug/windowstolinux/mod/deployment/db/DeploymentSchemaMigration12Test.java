@@ -10,7 +10,7 @@ import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -50,8 +50,8 @@ class DeploymentSchemaMigration12Test extends DeploymentRuntimeFixture {
                     assertEquals("opaque-7", row.getString(1));
                     assertNull(row.getString(2));
                 }
-                assertTrue(DeploymentSecretRepository.readRevision(connection,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference(
+                assertTrue(DeploymentSecretStore.readRevision(connection,
+                        new gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef(
                             "credential-name", 7))
                     .orElseThrow().purpose().isEmpty());
                 try (var row = statement.executeQuery(

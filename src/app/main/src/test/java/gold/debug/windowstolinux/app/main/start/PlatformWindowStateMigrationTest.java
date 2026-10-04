@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,25 +14,32 @@ import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import javax.swing.*;
 import javax.accessibility.AccessibleState;
+import javax.swing.*;
 
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.PlatformModsPane;
 import gold.debug.windowstolinux.app.ui.server.ServerProfileDialog;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -111,7 +113,7 @@ class PlatformWindowStateMigrationTest {
             assertTrue(original.operations().isEmpty());
             assertTrue(management.fixture.actions().isEmpty(), "Draft interaction must not start or stop the actual registered CLASS Mod");
         } finally {
-            await(() -> !DesktopTaskExecutor.hasActiveTasks());
+            await(() -> !DesktopTaskRunner.hasActiveTasks());
             if (management.runtime != null) management.runtime.close();
             onEdt(() -> {
                 if (management.frame != null) management.frame.dispose();
@@ -136,14 +138,14 @@ class PlatformWindowStateMigrationTest {
                     assertTrue(release.await(30, TimeUnit.SECONDS), "Original work must remain owned until explicitly released");
                 }
                 checkpointClosed.set(true);
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of("original"), Optional.empty());
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of("original"), Optional.empty());
             });
             try {
                 assertTrue(entered.await(8, TimeUnit.SECONDS));
                 var id = handle.id();
-                for (var choice : List.of(new DesktopDisplayConfiguration("en", ThemeMode.DARK),
-                    new DesktopDisplayConfiguration("zh-CN", ThemeMode.LIGHT),
-                    new DesktopDisplayConfiguration("en", ThemeMode.LIGHT))) {
+                for (var choice : List.of(new DesktopDisplayConfig("en", ThemeMode.DARK),
+                    new DesktopDisplayConfig("zh-CN", ThemeMode.LIGHT),
+                    new DesktopDisplayConfig("en", ThemeMode.LIGHT))) {
                     fixture.confirm(choice);
                     fixture.assertOriginalView();
                     assertEquals(id, handle.id());
@@ -156,7 +158,7 @@ class PlatformWindowStateMigrationTest {
                 release.countDown();
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
             }
-            assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             assertTrue(checkpointClosed.get());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             fixture.closeThroughActualOwner();
@@ -201,7 +203,7 @@ class PlatformWindowStateMigrationTest {
                         return null;
                     });
                     await(() -> (fixture.frame.getExtendedState() & Frame.MAXIMIZED_BOTH) == Frame.MAXIMIZED_BOTH);
-                    fixture.confirm(new DesktopDisplayConfiguration("en", ThemeMode.DARK));
+                    fixture.confirm(new DesktopDisplayConfig("en", ThemeMode.DARK));
                     fixture.assertOriginalView();
                     onEdt(() -> {
                         assertEquals(1, java.util.Arrays.stream(fixture.frame.getOwnedWindows()).filter(value -> value == fixture.editor && value.isDisplayable()).count());
@@ -267,7 +269,7 @@ class PlatformWindowStateMigrationTest {
                 DesktopThemeService.install(ThemeMode.LIGHT);
                 var window = new PlatformFrame(runtime.security(), catalog, ThemePalette.light(),
                     new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false), FailureReportStore.disabled());
-                window.installAppearance(new DesktopDisplayConfiguration("zh-CN", ThemeMode.LIGHT), requested -> {
+                window.installAppearance(new DesktopDisplayConfig("zh-CN", ThemeMode.LIGHT), requested -> {
                     try (var authorized = runtime.security().beginTask()) {
                         authorized.execute(() -> {
                             runtime.persistence().preferences().saveAll(Map.of("ui_locale", requested.localeTag(), "ui_theme", requested.themeMode().name()));
@@ -281,7 +283,7 @@ class PlatformWindowStateMigrationTest {
                 return window;
             });
             var widgets = onEdt(() -> {
-                var factory = new DesktopComponentFactory(ThemePalette.light());
+                var factory = new DesktopPartFactory(ThemePalette.light());
                 var root = factory.pagePanel();
                 root.setName("migration.contract.page");
                 root.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
@@ -337,7 +339,7 @@ class PlatformWindowStateMigrationTest {
             scope.commit();
             scope.open("contract");
             editor = onEdt(() -> {
-                var owned = new ServerProfileDialog(frame, servers, new DesktopComponentFactory(ThemePalette.light()), new PageMessagePresenter(catalog),
+                var owned = new ServerProfileDialog(frame, servers, new DesktopPartFactory(ThemePalette.light()), new PageMessagePresenter(catalog),
                     new ServerProfile("existing", "original.example", 22, "tester", "ssh/existing", "Original name"), ignored -> fail("Appearance must not save a server draft"));
                 owned.setModalityType(Dialog.ModalityType.MODELESS);
                 owned.setVisible(true);
@@ -353,7 +355,7 @@ class PlatformWindowStateMigrationTest {
             });
         }
 
-        private void confirm(DesktopDisplayConfiguration requested) throws Exception {
+        private void confirm(DesktopDisplayConfig requested) throws Exception {
             int before = environments.get();
             onEdt(() -> {
                 ((JComboBox<?>) named(frame, "appearance.language")).setSelectedItem(requested.localeTag());

@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,13 +13,18 @@ import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.ThemePalette;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,21 +38,21 @@ class PlatformInteractionTest {
     }
 
     static class Prompts implements PlatformInteractionService.Prompts {
-        public gold.debug.windowstolinux.appapi.linux.TransferConflictChoice transferConflict(
-            gold.debug.windowstolinux.appapi.linux.TransferConflict conflict,
-            gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+        public gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice transferConflict(
+            gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict conflict,
+            gold.debug.windowstolinux.appapi.server.model.ServerId server, TaskSnapshot task,
             CancelToken cancellation) {
-            return gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.SKIP;
+            return gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP;
         }
 
-        public gold.debug.windowstolinux.appapi.linux.TransferStallChoice transferStalled(
-            gold.debug.windowstolinux.appapi.linux.TransferStall stall,
-            gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+        public gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice transferStalled(
+            gold.debug.windowstolinux.appapi.linux.transfer.TransferStall stall,
+            gold.debug.windowstolinux.appapi.server.model.ServerId server, TaskSnapshot task,
             CancelToken cancellation) {
-            return gold.debug.windowstolinux.appapi.linux.TransferStallChoice.TERMINATE;
+            return gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice.TERMINATE;
         }
 
-        public String transferProgress(gold.debug.windowstolinux.appapi.linux.TransferProgress progress) {
+        public String transferProgress(gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress progress) {
             return progress.stage().name();
         }
 
@@ -101,7 +100,7 @@ class PlatformInteractionTest {
                     released.countDown();
                 }
                 prompt.get().get(8, TimeUnit.SECONDS);
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             }
         }
@@ -214,7 +213,7 @@ class PlatformInteractionTest {
                     continueWork.countDown();
                     Thread.sleep(100);
                     task.requestCancel();
-                    assertEquals(Outcome.CANCELLED,
+                    assertEquals(TaskResult.CANCELLED,
                         task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                     assertEquals(0, calls.get());
                     assertEquals(0, runtime.security().securityState().activeTasks());
@@ -256,13 +255,13 @@ class PlatformInteractionTest {
                         .map(JButton.class::cast).findFirst().orElseThrow().doClick(0);
                     return null;
                 });
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     first.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 var second = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
                     context -> capabilities.interaction().approve(intent(), context));
                 PlatformWindowTest.await(() -> dialog(frame) != null);
                 second.requestCancel();
-                assertEquals(Outcome.CANCELLED,
+                assertEquals(TaskResult.CANCELLED,
                     second.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 PlatformWindowTest.await(() -> dialog(frame) == null);
             } finally {

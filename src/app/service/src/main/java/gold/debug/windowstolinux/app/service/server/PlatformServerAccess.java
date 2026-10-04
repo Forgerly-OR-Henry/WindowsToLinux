@@ -1,25 +1,27 @@
 package gold.debug.windowstolinux.app.service.server;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.nio.ByteBuffer;
 import java.nio.charset.*;
 import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.server.ServerReferenceRepository;
-
+import gold.debug.windowstolinux.app.db.server.ServerRefStore;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.server.*;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.server.ref.ServerRef;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Exposes task-admitted server observations and exact-generation persistent references. / 提供任务已准入服务器观测及精确代次持久引用。 */
 public final class PlatformServerAccess implements ServerService, AutoCloseable {
@@ -27,7 +29,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
     private final PlatformTaskRuntime tasks;
 
     /** Authoritative server reference transactions. / 权威服务器引用事务。 */
-    private final ServerReferenceRepository repository;
+    private final ServerRefStore repository;
 
     /** Durable initial resource ownership. / 持久初始资源归属。 */
     private final TaskLedger ledger;
@@ -51,7 +53,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @param schema exact selected data generation, if any / 精确选定数据代次，可不存在
      */
     public PlatformServerAccess(PlatformDatabase database, PlatformTaskRuntime tasks,
-                                ServerReferenceRepository repository, String owner, String version, Optional<SchemaIdentity> schema) {
+                                ServerRefStore repository, String owner, String version, Optional<SchemaIdentity> schema) {
         this.tasks = Objects.requireNonNull(tasks);
         this.repository = Objects.requireNonNull(repository);
         this.ledger = new TaskLedger(database);
@@ -116,7 +118,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if access or storage is unavailable / 访问或存储不可用时
      */
     @Override
-    public ServerInfo get(ServerRef server, TaskContext task) throws ApiException {
+    public ServerInfo get(ServerId server, TaskContext task) throws ApiException {
         String id = serverId(server);
         return access(task, false, false, () -> {
             requireServer(task, id);
@@ -133,7 +135,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if input, data generation or persistence is unavailable / 输入、数据代次或持久化不可用时
      */
     @Override
-    public ServerReference reserve(ServerRef server, String businessKey, TaskContext task) throws ApiException {
+    public ServerRef reserve(ServerId server, String businessKey, TaskContext task) throws ApiException {
         String id = serverId(server);
         if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
             throw error(ProblemCode.INVALID_INPUT, "SERVER_REFERENCE_KEY", "Invalid server business key");
@@ -153,7 +155,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if input, authorization or reading fails / 输入、授权或读取失败时
      */
     @Override
-    public Optional<ServerReference> findReference(ServerRef server, String businessKey, TaskContext task)
+    public Optional<ServerRef> findReference(ServerId server, String businessKey, TaskContext task)
         throws ApiException {
         String id = serverId(server);
         if (businessKey == null || businessKey.isBlank() || businessKey.length() > 512)
@@ -173,7 +175,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @throws ApiException if authorization, identity or persistence fails / 授权、身份或持久化失败时
      */
     @Override
-    public void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException {
+    public void resolve(UUID referenceId, ResourceRefResult result, TaskContext task) throws ApiException {
         if (referenceId == null || result == null)
             throw error(ProblemCode.INVALID_INPUT, "SERVER_REFERENCE_RESULT",
                 "A reference and resolution are required");
@@ -277,7 +279,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      * @return exact identity / 精确身份
      * @throws ApiException if input is invalid / 输入无效时
      */
-    private static String serverId(ServerRef server) throws ApiException {
+    private static String serverId(ServerId server) throws ApiException {
         if (server == null || server.id().isBlank() || server.id().length() > 512)
             throw error(ProblemCode.INVALID_INPUT, "SERVER_ID", "Invalid server identity");
         return server.id();

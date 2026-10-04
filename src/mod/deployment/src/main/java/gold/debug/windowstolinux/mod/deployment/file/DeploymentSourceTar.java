@@ -7,8 +7,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.zip.GZIPOutputStream;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Writes the original deterministic source-only ustar/gzip format from frozen material. / 从冻结素材写入原确定性纯源码 ustar/gzip 格式。 */
 final class DeploymentSourceTar {

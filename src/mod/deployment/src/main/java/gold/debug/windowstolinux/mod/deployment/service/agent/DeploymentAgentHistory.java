@@ -1,19 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 
 /** Reads existing formal agent evidence and explicitly inspects only its original candidates. / 读取既有正式自主依据并明确仅检查其原候选。 */
@@ -22,22 +20,22 @@ public final class DeploymentAgentHistory {
     private final ModContext context;
 
     /** Original formal event reader. / 原正式事件读取器。 */
-    private final DeploymentAgentJournal journal;
+    private final DeploymentAgentActionLog journal;
 
     /** One selected original business row. / 一项所选原业务行。
      * @param id original task UUID / 原任务UUID
      * @param server original selected server / 原所选服务器
      * @param state actual Mod-local persisted state / 实际Mod内部持久状态
      * @param updatedAt last original update / 最近原更新 */
-    public record Entry(UUID id, ServerRef server, String state, Instant updatedAt) {
+    public record Entry(UUID id, ServerId server, String state, Instant updatedAt) {
     }
 
     /** Complete bounded detail from the existing business ledger. / 来自既有业务账本的完整有界详情。
      * @param entry selected original row / 所选原行
      * @param snapshot original immutable target and policy / 原不可变目标及策略
      * @param events original ordered bounded event stream / 原有序有界事件流 */
-    public record Detail(Entry entry, DeploymentAgentJournal.Snapshot snapshot,
-                         List<DeploymentAgentJournal.Event> events) {
+    public record Detail(Entry entry, DeploymentAgentActionLog.Snapshot snapshot,
+                         List<DeploymentAgentActionLog.Event> events) {
         /** Copies original event references without reconstructing work. / 复制原事件引用且不重建工作。
          * @param entry original row / 原行
          * @param snapshot original identity / 原身份
@@ -51,7 +49,7 @@ public final class DeploymentAgentHistory {
      * @param context actual owner / 实际所有者 */
     public DeploymentAgentHistory(ModContext context) {
         this.context = Objects.requireNonNull(context);
-        journal = new DeploymentAgentJournal(context.db());
+        journal = new DeploymentAgentActionLog(context.db());
     }
 
     /** Reads at most two hundred existing tasks; no duplicate history store is created. / 最多读取二百项既有任务，不创建重复历史存储。
@@ -65,7 +63,7 @@ public final class DeploymentAgentHistory {
                  + "FROM deployment_agent_task ORDER BY updated_at DESC,task_id FETCH FIRST 200 ROWS ONLY");
              var rows = query.executeQuery()) {
             while (rows.next())
-                result.add(new Entry(UUID.fromString(rows.getString(1)), new ServerRef(rows.getString(2)),
+                result.add(new Entry(UUID.fromString(rows.getString(1)), new ServerId(rows.getString(2)),
                     rows.getString(3), Instant.ofEpochMilli(rows.getLong(4))));
         }
         return List.copyOf(result);
@@ -83,7 +81,7 @@ public final class DeploymentAgentHistory {
             query.setString(1, selected.toString());
             try (var rows = query.executeQuery()) {
                 if (!rows.next()) throw new SQLException("Original task disappeared");
-                var entry = new Entry(selected, new ServerRef(snapshot.identity().server()), snapshot.state(),
+                var entry = new Entry(selected, new ServerId(snapshot.identity().server()), snapshot.state(),
                     Instant.ofEpochMilli(rows.getLong(1)));
                 return new Detail(entry, snapshot, journal.events(task, selected));
             }
@@ -147,7 +145,7 @@ public final class DeploymentAgentHistory {
             if (!detail.snapshot().identity().targetDigest().equals(DeploymentAgentWorkflow.targetDigest(server, session)))
                 throw new SQLException("Original inspection fingerprint changed");
             String revision = detail.snapshot().identity().configurationDigest();
-            if (new DeploymentManagedHelper(session, context.interaction(), server, task, revision).probe().outcome() != Outcome.SUCCEEDED)
+            if (new DeploymentManagedHelper(session, context.interaction(), server, task, revision).probe().outcome() != TaskResult.SUCCEEDED)
                 throw new SQLException("Original inspection helper is unconfirmed");
             var channel = new DeploymentAgentProjectChannel(session, context.interaction(), server, task, revision, () -> revision);
             for (var workspace : workspaces) {
@@ -163,7 +161,7 @@ public final class DeploymentAgentHistory {
     /** Finds only an unprocessed exact request; a later explicit recovery can then run normally. / 仅查找未处理精确请求，随后明确恢复可以正常运行。
      * @param events original bounded stream / 原有界事件流
      * @return pending exact request or absence / 待处理精确请求或不存在 */
-    static Optional<DeploymentAgentJournal.Event> pending(List<DeploymentAgentJournal.Event> events) {
+    static Optional<DeploymentAgentActionLog.Event> pending(List<DeploymentAgentActionLog.Event> events) {
         var request = events.stream().filter(event -> event.type().equals("INSPECT_REQUESTED")).reduce((a, b) -> b);
         if (request.isEmpty()) return Optional.empty();
         String id = Long.toString(request.orElseThrow().id());

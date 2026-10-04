@@ -1,16 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,17 +13,25 @@ import java.util.concurrent.atomic.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.*;
+import gold.debug.windowstolinux.app.db.PlatformStorage;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.file.source.FrozenSourceWork;
+import gold.debug.windowstolinux.app.file.source.SelectedDirectory;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
-import gold.debug.windowstolinux.app.file.SelectedDirectory;
-import gold.debug.windowstolinux.app.file.FrozenSourceWork;
-import gold.debug.windowstolinux.appapi.file.FileEntry;
-import gold.debug.windowstolinux.appapi.file.FileReadRequest;
-import gold.debug.windowstolinux.appapi.file.FileSelection;
-import gold.debug.windowstolinux.appapi.file.FileSnapshot;
-import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
-
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileEntry;
+import gold.debug.windowstolinux.appapi.file.source.FileReadRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -306,7 +304,7 @@ class PlatformSourceServiceTest {
         Path marker;
         byte[] expectedMarker;
         try (var db = PlatformDatabase.open(data, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(db);
+            var persistence = new PlatformStorage(db);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }

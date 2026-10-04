@@ -1,5 +1,8 @@
 package gold.debug.windowstolinux.app.windows.update;
 
+import gold.debug.windowstolinux.app.windows.update.check.DesktopUpdateVerification;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateException;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -16,7 +19,7 @@ public interface DesktopUpdatePort {
     StepEvidence quiesceTasks() throws DesktopUpdateException;
 
     /**
-     * Backs up the current program, SQLite file, data location and security profile. / 备份当前程序、SQLite 文件、数据位置及安全配置。
+     * Backs up the current program, H2 database and db-access.bin, data location and security profile. / 备份当前程序、H2 数据库及 db-access.bin、数据位置及安全配置。
      *
      * @param update update / 更新
      * @return constructed or resolved backup evidence / 构造或解析得到的备份证据
@@ -67,7 +70,7 @@ public interface DesktopUpdatePort {
     StepEvidence startAndVerify(DesktopUpdateVerification update, BackupEvidence backup) throws DesktopUpdateException;
 
     /**
-     * Restores the old program and pre-update SQLite backup as one pair. / 将旧程序及更新前 SQLite 备份作为一对恢复。
+     * Restores the old program and pre-update H2 and db-access.bin backup as one pair. / 将旧程序及更新前 H2 数据库及 db-access.bin 备份作为一对恢复。
      *
      * @param backup the local backup page state / 本地备份页面状态
      * @return constructed or resolved rollback evidence / 构造或解析得到的回滚证据

@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -33,12 +20,32 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import org.junit.jupiter.api.Test;
 
 /** Checks actual helper receipt processing against the original CLASS/H2 task and recovery. / 以原 CLASS/H2 任务和恢复核对实际 helper 回执处理。 */
@@ -53,12 +60,12 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
         else
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
@@ -98,12 +105,12 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 return reply("HELPER=1\nPROTOCOL=11\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             });
             var handle = context.tasks()
-                .submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Reject old native DB helper",
+                .submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE, "Reject old native DB helper",
                         List.of(server.id()), true),
                     task -> new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
                         .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64)));
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
-            assertEquals(Outcome.FAILED, result.outcome());
+            assertEquals(TaskResult.FAILED, result.outcome());
             assertEquals(0, starts.get());
         }
     }
@@ -140,11 +147,11 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 }
             };
             var handle = context.tasks()
-                .submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE, "Cancel native DB before dispatch",
+                .submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE, "Cancel native DB before dispatch",
                         List.of(server.id()), true),
                     task -> new DeploymentNativeDatabaseChannel(borrowed, review, server, task)
                         .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64)));
-            assertEquals(Outcome.CANCELLED,
+            assertEquals(TaskResult.CANCELLED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(0, starts.get());
         }
@@ -160,10 +167,10 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
             var server = saved(runtime);
             var context = runtime.modContexts().get(OWNER).context();
             var failure = new AtomicReference<Throwable>();
-            var handle = context.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+            var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
                 "Serial native DB evidence", List.of(server.id()), true), task -> {
                 try {
-                    var journal = DeploymentNativeDatabaseJournal.begin(context.tasks(), task, server,
+                    var journal = DeploymentNativeDatabaseActionLog.begin(context.tasks(), task, server,
                         java.util.UUID.randomUUID(), "start", "a".repeat(64), "b".repeat(64),
                         "POSTGRESQL:original");
                     journal.dispatched();
@@ -189,14 +196,14 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                             "d".repeat(64), ("db-16-" + "x".repeat(256)).substring(0, 256)));
                     assertEquals("SUCCEEDED", journal.facts().phase());
                     journal.close();
-                    assertTrue(context.tasks().findCheckpoint(task, DeploymentNativeDatabaseJournal.KEY)
+                    assertTrue(context.tasks().findCheckpoint(task, DeploymentNativeDatabaseActionLog.KEY)
                         .orElseThrow().snapshot().released());
                 } catch (Throwable caught) {
                     failure.set(caught);
                 }
-                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             if (failure.get() != null)
                 throw new AssertionError("Serial original checkpoint failed", failure.get());
@@ -220,7 +227,7 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 if (request.script().contains("native-db start")) {
                     starts.incrementAndGet();
                     peer(state, "start", request.stdin());
-                    return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNKNOWN, "TEST_REPLY_LOST", "Controlled reply lost",
                             Map.of(), Optional.empty())));
                 }
@@ -250,37 +257,37 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                     }
                 });
             var callbackFailure = new AtomicReference<Throwable>();
-            var handle = original.tasks().submit(new TaskRequest(DeploymentReferenceFlow.TASK_TYPE,
+            var handle = original.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
                 "Reconcile original native DB receipt", List.of(server.id()), true), task -> {
                 try {
-                    DeploymentStaticPreparationJournal.begin(original.tasks(), task, server);
+                    DeploymentStaticSetupActionLog.begin(original.tasks(), task, server);
                     var channel = new DeploymentNativeDatabaseChannel(session, original.interaction(), server,
                         task);
-                    assertEquals(Outcome.UNKNOWN,
+                    assertEquals(TaskResult.UNKNOWN,
                         channel.start(original.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64))
                             .outcome());
-                    var journal = DeploymentNativeDatabaseJournal.find(original.tasks(), task).orElseThrow();
+                    var journal = DeploymentNativeDatabaseActionLog.find(original.tasks(), task).orElseThrow();
                     assertEquals("DISPATCHED", journal.facts().phase());
-                    var prior = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentReferenceFlow.TASK_TYPE,
+                    var prior = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentRefFlow.TASK_TYPE,
                         TaskState.RUNNING, Optional.empty(), "", Instant.now(), Optional.empty(),
                         List.of());
-                    var reconciled = new DeploymentStaticTaskRecovery(bound, new DeploymentReferenceFlow(bound))
+                    var reconciled = new DeploymentStaticTaskRecovery(bound, new DeploymentRefFlow(bound))
                         .reconcile(prior, task);
-                    assertEquals(Outcome.FAILED, reconciled.outcome(),
+                    assertEquals(TaskResult.FAILED, reconciled.outcome(),
                         reconciled + " status=" + observedStatus.get());
                     assertTrue(journal.facts().effectsObserved());
                     assertTrue(original.tasks().resourcesReleased(task));
                 } catch (Throwable failure) {
                     callbackFailure.set(failure);
                 }
-                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             });
             for (int attempt = 0; attempt < 100 && callbackFailure.get() == null
                 && handle.snapshot().state() != TaskState.ENDED; attempt++)
                 Thread.sleep(50);
             if (callbackFailure.get() != null)
                 throw new AssertionError("Original native DB recovery failed", callbackFailure.get());
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(1, starts.get());
             assertEquals(1, statuses.get());
@@ -291,8 +298,8 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
         }
     }
 
-    private ServerRef saved(PlatformRuntime runtime) throws Exception {
-        var server = new ServerRef("database-server");
+    private ServerId saved(PlatformRuntime runtime) throws Exception {
+        var server = new ServerId("database-server");
         runtime.servers().saveServerProfile(
             ServerProfile
                 .fromStored(new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
@@ -316,7 +323,7 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
     }
 
     private static OperationResult<CommandResult> reply(String stdout) {
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
     }
 

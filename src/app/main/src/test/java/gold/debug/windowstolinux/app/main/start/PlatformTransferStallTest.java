@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformRemoteCapabilitiesTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,7 +14,14 @@ import java.util.concurrent.atomic.*;
 import gold.debug.windowstolinux.app.service.linux.PlatformLinuxService;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
-
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
@@ -56,7 +59,7 @@ class PlatformTransferStallTest {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
-            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferConfiguration(5, 1));
+            runtime.transfers().save(new gold.debug.windowstolinux.app.service.setting.TransferConfig(5, 1));
             var offsets = new CopyOnWriteArrayList<Long>();
             stallWrites(remote, 2, offsets);
             var reviews = new Reviews();
@@ -74,7 +77,7 @@ class PlatformTransferStallTest {
                 assertEquals(Duration.ofSeconds(prompts.get() < 2 ? 1 : 3), stall.idleTimeout());
                 if (prompts.get() == 0)
                     assertDoesNotThrow(() -> runtime.transfers()
-                        .save(new gold.debug.windowstolinux.app.service.linux.TransferConfiguration(5, 3)));
+                        .save(new gold.debug.windowstolinux.app.service.setting.TransferConfig(5, 3)));
                 assertEquals(remote.authentications.get(), prompts.incrementAndGet());
                 if (identity.get() == null)
                     identity.set(stall.progress().transferId());
@@ -97,7 +100,7 @@ class PlatformTransferStallTest {
                             RemoteActions.transfer(SERVER, "original", request, digest(new byte[100000]), true),
                             context).value().orElseThrow();
                         var result = session.upload(request, grant);
-                        assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                        assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                         assertTrue(linux.pendingTransfers(context).isEmpty());
                         stallWrites(remote, 1, new CopyOnWriteArrayList<>());
                         var next = new TransferRequest(local, "/next", 100000);
@@ -105,13 +108,13 @@ class PlatformTransferStallTest {
                             .approve(RemoteActions.transfer(SERVER, "next", next, digest(new byte[100000]), true),
                                 context)
                             .value().orElseThrow();
-                        assertEquals(Outcome.SUCCEEDED, session.upload(next, nextGrant).outcome());
+                        assertEquals(TaskResult.SUCCEEDED, session.upload(next, nextGrant).outcome());
                         assertEquals(2, count(runtime.persistence().database(),
                             "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE'"));
                         return result;
                     }
                 });
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     task.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
                 assertEquals(3, prompts.get());
                 assertEquals(4, remote.authentications.get());
@@ -133,7 +136,7 @@ class PlatformTransferStallTest {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
-            runtime.transfers().save(new gold.debug.windowstolinux.app.service.linux.TransferConfiguration(5, 1));
+            runtime.transfers().save(new gold.debug.windowstolinux.app.service.setting.TransferConfig(5, 1));
             stallWrites(remote, 1, new CopyOnWriteArrayList<>());
             var reviews = new Reviews();
             var prompts = new AtomicInteger();
@@ -156,13 +159,13 @@ class PlatformTransferStallTest {
                             RemoteActions.transfer(SERVER, "original", request, digest(new byte[100000]), true),
                             context).value().orElseThrow();
                         var result = session.upload(request, grant);
-                        assertEquals(Outcome.UNKNOWN, result.outcome());
+                        assertEquals(TaskResult.UNKNOWN, result.outcome());
                         assertEquals("SFTP_STALLED", result.problem().orElseThrow().eventCode());
                         return result;
                     }
                 });
                 state(task, TaskState.UNKNOWN);
-                PlatformServerReferenceTest.callbackReturned(runtime, original.get());
+                PlatformServerRefTest.callbackReturned(runtime, original.get());
                 assertEquals(1, prompts.get());
                 assertEquals(1, remote.authentications.get());
                 assertEquals(1, count(runtime.persistence().database(),

@@ -9,7 +9,7 @@ import java.util.Map;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -51,7 +51,7 @@ class DeploymentDatabaseSourceInputsTest {
             db.audit.environmentPrefix=AUDIT
             db.audit.passwordEnvironment=AUDIT_PASSWORD
             """);
-        var assessment = new DatabaseProjectInspector().inspect(root);
+        var assessment = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         assertEquals(List.of("schema.sql"), assessment.sqlCandidates());
         assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
         assertTrue(assessment.databases().getLast().initializationFiles().isEmpty());
@@ -75,7 +75,7 @@ class DeploymentDatabaseSourceInputsTest {
             db.main.passwordEnvironment=MAIN_PASSWORD
             db.main.initialize=missing.sql
             """);
-        var assessment = new DatabaseProjectInspector().inspect(root);
+        var assessment = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         assertEquals(List.of("missing.sql"), assessment.databases().getFirst().initializationFiles());
         assertEquals(List.of(), assessment.sqlCandidates());
         assertFalse(Files.exists(root.resolve("missing.sql")));
@@ -89,7 +89,7 @@ class DeploymentDatabaseSourceInputsTest {
             "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\ndb.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
         Files.write(root.resolve("seed.db"), new byte[]{1, 2, 3});
-        var assessment = new DatabaseProjectInspector().inspect(root);
+        var assessment = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         var completed = DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of());
         assertFalse(completed.unknownDatabase());
         assertEquals("state/store.db", completed.databases().getFirst().sqlite().orElseThrow().accessPath());
@@ -103,7 +103,7 @@ class DeploymentDatabaseSourceInputsTest {
     @Test
     void unknownFamilyRequiresExplicitTwoStepChoiceAndCompleteConnection() throws Exception {
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
-        var assessment = new DatabaseProjectInspector().inspect(root);
+        var assessment = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         assertTrue(assessment.unknownDatabase());
         assertEquals("database.main.engine",
             DeploymentDatabaseSourceInputs.questions(assessment, "demo", Map.of()).getFirst().id());
@@ -124,7 +124,7 @@ class DeploymentDatabaseSourceInputsTest {
     @Test
     void sourceMutationCannotBeDismissedByEmptyInitialization() throws Exception {
         Files.writeString(root.resolve("schema.sql"), "CREATE TABLE sample(id integer);");
-        var assessment = new DatabaseProjectInspector().inspect(root);
+        var assessment = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         assertThrows(IllegalArgumentException.class,
             () -> DeploymentDatabaseSourceInputs.complete(root, "demo", assessment, Map.of("database.main.engine",
                 "SQLITE", "database.main.path", "DEFAULT", "database.main.pathEnvironment", "DATABASE_PATH")));
@@ -139,7 +139,7 @@ class DeploymentDatabaseSourceInputsTest {
         Files.writeString(root.resolve("windowstolinux-db.properties"),
             "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\n"
                 + "db.main.initialize=schema.sql\ndb.main.seed=seed.db\n");
-        var valid = new DatabaseProjectInspector().inspect(root);
+        var valid = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         assertEquals("seed.db", DeploymentDatabaseSourceInputs.complete(root, "demo", valid, Map.of()).databases()
             .getFirst().sqlite().orElseThrow().seedFile());
         Files.writeString(root.resolve("first.sql"), "x".repeat(1_100_000));
@@ -147,7 +147,7 @@ class DeploymentDatabaseSourceInputsTest {
         Files.writeString(root.resolve("windowstolinux-db.properties"),
             "db=main\ndb.main.engine=SQLITE\ndb.main.path=state/store.db\n"
                 + "db.main.initialize=first.sql,second.sql\ndb.main.seed=seed.db\n");
-        var oversized = new DatabaseProjectInspector().inspect(root);
+        var oversized = new DatabaseProjectChecker().inspect(root, (root).getFileName().toString());
         assertThrows(IllegalArgumentException.class,
             () -> DeploymentDatabaseSourceInputs.complete(root, "demo", oversized, Map.of()));
     }

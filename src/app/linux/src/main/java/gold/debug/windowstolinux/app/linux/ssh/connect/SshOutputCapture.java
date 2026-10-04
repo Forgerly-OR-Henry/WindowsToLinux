@@ -4,7 +4,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 
 /** Drains both SSH streams while retaining only a shared bounded prefix. / 持续排空两条 SSH 流，同时只保留共享限额内的前缀。 */
 final class SshOutputCapture {

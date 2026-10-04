@@ -23,7 +23,7 @@ public final class DeploymentAssistedBuildEvidenceAssertions {
         final DeploymentExecutionRecord original;
         try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             assertTrue(rows.next());
-            original = DeploymentExecutionRepository.row(rows);
+            original = DeploymentExecutionStore.row(rows);
             assertFalse(rows.next());
         }
         var request = DeploymentJsonDocument.parse(original.requestJson(), DeploymentExecutionCodec.REQUEST_LIMIT);
@@ -62,7 +62,7 @@ public final class DeploymentAssistedBuildEvidenceAssertions {
                 throw new AssertionError(failure);
             }
         });
-        if (request.path("formatVersion").intValue() == DeploymentExecutionCodec.ASSISTED_GRAPH_VERSION)
+        if (!DeploymentExecutionCodec.singleRequest(request))
             reject(connection, original, node -> {
                 var review = (ObjectNode) node.path("buildReviews").get(0);
                 try {
@@ -161,7 +161,7 @@ public final class DeploymentAssistedBuildEvidenceAssertions {
     private static DeploymentExecutionRecord read(Connection connection) throws Exception {
         try (var statement = connection.createStatement(); var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             assertTrue(rows.next());
-            return DeploymentExecutionRepository.row(rows);
+            return DeploymentExecutionStore.row(rows);
         }
     }
 }

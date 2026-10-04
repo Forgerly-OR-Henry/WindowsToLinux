@@ -1,29 +1,27 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedAdvisor;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedBuildCorrection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
-import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 
 /** Keeps source advice, human review and assisted publication identity within the deterministic workflow. / 在确定性流程内组织来源建议、人工审阅及辅助发布身份。 */
 public final class DeploymentStaticAssistance {
@@ -59,12 +57,12 @@ public final class DeploymentStaticAssistance {
             String phase = failure.context().getOrDefault("recoveryPhase", "BUILD");
             if (!Set.of("BUILD", "ROLLBACK_VERIFIED").contains(phase))
                 throw new IllegalArgumentException("Unsupported fixed correction boundary");
-            var retry = advisor.afterFailure(request.server(), phase, new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.of(failure)),
+            var retry = advisor.afterFailure(request.server(), phase, new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(failure)),
                 request.material().snapshot().sha256(), fields, task);
-            if (!retry.retry()) return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(failure));
+            if (!retry.retry()) return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(failure));
             var answers = reviewer.reviewBuildCorrection(request.server(), request.material().snapshot().sha256(),
                 new Prompt(prompt.componentId(), prompt.applicationId(), prompt.projectType(), values, fields), before, task);
-            if (answers.outcome() != Outcome.SUCCEEDED)
+            if (answers.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(answers.outcome(), Optional.empty(), answers.problem());
             var after = answers.value().orElseThrow();
             var nextValues = new LinkedHashMap<>(values);
@@ -77,16 +75,16 @@ public final class DeploymentStaticAssistance {
             var definition = new DeploymentStaticRuntimeResolver().runtime(prompt.projectType(), nextValues);
             boolean changed = !definition.equals(request.runtime());
             int branch = changed ? 0 : failure.eventCode().equals("DEPLOYMENT_BUILD_COMPATIBLE_FAILURE") ? 1 : -1;
-            if (branch < 0) return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(failure));
+            if (branch < 0) return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(failure));
             var consent = new DeploymentReviewConsent(request.facts().applicationId(), request.server().id(), request.material().snapshot().sha256(), request.archive().sha256(), java.time.Instant.now());
             var corrected = new ReviewedDeploymentRequest(request.server(), request.facts(), request.material(), request.archive(), request.configuration(),
                 request.secretReferences(), request.resources(), definition, request.userAccessUrl(), request.limits(), consent, request.containerDaemonRiskAccepted(), request.experimentalAdapterRiskAccepted());
             var actual = new gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.ReviewedDeploymentPlanner().plan(corrected);
             var checked = new gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner().render(actual, task);
-            if (checked.outcome() != Outcome.SUCCEEDED)
+            if (checked.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
             prior.set(new Answers(Map.copyOf(nextValues), before.files(), before.limits(), before.containerRisk(), before.adapterRisk()));
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new DeploymentAssistedBuildCorrection.Correction(actual, values, nextValues, branch)), Optional.empty());
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new DeploymentAssistedBuildCorrection.Correction(actual, values, nextValues, branch)), Optional.empty());
         };
     }
 
@@ -99,11 +97,11 @@ public final class DeploymentStaticAssistance {
      * @param task original task / 原任务
      * @return checked human answers or original refusal / 已检查人工答案或原拒绝
      * @throws Exception on unknown advice, cancellation or invalid second review / 建议未知、取消或二次审阅无效时 */
-    public OperationResult<Map<String, Answers>> review(ServerRef server, String revision, List<Prompt> prompts,
+    public OperationResult<Map<String, Answers>> review(ServerId server, String revision, List<Prompt> prompts,
                                                         Reviewer reviewer, DeploymentAssistedAdvisor advice, TaskContext task) throws Exception {
         for (int attempt = 0; attempt < 2; attempt++) {
             var reviewed = reviewer.review(server, revision, prompts, task);
-            if (reviewed.outcome() != Outcome.SUCCEEDED)
+            if (reviewed.outcome() != TaskResult.SUCCEEDED)
                 return reviewed;
             var answers = reviewed.value().orElseThrow();
             if (advice != null)
@@ -122,14 +120,14 @@ public final class DeploymentStaticAssistance {
             } catch (IllegalArgumentException invalid) {
                 if (advice == null || attempt != 0)
                     throw invalid;
-                var failure = new OperationResult<Void>(Outcome.FAILED, Optional.empty(),
+                var failure = new OperationResult<Void>(TaskResult.FAILED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_ASSISTED_PREFLIGHT_REJECTED",
                         "Deterministic runtime form rejected the supplied fields", Map.of(),
                         Optional.empty())));
                 var retry = advice.afterFailure(server, "PREFLIGHT", failure, revision,
                     prompts.stream().flatMap(prompt -> prompt.fields().stream()).toList(), task);
                 if (!retry.retry())
-                    return new OperationResult<>(Outcome.FAILED, Optional.empty(), failure.problem());
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(), failure.problem());
                 if (!retry.values().isEmpty())
                     throw new SecurityException("AI cannot replace human runtime answers");
             }
@@ -140,24 +138,24 @@ public final class DeploymentStaticAssistance {
     /** Marks the actual assisted engine and retains unknown source scopes without replaying its author. / 标记真实辅助引擎并保留未知来源作用域，不重放作者。
      * @param prepared original deterministic preparation / 原确定性准备
      * @return same one-shot publication with assisted mode / 带辅助模式的同一次性发布 */
-    public static OperationResult<DeploymentReferenceFlow.PreparedPublication> publication(
-        OperationResult<DeploymentReferenceFlow.PreparedPublication> prepared) {
+    public static OperationResult<DeploymentRefFlow.PreparedPublish> publication(
+        OperationResult<DeploymentRefFlow.PreparedPublish> prepared) {
         var ready = prepared.value().orElseThrow();
         var original = ready.plan();
-        var plan = new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublicationPlan(
+        var plan = new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublishPlan(
             original.executionId(), original.project(), original.applicationId(), original.server(),
             gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED,
             original.reviewedRevision(), original.references(), original.createdAt());
-        var result = new java.util.concurrent.atomic.AtomicReference<Outcome>(Outcome.UNKNOWN);
-        var guarded = new DeploymentReferenceFlow.PreparedPublication(plan, task -> {
+        var result = new java.util.concurrent.atomic.AtomicReference<TaskResult>(TaskResult.UNKNOWN);
+        var guarded = new DeploymentRefFlow.PreparedPublish(plan, task -> {
             var actual = ready.author().run(task);
             result.set(actual.outcome());
             return actual;
         }, () -> {
-            if (result.get() != Outcome.UNKNOWN)
+            if (result.get() != TaskResult.UNKNOWN)
                 ready.cleanup().close();
         });
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(guarded), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(guarded), Optional.empty());
     }
 
     /** Adds bounded source-backed proposals only for genuinely missing technical fields. / 仅对真实缺失的技术字段加入有界来源建议。
@@ -168,7 +166,7 @@ public final class DeploymentStaticAssistance {
      * @param task original task / 原任务
      * @return still-human-reviewed prompt / 仍需人工审阅的问题
      * @throws Exception on uncertain source or model evidence / 来源或模型依据不明时 */
-    public Prompt prompt(ServerRef server, Prompt prompt, DeploymentAssistedAdvisor advice,
+    public Prompt prompt(ServerId server, Prompt prompt, DeploymentAssistedAdvisor advice,
                          DeploymentSourceMaterial material, TaskContext task) throws Exception {
         if (advice == null || prompt.fields().stream()
             .noneMatch(field -> field.value().isBlank() && DeploymentAssistedAdvisor.allows(field.id())))
@@ -179,11 +177,11 @@ public final class DeploymentStaticAssistance {
             suggested = advice.preflight(browser, prompt.fields(), Map.of("component", prompt.componentId(),
                 "projectType", prompt.projectType().name(), "sourceRevision", browser.revision()), task);
         } catch (DeploymentAiJson.CapabilityOutcomeException unavailable) {
-            if (unavailable.outcome() == Outcome.UNKNOWN)
+            if (unavailable.outcome() == TaskResult.UNKNOWN)
                 throw new ApiException(unavailable.problem()
                     .orElseGet(() -> new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_ASSISTED_AI_UNKNOWN",
                         "Assisted model result is unknown", Map.of(), Optional.empty())));
-            if (unavailable.outcome() == Outcome.CANCELLED)
+            if (unavailable.outcome() == TaskResult.CANCELLED)
                 throw new CancellationException();
             var problem = unavailable.problem().orElseGet(() -> new Problem(ProblemCode.UNAVAILABLE,
                 "DEPLOYMENT_ASSISTED_AI_UNAVAILABLE", "Assisted model is unavailable", Map.of(), Optional.empty()));
@@ -212,9 +210,9 @@ public final class DeploymentStaticAssistance {
             var review = context.interaction().approve(new ActionIntent("deployment.assisted.unresolved",
                 List.of(server.id()), prompt.componentId(), browser.revision(), detail,
                 "Review unresolved source analysis before the deterministic deployment form"), task);
-            if (review.outcome() == Outcome.UNKNOWN)
+            if (review.outcome() == TaskResult.UNKNOWN)
                 throw new ApiException(review.problem().orElseThrow());
-            if (review.outcome() != Outcome.SUCCEEDED)
+            if (review.outcome() != TaskResult.SUCCEEDED)
                 throw new CancellationException();
         }
         var fields = prompt.fields().stream()

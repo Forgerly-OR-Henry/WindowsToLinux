@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.mod.process;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-
 import static gold.debug.windowstolinux.app.mod.process.ProcessProtocol.Kind;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,6 +10,12 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,12 +43,59 @@ class ProcessChannelTest {
     }
 
     @Test
+    void slowHostCancellationObserverDoesNotDelayRequestTimeout() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var java = Path.of(System.getProperty("java.home"), "bin", "java.exe");
+        var child = new ProcessBuilder(java.toString(), "-cp", System.getProperty("java.class.path"),
+            Child.class.getName(), "hold", root.toString()).start();
+        var capture = new Capture();
+        var observer = new ProcessChannel.Observer() {
+            public boolean cancellationRequested() {
+                entered.countDown();
+                try {
+                    if (!release.await(8, TimeUnit.SECONDS)) throw new IllegalStateException("fixture timeout");
+                } catch (InterruptedException failure) {
+                    throw new IllegalStateException(failure);
+                }
+                return false;
+            }
+
+            public void diagnostic(String text, boolean truncated) {
+                capture.diagnostic(text, truncated);
+            }
+
+            public void failure(Problem problem, boolean uncertain) {
+                capture.failure(problem, uncertain);
+            }
+
+            public void waiting(boolean acknowledged) {
+                capture.waiting(acknowledged);
+            }
+        };
+        try (var channel = new ProcessChannel(child, UUID.randomUUID(), UUID.randomUUID(), observer)) {
+            channel.handshake("example.owner", "1", DEADLINE);
+            assertTrue(entered.await(3, TimeUnit.SECONDS));
+            assertEquals(TaskResult.UNKNOWN, channel.request(REQUEST, Duration.ofMillis(100))
+                .toCompletableFuture().get(3, TimeUnit.SECONDS).outcome());
+            release.countDown();
+        } finally {
+            release.countDown();
+            if (child.isAlive()) {
+                Files.writeString(root.resolve("release"), "finish");
+                child.waitFor(8, TimeUnit.SECONDS);
+            }
+            assertFalse(child.isAlive());
+        }
+    }
+
+    @Test
     void actualChildHandshakeRequestResultAndStopReleasePipes() throws Exception {
         try (var running = launch("normal")) {
             assertThrows(ApiException.class, () -> running.channel.request(REQUEST, DEADLINE));
             running.channel.handshake("example.owner", "1.2.3", DEADLINE);
             var result = running.channel.request(REQUEST, DEADLINE).toCompletableFuture().get(5, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals("{\"accepted\":true}", result.value().orElseThrow().jsonObject());
             assertFalse(running.channel.exitCode().toCompletableFuture().isDone());
             running.channel.close();
@@ -68,7 +114,7 @@ class ProcessChannelTest {
             running.channel.handshake("example.owner", "1", DEADLINE);
             var result = running.channel.request(REQUEST, Duration.ofMillis(80)).toCompletableFuture().get(3,
                 TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertTrue(running.capture.uncertain.get());
             running.channel.requestCancel();
             running.channel.requestCancel();
@@ -87,6 +133,82 @@ class ProcessChannelTest {
     }
 
     @Test
+    void blockingResultContinuationDoesNotBlockProtocolReadsOrAnotherDeadline() throws Exception {
+        for (String mode : List.of("gated", "gated-hold-second")) {
+            var release = new CountDownLatch(1);
+            var entered = new CountDownLatch(1);
+            try (var running = launch(mode)) {
+                running.channel.handshake("example.owner", "1", DEADLINE);
+                var first = running.channel.request(REQUEST, DEADLINE).thenAccept(result -> {
+                    entered.countDown();
+                    try {
+                        assertTrue(release.await(8, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new CompletionException(interrupted);
+                    }
+                });
+                Files.writeString(root.resolve("respond"), "continue");
+                assertTrue(entered.await(3, TimeUnit.SECONDS));
+                var second = running.channel.request(REQUEST, Duration.ofMillis(200)).toCompletableFuture().get(3, TimeUnit.SECONDS);
+                assertEquals(mode.equals("gated") ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN, second.outcome());
+                release.countDown();
+                first.toCompletableFuture().get(3, TimeUnit.SECONDS);
+            } finally {
+                release.countDown();
+                Files.deleteIfExists(root.resolve("respond"));
+            }
+        }
+    }
+
+    @Test
+    void resultContinuationCanCloseTheOriginalProcessWithoutWaitingForItself() throws Exception {
+        try (var running = launch("gated")) {
+            running.channel.handshake("example.owner", "1", DEADLINE);
+            var closed = running.channel.request(REQUEST, DEADLINE).thenApply(result -> {
+                try {
+                    running.channel.close();
+                    return result.outcome();
+                } catch (ApiException failure) {
+                    throw new CompletionException(failure);
+                }
+            });
+            Files.writeString(root.resolve("respond"), "continue");
+            assertEquals(TaskResult.SUCCEEDED, closed.toCompletableFuture().get(5, TimeUnit.SECONDS));
+            assertFalse(running.child.isAlive());
+        }
+    }
+
+    @Test
+    void activeContinuationsRemainBoundedAfterProtocolResultsHaveArrived() throws Exception {
+        var release = new CountDownLatch(1);
+        var entered = new CountDownLatch(32);
+        try (var running = launch("gated")) {
+            running.channel.handshake("example.owner", "1", DEADLINE);
+            var callbacks = new ArrayList<CompletionStage<Void>>();
+            for (int i = 0; i < 32; i++)
+                callbacks.add(running.channel.request(REQUEST, DEADLINE).thenAccept(result -> {
+                    entered.countDown();
+                    try {
+                        assertTrue(release.await(8, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new CompletionException(interrupted);
+                    }
+                }));
+            Files.writeString(root.resolve("respond"), "continue");
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            assertEquals(ProblemCode.BUSY, assertThrows(ApiException.class,
+                () -> running.channel.request(REQUEST, DEADLINE)).problem().code());
+            running.channel.close();
+            release.countDown();
+            for (var callback : callbacks) callback.toCompletableFuture().get(3, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
     void thirtyTwoUnsettledRequestsBoundAdmissionAndEofKeepsThemUnknown() throws Exception {
         try (var running = launch("hold")) {
             running.channel.handshake("example.owner", "1", DEADLINE);
@@ -98,7 +220,7 @@ class ProcessChannelTest {
                     .code());
             running.channel.close();
             for (var request : requests)
-                assertEquals(Outcome.UNKNOWN, request.get(3, TimeUnit.SECONDS).outcome());
+                assertEquals(TaskResult.UNKNOWN, request.get(3, TimeUnit.SECONDS).outcome());
         }
     }
 
@@ -131,7 +253,7 @@ class ProcessChannelTest {
                 running.channel.handshake("example.owner", "1", DEADLINE);
                 var result = running.channel.request(REQUEST, DEADLINE).toCompletableFuture().get(5, TimeUnit.SECONDS);
                 assertEquals(
-                    mode.equals("conflicting") || mode.equals("duplicate") ? Outcome.SUCCEEDED : Outcome.UNKNOWN,
+                    mode.equals("conflicting") || mode.equals("duplicate") ? TaskResult.SUCCEEDED : TaskResult.UNKNOWN,
                     result.outcome());
                 if (!mode.equals("duplicate"))
                     await(() -> !running.capture.problems.isEmpty());
@@ -186,7 +308,7 @@ class ProcessChannelTest {
     void stderrFloodIsConsumedAndAggregatedWithoutBlockingProtocol() throws Exception {
         try (var running = launch("stderr")) {
             running.channel.handshake("example.owner", "1", DEADLINE);
-            assertEquals(Outcome.SUCCEEDED, running.channel.request(REQUEST, DEADLINE).toCompletableFuture()
+            assertEquals(TaskResult.SUCCEEDED, running.channel.request(REQUEST, DEADLINE).toCompletableFuture()
                 .get(5, TimeUnit.SECONDS).outcome());
             running.channel.close();
             assertFalse(running.capture.diagnostics.isEmpty());
@@ -201,7 +323,7 @@ class ProcessChannelTest {
         try (var running = launch("nonzero")) {
             running.channel.handshake("example.owner", "1", DEADLINE);
             var result = running.channel.request(REQUEST, DEADLINE).toCompletableFuture().get(5, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             running.channel.close();
             assertEquals(7, running.channel.exitCode().toCompletableFuture().get());
             assertTrue(running.capture.problems.stream().anyMatch(p -> p.eventCode().equals("PROCESS_EXIT_NONZERO")));
@@ -275,6 +397,7 @@ class ProcessChannelTest {
             });
             String mode = args[0];
             Path root = Path.of(args[1]);
+            int requests = 0;
             while (true) {
                 var input = ProcessProtocol.read(System.in);
                 if (input.isEmpty())
@@ -292,6 +415,10 @@ class ProcessChannelTest {
                             Thread.sleep(10);
                 } else if (frame.kind() == Kind.REQUEST) {
                     event(root, "REQUEST");
+                    requests++;
+                    if (mode.startsWith("gated"))
+                        while (!Files.exists(root.resolve("respond"))) Thread.sleep(10);
+                    if (mode.equals("gated-hold-second") && requests > 1) continue;
                     if (mode.equals("hold"))
                         continue;
                     if (mode.equals("stderr")) {

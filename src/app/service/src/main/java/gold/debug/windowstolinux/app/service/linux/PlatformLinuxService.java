@@ -1,38 +1,56 @@
 package gold.debug.windowstolinux.app.service.linux;
 
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.server.ServerProfileRepository;
-
-import gold.debug.windowstolinux.app.linux.sftp.TransferJournal;
+import gold.debug.windowstolinux.app.db.server.ServerProfileStore;
+import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.linux.sftp.TransferActionLog;
 import gold.debug.windowstolinux.app.linux.sftp.TransferPlan;
 import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
 import gold.debug.windowstolinux.app.linux.ssh.connect.SshEndpoint;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.app.service.setting.TransferConfig;
+import gold.debug.windowstolinux.app.service.setting.TransferSettingsService;
 import gold.debug.windowstolinux.app.service.task.*;
+import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.app.db.server.StoredServerIdentity;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Adapts saved servers and reviewed effects to actual task-owned SSH resources. / 将已保存服务器及已审核副作用接入真实任务所属 SSH 资源。 */
 public final class PlatformLinuxService implements LinuxService, AutoCloseable {
+    /** Frozen SSH heartbeat and recovery timing configuration. / 冻结的 SSH 心跳及恢复时序配置。 */
+    private final gold.debug.windowstolinux.app.config.AppConfig.Ssh timing;
+
     /** Authentic task and resource coordinator. / 真实任务及资源协调器。 */
     private final PlatformTaskRuntime tasks;
 
@@ -40,7 +58,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     private final DesktopSecurityService security;
 
     /** Platform-owned connection metadata and host trust. / 平台所属连接元数据及主机信任。 */
-    private final ServerProfileRepository servers;
+    private final ServerProfileStore servers;
 
     /** Same caller's human review capability. / 同一调用方的人工审核能力。 */
     private final PlatformInteractionService interaction;
@@ -71,8 +89,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @return actual result / 实际结果
      * @throws java.io.IOException if file I/O fails / 文件 I/O 失败时
      * @throws ApiException if task, connection or cleanup fails / 任务、连接或清理失败时 */
-    public <T> T withFiles(ServerRef server, TaskContext task,
-                           gold.debug.windowstolinux.app.service.file.FileBackendAccess.Work<T> work)
+    public <T> T withFiles(ServerId server, TaskContext task,
+                           gold.debug.windowstolinux.app.service.file.check.FileBackendAccess.Work<T> work)
         throws java.io.IOException, ApiException {
         worker();
         if (fileSession.get() != null)
@@ -110,9 +128,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param task original task / 原任务
      * @return actual transfer mapping / 实际传输映射
      * @throws ApiException if facts, approval or transfer fail / 事实、审批或传输失败时 */
-    public gold.debug.windowstolinux.appapi.file.FileReport.Item transferFile(
-        gold.debug.windowstolinux.appapi.file.FileInfo source, gold.debug.windowstolinux.appapi.file.FilePath target,
-        Optional<gold.debug.windowstolinux.appapi.file.FileInfo> expectedTarget, TaskContext task) throws ApiException {
+    public gold.debug.windowstolinux.appapi.file.action.FileReport.Item transferFile(
+        gold.debug.windowstolinux.appapi.file.model.FileInfo source, gold.debug.windowstolinux.appapi.file.model.FilePath target,
+        Optional<gold.debug.windowstolinux.appapi.file.model.FileInfo> expectedTarget, TaskContext task) throws ApiException {
         var session = fileSession.get();
         if (session == null || session.task != task || session.fileOwner != Thread.currentThread())
             throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_SCOPE", "Transfer requires its original file scope");
@@ -128,7 +146,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             var sourceBackend = upload ? new gold.debug.windowstolinux.app.file.LocalFileBackend() : backend;
             var current = new gold.debug.windowstolinux.app.file.FileEngine(sourceBackend)
                 .inspect(source.requested(), false, tasks.operationCancellation(task));
-            if (!gold.debug.windowstolinux.appapi.file.FileActions.stamp(current).equals(gold.debug.windowstolinux.appapi.file.FileActions.stamp(source)))
+            if (!gold.debug.windowstolinux.appapi.file.action.FileActions.stamp(current).equals(gold.debug.windowstolinux.appapi.file.action.FileActions.stamp(source)))
                 throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_SOURCE_CHANGED", "Source changed after planning");
             var digest = java.security.MessageDigest.getInstance("SHA-256");
             try (var input = sourceBackend.read(source.actual())) {
@@ -148,14 +166,14 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             verifyFileTarget(session);
             var intent = RemoteActions.transfer(session.server, "file-v1", request, sha, upload, choice);
             var approval = interaction.approve(intent, task);
-            if (approval.outcome() != Outcome.SUCCEEDED || approval.value().isEmpty())
-                return new gold.debug.windowstolinux.appapi.file.FileReport.Item(source.actual(), Optional.of(target), Outcome.FAILED, "Transfer was not approved");
+            if (approval.outcome() != TaskResult.SUCCEEDED || approval.value().isEmpty())
+                return new gold.debug.windowstolinux.appapi.file.action.FileReport.Item(source.actual(), Optional.of(target), TaskResult.FAILED, "Transfer was not approved");
             var result = upload ? session.upload(request, approval.value().orElseThrow(), choice)
                 : session.download(request, approval.value().orElseThrow(), choice);
-            Optional<gold.debug.windowstolinux.appapi.file.FilePath> actual = result.value().map(value -> upload
-                ? gold.debug.windowstolinux.appapi.file.FilePath.remote(session.server, value.remoteAbsolutePath())
-                : gold.debug.windowstolinux.appapi.file.FilePath.local(value.localPath()));
-            return new gold.debug.windowstolinux.appapi.file.FileReport.Item(source.actual(), actual.or(() -> Optional.of(target)),
+            Optional<gold.debug.windowstolinux.appapi.file.model.FilePath> actual = result.value().map(value -> upload
+                ? gold.debug.windowstolinux.appapi.file.model.FilePath.remote(session.server, value.remoteAbsolutePath())
+                : gold.debug.windowstolinux.appapi.file.model.FilePath.local(value.localPath()));
+            return new gold.debug.windowstolinux.appapi.file.action.FileReport.Item(source.actual(), actual.or(() -> Optional.of(target)),
                 result.outcome(), result.problem().map(Problem::eventCode).orElse("Verified and published"));
         } catch (java.io.IOException | java.security.NoSuchAlgorithmException failure) {
             throw error(ProblemCode.IO_FAILURE, "FILE_TRANSFER_FACTS", "Transfer facts could not be verified");
@@ -171,12 +189,12 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         var expected = fileTarget.get();
         if (expected == null) return;
         try {
-            gold.debug.windowstolinux.app.file.FileBackend backend = expected.path().server().isPresent()
+            gold.debug.windowstolinux.app.file.model.FileBackend backend = expected.path().server().isPresent()
                 ? new gold.debug.windowstolinux.app.linux.sftp.SftpFileBackend(session.connection.fileChannel(), session.server)
                 : new gold.debug.windowstolinux.app.file.LocalFileBackend();
             var actual = backend.stat(expected.path());
-            if (!actual.map(gold.debug.windowstolinux.appapi.file.FileActions::stamp)
-                .equals(expected.observation().map(gold.debug.windowstolinux.appapi.file.FileActions::stamp)))
+            if (!actual.map(gold.debug.windowstolinux.appapi.file.action.FileActions::stamp)
+                .equals(expected.observation().map(gold.debug.windowstolinux.appapi.file.action.FileActions::stamp)))
                 throw error(ProblemCode.ACCESS_DENIED, "FILE_TRANSFER_TARGET_CHANGED", "Selected target changed after planning");
         } catch (java.io.IOException failure) {
             throw error(ProblemCode.IO_FAILURE, "FILE_TRANSFER_TARGET", "Target facts could not be read");
@@ -186,8 +204,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     /** Frozen collision observation. / 冻结冲突观测。
      * @param path actual target / 实际目标
      * @param observation prior object or absence / 原对象或不存在 */
-    private record FileTarget(gold.debug.windowstolinux.appapi.file.FilePath path,
-                              Optional<gold.debug.windowstolinux.appapi.file.FileInfo> observation) {
+    private record FileTarget(gold.debug.windowstolinux.appapi.file.model.FilePath path,
+                              Optional<gold.debug.windowstolinux.appapi.file.model.FileInfo> observation) {
     }
 
     /** Rejects new work after host shutdown begins. / 宿主开始关闭后拒绝新工作。 */
@@ -204,8 +222,25 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param settings shared persisted threshold owner / 共用持久阈值所有者
      */
     public PlatformLinuxService(PlatformTaskRuntime tasks, DesktopSecurityService security,
-                                ServerProfileRepository servers, PlatformInteractionService interaction, String owner, String version,
+                                ServerProfileStore servers, PlatformInteractionService interaction, String owner, String version,
                                 TransferSettingsService settings) {
+        this(tasks, security, servers, interaction, owner, version, settings, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ssh());
+    }
+
+    /** Captures the startup configuration. / 捕获启动配置。
+     * @param tasks supplied startup dependency / 启动依赖
+     * @param security supplied startup dependency / 启动依赖
+     * @param servers supplied startup dependency / 启动依赖
+     * @param interaction supplied startup dependency / 启动依赖
+     * @param owner supplied startup dependency / 启动依赖
+     * @param version supplied startup dependency / 启动依赖
+     * @param settings supplied startup dependency / 启动依赖
+     * @param timing supplied startup dependency / 启动依赖
+     */
+    public PlatformLinuxService(PlatformTaskRuntime tasks, DesktopSecurityService security,
+                                ServerProfileStore servers, PlatformInteractionService interaction, String owner, String version,
+                                TransferSettingsService settings, gold.debug.windowstolinux.app.config.AppConfig.Ssh timing) {
+        this.timing = Objects.requireNonNull(timing);
         this.tasks = Objects.requireNonNull(tasks);
         this.security = Objects.requireNonNull(security);
         this.servers = Objects.requireNonNull(servers);
@@ -223,7 +258,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @throws ApiException if admission, authentication, trust or cleanup fails / 准入、认证、信任或清理失败时
      */
     @Override
-    public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+    public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
         worker();
         tasks.requireServer(task, owner, version, Objects.requireNonNull(server).id());
         var thresholds = thresholds(task);
@@ -261,7 +296,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param task original platform rescue context / 原平台救援上下文
      * @return observed fixed verification outcome / 已观察固定复核结果
      * @throws ApiException if ownership, trust, transport or actual cleanup is unavailable / 归属、信任、传输或实际清理不可用时 */
-    public OperationResult<Void> verifyRecovery(ServerRef server, TaskContext task) throws ApiException {
+    public OperationResult<Void> verifyRecovery(ServerId server, TaskContext task) throws ApiException {
         worker();
         var identity = tasks.requireExecuting(task, owner, version);
         if (!owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)
@@ -269,19 +304,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             throw error(ProblemCode.ACCESS_DENIED, "RESCUE_TASK_REQUIRED",
                 "Fixed rescue verification requires its original host task");
         try (var session = (Session) connect(server, task)) {
-            var request = new CommandRequest("printf '%s\\n' WTL_SSH_RESCUE_OK", new byte[0], Duration.ofSeconds(15),
-                1024);
-            var result = session.operate(() -> session.connection.execute(request, tasks.operationCancellation(task)));
-            if (result.outcome() != Outcome.SUCCEEDED)
-                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
-            var output = result.value().orElseThrow();
-            if (!output.exitCode().equals(Optional.of(0)) || output.truncated()
-                || !output.stdout().equals("WTL_SSH_RESCUE_OK\n"))
-                return new OperationResult<>(Outcome.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "RESCUE_VERIFICATION_OUTPUT",
-                        "The fixed SSH verification did not produce its expected result", Map.of(),
-                        Optional.empty())));
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+            return session.operate(() -> gold.debug.windowstolinux.app.linux.ssh.recover.RecoveryProbe
+                .verify(session.connection, tasks.operationCancellation(task), Duration.ofSeconds(timing.probeTimeoutSeconds())));
         }
     }
 
@@ -317,10 +341,10 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                             + "\nSSH wire-key fingerprint=" + fingerprint,
                         "Trust this exact SSH host key for the selected saved server after successful authentication.");
                     var decision = interaction.approve(intent, task);
-                    if (decision.outcome() == Outcome.CANCELLED)
+                    if (decision.outcome() == TaskResult.CANCELLED)
                         throw error(ProblemCode.CANCELLED, "SSH_TRUST_CANCELLED",
                             "SSH host trust review was cancelled");
-                    if (decision.outcome() != Outcome.SUCCEEDED)
+                    if (decision.outcome() != TaskResult.SUCCEEDED)
                         return false;
                     interaction.consume(decision.value().orElseThrow(), intent, task);
                     return true;
@@ -366,7 +390,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 if (!resource.exclusive() || !metadata.protocol().equals("sftp.v1"))
                     throw new IllegalArgumentException("Unknown transfer resource protocol");
                 var fields = new TreeMap<>(metadata.fields());
-                var server = new ServerRef(Objects.requireNonNull(fields.remove("serverId")));
+                var server = new ServerId(Objects.requireNonNull(fields.remove("serverId")));
                 String fingerprint = Objects.requireNonNull(fields.remove("fingerprint"));
                 var plan = TransferPlan.fromRecoveryFields(fields);
                 if (!resource.id().equals("sftp:" + plan.id()) || !fingerprint.startsWith("SHA256:"))
@@ -385,7 +409,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param server original server identity / 原服务器身份
      * @param fingerprint original authenticated host key / 原已认证主机密钥
      * @param plan exact transport facts / 精确传输事实 */
-    private record RecoveredTransfer(TaskResource resource, ResourceRecovery metadata, ServerRef server,
+    private record RecoveredTransfer(TaskResource resource, ResourceRecovery metadata, ServerId server,
                                      String fingerprint, TransferPlan plan) {
         /** Exposes only facts needed to review the recovery operation. / 仅公开审核恢复操作所需事实。
          * @return public review description / 公开审核描述 */
@@ -449,7 +473,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
     /** Actual session retained independently of author-visible handle delivery. / 独立于作者可见句柄交付保留的实际会话。 */
     private final class Session implements RemoteSession {
         /** Exact saved server identity. / 精确已保存服务器身份。 */
-        private final ServerRef server;
+        private final ServerId server;
 
         /** Original accepted task object. / 原始已接纳任务对象。 */
         private final TaskContext task;
@@ -458,7 +482,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         private final ResourceLease lease;
 
         /** Owns even a failed authentication's retained client. / 即使认证失败也持有被保留的客户端。 */
-        private final SshConnector connector = new SshConnector();
+        private final SshConnector connector = new SshConnector(timing.heartbeatSeconds());
 
         /** Prevents cleanup from racing incomplete handle construction. / 防止清理与尚未完成的句柄构造竞争。 */
         private final AtomicBoolean opening = new AtomicBoolean(true);
@@ -487,7 +511,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @param task original task / 原始任务
          * @param lease durable resource claim / 持久资源申请
          */
-        private Session(ServerRef server, TaskContext task, ResourceLease lease) {
+        private Session(ServerId server, TaskContext task, ResourceLease lease) {
             this.server = server;
             this.task = task;
             this.lease = lease;
@@ -663,9 +687,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         }
 
         /** Owns repeated physical attempts of one reviewed file operation. / 持有一个已审核文件操作的多次物理尝试。 */
-        private final class TransferRun implements TransferJournal {
+        private final class TransferRun implements TransferActionLog {
             /** Original persistence operation, reused only after its prior lease closes. / 原持久化操作，仅在原占用关闭后复用。 */
-            private final TransferJournal journal;
+            private final TransferActionLog journal;
 
             /** Original facts, never inferred from an unverified offset. / 原事实，不从未核验偏移推导。 */
             private TransferPlan plan;
@@ -679,7 +703,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             /** Binds new or original recovery facts to the durable owner. / 将新传输或原恢复事实绑定到持久所有者。
              * @param plan original plan, or null before first preparation / 原计划，首次准备前为 null
              * @param journal original durable ownership gate / 原持久归属门禁 */
-            private TransferRun(TransferPlan plan, TransferJournal journal) {
+            private TransferRun(TransferPlan plan, TransferActionLog journal) {
                 this.plan = plan;
                 this.journal = journal;
             }
@@ -773,7 +797,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                         progress(progress);
                         return null;
                     });
-                TransferJournal ownedJournal = prepared -> prepare.apply(prepared, null);
+                TransferActionLog ownedJournal = prepared -> prepare.apply(prepared, null);
                 gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver resolver = new gold.debug.windowstolinux.app.linux.sftp.TransferConflictResolver() {
                     /** Preserves the actual preplanned collision facts. / 保留实际预计划冲突事实。
                      * @throws ApiException if the planned target observation has changed / 预计划目标观测变化时 */
@@ -810,9 +834,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                         var stallChoice = interaction.transferStalled(
                             new TransferStall(latest, actual, upload, transferTimeout), server, task);
                         if (stallChoice != TransferStallChoice.RETRY || cancellation.requested() || closing)
-                            return result.outcome() == Outcome.UNKNOWN
+                            return result.outcome() == TaskResult.UNKNOWN
                                 ? result
-                                : new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                                : new OperationResult<>(TaskResult.CANCELLED, Optional.empty(),
                                 Optional.of(error(ProblemCode.CANCELLED, "SFTP_TERMINATED",
                                     "Transfer was terminated before file effects").problem()));
                         tasks.requireServer(task, owner, version, server.id());
@@ -824,7 +848,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                         if (fileOwner == Thread.currentThread())
                             fileScope = connection.openFileScope(cancellation);
                     } catch (Exception failure) {
-                        if (result.outcome() == Outcome.UNKNOWN)
+                        if (result.outcome() == TaskResult.UNKNOWN)
                             tasks.reportUncertainEffect(task);
                         if (failure instanceof ApiException known)
                             throw known;
@@ -862,7 +886,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                     throw error(ProblemCode.UNAVAILABLE, "SSH_SESSION_CLOSING", "The owned session is not available");
                 tasks.requireServer(task, owner, version, server.id());
                 var result = work.run();
-                if (result.outcome() == Outcome.UNKNOWN)
+                if (result.outcome() == TaskResult.UNKNOWN)
                     tasks.reportUncertainEffect(task);
                 return result;
             } catch (RuntimeException failure) {
@@ -916,7 +940,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      * @param task original executing task / 原执行任务
      * @return immutable settings for this operation / 本操作不可变设置
      * @throws ApiException if identity or settings are unavailable / 身份或设置不可用时 */
-    private TransferConfiguration thresholds(TaskContext task) throws ApiException {
+    private TransferConfig thresholds(TaskContext task) throws ApiException {
         try {
             return tasks.callbacks().authorized(task, owner, version, settings::read);
         } catch (ApiException failure) {

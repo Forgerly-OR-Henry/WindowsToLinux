@@ -7,9 +7,12 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
-import gold.debug.windowstolinux.app.windows.file.WindowsFilePublication;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.app.windows.file.WindowsFilePublish;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import org.apache.sshd.sftp.client.SftpClient;
 import org.apache.sshd.sftp.client.extensions.openssh.OpenSSHPosixRenameExtension;
 import org.apache.sshd.sftp.common.*;
@@ -91,8 +94,8 @@ final class SftpDestination {
             .requireNonNull(choice.resolve(new TransferConflict(request, upload, size, expected.size())));
         check();
         if (decision == TransferConflictChoice.SKIP)
-            throw new gold.debug.windowstolinux.appapi.task.ApiException(new gold.debug.windowstolinux.appapi.task.Problem(
-                gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE, "SFTP_CONFLICT_SKIPPED",
+            throw new gold.debug.windowstolinux.appapi.task.result.ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE, "SFTP_CONFLICT_SKIPPED",
                 "The conflicting file was not processed by user choice", Map.of(), Optional.empty()));
         if (decision == TransferConflictChoice.OVERWRITE) {
             overwrite = true;
@@ -171,7 +174,7 @@ final class SftpDestination {
         verifyOriginal();
         progress.begin(TransferProgress.Stage.PUBLISHING, -1, 0);
         if (!upload) {
-            WindowsFilePublication.publish(localTemporary(), local, overwrite);
+            WindowsFilePublish.publish(localTemporary(), local, overwrite);
             return;
         }
         if (!overwrite) {

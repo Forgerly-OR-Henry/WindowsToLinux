@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -12,9 +7,12 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,13 +46,13 @@ class TaskArchivalLedgerTest {
             var lease = ledger.retain(id, new TaskResource("CONNECTION", "original", "example.owner", false));
             sql(db, "CREATE TABLE business_receipt(id INT PRIMARY KEY,value_text VARCHAR)");
             sql(db, "INSERT INTO business_receipt VALUES(1,'committed by the business')");
-            var blocked = ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+            var blocked = ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
             });
             assertEquals(TaskState.FINISHING, blocked.state());
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task'"));
             ledger.release(id, lease);
             var cleaned = new AtomicInteger();
-            var ended = ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{\"password\":\"do-not-log\"}", false,
+            var ended = ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{\"password\":\"do-not-log\"}", false,
                 cleaned::incrementAndGet);
             assertEquals(TaskState.ENDED, ended.state());
             assertEquals(1, cleaned.get());
@@ -75,7 +73,7 @@ class TaskArchivalLedgerTest {
             var id = queue(ledger);
             var ended = ledger.cancelAndArchive(id, () -> {
             });
-            assertEquals(Outcome.CANCELLED, ended.outcome().orElseThrow());
+            assertEquals(TaskResult.CANCELLED, ended.outcome().orElseThrow());
             assertEquals(TaskState.ENDED, ended.state());
             assertEquals(0, count(db, "SELECT COUNT(*) FROM platform_task_resource"));
             assertEquals(0, count(db, "SELECT COUNT(*) FROM platform_task"));
@@ -93,7 +91,7 @@ class TaskArchivalLedgerTest {
             assertTrue(ledger.tryStart(id));
             sql(db, "ALTER TABLE runtime_log ADD CONSTRAINT archive_fixture CHECK(category<>'platform_task')");
             original = assertThrows(TaskLedger.FinalizationException.class, () -> ledger.completeAndArchive(id,
-                Outcome.FAILED, "{\"reason\":\"business failed\"}", false, () -> {
+                TaskResult.FAILED, "{\"reason\":\"business failed\"}", false, () -> {
                 })).finalization();
             assertEquals(TaskState.RUNNING, ledger.queries().snapshot(id).state());
             assertEquals(2, count(db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -128,7 +126,7 @@ class TaskArchivalLedgerTest {
             sql(db, "CREATE TABLE retained_fixture(task_id UUID REFERENCES platform_task(task_id))");
             sql(db, "INSERT INTO retained_fixture VALUES('" + id + "')");
             var original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                 })).finalization();
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task'"));
             assertEquals(2, count(db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -148,7 +146,7 @@ class TaskArchivalLedgerTest {
             assertTrue(ledger.tryStart(id));
             sql(db, "ALTER TABLE runtime_log ADD CONSTRAINT archive_fixture CHECK(category<>'platform_task')");
             var original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                 })).finalization();
             sql(db, "ALTER TABLE runtime_log DROP CONSTRAINT archive_fixture");
             try (var other = PlatformDatabase.open(root.resolve("other"), PlatformDatabaseTest.TEST_PROTECTION)) {
@@ -172,7 +170,7 @@ class TaskArchivalLedgerTest {
             assertTrue(ledger.tryStart(id));
             sql(db, "ALTER TABLE runtime_log ADD CONSTRAINT archive_fixture CHECK(category<>'platform_task')");
             var original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                 })).finalization();
             assertTrue(ledger.retainFinalization(original));
             sql(db, "ALTER TABLE runtime_log DROP CONSTRAINT archive_fixture");
@@ -198,9 +196,9 @@ class TaskArchivalLedgerTest {
                 assertTrue(r.next());
                 archive = UUID.fromString(r.getString(1));
             }
-            ledger.completeAndArchive(id, Outcome.SUCCEEDED, "界😀".repeat(12000), false, () -> {
+            ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "界😀".repeat(12000), false, () -> {
             });
-            var logs = new LogRepository(db);
+            var logs = new LogStore(db);
             var target = logs.targets().stream().filter(t -> t.category().equals("platform_task")).findFirst()
                 .orElseThrow();
             var original = logs.read(target).getFirst();
@@ -228,7 +226,7 @@ class TaskArchivalLedgerTest {
             assertTrue(ledger.tryStart(id));
             ledger.progress(id, "\uD800broken");
             var original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                 })).finalization();
             assertTrue(ledger.retainFinalization(original));
             assertEquals(TaskState.FINISHING, ledger.queries().snapshot(id).state());
@@ -243,18 +241,18 @@ class TaskArchivalLedgerTest {
             var ledger = new TaskLedger(db);
             var id = queue(ledger);
             assertTrue(ledger.tryStart(id));
-            assertEquals(TaskState.UNKNOWN, ledger.completeAndArchive(id, Outcome.UNKNOWN, "{}", false, () -> {
+            assertEquals(TaskState.UNKNOWN, ledger.completeAndArchive(id, TaskResult.UNKNOWN, "{}", false, () -> {
             }).state());
             assertTrue(ledger.queries().pendingFinalization(id).isEmpty());
-            assertThrows(SQLException.class, () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+            assertThrows(SQLException.class, () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
             }));
             var lease = ledger.retain(id, new TaskResource("CUSTOM", "retained", "example.owner", false));
-            assertEquals(TaskState.FINISHING, ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", true, () -> {
+            assertEquals(TaskState.FINISHING, ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", true, () -> {
             }).state());
             assertTrue(ledger.queries().pendingFinalization(id).isEmpty());
             assertEquals(0, count(db, "SELECT COUNT(*) FROM runtime_log WHERE category='platform_task'"));
             ledger.release(id, lease);
-            assertEquals(TaskState.ENDED, ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", true, () -> {
+            assertEquals(TaskState.ENDED, ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", true, () -> {
             }).state());
         }
     }

@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.main;
 
-import gold.debug.windowstolinux.app.main.start.DesktopMain;
+import gold.debug.windowstolinux.app.main.start.ApplicationLauncher;
 
 /**
  * WindowsToLinux desktop application entrypoint.
@@ -23,6 +23,6 @@ public final class AppMain {
      * @param arguments literal arguments passed to the fixed command or message template / 传给固定命令或消息模板的字面参数
      */
     public static void main(String[] arguments) {
-        DesktopMain.launch(arguments);
+        ApplicationLauncher.launch(arguments);
     }
 }

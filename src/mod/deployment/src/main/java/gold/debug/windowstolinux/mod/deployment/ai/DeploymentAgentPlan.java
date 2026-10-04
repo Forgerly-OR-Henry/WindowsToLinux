@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.mod.deployment.ai;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationEntry;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigEntry;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Evidence-backed neutral application graph proposed by the autonomous model. / 自主模型提出、由证据支持的中立应用图。
@@ -11,7 +11,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
  * @param health independently reviewed whole probe / 独立审阅整图探测
  * @param components complete bounded graph / 完整有界图 */
 public record DeploymentAgentPlan(String applicationId, String healthComponentId, DeploymentHealthCheck health,
-                                  List<Component> components) {
+                                  List<Part> components) {
     /** One planned component before real managed identity is reserved. / 预留真实受管身份前的一项计划组件。
      * @param id component identity / 组件身份
      * @param dependencies required predecessors / 必需前驱
@@ -19,9 +19,9 @@ public record DeploymentAgentPlan(String applicationId, String healthComponentId
      * @param runtime reviewed neutral runtime / 已审阅中立运行定义
      * @param resources explicit managed resource bindings / 明确受管资源绑定
      * @param configuration typed nonsecret runtime values / 类型化不含秘密运行值 */
-    public record Component(String id, List<String> dependencies, List<String> evidence,
-                            DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources,
-                            List<DeploymentConfigurationEntry> configuration) {
+    public record Part(String id, List<String> dependencies, List<String> evidence,
+                       DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources,
+                       List<DeploymentConfigEntry> configuration) {
         /** Copies and validates one component. / 复制并校验一个组件。
          * @param id component identity / 组件身份
          * @param dependencies predecessors / 前驱
@@ -29,7 +29,7 @@ public record DeploymentAgentPlan(String applicationId, String healthComponentId
          * @param runtime typed runtime / 类型化运行定义
          * @param resources reviewed resources / 经审阅资源
          * @param configuration typed values / 类型化值 */
-        public Component {
+        public Part {
             if (!Objects.requireNonNull(id).matches("[a-z0-9][a-z0-9-]{0,62}"))
                 throw new IllegalArgumentException("Invalid agent component ID");
             dependencies = List.copyOf(dependencies);

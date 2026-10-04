@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -14,11 +10,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
@@ -35,7 +33,7 @@ class DeploymentBuildCorrectionPageTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
-            var workflow = new DeploymentStaticWorkflow(context, new DeploymentReferenceFlow(context));
+            var workflow = new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context));
             SwingUtilities.invokeAndWait(() -> {
                 var actual = new DeploymentStaticPage(new DeploymentStaticPageService(context, workflow));
                 var owner = new JFrame("Actual four-field build correction");
@@ -79,7 +77,7 @@ class DeploymentBuildCorrectionPageTest extends DeploymentRuntimeFixture {
                 new TaskRequest("build-correction-page-test", "Original build correction", List.of(), true),
                 task -> {
                     var result = new DeploymentStaticPageReviewer(page.get(), page.get().viewGeneration())
-                        .reviewBuildCorrection(new ServerRef("reviewed-server"), "a".repeat(64), prompt,
+                        .reviewBuildCorrection(new ServerId("reviewed-server"), "a".repeat(64), prompt,
                             original, task);
                     observed.set(result);
                     return result;
@@ -109,7 +107,7 @@ class DeploymentBuildCorrectionPageTest extends DeploymentRuntimeFixture {
                 throw new AssertionError(
                     "Original correction task=" + handle.snapshot() + "; callback=" + observed.get(), failed);
             }
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.problem().toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
             var corrected = result.value().orElseThrow();
             assertEquals(expected, corrected.values());
             assertEquals(original.files(), corrected.files());

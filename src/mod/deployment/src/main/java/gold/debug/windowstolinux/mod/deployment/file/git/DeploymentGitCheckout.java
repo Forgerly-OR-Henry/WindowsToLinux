@@ -1,14 +1,14 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.function.BooleanSupplier;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Fetches one exact ref, validates tree features and checks out its immutable commit. / 抓取一个精确引用、验证树特性并检出不可变提交。 */
 final class DeploymentGitCheckout {
@@ -40,16 +40,16 @@ final class DeploymentGitCheckout {
             "--template=" + control.resolve("template")), 16384);
         commands.run(List.of("remote", "add", "origin", request.remote().location().toString()), 16384);
         String ref = switch (request.reference()) {
-            case DeploymentGitReference.DefaultBranch ignored -> "HEAD";
-            case DeploymentGitReference.Branch branch -> "refs/heads/" + branch.value();
-            case DeploymentGitReference.Tag tag -> "refs/tags/" + tag.value();
-            case DeploymentGitReference.Commit commit -> commit.value();
+            case DeploymentGitRef.DefaultBranch ignored -> "HEAD";
+            case DeploymentGitRef.Branch branch -> "refs/heads/" + branch.value();
+            case DeploymentGitRef.Tag tag -> "refs/tags/" + tag.value();
+            case DeploymentGitRef.Commit commit -> commit.value();
         };
         fetch(commands, ref, cancelled);
         String commit = new String(commands.run(List.of("rev-parse", "--verify", "FETCH_HEAD^{commit}"), 16384),
             StandardCharsets.UTF_8).trim();
         if (!commit.matches("[0-9a-f]{40}")
-            || request.reference() instanceof DeploymentGitReference.Commit exact && !exact.value().equals(commit))
+            || request.reference() instanceof DeploymentGitRef.Commit exact && !exact.value().equals(commit))
             throw new IOException("Git did not resolve the original exact commit");
         List<String> attributes = tree(
             commands.run(List.of("ls-tree", "-rz", "--full-tree", commit), 32 * 1024 * 1024));

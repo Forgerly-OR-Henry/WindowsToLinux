@@ -6,15 +6,15 @@ import java.util.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /** Journals one actual activation without changing the user's enabled flag or version selection. / 记录一次实际启用，不改变用户开关或版本选择。 */
 public final class ModActivationLedger {
     /** Serialized platform transactions shared with task admission. / 与任务准入共用的串行平台事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Exact current engine boot. / 精确当前引擎启动身份。 */
     private final UUID boot;
@@ -46,7 +46,7 @@ public final class ModActivationLedger {
      * @param schema selected data generation / 选定数据代次 */
     public ModActivationLedger(PlatformDatabase database, String owner, String version,
                                Optional<SchemaIdentity> schema) {
-        connections = new RepositoryConnections(database::openConnection);
+        connections = new StoreConnections(database::openConnection);
         boot = database.bootId();
         this.owner = Objects.requireNonNull(owner);
         this.version = Objects.requireNonNull(version);
@@ -253,8 +253,8 @@ public final class ModActivationLedger {
      * @return transactional refusal with public evidence / 携带公开证据的事务拒绝 */
     private SQLException denied(String message) {
         return new SQLException(message,
-            new gold.debug.windowstolinux.appapi.task.ApiException(
-                new Problem(gold.debug.windowstolinux.appapi.task.ProblemCode.BUSY, "MOD_ACTIVATION_BLOCKED",
+            new gold.debug.windowstolinux.appapi.task.result.ApiException(
+                new Problem(gold.debug.windowstolinux.appapi.task.result.ProblemCode.BUSY, "MOD_ACTIVATION_BLOCKED",
                     message, Map.of("ownerId", owner), Optional.empty())));
     }
 
@@ -297,7 +297,7 @@ public final class ModActivationLedger {
     private void locked(Write work) throws SQLException {
         connections.transaction(() -> {
             try (var connection = connections.open()) {
-                RepositoryConnections.lockPlatformState(connection);
+                StoreConnections.lockPlatformState(connection);
                 try (var query = connection.prepareStatement("SELECT boot_id FROM app_state WHERE singleton_id=1");
                      var row = query.executeQuery()) {
                     if (!row.next() || !boot.equals(row.getObject(1, UUID.class)))

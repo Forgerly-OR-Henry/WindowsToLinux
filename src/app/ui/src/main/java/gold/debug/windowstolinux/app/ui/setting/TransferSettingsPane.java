@@ -5,10 +5,10 @@ import java.util.Objects;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.linux.TransferConfiguration;
-import gold.debug.windowstolinux.app.service.linux.TransferSettingsService;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.service.setting.TransferConfig;
+import gold.debug.windowstolinux.app.service.setting.TransferSettingsService;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Permanent platform threshold editor with persistence-confirmed values. / 使用持久化已确认值的常驻平台阈值编辑器。 */
@@ -32,7 +32,7 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
     private final JLabel status = new JLabel();
 
     /** Last successfully loaded or saved pair, never an unconfirmed edit. / 最后成功读取或保存的设置对，不是未确认编辑。 */
-    private TransferConfiguration confirmed;
+    private TransferConfig confirmed;
 
     /** Current privacy, operation and view lifetime state. / 当前隐私、操作及视图寿命状态。 */
     private boolean locked = true, busy, closed;
@@ -41,7 +41,7 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
      * @param service real preference owner / 真实偏好所有者
      * @param components themed platform controls / 主题平台控件
      * @param messages localized feedback / 本地化反馈 */
-    public TransferSettingsPane(TransferSettingsService service, DesktopComponentFactory components,
+    public TransferSettingsPane(TransferSettingsService service, DesktopPartFactory components,
                                 PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
@@ -103,16 +103,16 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
         busy = true;
         controls();
         status.setText(messages.text("transfer.settings.loading"));
-        DesktopTaskExecutor.run(service::read, value -> completed(value, "transfer.settings.loaded"), this::failed);
+        DesktopTaskRunner.run(service::read, value -> completed(value, "transfer.settings.loaded"), this::failed);
     }
 
     /** Validates editable seconds before scheduling one atomic save. / 调度一次原子保存前校验可编辑秒数。 */
     private void save() {
         if (locked || busy || closed || confirmed == null)
             return;
-        final TransferConfiguration requested;
+        final TransferConfig requested;
         try {
-            requested = new TransferConfiguration(Integer.parseInt(connect.getText().trim()),
+            requested = new TransferConfig(Integer.parseInt(connect.getText().trim()),
                 Integer.parseInt(idle.getText().trim()));
         } catch (IllegalArgumentException invalid) {
             status.setText(messages.text("transfer.settings.invalid"));
@@ -121,14 +121,14 @@ public final class TransferSettingsPane extends JPanel implements AutoCloseable 
         busy = true;
         controls();
         status.setText(messages.text("transfer.settings.saving"));
-        DesktopTaskExecutor.run(() -> service.save(requested), value -> completed(value, "transfer.settings.saved"),
+        DesktopTaskRunner.run(() -> service.save(requested), value -> completed(value, "transfer.settings.saved"),
             this::failed);
     }
 
     /** Publishes only a confirmed read or completed atomic write. / 仅发布已确认读取或已完成原子写入。
      * @param value confirmed stored pair / 已确认存储设置对
      * @param key localized completion message / 本地化完成消息 */
-    private void completed(TransferConfiguration value, String key) {
+    private void completed(TransferConfig value, String key) {
         busy = false;
         if (closed)
             return;

@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.service.mod;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -16,10 +12,13 @@ import java.util.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentModDiscovery;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentModFinder;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Registers verified CLASS builds without enabling them or changing an existing selection. / 登记已核验 CLASS 构建，不启用它们或改变已有单选。 */
 public final class PlatformModCatalog {
@@ -27,25 +26,25 @@ public final class PlatformModCatalog {
     private final UUID boot;
 
     /** Platform transactions serialized with all task admission. / 与全部任务准入串行的平台事务。 */
-    private final RepositoryConnections connections;
+    private final StoreConnections connections;
 
     /** Binds development registration to one actual database boot. / 将开发登记绑定到一次实际数据库启动。
      * @param database owned platform database / 所属平台数据库 */
     public PlatformModCatalog(PlatformDatabase database) {
         boot = database.bootId();
-        connections = new RepositoryConnections(database::openConnection);
+        connections = new StoreConnections(database::openConnection);
     }
 
     /** Current verified build registered for later selection and loading. / 已登记且供后续选择及加载的当前核验构建。
      * @param candidate exact discovered source / 精确发现来源
      * @param contentDigest digest of actual compiled content and build evidence / 实际编译内容及构建证据摘要 */
-    public record Build(DevelopmentModDiscovery.Candidate candidate, String contentDigest) {
+    public record Build(DevelopmentModFinder.Candidate candidate, String contentDigest) {
     }
 
     /** Independent registration results, without implying startup success. / 独立登记结果，不暗示启动成功。
      * @param builds admitted current builds / 已准入当前构建
      * @param rejections refused sources and safe reasons / 被拒来源及安全原因 */
-    public record Result(List<Build> builds, List<DevelopmentModDiscovery.Rejection> rejections) {
+    public record Result(List<Build> builds, List<DevelopmentModFinder.Rejection> rejections) {
         /** Copies results before handing them to the lifecycle coordinator. / 向生命周期协调器交付前复制结果。
          * @param builds admitted builds / 已准入构建
          * @param rejections refused sources / 被拒来源 */
@@ -61,7 +60,7 @@ public final class PlatformModCatalog {
      * @throws IOException if workspace discovery itself is unavailable / 工作区发现本身不可用时 */
     public Result refresh(Path workspace) throws IOException {
         requireWorker();
-        var discovered = DevelopmentModDiscovery.scan(workspace);
+        var discovered = DevelopmentModFinder.scan(workspace);
         var builds = new ArrayList<Build>();
         var rejected = new ArrayList<>(discovered.rejections());
         for (var candidate : discovered.candidates()) {
@@ -71,7 +70,7 @@ public final class PlatformModCatalog {
                 register(build);
                 builds.add(build);
             } catch (IOException | SQLException failure) {
-                rejected.add(new DevelopmentModDiscovery.Rejection(candidate.module(), problem(failure, candidate)));
+                rejected.add(new DevelopmentModFinder.Rejection(candidate.module(), problem(failure, candidate)));
             }
         }
         return new Result(builds, rejected);
@@ -84,7 +83,7 @@ public final class PlatformModCatalog {
     public static void verify(Path workspace, Build build) throws IOException {
         requireWorker();
         var before = build.candidate();
-        var current = DevelopmentDescriptor.read(workspace, before.module().resolve("target/wtlmod-development.json"));
+        var current = DevelopmentInfo.read(workspace, before.module().resolve("target/wtlmod-development.json"));
         if (!current.equals(before.descriptor()) || !current.manifest().json().equals(before.manifest().json())
             || !fingerprint(before).equals(build.contentDigest()))
             throw new IOException("The registered CLASS build changed before loading");
@@ -96,7 +95,7 @@ public final class PlatformModCatalog {
     private void register(Build build) throws SQLException {
         connections.transaction(() -> {
             try (var c = connections.open()) {
-                RepositoryConnections.lockPlatformState(c);
+                StoreConnections.lockPlatformState(c);
                 try (var s = c.createStatement();
                      var r = s.executeQuery("SELECT boot_id,shutdown_state FROM app_state WHERE singleton_id=1")) {
                     if (!r.next() || !boot.equals(r.getObject(1, UUID.class))
@@ -137,7 +136,7 @@ public final class PlatformModCatalog {
      * @param candidate validated source and ordered outputs / 已校验来源及有序输出
      * @return canonical content SHA-256 / 规范内容 SHA-256
      * @throws IOException if an output is redirected, unreadable or changes during hashing / 输出重定向、不可读或求摘要期间变化时 */
-    private static String fingerprint(DevelopmentModDiscovery.Candidate candidate) throws IOException {
+    private static String fingerprint(DevelopmentModFinder.Candidate candidate) throws IOException {
         var files = new TreeMap<String, Path>((a, b) -> Arrays.compareUnsigned(a.getBytes(StandardCharsets.UTF_8),
             b.getBytes(StandardCharsets.UTF_8)));
         add(files, candidate.descriptor().manifestPath());
@@ -230,7 +229,7 @@ public final class PlatformModCatalog {
      * @param failure original internal failure / 原内部失败
      * @param candidate affected source / 受影响来源
      * @return source-specific safe evidence / 来源专属安全证据 */
-    private static Problem problem(Exception failure, DevelopmentModDiscovery.Candidate candidate) {
+    private static Problem problem(Exception failure, DevelopmentModFinder.Candidate candidate) {
         if (failure instanceof SQLException && failure.getSuppressed().length == 0
             && failure.getCause() instanceof ApiException api)
             return api.problem();

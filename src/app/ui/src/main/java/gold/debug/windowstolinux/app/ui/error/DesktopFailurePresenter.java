@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.function.Function;
 
 import gold.debug.windowstolinux.app.ui.language.LocalizedMessage;
-import gold.debug.windowstolinux.appapi.task.Problem;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
 
 /**
  * Converts task failures into safe localized UI text and report references. / 将任务失败转换为安全的本地化 UI 文本和报告引用。
@@ -73,7 +73,7 @@ public final class DesktopFailurePresenter {
     /** Displays an existing public snapshot without another report write. / 展示既有公开快照且不再次写入报告。
      * @param problem original safe platform diagnostic / 原安全平台诊断
      * @return localized explanation, event and original identity / 本地化说明、事件及原身份 */
-    public String present(gold.debug.windowstolinux.appapi.task.Problem problem) {
+    public String present(gold.debug.windowstolinux.appapi.task.result.Problem problem) {
         return redact(explanation(problem)) + "\n[" + redact(problem.eventCode()) + "]"
             + problem.diagnosticId().map(id -> "\n" + id).orElse("");
     }
@@ -164,7 +164,7 @@ public final class DesktopFailurePresenter {
         Throwable current = throwable;
         var visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
         while (current != null && visited.size() < 16 && visited.add(current)) {
-            if (current instanceof gold.debug.windowstolinux.appapi.task.ApiException failure)
+            if (current instanceof gold.debug.windowstolinux.appapi.task.result.ApiException failure)
                 return Optional.of(failure.problem());
             if (current instanceof gold.debug.windowstolinux.app.service.error.ApplicationServiceException failure)
                 return Optional.of(failure.problem());

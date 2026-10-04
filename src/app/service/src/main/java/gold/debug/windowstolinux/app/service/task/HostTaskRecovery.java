@@ -4,7 +4,7 @@ import java.sql.SQLException;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 
 /** Verifies vanished process-local resources of a known host protocol. / 核验已知宿主协议消失的进程内资源。 */
 public final class HostTaskRecovery {
@@ -22,7 +22,7 @@ public final class HostTaskRecovery {
                                                  Map<String, String> allowedPrefixes) throws SQLException {
         try (var connection = database.openConnection()) {
             connection.setAutoCommit(false);
-            gold.debug.windowstolinux.app.db.connect.RepositoryConnections.lockPlatformState(connection);
+            gold.debug.windowstolinux.app.db.connect.StoreConnections.lockPlatformState(connection);
             try (var statement = connection.prepareStatement(
                 "SELECT boot_id,owner_id,owner_version,task_type,state FROM platform_task WHERE task_id=?")) {
                 statement.setObject(1, task.id());

@@ -1,5 +1,11 @@
 package gold.debug.windowstolinux.app.windows.update;
 
+import gold.debug.windowstolinux.app.windows.update.check.DesktopUpdateVerification;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopArchitectureType;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopReleaseVersion;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateEvent;
+import gold.debug.windowstolinux.app.windows.update.model.DesktopUpdateState;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -13,8 +19,8 @@ import java.util.UUID;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
-import gold.debug.windowstolinux.app.windows.workspace.DesktopHandoffEnvelopeCodec;
-import gold.debug.windowstolinux.app.windows.workspace.WindowsWorkspaceException;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffEnvelopeCodec;
+import gold.debug.windowstolinux.app.windows.handoff.DesktopHandoffException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,7 +36,7 @@ class DesktopUpdateHandoffCodecTest {
         byte[] document = codec.write(handoff, key(1));
 
         assertEquals(handoff, codec.read(document, key(1)));
-        WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
+        DesktopHandoffException failure = assertThrows(DesktopHandoffException.class,
             () -> codec.read(document, key(2)));
         assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
     }
@@ -40,7 +46,7 @@ class DesktopUpdateHandoffCodecTest {
         byte[] document = new DesktopHandoffEnvelopeCodec().write(DesktopHandoffEnvelopeCodec.PurposeType.UPDATE,
             new byte[]{0, 0, 0, 2}, key(1));
 
-        WindowsWorkspaceException failure = assertThrows(WindowsWorkspaceException.class,
+        DesktopHandoffException failure = assertThrows(DesktopHandoffException.class,
             () -> new DesktopUpdateHandoffCodec().read(document, key(1)));
 
         assertEquals("windows.workspace.handoff-invalid", failure.problem().eventCode());
@@ -62,7 +68,7 @@ class DesktopUpdateHandoffCodecTest {
             DesktopReleaseVersion.parse("2.0.0"), DesktopArchitectureType.X86_64, 8, "a".repeat(64),
             Instant.parse("2026-08-22T00:00:00.123456789Z"), List.of("signature and digest verified"));
         DesktopUpdatePort.BackupEvidence backup = new DesktopUpdatePort.BackupEvidence("backup-1", true, true, true,
-            true, List.of("program and SQLite backed up"));
+            true, List.of("program and H2 and db-access.bin backed up"));
         return new DesktopUpdateHandoff(UUID.fromString("11111111-1111-1111-1111-111111111111"), verification, backup,
             List.of(new DesktopUpdateEvent(DesktopUpdateState.TASKS_QUIESCED, true, "tasks quiesced"),
                 new DesktopUpdateEvent(DesktopUpdateState.BACKUP_CREATED, true, "paired backup created")));

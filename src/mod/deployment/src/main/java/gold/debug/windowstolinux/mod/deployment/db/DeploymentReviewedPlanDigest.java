@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import java.time.Instant;
 import java.util.*;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement;
 
 /** Stable pre-execution review identity, distinct from the eventual release manifest identity. / 稳定的执行前审阅身份，区别于最终发布清单身份。 */
@@ -43,8 +43,8 @@ public final class DeploymentReviewedPlanDigest {
     public record Values(String serverId, UUID snapshotId, String manifestSha256, String archiveSha256,
                          long byteCount, long uncompressedByteCount, Map<String, String> facts,
                          List<ToolchainRequirement> requirements,
-                         DeploymentConfigurationSnapshot configuration,
-                         List<DeploymentSecretReference> secretReferences,
+                         DeploymentConfigSnapshot configuration,
+                         List<DeploymentSecretRef> secretReferences,
                          DeploymentResourceBindings resources, DeploymentRuntimeDefinition runtime,
                          Optional<DeploymentAccessUrl> userAccessUrl,
                          DeploymentBuildLimits limits, Instant confirmedAt, boolean containerRisk,
@@ -182,8 +182,8 @@ public final class DeploymentReviewedPlanDigest {
                 text(out, value.configuration().schemaVersion());
                 text(out, value.configuration().sha256());
                 var secrets = value.secretReferences().stream()
-                    .sorted(Comparator.comparing(DeploymentSecretReference::identifier)
-                        .thenComparingLong(DeploymentSecretReference::revision))
+                    .sorted(Comparator.comparing(DeploymentSecretRef::identifier)
+                        .thenComparingLong(DeploymentSecretRef::revision))
                     .toList();
                 out.writeInt(secrets.size());
                 for (var secret : secrets) {

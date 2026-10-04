@@ -1,15 +1,19 @@
 package gold.debug.windowstolinux.appapi.mod;
 
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
+import gold.debug.windowstolinux.appapi.mod.service.ModServices;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.LogService;
-import gold.debug.windowstolinux.appapi.task.ProcessService;
 import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
+import gold.debug.windowstolinux.appapi.task.process.ProcessService;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
 /**
@@ -78,7 +82,7 @@ public interface ModContext {
     SecretService secrets();
 
     /**
-     * Returns authorized source reads and snapshots. / 返回经授权的来源读取与快照能力。
+     * Returns file queries, actions, sources, snapshots and workspaces under the original task authority. / 返回按原任务授权使用的文件查询、操作、来源、快照与工作区入口。
      * @return the owned result described by this capability / 此能力约定的所属结果
      */
     FileService file();

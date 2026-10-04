@@ -5,15 +5,15 @@ import java.util.Arrays;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.security.SecurityApplicationFacade;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.service.security.SecurityAccess;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Edits global security settings after explicit password verification. / 重新验证密码后修改全局安全设置。 */
 public final class SecuritySettingsPane extends JPanel {
     /** Narrow security facade used by this view. / 视图使用的窄安全门面。
      */
-    private final SecurityApplicationFacade service;
+    private final SecurityAccess service;
 
     /** Localized safe message presenter. / 本地化安全消息呈现器。
      */
@@ -51,7 +51,7 @@ public final class SecuritySettingsPane extends JPanel {
      * @param components components supplied to this boundary / 传入当前边界的components值
      * @param messages messages supplied to this boundary / 传入当前边界的messages值
      */
-    public SecuritySettingsPane(SecurityApplicationFacade service, DesktopComponentFactory components,
+    public SecuritySettingsPane(SecurityAccess service, DesktopPartFactory components,
                                 PageMessagePresenter messages) {
         super(new BorderLayout(0, 12));
         this.service = service;

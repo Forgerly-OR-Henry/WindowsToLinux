@@ -6,7 +6,7 @@ import java.util.*;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitRuntimeConfiguration;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitRuntimeConfig;
 import org.junit.jupiter.api.Test;
 
 class DeploymentUnitRuntimeCodecTest {
@@ -20,15 +20,15 @@ class DeploymentUnitRuntimeCodecTest {
         var runtime = new DeploymentRuntimeDefinition.PhpService("8.3", "public", "router.php", 8080, health)
             .withWorkload(workload);
         var codec = new DeploymentRuntimeCodec();
-        assertEquals(6, DeploymentCodecCompatibility.write(runtime)[4]);
-        assertEquals(runtime, codec.read(DeploymentCodecCompatibility.write(runtime), health));
-        var activation = new DeploymentUnitRuntimeConfiguration(health, Optional.empty(), runtime.identityPolicy(),
+        assertEquals(6, DeploymentCodecMatch.write(runtime)[4]);
+        assertEquals(runtime, codec.read(DeploymentCodecMatch.write(runtime), health));
+        var activation = new DeploymentUnitRuntimeConfig(health, Optional.empty(), runtime.identityPolicy(),
             workload);
         var activationCodec = new DeploymentUnitRuntimeCodec();
-        assertEquals(activation, activationCodec.read(DeploymentCodecCompatibility.write(activation)));
+        assertEquals(activation, activationCodec.read(DeploymentCodecMatch.write(activation)));
         assertThrows(java.io.IOException.class,
-            () -> codec.read(Arrays.copyOf(DeploymentCodecCompatibility.write(runtime),
-                DeploymentCodecCompatibility.write(runtime).length - 1), health));
+            () -> codec.read(Arrays.copyOf(DeploymentCodecMatch.write(runtime),
+                DeploymentCodecMatch.write(runtime).length - 1), health));
         assertThrows(IllegalArgumentException.class,
             () -> new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.DOCKER,
                 Map.of(), List.of(), health).withWorkload(workload));
@@ -44,12 +44,12 @@ class DeploymentUnitRuntimeCodecTest {
         var health = new DeploymentHealthCheck.Command(verify, "protocolVersion", 10);
         var runtime = new DeploymentRuntimeDefinition.PythonService("3.12", "main", health).withWorkload(workload);
         var codec = new DeploymentRuntimeCodec();
-        assertEquals(runtime, codec.read(DeploymentCodecCompatibility.write(runtime), health));
-        var activation = new DeploymentUnitRuntimeConfiguration(health, Optional.empty(), runtime.identityPolicy(),
+        assertEquals(runtime, codec.read(DeploymentCodecMatch.write(runtime), health));
+        var activation = new DeploymentUnitRuntimeConfig(health, Optional.empty(), runtime.identityPolicy(),
             workload);
         var activationCodec = new DeploymentUnitRuntimeCodec();
-        assertEquals(activation, activationCodec.read(DeploymentCodecCompatibility.write(activation)));
-        byte[] previousVersion = DeploymentCodecCompatibility.write(runtime);
+        assertEquals(activation, activationCodec.read(DeploymentCodecMatch.write(activation)));
+        byte[] previousVersion = DeploymentCodecMatch.write(runtime);
         previousVersion[4] = 4;
         assertThrows(java.io.IOException.class, () -> codec.read(previousVersion, health));
         assertEquals(DeploymentWorkload.CategoryType.APP, workload.category());
@@ -64,7 +64,7 @@ class DeploymentUnitRuntimeCodecTest {
             new DeploymentHealthCheck.Udp(9000, "70696e67", "706f6e67", Optional.empty(), 10),
             new DeploymentHealthCheck.Udp(9000, "", "", Optional.of(new DeploymentCommand("probe.py", List.of())),
                 10))) {
-            byte[] bytes = DeploymentCodecCompatibility.write(health);
+            byte[] bytes = DeploymentCodecMatch.write(health);
             assertEquals(health, codec.read(bytes));
             assertThrows(java.io.IOException.class, () -> codec.read(Arrays.copyOf(bytes, bytes.length + 1)));
             assertThrows(java.io.IOException.class, () -> codec.read(Arrays.copyOf(bytes, bytes.length - 1)));

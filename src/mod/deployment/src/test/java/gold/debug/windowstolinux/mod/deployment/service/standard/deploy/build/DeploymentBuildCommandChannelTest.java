@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -21,11 +12,18 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits;
@@ -44,7 +42,7 @@ class DeploymentBuildCommandChannelTest {
         var calls = new AtomicInteger();
         var channel = channel(false, calls);
         var result = channel.preflight("ordinary");
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals(ProblemCode.ACCESS_DENIED, result.problem().orElseThrow().code());
         assertEquals(0, calls.get());
     }
@@ -54,7 +52,7 @@ class DeploymentBuildCommandChannelTest {
     void stableJavaBuildSuffixCanReachReviewedPreparation() throws Exception {
         var calls = new AtomicInteger();
         var channel = channel(true, calls);
-        assertEquals(Outcome.SUCCEEDED,
+        assertEquals(TaskResult.SUCCEEDED,
             channel.prepare(DeploymentToolchainType.JAVA, "8", "8.0.462-b08", 60, "-").outcome());
         assertEquals(1, calls.get());
     }
@@ -78,16 +76,16 @@ class DeploymentBuildCommandChannelTest {
             return reply("TOOLCHAIN=GO|" + version + "|/usr/local/lib/windowstolinux/toolchains/versions/go-"
                 + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n");
         });
-        var preparer = new DeploymentToolchainPreparer(channel, catalog);
+        var preparer = new DeploymentToolchainSetup(channel, catalog);
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, ">=1.24.9", "go.mod",
             ToolchainRequirement.PurposeType.BUILD);
         assertEquals(2, catalog.candidates(requirement).size());
         var first = preparer.prepare(List.of(requirement), 0, 110);
-        assertEquals(Outcome.FAILED, first.outcome());
+        assertEquals(TaskResult.FAILED, first.outcome());
         assertEquals("DEPLOYMENT_TOOLCHAIN_MINIMUM", first.problem().orElseThrow().eventCode());
         assertEquals(1, calls.get());
         var second = preparer.prepare(List.of(requirement), 1, 110);
-        assertEquals(Outcome.SUCCEEDED, second.outcome(), second.toString());
+        assertEquals(TaskResult.SUCCEEDED, second.outcome(), second.toString());
         assertEquals("1.25.1", second.value().orElseThrow().selections().getFirst().version().text());
         assertEquals(3, calls.get());
     }
@@ -96,14 +94,14 @@ class DeploymentBuildCommandChannelTest {
     @Test
     void incompleteBuildAndConflictingBindingNeverReplay() throws Exception {
         var calls = new AtomicInteger();
-        var unknown = new OperationResult<CommandResult>(Outcome.UNKNOWN,
+        var unknown = new OperationResult<CommandResult>(TaskResult.UNKNOWN,
             Optional.of(new CommandResult(Optional.empty(), "partial", "", true)),
             Optional.of(new Problem(ProblemCode.UNKNOWN, "REMOTE_OUTPUT_TRUNCATED", "Incomplete command", Map.of(),
                 Optional.empty())));
         var channel = channel(true, calls, command -> unknown);
         var result = channel.build(new DeploymentRemoteWorkspace("demo", "a".repeat(64)),
             DeploymentBuildLimits.defaultNonRoot(), 60, "ordinary", "echo fixed", List.of(List.of("marker")));
-        assertEquals(Outcome.UNKNOWN, result.outcome());
+        assertEquals(TaskResult.UNKNOWN, result.outcome());
         assertEquals(1, calls.get());
 
         var bindingCalls = new AtomicInteger();
@@ -114,9 +112,9 @@ class DeploymentBuildCommandChannelTest {
                 + "b".repeat(64) + "|MANAGED|https://official.example/go|" + "b".repeat(64) + "\n"));
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.24", "go.mod",
             ToolchainRequirement.PurposeType.BUILD);
-        var bound = new DeploymentToolchainPreparer(bindingChannel, DeploymentToolchainCatalog.defaults())
+        var bound = new DeploymentToolchainSetup(bindingChannel, DeploymentToolchainCatalog.defaults())
             .prepare(List.of(requirement), 0, 110);
-        assertEquals(Outcome.UNKNOWN, bound.outcome());
+        assertEquals(TaskResult.UNKNOWN, bound.outcome());
         assertEquals("DEPLOYMENT_TOOLCHAIN_BINDING_UNCONFIRMED", bound.problem().orElseThrow().eventCode());
         assertEquals(2, bindingCalls.get());
     }
@@ -126,16 +124,16 @@ class DeploymentBuildCommandChannelTest {
     void knownHelperUnavailableKeepsTheOriginalIncompatibleCategory() throws Exception {
         var calls = new AtomicInteger();
         var channel = channel(true, calls,
-            command -> new OperationResult<>(Outcome.FAILED,
+            command -> new OperationResult<>(TaskResult.FAILED,
                 Optional.of(new CommandResult(Optional.of(1),
                     "TOOLCHAIN_FAILURE=unavailable: missing package\n", "", false)),
                 Optional.of(new Problem(ProblemCode.IO_FAILURE, "REMOTE_EXIT_NONZERO", "Helper exited",
                     Map.of(), Optional.empty()))));
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.24", "go.mod",
             ToolchainRequirement.PurposeType.BUILD);
-        var prepared = new DeploymentToolchainPreparer(channel, DeploymentToolchainCatalog.defaults())
+        var prepared = new DeploymentToolchainSetup(channel, DeploymentToolchainCatalog.defaults())
             .prepare(List.of(requirement), 0, 110);
-        assertEquals(Outcome.FAILED, prepared.outcome());
+        assertEquals(TaskResult.FAILED, prepared.outcome());
         assertEquals(ProblemCode.INCOMPATIBLE, prepared.problem().orElseThrow().code());
         assertEquals("DEPLOYMENT_TOOLCHAIN_UNSUPPORTED", prepared.problem().orElseThrow().eventCode());
         assertEquals(1, calls.get());
@@ -170,9 +168,9 @@ class DeploymentBuildCommandChannelTest {
         InteractionService interaction = new InteractionService() {
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) {
                 return approved
-                    ? new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
+                    ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
                     Optional.empty())
-                    : new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                    : new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                     Optional.of(new Problem(ProblemCode.ACCESS_DENIED, "REVIEW_DECLINED", "Review declined",
                         Map.of(), Optional.empty())));
             }
@@ -185,7 +183,7 @@ class DeploymentBuildCommandChannelTest {
             new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
                 throw new AssertionError("No task query expected");
             });
-        return new DeploymentBuildCommandChannel(session, interaction, new ServerRef("Server-Exact"), task,
+        return new DeploymentBuildCommandChannel(session, interaction, new ServerId("Server-Exact"), task,
             "a".repeat(64), new DeploymentBuildBudget(120));
     }
 
@@ -193,7 +191,7 @@ class DeploymentBuildCommandChannelTest {
      * @param stdout bounded reply / 有界回执
      * @return successful observation / 成功观测 */
     private static OperationResult<CommandResult> reply(String stdout) {
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
     }
 }

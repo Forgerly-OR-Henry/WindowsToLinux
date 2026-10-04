@@ -1,28 +1,26 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.delivery;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.security.SecureRandom;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationRepository;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentPublishStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentUnitIdentity;
 
 /** Resolves canonical ownership for either deployment mode without using source or plan hashes. / 为两种部署模式解析规范归属，不使用来源或计划散列。 */
 public final class DeploymentManagedUnitResolver {
     /** Existing exact business identity reader. / 既有精确业务身份读取器。 */
-    private final DeploymentPublicationRepository publications;
+    private final DeploymentPublishStore publications;
 
     /** Binds the real deployment database. / 绑定真实部署数据库。
      * @param database original task database / 原任务数据库 */
     public DeploymentManagedUnitResolver(ModDatabase database) {
-        publications = new DeploymentPublicationRepository(Objects.requireNonNull(database));
+        publications = new DeploymentPublishStore(Objects.requireNonNull(database));
     }
 
     /** Reuses saved ownership or proposes a random first-publication manifest. / 复用已存归属，或为初次发布提出随机清单。
@@ -31,7 +29,7 @@ public final class DeploymentManagedUnitResolver {
      * @param server selected server / 所选服务器
      * @return saved or fresh unpersisted identity / 已存或新未持久身份
      * @throws Exception on conflicting or unreadable ownership / 归属冲突或不可读时 */
-    public DeploymentUnitIdentity resolve(TaskContext task, String unitId, ServerRef server) throws Exception {
+    public DeploymentUnitIdentity resolve(TaskContext task, String unitId, ServerId server) throws Exception {
         var saved = publications.findUnit(task, unitId);
         if (saved.isPresent()) {
             var existing = saved.orElseThrow();

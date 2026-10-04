@@ -6,11 +6,18 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.file.model.FileActionLog;
+import gold.debug.windowstolinux.app.file.model.FileBackend;
+import gold.debug.windowstolinux.app.file.model.FileRecycleReceipt;
 import gold.debug.windowstolinux.app.windows.file.WindowsLinks;
-import org.junit.jupiter.api.Test;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class FileEngineTest {
@@ -21,7 +28,7 @@ class FileEngineTest {
 
     final FileEngine engine = new FileEngine(backend);
 
-    final Journal journal = new Journal();
+    final ActionLog journal = new ActionLog();
 
     final FileEngine.Decisions decisions = new FileEngine.Decisions() {
         public FileChoice.Directory directory(FileInfo a, FileInfo b) {
@@ -74,6 +81,90 @@ class FileEngineTest {
     }
 
     @Test
+    void targetClaimedAtPublicationKeepsTheMoveSourceAndOtherProcessContent() throws Exception {
+        file("source", "owned source");
+        var raced = (FileBackend) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+            new Class<?>[]{FileBackend.class}, (self, method, args) -> {
+                if (method.getName().equals("publish"))
+                    Files.writeString(Path.of(((FilePath) args[1]).path()), "other process", StandardOpenOption.CREATE_NEW);
+                try {
+                    return method.invoke(backend, args);
+                } catch (java.lang.reflect.InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
+        var destination = new FileEngine(raced);
+        var report = engine.copy(path("source"), path("destination"), false, true,
+            FileChoice.ask(), destination, decisions, (s, t, p) -> {
+            }, journal, () -> false, (a, b) -> {
+            });
+        assertNotEquals(TaskResult.SUCCEEDED, report.outcome());
+        assertEquals("owned source", Files.readString(root.resolve("source")));
+        assertEquals("other process", Files.readString(root.resolve("destination")));
+    }
+
+    FileRecycleReceipt informationReceipt() throws IOException {
+        var information = path("information");
+        return new FileRecycleReceipt(path("recycled"), "fixture-recycled", Optional.of(information),
+            Optional.of(backend.stat(information).orElseThrow().identity()));
+    }
+
+    @Test
+    void restorationMetadataRequiresOneExactDecodedPathThroughEngineAndLocalBackend() throws Exception {
+        var original = path("中文 + original.txt");
+        String encoded = java.net.URLEncoder.encode(original.path(), java.nio.charset.StandardCharsets.UTF_8);
+        String valid = "[Trash Info]\nPath=" + encoded + "\nDeletionDate=2026-10-03T00:00:00\n";
+        file("information", valid);
+        var receipt = informationReceipt();
+        assertTrue(engine.recoveryInformationMatches(original, receipt));
+        assertTrue(backend.recoveryInformationMatches(original, receipt));
+        assertFalse(engine.recoveryInformationMatches(path("other.txt"), receipt));
+        file("information", valid + "Path=" + encoded + "\n");
+        assertFalse(engine.recoveryInformationMatches(original, informationReceipt()));
+        file("information", "Path=" + encoded + "\n");
+        assertFalse(engine.recoveryInformationMatches(original, informationReceipt()));
+        var noInformation = new FileRecycleReceipt(path("recycled"), "fixture-recycled", Optional.empty(), Optional.empty());
+        assertFalse(engine.recoveryInformationMatches(original, noInformation));
+    }
+
+    @Test
+    void restorationMetadataKeepsTheSixtyFourKiBBoundAndReadCancellation() throws Exception {
+        var original = path("original");
+        String valid = "[Trash Info]\nPath=" + java.net.URLEncoder.encode(original.path(), java.nio.charset.StandardCharsets.UTF_8) + "\nComment=";
+        file("information", valid + "x".repeat(65536 - valid.getBytes(java.nio.charset.StandardCharsets.UTF_8).length));
+        assertTrue(engine.recoveryInformationMatches(original, informationReceipt()));
+        file("information", Files.readString(root.resolve("information")) + "x");
+        var receipt = informationReceipt();
+        assertThrows(IOException.class, () -> engine.recoveryInformationMatches(original, receipt));
+        assertThrows(IOException.class, () -> backend.recoveryInformationMatches(original, receipt));
+        assertThrows(java.util.concurrent.CancellationException.class, () -> engine.read(path("information"), 65536, () -> true));
+    }
+
+    @Test
+    void restorationMetadataRejectsAnObjectChangedAfterItsContentWasRead() throws Exception {
+        var original = path("original");
+        file("information", "[Trash Info]\nPath=" + java.net.URLEncoder.encode(original.path(), java.nio.charset.StandardCharsets.UTF_8) + "\n");
+        var receipt = informationReceipt();
+        var changing = (FileBackend) java.lang.reflect.Proxy.newProxyInstance(FileBackend.class.getClassLoader(),
+            new Class<?>[]{FileBackend.class}, (proxy, method, arguments) -> {
+                try {
+                    Object result = method.invoke(backend, arguments);
+                    if (!method.getName().equals("read")) return result;
+                    return new FilterInputStream((InputStream) result) {
+                        @Override
+                        public void close() throws IOException {
+                            super.close();
+                            file("information", "changed after read");
+                        }
+                    };
+                } catch (java.lang.reflect.InvocationTargetException cause) {
+                    throw cause.getCause();
+                }
+            });
+        assertThrows(IOException.class, () -> new FileEngine(changing).recoveryInformationMatches(original, receipt));
+    }
+
+    @Test
     void defaultConflictChoicesAskOnlyForUnspecifiedLayersAndNeverForAbsentTargets() throws Exception {
         file("source", "incoming");
         file("target", "old");
@@ -93,21 +184,21 @@ class FileEngineTest {
         };
         var approval = (FileEngine.Approval) (source, type, plan) -> {
         };
-        assertEquals(Outcome.SUCCEEDED, engine.copy(path("source"), path("absent"), false, false, FileChoice.ask(), engine, presenter, approval, journal, () -> false, (a, b) -> {
+        assertEquals(TaskResult.SUCCEEDED, engine.copy(path("source"), path("absent"), false, false, FileChoice.ask(), engine, presenter, approval, journal, () -> false, (a, b) -> {
         }).outcome());
         assertTrue(questions.isEmpty());
         var copied = engine.copy(path("source"), path("target"), false, false, FileChoice.ask(), engine, presenter, approval, journal, () -> false, (a, b) -> {
         });
-        assertEquals(Outcome.SUCCEEDED, copied.outcome());
+        assertEquals(TaskResult.SUCCEEDED, copied.outcome());
         assertEquals(List.of("file"), questions);
         assertEquals("old", Files.readString(root.resolve("target")));
         assertEquals("incoming", Files.readString(root.resolve("target (1)")));
         questions.clear();
-        assertEquals(Outcome.SUCCEEDED, engine.copy(path("from"), path("to"), false, false, new FileChoice(Optional.of(FileChoice.Directory.MERGE), Optional.empty()), engine, presenter, approval, journal, () -> false, (a, b) -> {
+        assertEquals(TaskResult.SUCCEEDED, engine.copy(path("from"), path("to"), false, false, new FileChoice(Optional.of(FileChoice.Directory.MERGE), Optional.empty()), engine, presenter, approval, journal, () -> false, (a, b) -> {
         }).outcome());
         assertEquals(List.of("file"), questions);
         questions.clear();
-        assertEquals(Outcome.SUCCEEDED, engine.copy(path("from"), path("to"), false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.OVERWRITE), engine, presenter, approval, journal, () -> false, (a, b) -> {
+        assertEquals(TaskResult.SUCCEEDED, engine.copy(path("from"), path("to"), false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.OVERWRITE), engine, presenter, approval, journal, () -> false, (a, b) -> {
         }).outcome());
         assertTrue(questions.isEmpty());
     }
@@ -121,7 +212,7 @@ class FileEngineTest {
         Files.delete(root.resolve("target"));
         assertEquals(FileInfo.Kind.LINK, engine.inspect(path("broken"), true, () -> false).kind());
         assertThrows(FileNotFoundException.class, () -> engine.inspect(path("broken"), false, () -> false));
-        assertEquals(Outcome.SUCCEEDED, copy("broken", "other/copied", true, false, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.SUCCEEDED, copy("broken", "other/copied", true, false, FileChoice.ask()).outcome());
         assertEquals(root.resolve("target"), Path.of(FileEngine.resolveTarget(path("other/copied"), engine.inspect(path("other/copied"), true, () -> false).target().orElseThrow()).path()));
         Files.createDirectory(root.resolve("a"));
         Files.createDirectory(root.resolve("b"));
@@ -141,7 +232,7 @@ class FileEngineTest {
         WindowsLinks.create(root.resolve("managed"), root.resolve("target"));
         var link = engine.inspect(path("managed"), true, () -> false);
         journal.saveLink(link, engine.optionalTarget(link, () -> false));
-        assertEquals(Outcome.SUCCEEDED, engine.delete(engine.inspect(path("target"), false, () -> false), false, DeleteEffect.PERMANENT, journal, () -> false).outcome());
+        assertEquals(TaskResult.SUCCEEDED, engine.delete(engine.inspect(path("target"), false, () -> false), false, DeleteEffect.PERMANENT, journal, () -> false).outcome());
         assertEquals(link.identity(), engine.inspect(path("managed"), true, () -> false).identity());
         assertFalse(journal.targets.containsKey(path("managed")));
         assertTrue(journal.links.containsKey(path("managed")));
@@ -154,7 +245,7 @@ class FileEngineTest {
         file("to/a.txt", "existing");
         file("to/unique.txt", "keep");
         var result = copy("from", "to", false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.SKIP));
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("existing", Files.readString(root.resolve("to/a.txt")));
         assertEquals("independent", Files.readString(root.resolve("to/b.txt")));
         assertEquals("keep", Files.readString(root.resolve("to/unique.txt")));
@@ -166,7 +257,7 @@ class FileEngineTest {
         file("from/a.txt", "in");
         file("to/a.txt", "old");
         var result = copy("from", "to", false, true, FileChoice.of(FileChoice.Directory.SKIP, FileChoice.Conflict.OVERWRITE));
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals(1, result.items().size());
         assertEquals("in", Files.readString(root.resolve("from/a.txt")));
         assertEquals("old", Files.readString(root.resolve("to/a.txt")));
@@ -180,7 +271,7 @@ class FileEngineTest {
         WindowsLinks.create(root.resolve("from/internal"), Path.of("inside"));
         WindowsLinks.create(root.resolve("from/external"), root.resolve("outside"));
         var result = copy("from", "to", false, false, FileChoice.of(FileChoice.Directory.COPY, FileChoice.Conflict.COPY));
-        assertEquals(Outcome.SUCCEEDED, result.outcome());
+        assertEquals(TaskResult.SUCCEEDED, result.outcome());
         assertEquals("inside", Files.readString(root.resolve("to (1)/internal/payload.txt")));
         assertEquals("outside", Files.readString(root.resolve("to (1)/external/payload.txt")));
         assertEquals(root.resolve("to (1)/inside"), FileEngine.resolveTarget(path("to (1)/internal"), engine.inspect(path("to (1)/internal"), true, () -> false).target().orElseThrow()).server().isEmpty() ? Path.of(FileEngine.resolveTarget(path("to (1)/internal"), engine.inspect(path("to (1)/internal"), true, () -> false).target().orElseThrow()).path()) : null);
@@ -194,7 +285,7 @@ class FileEngineTest {
         file("to/inside/payload", "old");
         WindowsLinks.create(root.resolve("from/dependent"), root.resolve("from/inside"));
         var result = copy("from", "to", false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.SKIP));
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("old", Files.readString(root.resolve("to/inside/payload")));
         // A directory link may be published only when all required contents have succeeded.
         assertFalse(Files.exists(root.resolve("to/dependent"), LinkOption.NOFOLLOW_LINKS));
@@ -205,9 +296,9 @@ class FileEngineTest {
         file("target/payload", "original");
         Files.createDirectory(root.resolve("other"));
         WindowsLinks.create(root.resolve("link"), root.resolve("target"));
-        assertEquals(Outcome.SUCCEEDED, copy("link", "other/copy", true, false, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.SUCCEEDED, copy("link", "other/copy", true, false, FileChoice.ask()).outcome());
         assertEquals("original", Files.readString(root.resolve("other/copy/payload")));
-        assertEquals(Outcome.SUCCEEDED, copy("other/copy", "moved-link", true, true, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.SUCCEEDED, copy("other/copy", "moved-link", true, true, FileChoice.ask()).outcome());
         assertFalse(Files.exists(root.resolve("other/copy"), LinkOption.NOFOLLOW_LINKS));
         assertEquals("original", Files.readString(root.resolve("moved-link/payload")));
     }
@@ -217,7 +308,7 @@ class FileEngineTest {
         file("actual/a", "content");
         WindowsLinks.create(root.resolve("alias"), root.resolve("actual"));
         var result = copy("alias", "copy", false, false, FileChoice.ask());
-        assertEquals(Outcome.SUCCEEDED, result.outcome());
+        assertEquals(TaskResult.SUCCEEDED, result.outcome());
         assertEquals(FileInfo.Kind.DIRECTORY, engine.inspect(path("copy"), false, () -> false).kind());
         assertEquals("content", Files.readString(root.resolve("copy/a")));
         assertEquals(FileInfo.Kind.LINK, engine.inspect(path("alias"), true, () -> false).kind());
@@ -230,7 +321,7 @@ class FileEngineTest {
         file("outside/a", "outside");
         WindowsLinks.create(root.resolve("to/inside"), root.resolve("outside"));
         var result = copy("from", "to", false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.OVERWRITE));
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("outside", Files.readString(root.resolve("outside/a")));
         assertEquals("keep", Files.readString(root.resolve("to/unique")));
     }
@@ -241,9 +332,9 @@ class FileEngineTest {
         WindowsLinks.create(root.resolve("registered"), root.resolve("original"));
         FileInfo link = engine.inspect(path("registered"), true, () -> false);
         journal.saveLink(link, engine.optionalTarget(link, () -> false));
-        assertEquals(Outcome.SUCCEEDED, copy("original", "copied", false, false, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.SUCCEEDED, copy("original", "copied", false, false, FileChoice.ask()).outcome());
         assertEquals(root.resolve("original"), Path.of(engine.inspect(path("registered"), false, () -> false).actual().path()));
-        assertEquals(Outcome.SUCCEEDED, copy("original", "moved", false, true, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.SUCCEEDED, copy("original", "moved", false, true, FileChoice.ask()).outcome());
         assertEquals(root.resolve("moved"), Path.of(engine.inspect(path("registered"), false, () -> false).actual().path()));
         assertFalse(Files.exists(root.resolve("original")));
     }
@@ -257,7 +348,7 @@ class FileEngineTest {
         FileInfo link = engine.inspect(path("registered"), true, () -> false);
         journal.saveLink(link, engine.optionalTarget(link, () -> false));
         var result = copy("original", "target", false, true, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.SKIP));
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("new", Files.readString(root.resolve("original/a")));
         assertFalse(Files.exists(root.resolve("original/b")));
         assertEquals("independent", Files.readString(root.resolve("target/b")));
@@ -286,7 +377,7 @@ class FileEngineTest {
         FileInfo link = engine.inspect(path("link"), true, () -> false);
         journal.saveLink(link, engine.optionalTarget(link, () -> false));
         var result = copy("incoming/a", "target/a", false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.OVERWRITE));
-        assertEquals(Outcome.SUCCEEDED, result.outcome());
+        assertEquals(TaskResult.SUCCEEDED, result.outcome());
         assertEquals("new", Files.readString(root.resolve("link/a")));
         assertEquals("new", Files.readString(root.resolve("incoming/a")));
     }
@@ -312,7 +403,7 @@ class FileEngineTest {
             }
         }, journal, () -> false, (a, b) -> {
         });
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertEquals("externally changed", Files.readString(root.resolve("target")));
     }
 
@@ -329,7 +420,7 @@ class FileEngineTest {
             }
         }, journal, () -> false, (a, b) -> {
         });
-        assertEquals(Outcome.FAILED, result.outcome());
+        assertEquals(TaskResult.FAILED, result.outcome());
         assertFalse(Files.exists(root.resolve("destination/new")));
         assertFalse(journal.phases.contains("BEFORE_WRITE"));
         assertEquals("incoming", Files.readString(root.resolve("source")));
@@ -342,7 +433,7 @@ class FileEngineTest {
     void lostAcknowledgementRetainsUnknownEvidenceAndDoesNotReplayMove() throws Exception {
         file("source", "content");
         journal.failWritten = true;
-        assertEquals(Outcome.UNKNOWN, copy("source", "target", false, true, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.UNKNOWN, copy("source", "target", false, true, FileChoice.ask()).outcome());
         assertEquals("content", Files.readString(root.resolve("source")));
         assertEquals("content", Files.readString(root.resolve("target")));
         assertTrue(journal.phases.contains("BEFORE_STAGING"));
@@ -354,11 +445,11 @@ class FileEngineTest {
         file("folder/user", "remove");
         WindowsLinks.create(root.resolve("folder/link"), root.resolve("outside"));
         var report = engine.delete(engine.inspect(path("folder"), false, () -> false), false, DeleteEffect.PERMANENT, journal, () -> false);
-        assertEquals(Outcome.SUCCEEDED, report.outcome());
+        assertEquals(TaskResult.SUCCEEDED, report.outcome());
         assertEquals("keep", Files.readString(root.resolve("outside/a")));
         assertFalse(Files.exists(root.resolve("folder")));
         WindowsLinks.create(root.resolve("alias"), root.resolve("outside"));
-        assertEquals(Outcome.SUCCEEDED, engine.delete(engine.inspect(path("alias"), true, () -> false), true, DeleteEffect.PERMANENT, journal, () -> false).outcome());
+        assertEquals(TaskResult.SUCCEEDED, engine.delete(engine.inspect(path("alias"), true, () -> false), true, DeleteEffect.PERMANENT, journal, () -> false).outcome());
         assertEquals("keep", Files.readString(root.resolve("outside/a")));
     }
 
@@ -368,11 +459,11 @@ class FileEngineTest {
         file("ordinary", "x");
         assertThrows(IOException.class, () -> copy("directory", "directory/sub", false, false, FileChoice.ask()));
         assertThrows(IOException.class, () -> engine.inspect(path("ordinary"), true, () -> false));
-        assertEquals(Outcome.FAILED, copy("ordinary", "directory", false, false, FileChoice.ask()).outcome());
+        assertEquals(TaskResult.FAILED, copy("ordinary", "directory", false, false, FileChoice.ask()).outcome());
         assertEquals("content", Files.readString(root.resolve("directory/a")));
     }
 
-    static class Journal implements FileJournal {
+    static class ActionLog implements FileActionLog {
         final Map<FilePath, FileInfo> links = new LinkedHashMap<>();
 
         final Map<FilePath, String> targets = new HashMap<>();

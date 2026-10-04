@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment;
 
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.sql.*;
@@ -13,10 +7,14 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaChecker;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
-
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -48,7 +46,7 @@ class ModTest extends DeploymentRuntimeFixture {
             try (var access = new SchemaAccessScope(database, identity, UUID.randomUUID(), true)) {
                 var report = new DeploymentSchema().validate(access);
                 assertTrue(report.valid(), report.toString());
-                assertNotNull(SchemaValidation.validate(access));
+                assertNotNull(SchemaChecker.validate(access));
             }
         }
     }
@@ -77,9 +75,9 @@ class ModTest extends DeploymentRuntimeFixture {
                         assertEquals(1,
                             statement.executeUpdate("INSERT INTO preference VALUES('acceptance','retained')"));
                     }
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of("saved"), Optional.empty());
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of("saved"), Optional.empty());
                 });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
             try (var access = scope(runtime, true);
                  var connection = access.openConnection();
@@ -170,7 +168,7 @@ class ModTest extends DeploymentRuntimeFixture {
                     "INSERT INTO deployment_unit_configuration_snapshot VALUES('unit',0,'a','1',1)"));
                 assertThrows(SQLException.class, () -> statement.executeUpdate(
                     "INSERT INTO deployment_unit_configuration_entry VALUES('absent',1,'port','NUMBER','80','SERVER')"));
-                String digest = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
+                String digest = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot
                     .create("unit", 1, "1", java.time.Instant.ofEpochMilli(1), List.of()).sha256();
                 statement.executeUpdate(
                     "INSERT INTO deployment_unit_configuration_snapshot VALUES('unit',1,'" + digest + "','1',1)");

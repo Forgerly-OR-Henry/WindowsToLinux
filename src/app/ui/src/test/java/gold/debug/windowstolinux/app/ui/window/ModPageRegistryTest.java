@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.ui.window;
 
-import gold.debug.windowstolinux.app.ui.mod.ExtensionPagePane;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.Component;
@@ -12,10 +10,15 @@ import java.util.concurrent.atomic.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.app.ui.mod.ExtensionPagePane;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.*;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 
 class ModPageRegistryTest {
@@ -69,11 +72,15 @@ class ModPageRegistryTest {
 
         boolean notifyFailure;
 
+        Error createError, closeError, notifyError;
+
         final List<UiEnvironment> environments = new ArrayList<>();
 
         public JComponent create(UiEnvironment environment) {
             assertTrue(SwingUtilities.isEventDispatchThread());
             creates++;
+            if (createError != null)
+                throw createError;
             if (createFailure)
                 throw new IllegalStateException("fixture create failure");
             return new JPanel();
@@ -82,6 +89,8 @@ class ModPageRegistryTest {
         public void environmentChanged(UiEnvironment environment) {
             assertTrue(SwingUtilities.isEventDispatchThread());
             environments.add(environment);
+            if (notifyError != null)
+                throw notifyError;
             if (notifyFailure)
                 throw new IllegalStateException("fixture notification failure");
         }
@@ -89,8 +98,112 @@ class ModPageRegistryTest {
         public void close() {
             assertTrue(SwingUtilities.isEventDispatchThread());
             closes++;
+            if (closeError != null)
+                throw closeError;
             if (closeFailures-- > 0)
                 throw new IllegalStateException("fixture close failure");
+        }
+    }
+
+    @Test
+    void hostNavigationCreatesLockedPagesWhileSdkOpenStillRequiresUnlock() throws Exception {
+        var host = new Host();
+        var registry = new ModPageRegistry(host, new UiEnvironment(Locale.ENGLISH, "dark", true));
+        var creations = new AtomicInteger();
+        try (var owner = registry.begin("example.owner", false)) {
+            owner.register(spec("main", false), () -> new Page() {
+                @Override
+                public JComponent create(UiEnvironment environment) {
+                    assertTrue(environment.locked());
+                    creations.incrementAndGet();
+                    return super.create(environment);
+                }
+            });
+            owner.commit();
+            assertThrows(ApiException.class, () -> owner.open("main"));
+            assertThrows(ApiException.class, () -> registry.openView(new PageKey("example.owner", "main")));
+            registry.navigateView(new PageKey("example.owner", "main"));
+            assertEquals(1, creations.get());
+            registry.navigateView(new PageKey("example.owner", "main"));
+            assertEquals(1, creations.get());
+            assertEquals(1, host.focuses);
+        }
+        assertTrue(host.views.isEmpty());
+    }
+
+    @Test
+    void authorErrorsRetainExactFailedPageUntilCleanupRetry() throws Exception {
+        var registry = new ModPageRegistry(new Host(), INITIAL);
+        var page = new Page();
+        page.createError = new ServiceConfigurationError("page provider unavailable");
+        page.closeError = new Error("page cleanup unavailable");
+        try (var owner = registry.begin("example.owner", false)) {
+            owner.register(spec("main", false), () -> page);
+            owner.commit();
+            var failure = assertThrows(ApiException.class, () -> owner.open("main"));
+            assertEquals("PAGE_CREATION_FAILED", failure.problem().eventCode());
+            assertEquals(1, failure.getSuppressed().length);
+            assertEquals(1, page.creates);
+            assertEquals(1, page.closes);
+            assertThrows(ApiException.class, () -> owner.open("main"));
+            assertEquals(1, page.creates);
+            page.closeError = null;
+            registry.closeView(new PageKey("example.owner", "main"));
+            assertEquals(2, page.closes);
+        }
+        assertTrue(registry.contributions().isEmpty());
+    }
+
+    @Test
+    void environmentErrorsDoNotSkipOtherPagesOrUndoHostLock() throws Exception {
+        var host = new Host();
+        var registry = new ModPageRegistry(host, INITIAL);
+        var bad = new Page();
+        var good = new Page();
+        bad.notifyError = new ServiceConfigurationError("page notification unavailable");
+        try (var owner = registry.begin("example.owner", false);
+             var other = registry.begin("example.other", false)) {
+            owner.register(spec("bad", false), () -> bad);
+            other.register(spec("good", false), () -> good);
+            owner.commit();
+            other.commit();
+            owner.open("bad");
+            other.open("good");
+            var locked = new UiEnvironment(Locale.ENGLISH, "light", true);
+            var failure = assertThrows(ApiException.class, () -> registry.environment(locked));
+            assertEquals("PAGE_ENVIRONMENT_FAILED", failure.problem().eventCode());
+            assertTrue(host.locked);
+            assertEquals(List.of(locked), good.environments);
+        }
+        assertEquals(1, bad.closes);
+        assertEquals(1, good.closes);
+    }
+
+    @Test
+    void fatalPageErrorsLeaveEdtBoundaryUnconvertedAndAllowExactCleanup() throws Exception {
+        for (var fatal : List.of(new InternalError("synthetic page VM error"), new ThreadDeath())) {
+            var registry = new ModPageRegistry(new Host(), INITIAL);
+            var page = new Page();
+            page.createError = fatal;
+            try (var owner = registry.begin("example.owner", false)) {
+                owner.register(spec("main", false), () -> page);
+                owner.commit();
+                assertSame(fatal, assertThrows(Error.class, () -> owner.open("main")));
+                assertEquals(0, page.closes);
+                page.createError = null;
+                registry.closeView(new PageKey("example.owner", "main"));
+                owner.open("main");
+                page.notifyError = fatal;
+                assertSame(fatal, assertThrows(Error.class,
+                    () -> registry.environment(new UiEnvironment(Locale.ENGLISH, "dark", false))));
+                page.notifyError = null;
+                page.closeError = fatal;
+                assertSame(fatal, assertThrows(Error.class,
+                    () -> registry.closeView(new PageKey("example.owner", "main"))));
+                page.closeError = null;
+                registry.closeView(new PageKey("example.owner", "main"));
+                assertEquals(3, page.closes);
+            }
         }
     }
 
@@ -215,7 +328,7 @@ class ModPageRegistryTest {
         };
         try (var owner = registry.begin("example.owner", false)) {
             owner.register(spec("first", false), () -> first);
-            owner.register(spec("second", false), () -> second);
+            owner.register(spec("second", true), () -> second);
             owner.commit();
             owner.open("first");
             owner.open("second");
@@ -274,22 +387,47 @@ class ModPageRegistryTest {
             owner.open("settings");
             SwingUtilities.invokeAndWait(() -> {
                 var businessTabs = components(pane.get(), JTabbedPane.class);
-                assertEquals(1, businessTabs.getFirst().getTabCount());
+                assertTrue(businessTabs.isEmpty());
                 var settingTabs = components(pane.get().settingsComponent(), JTabbedPane.class);
                 assertEquals(2, settingTabs.size());
                 assertEquals("Owner example.owner", settingTabs.getFirst().getTitleAt(0));
-                components(businessTabs.getFirst().getTabComponentAt(0), JButton.class).getFirst().doClick();
-                assertEquals(0, businessTabs.getFirst().getTabCount());
+                components(pane.get(), JButton.class).getFirst().doClick();
+                assertTrue(pane.get().selectedPage(false).isEmpty());
             });
             assertNull(closeFailure.get());
             assertEquals(1, business.closes);
             registry.get().environment(new UiEnvironment(Locale.ENGLISH, "dark", true));
             SwingUtilities.invokeAndWait(() -> {
-                assertFalse(components(pane.get(), JTabbedPane.class).getFirst().isVisible());
-                assertFalse(components(pane.get().settingsComponent(), JTabbedPane.class).getFirst().isVisible());
+                assertTrue(components(pane.get(), JTabbedPane.class).isEmpty());
+                assertTrue(components(pane.get().settingsComponent(), JTabbedPane.class).getFirst().isVisible());
             });
         }
         assertEquals(1, settings.closes);
+    }
+
+    @Test
+    void oneRootPerOwnerDoesNotCountSettingsOrIsolatedPreviews() throws Exception {
+        var registry = new ModPageRegistry(new Host(), INITIAL);
+        var created = new AtomicInteger();
+        try (var owner = registry.begin("example.owner", false)) {
+            var root = owner.register(spec("workspace", false), () -> {
+                created.incrementAndGet();
+                return new Page();
+            });
+            owner.register(spec("preferences", true), Page::new);
+            owner.registerPreview(spec("preview", false), Page::new);
+            var error = assertThrows(ApiException.class, () -> owner.register(spec("another", false), Page::new));
+            assertEquals("WORKSPACE_ALREADY_REGISTERED", error.problem().eventCode());
+            assertEquals("PAGE_ID_INVALID", assertThrows(ApiException.class,
+                () -> owner.register(spec("x".repeat(1025), false), Page::new)).problem().eventCode());
+            owner.commit();
+            assertEquals(1, registry.contributions().stream().filter(page -> !page.spec().settingsPage()).count());
+            assertEquals(0, created.get());
+            root.close();
+            owner.register(spec("replacement", false), Page::new);
+            assertEquals("replacement", registry.contributions().stream().filter(page -> !page.spec().settingsPage())
+                .findFirst().orElseThrow().key().pageId());
+        }
     }
 
     @Test

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationValue;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigValue;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,7 +34,7 @@ class DeploymentAgentPlanProtocolTest {
         assertEquals(DeploymentStorageLocation.StorageResourceType.CONFIGURATION, binding.resourceType());
         assertEquals("settings.json", binding.seedFile());
         assertEquals("a".repeat(64), binding.contentSha256());
-        assertEquals(new DeploymentConfigurationValue.Number(8080), result.configuration().getFirst().value());
+        assertEquals(new DeploymentConfigValue.Number(8080), result.configuration().getFirst().value());
         assertTrue(result.resources().databaseBindings().orElseThrow().isEmpty());
     }
 

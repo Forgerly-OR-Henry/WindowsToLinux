@@ -6,8 +6,11 @@ import java.util.*;
 
 import com.fasterxml.jackson.core.*;
 import com.fasterxml.jackson.databind.*;
-import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Bounded OpenAI transcription protocol values without business routing. / 不含业务路由的有界 OpenAI 转写协议值。 */
 public final class VoiceProtocol {
@@ -85,7 +88,7 @@ public final class VoiceProtocol {
      * @param modelId selected profile / 所选配置
      * @param confirmed already confirmed parts / 已确认片段
      * @return classified result / 已分类结果 */
-    public static OperationResult<VoiceResponse> failure(Outcome outcome, ProblemCode code, String event,
+    public static OperationResult<VoiceResponse> failure(TaskResult outcome, ProblemCode code, String event,
                                                          String message, String modelId, Optional<VoiceResponse> confirmed) {
         return new OperationResult<>(outcome, confirmed, Optional.of(
             new Problem(code, event, message, Map.of("modelId", modelId), Optional.empty())));

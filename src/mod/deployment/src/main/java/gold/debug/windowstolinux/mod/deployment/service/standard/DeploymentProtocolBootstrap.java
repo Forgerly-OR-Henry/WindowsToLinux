@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
@@ -17,10 +8,17 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentHelperInstallerScript;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentNativeDatabaseWire;
@@ -34,7 +32,7 @@ public final class DeploymentProtocolBootstrap {
     private final TaskContext task;
 
     /** Exact admitted server. / 精确已准入服务器。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Borrowed reviewed helper transport. / 借用经审核的 helper 传输。 */
     private final DeploymentManagedHelper helper;
@@ -45,7 +43,7 @@ public final class DeploymentProtocolBootstrap {
      * @param server admitted server / 已准入服务器
      * @param session borrowed remote session / 借用远端会话
      * @param interaction host review capability / 宿主审核能力 */
-    public DeploymentProtocolBootstrap(TaskService tasks, TaskContext task, ServerRef server, RemoteSession session,
+    public DeploymentProtocolBootstrap(TaskService tasks, TaskContext task, ServerId server, RemoteSession session,
                                        InteractionService interaction) {
         this.tasks = Objects.requireNonNull(tasks);
         this.task = Objects.requireNonNull(task);
@@ -58,12 +56,12 @@ public final class DeploymentProtocolBootstrap {
      * @return verified identity or an exact refusal or retained unknown / 已核身份、明确拒绝或留存未知
      * @throws ApiException if original task evidence cannot be persisted / 原任务依据无法持久化时 */
     public OperationResult<DeploymentManagedHelper.Identity> ensure() throws ApiException {
-        var retained = DeploymentProtocolBootstrapJournal.find(tasks, task);
+        var retained = DeploymentProtocolBootstrapActionLog.find(tasks, task);
         if (retained.isPresent())
             return reconcile(retained.orElseThrow());
         var observed = helper.probe();
-        if (observed.outcome() == Outcome.SUCCEEDED || observed.outcome() == Outcome.CANCELLED
-            || observed.outcome() == Outcome.UNKNOWN)
+        if (observed.outcome() == TaskResult.SUCCEEDED || observed.outcome() == TaskResult.CANCELLED
+            || observed.outcome() == TaskResult.UNKNOWN)
             return observed;
         UUID operationId = UUID.randomUUID();
         String serverDigest = digest(server.id().getBytes(StandardCharsets.UTF_8));
@@ -71,7 +69,7 @@ public final class DeploymentProtocolBootstrap {
         byte[] script = DeploymentHelperInstallerScript.renderTracked(task.id(), operationId, serverDigest, bodyDigest)
             .getBytes(StandardCharsets.UTF_8);
         try {
-            var journal = DeploymentProtocolBootstrapJournal.begin(tasks, task, server, operationId, serverDigest,
+            var journal = DeploymentProtocolBootstrapActionLog.begin(tasks, task, server, operationId, serverDigest,
                 bodyDigest, digest(script));
             return send(journal, script);
         } finally {
@@ -83,7 +81,7 @@ public final class DeploymentProtocolBootstrap {
      * @param journal original installation journal / 原安装日志
      * @return verified identity or retained uncertainty / 已核身份或留存未知
      * @throws ApiException if original persistence fails / 原持久化失败时 */
-    public OperationResult<DeploymentManagedHelper.Identity> reconcile(DeploymentProtocolBootstrapJournal journal)
+    public OperationResult<DeploymentManagedHelper.Identity> reconcile(DeploymentProtocolBootstrapActionLog journal)
         throws ApiException {
         var facts = journal.facts();
         if (!server.id().equals(facts.serverId()))
@@ -109,9 +107,9 @@ public final class DeploymentProtocolBootstrap {
         }
         if ("SUCCEEDED".equals(facts.phase())) {
             var observed = helper.probe();
-            if (observed.outcome() == Outcome.SUCCEEDED)
+            if (observed.outcome() == TaskResult.SUCCEEDED)
                 journal.close();
-            return observed.outcome() == Outcome.SUCCEEDED
+            return observed.outcome() == TaskResult.SUCCEEDED
                 ? observed
                 : unknown("DEPLOYMENT_HELPER_BOOTSTRAP_IDENTITY_UNCONFIRMED");
         }
@@ -123,7 +121,7 @@ public final class DeploymentProtocolBootstrap {
      * @param script owned exact command input / 所属精确命令输入
      * @return verified identity or retained uncertainty / 已核身份或留存未知
      * @throws ApiException if original persistence fails / 原持久化失败时 */
-    private OperationResult<DeploymentManagedHelper.Identity> send(DeploymentProtocolBootstrapJournal journal,
+    private OperationResult<DeploymentManagedHelper.Identity> send(DeploymentProtocolBootstrapActionLog journal,
                                                                    byte[] script) throws ApiException {
         var transitionEntered = new AtomicBoolean();
         var dispatched = new AtomicBoolean();
@@ -139,14 +137,14 @@ public final class DeploymentProtocolBootstrap {
                 return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_DISPATCH_UNCONFIRMED");
             journal.close();
             return new OperationResult<>(
-                failure.problem().code() == ProblemCode.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED,
+                failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                 Optional.empty(), Optional.of(failure.problem()));
         }
         if (!dispatched.get()) {
             journal.close();
             return new OperationResult<>(observed.outcome(), Optional.empty(), observed.problem());
         }
-        if (observed.outcome() == Outcome.UNKNOWN)
+        if (observed.outcome() == TaskResult.UNKNOWN)
             return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_DISPATCH_UNCONFIRMED");
         if (knownFailedExit(observed)) {
             journal.terminal(false);
@@ -160,7 +158,7 @@ public final class DeploymentProtocolBootstrap {
      * @param journal original installation journal / 原安装日志
      * @return verified identity or retained uncertainty / 已核身份或留存未知
      * @throws ApiException if original persistence fails / 原持久化失败时 */
-    private OperationResult<DeploymentManagedHelper.Identity> settle(DeploymentProtocolBootstrapJournal journal)
+    private OperationResult<DeploymentManagedHelper.Identity> settle(DeploymentProtocolBootstrapActionLog journal)
         throws ApiException {
         var facts = journal.facts();
         final OperationResult<CommandResult> observed;
@@ -176,7 +174,7 @@ public final class DeploymentProtocolBootstrap {
         if (!expected.equals(observed.value().orElseThrow().stdout()))
             return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_RECEIPT_CONFLICT");
         var identity = helper.probe();
-        if (identity.outcome() != Outcome.SUCCEEDED)
+        if (identity.outcome() != TaskResult.SUCCEEDED)
             return unknown("DEPLOYMENT_HELPER_BOOTSTRAP_IDENTITY_UNCONFIRMED");
         journal.terminal(true);
         journal.close();
@@ -187,7 +185,7 @@ public final class DeploymentProtocolBootstrap {
      * @param observed platform observation / 平台观察
      * @return whether exact success was observed / 是否观察到精确成功 */
     private static boolean knownSuccessfulExit(OperationResult<CommandResult> observed) {
-        if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
+        if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
             return false;
         var value = observed.value().orElseThrow();
         return value.exitCode().equals(Optional.of(0)) && !value.truncated() && value.stderr().isEmpty();
@@ -197,7 +195,7 @@ public final class DeploymentProtocolBootstrap {
      * @param observed platform observation / 平台观察
      * @return whether a bounded nonzero process exit was observed / 是否观察到有界非零进程退出 */
     private static boolean knownFailedExit(OperationResult<CommandResult> observed) {
-        if (observed.outcome() != Outcome.SUCCEEDED && observed.outcome() != Outcome.FAILED
+        if (observed.outcome() != TaskResult.SUCCEEDED && observed.outcome() != TaskResult.FAILED
             || observed.value().isEmpty())
             return false;
         var value = observed.value().orElseThrow();
@@ -215,7 +213,7 @@ public final class DeploymentProtocolBootstrap {
      * @param event stable event code / 稳定事件码
      * @return unknown result / 未知结果 */
     private static OperationResult<DeploymentManagedHelper.Identity> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
             event, "Original managed helper installation needs exact receipt review", Map.of(), Optional.empty())));
     }
 
@@ -223,7 +221,7 @@ public final class DeploymentProtocolBootstrap {
      * @param event stable event code / 稳定事件码
      * @return failed result / 失败结果 */
     private static OperationResult<DeploymentManagedHelper.Identity> failed(String event) {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
             event, "Managed helper installation may require manual review", Map.of(), Optional.empty())));
     }
 }

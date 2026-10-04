@@ -12,11 +12,11 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublication;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublicationPlan;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublish;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentPublishPlan;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph;
 
 /** Seeds complete managed applications through the actual formal publication contract. / 通过实际正式发布契约建立完整受管应用种子。 */
@@ -56,18 +56,18 @@ abstract class DeploymentManagedApplicationFixture extends DeploymentGraphFixtur
         var context = runtime.modContexts().get(OWNER).context();
         var units = publications(graph, revision, List.of()).stream()
             .sorted(java.util.Comparator.comparing(value -> value.unit().id())).toList();
-        var proposal = new DeploymentPublication(graph, units);
+        var proposal = new DeploymentPublish(graph, units);
         var server = graph.components().getFirst().unit().server();
-        var plan = new DeploymentPublicationPlan(UUID.randomUUID(), Optional.empty(), graph.applicationId(), server,
+        var plan = new DeploymentPublishPlan(UUID.randomUUID(), Optional.empty(), graph.applicationId(), server,
             DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
-            DeploymentOriginalPublicationCommit.references(server, proposal, Map.of()),
+            DeploymentOriginalPublishCommit.references(server, proposal, Map.of()),
             Instant.ofEpochMilli(System.currentTimeMillis()));
-        var commit = new DeploymentOriginalPublicationCommit(context);
+        var commit = new DeploymentOriginalPublishCommit(context);
         commit.begin(plan, proposal, task, "deployment-publication");
-        assertEquals(Outcome.SUCCEEDED, commit.commitVerified(task, plan.executionId(), proposal).outcome());
-        var record = new DeploymentExecutionRepository(context.db()).find(task, plan.executionId()).orElseThrow();
-        assertEquals(Outcome.SUCCEEDED, commit.finishKnown(task, record).outcome());
+        assertEquals(TaskResult.SUCCEEDED, commit.commitVerified(task, plan.executionId(), proposal).outcome());
+        var record = new DeploymentExecutionStore(context.db()).find(task, plan.executionId()).orElseThrow();
+        assertEquals(TaskResult.SUCCEEDED, commit.finishKnown(task, record).outcome());
         var link = DeploymentExecutionCodec.release(record).orElseThrow();
-        return new DeploymentReleaseRepository(context.db()).find(task, graph.applicationId(), link.id()).orElseThrow();
+        return new DeploymentReleaseStore(context.db()).find(task, graph.applicationId(), link.id()).orElseThrow();
     }
 }

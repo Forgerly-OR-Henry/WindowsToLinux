@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,8 +11,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,7 +45,7 @@ class PlatformModIntentsTest {
     static String manifest(String owner, String version, Map<String, String> dependencies, String schema,
                            List<Map<String, String>> migrations) throws Exception {
         var node = JSON.createObjectNode().put("formatVersion", 1).put("id", owner).put("name", "Fixture")
-            .put("version", version).put("platformApiRange", "1.0.0-dev.1").put("minJavaVersion", 21)
+            .put("version", version).put("platformApiRange", "[1.0.0-dev.1,1.0.0)").put("minJavaVersion", 21)
             .put("mainJar", "main/fixture.jar").put("entryClass", owner + ".Mod");
         node.set("dependencies", JSON.valueToTree(new TreeMap<>(dependencies).entrySet().stream()
             .map(e -> Map.of("id", e.getKey(), "versionRange", e.getValue())).toList()));
@@ -148,7 +146,7 @@ class PlatformModIntentsTest {
                 assertEquals("MOD_RESTART_PENDING",
                     assertThrows(ApiException.class, () -> binding.submit(work(), t -> success(null))).problem()
                         .eventCode());
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     runtime.tasks().bind(FREE, "1.0.0", false).submit(work(), t -> success(null)).completion()
                         .toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
             } finally {
@@ -179,7 +177,7 @@ class PlatformModIntentsTest {
             assertEquals("1.0.0", text(runtime, "SELECT selected_version FROM mod_registry WHERE mod_id='" + P + "'"));
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM runtime_log WHERE outcome='CANCELLED' AND log_id='" + archive + "'"));
-            assertEquals(Outcome.SUCCEEDED, runtime.tasks().bind(G, "1.0.0", false).submit(work(), t -> success(null))
+            assertEquals(TaskResult.SUCCEEDED, runtime.tasks().bind(G, "1.0.0", false).submit(work(), t -> success(null))
                 .completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
             assertEquals("MOD_REQUEST_NOT_PENDING",
                 assertThrows(ApiException.class, () -> manager.reviewCancellation(review.id())).problem()

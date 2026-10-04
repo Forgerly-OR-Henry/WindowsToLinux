@@ -59,7 +59,7 @@ public final class ModHostLease implements ContextLease {
             throw new IllegalStateException("Mod publication is sealed");
         if (published)
             return;
-        boolean normal = context.launchMode() == gold.debug.windowstolinux.appapi.mod.ModLaunchMode.NORMAL;
+        boolean normal = context.launchMode() == gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.NORMAL;
         if (normal && !tasks.ownerBlockers(context.identity().id()).isEmpty())
             throw new IllegalStateException("Previous Mod work still requires reconciliation");
         for (var contribution : contributions)

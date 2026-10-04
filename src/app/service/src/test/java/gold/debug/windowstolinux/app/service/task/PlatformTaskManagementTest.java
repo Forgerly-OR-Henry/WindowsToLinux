@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.app.service.task;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.service.task.PlatformTaskRuntimeTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -18,9 +9,16 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.service.task.TaskManagement;
 import gold.debug.windowstolinux.app.service.task.TaskManagement.RecoveryState;
-
+import gold.debug.windowstolinux.app.service.task.TaskManagement;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,7 +31,7 @@ class PlatformTaskManagementTest {
     }
 
     static OperationResult<Void> unknown() {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNAVAILABLE,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNAVAILABLE,
             "FIXTURE_UNCONFIRMED", "Original result is unconfirmed", Map.of(), Optional.empty())));
     }
 
@@ -57,7 +55,7 @@ class PlatformTaskManagementTest {
                 entered.countDown();
                 assertTrue(release.await(8, TimeUnit.SECONDS));
                 assertTrue(task.cancelToken().requested());
-                return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             });
             try {
                 assertTrue(entered.await(8, TimeUnit.SECONDS));
@@ -66,7 +64,7 @@ class PlatformTaskManagementTest {
                 });
                 assertEquals(TaskState.QUEUED, entry(service, queued.id()).snapshot().state());
                 assertEquals(TaskState.ENDED, service.requestCancel(queued.id()).state());
-                assertEquals(Outcome.CANCELLED, result(queued).outcome());
+                assertEquals(TaskResult.CANCELLED, result(queued).outcome());
                 assertTrue(entry(service, running.id()).cancellable());
                 assertEquals(TaskState.CANCEL_REQUESTED, service.requestCancel(running.id()).state());
                 assertFalse(running.completion().toCompletableFuture().isDone());
@@ -77,7 +75,7 @@ class PlatformTaskManagementTest {
             } finally {
                 release.countDown();
             }
-            assertEquals(Outcome.CANCELLED, result(running).outcome());
+            assertEquals(TaskResult.CANCELLED, result(running).outcome());
             assertTrue(service.list().isEmpty());
             assertEquals(0, security.securityState().activeTasks());
         }
@@ -146,7 +144,7 @@ class PlatformTaskManagementTest {
                     assertEquals(TaskState.ENDED,
                         service.reconcile(task.id(), false).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
                     assertEquals(1, calls.get());
-                    assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
                     assertTrue(result(task).value().isEmpty());
                 }
             }
@@ -175,7 +173,7 @@ class PlatformTaskManagementTest {
             assertEquals(RecoveryState.ARCHIVE_ONLY, entry(service, task.id()).recovery());
             assertFalse(entry(service, task.id()).cancellable());
             PlatformTaskArchivalTest.untrap(db);
-            assertEquals(Outcome.SUCCEEDED, service.reconcile(task.id(), false).toCompletableFuture()
+            assertEquals(TaskResult.SUCCEEDED, service.reconcile(task.id(), false).toCompletableFuture()
                 .get(8, TimeUnit.SECONDS).outcome().orElseThrow());
             assertEquals(1, calls.get());
             assertTrue(service.list().isEmpty());
@@ -198,7 +196,7 @@ class PlatformTaskManagementTest {
                 var task = tasks.submit(request(PlatformTaskAdmission.RESCUE_TYPE, true), context -> unknown());
                 state(task, TaskState.UNKNOWN);
                 try (var registration = tasks.registerRecovery(PlatformTaskAdmission.RESCUE_TYPE,
-                    (previous, context) -> new OperationResult<>(Outcome.FAILED, Optional.empty(),
+                    (previous, context) -> new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                         Optional.of(new Problem(ProblemCode.UNAVAILABLE, "FIXTURE_RECOVERED",
                             "Original operation was interrupted", Map.of(), Optional.empty()))))) {
                     if (owner.equals(PlatformTaskAdmission.PLATFORM_OWNER)) {

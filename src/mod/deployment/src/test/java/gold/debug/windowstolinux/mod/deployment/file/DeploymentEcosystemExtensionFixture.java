@@ -17,7 +17,7 @@ final class DeploymentEcosystemExtensionFixture {
     /** Creates a healthy or health-rejected source tree for one exact architecture. / 为一个精确架构创建健康或健康拒绝源码树。 */
     static Path create(Path parent, ArchitectureType architecture, String applicationId, String runtimeVersion,
                        String toolVersion, String marker, boolean healthy) throws IOException {
-        Path root = DeploymentRepositoryServiceFixture.copy(parent, applicationId, architecture.fixturePath() + "/http-service",
+        Path root = DeploymentStoreServiceFixture.copy(parent, applicationId, architecture.fixturePath() + "/http-service",
             healthy);
         if (architecture.pythonLocked() && runtimeVersion.equals("3.11")) {
             String tool = architecture.fixturePath().substring("python/".length());
@@ -56,7 +56,7 @@ final class DeploymentEcosystemExtensionFixture {
         } else if (architecture == ArchitectureType.RUBY_CLI) {
             replacements.put("rubyVersion=3.3", "rubyVersion=" + runtimeVersion);
         }
-        DeploymentRepositoryServiceFixture.replaceText(root, replacements);
+        DeploymentStoreServiceFixture.replaceText(root, replacements);
         return root;
     }
 

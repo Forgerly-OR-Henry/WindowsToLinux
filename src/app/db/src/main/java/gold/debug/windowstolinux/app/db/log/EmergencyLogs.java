@@ -8,6 +8,9 @@ import java.util.*;
 
 /** Bounded category files with verified staging and same-directory atomic publication. / 具有已核验暂存及同目录原子发布的有界类别文件。 */
 public final class EmergencyLogs {
+    /** Maximum retained emergency records per category. / 每类应急记录的保留上限。 */
+    private final int retention;
+
     /** Fixed confirmed platform data root. / 固定且已确认的平台数据根。 */
     private final Path root;
 
@@ -19,6 +22,16 @@ public final class EmergencyLogs {
     /** Binds storage without making fallback directories elsewhere. / 绑定存储，不在其他位置创建备用目录。
      * @param root confirmed database root / 已确认数据库根 */
     public EmergencyLogs(Path root) {
+        this(root, 100);
+    }
+
+    /** Captures the startup configuration. / 捕获启动配置。
+     * @param root supplied startup dependency / 启动依赖
+     * @param retention supplied startup dependency / 启动依赖
+     */
+    public EmergencyLogs(Path root, int retention) {
+        if (retention < 1 || retention > 100) throw new IllegalArgumentException("Invalid retention");
+        this.retention = retention;
         this.root = Objects.requireNonNull(root).toAbsolutePath().normalize();
     }
 
@@ -42,7 +55,7 @@ public final class EmergencyLogs {
      * @param target original registered target / 原登记目标
      * @return immutable validated records / 不可变已校验记录
      * @throws IOException if files, framing or attribution cannot be verified / 无法核实文件、帧或归属时 */
-    public List<LogRecordCodec.Record> read(LogRepository.Target target) throws IOException {
+    public List<LogRecordCodec.Record> read(LogStore.Target target) throws IOException {
         var directory = directory(false);
         if (directory == null)
             return List.of();
@@ -59,17 +72,17 @@ public final class EmergencyLogs {
      * @param target registered destination / 登记目的地
      * @param record original event identity / 原事件身份
      * @throws IOException if existing records or replacement cannot be confirmed / 无法确认既有记录或替换时 */
-    public void append(LogRepository.Target target, LogRecordCodec.Record record) throws IOException {
+    public void append(LogStore.Target target, LogRecordCodec.Record record) throws IOException {
         var records = new ArrayList<>(read(target));
         records.add(record);
-        replace(target, merge(records, 100));
+        replace(target, merge(records, retention));
     }
 
     /** Atomically replaces only this registered category after validating all bytes. / 校验全部字节后，仅原子替换此登记类别。
      * @param target original registration / 原登记
      * @param records exact confirmed replacement / 精确已确认替换集合
      * @throws IOException if publication remains unconfirmed / 发布仍未确认时 */
-    public void replace(LogRepository.Target target, List<LogRecordCodec.Record> records) throws IOException {
+    public void replace(LogStore.Target target, List<LogRecordCodec.Record> records) throws IOException {
         if (records.size() > 100)
             throw new IOException("Emergency category exceeds its record limit");
         var bytes = new ByteArrayOutputStream();
@@ -120,7 +133,7 @@ public final class EmergencyLogs {
      * @param path exact generated file path / 精确生成文件路径
      * @return verified complete records / 已核验完整记录
      * @throws IOException if content or physical path is invalid / 内容或实际路径无效时 */
-    private static List<LogRecordCodec.Record> readFile(LogRepository.Target target, Path path) throws IOException {
+    private static List<LogRecordCodec.Record> readFile(LogStore.Target target, Path path) throws IOException {
         if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS))
             return List.of();
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)

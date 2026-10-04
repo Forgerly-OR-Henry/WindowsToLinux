@@ -1,16 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.db.CheckResult;
+import gold.debug.windowstolinux.appapi.db.schema.CheckResult;
+import gold.debug.windowstolinux.appapi.db.schema.ModSchemaLifecycle;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 
 /** Initializes and reads the fixed official deployment schema through public managed JDBC. / 通过公开受管 JDBC 初始化并读取固定官方部署结构。 */
 public final class DeploymentSchema implements ModSchemaLifecycle {
@@ -84,45 +83,45 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
             if (violations.isEmpty()) {
                 validateBindings(connection, violations);
                 try {
-                    DeploymentProjectRepository.validate(connection);
+                    DeploymentProjectStore.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Deployment project facts are invalid");
                 }
                 try {
-                    DeploymentConfigurationRepository.validate(connection);
+                    DeploymentConfigStore.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment configuration snapshots are invalid");
                 }
                 try {
-                    DeploymentSecretRepository.validate(connection);
+                    DeploymentSecretStore.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment secret metadata or bindings are invalid");
                 }
                 try {
-                    DeploymentReleaseValidation.validate(connection);
+                    DeploymentReleaseChecker.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment release history is invalid");
                 }
                 try {
-                    DeploymentExecutionRepository.validate(connection);
+                    DeploymentExecutionStore.validate(connection);
                 } catch (SQLException invalid) {
                     violations.add("Stored deployment execution evidence is invalid");
                 }
                 try {
-                    DeploymentPayloadValidation.validate(connection);
+                    DeploymentPayloadChecker.validate(connection);
                 } catch (SQLException | IOException invalid) {
                     violations.add("Stored deployment runtime payloads are invalid");
                 }
                 if (violations.isEmpty()) {
                     try {
-                        DeploymentGraphRepository.validate(connection);
+                        DeploymentGraphStore.validate(connection);
                     } catch (SQLException invalid) {
                         violations.add("Stored complete application graphs are invalid");
                     }
                 }
                 if (violations.isEmpty()) {
                     try {
-                        DeploymentPublicationRepository.validate(connection);
+                        DeploymentPublishStore.validate(connection);
                     } catch (SQLException invalid) {
                         violations.add("Stored current publication facts are invalid");
                     }

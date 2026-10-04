@@ -40,7 +40,7 @@ class ModPackageReaderTest {
         var source = root.resolve("Mod.java");
         Files.writeString(source, """
             package sample.bundle;
-            import gold.debug.windowstolinux.appapi.mod.*;
+            import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
             public class Mod implements ModEntrypoint {
                 static {System.setProperty("wtl.package.reader.executed","initialized");}
                 public Mod() {}

@@ -8,20 +8,20 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteActions;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Runs the fixed helper installation and probe through one borrowed, host-authorized remote session. / 通过借用的宿主授权远端会话执行固定 helper 安装与探测。 */
 public final class DeploymentManagedHelper {
@@ -54,7 +54,7 @@ public final class DeploymentManagedHelper {
     private final InteractionService interaction;
 
     /** Original admitted server, never normalized. / 原准入服务器，不作规范化。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Original accepted task. / 原已接纳任务。 */
     private final TaskContext task;
@@ -71,7 +71,7 @@ public final class DeploymentManagedHelper {
      * @param server original admitted server / 原准入服务器
      * @param task original accepted task / 原已接纳任务
      * @param revision reviewed business revision / 已审阅业务修订 */
-    public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerId server,
                                    TaskContext task, String revision) {
         this(session, interaction, server, task, revision, DeploymentSendGuard.NONE);
     }
@@ -83,7 +83,7 @@ public final class DeploymentManagedHelper {
      * @param task original accepted task / 原任务
      * @param revision reviewed business revision / 已审阅业务修订
      * @param beforeSend caller-owned check / 调用方持有的核对 */
-    public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerId server,
                                    TaskContext task, String revision, DeploymentSendGuard beforeSend) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -104,7 +104,7 @@ public final class DeploymentManagedHelper {
             131072)) {
             java.util.Arrays.fill(body, (byte) 0);
             var grant = interaction.approve(intent("deployment.helper.install.v1", request), task);
-            if (grant.outcome() != Outcome.SUCCEEDED)
+            if (grant.outcome() != TaskResult.SUCCEEDED)
                 return withoutValue(grant);
             final OperationResult<CommandResult> response;
             beforeSend.verify();
@@ -116,13 +116,13 @@ public final class DeploymentManagedHelper {
                     throw uncertain;
                 return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
             }
-            if (response.outcome() == Outcome.CANCELLED)
+            if (response.outcome() == TaskResult.CANCELLED)
                 return withoutValue(response);
             if (!complete(response, installTail(), false))
                 return unknown("DEPLOYMENT_HELPER_INSTALL_UNCONFIRMED");
             try {
                 var observed = probe();
-                return observed.outcome() == Outcome.SUCCEEDED
+                return observed.outcome() == TaskResult.SUCCEEDED
                     ? observed
                     : unknown("DEPLOYMENT_HELPER_POSTINSTALL_UNCONFIRMED");
             } catch (ApiException uncertain) {
@@ -145,10 +145,10 @@ public final class DeploymentManagedHelper {
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofHours(2),
             131072)) {
             var grant = interaction.approve(intent("deployment.helper.install.tracked.v1", request), task);
-            if (grant.outcome() != Outcome.SUCCEEDED)
+            if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             if (task.cancelToken().requested())
-                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(),
+                return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(),
                     Optional.of(problem(ProblemCode.CANCELLED, "DEPLOYMENT_HELPER_INSTALL_UNSENT")));
             beforeExecute.run();
             beforeSend.verify();
@@ -166,7 +166,7 @@ public final class DeploymentManagedHelper {
             2048)) {
             java.util.Arrays.fill(script, (byte) 0);
             var grant = interaction.approve(intent("deployment.helper.install.status.v1", request), task);
-            if (grant.outcome() != Outcome.SUCCEEDED)
+            if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             beforeSend.verify();
             return session.execute(request, grant.value().orElseThrow());
@@ -181,18 +181,18 @@ public final class DeploymentManagedHelper {
     public OperationResult<Identity> probe() throws ApiException {
         try (var request = new CommandRequest(probeScript(), new byte[0], Duration.ofSeconds(30), 4096)) {
             var grant = interaction.approve(intent("deployment.helper.probe.v1", request), task);
-            if (grant.outcome() != Outcome.SUCCEEDED)
+            if (grant.outcome() != TaskResult.SUCCEEDED)
                 return withoutValue(grant);
             beforeSend.verify();
             var response = session.execute(request, grant.value().orElseThrow());
-            if (response.outcome() == Outcome.CANCELLED || response.outcome() == Outcome.UNKNOWN)
+            if (response.outcome() == TaskResult.CANCELLED || response.outcome() == TaskResult.UNKNOWN)
                 return withoutValue(response);
             if (complete(response, probeOutput(), true))
-                return new OperationResult<>(Outcome.SUCCEEDED,
+                return new OperationResult<>(TaskResult.SUCCEEDED,
                     Optional.of(new Identity(DeploymentManagedHelperBundle.PROTOCOL_VERSION,
                         DeploymentManagedHelperBundle.EXPECTED_SHA256)),
                     Optional.empty());
-            return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+            return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                 Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
         }
     }
@@ -201,7 +201,7 @@ public final class DeploymentManagedHelper {
      * @param operation versioned operation identity / 带版本的操作身份
      * @param request exact command and input digest / 精确命令及输入摘要
      * @return classified exact review intent / 已分类的精确审核意图 */
-    private gold.debug.windowstolinux.appapi.task.ActionIntent intent(String operation, CommandRequest request) {
+    private gold.debug.windowstolinux.appapi.task.action.ActionIntent intent(String operation, CommandRequest request) {
         return RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(operation,
             Set.of(new ActionTarget(server.id(), "deployment-helper", DeploymentManagedHelperBundle.PATH))));
     }
@@ -212,7 +212,7 @@ public final class DeploymentManagedHelper {
      * @param exact whether the whole output must match / 是否要求全部输出匹配
      * @return whether every success fact was observed / 是否已观察到全部成功事实 */
     private static boolean complete(OperationResult<CommandResult> response, String expected, boolean exact) {
-        if (response.outcome() != Outcome.SUCCEEDED || response.value().isEmpty())
+        if (response.outcome() != TaskResult.SUCCEEDED || response.value().isEmpty())
             return false;
         CommandResult value = response.value().orElseThrow();
         return value.exitCode().equals(Optional.of(0)) && !value.truncated() && (!exact || value.stderr().isEmpty())
@@ -230,7 +230,7 @@ public final class DeploymentManagedHelper {
      * @param event stable event identity / 稳定事件身份
      * @return retained uncertainty / 保留的不确定性 */
     private static OperationResult<Identity> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(),
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(),
             Optional.of(problem(ProblemCode.UNKNOWN, event)));
     }
 

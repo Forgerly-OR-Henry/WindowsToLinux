@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,17 +14,27 @@ import javax.swing.*;
 import javax.tools.ToolProvider;
 
 import gold.debug.windowstolinux.app.main.mod.PlatformModContext;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentModDiscovery;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentModFinder;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
 import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.*;
-
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,12 +47,12 @@ class PlatformModContextTest {
                 import java.util.*;
                 import java.util.concurrent.*;
                 import javax.swing.*;
-                import gold.debug.windowstolinux.appapi.mod.*;
-                import gold.debug.windowstolinux.appapi.task.*;
+                import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.service.ServiceRegistration; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+                import gold.debug.windowstolinux.appapi.task.result.ApiException; import gold.debug.windowstolinux.appapi.task.log.LogCategory; import gold.debug.windowstolinux.appapi.task.log.LogEvent; import gold.debug.windowstolinux.appapi.task.log.LogLevel; import gold.debug.windowstolinux.appapi.task.log.LogStorage; import gold.debug.windowstolinux.appapi.task.log.LogTarget; import gold.debug.windowstolinux.appapi.task.result.OperationResult; import gold.debug.windowstolinux.appapi.task.run.TaskContext; import gold.debug.windowstolinux.appapi.task.run.TaskHandle; import gold.debug.windowstolinux.appapi.task.model.TaskRequest; import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
-                import gold.debug.windowstolinux.appapi.ui.*;
-                import gold.debug.windowstolinux.appapi.file.FileReadRequest;
-        import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
+                import gold.debug.windowstolinux.appapi.ui.page.ModPage; import gold.debug.windowstolinux.appapi.ui.page.PageRegistration; import gold.debug.windowstolinux.appapi.ui.page.PageSpec; import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+                import gold.debug.windowstolinux.appapi.file.source.FileReadRequest;
+        import gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest;
                 public final class Mod implements ModEntrypoint, example.admission.api.Echo {
                     public static ModContext context;
                     public static TaskHandle<String> task;
@@ -63,9 +68,9 @@ class PlatformModContextTest {
                     public void start(ModContext supplied) throws Exception {
                         context=supplied;
                         List.of(context.identity(),context.launchMode(),context.ui(),context.tasks(),context.interaction(),context.servers(),context.linux(),context.ai(),context.db(),context.secrets(),context.file(),context.logs(),context.processes(),context.services());
-                        try { context.tasks().submit(new TaskRequest("wrong","Wrong",List.of(),false), t->new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()));throw new AssertionError("Startup admitted work"); }
+                        try { context.tasks().submit(new TaskRequest("wrong","Wrong",List.of(),false), t->new OperationResult<Void>(TaskResult.SUCCEEDED,Optional.empty(),Optional.empty()));throw new AssertionError("Startup admitted work"); }
                         catch(ApiException denied) { blockedStartup=denied.problem().code().name(); }
-                        context.tasks().registerRecovery("fixture",(before,t)->new OperationResult<Void>(Outcome.SUCCEEDED,Optional.empty(),Optional.empty()));
+                        context.tasks().registerRecovery("fixture",(before,t)->new OperationResult<Void>(TaskResult.SUCCEEDED,Optional.empty(),Optional.empty()));
                         logs=context.logs().register(new LogCategory("runtime","Runtime",Optional.empty()));
                         service=context.services().register(example.admission.api.Echo.class,this);
                         page=context.ui().register(new PageSpec("main","fixture.main","本机 CLASS 验收",false),()->new ModPage(){
@@ -87,16 +92,16 @@ class PlatformModContextTest {
                         if(context.servers().list(Optional.empty(),10,task).items().size()!=1)throw new AssertionError("Original server admission");
                         var secret=context.secrets().create("fixture",new byte[]{1,2,3},task);
                         if(context.secrets().use(secret,"fixture",task,bytes->bytes.length)!=3)throw new AssertionError("Secret scope");
-                        var selection=context.file().selectDirectory("选择验收目录",task);
-                        var read=context.file().read(selection,new FileReadRequest("sample.txt",1024),task);
+                        var selection=context.file().sources().selectDirectory("选择验收目录",task);
+                        var read=context.file().sources().read(selection,new FileReadRequest("sample.txt",1024),task);
                         String text=new String(read.content(),java.nio.charset.StandardCharsets.UTF_8);
-                        try(var snapshot=context.file().snapshot(selection,new SnapshotRequest(List.of("sample.txt"),1024),task)) {
+                        try(var snapshot=context.file().snapshots().snapshot(selection,new SnapshotRequest(List.of("sample.txt"),1024),task)) {
                             snapshotPath=snapshot.directory();entered.countDown();
                             if(!release.await(12,TimeUnit.SECONDS))throw new AssertionError("Release timed out");
                         }
-                        var result=context.logs().write(logs,new LogEvent(LogLevel.INFO,"CONTEXT_FLOW","Local capability flow completed",Optional.empty(),Optional.of(task.id()),Optional.empty(),Optional.of(Outcome.SUCCEEDED)));
+                        var result=context.logs().write(logs,new LogEvent(LogLevel.INFO,"CONTEXT_FLOW","Local capability flow completed",Optional.empty(),Optional.of(task.id()),Optional.empty(),Optional.of(TaskResult.SUCCEEDED)));
                         if(result.storage()!=LogStorage.DATABASE)throw new AssertionError("Real log persistence");
-                        return new OperationResult<>(Outcome.SUCCEEDED,Optional.of(text),Optional.empty());
+                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(text),Optional.empty());
                     }
                     public String value(){return "actual-provider";}
                     public void stop(StopContext reason) throws Exception {stops++;if(page!=null)page.close();if(service!=null)service.close();}
@@ -126,10 +131,10 @@ class PlatformModContextTest {
             """
             .formatted(schema ? ",\"schemaVersion\":\"1\"" : "");
         Files.writeString(code.resolve("mod.json"), json, StandardCharsets.UTF_8);
-        DevelopmentDescriptor.generate(workspace, code.resolve("mod.json"), classes, List.of(),
+        DevelopmentInfo.generate(workspace, code.resolve("mod.json"), classes, List.of(),
             List.of(workspace.resolve("pom.xml"), workspace.resolve("src/mod/pom.xml"), code.resolve("pom.xml")),
             List.of());
-        var discovered = DevelopmentModDiscovery.scan(workspace);
+        var discovered = DevelopmentModFinder.scan(workspace);
         assertTrue(discovered.rejections().isEmpty(), discovered.rejections().toString());
         assertEquals(1, discovered.candidates().size());
         var candidate = discovered.candidates().getFirst();
@@ -310,7 +315,7 @@ class PlatformModContextTest {
             } finally {
                 f.signal("release").countDown();
             }
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 f.task().completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
             f.session.stop(StopReason.APPLICATION_RESTART);
             assertTrue(f.runtime.modContexts().isEmpty());

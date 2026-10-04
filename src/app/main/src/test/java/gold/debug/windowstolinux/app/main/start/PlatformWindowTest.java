@@ -20,6 +20,9 @@ import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -45,6 +48,9 @@ class PlatformWindowTest {
                 window.set(frame);
                 frame.onExit(runtime);
                 frame.setVisible(true);
+                assertEquals("shell.home", frame.currentPage().platformId());
+                ((JButton) named(frame, "navigation.settings")).doClick(0);
+                ((JButton) named(frame, "navigation.security.settings")).doClick(0);
                 assertTrue(named(frame, "security.settings.password").isShowing());
                 assertFalse(((JButton) named(frame, "security.lock")).isEnabled());
                 capture(frame, "platform-first-use.png");
@@ -82,17 +88,16 @@ class PlatformWindowTest {
                 owned.setSize(320, 160);
                 owned.setVisible(true);
                 ((JButton) named(window.get(), "security.lock")).doClick(0);
-                assertFalse(window.get().getContentPane().isVisible());
+                assertTrue(window.get().getContentPane().isVisible());
+                assertTrue(window.get().getGlassPane().isVisible());
                 assertFalse(owned.getContentPane().isVisible());
                 assertEquals(0, ((JPasswordField) named(owned, "fixture.password")).getPassword().length);
                 assertTrue(pageLocked.get());
                 capture(window.get(), "platform-locked.png");
                 owned.dispose();
-                ((JButton) named(window.get(), "security.enter")).doClick(0);
-                ((JPasswordField) named(window.get(), "security.password")).setText("isolated-window-password");
-                ((JButton) named(window.get(), "security.submit")).doClick(0);
                 return null;
             });
+            unlockPassword(window.get(), "isolated-window-password");
             await(() -> runtime.security().securityState().unlocked()
                 && !runtime.security().securityState().changing());
             await(() -> !pageLocked.get());
@@ -125,8 +130,9 @@ class PlatformWindowTest {
                     FailureReportStore.disabled());
                 try {
                     frame.setVisible(true);
-                    assertFalse(frame.getContentPane().isVisible());
-                    assertTrue(named(frame, "security.enter").isShowing());
+                    assertTrue(frame.getContentPane().isVisible());
+                    assertTrue(frame.getGlassPane().isVisible());
+                    assertEquals("解锁", ((JButton) named(frame, "security.lock")).getText());
                 } finally {
                     frame.dispose();
                 }
@@ -152,10 +158,26 @@ class PlatformWindowTest {
         return future.get();
     }
 
+    static void unlockPassword(PlatformFrame frame, String value) throws Exception {
+        SwingUtilities.invokeLater(() -> ((JButton) named(frame, "security.lock")).doClick(0));
+        await(() -> java.util.Arrays.stream(frame.getOwnedWindows())
+            .anyMatch(window -> window.isShowing() && "security.unlockDialog".equals(window.getName())));
+        onEdt(() -> {
+            Window prompt = java.util.Arrays.stream(frame.getOwnedWindows())
+                .filter(window -> window.isShowing() && "security.unlockDialog".equals(window.getName())).findFirst().orElseThrow();
+            ((JPasswordField) named(prompt, "security.password")).setText(value);
+            ((JButton) named(prompt, "security.submit")).doClick(0);
+            return null;
+        });
+    }
+
     static void await(java.util.function.BooleanSupplier condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!onEdt(condition::getAsBoolean) && System.nanoTime() < deadline)
+        while (System.nanoTime() < deadline) {
+            if (onEdt(condition::getAsBoolean))
+                return;
             Thread.sleep(25);
+        }
         assertTrue(onEdt(condition::getAsBoolean));
     }
 

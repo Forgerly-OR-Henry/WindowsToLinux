@@ -1,14 +1,13 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.io.*;
 import java.nio.CharBuffer;
 import java.nio.charset.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Sends script bytes separately from the command's unchanged binary input. / 将脚本字节与命令的原始二进制输入分开传送。 */
 final class SshCommandFrame implements AutoCloseable {

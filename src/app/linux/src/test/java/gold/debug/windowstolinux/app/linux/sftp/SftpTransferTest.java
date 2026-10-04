@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.app.linux.sftp;
 
-import gold.debug.windowstolinux.app.linux.ssh.connect.LinuxLoopbackSshServer;
-import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
-
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-
-import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -21,9 +10,16 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.appapi.linux.TransferConflictChoice;
-import gold.debug.windowstolinux.appapi.linux.TransferRequest;
-
+import gold.debug.windowstolinux.app.linux.ssh.connect.LinuxLoopbackSshServer;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandExecutionTest;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
 import org.apache.sshd.common.util.threads.*;
 import org.apache.sshd.server.session.ServerSession;
@@ -50,28 +46,28 @@ class SftpTransferTest {
                 Path source = Files.write(directory.resolve("原始 输入.bin"), bytes);
                 Files.createDirectories(fixture.remote.resolve("nested"));
                 var upload = transfer(connection, source, "/nested/二进制 file.bin", bytes.length, digest(bytes), true);
-                assertEquals(Outcome.SUCCEEDED, upload.outcome(), upload.toString());
+                assertEquals(TaskResult.SUCCEEDED, upload.outcome(), upload.toString());
                 assertEquals(bytes.length, upload.value().orElseThrow().transferredBytes());
                 assertEquals(digest(bytes), upload.value().orElseThrow().sha256());
                 assertArrayEquals(bytes, Files.readAllBytes(fixture.remote.resolve("nested/二进制 file.bin")));
                 Path received = directory.resolve("received.bin");
                 var download = transfer(connection, received, "/nested/二进制 file.bin", bytes.length, digest(bytes),
                     false);
-                assertEquals(Outcome.SUCCEEDED, download.outcome(), download.toString());
+                assertEquals(TaskResult.SUCCEEDED, download.outcome(), download.toString());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
                 var skippedDownload = transfer(connection, received, "/nested/二进制 file.bin", bytes.length,
                     digest(bytes), false);
-                assertEquals(Outcome.FAILED, skippedDownload.outcome());
+                assertEquals(TaskResult.FAILED, skippedDownload.outcome());
                 assertEquals("SFTP_CONFLICT_SKIPPED", skippedDownload.problem().orElseThrow().eventCode());
                 var skippedUpload = transfer(connection, source, "/nested/二进制 file.bin", bytes.length,
                     digest(bytes), true);
-                assertEquals(Outcome.FAILED, skippedUpload.outcome());
+                assertEquals(TaskResult.FAILED, skippedUpload.outcome());
                 assertEquals("SFTP_CONFLICT_SKIPPED", skippedUpload.problem().orElseThrow().eventCode());
                 assertArrayEquals(bytes, Files.readAllBytes(received));
                 Path empty = Files.write(directory.resolve("empty"), new byte[0]);
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     transfer(connection, empty, "/empty", 0, digest(new byte[0]), true).outcome());
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     transfer(connection, directory.resolve("empty-copy"), "/empty", 0, digest(new byte[0]), false)
                         .outcome());
                 Files.delete(source);
@@ -98,16 +94,16 @@ class SftpTransferTest {
             assertEquals(ProblemCode.INVALID_INPUT,
                 assertThrows(ApiException.class, () -> transfer(connection, source, "/never", 3, "bad", true))
                     .problem().code());
-            assertEquals(Outcome.FAILED, transfer(connection, source, "/never", 2, digest(bytes), true).outcome());
-            assertEquals(Outcome.FAILED, transfer(connection, source, "/never", 3, "0".repeat(64), true).outcome());
-            assertEquals(Outcome.FAILED, transfer(connection, root, "/never", 3, digest(bytes), true).outcome());
+            assertEquals(TaskResult.FAILED, transfer(connection, source, "/never", 2, digest(bytes), true).outcome());
+            assertEquals(TaskResult.FAILED, transfer(connection, source, "/never", 3, "0".repeat(64), true).outcome());
+            assertEquals(TaskResult.FAILED, transfer(connection, root, "/never", 3, digest(bytes), true).outcome());
             Files.createDirectories(fixture.remote.resolve("directory"));
-            assertEquals(Outcome.FAILED,
+            assertEquals(TaskResult.FAILED,
                 transfer(connection, root.resolve("never"), "/directory", 3, digest(bytes), false).outcome());
             Files.write(fixture.remote.resolve("file"), bytes);
-            assertEquals(Outcome.FAILED,
+            assertEquals(TaskResult.FAILED,
                 transfer(connection, root.resolve("never"), "/file", 2, digest(bytes), false).outcome());
-            assertEquals(Outcome.FAILED,
+            assertEquals(TaskResult.FAILED,
                 transfer(connection, root.resolve("never"), "/file", 3, "0".repeat(64), false).outcome());
             assertFalse(Files.exists(root.resolve("never")));
             assertFalse(Files.exists(fixture.remote.resolve("never")));
@@ -130,7 +126,7 @@ class SftpTransferTest {
             byte[] bytes = {1, 2, 3};
             Path source = Files.write(root.resolve("input"), bytes);
             var result = transfer(connection, source, "/corrupt", 3, digest(bytes), true);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals(1, writes.get());
             assertFalse(Files.exists(fixture.remote.resolve("corrupt")));
             assertArrayEquals(new byte[]{0, 2, 3}, Files.readAllBytes(temporary(fixture.remote)));
@@ -158,12 +154,12 @@ class SftpTransferTest {
             byte[] bytes = new byte[200000];
             Path source = Files.write(root.resolve("input"), bytes);
             var request = new TransferRequest(source, "/partial", bytes.length);
-            assertEquals(Outcome.CANCELLED, connection
+            assertEquals(TaskResult.CANCELLED, connection
                 .transfer(request, digest(bytes), true, Duration.ofSeconds(5), cancelled::get, progress -> {
                 }, conflict -> TransferConflictChoice.SKIP, journal()).outcome());
             assertFalse(Files.exists(fixture.remote.resolve("partial")));
             cancelled.set(false);
-            assertEquals(Outcome.UNKNOWN, connection
+            assertEquals(TaskResult.UNKNOWN, connection
                 .transfer(request, digest(bytes), true, Duration.ofSeconds(5), cancelled::get, progress -> {
                 }, conflict -> TransferConflictChoice.SKIP, journal()).outcome());
             assertEquals(1, writes.get());
@@ -209,7 +205,7 @@ class SftpTransferTest {
                         progress -> {
                         }, conflict -> TransferConflictChoice.SKIP, journal());
                     assertEquals(0, entered.getCount());
-                    assertEquals(Outcome.UNKNOWN, result.outcome(), result.toString());
+                    assertEquals(TaskResult.UNKNOWN, result.outcome(), result.toString());
                     if (timeout)
                         assertEquals("SFTP_STALLED", result.problem().orElseThrow().eventCode());
                     assertFalse(Files.exists(fixture.remote.resolve("partial")));
@@ -236,14 +232,14 @@ class SftpTransferTest {
              var connector = new SshConnector();
              var connection = SshCommandExecutionTest.connect(connector, fixture.server)) {
             var result = transfer(connection, source, "/changed", 3, digest(bytes), true);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertTrue(result.value().isEmpty());
             assertFalse(Files.exists(fixture.remote.resolve("changed")));
             assertArrayEquals(new byte[]{9, 2, 3}, Files.readAllBytes(temporary(fixture.remote)));
         }
     }
 
-    static TransferJournal journal() {
+    static TransferActionLog journal() {
         return plan -> new ResourceLease() {
             public java.util.UUID id() {
                 return plan.id();
@@ -254,7 +250,7 @@ class SftpTransferTest {
         };
     }
 
-    static OperationResult<gold.debug.windowstolinux.appapi.linux.TransferResult> transfer(
+    static OperationResult<gold.debug.windowstolinux.appapi.linux.transfer.TransferResult> transfer(
         SshConnector.Connection connection, Path local, String remote, long limit, String digest, boolean upload)
         throws ApiException {
         return connection.transfer(new TransferRequest(local, remote, limit), digest, upload, Duration.ofSeconds(5),
@@ -289,14 +285,14 @@ class SftpTransferTest {
             Path remoteLink = fixture.remote.resolve("remote-link");
             directoryLink(remoteLink, outside);
             try {
-                assertEquals(Outcome.FAILED,
+                assertEquals(TaskResult.FAILED,
                     transfer(connection, localLink.resolve("input"), "/never", 3, digest(bytes), true).outcome());
-                assertEquals(Outcome.FAILED,
+                assertEquals(TaskResult.FAILED,
                     transfer(connection, source, "/remote-link/never", 3, digest(bytes), true).outcome());
                 Files.write(fixture.remote.resolve("source"), bytes);
-                assertEquals(Outcome.FAILED,
+                assertEquals(TaskResult.FAILED,
                     transfer(connection, localLink.resolve("never"), "/source", 3, digest(bytes), false).outcome());
-                assertEquals(Outcome.FAILED,
+                assertEquals(TaskResult.FAILED,
                     transfer(connection, root.resolve("never"), "/remote-link/input", 3, digest(bytes), false)
                         .outcome());
                 assertFalse(Files.exists(outside.resolve("never")));
@@ -327,7 +323,7 @@ class SftpTransferTest {
             Files.write(fixture.remote.resolve("changing"), bytes);
             Path received = root.resolve("received");
             var result = transfer(connection, received, "/changing", bytes.length, digest(bytes), false);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertTrue(result.value().isEmpty());
             assertFalse(Files.exists(received));
             assertArrayEquals(new byte[]{0, 2, 3}, Files.readAllBytes(temporary(root)));

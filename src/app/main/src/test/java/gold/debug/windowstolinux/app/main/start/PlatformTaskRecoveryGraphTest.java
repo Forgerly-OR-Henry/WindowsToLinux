@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -15,8 +8,13 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -98,11 +96,11 @@ class PlatformTaskRecoveryGraphTest {
                 sql(db, "UPDATE mod_schema SET generation=? WHERE mod_id=?", schema.generation(), PROVIDER);
                 sql(db, "UPDATE mod_version SET content_sha256=? WHERE mod_id=?", "3".repeat(64), LEAF);
                 release.countDown();
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     first.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 if (queued != null) {
                     var result = queued.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
-                    assertEquals(Outcome.SUCCEEDED, result.outcome());
+                    assertEquals(TaskResult.SUCCEEDED, result.outcome());
                     assertEquals(observed.get(), result.value().orElseThrow());
                 }
             }
@@ -143,7 +141,7 @@ class PlatformTaskRecoveryGraphTest {
                 assertTrue(new TaskLedger(runtime.persistence().database()).queries().recoveryGraph(context.id()).isEmpty());
                 return success(null);
             });
-            assertEquals(Outcome.SUCCEEDED, task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.SUCCEEDED, task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_registry"));
         }
     }

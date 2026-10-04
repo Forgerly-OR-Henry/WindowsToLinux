@@ -3,10 +3,10 @@ package gold.debug.windowstolinux.mod.deployment.service.agent;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Cooperates with one owning worker only at settled action boundaries. / 仅在动作已结清边界与一项所属工作线程协作。 */
 public final class DeploymentAgentControl {

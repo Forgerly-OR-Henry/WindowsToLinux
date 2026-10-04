@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.Graphics2D;
@@ -28,22 +22,28 @@ import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.secret.SecretRef;
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
-
-import gold.debug.windowstolinux.appapi.task.TaskState;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Candidate;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DeploymentNativeDatabaseFacts.Instance;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqliteSetup;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -60,7 +60,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             try {
                 SwingUtilities
@@ -119,11 +119,11 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             SwingUtilities
                 .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
-            var server = new gold.debug.windowstolinux.appapi.server.ServerRef("native-modal-server");
+            var server = new gold.debug.windowstolinux.appapi.server.model.ServerId("native-modal-server");
             var previous = new Instance(DeploymentDatabaseEngineType.POSTGRESQL, "postgresql-16", "15.6", 5432,
                 "postgresql.service", "/var/lib/postgresql/16/main", "a".repeat(64), false);
             var installed = new Instance(DeploymentDatabaseEngineType.POSTGRESQL, "postgresql-16", "16.6", 5432,
@@ -139,9 +139,9 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     for (var result : List.of(reviewer.install(server, database, candidate, task),
                         reviewer.replacement(server, previous, candidate, task),
                         reviewer.restored(server, installed, task)))
-                        if (result.outcome() != Outcome.SUCCEEDED)
+                        if (result.outcome() != TaskResult.SUCCEEDED)
                             return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
-                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 });
             var install = awaitDialog("安装数据库软件包");
             captureDialog(install, "native-install");
@@ -187,7 +187,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var restoration = awaitDialog("确认人工恢复数据库");
             captureDialog(restoration, "native-restoration");
             acceptDialog(restoration);
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(handle.id(), originalTask.get());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
@@ -238,7 +238,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(bound,
                     new DeploymentStaticWorkflow(bound,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             bound))));
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
@@ -262,7 +262,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             } finally {
                 release.countDown();
             }
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertFalse(cancelled.get(), "Confirmed original secret creation must outlive the view");
             awaitServerTasks(real);
@@ -286,7 +286,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
@@ -306,15 +306,15 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     page.close();
             });
             assertFalse(dialog.isVisible());
-            assertEquals(Outcome.CANCELLED,
+            assertEquals(TaskResult.CANCELLED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var read = context.tasks().submit(
                 new TaskRequest("cancelled-secret-read", "Check absent revision", List.of(), true), task -> {
-                    assertTrue(new DeploymentSecretRepository(context.db())
-                        .findRevision(task, new DeploymentSecretReference("cancelled-secret", 1)).isEmpty());
-                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    assertTrue(new DeploymentSecretStore(context.db())
+                        .findRevision(task, new DeploymentSecretRef("cancelled-secret", 1)).isEmpty());
+                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             if (lock)
                 SwingUtilities.invokeAndWait(page::close);
@@ -379,7 +379,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
@@ -413,27 +413,27 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             } finally {
                 Arrays.fill(input, '\0');
             }
-            var reference = new DeploymentSecretReference("page-secret", 1);
+            var reference = new DeploymentSecretRef("page-secret", 1);
             awaitSecretChoice(page, reference);
             var read = context.tasks().submit(
                 new TaskRequest("page-secret-read", "Read saved revision", List.of("secret-server"), false),
                 task -> {
-                    var stored = new DeploymentSecretRepository(context.db()).findRevision(task, reference)
+                    var stored = new DeploymentSecretStore(context.db()).findRevision(task, reference)
                         .orElseThrow();
                     assertEquals("deployment-application", stored.purpose().orElseThrow());
                     var expected = new byte[]{(byte) 0xe4, (byte) 0xbd, (byte) 0xa0, (byte) 0xe5, (byte) 0xa5,
                         (byte) 0xbd, 0x21};
                     boolean matched = context.secrets().use(
-                        new SecretRef(stored.credentialId(), stored.purpose().orElseThrow()),
+                        new SecretId(stored.credentialId(), stored.purpose().orElseThrow()),
                         stored.purpose().orElseThrow(), task, actual -> Arrays.equals(expected, actual));
                     Arrays.fill(expected, (byte) 0);
                     assertTrue(matched);
-                    return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             SwingUtilities.invokeAndWait(() -> {
-                var choice = new DeploymentSecretReferenceField(page::text, "", page.secretChoices());
+                var choice = new DeploymentSecretRefField(page::text, "", page.secretChoices());
                 findButton(choice, "使用所选修订").doClick();
                 assertEquals("page-secret:1", choice.value());
                 var reviewRow = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING));
@@ -449,7 +449,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var reopened = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             var reopenedView = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(() -> reopenedView
@@ -562,7 +562,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             SwingUtilities
                 .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
@@ -575,14 +575,14 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var fields = new DeploymentStaticRuntimeResolver().corrections("service", defaults);
             var prompt = new DeploymentStaticWorkflow.Prompt("service", "service", DeploymentProjectKind.GO_SERVICE,
                 defaults, fields);
-            var formClass = Class.forName(DeploymentStaticPageReviewer.class.getName() + "$ComponentForm");
+            var formClass = Class.forName(DeploymentStaticPageReviewer.class.getName() + "$PartForm");
             var constructor = formClass.getDeclaredConstructor(DeploymentStaticPage.class,
                 DeploymentStaticWorkflow.Prompt.class);
             constructor.setAccessible(true);
             var panelMethod = formClass.getDeclaredMethod("panel");
             panelMethod.setAccessible(true);
             var confirmation = DeploymentStaticPageReviewer.class.getDeclaredMethod("confirmation",
-                DeploymentStaticPage.class, gold.debug.windowstolinux.appapi.server.ServerRef.class, String.class,
+                DeploymentStaticPage.class, gold.debug.windowstolinux.appapi.server.model.ServerId.class, String.class,
                 Map.class, Map.class, Map.class, Optional.class);
             confirmation.setAccessible(true);
             SwingUtilities.invokeAndWait(() -> {
@@ -597,7 +597,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     var gitReview = new DeploymentStaticWorkflow.GitReview("https://example.invalid/repository.git",
                         "DEFAULT:HEAD", "a".repeat(40));
                     var finalPanel = (JPanel) confirmation.invoke(null, page,
-                        new gold.debug.windowstolinux.appapi.server.ServerRef("visual-server"), "b".repeat(64),
+                        new gold.debug.windowstolinux.appapi.server.model.ServerId("visual-server"), "b".repeat(64),
                         Map.of("service", "c".repeat(64)), Map.of(), Map.of(), Optional.of(gitReview));
                     assertNotNull(findLabel(finalPanel, "确认后将在部署前保存本次经审阅的来源项目记录。"));
                     render(new JOptionPane(new JScrollPane(finalPanel), JOptionPane.QUESTION_MESSAGE,
@@ -622,7 +622,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                 + "db.main.pathEnvironment=APP_DB_PATH\ndb.main.initialize=schema-a.sql,missing.sql\n");
         Files.writeString(source.resolve("schema-a.sql"), "CREATE TABLE a(id integer);");
         Files.writeString(source.resolve("schema-b.sql"), "CREATE TABLE b(id integer);");
-        var assessment = new DatabaseProjectInspector().inspect(source);
+        var assessment = new DatabaseProjectChecker().inspect(source, (source).getFileName().toString());
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -630,27 +630,27 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             SwingUtilities
                 .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
-            var target = new gold.debug.windowstolinux.appapi.server.ServerRef("sqlite-server");
+            var target = new gold.debug.windowstolinux.appapi.server.model.ServerId("sqlite-server");
             var result = new AtomicReference<Map<String, String>>();
             var handle = context.tasks().submit(new TaskRequest("sqlite-modal-test", "SQLite review", List.of(), true),
                 task -> {
                     var reviewer = new DeploymentStaticPageReviewer(page, 0);
                     var input = reviewer.databaseInputs(target, "api", "a".repeat(64), source, "sqlite-app",
                         assessment, task);
-                    if (input.outcome() != Outcome.SUCCEEDED)
+                    if (input.outcome() != TaskResult.SUCCEEDED)
                         return new OperationResult<Void>(input.outcome(), Optional.empty(), input.problem());
                     result.set(input.value().orElseThrow());
                     var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment,
                         result.get());
                     var first = reviewer.confirmSqliteInitialization(target, "api", "a".repeat(64), completed,
                         task);
-                    if (first.outcome() != Outcome.SUCCEEDED)
+                    if (first.outcome() != TaskResult.SUCCEEDED)
                         return new OperationResult<Void>(first.outcome(), Optional.empty(), first.problem());
-                    var prepared = DeploymentSqlitePreparation.prepare(source, "sqlite-app", completed, true, task);
+                    var prepared = DeploymentSqliteSetup.prepare(source, "sqlite-app", completed, true, task);
                     var answers = new DeploymentStaticWorkflow.Answers(
                         Map.of("databaseMode", "NONE", "databaseDetails", ""), List.of(),
                         gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits
@@ -679,7 +679,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var finalDialog = awaitDialog("确认部署");
             SwingUtilities.invokeAndWait(() -> captureDialog(finalDialog, "sqlite-final-confirm"));
             acceptDialog(finalDialog);
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             var completed = DeploymentDatabaseSourceInputs.complete(source, "sqlite-app", assessment, result.get());
             assertEquals("state/custom.db", completed.databases().getFirst().sqlite().orElseThrow().accessPath());
@@ -703,12 +703,12 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             SwingUtilities
                 .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
             var handle = context.tasks().submit(new TaskRequest("modal-review-test", "Modal review", List.of(), true),
-                task -> new OperationResult<>(Outcome.SUCCEEDED,
+                task -> new OperationResult<>(TaskResult.SUCCEEDED,
                     Optional.of(page.approve(0, new JPanel(), "Review", task)), Optional.empty()));
             awaitDialog();
             SwingUtilities.invokeAndWait(() -> {
@@ -718,7 +718,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     page.close();
             });
             var result = handle.completion().toCompletableFuture().get(10, java.util.concurrent.TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals(false, result.value().orElseThrow());
             if (lock)
                 SwingUtilities.invokeAndWait(page::close);
@@ -737,7 +737,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var page = new DeploymentStaticPage(
                 new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
                     new DeploymentStaticWorkflow(context,
-                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow(
+                        new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(
                             context))));
             SwingUtilities
                 .invokeAndWait(() -> page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false)));
@@ -751,7 +751,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                     if (!release.await(10, TimeUnit.SECONDS))
                         throw new AssertionError("Original task release timed out");
                     cancelled.set(task.cancelToken().requested());
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(approved), Optional.empty());
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(approved), Optional.empty());
                 });
             var field = DeploymentStaticPage.class.getDeclaredField("currentTask");
             field.setAccessible(true);
@@ -770,7 +770,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
                 release.countDown();
             }
             var result = handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertTrue(result.value().orElseThrow());
             assertFalse(cancelled.get());
             awaitServerTasks(context);
@@ -901,7 +901,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
      * @param page current page / 当前页面
      * @param reference expected business revision / 预期业务修订
      * @throws Exception if no saved choice is observed / 未观察到已保存选项时 */
-    private static void awaitSecretChoice(DeploymentStaticPage page, DeploymentSecretReference reference)
+    private static void awaitSecretChoice(DeploymentStaticPage page, DeploymentSecretRef reference)
         throws Exception {
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (System.nanoTime() < until) {

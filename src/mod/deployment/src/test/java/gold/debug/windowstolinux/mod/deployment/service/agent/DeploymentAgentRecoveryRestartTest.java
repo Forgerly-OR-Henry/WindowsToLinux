@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -24,14 +15,28 @@ import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
-import gold.debug.windowstolinux.mod.deployment.file.*;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.junit.jupiter.api.Test;
@@ -54,12 +59,12 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall c, ServerRef s, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall c, ServerId s, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -120,7 +125,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
                 stage.set(2);
                 var settled = runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS);
                 assertEquals(TaskState.ENDED, settled.state(), settled.toString());
-                assertEquals(Optional.of(Outcome.FAILED), settled.outcome());
+                assertEquals(Optional.of(TaskResult.FAILED), settled.outcome());
                 assertEquals(1, cleanup.get());
                 assertEquals(0, replay.get());
                 assertEquals(0,
@@ -153,7 +158,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
         enable();
         var runtime = open();
         start(runtime, true);
-        var server = new ServerRef("server");
+        var server = new ServerId("server");
         runtime.servers().saveServerProfile(
             ServerProfile.fromStored(
                 new StoredServerProfile(server.id(), "127.0.0.1", port, "root", "fixture-password")),
@@ -165,12 +170,12 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
             try (var session = context.linux().connect(server, task)) {
                 target = DeploymentAgentWorkflow.targetDigest(server, session);
             }
-            var selected = context.file().selectDirectory("Original agent source", task);
-            var material = new DeploymentSourcePreparer(context.file()).prepare(selected, 65536, 100, task);
+            var selected = context.file().sources().selectDirectory("Original agent source", task);
+            var material = new DeploymentSourceSetup(context.file()).prepare(selected, 65536, 100, task);
             var archive = new DeploymentSourceArchiver(context.file()).prepare(material, 65536, task);
-            var journal = new DeploymentAgentJournal(context.db());
+            var journal = new DeploymentAgentActionLog(context.db());
             journal.create(task,
-                new DeploymentAgentJournal.Identity(server.id(), target, "a".repeat(64), "MANUAL_REVIEW"));
+                new DeploymentAgentActionLog.Identity(server.id(), target, "a".repeat(64), "MANUAL_REVIEW"));
             journal.event(task, "SOURCE", archive.sha256(), material.snapshot().sha256());
             journal.event(task, "PLAN_APPLICATION", "", "demo");
             journal.event(task, "PREPARE_EXECUTING", "b".repeat(64), "api");
@@ -178,7 +183,7 @@ class DeploymentAgentRecoveryRestartTest extends DeploymentRuntimeFixture {
             journal.event(task, "CANDIDATE", "api", candidate);
             Files.writeString(root.resolve("original-candidate"), candidate + "\n" + task.id());
             journal.state(task, "UNKNOWN");
-            return new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(),
+            return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(),
                 Optional.of(new Problem(ProblemCode.UNKNOWN, "CONSTRUCTED_AGENT_INTERRUPTED",
                     "Constructed original preparation", Map.of(), Optional.empty())));
         });

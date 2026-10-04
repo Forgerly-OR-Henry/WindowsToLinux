@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.appapi.mod;
 
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+
 /**
  * Author lifecycle entry with partial-start cleanup obligations. / 作者生命周期入口及部分启动失败的清理责任。
  */

@@ -8,14 +8,14 @@ import java.util.*;
 import javax.tools.ToolProvider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
-import gold.debug.windowstolinux.app.mod.load.ModEntryFactory;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import gold.debug.windowstolinux.app.mod.config.ModManifest;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.load.ModEntryFactory;
+import gold.debug.windowstolinux.app.mod.run.ModDependencyPlan;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -153,9 +153,9 @@ class ModDependencyPlanTest {
         var providerClasses = compile("provider", Map.of("example.provider.api.Echo",
             "package example.provider.api; public interface Echo { String value(); }", "example.provider.Private",
             "package example.provider; public class Private {}", "example.provider.Mod",
-            "package example.provider; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint,example.provider.api.Echo {public String value(){return \"actual\";}public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){}public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){}}"));
+            "package example.provider; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint,example.provider.api.Echo {public String value(){return \"actual\";}public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){}public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c){}}"));
         var consumerClasses = compile("consumer", Map.of("example.consumer.Mod",
-                "package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint {public String call(example.provider.api.Echo e){return e.value();}public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){}public void stop(gold.debug.windowstolinux.appapi.mod.StopContext c){}}"),
+                "package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint {public String call(example.provider.api.Echo e){return e.value();}public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){}public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c){}}"),
             providerClasses);
         var plan = ModDependencyPlan.resolve(List.of(consumer, provider), API, 21);
         var urls = List.of(consumerClasses.toUri().toURL());

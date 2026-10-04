@@ -9,23 +9,23 @@ import java.util.Map;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationEntry;
-import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationInput;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigEntry;
+import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigInput;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseSchemaReview;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqlitePreparation;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentSqliteSetup;
 
 /** Separates whole-source database validation from original-task native effects. / 将整份源码数据库校验与原任务原生效果分开。 */
 final class DeploymentDatabaseStages {
@@ -41,14 +41,14 @@ final class DeploymentDatabaseStages {
     /** All local facts for one component. / 一组件的全部本机事实。
      * @param sqlite verified local SQLite output / 已验证本机 SQLite 输出
      * @param nativeSource optional fully checked native input / 可选已完整校验原生输入 */
-    record Local(DeploymentSqlitePreparation.Prepared sqlite,
-                 Optional<DeploymentNativeDatabasePreparation.Local> nativeSource) {
+    record Local(DeploymentSqliteSetup.Prepared sqlite,
+                 Optional<DeploymentNativeDatabaseSetup.Local> nativeSource) {
         /** Lists actual native child addresses before any effect. / 任何效果前列出真实原生子项地址。
          * @return exact child addresses / 精确子项地址 */
-        List<DeploymentDatabasePlanJournal.Entry> entries() {
+        List<DeploymentDatabasePlanActionLog.Entry> entries() {
             return nativeSource.stream()
                 .flatMap(source -> source.nativeDatabases().stream().map(
-                    database -> new DeploymentDatabasePlanJournal.Entry(source.componentId(), database.id())))
+                    database -> new DeploymentDatabasePlanActionLog.Entry(source.componentId(), database.id())))
                 .toList();
         }
 
@@ -64,8 +64,8 @@ final class DeploymentDatabaseStages {
      * @param bindings managed DB targets / 受管数据库目标
      * @param secrets immutable secret revisions / 不可变秘密修订
      * @param schemaReview one actual component source-bound review / 同组件真实源码绑定审阅 */
-    record Prepared(List<DeploymentConfigurationEntry> configuration, List<DeploymentDatabaseBinding> bindings,
-                    List<DeploymentSecretReference> secrets,
+    record Prepared(List<DeploymentConfigEntry> configuration, List<DeploymentDatabaseBinding> bindings,
+                    List<DeploymentSecretRef> secrets,
                     Optional<DatabaseSchemaReview> schemaReview) implements DeploymentPreparedDatabase {
         /** Copies exact immutable output. / 复制精确不可变输出。
          * @param configuration runtime entries / 运行条目
@@ -90,14 +90,14 @@ final class DeploymentDatabaseStages {
      * @param task original task / 原任务
      * @return fully checked local stage or classified refusal / 完整本机阶段或分类拒绝
      * @throws Exception if original source or review fails / 原来源或审阅失败时 */
-    OperationResult<Local> local(ServerRef server, String componentId, String applicationId, String manifestSha256,
+    OperationResult<Local> local(ServerId server, String componentId, String applicationId, String manifestSha256,
                                  Path root, DeploymentStaticWorkflow.Reviewer review, TaskContext task) throws Exception {
-        var observed = new DatabaseProjectInspector().inspect(root);
+        var observed = new DatabaseProjectChecker().inspect(root, applicationId);
         Map<String, String> answers = Map.of();
         if (!observed.databases().isEmpty() || observed.unknownDatabase()) {
             var supplied = review.databaseInputs(server, componentId, manifestSha256, root, applicationId, observed,
                 task);
-            if (supplied.outcome() != Outcome.SUCCEEDED)
+            if (supplied.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(supplied.outcome(), Optional.empty(), supplied.problem());
             answers = supplied.value().orElseThrow();
         }
@@ -105,7 +105,7 @@ final class DeploymentDatabaseStages {
         var sqlite = subset(completed, DeploymentDatabaseEngineType.SQLITE);
         var nativeDatabases = completed.databases().stream()
             .filter(value -> value.engine() != DeploymentDatabaseEngineType.SQLITE).toList();
-        var nativeAssessment = new DatabaseProjectInspector.Assessment(nativeDatabases, completed.sqlCandidates(),
+        var nativeAssessment = new DatabaseProjectChecker.Report(nativeDatabases, completed.sqlCandidates(),
             completed.schemaReviewRequired()
                 && nativeDatabases.stream().anyMatch(value -> !value.initializationFiles().isEmpty()),
             false, completed.endpointConfirmationRequired());
@@ -117,13 +117,13 @@ final class DeploymentDatabaseStages {
         boolean approved = false;
         if (sqlite.schemaReviewRequired()) {
             var consent = review.confirmSqliteInitialization(server, componentId, manifestSha256, sqlite, task);
-            if (consent.outcome() != Outcome.SUCCEEDED)
+            if (consent.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(consent.outcome(), Optional.empty(), consent.problem());
             if (!consent.value().orElse(false))
-                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), consent.problem());
+                return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), consent.problem());
             approved = true;
         }
-        var localSqlite = DeploymentSqlitePreparation.prepare(root, applicationId, sqlite, approved, task);
+        var localSqlite = DeploymentSqliteSetup.prepare(root, applicationId, sqlite, approved, task);
         var reserved = new HashSet<String>();
         for (var value : localSqlite.configuration())
             if (!reserved.add(value.key()))
@@ -137,10 +137,10 @@ final class DeploymentDatabaseStages {
             .allMatch(DatabaseRequirement::springDatasource))
             reserved.addAll(frameworkKeys());
         var localNative = nativeDatabases.isEmpty()
-            ? Optional.<DeploymentNativeDatabasePreparation.Local>empty()
-            : Optional.of(DeploymentNativeDatabasePreparation.local(componentId, applicationId, manifestSha256,
+            ? Optional.<DeploymentNativeDatabaseSetup.Local>empty()
+            : Optional.of(DeploymentNativeDatabaseSetup.local(componentId, applicationId, manifestSha256,
             root, nativeAssessment, task));
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new Local(localSqlite, localNative)),
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new Local(localSqlite, localNative)),
             Optional.empty());
     }
 
@@ -157,7 +157,7 @@ final class DeploymentDatabaseStages {
                 && source.nativeDatabases().stream().filter(value -> !value.initializationFiles().isEmpty())
                 .allMatch(DatabaseRequirement::springDatasource))
             .ifPresent(source -> keys.addAll(frameworkKeys()));
-        for (var value : DeploymentConfigurationInput.parse(answer.values().getOrDefault("configuration", "")))
+        for (var value : DeploymentConfigInput.parse(answer.values().getOrDefault("configuration", "")))
             if (keys.contains(value.key()))
                 throw new IllegalArgumentException("Runtime configuration conflicts with source database");
     }
@@ -168,14 +168,14 @@ final class DeploymentDatabaseStages {
      * @param local all component stages / 全部组件阶段
      * @param task original task / 原任务
      * @return optional original plan / 可选原计划
-     * @throws gold.debug.windowstolinux.appapi.task.ApiException if persistence fails / 持久化失败时 */
-    Optional<DeploymentDatabasePlanJournal> begin(ServerRef server, String manifestSha256, List<Local> local,
-                                                  TaskContext task) throws gold.debug.windowstolinux.appapi.task.ApiException {
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if persistence fails / 持久化失败时 */
+    Optional<DeploymentDatabasePlanActionLog> begin(ServerId server, String manifestSha256, List<Local> local,
+                                                    TaskContext task) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
         var entries = local.stream().flatMap(value -> value.entries().stream()).toList();
         return entries.isEmpty()
             ? Optional.empty()
             : Optional.of(
-            DeploymentDatabasePlanJournal.begin(context.tasks(), task, server, manifestSha256, entries));
+            DeploymentDatabasePlanActionLog.begin(context.tasks(), task, server, manifestSha256, entries));
     }
 
     /** Releases only original children with confirmed terminal or unsent intent facts. / 只释放原子项已确认终态或未发送意图的依据。
@@ -183,10 +183,10 @@ final class DeploymentDatabaseStages {
      * @param plan original indexed plan / 原索引计划
      * @return true only when all indexed work is known and released / 仅全部索引工作确知且释放时为真
      * @throws ApiException if original evidence is unavailable / 原依据不可得时 */
-    boolean releaseKnown(TaskContext task, DeploymentDatabasePlanJournal plan) throws ApiException {
+    boolean releaseKnown(TaskContext task, DeploymentDatabasePlanActionLog plan) throws ApiException {
         for (String key : plan.facts().keys()) {
-            var child = DeploymentNativeDatabaseJournal.find(context.tasks(), task,
-                DeploymentNativeDatabaseJournal.KEY + "." + key);
+            var child = DeploymentNativeDatabaseActionLog.find(context.tasks(), task,
+                DeploymentNativeDatabaseActionLog.KEY + "." + key);
             if (child.isPresent()) {
                 var facts = child.orElseThrow().facts();
                 if (!plan.facts().serverId().equals(facts.serverId()) || "DISPATCHED".equals(facts.phase()))
@@ -196,8 +196,8 @@ final class DeploymentDatabaseStages {
             var secretKey = "deployment-secret-revision." + key;
             if (context.tasks().findCheckpoint(task, secretKey).isPresent()
                 && new DeploymentSecretProvisionFlow(context)
-                .reconcileChild(task, secretKey, new ServerRef(plan.facts().serverId()))
-                .outcome() == Outcome.UNKNOWN)
+                .reconcileChild(task, secretKey, new ServerId(plan.facts().serverId()))
+                .outcome() == TaskResult.UNKNOWN)
                 return false;
         }
         plan.close();
@@ -209,20 +209,20 @@ final class DeploymentDatabaseStages {
      * @param plan original durable index / 原持久索引
      * @return non-secret prior-effect context / 不含秘密的先前效果上下文
      * @throws ApiException if evidence lookup fails / 依据查找失败时 */
-    Map<String, String> effectDetails(TaskContext task, DeploymentDatabasePlanJournal plan) throws ApiException {
+    Map<String, String> effectDetails(TaskContext task, DeploymentDatabasePlanActionLog plan) throws ApiException {
         int affected = 0;
         int savedSecrets = 0;
         String firstTarget = "";
         for (String key : plan.facts().keys()) {
-            var child = DeploymentNativeDatabaseJournal.find(context.tasks(), task,
-                DeploymentNativeDatabaseJournal.KEY + "." + key);
+            var child = DeploymentNativeDatabaseActionLog.find(context.tasks(), task,
+                DeploymentNativeDatabaseActionLog.KEY + "." + key);
             if (child.isPresent() && child.orElseThrow().facts().effectsObserved()) {
                 affected++;
                 if (firstTarget.isEmpty())
                     firstTarget = child.orElseThrow().facts().target();
             }
             if (new DeploymentSecretProvisionFlow(context)
-                .savedChild(task, "deployment-secret-revision." + key, new ServerRef(plan.facts().serverId()))
+                .savedChild(task, "deployment-secret-revision." + key, new ServerId(plan.facts().serverId()))
                 .isPresent())
                 savedSecrets++;
         }
@@ -245,15 +245,15 @@ final class DeploymentDatabaseStages {
      * @param task original task / 原任务
      * @return merged publication facts or classified refusal / 合并发布事实或分类拒绝
      * @throws Exception if original access fails / 原访问失败时 */
-    OperationResult<DeploymentPreparedDatabase> prepare(ServerRef server, Optional<DeploymentDatabasePlanJournal> plan,
+    OperationResult<DeploymentPreparedDatabase> prepare(ServerId server, Optional<DeploymentDatabasePlanActionLog> plan,
                                                         Local local, DeploymentStaticWorkflow.Reviewer review, TaskContext task) throws Exception {
         if (local.nativeSource().isEmpty())
-            return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(local.sqlite()), Optional.empty());
-        var nativeResult = new DeploymentNativeDatabasePreparation(context).prepare(server, plan.orElseThrow(),
+            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(local.sqlite()), Optional.empty());
+        var nativeResult = new DeploymentNativeDatabaseSetup(context).prepare(server, plan.orElseThrow(),
             local.nativeSource().orElseThrow(), review, task);
-        if (nativeResult.outcome() != Outcome.SUCCEEDED)
+        if (nativeResult.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(nativeResult.outcome(), Optional.empty(), nativeResult.problem());
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(merge(local.sqlite(), nativeResult.value().orElseThrow())), Optional.empty());
     }
 
@@ -261,9 +261,9 @@ final class DeploymentDatabaseStages {
      * @param sqlite local SQLite facts / 本机 SQLite 事实
      * @param nativeOutput verified native facts / 已核原生事实
      * @return one publishable result / 一份可发布结果 */
-    private static Prepared merge(DeploymentSqlitePreparation.Prepared sqlite,
-                                  DeploymentNativeDatabasePreparation.Prepared nativeOutput) {
-        var configuration = new HashMap<String, DeploymentConfigurationEntry>();
+    private static Prepared merge(DeploymentSqliteSetup.Prepared sqlite,
+                                  DeploymentNativeDatabaseSetup.Prepared nativeOutput) {
+        var configuration = new HashMap<String, DeploymentConfigEntry>();
         for (var value : sqlite.configuration())
             configuration.put(value.key(), value);
         for (var value : nativeOutput.configuration()) {
@@ -309,10 +309,10 @@ final class DeploymentDatabaseStages {
      * @param original completed source assessment / 已补齐来源评估
      * @param engine selected engine / 选中引擎
      * @return filtered assessment / 筛选后评估 */
-    private static DatabaseProjectInspector.Assessment subset(DatabaseProjectInspector.Assessment original,
-                                                              DeploymentDatabaseEngineType engine) {
+    private static DatabaseProjectChecker.Report subset(DatabaseProjectChecker.Report original,
+                                                        DeploymentDatabaseEngineType engine) {
         var values = original.databases().stream().filter(value -> value.engine() == engine).toList();
-        return new DatabaseProjectInspector.Assessment(values, original.sqlCandidates(),
+        return new DatabaseProjectChecker.Report(values, original.sqlCandidates(),
             original.schemaReviewRequired()
                 && values.stream().anyMatch(value -> !value.initializationFiles().isEmpty()),
             false, original.endpointConfirmationRequired());

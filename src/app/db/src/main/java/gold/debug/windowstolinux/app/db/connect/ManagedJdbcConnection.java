@@ -20,6 +20,12 @@ public final class ManagedJdbcConnection {
     /** Identity cache preserving JDBC parent relationships. / 保持 JDBC 父对象关系的身份缓存。 */
     private final Map<Object, Object> wrappers = new IdentityHashMap<>();
 
+    /** Result sets whose driver may close them implicitly with their statement. / 驱动可能随语句隐式关闭的结果集。 */
+    private final Map<Statement, java.util.Set<ResultSet>> results = new IdentityHashMap<>();
+
+    /** Original parent of each tracked result set. / 每个已跟踪结果集的原父语句。 */
+    private final Map<ResultSet, Statement> resultOwners = new IdentityHashMap<>();
+
     /** Whether confirmed physical close has been reported. / 是否已报告确认的物理关闭。 */
     private final AtomicBoolean released = new AtomicBoolean();
 
@@ -70,8 +76,20 @@ public final class ManagedJdbcConnection {
      * @return managed handle or unchanged ordinary value / 受管句柄或原普通值
      */
     private Object managed(Object value) {
+        return managed(value, null);
+    }
+
+    /** Wraps returned handles and tracks only resources with an actual close/free lifecycle. / 包装返回句柄，仅缓存有实际关闭或释放生命周期的资源。
+     * @param value driver value / 驱动值
+     * @param parent original producing handle / 原产生句柄
+     * @return restricted public handle or ordinary value / 受限公开句柄或普通值 */
+    private Object managed(Object value, Object parent) {
         if (value == null)
             return null;
+        if (value instanceof ResultSet result && parent instanceof Statement statement) {
+            results.computeIfAbsent(statement, ignored -> java.util.Collections.newSetFromMap(new IdentityHashMap<>())).add(result);
+            resultOwners.put(result, statement);
+        }
         if (wrappers.containsKey(value))
             return wrappers.get(value);
         Class<?> type = value instanceof Connection
@@ -109,8 +127,36 @@ public final class ManagedJdbcConnection {
             return value;
         var proxy = Proxy.newProxyInstance(ManagedJdbcConnection.class.getClassLoader(), new Class<?>[]{type},
             (self, method, args) -> invoke(self, value, method, args));
-        wrappers.put(value, proxy);
+        if (value instanceof Connection || value instanceof Statement || value instanceof ResultSet
+            || value instanceof Blob || value instanceof Clob || value instanceof SQLXML || value instanceof java.sql.Array)
+            wrappers.put(value, proxy);
         return proxy;
+    }
+
+    /** Forgets driver-confirmed closed statements and result sets, including implicit closes. / 注销驱动确认关闭的语句及结果集，包含隐式关闭。
+     * @param statement original driver statement / 原驱动语句 */
+    private void prune(Statement statement) {
+        var owned = results.get(statement);
+        if (owned != null) {
+            owned.removeIf(result -> {
+                try {
+                    if (result.isClosed()) {
+                        wrappers.remove(result);
+                        resultOwners.remove(result);
+                        return true;
+                    }
+                } catch (SQLException uncertain) {
+                    // Unconfirmed resources remain tracked for retry. / 未确认资源继续跟踪以供重试。
+                }
+                return false;
+            });
+            if (owned.isEmpty()) results.remove(statement);
+        }
+        try {
+            if (statement.isClosed()) wrappers.remove(statement);
+        } catch (SQLException uncertain) {
+            // Keep the original handle while its closure is unconfirmed. / 关闭未确认时保留原句柄。
+        }
     }
 
     /**
@@ -149,14 +195,31 @@ public final class ManagedJdbcConnection {
             physical.close();
             if (!physical.isClosed())
                 throw new SQLException("Connection is still open", "HY000");
+            wrappers.clear();
+            wrappers.put(physical, self);
+            results.clear();
+            resultOwners.clear();
             release.run();
             released.set(true);
             return null;
         }
+        var resultOwner = target instanceof ResultSet ? resultOwners.get(target) : null;
         try {
-            return managed(method.invoke(target, args));
+            var value = method.invoke(target, args);
+            if (name.equals("free")) wrappers.remove(target);
+            if (target instanceof ResultSet result && name.equals("close") && result.isClosed())
+                wrappers.remove(result);
+            return managed(value, target);
         } catch (InvocationTargetException failure) {
             throw failure.getCause();
+        } finally {
+            if (target instanceof Statement statement
+                && (name.equals("close") || name.startsWith("execute") || name.equals("getMoreResults")))
+                prune(statement);
+            else if (target instanceof ResultSet && name.equals("close") && resultOwner != null)
+                prune(resultOwner);
+            else if (target == physical && (name.equals("commit") || name.equals("rollback") || name.equals("setAutoCommit")))
+                for (var statement : java.util.List.copyOf(results.keySet())) prune(statement);
         }
     }
 }

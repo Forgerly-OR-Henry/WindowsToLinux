@@ -1,5 +1,9 @@
 package gold.debug.windowstolinux.app.main.start;
 
+import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
+import gold.debug.windowstolinux.app.ui.display.ThemeMode;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
+
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformWindowTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -8,13 +12,13 @@ import java.nio.file.Path;
 import java.util.Locale;
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.service.file.FileSettingsService;
+import gold.debug.windowstolinux.app.service.setting.FileSettingsService;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -69,7 +73,7 @@ class PlatformFileSettingsWindowTest {
                 await(() -> !named(frame, "fileSettings.enabled").isEnabled());
                 runtime.security().unlock(PASSWORD.toCharArray());
                 await(() -> named(frame, "fileSettings.enabled").isEnabled());
-                await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                await(() -> !DesktopTaskRunner.hasActiveTasks());
             } finally {
                 onEdt(() -> {
                     frame.dispose();
@@ -105,7 +109,7 @@ class PlatformFileSettingsWindowTest {
                     return null;
                 });
                 await(() -> named(frame, "fileSettings.enabled").isEnabled());
-                await(() -> !DesktopTaskExecutor.hasActiveTasks());
+                await(() -> !DesktopTaskRunner.hasActiveTasks());
             } finally {
                 onEdt(() -> {
                     frame.dispose();

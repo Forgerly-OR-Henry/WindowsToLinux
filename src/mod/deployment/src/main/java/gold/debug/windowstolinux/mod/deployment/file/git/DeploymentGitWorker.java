@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitProtocol.KindType;
 
 import java.io.*;
@@ -11,6 +7,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.*;
 import java.util.*;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Single-operation Git worker using only the public standard-stream process protocol. / 仅使用公开标准流进程协议的单操作 Git worker。 */
 public final class DeploymentGitWorker {

@@ -14,7 +14,7 @@ import java.util.Objects;
  * @param runtime opaque versioned runtime / 不透明版本化运行数据
  * @param bindings reviewed data bindings / 已审阅数据绑定
  * @param healthPolicySha256 exact health policy digest / 精确健康策略摘要 */
-public record DeploymentApplicationSnapshot(DeploymentApplicationRef application, String displayName,
+public record DeploymentApplicationSnapshot(DeploymentApplicationId application, String displayName,
                                             String revisionSha256, String ownershipSha256, ApplicationRunState state,
                                             Instant observedAt,
                                             VersionedRuntime runtime, List<DeploymentBinding> bindings,

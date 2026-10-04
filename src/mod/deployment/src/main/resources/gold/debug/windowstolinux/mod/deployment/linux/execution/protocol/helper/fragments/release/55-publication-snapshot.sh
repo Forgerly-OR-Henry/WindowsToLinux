@@ -17,7 +17,7 @@ snapshot_deployment_owned() {
     case "$attempt" in 0 | 1) ;; *) reject snapshot-attempt-flag ;; esac
     initialise_controlled_roots
     assert_application_root_or_absent "$app"
-    assert_deployment_or_ordinary_current_or_empty "$app" "$manifest"
+    assert_deployment_current_or_empty "$app" "$manifest"
     if [ "$previous_present" -eq 0 ]; then
         printf 'PREVIOUS=0\n'
         return
@@ -30,11 +30,9 @@ snapshot_deployment_owned() {
     [ ! -e "$snapshot" ] && [ ! -L "$snapshot" ] || reject snapshot-exists
     install -d -o root -g root -m 700 -- "$snapshot"
     printf '%s\n' "$previous_path" >"$snapshot/current-path"
-    printf '%s\n' "$previous_kind" >"$snapshot/kind"
+    printf 'deployment\n' >"$snapshot/kind"
     install -o root -g root -m 600 -- "$unit" "$snapshot/unit"
-    if [ "$previous_kind" = deployment ]; then
-        install -o root -g root -m 600 -- "$previous_path/.windowstolinux-deployment-parameters" "$snapshot/deployment-parameters"
-    fi
+    install -o root -g root -m 600 -- "$previous_path/.windowstolinux-deployment-parameters" "$snapshot/deployment-parameters"
     systemctl is-enabled "$(unit_name "$app")" >"$snapshot/enabled" 2>/dev/null || true
     if [ "$previous_running" -eq 1 ]; then printf 'active\n' >"$snapshot/runtime"; else printf 'inactive\n' >"$snapshot/runtime"; fi
     chown root:root -- "$snapshot/current-path" "$snapshot/kind" "$snapshot/enabled" "$snapshot/runtime"
@@ -50,17 +48,15 @@ snapshot_deployment_owned() {
             chmod 600 -- "$snapshot/.deployment-operation"
         fi
     fi
-    if [ "$previous_kind" = deployment ]; then
-        chown root:root -- "$snapshot/deployment-parameters"
-        chmod 600 -- "$snapshot/deployment-parameters"
-    fi
+    chown root:root -- "$snapshot/deployment-parameters"
+    chmod 600 -- "$snapshot/deployment-parameters"
     printf '%s\n' "$token" >"$(app_root "$app")/.migration-snapshot"
     chmod 400 -- "$(app_root "$app")/.migration-snapshot"
     printf 'SNAPSHOT_TOKEN=%s\n' "$token"
     printf 'PREVIOUS=1\n'
     printf 'PREVIOUS_RUNNING=%s\n' "$previous_running"
     printf 'PREVIOUS_DIGEST=%s\n' "${previous_path##*/}"
-    printf 'PREVIOUS_KIND=%s\n' "$previous_kind"
+    printf 'PREVIOUS_KIND=deployment\n'
 }
 snapshot_container_owned() {
     [ "$#" -eq 5 ] || reject snapshot-container-owned-arguments

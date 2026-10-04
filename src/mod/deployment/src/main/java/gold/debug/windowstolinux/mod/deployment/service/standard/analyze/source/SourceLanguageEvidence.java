@@ -34,7 +34,7 @@ public final class SourceLanguageEvidence {
      * @param marker marker / 标记
      * @return constructed or resolved project language facts / 构造或解析得到的项目语言事实
      */
-    public static ProjectLanguageFacts collect(SourceInspectionFacts source, LanguageEcosystemType ecosystem,
+    public static ProjectLanguageFacts collect(SourceCheckFacts source, LanguageEcosystemType ecosystem,
                                                Function<String, SourceLanguageType> marker) {
         EnumMap<SourceLanguageType, Path> firstEvidence = new EnumMap<>(SourceLanguageType.class);
         for (Path path : source.relativeFiles()) {

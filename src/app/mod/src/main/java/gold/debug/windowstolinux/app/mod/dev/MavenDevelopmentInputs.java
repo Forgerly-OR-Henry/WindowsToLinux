@@ -36,7 +36,7 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
      * @throws IOException if workspace, model or actual resolved artifacts are invalid / 工作区、模型或实际已解析制品无效时 */
     public Path prepare() throws IOException {
         var project = Objects.requireNonNull(session.getCurrentProject());
-        Path workspace = DevelopmentDescriptor.workspace(Path.of(property(project, "wtl.workspace", "")));
+        Path workspace = DevelopmentInfo.workspace(Path.of(property(project, "wtl.workspace", "")));
         Path module = project.getBasedir().toPath().toRealPath();
         if (!module.startsWith(workspace.resolve("src/mod")) || module.equals(workspace.resolve("src/mod")))
             throw new IOException("CLASS author projects must be inside the declared workspace Mod root");
@@ -56,7 +56,7 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
             }
         }
         Path manifest = module.resolve("mod.json");
-        DevelopmentDescriptor.manifest(workspace, manifest);
+        DevelopmentInfo.manifest(workspace, manifest);
         var inputs = new LinkedHashSet<Path>();
         inputs.add(workspace.resolve("pom.xml"));
         inputs.add(workspace.resolve("src/mod/pom.xml"));

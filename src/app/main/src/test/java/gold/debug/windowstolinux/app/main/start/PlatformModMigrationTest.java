@@ -15,9 +15,9 @@ import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
-import gold.debug.windowstolinux.app.mod.dev.DevelopmentDescriptor;
+import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
 import gold.debug.windowstolinux.app.service.mod.PlatformModCatalog;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,7 +28,7 @@ class PlatformModMigrationTest {
 
     PlatformModInitializationTest initial;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
     SchemaIdentity original;
 
@@ -68,8 +68,8 @@ class PlatformModMigrationTest {
                     package example.provider.db;
                     import java.nio.file.*;
                     import java.sql.*;
-                    import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-                    import gold.debug.windowstolinux.appapi.db.SchemaMigration;
+                    import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+                    import gold.debug.windowstolinux.appapi.db.schema.SchemaMigration;
                     
                     public final class %s implements SchemaMigration {
                         public void migrate(SchemaAccess source, SchemaAccess target) throws Exception {
@@ -88,7 +88,13 @@ class PlatformModMigrationTest {
                                         insert.setObject(3,rows.getObject(3));insert.setObject(4,rows.getObject(4));insert.executeUpdate();
                                     }
                                 }
-                                if("%s".equals("secondFailure") && %s==2)throw new IllegalStateException("private fixture failure");
+                                if(%s==2) {
+                                    switch("%s") {
+                                        case "secondError" -> throw new java.util.ServiceConfigurationError("private migration provider failure");
+                                        case "secondFatal" -> throw new InternalError("synthetic migration VM error");
+                                        case "secondFailure" -> throw new IllegalStateException("private fixture failure");
+                                    }
+                                }
                                 if("%s".equals("writerLeak") && %s==1) {
                                     System.getProperties().put("wtl.migration.fixture.connection",target.openConnection());
                                     System.getProperties().put("wtl.migration.fixture.scope",target);
@@ -98,7 +104,7 @@ class PlatformModMigrationTest {
                     }
                     """
                     .formatted(name, fixture.trace.toString().replace("\\", "\\\\"), from, from + 1, mode, from,
-                        from + 1, mode, from, mode, from));
+                        from + 1, from, mode, mode, from));
             sources.add(source.toString());
         }
         String cp = Path.of(ModContext.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
@@ -110,7 +116,7 @@ class PlatformModMigrationTest {
             manifest(OWNER, NEXT, Map.of(), "3",
                 List.of(Map.of("from", "1", "to", "2", "class", "example.provider.db.Step12"),
                     Map.of("from", "2", "to", "3", "class", "example.provider.db.Step23"))));
-        DevelopmentDescriptor.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
+        DevelopmentInfo.generate(fixture.workspace, module.resolve("mod.json"), classes, List.of(),
             List.of(fixture.workspace.resolve("pom.xml"), fixture.workspace.resolve("src/mod/pom.xml"),
                 module.resolve("pom.xml")),
             List.of());
@@ -174,13 +180,43 @@ class PlatformModMigrationTest {
             assertEquals("initial", sourceValue(runtime));
             assertEquals(NEXT, text(runtime, "SELECT selected_version FROM mod_registry"));
             assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
-            assertEquals("FAILED", PlatformModCoordinatorTest.state(runtime, OWNER));
+            assertEquals("FAILED", PlatformModFlowTest.state(runtime, OWNER));
             assertEquals(0, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name LIKE 't\\_%' ESCAPE '\\'"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
         }
         try (var runtime = fixture.open(false)) {
             assertTrue(fixture.start(runtime).running().isEmpty());
+        }
+        assertEquals(List.of("migration:1->2", "migration:2->3"), fixture.actions());
+    }
+
+    @Test
+    void migrationProviderErrorKeepsOriginalDataAndDoesNotReplayEdges() throws Exception {
+        upgrade("secondError");
+        try (var runtime = fixture.open(false)) {
+            assertTrue(fixture.start(runtime).running().isEmpty());
+            assertEquals("READY", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='1'"));
+            assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='3'"));
+            assertEquals("initial", sourceValue(runtime));
+            assertEquals(0, runtime.persistence().database().openConnections());
+        }
+        try (var runtime = fixture.open(false)) {
+            assertTrue(fixture.start(runtime).running().isEmpty());
+            assertEquals("initial", sourceValue(runtime));
+        }
+        assertEquals(List.of("migration:1->2", "migration:2->3"), fixture.actions());
+    }
+
+    @Test
+    void fatalMigrationPropagatesWithoutLosingOriginalSourceOrScopes() throws Exception {
+        upgrade("secondFatal");
+        try (var runtime = fixture.open(false)) {
+            assertThrows(InternalError.class, () -> fixture.start(runtime));
+            assertEquals("READY", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='1'"));
+            assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='3'"));
+            assertEquals("initial", sourceValue(runtime));
+            assertEquals(0, runtime.persistence().database().openConnections());
         }
         assertEquals(List.of("migration:1->2", "migration:2->3"), fixture.actions());
     }
@@ -265,7 +301,7 @@ class PlatformModMigrationTest {
         try {
             assertTrue(fixture.start(runtime).running().isEmpty());
             assertThrows(SQLException.class, runtime::close);
-            var access = (gold.debug.windowstolinux.appapi.db.SchemaAccess) System.getProperties()
+            var access = (gold.debug.windowstolinux.appapi.db.schema.SchemaAccess) System.getProperties()
                 .get("wtl.migration.fixture.scope");
             assertThrows(SQLException.class, access::openConnection);
             ((Connection) System.getProperties().remove("wtl.migration.fixture.connection")).close();

@@ -1,20 +1,19 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.util.*;
 
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.assessment.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer.SnapshotAssessment;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.extension.registry.DeploymentBuildRendererRegistry;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer.SnapshotReport;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.build.extension.registry.DeploymentBuildWriterRegistry;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.plan.*;
-import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 
 /** Plans all deterministic single and mixed deployments against the original still-owned source. / 对原仍受管源码规划全部确定性单组件及混合部署。 */
 public final class DeploymentStandardPlanner {
@@ -22,10 +21,10 @@ public final class DeploymentStandardPlanner {
     private final ReviewedDeploymentPlanner single = new ReviewedDeploymentPlanner();
 
     /** Original deterministic component graph planner. / 原确定性组件图规划器。 */
-    private final MultiComponentDeploymentPlanner mixed = new MultiComponentDeploymentPlanner();
+    private final MultiPartDeploymentPlanner mixed = new MultiPartDeploymentPlanner();
 
     /** All supported fixed build renderers. / 全部受支持的固定构建渲染器。 */
-    private final DeploymentBuildRendererRegistry renderers = DeploymentBuildRendererRegistry.defaults();
+    private final DeploymentBuildWriterRegistry renderers = DeploymentBuildWriterRegistry.defaults();
 
     /** Creates the stateless planner. / 创建无状态规划器。 */
     public DeploymentStandardPlanner() {
@@ -34,12 +33,12 @@ public final class DeploymentStandardPlanner {
     /** A complete component plan with the original graph ordering. / 带原图排序的完整组件计划。
      * @param ordering dependency-safe build and runtime order / 依赖安全的构建和运行顺序
      * @param components exact plans by component ID / 按组件ID索引的精确计划 */
-    public record ComponentPlans(MultiComponentDeploymentPlan ordering,
-                                 Map<String, ReviewedDeploymentPlan> components) {
+    public record PartPlans(MultiPartDeploymentPlan ordering,
+                            Map<String, ReviewedDeploymentPlan> components) {
         /** Retains each original component once. / 各原组件仅保留一次。
          * @param ordering deterministic graph / 确定性图
          * @param components complete plans / 完整计划 */
-        public ComponentPlans {
+        public PartPlans {
             Objects.requireNonNull(ordering);
             components = Map.copyOf(components);
             if (!ordering.candidateNamespaces().keySet().equals(components.keySet()))
@@ -85,7 +84,7 @@ public final class DeploymentStandardPlanner {
             return cancellation();
         if (!requireOriginal(request.material(), source.id(), request.archive().sourceManifestSha256(), request))
             return cancelled(task) ? cancellation() : unavailable();
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(new RenderedPlan(plan, ReviewedPlanIdentity.from(request), script)), Optional.empty());
     }
 
@@ -96,7 +95,7 @@ public final class DeploymentStandardPlanner {
      * @param task original admitted task / 原准入任务
      * @return original deterministic plan or cancellation / 原确定性计划或取消 */
     public OperationResult<ReviewedDeploymentPlan> plan(DeploymentSourceMaterial material,
-                                                        SnapshotAssessment<DeploymentProjectAssessment> analysis, ReviewedDeploymentRequest request,
+                                                        SnapshotReport<DeploymentProjectReport> analysis, ReviewedDeploymentRequest request,
                                                         TaskContext task) {
         Objects.requireNonNull(material);
         Objects.requireNonNull(analysis);
@@ -114,7 +113,7 @@ public final class DeploymentStandardPlanner {
             return cancellation();
         if (!requireOriginal(material, analysis.snapshotId(), analysis.snapshotSha256(), request))
             return cancelled(task) ? cancellation() : unavailable();
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(plan), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(plan), Optional.empty());
     }
 
     /** Plans all deployable components with independent candidates and one dependency order. / 以独立候选和同一依赖顺序规划全部可部署组件。
@@ -123,9 +122,9 @@ public final class DeploymentStandardPlanner {
      * @param requests complete reviewed component requests / 完整审阅组件请求
      * @param task original admitted task / 原准入任务
      * @return complete graph and component plans or cancellation / 完整图及组件计划或取消 */
-    public OperationResult<ComponentPlans> planComponents(DeploymentSourceMaterial material,
-                                                          SnapshotAssessment<MultiComponentProjectAssessment> analysis,
-                                                          Map<String, ReviewedDeploymentRequest> requests, TaskContext task) {
+    public OperationResult<PartPlans> planComponents(DeploymentSourceMaterial material,
+                                                     SnapshotReport<MultiPartProjectReport> analysis,
+                                                     Map<String, ReviewedDeploymentRequest> requests, TaskContext task) {
         Objects.requireNonNull(material);
         Objects.requireNonNull(analysis);
         Objects.requireNonNull(requests);
@@ -159,7 +158,7 @@ public final class DeploymentStandardPlanner {
         for (var request : requests.values())
             if (!requireOriginal(material, analysis.snapshotId(), analysis.snapshotSha256(), request))
                 return cancelled(task) ? cancellation() : unavailable();
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ComponentPlans(graph, components)),
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new PartPlans(graph, components)),
             Optional.empty());
     }
 
@@ -198,7 +197,7 @@ public final class DeploymentStandardPlanner {
      * @param <T> plan type / 计划类型
      * @return cancelled result / 已取消结果 */
     private static <T> OperationResult<T> cancellation() {
-        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
+        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
             "DEPLOYMENT_PLAN_CANCELLED", "Standard planning was cancelled", Map.of(), Optional.empty())));
     }
 
@@ -206,7 +205,7 @@ public final class DeploymentStandardPlanner {
      * @param <T> plan type / 计划类型
      * @return failed source observation / 失败的来源观测 */
     private static <T> OperationResult<T> unavailable() {
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(),
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
             Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PLAN_SOURCE_UNAVAILABLE",
                 "Original source material is unavailable", Map.of(), Optional.empty())));
     }

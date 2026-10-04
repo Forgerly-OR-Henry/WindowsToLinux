@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.LogStorage;
-import gold.debug.windowstolinux.appapi.task.LogTarget;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformLogServiceTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModDeletionTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModInstallationTest.OWNER;
@@ -18,7 +13,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
-
+import gold.debug.windowstolinux.appapi.task.log.LogStorage;
+import gold.debug.windowstolinux.appapi.task.log.LogTarget;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -73,7 +71,7 @@ class PlatformLogDeletionTest {
             + "'");
     }
 
-    LogRepository.Target category(PlatformRuntime runtime) throws Exception {
+    LogStore.Target category(PlatformRuntime runtime) throws Exception {
         try (var binding = runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty())) {
             var handle = binding.register(CATEGORY);
             assertEquals(LogStorage.DATABASE, binding.write(handle, event("retained original")).storage());
@@ -109,7 +107,7 @@ class PlatformLogDeletionTest {
              var installer = fixture.installer(runtime);
              var binding = runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty());
              var other = runtime.capabilities().logs("example.other", "1.0.0", Optional.empty())) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             acknowledged(runtime);
             var target = binding.register(CATEGORY);
             var another = other.register(CATEGORY);
@@ -123,7 +121,7 @@ class PlatformLogDeletionTest {
                 assertEquals(LogStorage.NOT_SAVED, binding.write(target, event("closed binding")).storage());
             }
             var review = installer.deletion().review(OWNER, "1.0.0");
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().delete(review, false).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().delete(review, false).outcome());
             assertFalse(Files.exists(fixture.target("1.0.0")));
         }
     }
@@ -163,13 +161,13 @@ class PlatformLogDeletionTest {
         try (var runtime = fixture.runtime();
              var installer = fixture.installer(runtime);
              var executor = Executors.newSingleThreadExecutor()) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             acknowledged(runtime);
             var target = category(runtime);
             Path emergency = file(root.resolve("data"), new LogTarget(target.key()));
             new EmergencyLogs(root.resolve("data")).append(target,
                 LogRecordCodec.create(target, "1.0.0", event("old pending")));
-            var ledger = new ModDeletionLedger(runtime.persistence().database(), root);
+            var ledger = new ModDeletionLedger(runtime.persistence().database(), root, new gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletionFileEvidence(root, runtime.persistence().database().root()));
             pause(runtime);
             var maintenance = executor.submit(() -> runtime.logs().replayAll());
             assertTrue(PauseSelect.entered.await(5, TimeUnit.SECONDS));
@@ -193,7 +191,7 @@ class PlatformLogDeletionTest {
                 assertNotEquals(target.key(), fresh.key());
                 assertEquals(LogStorage.DATABASE, replacement.write(fresh, event("new owner activation")).storage());
                 assertEquals(1,
-                    new LogRepository(runtime.persistence().database()).read(target(runtime, fresh)).size());
+                    new LogStore(runtime.persistence().database()).read(target(runtime, fresh)).size());
             }
             assertFalse(Files.exists(emergency));
         } finally {
@@ -210,14 +208,14 @@ class PlatformLogDeletionTest {
         byte[] retained;
         var original = fixture.original("one.wtlmod", "1.0.0", "one");
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             acknowledged(runtime);
             var target = category(runtime);
             emergency = file(root.resolve("data"), new LogTarget(target.key()));
             new EmergencyLogs(root.resolve("data")).append(target,
                 LogRecordCodec.create(target, "1.0.0", event("preserve while pending")));
             retained = Files.readAllBytes(emergency);
-            var ledger = new ModDeletionLedger(runtime.persistence().database(), root);
+            var ledger = new ModDeletionLedger(runtime.persistence().database(), root, new gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletionFileEvidence(root, runtime.persistence().database().root()));
             try (var scope = runtime.logs().sealDeletion(OWNER)) {
                 id = ledger.begin(ledger.review(OWNER), "{}");
                 ledger.unconfirmed(id);
@@ -231,7 +229,7 @@ class PlatformLogDeletionTest {
         try (var runtime = fixture.runtime()) {
             assertThrows(IllegalStateException.class, () -> runtime.capabilities().logs(OWNER, "1.0.0", Optional.empty()));
             assertArrayEquals(retained, Files.readAllBytes(emergency));
-            var ledger = new ModDeletionLedger(runtime.persistence().database(), root);
+            var ledger = new ModDeletionLedger(runtime.persistence().database(), root, new gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletionFileEvidence(root, runtime.persistence().database().root()));
             try (var scope = runtime.logs().sealDeletion(OWNER)) {
                 ledger.resume(id);
                 finish(runtime, ledger, id, emergency);

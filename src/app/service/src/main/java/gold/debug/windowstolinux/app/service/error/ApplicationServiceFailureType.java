@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.app.service.error;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /**
  * Stable failures raised at the desktop application-service boundary. / 桌面应用服务边界抛出的稳定失败。
@@ -133,12 +133,6 @@ public enum ApplicationServiceFailureType {
      */
     APPLICATION_NOT_SELECTED("service.lifecycle.application-not-selected", "lifecycle",
         "service.error.applicationNotSelected", "ERROR", "REQUEST_USER_CORRECTION"),
-    /**
-     * LEGACY RUNTIME MISSING classification within application service failure type.
-     * <p>应用服务失败类型中的历史运行时缺失分类。
-     */
-    LEGACY_RUNTIME_MISSING("service.lifecycle.runtime-missing", "lifecycle", "service.error.runtimeMissing", "ERROR",
-        "REQUIRE_MANUAL_RECOVERY"),
     /**
      * SERVER PROFILE MISSING classification within application service failure type.
      * <p>应用服务失败类型中的服务器配置资料缺失分类。
@@ -338,7 +332,7 @@ public enum ApplicationServiceFailureType {
                  BACKUP_INPUT_INCOMPLETE -> ProblemCode.INVALID_INPUT;
             case APPROVAL_MODEL_REQUIRED, DEPLOYMENT_MODEL_REQUIRED, DEPLOYMENT_ANALYSIS_REQUIRED,
                  SECURITY_UNAVAILABLE -> ProblemCode.UNAVAILABLE;
-            case APPLICATION_SECRET_REFERENCE_MISSING, LEGACY_RUNTIME_MISSING, SERVER_PROFILE_MISSING,
+            case APPLICATION_SECRET_REFERENCE_MISSING, SERVER_PROFILE_MISSING,
                  APPLICATION_NOT_MANAGED -> ProblemCode.NOT_FOUND;
             case DATABASE_VERSION_UNSUPPORTED -> ProblemCode.INCOMPATIBLE;
             case DATABASE_STATE_CHANGED -> ProblemCode.UNKNOWN;

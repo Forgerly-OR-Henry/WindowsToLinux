@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-
 import java.awt.BorderLayout;
 import java.util.*;
 import java.util.concurrent.*;
@@ -13,9 +8,14 @@ import java.util.function.Consumer;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.appapi.server.ServerInfo;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
@@ -29,7 +29,7 @@ public final class DeploymentApplicationsPage implements ModPage {
     private final JPanel root = new JPanel(new BorderLayout(8, 8));
 
     /** Unified saved identities retaining their original management payloads. / 保留原管理载荷的统一保存身份。 */
-    private final JList<DeploymentApplicationInventory.Entry> applications = new JList<>();
+    private final JList<DeploymentApplicationList.Entry> applications = new JList<>();
 
     /** Configured authorized scan endpoints. / 已配置授权扫描端点。 */
     private final JComboBox<ServerInfo> servers = new JComboBox<>();
@@ -41,10 +41,10 @@ public final class DeploymentApplicationsPage implements ModPage {
     private final JComboBox<String> categories = new JComboBox<>(new String[]{"ALL", "APP", "WEBSITE"});
 
     /** Original saved server identity filter, including an explicit all choice. / 原保存服务器身份筛选，包括明确全部选项。 */
-    private final JComboBox<gold.debug.windowstolinux.appapi.server.ServerRef> serverFilter = new JComboBox<>();
+    private final JComboBox<gold.debug.windowstolinux.appapi.server.model.ServerId> serverFilter = new JComboBox<>();
 
     /** Complete local facts retained for side-effect-free filtering. / 为无副作用筛选保留的完整本地事实。 */
-    private List<DeploymentApplicationInventory.Entry> inventory = List.of();
+    private List<DeploymentApplicationList.Entry> inventory = List.of();
 
     /** Distinguishes first loading from a user's explicit cleared selection. / 区分首次加载与用户明确清空选择。 */
     private boolean loaded;
@@ -197,10 +197,14 @@ public final class DeploymentApplicationsPage implements ModPage {
             detail.putClientProperty("html.disable", true);
             copy.add(detail);
             var card = DeploymentPageStyle.card(null, copy);
-            card.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(
-                selected ? UIManager.getColor("Component.focusColor") : UIManager.getColor("Panel.background"), 2,
-                true), BorderFactory.createEmptyBorder(12, 14, 12, 14)));
-            return card;
+            card.setBorder(BorderFactory.createEmptyBorder(12, 14, 12, 14));
+            card.putClientProperty("deployment.style.inventory", true);
+            card.putClientProperty("deployment.style.selected", selected);
+            var row = new JPanel(new BorderLayout());
+            row.setOpaque(false);
+            row.setBorder(BorderFactory.createEmptyBorder(3, 0, 3, 0));
+            row.add(card);
+            return row;
         });
         categories.setRenderer((list, value, index, selected, focus) -> label(list,
             value == null ? "" : text(value.equals("ALL") ? "allCategories" : value), selected));
@@ -243,12 +247,12 @@ public final class DeploymentApplicationsPage implements ModPage {
         String key = original == null ? null : original.key();
         run(service::inventory, values -> {
             inventory = values;
-            var target = (gold.debug.windowstolinux.appapi.server.ServerRef) serverFilter.getSelectedItem();
+            var target = (gold.debug.windowstolinux.appapi.server.model.ServerId) serverFilter.getSelectedItem();
             serverFilter.putClientProperty("inventory.loading", true);
             serverFilter.removeAllItems();
             serverFilter.addItem(null);
-            values.stream().map(DeploymentApplicationInventory.Entry::server).distinct()
-                .sorted(Comparator.comparing(gold.debug.windowstolinux.appapi.server.ServerRef::id))
+            values.stream().map(DeploymentApplicationList.Entry::server).distinct()
+                .sorted(Comparator.comparing(gold.debug.windowstolinux.appapi.server.model.ServerId::id))
                 .forEach(serverFilter::addItem);
             if (values.stream().anyMatch(value -> value.server().equals(target)))
                 serverFilter.setSelectedItem(target);
@@ -327,7 +331,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         var entry = selected();
         var original = entry == null ? null : entry.external().orElse(null);
         var candidate = (DeploymentExternalApplications.Discovered) discovered.getSelectedItem();
-        var server = (gold.debug.windowstolinux.appapi.server.ServerInfo) servers.getSelectedItem();
+        var server = (gold.debug.windowstolinux.appapi.server.model.ServerInfo) servers.getSelectedItem();
         if (original == null || candidate == null || server == null || !server.ref().equals(original.server())
             || !candidate.kind().equals(original.target().kind())
             || !candidate.identity().equals(original.target().identity())) {
@@ -445,8 +449,8 @@ public final class DeploymentApplicationsPage implements ModPage {
 
     /** Reads the current EDT-owned original inventory payload. / 读取当前EDT所属原清单载荷。
      * @return selected saved entry or absence / 所选保存条目或无 */
-    private DeploymentApplicationInventory.Entry selected() {
-        return (DeploymentApplicationInventory.Entry) applications.getSelectedValue();
+    private DeploymentApplicationList.Entry selected() {
+        return (DeploymentApplicationList.Entry) applications.getSelectedValue();
     }
 
     /** Shows saved business category, URL and origin-specific dates without claiming live state. / 展示保存的业务类别、URL及来源时间，不宣称实时状态。 */
@@ -490,10 +494,10 @@ public final class DeploymentApplicationsPage implements ModPage {
         Optional<String> category = Optional.ofNullable((String) categories.getSelectedItem())
             .filter(value -> !value.equals("ALL"));
         var server = Optional
-            .ofNullable((gold.debug.windowstolinux.appapi.server.ServerRef) serverFilter.getSelectedItem());
+            .ofNullable((gold.debug.windowstolinux.appapi.server.model.ServerId) serverFilter.getSelectedItem());
         var values = inventory.stream().filter(value -> value.matches(category, server)).toList();
         applications.putClientProperty("inventory.loading", true);
-        applications.setListData(values.toArray(DeploymentApplicationInventory.Entry[]::new));
+        applications.setListData(values.toArray(DeploymentApplicationList.Entry[]::new));
         applications.setSelectedValue(values.stream().filter(value -> value.key().equals(key)).findFirst().orElse(null),
             true);
         applications.putClientProperty("inventory.loading", false);
@@ -551,7 +555,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                         details.append("\n" + text("failed"));
                         return;
                     }
-                    if (result.outcome() == Outcome.SUCCEEDED && result.value().isPresent())
+                    if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent())
                         completed.accept(result.value().orElseThrow());
                     else
                         details.append(

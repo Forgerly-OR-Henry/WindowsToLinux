@@ -5,9 +5,22 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
 import gold.debug.windowstolinux.app.file.FileCopyPlan.Step;
+import gold.debug.windowstolinux.app.file.model.FileActionLog;
+import gold.debug.windowstolinux.app.file.model.FileBackend;
+import gold.debug.windowstolinux.app.file.model.FileLinkMaintenance;
+import gold.debug.windowstolinux.app.file.model.FileRecycleReceipt;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** Bounded file operations with no-follow traversal, exact planning and durable effects. / 有界文件操作、不跟随遍历、精确计划及持久副作用依据。 */
 public final class FileEngine {
@@ -132,6 +145,18 @@ public final class FileEngine {
         return bytes;
     }
 
+    /** Checks exact original-path restoration metadata without moving the recycled object. / 不移动回收对象地核对精确原路径恢复元数据。
+     * @param original original actual removed object position / 原实际被移除对象位置
+     * @param receipt already observed recovery object and metadata / 已观测恢复对象及元数据
+     * @return whether required metadata still describes the exact original object position / 所需元数据是否仍描述精确原对象位置
+     * @throws IOException if metadata is unreadable or exceeds its bound / 元数据无法读取或超过界限时 */
+    public boolean recoveryInformationMatches(FilePath original, FileRecycleReceipt receipt) throws IOException {
+        if (receipt.information().isEmpty()) return false;
+        String text = new String(read(receipt.information().orElseThrow(), 65536, () -> false), java.nio.charset.StandardCharsets.UTF_8);
+        var paths = text.lines().filter(line -> line.startsWith("Path=")).toList();
+        return text.startsWith("[Trash Info]\n") && paths.size() == 1 && java.net.URLDecoder.decode(paths.getFirst().substring(5), java.nio.charset.StandardCharsets.UTF_8).equals(original.path());
+    }
+
     /** Preplans all collision decisions, then performs actual per-item copy or move. / 先计划全部冲突决定，再逐项复制或移动。
      * @param from original source position / 原来源位置
      * @param to requested destination position / 请求目标位置
@@ -149,7 +174,7 @@ public final class FileEngine {
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
     public FileReport copy(FilePath from, FilePath to, boolean link, boolean move, FileChoice choices,
-                           FileEngine destination, Decisions decisions, Approval approval, FileJournal journal,
+                           FileEngine destination, Decisions decisions, Approval approval, FileActionLog journal,
                            CancelToken cancel, Progress progress) throws IOException, ApiException {
         return copy(from, to, link, move, choices, destination, decisions, approval, journal, cancel, progress, null);
     }
@@ -172,7 +197,7 @@ public final class FileEngine {
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
     public FileReport copy(FilePath from, FilePath to, boolean link, boolean move, FileChoice choices,
-                           FileEngine destination, Decisions decisions, Approval approval, FileJournal journal,
+                           FileEngine destination, Decisions decisions, Approval approval, FileActionLog journal,
                            CancelToken cancel, Progress progress, ContentTransfer transfer) throws IOException, ApiException {
         Objects.requireNonNull(choices);
         Objects.requireNonNull(destination);
@@ -196,7 +221,7 @@ public final class FileEngine {
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
     public FileReport write(FilePath path, byte[] content, boolean directory, boolean createOnly, Decisions decisions,
-                            Approval approval, FileJournal journal, CancelToken cancel) throws IOException, ApiException {
+                            Approval approval, FileActionLog journal, CancelToken cancel) throws IOException, ApiException {
         if (content.length > 64 * 1024 * 1024) throw new IllegalArgumentException("Write capacity exceeded");
         FilePath target = destination(path, false, cancel);
         FileInfo existing = backend.stat(target).orElse(null);
@@ -238,10 +263,10 @@ public final class FileEngine {
             }
             refreshTargetLinks(target, journal, cancel);
             journal.record(id, "COMPLETE", path, Optional.of(target), inspect(target, false, cancel).identity());
-            return new FileReport(id, Outcome.SUCCEEDED, List.of(item(path, target, Outcome.SUCCEEDED, "Written and verified")));
+            return new FileReport(id, TaskResult.SUCCEEDED, List.of(item(path, target, TaskResult.SUCCEEDED, "Written and verified")));
         } catch (Exception failure) {
             journal.record(id, "UNKNOWN", path, Optional.of(target), failure.getClass().getSimpleName());
-            return new FileReport(id, Outcome.UNKNOWN, List.of(item(path, target, Outcome.UNKNOWN, "Write requires reconciliation")));
+            return new FileReport(id, TaskResult.UNKNOWN, List.of(item(path, target, TaskResult.UNKNOWN, "Write requires reconciliation")));
         }
     }
 
@@ -255,7 +280,7 @@ public final class FileEngine {
      * @throws IOException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
-    public FileReport createLink(FilePath path, String targetText, Approval approval, FileJournal journal, CancelToken cancel) throws IOException, ApiException {
+    public FileReport createLink(FilePath path, String targetText, Approval approval, FileActionLog journal, CancelToken cancel) throws IOException, ApiException {
         FilePath pathActual = inspect(path.parent(), false, cancel).actual().child(path.name());
         FilePath target = resolveTarget(pathActual, targetText);
         if (backend.stat(pathActual).isPresent()) throw new IOException("Link path already exists");
@@ -270,10 +295,10 @@ public final class FileEngine {
             FileInfo observed = inspect(pathActual, true, cancel);
             journal.saveLink(observed, optionalTarget(observed, cancel));
             journal.record(operation, "COMPLETE", pathActual, Optional.of(target), observed.identity());
-            return new FileReport(operation, Outcome.SUCCEEDED, List.of(item(pathActual, target, Outcome.SUCCEEDED, "Link created and registered")));
+            return new FileReport(operation, TaskResult.SUCCEEDED, List.of(item(pathActual, target, TaskResult.SUCCEEDED, "Link created and registered")));
         } catch (Exception failure) {
             journal.record(operation, "UNKNOWN", pathActual, Optional.of(target), failure.getClass().getSimpleName());
-            return new FileReport(operation, Outcome.UNKNOWN, List.of(item(pathActual, target, Outcome.UNKNOWN, "Link effect or registration requires reconciliation")));
+            return new FileReport(operation, TaskResult.UNKNOWN, List.of(item(pathActual, target, TaskResult.UNKNOWN, "Link effect or registration requires reconciliation")));
         }
     }
 
@@ -286,7 +311,7 @@ public final class FileEngine {
      * @return actual per-link outcomes without content replay / 不重放内容的真实逐链接结果
      * @throws IOException if original prerequisites or durable effects cannot be verified / 原前置条件或持久副作用无法核实时
      * @throws ApiException if the new approval is refused / 新审批拒绝时 */
-    public FileReport maintainLinks(List<FileLinkMaintenance> plan, Map<FilePath, String> targets, Approval approval, FileJournal journal, CancelToken cancel) throws IOException, ApiException {
+    public FileReport maintainLinks(List<FileLinkMaintenance> plan, Map<FilePath, String> targets, Approval approval, FileActionLog journal, CancelToken cancel) throws IOException, ApiException {
         return FileMaintenanceRun.execute(this, List.copyOf(plan), Map.copyOf(targets), approval, journal, cancel);
     }
 
@@ -299,7 +324,7 @@ public final class FileEngine {
      * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
      * @throws IOException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
-    public FileReport delete(FileInfo info, boolean link, DeleteEffect effect, FileJournal journal, CancelToken cancel) throws IOException {
+    public FileReport delete(FileInfo info, boolean link, DeleteEffect effect, FileActionLog journal, CancelToken cancel) throws IOException {
         same(info, inspect(info.requested(), link, cancel));
         if (effect == DeleteEffect.RECYCLE && !backend.canRecycle(info.actual()))
             throw new IOException("Recoverable trash is unavailable");
@@ -318,7 +343,7 @@ public final class FileEngine {
                 if (receipt.information().isPresent())
                     journal.record(operation, "RECYCLE_METADATA", info.actual(), receipt.information(), receipt.informationIdentity().orElseThrow());
                 for (FileInfo node : nodes)
-                    results.add(item(node.actual(), null, Outcome.SUCCEEDED, "Recycled with restoration information"));
+                    results.add(item(node.actual(), null, TaskResult.SUCCEEDED, "Recycled with restoration information"));
             } else {
                 Collections.reverse(nodes);
                 for (FileInfo node : nodes) {
@@ -327,7 +352,7 @@ public final class FileEngine {
                     journal.record(operation, "BEFORE_DELETE_ITEM", node.actual(), Optional.empty(), node.identity());
                     backend.remove(node.actual());
                     journal.record(operation, "DELETED_ITEM", node.actual(), Optional.empty(), "confirmed");
-                    results.add(item(node.actual(), null, Outcome.SUCCEEDED, "Permanently deleted"));
+                    results.add(item(node.actual(), null, TaskResult.SUCCEEDED, "Permanently deleted"));
                 }
             }
             for (FileInfo node : nodes) if (node.kind() == FileInfo.Kind.LINK) journal.removeLink(node.actual());
@@ -339,7 +364,7 @@ public final class FileEngine {
                 }
             journal.record(operation, "COMPLETE", info.actual(), Optional.empty(), effect.name());
         } catch (Exception failure) {
-            results.add(item(info.actual(), null, Outcome.UNKNOWN, "Deletion effect requires reconciliation"));
+            results.add(item(info.actual(), null, TaskResult.UNKNOWN, "Deletion effect requires reconciliation"));
             journal.record(operation, "UNKNOWN", info.actual(), Optional.empty(), failure.getClass().getSimpleName());
         }
         return new FileReport(operation, aggregate(results), results);
@@ -393,7 +418,7 @@ public final class FileEngine {
      * @param cancel original cooperative cancellation / 原协作取消
      * @throws IOException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
-    void refreshTargetLinks(FilePath target, FileJournal journal, CancelToken cancel) throws IOException {
+    void refreshTargetLinks(FilePath target, FileActionLog journal, CancelToken cancel) throws IOException {
         for (FileInfo link : journal.links(target))
             if (resolveTarget(link.actual(), link.target().orElseThrow()).equals(target)) {
                 same(link, inspect(link.actual(), true, cancel));
@@ -576,7 +601,7 @@ public final class FileEngine {
      * @param detail bounded evidence or diagnostic detail / 有界依据或诊断详情
      * @return immutable per-object observed result / 不可变逐对象观测结果
      */
-    static FileReport.Item item(FilePath source, FilePath target, Outcome outcome, String detail) {
+    static FileReport.Item item(FilePath source, FilePath target, TaskResult outcome, String detail) {
         return new FileReport.Item(source, Optional.ofNullable(target), outcome, detail);
     }
 
@@ -586,17 +611,17 @@ public final class FileEngine {
      * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
      */
     private static FileReport failedWithoutEffect(FilePath path, String reason) {
-        return new FileReport(UUID.randomUUID(), Outcome.FAILED, List.of(item(path, null, Outcome.FAILED, reason)));
+        return new FileReport(UUID.randomUUID(), TaskResult.FAILED, List.of(item(path, null, TaskResult.FAILED, reason)));
     }
 
     /** Preserves uncertainty and cancellation while combining independent outcomes. / 合并独立结果时保留不确定及取消状态。
      * @param items immutable per-object results / 不可变逐对象结果
      * @return combined result preserving unknown and cancellation / 保留未知及取消的合并结果
      */
-    static Outcome aggregate(List<FileReport.Item> items) {
-        if (items.stream().anyMatch(r -> r.outcome() == Outcome.UNKNOWN)) return Outcome.UNKNOWN;
-        if (items.stream().anyMatch(r -> r.outcome() == Outcome.CANCELLED)) return Outcome.CANCELLED;
-        return items.stream().anyMatch(r -> r.outcome() == Outcome.FAILED) ? Outcome.FAILED : Outcome.SUCCEEDED;
+    static TaskResult aggregate(List<FileReport.Item> items) {
+        if (items.stream().anyMatch(r -> r.outcome() == TaskResult.UNKNOWN)) return TaskResult.UNKNOWN;
+        if (items.stream().anyMatch(r -> r.outcome() == TaskResult.CANCELLED)) return TaskResult.CANCELLED;
+        return items.stream().anyMatch(r -> r.outcome() == TaskResult.FAILED) ? TaskResult.FAILED : TaskResult.SUCCEEDED;
     }
 
     /** A proven refusal or invalid identity before a required object effect. / 所需对象副作用前已证明的拒绝或无效身份。

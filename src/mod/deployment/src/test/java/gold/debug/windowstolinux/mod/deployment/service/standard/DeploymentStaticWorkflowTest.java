@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.InvocationTargetException;
@@ -23,17 +15,23 @@ import java.util.concurrent.atomic.AtomicInteger;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.ai.AiService;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.file.FileService;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import gold.debug.windowstolinux.mod.deployment.file.git.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -117,18 +115,17 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var snapshots = new AtomicInteger();
             var ssh = new AtomicInteger();
             var models = new AtomicInteger();
-            var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
-                new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
-                    if (method.getName().equals("selectDirectory"))
-                        sourceCalls.incrementAndGet();
-                    if (method.getName().equals("snapshot"))
-                        snapshots.incrementAndGet();
-                    try {
-                        return method.invoke(actual.file(), arguments);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
+            var source = gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.create(FileService.class.getClassLoader(), (proxy, method, arguments) -> {
+                if (method.getName().equals("selectDirectory"))
+                    sourceCalls.incrementAndGet();
+                if (method.getName().equals("snapshot"))
+                    snapshots.incrementAndGet();
+                try {
+                    return gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.invoke(method, actual.file(), arguments);
+                } catch (InvocationTargetException failure) {
+                    throw failure.getCause();
+                }
+            });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
                 new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
                     ssh.incrementAndGet();
@@ -159,8 +156,8 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var database = new AtomicInteger();
             var original = new java.util.concurrent.atomic.AtomicReference<UUID>();
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
-                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                                                                                  List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+                                                                                  List<DiscoveredProjectPart> discovered, TaskContext task) throws Exception {
                     selected.incrementAndGet();
                     original.set(task.id());
                     assertEquals(count, discovered.size());
@@ -176,9 +173,9 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                         Optional.empty()));
                 }
 
-                public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+                public OperationResult<Map<String, String>> databaseInputs(ServerId server, String componentId,
                                                                            String sha, Path directory, String applicationId,
-                                                                           gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                           gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker.Report assessment,
                                                                            TaskContext task) {
                     assertEquals(RefusalStageType.UNKNOWN_DATABASE_INPUTS, stage);
                     assertEquals(original.get(), task.id());
@@ -189,7 +186,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                     return cancelled();
                 }
 
-                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server,
                                                                                              String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertEquals(RefusalStageType.RUNTIME_REVIEW, stage);
                     assertEquals(original.get(), task.id());
@@ -198,20 +195,20 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                     return cancelled();
                 }
 
-                public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
+                public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
                                                         Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                         Map<String, DeploymentPreparedDatabase> databases,
                                                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     throw new AssertionError("Refused local fields cannot reach publication consent");
                 }
             };
-            var handle = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound)).submit(
-                new ServerRef("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
+            var handle = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound)).submit(
+                new ServerId("server"), new DeploymentStaticWorkflow.Draft("", 65536, 100, 65536),
                 Optional.empty(), reviewer);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
-            assertEquals(Optional.of(Outcome.CANCELLED), handle.snapshot().outcome());
+            assertEquals(Optional.of(TaskResult.CANCELLED), handle.snapshot().outcome());
             assertEquals(original.get(), handle.id());
             assertEquals(1, selected.get());
             assertEquals(stage == RefusalStageType.RUNTIME_REVIEW ? 1 : 0, reviewed.get());
@@ -248,20 +245,19 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             var cleanupCalls = new AtomicInteger();
-            var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
-                new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
-                    if (method.getName().equals("workspace") && arguments.length == 2)
-                        throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_WORKSPACE_UNCONFIRMED",
-                            "Original workspace result is unavailable", Map.of(), Optional.empty()));
-                    if (method.getName().equals("closeTaskResources") && cleanupCalls.getAndIncrement() == 0)
-                        throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_CLEANUP_UNCONFIRMED",
-                            "Original source cleanup is unavailable", Map.of(), Optional.empty()));
-                    try {
-                        return method.invoke(original.file(), arguments);
-                    } catch (InvocationTargetException wrapped) {
-                        throw wrapped.getCause();
-                    }
-                });
+            var source = gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.create(FileService.class.getClassLoader(), (proxy, method, arguments) -> {
+                if (method.getName().equals("workspace") && arguments.length == 2)
+                    throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_WORKSPACE_UNCONFIRMED",
+                        "Original workspace result is unavailable", Map.of(), Optional.empty()));
+                if (method.getName().equals("closeTaskResources") && cleanupCalls.getAndIncrement() == 0)
+                    throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_CLEANUP_UNCONFIRMED",
+                        "Original source cleanup is unavailable", Map.of(), Optional.empty()));
+                try {
+                    return gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.invoke(method, original.file(), arguments);
+                } catch (InvocationTargetException wrapped) {
+                    throw wrapped.getCause();
+                }
+            });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
                 new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
                     if (method.getName().equals("file"))
@@ -272,28 +268,28 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                         throw wrapped.getCause();
                     }
                 });
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
+            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
             var request = new DeploymentGitRequest(new DeploymentGitRemote(root.resolve("unused-repo").toUri()),
-                new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true);
+                new DeploymentGitRef.DefaultBranch(), Set.of(), 65536, true);
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
-                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String manifest,
-                                                                                  List<DiscoveredProjectComponent> discovered, TaskContext task) {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String manifest,
+                                                                                  List<DiscoveredProjectPart> discovered, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
 
-                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server,
                                                                                              String manifest, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
 
-                public OperationResult<Boolean> confirm(ServerRef server, String manifest, Map<String, String> archives,
+                public OperationResult<Boolean> confirm(ServerId server, String manifest, Map<String, String> archives,
                                                         Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                         Map<String, DeploymentPreparedDatabase> databases,
                                                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
                     throw new AssertionError("Git preparation did not finish");
                 }
             };
-            var handle = workflow.submit(new ServerRef("server"),
+            var handle = workflow.submit(new ServerId("server"),
                 new DeploymentStaticWorkflow.Draft("reviewed-project", 65536, 100, 65536),
                 Optional.of(new DeploymentStaticWorkflow.GitSource(request, GIT)), reviewer);
             long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
@@ -302,9 +298,9 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertEquals(2, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND released_at IS NULL"));
-            var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+            var recovered = reconcileReady(runtime, handle);
             assertEquals(TaskState.ENDED, recovered.state());
-            assertEquals(Optional.of(Outcome.FAILED), recovered.outcome());
+            assertEquals(Optional.of(TaskResult.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind IN ('CUSTOM','FILE','PROCESS') AND released_at IS NULL"));
             assertEquals(1, cleanupCalls.get(), "Recovery uses the registered unwrapped source capability");
@@ -352,12 +348,12 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var taskId = new java.util.concurrent.atomic.AtomicReference<UUID>();
             var confirmationEntered = new CountDownLatch(1);
             var confirmationRelease = new CountDownLatch(1);
-            var workflow = new DeploymentStaticWorkflow(context, new DeploymentReferenceFlow(context));
+            var workflow = new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context));
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 @Override
-                public OperationResult<Map<String, String>> databaseInputs(ServerRef server, String componentId,
+                public OperationResult<Map<String, String>> databaseInputs(ServerId server, String componentId,
                                                                            String sha, Path componentRoot, String applicationId,
-                                                                           gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                           gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker.Report assessment,
                                                                            TaskContext task) {
                     assertTrue(schema);
                     assertEquals(taskId.get(), task.id());
@@ -367,9 +363,9 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
 
                 @Override
-                public OperationResult<Boolean> confirmSqliteInitialization(ServerRef server, String componentId,
+                public OperationResult<Boolean> confirmSqliteInitialization(ServerId server, String componentId,
                                                                             String sha,
-                                                                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector.Assessment assessment,
+                                                                            gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker.Report assessment,
                                                                             TaskContext task) throws Exception {
                     assertTrue(schema);
                     assertEquals(List.of("schema.sql"), assessment.databases().getFirst().initializationFiles());
@@ -382,8 +378,8 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
 
                 @Override
-                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                                                                                  List<DiscoveredProjectComponent> discovered, TaskContext task) throws Exception {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+                                                                                  List<DiscoveredProjectPart> discovered, TaskContext task) throws Exception {
                     assertEquals(count, discovered.size());
                     taskId.set(task.id());
                     source.set(sha);
@@ -402,7 +398,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
 
                 @Override
-                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server,
                                                                                              String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertEquals(taskId.get(), task.id());
                     assertEquals(source.get(), sha);
@@ -425,7 +421,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 }
 
                 @Override
-                public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archiveSha,
+                public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archiveSha,
                                                         Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                         Map<String, DeploymentPreparedDatabase> databases,
                                                         Optional<DeploymentStaticWorkflow.GitReview> gitReview, TaskContext task) {
@@ -443,10 +439,10 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var gitInput = git
                 ? Optional.of(new DeploymentStaticWorkflow.GitSource(
                 new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
-                    new DeploymentGitReference.DefaultBranch(), Set.of(), 65536, true),
+                    new DeploymentGitRef.DefaultBranch(), Set.of(), 65536, true),
                 GIT))
                 : Optional.<DeploymentStaticWorkflow.GitSource>empty();
-            var handle = workflow.submit(new ServerRef("server"),
+            var handle = workflow.submit(new ServerId("server"),
                 new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536), gitInput,
                 reviewer);
             if (cancelAfterConsent)
@@ -457,7 +453,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                     confirmationRelease.countDown();
                 }
             var result = handle.completion().toCompletableFuture().get(90, TimeUnit.SECONDS);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(schema ? 0 : 1, reviewed.get());
             if (!schema)
                 assertEquals(count, archives.get().size());
@@ -506,11 +502,11 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     private static <T> OperationResult<T> cancelled() {
-        return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
+        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.of(new Problem(ProblemCode.CANCELLED,
             "DEPLOYMENT_STATIC_TEST_REFUSED", "Original review was refused", Map.of(), Optional.empty())));
     }
 }

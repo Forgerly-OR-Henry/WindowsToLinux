@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.awt.BorderLayout;
 import java.util.*;
 import java.util.concurrent.Executor;
@@ -13,6 +7,11 @@ import java.util.function.Supplier;
 
 import javax.swing.*;
 
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.service.agent.*;
 
 /** Displays original evidence and explicit safe-boundary controls without holding task capabilities. / 展示原依据及明确安全边界控件，不持有任务能力。 */
@@ -163,7 +162,7 @@ final class DeploymentAgentEvidencePanel {
                 return;
             if (failure != null)
                 detail.setText(diagnostic(failure));
-            else if (result.outcome() == Outcome.SUCCEEDED)
+            else if (result.outcome() == TaskResult.SUCCEEDED)
                 rendered.accept(result.value().orElseThrow());
             else
                 detail.setText(result.problem().map(this::diagnostic).orElse(result.outcome().toString()));

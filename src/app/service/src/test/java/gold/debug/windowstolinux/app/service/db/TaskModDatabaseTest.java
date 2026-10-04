@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.service.db;
 
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -15,15 +7,20 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -31,8 +28,8 @@ class TaskModDatabaseTest {
     static gold.debug.windowstolinux.app.service.security.DesktopSecurityService security(PlatformDatabase db)
         throws Exception {
         var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
-            new gold.debug.windowstolinux.app.db.security.SecurityRepository(
-                new gold.debug.windowstolinux.app.db.connect.RepositoryConnections(
+            new gold.debug.windowstolinux.app.db.security.SecurityStore(
+                new gold.debug.windowstolinux.app.db.connect.StoreConnections(
                     db::openConnection)));
         if (security.securityState().configured())
             security.unlock("fixture-password".toCharArray());
@@ -58,7 +55,7 @@ class TaskModDatabaseTest {
     };
 
     static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
     }
 
     static <T> OperationResult<T> result(TaskHandle<T> task) throws Exception {

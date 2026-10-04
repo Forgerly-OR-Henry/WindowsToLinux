@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreEvidence.*;
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreSteps.*;
 
@@ -15,16 +8,20 @@ import java.time.*;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Original activation compensation and verified post-commit recovery. / 原激活补偿与已核实提交后恢复。 */
@@ -33,19 +30,19 @@ final class DeploymentRestoreRecovery {
     private final ModContext context;
 
     /** Existing canonical archive and release validator. / 既有规范归档与发布校验器。 */
-    private final DeploymentReleaseRepository releases;
+    private final DeploymentReleaseStore releases;
 
     /** Original formal execution records. / 原正式执行记录。 */
-    private final DeploymentExecutionRepository executions;
+    private final DeploymentExecutionStore executions;
 
     /** Shared original transaction and reference verification. / 共用原事务与引用核验。 */
-    private final DeploymentOriginalPublicationCommit commit;
+    private final DeploymentOriginalPublishCommit commit;
 
     /** Exact original cleanup and receipt observations. / 精确原清理与回执观察。 */
     private final DeploymentRestoreCleanup cleanup;
 
     /** Current target secret and configuration authority checks. / 当前目标秘密与配置权限核对。 */
-    private final DeploymentRestorePreparation inputs;
+    private final DeploymentRestoreSetup inputs;
 
     /** Reuses the original publication, authority and cleanup boundaries. / 复用原发布、权限与清理边界。
      * @param context actual provider context / 实际提供方上下文
@@ -54,9 +51,9 @@ final class DeploymentRestoreRecovery {
      * @param commit shared transaction boundary / 共用事务边界
      * @param cleanup original cleanup phases / 原清理阶段
      * @param inputs original input authority checks / 原输入权限核对 */
-    DeploymentRestoreRecovery(ModContext context, DeploymentReleaseRepository releases,
-                              DeploymentExecutionRepository executions, DeploymentOriginalPublicationCommit commit,
-                              DeploymentRestoreCleanup cleanup, DeploymentRestorePreparation inputs) {
+    DeploymentRestoreRecovery(ModContext context, DeploymentReleaseStore releases,
+                              DeploymentExecutionStore executions, DeploymentOriginalPublishCommit commit,
+                              DeploymentRestoreCleanup cleanup, DeploymentRestoreSetup inputs) {
         this.context = context;
         this.releases = releases;
         this.executions = executions;
@@ -74,7 +71,7 @@ final class DeploymentRestoreRecovery {
      * @return compensated original failure or retained uncertainty / 已补偿原失败或留存未知
      * @throws Exception if compensation or original evidence is unavailable / 补偿或原依据不可用时 */
     OperationResult<DeploymentActivation> compensate(DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-                                                     DeploymentHandoffChannel channel, DeploymentPublicationChannel publisher, Problem original)
+                                                     DeploymentHandoffChannel channel, DeploymentPublishChannel publisher, Problem original)
         throws Exception {
         cursor.facts.put("compensationAttempted", true);
         cursor.save(DeploymentHandoffState.COMPENSATING);
@@ -110,14 +107,14 @@ final class DeploymentRestoreRecovery {
         for (var component : plan.proposal.graph().components())
             if (!cursor.unit(component.componentId()).path("beforeDigest").asText().equals("-")) {
                 var observed = publisher.observeRestored(component.unit());
-                if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
+                if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()
                     || !observed.value().orElseThrow().state().name()
                     .equals(cursor.unit(component.componentId()).path("beforeState").asText()))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_OLD_STATE_UNCONFIRMED");
             }
-        var completed = commit.completeUncommittedVerified(cursor.task, cursor.entry.publicValue().id(), Outcome.FAILED,
+        var completed = commit.completeUncommittedVerified(cursor.task, cursor.entry.publicValue().id(), TaskResult.FAILED,
             original);
-        if (completed.outcome() != Outcome.FAILED)
+        if (completed.outcome() != TaskResult.FAILED)
             return cursor.uncertain("DEPLOYMENT_RESTORE_COMPENSATED_FORMAL_UNKNOWN");
         cursor.facts.put("compensated", true);
         cursor.save(DeploymentHandoffState.COMPENSATING);
@@ -125,7 +122,7 @@ final class DeploymentRestoreRecovery {
             return cursor.uncertain("DEPLOYMENT_RESTORE_COMPENSATED_CLEANUP_REQUIRED");
         cursor.facts.put("terminalOutcome", "FAILED");
         cursor.save(DeploymentHandoffState.FINISHED);
-        return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(original));
+        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(original));
     }
 
     /** Rechecks committed activation and completes only its original cleanup. / 复核已提交激活并仅完成其原清理。
@@ -140,25 +137,25 @@ final class DeploymentRestoreRecovery {
             inputs.authorize(plan, task);
             try (var session = context.linux().connect(plan.request.target(), task)) {
                 if (new DeploymentManagedHelper(session, context.interaction(), plan.request.target(), task,
-                    plan.request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
+                    plan.request.reviewedTargetSha256()).probe().outcome() != TaskResult.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_HELPER_UNCONFIRMED");
                 if (!sameTarget(context, cursor, plan, session))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_TARGET_CHANGED");
                 var channel = channel(context, session, plan.request, task);
                 var publisher = publication(context, session, plan.request, task);
-                if (health(plan, channel, publisher).outcome() != Outcome.SUCCEEDED)
+                if (health(plan, channel, publisher).outcome() != TaskResult.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_ACTIVE_HEALTH_UNCONFIRMED");
                 if (commit
                     .commitVerified(task, cursor.entry.publicValue().id(),
-                        new DeploymentPublication(plan.proposal.graph(), plan.proposal.units()))
-                    .outcome() != Outcome.SUCCEEDED)
+                        new DeploymentPublish(plan.proposal.graph(), plan.proposal.units()))
+                    .outcome() != TaskResult.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_LOCAL_COMMIT_UNCONFIRMED");
                 if (!cleanup.cleanup(cursor, plan, channel, false))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_CLEANUP_UNKNOWN");
                 cursor.save(DeploymentHandoffState.FINISHED);
             }
             if (commit.finishProviderKnown(task, executions.find(task, cursor.entry.publicValue().id()).orElseThrow())
-                .outcome() != Outcome.SUCCEEDED)
+                .outcome() != TaskResult.SUCCEEDED)
                 return unknown("DEPLOYMENT_RESTORE_RESOURCES_UNCONFIRMED");
             return success(activation(cursor, true));
         } catch (Exception unavailable) {
@@ -177,7 +174,7 @@ final class DeploymentRestoreRecovery {
             var plan = new DeploymentRestorePlan(DeploymentRestorePlan.read(cursor.entry), releases);
             try (var session = context.linux().connect(plan.request.target(), task)) {
                 if (new DeploymentManagedHelper(session, context.interaction(), plan.request.target(), task,
-                    plan.request.reviewedTargetSha256()).probe().outcome() != Outcome.SUCCEEDED)
+                    plan.request.reviewedTargetSha256()).probe().outcome() != TaskResult.SUCCEEDED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_HELPER_UNCONFIRMED");
                 if (!sameTarget(context, cursor, plan, session))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_TARGET_CHANGED");
@@ -186,8 +183,8 @@ final class DeploymentRestoreRecovery {
                     return cursor.uncertain("DEPLOYMENT_RESTORE_COMPENSATION_UNCONFIRMED");
                 var original = problem(ProblemCode.valueOf(cursor.facts.path("failureCode").asText()),
                     cursor.facts.path("failureEvent").asText());
-                if (commit.completeUncommittedVerified(task, cursor.entry.publicValue().id(), Outcome.FAILED, original)
-                    .outcome() != Outcome.FAILED)
+                if (commit.completeUncommittedVerified(task, cursor.entry.publicValue().id(), TaskResult.FAILED, original)
+                    .outcome() != TaskResult.FAILED)
                     return cursor.uncertain("DEPLOYMENT_RESTORE_COMPENSATED_FORMAL_UNKNOWN");
                 if (!cleanup.abortCleanup(cursor, plan, channel, false))
                     return cursor.uncertain("DEPLOYMENT_RESTORE_COMPENSATED_CLEANUP_UNKNOWN");
@@ -195,7 +192,7 @@ final class DeploymentRestoreRecovery {
                 cursor.save(DeploymentHandoffState.FINISHED);
             }
             if (commit.finishProviderKnown(task, executions.find(task, cursor.entry.publicValue().id()).orElseThrow())
-                .outcome() != Outcome.FAILED)
+                .outcome() != TaskResult.FAILED)
                 return unknown("DEPLOYMENT_RESTORE_RESOURCES_UNCONFIRMED");
             return success(cursor.entry.publicValue());
         } catch (Exception unknown) {
@@ -211,7 +208,7 @@ final class DeploymentRestoreRecovery {
      * @return whether all original compensation is confirmed / 是否全部原补偿已确证
      * @throws Exception if original observations are unavailable / 原观察不可用时 */
     boolean compensationObserved(DeploymentRestoreState cursor, DeploymentRestorePlan plan,
-                                 DeploymentHandoffChannel channel, DeploymentPublicationChannel publisher) throws Exception {
+                                 DeploymentHandoffChannel channel, DeploymentPublishChannel publisher) throws Exception {
         if (!targets(plan.proposal.graph(), channel).equals(before(cursor)))
             return false;
         for (var component : plan.proposal.graph().components()) {
@@ -234,7 +231,7 @@ final class DeploymentRestoreRecovery {
             }
             if (!unit.path("beforeDigest").asText().equals("-")) {
                 var observed = publisher.observeRestored(component.unit());
-                if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
+                if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()
                     || !observed.value().orElseThrow().state().name().equals(unit.path("beforeState").asText()))
                     return false;
             }

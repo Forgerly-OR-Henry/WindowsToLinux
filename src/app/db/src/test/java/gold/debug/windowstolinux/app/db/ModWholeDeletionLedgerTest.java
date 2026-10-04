@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-
 import static gold.debug.windowstolinux.app.db.ModVersionDeletionLedgerTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -10,12 +7,17 @@ import java.nio.file.*;
 import java.sql.SQLException;
 import java.util.*;
 
-import gold.debug.windowstolinux.app.db.log.*;
-import gold.debug.windowstolinux.app.db.mod.*;
-import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences.PagePin;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.log.*;
+import gold.debug.windowstolinux.app.db.log.LogRecordCodec;
+import gold.debug.windowstolinux.app.db.log.LogStore;
+import gold.debug.windowstolinux.app.db.mod.*;
+import gold.debug.windowstolinux.app.db.mod.ModDeletionLedger;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
-
+import gold.debug.windowstolinux.app.db.setting.ModNavigationPreferences.PagePin;
+import gold.debug.windowstolinux.app.db.setting.ModNavigationPreferences;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -52,8 +54,8 @@ class ModWholeDeletionLedgerTest {
         }
     }
 
-    LogRepository.Target log(PlatformDatabase db, String owner) throws Exception {
-        var repo = new LogRepository(db);
+    LogStore.Target log(PlatformDatabase db, String owner) throws Exception {
+        var repo = new LogStore(db);
         var target = repo.register(owner, Optional.empty(), new LogCategory("runtime", "fixture", Optional.empty()));
         repo.store(target,
             List.of(new LogRecordCodec.Record(UUID.randomUUID(), 1, owner, "runtime", LogLevel.INFO, "FIXTURE",
@@ -88,7 +90,7 @@ class ModWholeDeletionLedgerTest {
                 UUID.randomUUID(), OWNER, current.generation());
             sql(db, "CREATE TABLE app.unrelated_fixture(value_text VARCHAR)");
             sql(db, "INSERT INTO app.unrelated_fixture VALUES('keep')");
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var review = ledger.review(OWNER);
             assertEquals(List.of("1.0.0", "2.0.0"), review.versions());
             assertEquals(List.of(orphan, current), review.removedSchemas());
@@ -136,7 +138,7 @@ class ModWholeDeletionLedgerTest {
             Path cache = db.root().resolve("mod").resolve(OWNER);
             Files.createDirectories(cache);
             Path item = Files.writeString(cache.resolve("cache"), "registered cleanup is required");
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var id = ledger.begin(ledger.review(OWNER), "{}");
             removePrograms("1.0.0");
             ledger.programRemoved(id);
@@ -167,7 +169,7 @@ class ModWholeDeletionLedgerTest {
             fixture.owner(db);
             fixture.release(db, "1.0.0", null);
             pins(db, new PagePin(OWNER, "main"));
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var dataReview = ledger.review(OWNER);
             fixture.schema(db, "1");
             assertThrows(SQLException.class, () -> ledger.begin(dataReview, "{}"));
@@ -193,7 +195,7 @@ class ModWholeDeletionLedgerTest {
             fixture.release(db, "1.0.0", null);
             log(db, OWNER);
             pins(db, new PagePin(OWNER, "main"));
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var id = ledger.begin(ledger.review(OWNER), "{}");
             removePrograms("1.0.0");
             ledger.programRemoved(id);
@@ -220,7 +222,7 @@ class ModWholeDeletionLedgerTest {
             fixture.owner(db);
             fixture.release(db, "1.0.0", "1");
             fixture.schema(db, "1");
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             id = ledger.begin(ledger.review(OWNER), "{\"physical\":\"original\"}");
             archive = value(db, "SELECT archive_log_id FROM mod_operation WHERE operation_id=?", id);
             removePrograms("1.0.0");
@@ -236,7 +238,7 @@ class ModWholeDeletionLedgerTest {
             sql(db, "ALTER TABLE runtime_log DROP CONSTRAINT fixture_archive");
         }
         try (var db = fixture.open()) {
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             assertEquals("{\"physical\":\"original\"}", ledger.execution(id).files());
             assertEquals("CLEANUP", ledger.resume(id));
             assertTrue(ledger.finish(id));
@@ -254,7 +256,7 @@ class ModWholeDeletionLedgerTest {
         try (var db = fixture.open()) {
             fixture.owner(db);
             fixture.release(db, "1.0.0", null);
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var id = ledger.begin(ledger.review(OWNER), "{}");
             fixture.removeProgram("1.0.0");
             Path foreign = Files.writeString(root.resolve("mod").resolve(OWNER).resolve("unknown-file"), "keep");
@@ -280,7 +282,7 @@ class ModWholeDeletionLedgerTest {
             fixture.owner(db);
             fixture.release(db, "1.0.0", null);
             fixture.release(db, "2.0.0", null);
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             sql(db, "UPDATE mod_version SET origin_kind='CLASS' WHERE version='2.0.0'");
             assertThrows(SQLException.class, () -> ledger.review(OWNER));
             sql(db, "UPDATE mod_version SET origin_kind='LOCAL'");
@@ -304,7 +306,7 @@ class ModWholeDeletionLedgerTest {
             fixture.release(db, "1.0.0", "1");
             var first = fixture.schema(db, "1");
             var second = fixture.schema(db, "2");
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var id = ledger.begin(ledger.review(OWNER), "{}");
             removePrograms("1.0.0");
             ledger.programRemoved(id);
@@ -332,7 +334,7 @@ class ModWholeDeletionLedgerTest {
             fixture.owner(db);
             fixture.release(db, "1.0.0", null);
             log(db, OWNER);
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var id = ledger.begin(ledger.review(OWNER), "{}");
             String original = value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id);
             sql(db, "UPDATE mod_operation SET request_json=? WHERE operation_id=?",
@@ -358,7 +360,7 @@ class ModWholeDeletionLedgerTest {
                 fixture.schema(db, "1");
             if (kind.equals("shared"))
                 fixture.release(db, "2.0.0", "1");
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             id = ledger.begin(ledger.review(OWNER, "1.0.0"), "{\"scope\":\"original physical evidence\"}");
             var json = new com.fasterxml.jackson.databind.ObjectMapper();
             var node = (com.fasterxml.jackson.databind.node.ObjectNode) json
@@ -380,7 +382,7 @@ class ModWholeDeletionLedgerTest {
             sql(db, "UPDATE mod_operation SET request_json=? WHERE operation_id=?", original, id);
         }
         try (var db = fixture.open()) {
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             assertEquals("1.0.0", ledger.execution(id).version());
             assertEquals("QUIESCENT", ledger.resume(id));
             assertEquals(original, value(db, "SELECT request_json FROM mod_operation WHERE operation_id=?", id));
@@ -402,16 +404,16 @@ class ModWholeDeletionLedgerTest {
             fixture.release(db, "1.0.0", null);
             sql(db, "INSERT INTO security_profile VALUES(1,1,'fixture',?,'AES256_GCM_V1',?,'ARGON2ID_V1',?,'fixture',1)",
                 new byte[48], new byte[12], new byte[16]);
-            String owned = gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository
+            String owned = gold.debug.windowstolinux.app.db.security.SecretRefStore
                 .newSecret(OWNER, "fixture").id();
-            String shared = gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository
+            String shared = gold.debug.windowstolinux.app.db.security.SecretRefStore
                 .newSecret(OWNER, "server").id();
-            String other = gold.debug.windowstolinux.app.db.security.CredentialReferenceRepository
+            String other = gold.debug.windowstolinux.app.db.security.SecretRefStore
                 .newSecret("other.owner", "fixture").id();
             for (String id : List.of(owned, shared, other))
                 sql(db, "INSERT INTO credential(credential_id,storage_format,payload) VALUES(?,'PLAIN_V1',?)", id,
                     new byte[]{1, 2, 3});
-            var ledger = new ModDeletionLedger(db, root);
+            var ledger = new ModDeletionLedger(db, root, DeletionFileEvidenceFixture.files());
             var stale = ledger.review(OWNER);
             sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared',?,'localhost',22,'fixture','fixture')",
                 shared);

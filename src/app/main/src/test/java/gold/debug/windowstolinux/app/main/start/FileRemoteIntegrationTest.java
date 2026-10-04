@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformRemoteCapabilitiesTest.*;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.callbackReturned;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.callbackReturned;
+import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -13,15 +13,28 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.service.setting.TransferConfig;
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService.Launch;
-import gold.debug.windowstolinux.app.service.linux.TransferConfiguration;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.linux.TransferStallChoice;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.api.io.TempDir;
 
 class FileRemoteIntegrationTest {
     @TempDir
@@ -53,7 +66,7 @@ class FileRemoteIntegrationTest {
                         var path = FilePath.remote(SERVER, "/owned");
                         var intent = FileActions.delete(file.getFile(path, task), false, DeleteEffect.PERMANENT).withSemantics(new ActionSemantics("file.delete.v1", Set.of(target)));
                         var grant = activation.interaction().approve(intent, task).value().orElseThrow();
-                        assertEquals(Outcome.SUCCEEDED, file.deleteFile(path, task, grant).outcome());
+                        assertEquals(TaskResult.SUCCEEDED, file.deleteFile(path, task, grant).outcome());
                         assertFalse(Files.exists(owned));
                         Files.writeString(owned, "replacement must survive");
                         assertEquals(ProblemCode.ACCESS_DENIED, assertThrows(ApiException.class, () -> file.deleteFile(path, task, grant)).problem().code());
@@ -78,13 +91,13 @@ class FileRemoteIntegrationTest {
             Thread.sleep(5);
         if (handle.snapshot().state() == TaskState.UNKNOWN) {
             callbackReturned(runtime, callbackContext.get());
-            try (var recovery = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture", (before, task) -> new OperationResult<Void>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_CAPTURED_FILE_FAILURE", "Owned file failure retained for diagnosis", Map.of(), Optional.empty()))))) {
+            try (var recovery = runtime.tasks().bind(OWNER, VERSION, false).registerRecovery("fixture", (before, task) -> new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "FIXTURE_CAPTURED_FILE_FAILURE", "Owned file failure retained for diagnosis", Map.of(), Optional.empty()))))) {
                 assertEquals(TaskState.ENDED, runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(10, TimeUnit.SECONDS).state());
             }
         }
         if (callbackFailure.get() != null)
             throw new AssertionError("Actual file callback failed", callbackFailure.get());
-        assertEquals(Outcome.SUCCEEDED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+        assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
     }
 
     @Test
@@ -105,7 +118,7 @@ class FileRemoteIntegrationTest {
                 return TransferStallChoice.RETRY;
             };
             runtime.setInteractionPresenter(reviews);
-            runtime.transfers().save(new TransferConfiguration(5, 1));
+            runtime.transfers().save(new TransferConfig(5, 1));
             var offsets = new CopyOnWriteArrayList<Long>();
             PlatformTransferStallTest.stallWrites(remote, 1, offsets);
             try (var activation = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
@@ -113,11 +126,11 @@ class FileRemoteIntegrationTest {
                 var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                     var destination = FilePath.remote(SERVER, "/uploaded");
                     var choices = FileChoice.of(FileChoice.Directory.COPY, FileChoice.Conflict.COPY);
-                    assertEquals(Outcome.SUCCEEDED, file.uploadFile(FilePath.local(root.resolve("input")), destination, task, choices).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, file.uploadFile(FilePath.local(root.resolve("input")), destination, task, choices).outcome());
                     assertEquals(1, retries.get());
                     assertTrue(remote.authentications.get() >= 2);
                     assertArrayEquals(content, file.readFile(destination.child("sub").child("large.bin"), content.length, task));
-                    assertEquals(Outcome.SUCCEEDED, file.downloadFile(destination, FilePath.local(root.resolve("downloaded")), task, choices).outcome());
+                    assertEquals(TaskResult.SUCCEEDED, file.downloadFile(destination, FilePath.local(root.resolve("downloaded")), task, choices).outcome());
                     assertArrayEquals(content, Files.readAllBytes(root.resolve("downloaded/sub/large.bin")));
                     assertEquals("small", Files.readString(root.resolve("downloaded/small.txt")));
                     assertTrue(activation.linux().pendingTransfers(task).isEmpty());
@@ -126,7 +139,7 @@ class FileRemoteIntegrationTest {
                     return success(null);
                 });
                 var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
-                assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                 assertTrue(offsets.size() > 1);
                 assertArrayEquals(content, Files.readAllBytes(remote.files.resolve("uploaded/sub/large.bin")));
             }
@@ -163,7 +176,7 @@ class FileRemoteIntegrationTest {
                 } finally {
                     handle.requestCancel();
                 }
-                assertEquals(Outcome.CANCELLED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+                assertEquals(TaskResult.CANCELLED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
                 assertEquals("keep", Files.readString(kept));
             }
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));

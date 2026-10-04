@@ -8,11 +8,17 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import gold.debug.windowstolinux.app.file.*;
-import gold.debug.windowstolinux.app.windows.file.WindowsLinks;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.app.file.FileEngine;
+import gold.debug.windowstolinux.app.file.model.FileActionLog;
 import gold.debug.windowstolinux.app.linux.ssh.connect.*;
+import gold.debug.windowstolinux.app.linux.ssh.connect.SshConnector;
+import gold.debug.windowstolinux.app.windows.file.WindowsLinks;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.sshd.common.file.root.RootedFileSystem;
 import org.apache.sshd.sftp.server.*;
 import org.junit.jupiter.api.Test;
@@ -22,7 +28,7 @@ class SftpFileBackendTest {
     @TempDir
     Path root;
 
-    final ServerRef server = new ServerRef("fixture");
+    final ServerId server = new ServerId("fixture");
 
     FilePath remote(String p) {
         return FilePath.remote(server, p);
@@ -53,11 +59,11 @@ class SftpFileBackendTest {
                 Files.writeString(fixture.remote.resolve("to/unique"), "keep");
                 connection.withSftp(() -> false, client -> {
                     var engine = new FileEngine(new SftpFileBackend(client, server));
-                    var journal = new Journal();
+                    var journal = new ActionLog();
                     var copied = engine.copy(remote("/from"), remote("/to"), false, false, FileChoice.of(FileChoice.Directory.MERGE, FileChoice.Conflict.SKIP), engine, decisions, (a, b, c) -> {
                     }, journal, () -> false, (a, b) -> {
                     });
-                    assertEquals(Outcome.FAILED, copied.outcome());
+                    assertEquals(TaskResult.FAILED, copied.outcome());
                     assertEquals("existing", Files.readString(fixture.remote.resolve("to/a")));
                     assertEquals("independent", Files.readString(fixture.remote.resolve("to/sub/b")));
                     assertEquals("keep", Files.readString(fixture.remote.resolve("to/unique")));
@@ -83,19 +89,19 @@ class SftpFileBackendTest {
             connection.withSftp(() -> false, client -> {
                 var backend = new SftpFileBackend(client, server);
                 var engine = new FileEngine(backend);
-                var journal = new Journal();
+                var journal = new ActionLog();
                 backend.link(remote("/from/internal"), "inside");
                 backend.link(remote("/from/external"), "/outside");
                 backend.link(remote("/from/broken"), "missing");
                 var report = engine.copy(remote("/from"), remote("/to"), false, false, FileChoice.of(FileChoice.Directory.COPY, FileChoice.Conflict.COPY), engine, decisions, (a, b, c) -> {
                 }, journal, () -> false, (a, b) -> {
                 });
-                assertEquals(Outcome.SUCCEEDED, report.outcome(), report.toString());
+                assertEquals(TaskResult.SUCCEEDED, report.outcome(), report.toString());
                 assertEquals("/to (1)/inside", engine.inspect(remote("/to (1)/internal"), false, () -> false).actual().path());
                 assertEquals("/outside", engine.inspect(remote("/to (1)/external"), false, () -> false).actual().path());
                 assertEquals("/from/missing", FileEngine.resolveTarget(remote("/to (1)/broken"), engine.inspect(remote("/to (1)/broken"), true, () -> false).target().orElseThrow()).path());
                 assertThrows(FileNotFoundException.class, () -> engine.inspect(remote("/to (1)/broken"), false, () -> false));
-                assertEquals(Outcome.SUCCEEDED, engine.delete(engine.inspect(remote("/to (1)"), false, () -> false), false, DeleteEffect.PERMANENT, journal, () -> false).outcome());
+                assertEquals(TaskResult.SUCCEEDED, engine.delete(engine.inspect(remote("/to (1)"), false, () -> false), false, DeleteEffect.PERMANENT, journal, () -> false).outcome());
                 assertEquals("outside", Files.readString(fixture.remote.resolve("outside/content")));
                 return null;
             });
@@ -113,7 +119,7 @@ class SftpFileBackendTest {
             var scope = first.openFileScope(() -> false);
             var current = new java.util.concurrent.atomic.AtomicReference<>(scope.channel());
             var backend = new SftpFileBackend(server, current::get);
-            assertThrows(IllegalArgumentException.class, () -> backend.stat(FilePath.remote(new ServerRef("another-host"), "/content")));
+            assertThrows(IllegalArgumentException.class, () -> backend.stat(FilePath.remote(new ServerId("another-host"), "/content")));
             assertEquals(4, backend.stat(remote("/content")).orElseThrow().bytes());
             scope.close();
             first.close();
@@ -135,7 +141,7 @@ class SftpFileBackendTest {
             connection.withSftp(() -> false, client -> {
                 var backend = new SftpFileBackend(client, server);
                 var engine = new FileEngine(backend);
-                var journal = new Journal();
+                var journal = new ActionLog();
                 backend.link(remote("/private-link"), "/inaccessible");
                 backend.link(remote("/missing-link"), "/missing");
                 IOException denied = assertThrows(IOException.class, () -> engine.inspect(remote("/private-link"), false, () -> false));
@@ -147,7 +153,7 @@ class SftpFileBackendTest {
                     var report = engine.copy(original.actual(), remote("/" + source + "-copy"), true, false, FileChoice.ask(), engine, decisions, (a, b, c) -> {
                     }, journal, () -> false, (a, b) -> {
                     });
-                    assertEquals(Outcome.SUCCEEDED, report.outcome(), report.toString());
+                    assertEquals(TaskResult.SUCCEEDED, report.outcome(), report.toString());
                     assertEquals(original.target(), engine.inspect(remote("/" + source + "-copy"), true, () -> false).target());
                     assertFalse(journal.targets.containsKey(remote("/" + source + "-copy")));
                 }
@@ -171,14 +177,14 @@ class SftpFileBackendTest {
             links.unreadable.add(fixture.remote.resolve("from/denied"));
             connection.withSftp(() -> false, client -> {
                 var engine = new FileEngine(new SftpFileBackend(client, server));
-                var journal = new Journal();
+                var journal = new ActionLog();
                 var report = engine.copy(remote("/from"), remote("/copied"), false, false, FileChoice.ask(), engine, decisions,
                     (a, b, c) -> {
                     }, journal, () -> false, (a, b) -> {
                     });
-                assertEquals(Outcome.FAILED, report.outcome(), report.toString());
-                assertTrue(report.items().stream().anyMatch(item -> item.source().equals(remote("/from/denied")) && item.outcome() == Outcome.FAILED));
-                assertTrue(report.items().stream().anyMatch(item -> item.source().equals(remote("/from/independent")) && item.outcome() == Outcome.SUCCEEDED));
+                assertEquals(TaskResult.FAILED, report.outcome(), report.toString());
+                assertTrue(report.items().stream().anyMatch(item -> item.source().equals(remote("/from/denied")) && item.outcome() == TaskResult.FAILED));
+                assertTrue(report.items().stream().anyMatch(item -> item.source().equals(remote("/from/independent")) && item.outcome() == TaskResult.SUCCEEDED));
                 assertFalse(Files.exists(fixture.remote.resolve("copied/denied")));
                 assertEquals("independent bytes", Files.readString(fixture.remote.resolve("copied/independent")));
                 assertEquals("private bytes", Files.readString(fixture.remote.resolve("from/denied")));
@@ -267,7 +273,7 @@ class SftpFileBackendTest {
         }
     }
 
-    static final class Journal implements FileJournal {
+    static final class ActionLog implements FileActionLog {
         final List<String> phases = new ArrayList<>();
 
         final Map<FilePath, FileInfo> links = new HashMap<>();

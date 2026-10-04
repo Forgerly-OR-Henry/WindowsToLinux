@@ -11,13 +11,18 @@
   <dependencies>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-app-file</artifactId>
+      <artifactId>windowstolinux-app-config</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
-      <artifactId>windowstolinux-app-ai</artifactId>
+      <artifactId>windowstolinux-app-file</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
     </dependency>
     <dependency>
       <groupId>com.microsoft.playwright</groupId>
@@ -32,7 +37,7 @@
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-appapi</artifactId>
-      <version>1.0.0-dev.1</version>
+      <version>1.0.0-dev.2</version>
     </dependency>
     <dependency>
       <groupId>org.apache.sshd</groupId>

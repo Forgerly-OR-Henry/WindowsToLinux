@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -17,10 +15,10 @@ import javax.tools.ToolProvider;
 
 import com.sun.jna.platform.win32.*;
 import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
 import gold.debug.windowstolinux.app.windows.file.WindowsFileIdentity;
 import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
-
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.commons.compress.archivers.zip.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,7 +37,7 @@ class PlatformModInstallationTest {
         var source = root.resolve("Mod.java");
         Files.writeString(source, """
             package sample.bundle;
-            import gold.debug.windowstolinux.appapi.mod.*;
+            import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
             public class Mod implements ModEntrypoint {
                 static {System.setProperty("wtl.installation.executed","initialized");}
                 public Mod() {}
@@ -142,15 +140,15 @@ class PlatformModInstallationTest {
             assertFalse(Files.exists(root.resolve(".mod-staging")));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             var result = installer.install(review);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals("RETAINED", result.value().orElseThrow().originalCleanup());
             assertTrue(Files.exists(original));
-            ModPackageReader.verifyDirectory(review.inspection(), target("1.0.0"));
+            ModPackageReader.verifyDirectory(ModPackageReader.read(review.packageInfo().archive()), target("1.0.0"));
             assertFalse(Files.exists(root.resolve(".mod-staging").resolve(review.id().toString())));
             assertEquals("FALSE/1.0.0/TRUE/0/STOPPED", text(runtime,
                 "SELECT enabled || '/' || selected_version || '/' || selection_initialized || '/' || revision || '/' || last_runtime_state FROM mod_registry"));
             assertEquals("LOCAL", text(runtime, "SELECT origin_kind FROM mod_version"));
-            assertEquals(review.inspection().contentSha256(), text(runtime, "SELECT content_sha256 FROM mod_version"));
+            assertEquals(review.packageInfo().contentSha256(), text(runtime, "SELECT content_sha256 FROM mod_version"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_schema"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertEquals(result.value(), installer.reconcile(review.id()).value());
@@ -165,12 +163,12 @@ class PlatformModInstallationTest {
     void extraReleasePreservesSelectionRunningFactsAndRefusesAnyDuplicate() throws Exception {
         var original = original("one.wtlmod", "1.0.0", "one");
         try (var runtime = runtime(); var installer = installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             sql(runtime.persistence().database(),
                 "UPDATE mod_registry SET enabled=TRUE,revision=7,last_boot_id=?,last_runtime_state='RUNNING',actual_version='1.0.0',failure_code='preserve'",
                 runtime.persistence().database().bootId());
             var second = original("two.wtlmod", "2.0.0", "two");
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(second)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(second)).outcome());
             assertEquals("TRUE/1.0.0/7/RUNNING/1.0.0/preserve", text(runtime,
                 "SELECT enabled || '/' || selected_version || '/' || revision || '/' || last_runtime_state || '/' || actual_version || '/' || failure_code FROM mod_registry"));
             assertThrows(SQLException.class, () -> installer.review(original));
@@ -229,7 +227,7 @@ class PlatformModInstallationTest {
                 "ALTER TABLE mod_version ADD CONSTRAINT installation_register_trap CHECK(origin_kind <> 'LOCAL')");
             var review = installer.review(original);
             operation = review.id();
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertEquals("FILES_PUBLISHED", phase(runtime));
             identity = WindowsFileIdentity.read(target("1.0.0"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
@@ -242,7 +240,7 @@ class PlatformModInstallationTest {
         try (var runtime = runtime(); var installer = installer(runtime)) {
             assertEquals("UNKNOWN", text(runtime, "SELECT state FROM mod_operation"));
             var result = installer.reconcile(operation);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals("ABSENT", result.value().orElseThrow().originalCleanup());
             assertEquals(identity, WindowsFileIdentity.read(target("1.0.0")));
             assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
@@ -255,20 +253,20 @@ class PlatformModInstallationTest {
         try (var runtime = runtime(); var installer = installer(runtime)) {
             trap(runtime, "phase <> 'FILES_PUBLISHED'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertEquals("STAGED", phase(runtime));
             var genuine = root.resolve("genuine");
             Files.move(target("1.0.0"), genuine);
             copied(genuine, target("1.0.0"));
             assertNotEquals(WindowsFileIdentity.read(genuine), WindowsFileIdentity.read(target("1.0.0")));
             untrap(runtime);
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
             Files.move(target("1.0.0"), root.resolve("foreign-copy"));
             Files.move(genuine, target("1.0.0"));
             Files.delete(original);
             var recovered = installer.reconcile(review.id());
-            assertEquals(Outcome.SUCCEEDED, recovered.outcome());
+            assertEquals(TaskResult.SUCCEEDED, recovered.outcome());
             assertEquals("ABSENT", recovered.value().orElseThrow().originalCleanup());
             assertTrue(Files.exists(root.resolve("foreign-copy/README.md")));
         }
@@ -286,7 +284,7 @@ class PlatformModInstallationTest {
             try {
                 assertThrows(IOException.class, () -> Files.delete(original));
                 var result = installer.install(review);
-                assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals("RETAINED_UNCONFIRMED", result.value().orElseThrow().originalCleanup());
                 assertTrue(Files.exists(original));
                 assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
@@ -305,18 +303,18 @@ class PlatformModInstallationTest {
             installer.keepOriginal(false);
             trap(runtime, "phase <> 'CLEANUP'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertEquals("REGISTERED", phase(runtime));
             assertFalse(Files.exists(original));
             assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
             untrap(runtime);
             sql(runtime.persistence().database(),
                 "ALTER TABLE runtime_log ADD CONSTRAINT installation_archive_trap CHECK(event_code <> 'MOD_INSTALLED')");
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertEquals("CLEANUP", phase(runtime));
             assertFalse(Files.exists(root.resolve(".mod-staging").resolve(review.id().toString())));
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT installation_archive_trap");
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(review.id()).outcome());
             assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_INSTALLED'"));
@@ -329,18 +327,18 @@ class PlatformModInstallationTest {
         try (var runtime = runtime(); var installer = installer(runtime)) {
             trap(runtime, "phase <> 'STAGED'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertEquals("VALIDATED", phase(runtime));
             var program = root.resolve(".mod-staging").resolve(review.id().toString()).resolve("program");
             String originalIdentity = WindowsFileIdentity.read(program);
             Files.createDirectories(target("1.0.0"));
             Files.writeString(target("1.0.0").resolve("keep.txt"), "foreign");
             untrap(runtime);
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertEquals("foreign", Files.readString(target("1.0.0").resolve("keep.txt")));
             assertEquals(originalIdentity, WindowsFileIdentity.read(program));
             Files.move(target("1.0.0"), root.resolve("foreign"));
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(review.id()).outcome());
             assertEquals(originalIdentity, WindowsFileIdentity.read(target("1.0.0")));
         }
     }
@@ -351,20 +349,20 @@ class PlatformModInstallationTest {
         try (var runtime = runtime(); var installer = installer(runtime)) {
             trap(runtime, "phase <> 'FILES_PUBLISHED'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             untrap(runtime);
             Files.writeString(target("1.0.0").resolve("README.md"), "changed");
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertEquals("changed", Files.readString(target("1.0.0").resolve("README.md")));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
             assertThrows(SQLException.class, () -> installer.review(original));
             Files.writeString(target("1.0.0").resolve("README.md"), "one");
             var stage = root.resolve(".mod-staging").resolve(review.id().toString());
             Files.writeString(stage.resolve("keep.txt"), "unowned");
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertEquals("unowned", Files.readString(stage.resolve("keep.txt")));
             Files.move(stage.resolve("keep.txt"), root.resolve("unowned.txt"));
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(review.id()).outcome());
         }
     }
 
@@ -374,12 +372,12 @@ class PlatformModInstallationTest {
         try (var runtime = runtime(); var installer = installer(runtime)) {
             trap(runtime, "recovery_json LIKE '%\"root\":null%'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             var stage = root.resolve(".mod-staging").resolve(review.id().toString());
             assertTrue(Files.isDirectory(stage));
             Files.writeString(stage.resolve("keep.txt"), "retained");
             untrap(runtime);
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertEquals("retained", Files.readString(stage.resolve("keep.txt")));
             assertFalse(Files.exists(target("1.0.0")));
         }
@@ -392,18 +390,18 @@ class PlatformModInstallationTest {
             var competing = other.review(original);
             trap(runtime, "phase <> 'STAGED'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertThrows(SQLException.class, () -> other.install(competing));
             var program = root.resolve(".mod-staging").resolve(review.id().toString()).resolve("program");
             Files.delete(program.resolve("LICENSE"));
             String identity = WindowsFileIdentity.read(program);
             untrap(runtime);
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertFalse(Files.exists(program.resolve("LICENSE")));
             assertFalse(Files.exists(target("1.0.0")));
             assertEquals(identity, WindowsFileIdentity.read(program));
             Files.writeString(program.resolve("LICENSE"), "MIT");
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(review.id()).outcome());
         }
     }
 
@@ -452,7 +450,7 @@ class PlatformModInstallationTest {
             assertTrue(first.originals().getFirst().deletable());
             assertTrue(first.originals().getFirst().problem().isPresent());
             assertFalse(Files.exists(root.resolve(".mod-staging")));
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             var different = original("different.wtlmod", "1.0.0", "changed");
             var after = installer.scan();
             assertEquals(List.of("INVALID", "CONFLICT", "INSTALLED"),
@@ -465,7 +463,7 @@ class PlatformModInstallationTest {
     void manualOriginalDeletionDoesNotAffectInstalledCodeAndRejectsChangedReview() throws Exception {
         var original = original("one.wtlmod", "1.0.0", "one");
         try (var runtime = runtime(); var installer = installer(runtime); var other = installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             var review = installer.reviewDelete(original);
             assertThrows(IllegalArgumentException.class, () -> other.deleteOriginal(review));
             var saved = root.resolve("saved.wtlmod");
@@ -496,7 +494,7 @@ class PlatformModInstallationTest {
             var deletion = installer.reviewDelete(original);
             trap(runtime, "phase <> 'STAGED'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertThrows(SQLException.class, () -> installer.deleteOriginal(deletion));
             var linked = root.resolve("mod-zip/linked.wtlmod");
             Files.createLink(linked, original);
@@ -517,7 +515,7 @@ class PlatformModInstallationTest {
             assertThrows(SQLException.class, () -> installer.reviewDelete(broken));
             sql(runtime.persistence().database(), "UPDATE mod_operation SET request_json=?", json);
             untrap(runtime);
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(review.id()).outcome());
         }
     }
 
@@ -534,7 +532,7 @@ class PlatformModInstallationTest {
             untrap(runtime);
             assertThrows(IllegalArgumentException.class, () -> installer.install(review));
             assertThrows(SQLException.class, () -> installer.reconcile(review.id()));
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
         }
     }
 
@@ -544,14 +542,14 @@ class PlatformModInstallationTest {
         try (var runtime = runtime(); var installer = installer(runtime)) {
             trap(runtime, "phase <> 'CLEANUP'");
             var review = installer.review(original);
-            assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
             assertEquals("REGISTERED", phase(runtime));
             untrap(runtime);
             sql(runtime.persistence().database(), "UPDATE mod_version SET archive_sha256=?", "0".repeat(64));
-            assertEquals(Outcome.UNKNOWN, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.reconcile(review.id()).outcome());
             assertTrue(Files.exists(original));
             sql(runtime.persistence().database(), "UPDATE mod_version SET archive_sha256=?",
-                review.inspection().archiveSha256());
+                review.packageInfo().archiveSha256());
             String request = text(runtime, "SELECT request_json FROM mod_operation");
             var damaged = JSON.readTree(request);
             ((com.fasterxml.jackson.databind.node.ObjectNode) damaged).remove("keep");
@@ -560,7 +558,7 @@ class PlatformModInstallationTest {
             assertTrue(Files.exists(original));
             assertEquals("UNKNOWN", text(runtime, "SELECT state FROM mod_operation"));
             sql(runtime.persistence().database(), "UPDATE mod_operation SET request_json=?", request);
-            assertEquals(Outcome.SUCCEEDED, installer.reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.reconcile(review.id()).outcome());
         }
     }
 }

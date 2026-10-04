@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.app.service.file;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -21,34 +12,47 @@ import java.util.concurrent.Callable;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.file.source.FrozenSourceWork;
+import gold.debug.windowstolinux.app.file.source.SelectedDirectory;
+import gold.debug.windowstolinux.app.file.source.SourceWorkDirectory;
 import gold.debug.windowstolinux.app.service.file.FileDirectoryPicker;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.*;
-import gold.debug.windowstolinux.app.file.SelectedDirectory;
-import gold.debug.windowstolinux.app.file.FrozenSourceWork;
-import gold.debug.windowstolinux.app.file.SourceWorkDirectory;
-import gold.debug.windowstolinux.appapi.file.FileContent;
-import gold.debug.windowstolinux.appapi.file.FileEntry;
-import gold.debug.windowstolinux.appapi.file.FileReadRequest;
-import gold.debug.windowstolinux.appapi.file.FileSelection;
-import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.file.FileSnapshot;
-import gold.debug.windowstolinux.appapi.file.FileWorkspace;
-import gold.debug.windowstolinux.appapi.file.SnapshotRequest;
-import gold.debug.windowstolinux.appapi.file.FilePath;
-import gold.debug.windowstolinux.appapi.file.FileInfo;
-import gold.debug.windowstolinux.appapi.file.FileReport;
-import gold.debug.windowstolinux.appapi.file.FileChoice;
-import gold.debug.windowstolinux.appapi.file.FileOperation;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
+import gold.debug.windowstolinux.app.service.task.TaskCapabilityScope;
+import gold.debug.windowstolinux.appapi.file.query.FileQueryService;
+import gold.debug.windowstolinux.appapi.file.action.FileActionService;
+import gold.debug.windowstolinux.appapi.file.source.FileSourceService;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService;
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.action.FileOperation;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileContent;
+import gold.debug.windowstolinux.appapi.file.source.FileEntry;
+import gold.debug.windowstolinux.appapi.file.source.FileReadRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Binds user-selected files and owned snapshots to the original Mod task. / 将用户所选文件及所属快照绑定到原 Mod 任务。 */
-public final class PlatformFileAccess implements FileService, AutoCloseable {
+public final class PlatformFileAccess implements FileQueryService, FileActionService, FileSourceService, FileSnapshotService, FileWorkspaceService, AutoCloseable {
     /** Actual installed activation-bound file coordinator. / 实际安装的启用绑定文件协调器。
      */
-    private PlatformFileCoordinator operations;
+    private PlatformFileFlow operations;
 
     /** Activation-owned host capabilities, closed together with file admission. / 与文件准入一同关闭的启用所属宿主能力。 */
     private final List<AutoCloseable> operationOwners = new ArrayList<>();
@@ -63,7 +67,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
     /** Installs the actual common file operations once for this activation. / 为本次启用一次装配实际通用文件操作。
      * @param value content whose exact digest is required / 需要精确摘要的内容
      */
-    public synchronized void installOperations(PlatformFileCoordinator value) {
+    public synchronized void installOperations(PlatformFileFlow value) {
         if (operations != null || closed)
             throw new IllegalStateException("File operations already installed or closed");
         operations = Objects.requireNonNull(value);
@@ -73,7 +77,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
      * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
-    private synchronized PlatformFileCoordinator operations() throws ApiException {
+    private synchronized PlatformFileFlow operations() throws ApiException {
         if (operations == null || closed)
             throw error(ProblemCode.UNAVAILABLE, "FILE_OPERATIONS_UNAVAILABLE", "Common file operations are unavailable");
         return operations;
@@ -138,7 +142,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
     }
 
     /** Lists sorted immediate entries. / 列举已排序直接子项。
-     * @param directory whether to create a directory / 是否创建目录
+     * @param directory absolute local or server-bound directory to observe / 待观测的绝对本机目录或服务器绑定目录
      * @param limit maximum accepted immediate entries or bytes / 允许的直接子项或字节上限
      * @param task authentic original executing task / 真实原执行任务
      * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
@@ -150,7 +154,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
     }
 
     /** Lists explicit type/name filtered entries. / 按明确类型/名称条件列举。
-     * @param directory whether to create a directory / 是否创建目录
+     * @param directory absolute local or server-bound directory to observe / 待观测的绝对本机目录或服务器绑定目录
      * @param limit maximum accepted immediate entries or bytes / 允许的直接子项或字节上限
      * @param kind optional object type filter / 可选对象类型筛选
      * @param nameContains case-sensitive name filter / 区分大小写的名称筛选
@@ -338,7 +342,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
      */
     @Override
     public FileReport renameFile(FilePath from, String name, TaskContext task) throws ApiException {
-        return moveFile(from, from.parent().child(name), task);
+        return operations().rename(from, name, false, task);
     }
 
     /** Renames Link through the common move implementation. / 通过统一移动实现重命名 Link。
@@ -350,7 +354,7 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
      */
     @Override
     public FileReport renameLink(FilePath from, String name, TaskContext task) throws ApiException {
-        return moveLink(from, from.parent().child(name), task);
+        return operations().rename(from, name, true, task);
     }
 
     /** Confirms ordinary File deletion. / 确认常规 File 删除。
@@ -826,7 +830,6 @@ public final class PlatformFileAccess implements FileService, AutoCloseable {
     /** Reconciles only this original task's local resources without recopying sources. / 仅核对此原任务本地资源，不重新复制来源。
      * @param task original recovery context / 原恢复上下文
      * @throws ApiException if physical cleanup or durable ownership remains uncertain / 物理清理或持久归属仍不确定时 */
-    @Override
     public void closeTaskResources(TaskContext task) throws ApiException {
         scope.retryFinishedReleases(task);
         List<Snapshot> owned;

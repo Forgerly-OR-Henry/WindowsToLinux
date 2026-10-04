@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.linux;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
 /** Checks a caller-owned binding immediately before remote dispatch. / 在远端发送紧前核对调用方持有的绑定。 */
 @FunctionalInterface

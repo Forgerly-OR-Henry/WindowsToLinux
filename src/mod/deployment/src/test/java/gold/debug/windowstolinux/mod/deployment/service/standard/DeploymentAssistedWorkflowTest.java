@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -23,14 +14,33 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.*;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectComponent;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.DiscoveredProjectPart;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentPreparedDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -58,12 +68,12 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall c, ServerRef s, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall c, ServerId s, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -116,7 +126,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             var peer = new DeploymentAssistedTestPeer();
             var connections = new AtomicInteger();
             LinuxService linux = new LinuxService() {
-                public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+                public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                     connections.incrementAndGet();
                     return peer.session(task, () -> {
                         if (scenario == ScenarioType.CONNECT_DRIFT)
@@ -140,12 +150,12 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                         throw failure.getCause();
                     }
                 });
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentReferenceFlow(bound));
+            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
             var page = new DeploymentStaticPageService(bound, workflow);
             var original = new AtomicReference<UUID>();
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
-                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerRef server, String sha,
-                                                                                  List<DiscoveredProjectComponent> found, TaskContext task) {
+                public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sha,
+                                                                                  List<DiscoveredProjectPart> found, TaskContext task) {
                     original.set(task.id());
                     assertEquals(1, found.size());
                     return success(
@@ -157,7 +167,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                             Optional.empty()));
                 }
 
-                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerRef server,
+                public OperationResult<Map<String, DeploymentStaticWorkflow.Answers>> review(ServerId server,
                                                                                              String sha, List<DeploymentStaticWorkflow.Prompt> prompts, TaskContext task) {
                     assertEquals(original.get(), task.id());
                     int round = reviews.getAndIncrement();
@@ -175,7 +185,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                         DeploymentBuildLimits.defaultNonRoot(), false, true)));
                 }
 
-                public OperationResult<Boolean> confirm(ServerRef server, String sha, Map<String, String> archives,
+                public OperationResult<Boolean> confirm(ServerId server, String sha, Map<String, String> archives,
                                                         Map<String, DeploymentStaticWorkflow.Answers> answers,
                                                         Map<String, DeploymentPreparedDatabase> databases,
                                                         Optional<DeploymentStaticWorkflow.GitReview> git, TaskContext task) {
@@ -185,14 +195,14 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                     return success(scenario != ScenarioType.REFUSAL);
                 }
             };
-            var handle = page.submit(new ServerRef("server"),
+            var handle = page.submit(new ServerId("server"),
                 new DeploymentStaticWorkflow.Draft("demo", 65536, 100, 65536), Optional.empty(), reviewer, true);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(
                 scenario == ScenarioType.REFUSAL
-                    ? Outcome.CANCELLED
-                    : scenario == ScenarioType.PUBLICATION ? Outcome.SUCCEEDED : Outcome.FAILED,
+                    ? TaskResult.CANCELLED
+                    : scenario == ScenarioType.PUBLICATION ? TaskResult.SUCCEEDED : TaskResult.FAILED,
                 result.outcome(), result.toString());
             assertEquals(handle.id(), original.get());
             assertEquals(2, reviews.get());
@@ -226,22 +236,22 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     private AiService ai() {
         return new AiService() {
             @Override
-            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
             @Override
-            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expectedRevision,
-                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, String expectedRevision,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
             @Override
-            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
-                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
-                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.ai.voice.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.voice.VoiceListener listener,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
@@ -290,6 +300,6 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 }

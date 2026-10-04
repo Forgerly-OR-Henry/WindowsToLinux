@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -11,7 +8,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -46,14 +44,14 @@ class PlatformServerContractsTest {
                 service.saveServerProfile(profile, "fixture-secret".toCharArray());
                 var failed = service.check(profile);
                 var result = failed.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
-                assertEquals(Outcome.FAILED, result.outcome());
+                assertEquals(TaskResult.FAILED, result.outcome());
                 assertEquals(TaskState.ENDED, failed.snapshot().state());
                 assertEquals("SSH_AUTHENTICATION_FAILED", result.problem().orElseThrow().eventCode());
                 assertTrue(authenticated.get() > 0);
                 assertTrue(runtime.persistence().servers().findServer("server").isEmpty(), "Accepted first-use review alone cannot persist unconfirmed authentication");
                 accepted.set(true);
                 var verified = service.check(profile);
-                assertEquals(Outcome.SUCCEEDED, verified.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+                assertEquals(TaskResult.SUCCEEDED, verified.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
                 assertEquals(TaskState.ENDED, verified.snapshot().state());
                 original = runtime.persistence().servers().findServer("server").orElseThrow();
                 assertTrue(original.hostKeySha256().startsWith("SHA256:"));
@@ -74,7 +72,7 @@ class PlatformServerContractsTest {
                 assertEquals(port, ssh.server().getPort());
                 var changed = service.check(PlatformServerServiceTest.profile("server", port));
                 var rejected = changed.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
-                assertEquals(Outcome.FAILED, rejected.outcome());
+                assertEquals(TaskResult.FAILED, rejected.outcome());
                 assertEquals(TaskState.ENDED, changed.snapshot().state());
                 assertEquals("SSH_HOST_KEY_REJECTED", rejected.problem().orElseThrow().eventCode());
                 assertEquals(authenticatedBefore, authenticated.get(), "A different physical host key cannot reach authentication or overwrite approved trust");

@@ -17,6 +17,7 @@
     <maven.compiler.proc>none</maven.compiler.proc>
   </properties>
   <modules>
+    <module>config</module>
     <module>ai</module>
     <module>file</module>
     <module>linux</module>

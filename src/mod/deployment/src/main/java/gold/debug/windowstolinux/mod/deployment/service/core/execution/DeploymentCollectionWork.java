@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentCollectionEvidence.*;
 
 import java.nio.charset.StandardCharsets;
@@ -25,10 +19,14 @@ import java.util.UUID;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper;
-import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublicationChannel;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublishChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader.ApplicationFacts;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph;
 
@@ -53,7 +51,7 @@ final class DeploymentCollectionWork {
     private final DeploymentHandoffChannel channel;
 
     /** Borrowed original runtime channel. / 借用的原运行时频道。 */
-    private final DeploymentPublicationChannel publication;
+    private final DeploymentPublishChannel publication;
 
     /** Original immutable remote producer operation. / 原不可变远端生产者操作。 */
     private final String operation;
@@ -77,7 +75,7 @@ final class DeploymentCollectionWork {
      * @param publication borrowed original runtime channel / 借用原运行时频道 */
     DeploymentCollectionWork(DeploymentHandoffLedger ledger, ApplicationFacts data, TaskContext task,
                              DeploymentHandoffLedger.Entry entry, List<DeploymentCollectionPlan.ArtifactPlan> plans,
-                             DeploymentHandoffChannel channel, DeploymentPublicationChannel publication) {
+                             DeploymentHandoffChannel channel, DeploymentPublishChannel publication) {
         this.ledger = ledger;
         this.data = data;
         this.task = task;
@@ -103,12 +101,12 @@ final class DeploymentCollectionWork {
      * @throws ApiException if authority or original persistence is unavailable / 权限或原持久化不可用时 */
     OperationResult<Void> begin(boolean quiescence) throws ApiException {
         var verified = current(channel, data);
-        if (verified.outcome() != Outcome.SUCCEEDED)
+        if (verified.outcome() != TaskResult.SUCCEEDED)
             return copy(verified);
         units = facts.putObject("units");
         for (var component : data.graph().components()) {
             var observed = publication.observe(component.unit(), component.reviewedRuntime());
-            if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
+            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
                 return copy(observed);
             String state = observed.value().orElseThrow().state().name();
             if (quiescence && state.equals("ERROR"))
@@ -121,14 +119,14 @@ final class DeploymentCollectionWork {
 
         facts.put("changed", true);
         save(DeploymentHandoffState.MAINTENANCE);
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 
     /** Acquires only this operation's markers after exact current-release checks. / 精确当前发布核对后仅获取本操作标记。
      * @throws ApiException if identity, marker or original evidence is unconfirmed / 身份、标记或原依据未确证时 */
     void acquireMaintenance() throws ApiException {
         for (var component : data.graph().components()) {
-            if (current(channel, data).outcome() != Outcome.SUCCEEDED)
+            if (current(channel, data).outcome() != TaskResult.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_CURRENT_CHANGED");
             var unit = units.withObject(component.componentId());
             unit.put("maintenanceAttempted", true);
@@ -152,13 +150,13 @@ final class DeploymentCollectionWork {
                 var unit = units.withObject(component.componentId());
                 if (!unit.path("before").asText().equals("RUNNING"))
                     continue;
-                if (current(channel, data).outcome() != Outcome.SUCCEEDED)
+                if (current(channel, data).outcome() != TaskResult.SUCCEEDED)
                     throw fail("DEPLOYMENT_COLLECTION_CURRENT_CHANGED");
                 unit.put("stopAttempted", true);
                 save(DeploymentHandoffState.MAINTENANCE);
                 var stopped = publication.lifecycle(component.unit(), component.reviewedRuntime(), "stop",
                     unitRelease(data, component));
-                if (stopped.outcome() != Outcome.SUCCEEDED)
+                if (stopped.outcome() != TaskResult.SUCCEEDED)
                     throw fail("DEPLOYMENT_COLLECTION_STOP_UNKNOWN");
                 unit.put("stopped", true);
                 save(DeploymentHandoffState.MAINTENANCE);
@@ -173,7 +171,7 @@ final class DeploymentCollectionWork {
         for (var plan : plans) {
             if (task.cancelToken().requested())
                 throw fail("DEPLOYMENT_COLLECTION_CANCELLED_IN_MAINTENANCE");
-            if (current(channel, data).outcome() != Outcome.SUCCEEDED)
+            if (current(channel, data).outcome() != TaskResult.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_CURRENT_CHANGED");
             var attempts = facts.withArray("attemptedArtifacts");
             attempts.add(plan.componentId() + ":" + plan.kind() + ":" + plan.resource());
@@ -181,7 +179,7 @@ final class DeploymentCollectionWork {
             var remote = channel.execute(plan.kind().equals("database") ? "handoff-database-export" : "backup-create",
                 plan.createArguments(operation, data.snapshot().application().id()), new byte[0],
                 Duration.ofHours(2), 4096);
-            if (remote.outcome() != Outcome.SUCCEEDED || remote.value().isEmpty())
+            if (remote.outcome() != TaskResult.SUCCEEDED || remote.value().isEmpty())
                 throw fail("DEPLOYMENT_COLLECTION_ARTIFACT_UNKNOWN");
             var artifact = parseArtifact(remote, plan, operation, data.snapshot().application().id());
             if (artifact.isEmpty())
@@ -217,7 +215,7 @@ final class DeploymentCollectionWork {
     private void closeProducers() throws ApiException {
         // Confirm that every actually dispatched producer has stopped before
         // restoring source writes or removing original operation material.
-        if (current(channel, data).outcome() != Outcome.SUCCEEDED)
+        if (current(channel, data).outcome() != TaskResult.SUCCEEDED)
             throw fail("DEPLOYMENT_COLLECTION_RECOVERY_CURRENT_CHANGED");
         boolean closePreviouslyAttempted = facts.path("closeAttempted").asBoolean();
         if (!closePreviouslyAttempted) {
@@ -267,10 +265,10 @@ final class DeploymentCollectionWork {
             var saved = units.path(component.componentId());
             if (!saved.path("stopAttempted").asBoolean(false))
                 continue;
-            if (current(channel, data).outcome() != Outcome.SUCCEEDED)
+            if (current(channel, data).outcome() != TaskResult.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_RECOVERY_CURRENT_CHANGED");
             var observed = publication.observe(component.unit(), component.reviewedRuntime());
-            if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty())
+            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty())
                 throw fail("DEPLOYMENT_COLLECTION_RESTORE_OBSERVATION_UNKNOWN");
             String now = observed.value().orElseThrow().state().name();
             if (now.equals("RUNNING"))
@@ -287,7 +285,7 @@ final class DeploymentCollectionWork {
             save(DeploymentHandoffState.COMPENSATING);
             var started = publication.lifecycle(component.unit(), component.reviewedRuntime(), "start",
                 unitRelease(data, component));
-            if (started.outcome() != Outcome.SUCCEEDED)
+            if (started.outcome() != TaskResult.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_RESTORE_UNKNOWN");
             mutable.put("restored", true);
             save(DeploymentHandoffState.COMPENSATING);
@@ -380,18 +378,18 @@ final class DeploymentCollectionWork {
     /** Verifies original current digests, before-states and applicable health policies. / 核实原当前摘要、变更前状态及适用健康策略。
      * @throws ApiException if original source restoration is unconfirmed / 原来源恢复未确证时 */
     private void verifySource() throws ApiException {
-        if (current(channel, data).outcome() != Outcome.SUCCEEDED)
+        if (current(channel, data).outcome() != TaskResult.SUCCEEDED)
             throw fail("DEPLOYMENT_COLLECTION_RECOVERY_CURRENT_CHANGED");
         boolean allRunning = true;
         for (var component : data.graph().components()) {
             var observed = publication.observe(component.unit(), component.reviewedRuntime());
             String expected = units.path(component.componentId()).path("before").asText();
-            if (observed.outcome() != Outcome.SUCCEEDED || observed.value().isEmpty()
+            if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()
                 || !observed.value().orElseThrow().state().name().equals(expected))
                 throw fail("DEPLOYMENT_COLLECTION_SOURCE_RESTORE_UNVERIFIED");
             if (expected.equals("RUNNING")) {
                 if (publication.healthCheck(component.unit(), component.reviewedRuntime().healthCheck())
-                    .outcome() != Outcome.SUCCEEDED)
+                    .outcome() != TaskResult.SUCCEEDED)
                     throw fail("DEPLOYMENT_COLLECTION_SOURCE_HEALTH_UNVERIFIED");
             } else
                 allRunning = false;
@@ -400,7 +398,7 @@ final class DeploymentCollectionWork {
             var health = data.graph().components().stream()
                 .filter(value -> value.componentId().equals(data.graph().healthComponentId())).findFirst()
                 .orElseThrow();
-            if (publication.healthCheck(health.unit(), data.graph().healthCheck()).outcome() != Outcome.SUCCEEDED)
+            if (publication.healthCheck(health.unit(), data.graph().healthCheck()).outcome() != TaskResult.SUCCEEDED)
                 throw fail("DEPLOYMENT_COLLECTION_SOURCE_HEALTH_UNVERIFIED");
         }
     }

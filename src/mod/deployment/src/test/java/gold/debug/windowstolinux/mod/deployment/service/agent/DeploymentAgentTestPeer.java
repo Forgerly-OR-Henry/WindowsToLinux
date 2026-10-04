@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -18,7 +11,18 @@ import java.util.concurrent.atomic.*;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.appapi.linux.*;
-
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 
@@ -74,7 +78,7 @@ final class DeploymentAgentTestPeer {
                     archive = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
                     archiveBytes = bytes.length;
                     Arrays.fill(bytes, (byte) 0);
-                    return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new TransferResult(archiveBytes,
+                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new TransferResult(archiveBytes,
                         archive, request.localPath(), request.remoteAbsolutePath())), Optional.empty());
                 }
                 if (method.getName().equals("execute")) {
@@ -198,12 +202,12 @@ final class DeploymentAgentTestPeer {
     }
 
     private static OperationResult<CommandResult> reply(int exit, String output) {
-        return new OperationResult<>(Outcome.SUCCEEDED,
+        return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(new CommandResult(Optional.of(exit), output, "", false)), Optional.empty());
     }
 
     private static OperationResult<CommandResult> unknown(String event) {
-        return new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
             event, "Controlled original receipt is unavailable", Map.of(), Optional.empty())));
     }
 }

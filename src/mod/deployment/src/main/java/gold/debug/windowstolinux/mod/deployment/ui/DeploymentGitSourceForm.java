@@ -87,10 +87,10 @@ final class DeploymentGitSourceForm {
     DeploymentStaticWorkflow.GitSource source() {
         var remote = DeploymentGitRemote.parse(url.getText().trim());
         var reference = switch ((String) kind.getSelectedItem()) {
-            case "DEFAULT" -> new DeploymentGitReference.DefaultBranch();
-            case "BRANCH" -> new DeploymentGitReference.Branch(ref.getText().trim());
-            case "TAG" -> new DeploymentGitReference.Tag(ref.getText().trim());
-            case "COMMIT" -> new DeploymentGitReference.Commit(ref.getText().trim());
+            case "DEFAULT" -> new DeploymentGitRef.DefaultBranch();
+            case "BRANCH" -> new DeploymentGitRef.Branch(ref.getText().trim());
+            case "TAG" -> new DeploymentGitRef.Tag(ref.getText().trim());
+            case "COMMIT" -> new DeploymentGitRef.Commit(ref.getText().trim());
             default -> throw new IllegalArgumentException("Unknown Git reference kind");
         };
         var hosts = remote.host().map(Set::of).orElseGet(Set::of);

@@ -1,18 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskService;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -27,15 +14,39 @@ import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.file.FileSnapshot;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionRepository;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionStore;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
 import org.junit.jupiter.api.Test;
@@ -98,12 +109,12 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
     @Override
     protected PlatformInteractionService.Prompts interactionPrompts() {
         return new PlatformInteractionService.Prompts() {
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall s, ServerRef target, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall s, ServerId target, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -219,7 +230,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
             var peer = new DeploymentAgentTestPeer(ScenarioType.SUCCESS);
             var workflow = new DeploymentAgentWorkflow(bind(actual, tasks, peer, scriptedAi()));
             try (var recovery = tasks.registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, workflow)) {
-                var handle = workflow.submitLocal(new ServerRef("server"), new DeploymentAgentWorkflow.Request(
+                var handle = workflow.submitLocal(new ServerId("server"), new DeploymentAgentWorkflow.Request(
                     Map.of("goal", "Build the observed api and web"), "MANUAL_REVIEW", 65536, 100, 65536));
                 boundaryHandle.set(handle);
                 waitReturned(handle);
@@ -244,10 +255,9 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                     assertEquals(originalText, Files.readString(selectedSourceDirectory().resolve("README.md")));
                     int decisions = calls.get();
                     restoreOriginalFrozenBytes(frozenDirectory.get().resolve("README.md"), originalText);
-                    var resolved = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20,
-                        TimeUnit.SECONDS);
+                    var resolved = reconcileReady(runtime, handle);
                     assertEquals(TaskState.ENDED, resolved.state(), diagnostic(runtime, handle));
-                    assertEquals(Optional.of(Outcome.FAILED), resolved.outcome());
+                    assertEquals(Optional.of(TaskResult.FAILED), resolved.outcome());
                     assertEquals(decisions, calls.get());
                     assertEquals(0, peer.commands.get());
                     assertTrue(peer.current.isEmpty());
@@ -270,16 +280,15 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         }
                         int decisions = calls.get(), effects = peer.commands.get();
                         var current = Map.copyOf(peer.current);
-                        var settled = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20,
-                            TimeUnit.SECONDS);
+                        var settled = reconcileReady(runtime, handle);
                         assertEquals(TaskState.ENDED, settled.state(), diagnostic(runtime, handle));
-                        assertEquals(Optional.of(Outcome.SUCCEEDED), settled.outcome());
+                        assertEquals(Optional.of(TaskResult.SUCCEEDED), settled.outcome());
                         assertEquals(decisions, calls.get());
                         assertEquals(effects, peer.commands.get());
                         assertEquals(current, peer.current);
                     }
                     assertEquals(TaskState.ENDED, handle.snapshot().state(), diagnostic(runtime, handle));
-                    assertEquals(Optional.of(Outcome.SUCCEEDED), handle.snapshot().outcome());
+                    assertEquals(Optional.of(TaskResult.SUCCEEDED), handle.snapshot().outcome());
                     assertEquals(3, peer.commands.get());
                     assertEquals(Set.of("demo-api", "demo-web"), peer.current.keySet());
                     if (cancelAfterCommit) {
@@ -343,7 +352,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                  var queries = tasks.registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK,
                      new DeploymentAgentPageService(bound, workflow))) {
                 var page = new DeploymentAgentPageService(bound, workflow);
-                var handle = page.submitLocal(new ServerRef("server"), new DeploymentAgentWorkflow.Request(
+                var handle = page.submitLocal(new ServerId("server"), new DeploymentAgentWorkflow.Request(
                     Map.of("goal",
                         singleUnsupported
                             ? "Build the observed unsupported api"
@@ -386,8 +395,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         assertTrue(DeploymentAgentHistory.pending(detail.events()).isPresent());
                         assertThrows(ApiException.class, () -> page.inspect(detail.entry()),
                             "A new query cannot borrow original UNKNOWN occupancy");
-                        var inspected = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20,
-                            TimeUnit.SECONDS);
+                        var inspected = reconcileReady(runtime, handle);
                         assertEquals(TaskState.UNKNOWN, inspected.state());
                         var after = page.events(handle.id()).completion().toCompletableFuture()
                             .get(10, TimeUnit.SECONDS).value().orElseThrow();
@@ -403,18 +411,17 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         assertTrue(scalar(runtime,
                             "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
                     }
-                    var still = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20, TimeUnit.SECONDS);
+                    var still = reconcileReady(runtime, handle);
                     assertEquals(TaskState.UNKNOWN, still.state());
                     assertEquals(sends, peer.commands.get());
                     assertEquals(decisions, calls.get());
                     peer.active = false;
                     peer.recoveryKnown = true;
                     revision.set("a".repeat(64));
-                    var recovered = runtime.tasks().reconcile(handle.id()).toCompletableFuture().get(20,
-                        TimeUnit.SECONDS);
+                    var recovered = reconcileReady(runtime, handle);
                     assertEquals(TaskState.ENDED, recovered.state());
                     assertEquals(
-                        Optional.of(selected == ScenarioType.PUBLISH_UNKNOWN ? Outcome.SUCCEEDED : Outcome.FAILED),
+                        Optional.of(selected == ScenarioType.PUBLISH_UNKNOWN ? TaskResult.SUCCEEDED : TaskResult.FAILED),
                         recovered.outcome());
                     assertEquals(sends, peer.commands.get(), "Recovery cannot rerun the candidate build");
                     assertEquals(decisions, calls.get(), "Recovery cannot ask a fresh model");
@@ -424,8 +431,8 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                     assertEquals(TaskState.ENDED, handle.snapshot().state(), diagnostic(runtime, handle));
                     assertEquals(
                         Optional.of(selected == ScenarioType.SUCCESS || selected == ScenarioType.MODEL_REFRESH
-                            ? Outcome.SUCCEEDED
-                            : selected == ScenarioType.CANCELLED ? Outcome.CANCELLED : Outcome.FAILED),
+                            ? TaskResult.SUCCEEDED
+                            : selected == ScenarioType.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED),
                         handle.snapshot().outcome());
                     assertEquals(0, page.tasks().size());
                 }
@@ -517,7 +524,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
             .stream().filter(value -> value.id().equals(original)).findFirst().orElseThrow();
         int effects = peer.commands.get();
         var inspected = page.inspect(entry).completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
-        assertEquals(Outcome.SUCCEEDED, inspected.outcome(), inspected.problem().toString());
+        assertEquals(TaskResult.SUCCEEDED, inspected.outcome(), inspected.problem().toString());
         assertTrue(inspected.value().orElseThrow().values().stream().allMatch(value -> value.equals("ABSENT")));
         assertEquals(effects, peer.commands.get());
         assertTrue(peer.present.values().stream().noneMatch(Boolean::booleanValue));
@@ -526,7 +533,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                 .fromStored(new StoredServerProfile("server", "127.0.0.2", 22, "root", "fixture-password")),
             "fixture-password".toCharArray());
         int connections = peer.connections.get();
-        assertEquals(Outcome.FAILED,
+        assertEquals(TaskResult.FAILED,
             page.inspect(entry).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
         assertEquals(connections, peer.connections.get(), "Endpoint drift is rejected before connection");
         runtime.servers().saveServerProfile(
@@ -534,7 +541,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                 .fromStored(new StoredServerProfile("server", "127.0.0.1", 22, "root", "fixture-password")),
             "fixture-password".toCharArray());
         peer.fingerprint = "SHA256:changed-host";
-        assertEquals(Outcome.FAILED,
+        assertEquals(TaskResult.FAILED,
             page.inspect(entry).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
         assertEquals(effects, peer.commands.get());
         assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
@@ -551,7 +558,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
 
     private ModContext bind(ModContext actual, TaskService tasks, DeploymentAgentTestPeer peer, AiService ai) {
         LinuxService linux = new LinuxService() {
-            public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
+            public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 var original = peer.session(task);
                 if (!cancelAfterCommit)
                     return original;
@@ -561,11 +568,11 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                             boundarySends.add(((CommandRequest) arguments[0]).script());
                         if (method.getName().equals("close") && !peer.current.isEmpty()
                             && cancelledKnownCommit.compareAndSet(false, true)) {
-                            var executions = new DeploymentExecutionRepository(actual.db());
+                            var executions = new DeploymentExecutionStore(actual.db());
                             var record = executions.findForTask(task).orElseThrow();
                             assertEquals("COMMITTED", record.phase());
                             assertTrue(record.businessCommitted());
-                            assertEquals(Optional.of(Outcome.SUCCEEDED), record.outcome());
+                            assertEquals(Optional.of(TaskResult.SUCCEEDED), record.outcome());
                             assertFalse(record.cleanupComplete());
                             var proposal = executions.publicationTemplate(record).orElseThrow();
                             assertEquals(2, proposal.units().size());
@@ -595,25 +602,24 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                 return List.of();
             }
         };
-        var source = (FileService) Proxy.newProxyInstance(FileService.class.getClassLoader(),
-            new Class<?>[]{FileService.class}, (proxy, method, arguments) -> {
-                try {
-                    var value = method.invoke(actual.file(), arguments);
-                    if (value instanceof FileSnapshot snapshot && editFrozenSource != null
-                        && arguments[1] instanceof gold.debug.windowstolinux.appapi.file.SnapshotRequest request
-                        && request.relativePaths().contains("README.md")) {
-                        assertTrue(frozenMaterial.compareAndSet(null, snapshot),
-                            "Only the authentic original material snapshot may bind this boundary");
-                        assertTrue(Files.isRegularFile(snapshot.directory().resolve("README.md")));
-                        assertFalse(Files.exists(snapshot.directory().resolve("source.tar.gz")));
-                        frozenDirectory.set(snapshot.directory());
-                    } else if (value instanceof FileSnapshot snapshot && cancelAfterCommit)
-                        frozenDirectory.set(snapshot.directory());
-                    return value;
-                } catch (InvocationTargetException failure) {
-                    throw failure.getCause();
-                }
-            });
+        var source = gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.create(FileService.class.getClassLoader(), (proxy, method, arguments) -> {
+            try {
+                var value = gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.invoke(method, actual.file(), arguments);
+                if (value instanceof FileSnapshot snapshot && editFrozenSource != null
+                    && arguments[1] instanceof gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest request
+                    && request.relativePaths().contains("README.md")) {
+                    assertTrue(frozenMaterial.compareAndSet(null, snapshot),
+                        "Only the authentic original material snapshot may bind this boundary");
+                    assertTrue(Files.isRegularFile(snapshot.directory().resolve("README.md")));
+                    assertFalse(Files.exists(snapshot.directory().resolve("source.tar.gz")));
+                    frozenDirectory.set(snapshot.directory());
+                } else if (value instanceof FileSnapshot snapshot && cancelAfterCommit)
+                    frozenDirectory.set(snapshot.directory());
+                return value;
+            } catch (InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
             (proxy, method, args) -> switch (method.getName()) {
                 case "tasks" -> tasks;
@@ -633,22 +639,22 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
     private AiService scriptedAi() {
         return new AiService() {
             @Override
-            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
             @Override
-            public gold.debug.windowstolinux.appapi.task.OperationResult<gold.debug.windowstolinux.appapi.ai.VoiceResponse> call(
-                gold.debug.windowstolinux.appapi.ai.VoiceRequest request, String expectedRevision,
-                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest request, String expectedRevision,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
             @Override
-            public gold.debug.windowstolinux.appapi.ai.VoiceSession openVoice(
-                gold.debug.windowstolinux.appapi.ai.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.VoiceListener listener,
-                gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public gold.debug.windowstolinux.appapi.ai.voice.VoiceSession openVoice(
+                gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions options, gold.debug.windowstolinux.appapi.ai.voice.VoiceListener listener,
+                gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new AssertionError("Voice is outside this fixture");
             }
 
@@ -680,7 +686,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         assertEquals(ScenarioType.AI_APPROVAL_DRIFT, scenario);
                         revision.set("b".repeat(64));
                     }
-                    return new OperationResult<>(Outcome.SUCCEEDED,
+                    return new OperationResult<>(TaskResult.SUCCEEDED,
                         Optional.of(new AiResponse(
                             "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Controlled review\"}",
                             "independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
@@ -699,7 +705,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                     assertEquals(frozenMaterial.get().sha256(), data.path("state").path("sourceRevision").asText(),
                         "The captured material must be the source browser's actual approved revision");
                 if (scenario == ScenarioType.CANCELLED)
-                    return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                    return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                 String output = switch (scenario) {
                     case DUPLICATE_JSON -> "{\"tool\":\"deliver\",\"tool\":\"inspect\",\"arguments\":{}}";
                     case TRAILING_JSON -> "{\"tool\":\"inspect\",\"arguments\":{}} {}";
@@ -707,7 +713,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         "{\"tool\":\"list\",\"arguments\":{\"path\":\".\",\"offset\":" + turn + ",\"limit\":1}}";
                     default -> proposal(turn, data);
                 };
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(
                     new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
                     Optional.empty());
             }
@@ -759,7 +765,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
             List.of("server"), true), task -> {
             try {
                 var data = new DeploymentApplicationReader(context.db())
-                    .find(new DeploymentApplicationRef("demo", new ServerRef("server")), task);
+                    .find(new DeploymentApplicationId("demo", new ServerId("server")), task);
                 assertEquals(1, data.graph().components().size());
                 var component = data.graph().components().getFirst();
                 assertEquals("api", component.componentId());
@@ -793,10 +799,10 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                         assertFalse(rows.next());
                     }
                 }
-                var repository = new DeploymentExecutionRepository(context.db());
+                var repository = new DeploymentExecutionStore(context.db());
                 var record = repository.find(task, executionId).orElseThrow();
                 assertEquals("FINISHED", record.phase());
-                assertEquals(Optional.of(Outcome.SUCCEEDED), record.outcome());
+                assertEquals(Optional.of(TaskResult.SUCCEEDED), record.outcome());
                 assertTrue(record.businessCommitted());
                 assertTrue(record.cleanupComplete());
                 var template = repository.publicationTemplate(record).orElseThrow();
@@ -804,13 +810,13 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(1, template.units().size());
                 assertEquals("demo-api", template.units().getFirst().unit().id());
                 assertEquals(publishedRelease, template.units().getFirst().release().sha256());
-                return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
             } catch (Exception | AssertionError problem) {
                 failure.set(problem);
                 throw problem;
             }
         });
-        assertEquals(Outcome.SUCCEEDED, read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome(),
+        assertEquals(TaskResult.SUCCEEDED, read.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome(),
             () -> String.valueOf(failure.get()));
         if (failure.get() != null)
             throw new AssertionError("Single unsupported formal publication could not be read", failure.get());

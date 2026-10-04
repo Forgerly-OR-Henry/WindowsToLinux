@@ -7,7 +7,7 @@
 - 当前官方部署实现已复用公开 Task/File/AI/SSH/Interaction 能力接入三种模式；模式编排、公共整图发布与正式记录仍在部署 Mod 内，不向 SDK 增加业务引擎类型。原任务恢复只读原候选状态，模型拒绝、审批漂移与不明副作用分别按原合同保留或结清，不能据一次页面操作自动重发。S5 本机适用功能已验证；正式 SDK 发行属于暂缓的 S7。
 - 本文面向官方与第三方 Mod 作者，作为社区共同使用的开发与包格式规范，独立放在 `docs/`，不归入开发分期目录。本文说明开发分工、跨 Mod 协作、AI 使用、打包和调试；详细源码目录与命名由 File.md 统一维护。已确定要求与实现状态分开记录；[完整 API](#public-api-spec)和示例提供类型一致的目标声明，示例不替代实际源码与验证边界，正式 SDK 发行仍暂缓。
 - 职责：描述 Mod 的格式、行为、数据和公开能力。1.1 迁移及后置事项见 [1.1 开发文档](development/PHASE-1.1.md#implementation)，本期文件、语音、命名与验收见 [1.2 开发文档](development/PHASE-1.2.md)。本文不把接口示例当作已发行 SDK。
-- [开发总纲](development/DEVELOPMENT.md) · [1.1 工程主文档](development/PHASE-1.1.md) · [1.2 当前开发](development/PHASE-1.2.md) · [项目目标结构](File.md#phase-1-1-target) · [已确认的源码结构](File.md#mod-source-layout) · [作者开发约定](#source-development) · [数据库与 Schema 版本](#mod-database) · [用户操作与生命周期](#mod-lifecycle) · [版本切回](#version-switching) · [包与加载规格](#package-loader-spec) · [完整 API](#public-api-spec) · [部署 API](#deployment-api-spec)
+- [开发总纲](development/DEVELOPMENT.md) · [1.1 工程主文档](development/PHASE-1.1.md) · [1.2 当前开发](development/PHASE-1.2.md) · [当前源码结构](File.md#current-source-tree) · [已确认的源码结构](File.md#mod-source-layout) · [作者开发约定](#source-development) · [数据库与 Schema 版本](#mod-database) · [用户操作与生命周期](#mod-lifecycle) · [版本切回](#version-switching) · [包与加载规格](#package-loader-spec) · [完整 API](#public-api-spec) · [部署 API](#deployment-api-spec)
 
 <a id="confirmed-format"></a>
 
@@ -61,6 +61,8 @@ example-1.0.0.wtlmod       # ZIP 容器；外层所有条目使用 STORED
 ```
 
 首版 `main/` 和 `lib/` 内的 JAR 均直接放在目录下，不再嵌套子目录；没有第三方依赖时省略 `lib/`，没有同作者从包时 `main/` 仅含主 JAR。
+
+默认 YAML 也随所属 JAR 资源发布，由作者入口选择并读取；运行中可修改的偏好、状态和业务快照继续进入 DB。本期不整体搬迁 deployment 的既有业务配置快照。APP Config 同样从所属模块的资源加载，填写说明见 [Config.md](Config.md)。
 
 资源随所属 JAR 打包，不另设外置 `resources/` 目录。开发工程中的 `src/main/resources` 继续用于管理图标、语言文件、模板、提示词和脚本等素材，不需要在 `.wtlmod` 外层再复制一份。需要实际文件路径或上传到 Linux 的资源，可在使用时从 JAR 中取出。
 
@@ -152,6 +154,8 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 
 `dependencies` 首版只声明必需依赖；缺项或 `[]` 表示无依赖。平台检查指定 Mod 的所选版本是否符合 `versionRange`，不自动下载依赖或替用户切换版本。依赖范围语法与预发布规则统一见[身份与版本](#mod-identity-version)。
 
+[1.3 期可选依赖计划](development/PHASE-1.3.md#git-mod)已确认扩展依赖声明和受管发现，部署将 Git 作为可选依赖；该机制尚未实施，本节仍描述现行必需依赖合同。精确字段、类型隔离与加载规则由 1.3 实施后同步到本规范。
+
 `migrations` 每项包含三个必填字符串字段：`from` 为来源 Schema 版本，`to` 为目标 Schema 版本，均采用与 `schemaVersion` 相同的正整数字符串；`class` 为作者 Java 迁移实现的完整类名，不填写 SQL 正文。示例声明从 `"1"` 经 `"2"` 到 `"3"` 的迁移链。新安装直接初始化当前结构；扫描、下载或解压包不执行迁移。来源确认、路径选择、失败和重试只遵循[数据库迁移规则](#schema-upgrade)。
 
 格式版本、Mod 发布版本、平台 API 兼容范围、Schema 版本和最低 Java 版本分别描述不同对象，不互相推导。`README.md` 和 `LICENSE` 使用固定包内位置，不再声明重复路径；官网投稿邮箱不写入公开清单。
@@ -161,6 +165,9 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 解析与校验约定：使用 UTF-8 标准 JSON，不支持注释；必填字段缺失或类型错误时报错；可选字段不用时省略，不用 `null` 占位；可选数组缺省等同于 `[]`。拒绝重复键；按对应 `formatVersion` 校验字段，未知字段报错以避免拼写错误被静默忽略。
 
 <a id="loading-modes"></a>
+
+自动加载开关仅属于 CLASS 源码开发模式，填写规则见 [Config.md](Config.md)。CLASS 默认关闭，关闭时完全跳过 Mod 来源读取、发现、登记、校验、类加载和生命周期，不挂载任何 Mod 管理、固定入口、设置、商店或工作区，不要求 wtl.workspace。JAR/APP 固定执行以下发现与加载流程，不提供自动加载开关；仍保留每个 Mod 的用户启用和版本选择。
+
 
 ## 4. 运行模式与 Mod 加载来源
 
@@ -172,7 +179,7 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 | JAR      | 按 [JAR 发布布局](APP.md#jar-layout)定位程序根及 Mod 目录                                                | 按下方[获取与解压流程](#package-acquisition)安装；后续启动加载已安装、启用且通过校验的 Mod。  |
 | APP      | 按 [APP 发布布局](APP.md#release-layout)定位程序根及 Mod 目录                                            | 与 JAR 模式共用获取、解压和加载规则。                                                         |
 
-源码聚合模块 `src/mod` 与发行物中的 `mod/` 安装目录用途不同；详细源码结构只在 [File.md](File.md#phase-1-1-tree) 维护。随发行物预装且已展开的官方 Mod 属于已安装插件，无需用户重复解压。
+源码聚合模块 `src/mod` 与发行物中的 `mod/` 安装目录用途不同；详细源码结构只在 [File.md](File.md#current-source-tree) 维护。随发行物预装且已展开的官方 Mod 属于已安装插件，无需用户重复解压。
 
 ### 4.1 CLASS 开发加载规则
 
@@ -221,6 +228,8 @@ Mod 入口、服务注册和界面在 APP 主进程运行；作者可按需启�
 
 “原始包”是原包管理页面名称，包含已解压和未解压的包；[“待重启”](#mod-lifecycle)表示已登记的运行变更状态。解压安装成功不等于启用；商店自动解压也不自动打开 Mod 开关、不改变已有版本单选，继续按生命周期规则由用户选择启用和版本。商店服务范围见 [APP.md](APP.md#website-service)。
 
+[1.3 期商店连同下载计划](development/PHASE-1.3.md#dependency-download)已确认必需依赖自动加入清单、可选依赖由用户选择，包含必要客户端接线；当前正式商店通道仍未接通，该计划不表示已有下载能力。具体获取规格和实施任务由 1.3 维护，官网投稿、审核与公开发布范围仍后置。
+
 <a id="original-package-management"></a>
 
 #### 原始包管理界面
@@ -265,6 +274,7 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 | ---------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `Mod.java` | 按生命周期初始化，组装服务与数据访问对象，注册页面/操作，停止时释放所持资源 | 保持入口简洁，不在入口编写备份、部署等具体业务流程。                                                                            |
 | `api`      | 向其他 Mod 公开的接口、请求、结果及必要错误契约                             | 只放契约，实现在 `service` 并由入口接线；不暴露私有 service、AI 实现、数据库实体、客户端或凭据。                                |
+| `config` | 可选的固定 YAML 配置解析与不可变值 | 在 Mod.java 加载并注入，不依赖 APP Config 实现；不读取其他 Mod 私有配置。按需建包，无需独立 POM。 |
 | `ai`       | 本 Mod 的提示词组织、模型输入适配、平台 AI 调用、结果解析及格式检查         | 通过 APP 公开 API 调用模型；不自行接管平台的模型配置、Provider 通信或凭据，不承担整个业务流程或直接写库。                       |
 | `ui`       | 界面布局、用户输入、展示任务状态与业务结果                                  | 经 `service` 发起业务操作，不直接读写数据库，不承载业务执行流程。                                                               |
 | `db`       | 插件数据访问、查询、存储映射、结构初始化及版本迁移                          | 经平台接口使用本 Mod 的 Schema，不携带 H2 引擎，不直接打开平台库或读写其他私有表，不跨 Mod 建外键；不反向调用 `ui` 或业务流程。 |
@@ -286,6 +296,8 @@ Mod 管理界面提供独立的“原始包”页面，管理 `mod-zip/` 中的�
 - 本 Mod 的 `api` 包供其他 Mod 调用本 Mod 的业务能力。例如备份可以调用部署公开的应用快照或恢复协作接口，不能直接调用部署的 `service`、`ai`、`db`、`ui` 或读取其私有表。
 - 公共接口只使用约定的跨边界数据类型，不把数据库实体、内部服务、模型客户端或凭据传给调用方。实现留在本 Mod 内部，调用方通过平台约定的注册与发现方式取得服务。
 - `api` 是源码中的公开契约包，包名本身不会自动导出服务或产生独立 API JAR。公开服务使用平台契约注册和发现，私有实现不因包名为 `api` 自动公开。
+
+平台公开类型按 [appapi 结构与职责](File.md#package-rules) 归于一级入口或二级职责包。例如 `TaskService` 位于 `appapi.task`，`TaskContext` 位于 `appapi.task.run`，`ApiException` 位于 `appapi.task.result`，`ServerId` 位于 `appapi.server.model`，Schema 生命周期位于 `appapi.db.schema`，跨 Mod 服务位于 `appapi.mod.service`。各一级能力根包只保留主入口；`mod` 同时保留 `ModContext` 与 `ModEntrypoint` 两个方向的入口。其他合同归入已登记的二级职责包，当前共41个公开包，不新增三级包。当前未发布开发 API 保持原版本；本次直接迁移类型，不留旧包兼容壳，已有外部 Mod 需更新导入与文件分组调用并重新编译。类型由宿主共享加载，Mod 不打包平台 API 副本。
 
 ### 5.3 使用 AI 时如何分工
 
@@ -479,17 +491,18 @@ Mod、安装版本和实际 Schema 分别登记。多个安装版本可引用同
 
 删除整个 Mod 可以按既定删除范围处理其拥有的日志与应急文件；单独删除版本只处理不再受保留版本引用的数据，平台拥有的管理摘要独立保留。普通日志清理不解除任何业务引用，也不授予跨 Schema 读取私有表的权限。
 
-数量与单条长度共同限制日志有效载荷，但不是整个 H2 文件的字节上限；数据库页、索引、其他数据及临时替换空间另有开销。删除记录不保证 `platform.mv.db` 立即变小，本按钮不承担压缩数据库文件的功能。
+数量与单条长度共同限制日志有效载荷，但不是整个 H2 文件的字节上限；数据库页、索引、其他数据及临时替换空间另有开销。删除记录不保证 `windowstolinux.mv.db` 立即变小，本按钮不承担压缩数据库文件的功能。
 
 <a id="mod-data-root"></a>
 
 #### 三种运行模式的数据根（已确认）
 
-1.1 沿用 [Runtime.md：桌面端数据目录](Runtime.md#desktop-data)的三种模式锚点与定位限制，不另列第二份路径表。内部布局如下，与旧 SQLite 分别识别。
+1.1 沿用 [Runtime.md：桌面端数据目录](Runtime.md#desktop-data)的三种模式锚点与定位限制，不另列第二份路径表。内部布局如下；旧格式明确拒绝，既有文件不自动转换或删除。
 
 ```text
 data/
-├─ platform.mv.db       # 平台统一 H2 数据库
+├─ windowstolinux.mv.db  # 平台统一 H2 数据库
+├─ windowstolinux.lock   # 平台数据库的单实例锁
 ├─ db-access.bin        # 平台本机数据库引导材料；不属于 Mod，也不随程序替换
 ├─ log/emergency/       # 平台管理的应急日志，按登记区分归属
 ├─ mod/<稳定ID>/        # Mod 所属缓存及其他登记文件
@@ -631,7 +644,7 @@ H2 的部分结构变更（包括 `CREATE SCHEMA`、`DROP SCHEMA`）会提交当
 
 当前删除入口仅在 JAR/APP 安装装配下提供。已下载页审阅所选版本的实际文件、字节数、将删除的数据及保护同一 Schema 的保留版本；确认框默认不勾选“同时删除对应原包”。PlatformModDeletion 在第一次文件删除前将原生文件/目录身份、摘要、父目录身份及选定原包范围写入原 DELETE_VERSION 请求。只删除原范围内未变化的剩余子集，额外文件、同内容替代物或重定向均保留待清理；锁定销毁旧确认，已接纳工作仍由原服务收尾。程序文件已损坏但属于登记安装路径及固定包布局时，可明确审阅实际字节后删除，不需要先成功加载作者代码。原包按读取清单的 ID＋版本匹配，不按文件名推断；不可读、无法证明归属或扫描超限的原包保留，不阻止默认仅删除程序。待清理操作持有已选原包，其他原包管理入口不能抢先移除；恢复不把后来出现的原包加入删除范围。
 
-整 Mod 的内部账本现已复用 `ModDeletionLedger`：一个 DELETE_MOD 请求捕获全部版本、全部已登记 Schema（含无版本引用的旧数据）、专属日志类别、所属导航项及平台签发的自有凭据身份。全部版本和 Schema 原子进入 DELETE_PENDING；程序所有者根实际消失后才能清理数据，应急 `.log`/`.pending` 及数据根 `mod/<ID>/` 实际消失后才能注销所属引用。账本只核验这些路径，不执行文件删除，也不把文件不存在等同于最终成功。
+整 Mod 的内部账本现已复用 `ModDeletionLedger`：一个 DELETE_MOD 请求捕获全部版本、全部已登记 Schema（含无版本引用的旧数据）、专属日志类别、所属导航项及平台签发的自有凭据身份。全部版本和 Schema 原子进入 DELETE_PENDING；程序所有者根实际消失后才能清理数据，应急 `.log`/`.pending` 及数据根 `mod/<ID>/` 实际消失后才能注销所属引用。账本在原事务节点主动通过宿主内部 `FileEvidence` 要求安装层核验这些原目标；`PlatformModDeletionFileEvidence` 绑定原程序根和数据库数据根，不跟随重定向祖先，不将访问失败视为不存在。账本保留路径身份、阶段及 SQL 证据检查，不执行文件删除，也不把文件不存在等同于最终成功。
 
 引用阶段在同一事务中清理精确所有者的运行日志、日志登记、固定导航及无外部使用者的自有凭据；已有共享服务器、模型或其他 Mod 引用保护的凭据保留。导航使用与固定功能共用的严格读写规则，损坏偏好保留并阻止删除；其他 Mod 的条目和顺序不变。已接纳整 Mod 删除期间拒绝修改该所有者的固定项。平台 `owner_id=app` 的历史摘要即使关联该 Mod 也保留。最后注销所有版本、Schema 和所有者；登记已消失但归档失败时，原操作仍可跨重启核对，不能接管后来重新建立的同名所有者。
 
@@ -653,6 +666,8 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 
 ### 5.5 用户操作与 Mod 生命周期（已确认、部分已实施）
 
+平台与固定 Mod 入口在外观中分区排序，复用 desktop_preference 的 platform_navigation_order 与 mod_navigation_pins；重排可见项保留隐藏项位置，新增项追加，取消固定和完整删除 Mod 清理记录。损坏偏好报错并保留原值；设置按钮和设置分类顺序保持原有布局。
+
 **Mod 用开关，版本用单选**：开关表示用户是否启用整个 Mod，单选表示希望使用哪个已安装版本；当前实际运行版本与迁移、启动结果另行记录。安装完成、开关开启或版本被选中，均不代表该版本已经成功运行。
 
 当前默认窗口的 Mod → 已下载页提供整个 Mod 的开关草稿与版本单选，点击“审阅更改”后展示具体选择、连带停用及阻断新工作的范围，确认才保存。来源先按实际运行版或语义版本降序预选，再由用户明确确认；同 Schema 的多个发布分别标注对应数据。持久状态与草稿分开，待重启是状态而非模式按钮。支持整组撤销、原 UNKNOWN 数据核对、首次失败数据重试及原资源继续收尾；提供实际平台日志入口。锁定清空列表和详情并使打开的旧确认失效，解锁后重新读取。已接当前已发布业务/设置页的选择、打开和手动固定/取消固定。JAR/APP 已接独立原始包页，部分暂存明确撤销及安装版单版本删除已接通，整个 Mod 删除和同版本重装/明确旧程序恢复均已接通，不将现有入口视为全部管理功能完成。
@@ -665,7 +680,7 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 
 | 操作或状态             | 已确认规则                                                                                                                                                                                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 管理入口               | 主 APP 导航设置 `Mod`，包含“已下载”“原始包”和“Mod 商店”；已下载详情展示各已安装版本，原始包操作见[原始包管理](#original-package-management)。商店实施后置，当前不承诺在线下载已可用。                                                             |
+| 管理入口               | 主 APP 导航设置 `Mod`，包含“已下载”“原始包”和“Mod 商店”；已下载详情展示各已安装版本，原始包操作见[原始包管理](#original-package-management)。商店界面与查询/下载/验证接口已接入不可用兼容实现；没有真实 HTTP 或签名算法，不承诺线上下载。默认显示“网络未连接，请点击重试”，重试保留搜索词、不轮询。成功流程经测试适配器验证，安装不自动启用或切换版本；CLASS 只能浏览。服务地址填写见 [Config.md](Config.md)。                                                             |
 | 业务页面               | 从“已下载”列表打开 Mod 业务页面，用户可手动将入口固定到主导航；不因启用 Mod 自动加入主导航。管理界面与业务页面分开。                                                                                                                              |
 | 开关与版本单选         | 用户下载后选择是否开启 Mod；启用后进入详情单选版本。启用属于整个 Mod，各版本不分别启用。允许保留多个版本，但单选目标只有一个，同一 Mod 同时最多运行一个业务版本；切换执行时先完成旧版停止，再启动新版。                                           |
 | 首次安装               | 按[获取与解压流程](#package-acquisition)安装或官方预装后，均默认“已安装，未启用”，开关关闭，由用户选择启用；没有历史选择时，初次默认单选已安装的最新版。仅安装不产生待重启的运行变更。                                                            |
@@ -849,7 +864,7 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 
 ### 6.3 作者构建与调试工具
 
-沿用 Maven 和 [File.md 目标结构](File.md#phase-1-1-target)，九类 Mod 职责包仍属同一主模块，不按包名拆成独立 Maven 模块。CLASS 开发描述现由构建生成，不要求作者手工维护第二份元数据；IDE 在启动前执行 `process-classes` 完成编译、资源处理和描述。当前独立作者父 POM 位于 `.mvn/wtlmod-author-parent/pom.xml`，仅 Mod 主模块继承，从模块使用普通 Maven 配置。发行阶段计划由 `mvn package` 装配 `.wtlmod` 并提供独立 verify，两者仍待 S7；不能把普通 Maven JAR 当作已可导入的 Mod 包。
+沿用 Maven 和 [File.md 源码结构](File.md#current-source-tree)，九类 Mod 职责包仍属同一主模块，不按包名拆成独立 Maven 模块。CLASS 开发描述现由构建生成，不要求作者手工维护第二份元数据；IDE 在启动前执行 `process-classes` 完成编译、资源处理和描述。当前独立作者父 POM 位于 `.mvn/wtlmod-author-parent/pom.xml`，仅 Mod 主模块继承，从模块使用普通 Maven 配置。发行阶段计划由 `mvn package` 装配 `.wtlmod` 并提供独立 verify，两者仍待 S7；不能把普通 Maven JAR 当作已可导入的 Mod 包。
 
 作者工具包含最小第三方示例，源码遵循 [File.md](File.md#mod-source-layout) 的入口、命名及依赖约束。
 
@@ -884,7 +899,7 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 
 当前 `ModPackageReader` 已提供原包读取与新目录暂存：复用严格清单，核对外层 STORED、必选文件、实际长度/CRC、路径冲突、链接和原始 SHA-256；按上述算法另算内容摘要。普通 ZIP 与限额内 ZIP64 均支持，中央目录和本地头必须一致；归档读取前后复核原句柄字节和文件事实。原包路径及暂存父目录不允许符号链接或重解析重定向。读取不执行作者代码，也不建立 Schema。
 
-嵌套 JAR 通过原文件的有界视图枚举，不展开到磁盘；检查重复类归属、宿主保留类及主入口存在。入口及公开签名由 `ModCodeInspection` 共用检查：读取类身份、公开具体形状、公开无参构造器及父类/接口关系，不定义或初始化作者类；入口可通过自有从包、私有库或明确提供方继承入口契约。导出表面覆盖公开/受保护的父类、接口、字段、方法、数组、泛型界限/实参、异常、记录组件、密封子类、声明/类型注解及注解中的类字面量；外层不可见的嵌套类型和自有未导出类型不能出现在公开签名中。格式检查包含类成员/属性完整边界，不将方法体字节码验证或业务正确性当作静态扫描结论。
+嵌套 JAR 通过原文件的有界视图枚举，不展开到磁盘；检查重复类归属、宿主保留类及主入口存在。入口及公开签名由 `ModCodeChecker` 共用检查：读取类身份、公开具体形状、公开无参构造器及父类/接口关系，不定义或初始化作者类；入口可通过自有从包、私有库或明确提供方继承入口契约。导出表面覆盖公开/受保护的父类、接口、字段、方法、数组、泛型界限/实参、异常、记录组件、密封子类、声明/类型注解及注解中的类字面量；外层不可见的嵌套类型和自有未导出类型不能出现在公开签名中。格式检查包含类成员/属性完整边界，不将方法体字节码验证或业务正确性当作静态扫描结论。
 
 安装与 CLASS 构建/发现先拒绝能够证明的错误；缺失 API 类型、声明了依赖但尚未取得提供方的类型，以及较新 Java 所需的 JDK 类型保留到启用时解析。未声明依赖不能将任意缺失第三方类型视为合法导出。实际依赖计划在准备加载器时、入口工厂在构造作者前，按原提供方加载器的 ID、版本和真实导出类型再次完整核验；不按提供方 ID 推断 Java 包。启用不允许残留未解析引用、自有类占用依赖导出包或当前 JVM 不支持的类版本。原包已移走的安装恢复从已核验的原文件清单重新构建索引，也必须通过安装阶段准入。真正链接和执行仍在启用阶段，扫描成功不等于可启用或已安装。
 
@@ -948,7 +963,7 @@ CLASS 的 `content_sha256` 使用 `WTL-CLASS-CONTENT-1\n` 前缀，对 `mod.json
 3. 其余类型只从本 Mod 主输出/main、同作者从输出/main、私有 lib 查找；不遍历所有 Mod，也不回退到宿主私有 classpath。CLASS 与 JAR 使用同一解析图。
 4. 平台先准备数据库、再按依赖拓扑顺序构造入口并调用 `start`；注册在本次启动会话暂存，只有 `start` 成功才对外可见。失败时撤销本次注册并执行停止/释放，保留用户意图与失败原因。服务键为提供方 ID＋接口完整名，每个键最多一个提供者。
 5. 迁移通过目标版本的隔离准备加载器执行清单指定类及 `ModSchemaLifecycle`，不调用业务入口，不注册页面或服务。准备加载器也必须释放 JDBC、文件和子进程。成功后标记数据可用；业务加载仍按重启规则进行。
-6. PF4J 仅是 APP 内部适配依赖。描述器、代码来源、加载顺序和注册事务由 `app/mod` 适配；不要求作者继承 PF4J 类型，也不生成第二份作者声明。S2 隔离探针已验证并锁定 PF4J `3.13.0` 的加载器适配；公开类型共享、私有隔离和 Windows JAR 资源释放的结果见 [验证工程](../.mvn/probes/phase11/README.md)。这不代表生产安装、注册事务或生命周期已完成。
+6. PF4J 仅是 APP 内部适配依赖。描述器、代码来源、加载顺序和注册事务由 `app/mod` 适配；不要求作者继承 PF4J 类型，也不生成第二份作者声明。S2 隔离探针已验证并锁定 PF4J `3.13.0` 的加载器适配；公开类型共享、私有隔离和 Windows JAR 资源释放的结果见 当前主工程的 `ModClassLoaderTest`、`ModDependencyPlanTest`、`ManagedJdbcConnectionTest`、`ModPageRegistryTest` 和 `ProcessChannelTest`。这不代表生产安装、注册事务或生命周期已完成。
 
 <a id="public-api-spec"></a>
 
@@ -956,7 +971,7 @@ CLASS 的 `content_sha256` 使用 `WTL-CLASS-CONTENT-1\n` 前缀，对 `mod.json
 
 ### 8.1 通用约定与依赖方向
 
-以下 Java 声明是 **目标接口规格**，尚不是可下载 SDK。每段中的公开类型在实现时各自保存为同名源文件；省略重复 Javadoc，不省略接口所需的数据类型。类型前缀为 `gold.debug.windowstolinux.appapi`；`task` 是基础包，其他能力可以依赖它，`mod` 只负责汇总上下文和扩展注册，基础包不反向依赖 `mod`。
+以下 Java 声明按当前公开类型的包归属展示合同，尚不是可下载 SDK；完整成员和校验以 `src/appapi` 源码为准。每个公开类型各自保存为同名源文件，示例省略重复 Javadoc。类型前缀为 `gold.debug.windowstolinux.appapi`；任务基础合同位于 `task` 下的二级职责包，根包保留 `TaskService`，其他能力可依赖任务合同。`mod` 根包汇总上下文和启停生命周期，跨 Mod 服务位于 `mod.service`；任务基础不反向依赖服务入口或 `mod`。
 
 - 平台实现所有能力服务、上下文及句柄；作者实现 `ModEntrypoint`、页面、任务工作、数据库初始化/迁移/验证以及自己导出的业务服务。平台实例绑定真实调用 Mod，传入别人的 ID 不改变调用身份。
 - 除明确标为 `Optional` 的字段外禁止 `null`；集合非空引用、元素不为 null，输入输出作防御性复制。`byte[]` 同样复制，秘密回调另按清零约定处理。标识使用精确字符串；时间为 `Instant`，持续时间为正 `Duration`，容量为非负字节数。分页 `limit` 为 1～200，`cursor` 为空表示首页；游标不承诺跨并发变更快照。
@@ -967,37 +982,73 @@ CLASS 的 `content_sha256` 使用 `WTL-CLASS-CONTENT-1\n` 前缀，对 `mod.json
 
 ### 8.2 task：任务、结果、日志及辅助进程
 
-```java
-package gold.debug.windowstolinux.appapi.task;
+`TaskService.list` 按当前运行时的稳定提交顺序读取未结束任务。后续游标绑定本次启用的精确服务实例及本次启动，并保留首屏提交上限；前页任务结束不导致后页偏移漏项，后续新提交须开启新查询。游标不保证事务快照，已经结束的任务仍可从后续页消失；旧服务绑定、重启或无效游标返回 INVALID_INPUT。宿主界面读取独立发布的不可变任务观察快照，操作时仍重新核验实际任务和权限。
 
-import java.time.Duration;
-import java.time.Instant;
-import java.nio.file.Path;
-import java.util.List;
+`task.result`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.result;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CompletionStage;
 
-public enum Outcome { SUCCEEDED, FAILED, CANCELLED, UNKNOWN }
-public enum TaskState { QUEUED, RUNNING, WAITING, CANCEL_REQUESTED, FINISHING, UNKNOWN, ENDED }
+public enum TaskResult { SUCCEEDED, FAILED, CANCELLED, UNKNOWN }
 public enum ProblemCode { INVALID_INPUT, UNAVAILABLE, INCOMPATIBLE, ACCESS_DENIED,
     BUSY, NOT_FOUND, IO_FAILURE, TIMEOUT, CANCELLED, UNKNOWN, CONTRACT_VIOLATION }
 public record Problem(ProblemCode code, String eventCode, String message,
     Map<String, String> context, Optional<UUID> diagnosticId) {}
-public record OperationResult<T>(Outcome outcome, Optional<T> value,
+public record OperationResult<T>(TaskResult outcome, Optional<T> value,
     Optional<Problem> problem) {}
 public class ApiException extends Exception {
     private final Problem problem;
     public ApiException(Problem problem) { super(problem.message()); this.problem = problem; }
     public Problem problem() { return problem; }
 }
-public record PageSlice<T>(List<T> items, Optional<String> nextCursor) {}
+```
+
+`task.model`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.model;
+
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public enum TaskState { QUEUED, RUNNING, WAITING, CANCEL_REQUESTED, FINISHING, UNKNOWN, ENDED }
 public record TaskRequest(String type, String title, List<String> serverIds,
     boolean cancellable) {}
 public record TaskSnapshot(UUID id, String ownerId, String ownerVersion, String type,
-    TaskState state, Optional<Outcome> outcome, String progressText,
+    TaskState state, Optional<TaskResult> outcome, String progressText,
     Instant startedAt, Optional<Instant> endedAt, List<String> blockers) {}
+```
+
+`task.query`：通用分页结果可供任务、服务器等能力复用，不依赖任务模型或任务入口。
+
+```java
+package gold.debug.windowstolinux.appapi.task.query;
+
+import java.util.List;
+import java.util.Optional;
+
+public record PageSlice<T>(List<T> items, Optional<String> nextCursor) {}
+```
+
+`task.run`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.run;
+
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletionStage;
+
 public interface CancelToken { boolean requested(); }
 public interface ResourceLease extends AutoCloseable {
     UUID id();
@@ -1022,6 +1073,25 @@ public interface TaskHandle<T> {
     CompletionStage<OperationResult<T>> completion();
     void requestCancel() throws ApiException;
 }
+```
+
+`task`：
+
+```java
+package gold.debug.windowstolinux.appapi.task;
+
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.recover.RecoveryRegistration;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
+import java.util.Optional;
+
 public interface TaskService {
     <T> TaskHandle<T> submit(TaskRequest request, TaskWork<T> work) throws ApiException;
     PageSlice<TaskSnapshot> list(Optional<String> cursor, int limit) throws ApiException;
@@ -1034,6 +1104,18 @@ public interface TaskService {
     Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException;
     RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException;
 }
+```
+
+`task.recover`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.recover;
+
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
 public interface TaskCheckpoint extends AutoCloseable {
     record Snapshot(long revision, String payload, boolean released) {}
     Snapshot snapshot() throws ApiException;
@@ -1046,6 +1128,20 @@ public interface TaskRecovery {
 public interface RecoveryRegistration extends AutoCloseable {
     @Override void close() throws ApiException;
 }
+```
+
+`task.action`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.action;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
 public enum AuthorizationMode { ONCE, GENERAL, FULL }
 public record ActionTarget(String serverId,
     String kind, String id) {}
@@ -1059,11 +1155,24 @@ public interface InteractionService {
     OperationResult<String> requestText(String title, String prompt, boolean secret,
         TaskContext task) throws ApiException;
 }
+```
+
+`task.log`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.log;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import java.util.Optional;
+import java.util.UUID;
+
 public enum LogLevel { DEBUG, INFO, WARN, ERROR }
 public record LogTarget(UUID key) {}
 public record LogCategory(String category, String displayName, Optional<String> businessTable) {}
 public record LogEvent(LogLevel level, String eventCode, String message, Optional<String> details,
-    Optional<UUID> taskId, Optional<UUID> operationId, Optional<Outcome> outcome) {}
+    Optional<UUID> taskId, Optional<UUID> operationId, Optional<TaskResult> outcome) {}
 public enum LogStorage { DATABASE, EMERGENCY_FILE, NOT_SAVED }
 public record LogWriteResult(UUID logId, LogStorage storage, boolean truncated,
     Optional<Problem> problem) {}
@@ -1071,6 +1180,23 @@ public interface LogService {
     LogTarget register(LogCategory category) throws ApiException;
     LogWriteResult write(LogTarget target, LogEvent event);
 }
+```
+
+`task.process`：
+
+```java
+package gold.debug.windowstolinux.appapi.task.process;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletionStage;
+
 public record ProcessSpec(Path executable, List<String> arguments, Map<String, String> environment,
     Path workingDirectory, Duration handshakeTimeout) {}
 public record ProcessMessage(String type, String jsonObject) {}
@@ -1123,7 +1249,7 @@ public interface ProcessService {
 
 AI 审批继续决定 AI 提议的动作是否获准，平台授权决定获准动作是否可在平台执行。平台完全授权不能绕过 AI 审批；静态部署使用平台授权，不引入 AI 审批。两层都需要人工确认时可合并为一次交互，但必须清楚展示 AI 动作审核和平台操作授权两层含义。
 
-当前平台基础实现已接通 `AuthorizationMode`、`ActionTarget`、`ActionSemantics` 与真实任务/SSH 审核。宿主 `WorkflowLaunchButton` 在用户点击时捕获表单解析出的完整目标，内部 `PlatformAuthorizationService.Launcher` 读取并冻结当前偏好，再通过中央任务准入建立本次回调的临时作用域；该启动授权不暴露在普通作者 `TaskService` 中。ActionTarget 保存与 ServerRef.id 相同的精确 String serverId，task 契约仅依赖 JDK；目标的服务器集合必须等于任务准入集合。通用授权按平台操作类别、业务操作含义、完整实际目标集合精确复用；拒绝不缓存，并发同义操作串行核对首次批准。流程回调退出即销毁缓存和令牌寿命，原任务后续显式恢复也不能复活旧流程授权。
+当前平台基础实现已接通 `AuthorizationMode`、`ActionTarget`、`ActionSemantics` 与真实任务/SSH 审核。宿主 `WorkflowLaunchButton` 在用户点击时捕获表单解析出的完整目标，内部 `PlatformAuthorizationService.Launcher` 读取并冻结当前偏好，再通过中央任务准入建立本次回调的临时作用域；该启动授权不暴露在普通作者 `TaskService` 中。ActionTarget 保存与 ServerId.id 相同的精确 String serverId，task 契约仅依赖 JDK；目标的服务器集合必须等于任务准入集合。通用授权按平台操作类别、业务操作含义、完整实际目标集合精确复用；拒绝不缓存，并发同义操作串行核对首次批准。流程回调退出即销毁缓存和令牌寿命，原任务后续显式恢复也不能复活旧流程授权。
 
 作者在 `RemoteActions` 生成的精确意图上调用 `withSemantics`，提供从已校验业务操作与目标派生的含义。业务 Mod 负责证明其请求与该含义相符，不能用自由文本标签替代业务校验；平台不解析任意 Bash 来证明业务语义，也不把可信本地 Mod 当作恶意代码沙箱。宿主只保留已审核的语义元数据，仍从实际命令/传输请求重建并逐字段核对精确副作用，然后单次消费原对象令牌。未分类操作逐次人工确认；首次主机信任、同名冲突和停滞选择独立处理。
 
@@ -1139,25 +1265,17 @@ Mod 新任务准入在同一平台事务内核对本次启动的运行版本、�
 
 ### 8.3 ui：作者提供 Swing 页面
 
+本节描述现行唯一根工作区 API 与挂载行为。[1.3 前置开发](development/PHASE-1.3.md#mod-workspace)落实每个 Mod 一个自动主导航入口，内部功能页由作者组织；旧固定偏好按所有者归并。
+
 ```java
 package gold.debug.windowstolinux.appapi.ui;
 
-import javax.swing.JComponent;
-import java.util.Locale;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
-public record UiEnvironment(Locale locale, String themeId, boolean locked) {}
-public record PageSpec(String id, String titleKey, String defaultTitle, boolean settingsPage) {}
-public interface ModPage extends AutoCloseable {
-    JComponent create(UiEnvironment environment) throws Exception;
-    void environmentChanged(UiEnvironment environment);
-    @Override void close() throws Exception;
-}
-public interface PageFactory { ModPage create() throws Exception; }
-public interface PageRegistration extends AutoCloseable {
-    String id();
-    @Override void close() throws ApiException;
-}
 public interface UiService {
     PageRegistration register(PageSpec spec, PageFactory factory) throws ApiException;
     void open(String localPageId) throws ApiException;
@@ -1165,34 +1283,61 @@ public interface UiService {
 }
 ```
 
-作者控制 `JComponent` 内的布局、组件、绘制、表格、表单和业务交互；平台只挂载页面并提供主题/语言变化通知，不要求改写成描述式表单。页面 ID 在同一 Mod 内唯一；平台实际键为 Mod ID＋页面 ID。注册不创建界面，首次打开在 EDT 创建并缓存一个实例，关闭页面时调用 `ModPage.close`，再次打开重新创建；移除注册同时关闭实例。`settingsPage=true` 挂载到平台设置中的该 Mod 分区，不授予平台设置访问权限。
+`ui.page`：
 
-作者弹窗使用页面所在窗口为 owner，纳入锁定和关闭；不要创建脱离管理的常驻顶层窗口。页面关闭只释放视图资源，后台任务按自己的生命周期继续。任务返回后通过 EDT 更新仍有效的页面；页面已关闭则只更新任务结果。自动添加主导航仍不允许，固定入口由用户操作；`open` 只能打开本 Mod 已注册页面。
+```java
+package gold.debug.windowstolinux.appapi.ui.page;
 
-当前 CLASS 外壳已接通“已下载”中的页面选择、打开及手动固定/取消固定。打开和作者 `UiService.open` 共用原页面作用域，均会聚焦实际业务页或设置分区，不能绕过锁定、停止或恢复上下文的限制。页面登记/撤销通知只刷新元数据；注册、恢复固定偏好及显示列表都不创建作者视图。
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import java.util.Locale;
+import javax.swing.JComponent;
 
-固定偏好仅保存有序的 Mod ID＋页面 ID，不绑定发布版本，不持有作者组件。停用完成或页面撤销后隐藏入口但保留偏好，下一次同一身份发布时恢复；保存停用意图尚未实际停用时，原运行版页面仍可见，普通业务任务继续受原意图准入约束。关闭视图不取消固定，取消固定也不关闭已打开的视图。锁定清空可见导航，解锁后重读；完整删除 Mod 时清理其偏好的删除流程仍待实现。
+public record UiEnvironment(Locale locale, String themeId, boolean locked) {}
+public record PageSpec(String id, String titleKey, String defaultTitle, boolean settingsPage) {}
+public interface ModPage extends AutoCloseable {
+    JComponent create(UiEnvironment environment) throws Exception;
+    void environmentChanged(UiEnvironment environment);
+    default String navigationId() { return ""; }
+    default void restoreNavigation(String id) {}
+    @Override void close() throws Exception;
+}
+public interface PageFactory { ModPage create() throws Exception; }
+public interface PageRegistration extends AutoCloseable {
+    String id();
+    @Override void close() throws ApiException;
+}
+```
 
-偏好复用平台 H2 的 `desktop_preference`，键为 `mod_navigation_pins`，格式为 `{"formatVersion":1,"pages":[{"ownerId":"…","pageId":"…"}]}`。写入明确成功后才显示为已固定；无法确认时只读刷新，不重放修改。重复身份、未知字段或损坏内容均报错并保留原值。实现上限为 1,024 项、JSON 文本 1,048,576 个字符，单个 Mod ID/页面 ID 分别最多 512/1,024 字符（长度均按 Java `String.length` 计数）；超过上限明确拒绝，不截断已有偏好。
+作者控制根 `JComponent` 内的布局、组件、绘制、表格、表单及内部页面切换。`UiService.register(PageSpec, PageFactory)` 中 `settingsPage=false` 表示所属 Mod 唯一根工作区，第二个普通根登记明确拒绝；撤销原根登记后可登记新的根。`settingsPage=true` 挂载到 APP 设置中的该 Mod 分区，不生成普通主导航入口，也不授予平台设置权限。`registerPreview` 保留 CLASS 隔离预览，既不占根登记，也不出现在普通导航。
+
+当前 API 开发版为 `1.0.0-dev.2`，对应普通多页登记向唯一根的不兼容收敛；作者父工程与宿主依赖同步，官方部署最低 API 范围为 `[1.0.0-dev.2,1.0.0)`。这是当前源码合同，正式 SDK 发行仍后置；软件、Schema 和 helper 版本不根据文档期数修改。CLASS 源码允许原版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
+
+登记与成功发布只提供元数据，不创建视图；Mod 成功启用并发布根后，APP 自动生成其唯一入口，无界面服务 Mod 没有空入口。根 ID 在所属 Mod 内唯一，宿主键为 Mod ID＋根 ID。首次进入在 EDT 创建并缓存实例，切换只隐藏，返回复用输入、选择和浏览状态；明确关闭后释放视图，重开才创建新实例。撤销、停用及正常退出按原作用域释放，清理失败保留原实例和占用供重试。主题、语言和锁定通知覆盖所有保留实例，作者向内部页转发环境并负责其资源。
+
+APP 拥有左侧主导航、紧凑根标题/关闭入口与全局底部诊断反馈；作者拥有根内导航、业务标题和状态。当前主窗默认 1120×760、最小 800×560，仅作兼容性基线，具体比例可继续调整。明确关闭先确认，默认取消；确认关闭会丢弃未保存界面输入，已接受后台任务继续按自身生命周期执行。平台撤销、停用及退出沿原清理合同。作者弹窗使用实际页面所在窗口为 owner，纳入锁定和关闭，不创建脱离管理的常驻顶层窗口。
+
+锁定允许宿主根导航及作者内部标签切换，业务输入/动作仍由原输入边界和能力授权限制；作者 `UiService.open` 仍需解锁。APP 的 Mod 已下载页保留当前根与设置扩展的明确打开、启停、版本及权限管理，不提供手动固定/取消固定。P0 不提供单独隐藏根入口；可调整顺序或折叠主导航，撤销/实际停用后入口消失，重发布后按原顺序显示，关闭视图不移除入口。
+
+排序偏好复用 H2 `desktop_preference` 的 `mod_navigation_pins`，格式仍为 `{"formatVersion":1,"pages":[{"ownerId":"…","pageId":"…"}]}`。当前已发布所有者的旧页面项按最早位置归并为一个当前根，重复旧项合并，新根追加；暂未发布所有者的原项保留至以后归并。解锁后经原准入事务原子保存，锁定只使用发布元数据和缓存；全 Mod 待核对删除仍冻结其原导航身份，完整删除沿原事务清理其偏好。损坏、重复身份、未知字段或超限均报告并保留原值，不截断。上限仍为 1,024 项、JSON 文本 1,048,576 字符、Mod ID 512 字符及页面 ID 1,024 字符，均按 Java `String.length` 计数。
+
+恢复上次页面仍使用 `desktop_preference.ui_last_page` 原格式，根身份位于 `ownerId` / `pageId`，内部选择位于 `detailId`。作者可实现 `ModPage.navigationId()` 和 `restoreNavigation(id)`；两个回调均在 EDT 执行，恢复在新视图 `create` 前应用。标识只能为空或匹配 `[a-z][a-z0-9_.-]{0,127}` 的非秘密稳定值，不能包含草稿、路径或凭据；未知内部标识按作者默认选择处理。普通切换不会调用恢复，也不会重置保留实例。捕获失败会阻止本次正常退出并显示错误，允许修复后重试，不能静默丢弃原偏好。
+
+官方部署仅登记 `workspace` 根，标准/辅助部署、自主部署、应用管理在内部三个标签按首次选择创建并保留；设置及预览不会增加部署普通入口。内部标识为 `static-deployment` / `agent-deployment` / `applications`，旧独立页面启动身份转到新根后仍恢复对应标签；首次恢复只创建选中的内部页面。具体 P0 接入和有效验证见 [1.3 前置开发](development/PHASE-1.3.md#mod-workspace)。
 
 ### 8.4 db：作者自主 JDBC 与数据生命周期
 
+`db.schema`：
+
 ```java
-package gold.debug.windowstolinux.appapi.db;
+package gold.debug.windowstolinux.appapi.db.schema;
 
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
 
 public record SchemaIdentity(String ownerId, String schemaVersion, UUID generation) {}
-public interface ModDatabase {
-    SchemaIdentity identity() throws ApiException;
-    Connection openConnection(TaskContext task) throws ApiException, SQLException;
-}
 public interface SchemaAccess {
     SchemaIdentity identity();
     Connection openConnection() throws SQLException;
@@ -1208,7 +1353,26 @@ public interface SchemaMigration {
 }
 ```
 
+`db`：
+
+```java
+package gold.debug.windowstolinux.appapi.db;
+
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import java.sql.Connection;
+import java.sql.SQLException;
+
+public interface ModDatabase {
+    SchemaIdentity identity() throws ApiException;
+    Connection openConnection(TaskContext task) throws ApiException, SQLException;
+}
+```
+
 `ModDatabase` 是绑定当前已启用数据版本的能力，调用方不能传入另一个 Schema。无 `schemaVersion` 的 Mod 调用时返回 `UNAVAILABLE`。每次 `openConnection` 返回独立连接，初始自动提交为 `true`、隔离级别为 `READ_COMMITTED`、锁等待 5 秒；作者可以在 H2 支持范围内调整其连接事务选项。平台不共享作者事务、不自动提交、不接管作者 SQL；作者自行关闭语句、结果集、LOB 和连接，同一连接不并发跨线程使用。
+
+包装器仅缓存仍持有关闭/释放责任的 JDBC 对象，成功 close/free 后移除；语句重新执行、getMoreResults、语句关闭以及事务结束造成的隐式关闭，按驱动可确认事实清理原结果集关联。元数据对象仍受线程、连接身份及 unwrap 限制，但不由连接持续缓存。实际关闭失败保留原对象供原线程重试，物理连接已确认关闭后释放所有子对象缓存。
 
 支持标准 JDBC 的参数化 SQL、JOIN、多表事务、批处理、保存点、元数据及 BLOB/CLOB；具体 SQL 遵循 H2 2.5.250。普通连接为本 Schema 非管理员所有者，可创建/修改/删除自己的表、索引、约束、视图及序列；更改持久化结构时作者负责维护 `schemaVersion` 和旧数据路径。不给 `ADMIN`、`ALTER ANY SCHEMA`、平台/其他 Mod 私有表授权，不开放引擎 URL、登录密码或 H2 专有连接类型；包装器仅追踪生命周期及标准 JDBC 关闭，不提供底层驱动 `unwrap`；Statement/DatabaseMetaData 的 getConnection 返回同一受管理连接，标准接口 unwrap 仅返回对应包装器，不能绕过占用登记。Schema 本身及数据库身份由平台管理，作者不得自行 DROP/改名 Schema 或管理数据库用户；Schema 所有者权限并非对此误用的沙箱保证。这不是 SQL 功能白名单或恶意代码沙箱。
 
@@ -1222,22 +1386,58 @@ public interface SchemaMigration {
 
 ### 8.5 server 与 secret：共享配置引用
 
+`server.model`：
+
 ```java
-package gold.debug.windowstolinux.appapi.server;
+package gold.debug.windowstolinux.appapi.server.model;
 
 import java.time.Instant;
 import java.util.Optional;
-import java.util.UUID;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
 
-public record ServerRef(String id) {}
-public record ServerInfo(ServerRef ref, String name, String host, int port, String username,
+public record ServerId(String id) {}
+public record ServerInfo(ServerId ref, String name, String host, int port, String username,
     Optional<String> trustedFingerprint, Optional<Instant> observedAt) {}
-public enum ReferenceState { RESERVED, ACTIVE, UNKNOWN }
-public enum ReferenceResolution { REFERENCED, NOT_REFERENCED, UNKNOWN }
-public record ServerReference(UUID id, ServerRef server, String businessKey, ReferenceState state) {}
+```
+
+`server.ref`：
+
+`task.ref`：服务器与秘密共用的业务引用协议，引用可以跨任务持久存在，任务结束不表示释放。
+
+```java
+package gold.debug.windowstolinux.appapi.task.ref;
+
+public enum ResourceRefState { RESERVED, ACTIVE, UNKNOWN }
+public enum ResourceRefResult { REFERENCED, NOT_REFERENCED, UNKNOWN }
+```
+
+`server.ref`：
+
+```java
+package gold.debug.windowstolinux.appapi.server.ref;
+
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import java.util.UUID;
+
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefState;
+
+public record ServerRef(UUID id, ServerId server, String businessKey, ResourceRefState state) {}
+```
+
+`server`：
+
+```java
+package gold.debug.windowstolinux.appapi.server;
+
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.server.ref.ServerRef;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import java.util.Optional;
+import java.util.UUID;
+
 public interface ServerService {
     PageSlice<ServerInfo> listConfigured(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
     PageSlice<ServerInfo> list(Optional<String> cursor, int limit, TaskContext task) throws ApiException;
@@ -1247,34 +1447,61 @@ public interface ServerService {
     default PageSlice<ServerInfo> list(int limit, TaskContext task) throws ApiException {
         return list(Optional.empty(), limit, task);
     }
-    ServerInfo get(ServerRef server, TaskContext task) throws ApiException;
-    ServerReference reserve(ServerRef server, String businessKey, TaskContext task) throws ApiException;
-    Optional<ServerReference> findReference(ServerRef server, String businessKey, TaskContext task) throws ApiException;
-    void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException;
+    ServerInfo get(ServerId server, TaskContext task) throws ApiException;
+    ServerRef reserve(ServerId server, String businessKey, TaskContext task) throws ApiException;
+    Optional<ServerRef> findReference(ServerId server, String businessKey, TaskContext task) throws ApiException;
+    void resolve(UUID referenceId, ResourceRefResult result, TaskContext task) throws ApiException;
 }
 ```
 
 ```java
 package gold.debug.windowstolinux.appapi.secret;
 
+import gold.debug.windowstolinux.appapi.secret.access.SecretConsumer;
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.secret.ref.SecretRef;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import java.util.Optional;
 import java.util.UUID;
-import gold.debug.windowstolinux.appapi.server.ReferenceResolution;
-import gold.debug.windowstolinux.appapi.server.ReferenceState;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
 
-public record SecretRef(String id, String purpose) {}
-public record SecretReference(UUID id, SecretRef secret, String businessKey, ReferenceState state) {}
-public interface SecretConsumer<T> { T use(byte[] value) throws Exception; }
 public interface SecretService {
-    SecretRef create(String purpose, byte[] value, TaskContext task) throws ApiException;
-    SecretReference reserve(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
-    Optional<SecretReference> findReference(SecretRef secret, String businessKey, TaskContext task) throws ApiException;
-    void resolve(UUID referenceId, ReferenceResolution result, TaskContext task) throws ApiException;
-    <T> T use(SecretRef secret, String purpose, TaskContext task, SecretConsumer<T> consumer)
+    SecretId create(String purpose, byte[] value, TaskContext task) throws ApiException;
+    SecretRef reserve(SecretId secret, String businessKey, TaskContext task) throws ApiException;
+    Optional<SecretRef> findReference(SecretId secret, String businessKey, TaskContext task) throws ApiException;
+    void resolve(UUID referenceId, ResourceRefResult result, TaskContext task) throws ApiException;
+    <T> T use(SecretId secret, String purpose, TaskContext task, SecretConsumer<T> consumer)
         throws ApiException;
 }
+```
+
+`secret.access`：
+
+```java
+package gold.debug.windowstolinux.appapi.secret.access;
+
+public interface SecretConsumer<T> { T use(byte[] value) throws Exception; }
+```
+
+`secret.model`：
+
+```java
+package gold.debug.windowstolinux.appapi.secret.model;
+
+public record SecretId(String id, String purpose) {}
+```
+
+`secret.ref`：
+
+```java
+package gold.debug.windowstolinux.appapi.secret.ref;
+
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.task.ref.ResourceRefState;
+import java.util.UUID;
+
+public record SecretRef(UUID id, SecretId secret, String businessKey, ResourceRefState state) {}
 ```
 
 `listConfigured` 是原任务作用域内已保存服务器的只读发现入口，仅返回不含秘密的 `ServerInfo` 摘要，不准入或占用目标；`list` 仅返回当前任务已准入的服务器。选中发现结果后仍须由实际发布原任务准入，随后才能 `get`、预留引用或连接。修改服务器、主密码及模型配置由平台页面负责。`get` 返回的观测附时间，不代表实时连接健康；真正使用仍复核指纹、服务器版本及授权。
@@ -1297,65 +1524,49 @@ public interface SecretService {
 
 官方 deployment 的执行账本在 `deployment_execution` 保存原执行 UUID、平台任务 UUID、目标应用/服务器、模式和审阅摘要。预留前的请求文档固定资源、用途和业务键，后续仅补原预留 UUID；所有关联均已取得 UUID 后才能进入副作用阶段。成功结果与单元/配置/秘密集合/拓扑同一 H2 事务提交，`business_committed` 与 `cleanup_complete` 分开，未知结果不能标清理完成或重新开始副作用。已知结果不可覆盖，另一平台任务只可读取旧记录，不能接管写入；执行记录创建确认丢失时，可按原平台任务查询原业务执行 UUID，不重新创建。
 
-现行通用执行文档为 `formatVersion=4` 的 UTF-8 JSON object，单份最大一 MiB；单组件 `deployment-publication` 沿用格式 5／模板格式 1，在原请求中嵌套保存完整非秘密发布模板，模板最大 32 MiB、请求最大 40 MiB；多组件整图使用请求格式 6／模板格式 2，分别限 144 MiB／128 MiB。格式 4 仍按原契约推进引用和已知结果，不支持的更旧格式只读且不补造远端模板。资源意图最多 512 个、正式结果最多 64 个单元；拒绝重复键、尾随内容、缺字段、身份/阶段不符和超界载荷。原请求/恢复/结果绑定同一执行和任务身份；非成功结果仅保存公开 `ProblemCode` 与符合 `[A-Za-z][A-Za-z0-9_.-]{0,127}` 的 `eventCode`，不存任意消息、上下文、异常或秘密。模板使用结构化嵌套节点，避免两层 JSON 字符串转义；上限是持久信封而非额外执行授权。整图正式执行至多 16 组件，分析和业务模型仍允许至多 64；完整图 16 MiB、每项 BUILD 脚本一 MiB、每项 RUNTIME 封存 64 KiB、健康文档一 MiB等各自准入继续适用。BUILD JSON 保守按脚本六倍、RUNTIME JSON 按 systemd 封存十一倍估算，整图上界约 123 MiB，模板 128 MiB 和请求 144 MiB 留有有界信封余量；不能将独立任意配置快照视为已获发布许可。私有 Jackson 2.18.1 由 Mod 自己的 Maven 依赖和 CLASS 描述管理，不加入 appapi。
+现行通用、普通发布、自主部署、恢复及辅助纠正执行信封统一为 `formatVersion=11` 的 UTF-8 JSON object，请求从首写起使用固定完整字段集：公共身份、操作类型、引用、来源、发布模板、构建意图与审阅、操作证明与纠正历史；未发生状态明确写入 null、空数组或零值。缺字段、重复键、尾随内容、身份/阶段不符与超界载荷均拒绝。通用引用请求及恢复/结果一 MiB，初始单组件发布请求40 MiB、整图或构建审阅请求144 MiB、纠正链请求272 MiB；完整单组件/整图模板继续使用其当前格式1/2，分别限32/128 MiB。资源意图最多512个、正式结果最多64个单元、正式执行至多16组件，分析和业务模型仍允许至多64。其他既有图、脚本、运行和健康容量上限保持不变。版本4～10及未来版本在业务解释前拒绝；原文、任务身份和资源依据保留，不转换、不补齐、不重放、不清理未知资源。非成功结果仅保存公开 `ProblemCode` 与符合 `[A-Za-z][A-Za-z0-9_.-]{0,127}` 的 `eventCode`，不存任意消息、上下文、异常或秘密。模板使用结构化嵌套节点，容量准入不代替授权。私有Jackson依赖由Mod自己的Maven依赖和CLASS描述管理，不加入appapi。
 
-正式发布入口固定 `deployment-publication` 平台任务类型，`Mod.start` 登记原版本 `TaskRecovery`，`stop` 释放登记。`DeploymentReferenceFlow` 在作者副作用前持久化原执行及全部引用意图，预留并记录原 UUID，确认 `startEffects` 后仅调用作者一次；正式成功的原单元、配置、秘密修订、完整图、发布历史及结果同事务提交。单组件格式 5 与整图格式 6 模板及原作者检查点使同一原任务能在显式恢复时核对原服务器、应用、候选、旧快照、已核实业务结果及具体收尾步骤。整图先持久唯一根索引，再在各组件首次候选效果前分别登记短检查点；首次停止旧运行或发布前将完整整图业务提案一次保存到原执行 BLOB。宿主先释放原任务旧 SSH 连接，再由作者通过原任务精确审批调用固定只读远端观察；启动不会自动连远端。仅全部组件及独立整应用健康获证、全部原状态已核实恢复，或完整证明整图发布从未开始时，才推进唯一正式结果及原资源收尾；局部、冲突和缺失事实保持 UNKNOWN。已知业务结果不覆盖，已提交不重复提交，已完成的远端清理不重发。PREPARED 仍按原业务行、平台 UUID 和显式资源证明未开始；引用保护包括 RETIRED 历史，只有全部真实资源释放才记录 `cleanup_complete`。默认页面已接本机流程，完整 S5 与真实目标机验收仍待后续。
+正式发布入口固定 `deployment-publication` 平台任务类型，`Mod.start` 登记原版本 `TaskRecovery`，`stop` 释放登记。`DeploymentRefFlow` 在作者副作用前持久化原执行及全部引用意图，预留并记录原 UUID，确认 `startEffects` 后仅调用作者一次；正式成功的原单元、配置、秘密修订、完整图、发布历史及结果同事务提交。版本11中的单组件与整图模板及原作者检查点使同一原任务能在显式恢复时核对原服务器、应用、候选、旧快照、已核实业务结果及具体收尾步骤。整图先持久唯一根索引，再在各组件首次候选效果前分别登记短检查点；首次停止旧运行或发布前将完整整图业务提案一次保存到原执行 BLOB。宿主先释放原任务旧 SSH 连接，再由作者通过原任务精确审批调用固定只读远端观察；启动不会自动连远端。仅全部组件及独立整应用健康获证、全部原状态已核实恢复，或完整证明整图发布从未开始时，才推进唯一正式结果及原资源收尾；局部、冲突和缺失事实保持 UNKNOWN。已知业务结果不覆盖，已提交不重复提交，已完成的远端清理不重发。PREPARED 仍按原业务行、平台 UUID 和显式资源证明未开始；引用保护包括 RETIRED 历史，只有全部真实资源释放才记录 `cleanup_complete`。默认页面已接本机流程，完整 S5 与真实目标机验收仍待后续。
 
-官方 deployment 的成功结果在现行格式 4、单组件格式 5 与整图格式 6 中必须包含 `applicationRelease`（原发布 UUID 与整应用清单 SHA-256），非成功结果明确为 null；格式 1～3 及其他不支持版本保留原文，只读而不推测补齐历史。`deployment_release` 的新 ACTIVE 登记、旧 ACTIVE 退为 RETIRED、单元/配置/秘密/拓扑和正式结果共用一次事务，失败整体回滚。内容相同的再次发布或重新激活复用原历史 UUID、首次创建执行和创建时间，不重写载荷。CANDIDATE、FAILED、UNKNOWN 可作为原记录状态读取，但本仓库不将它们按新执行直接提升为 ACTIVE；整图执行只有全部组件成功并完成健康核对后才正式提交一次。
+官方 deployment 的成功结果在现行版本11中必须包含 `applicationRelease`（原发布 UUID 与整应用清单 SHA-256），非成功结果明确为 null；旧版及未来版本保留原文，拒绝语义查询和恢复，不推测补齐历史。`deployment_release` 的新 ACTIVE 登记、旧 ACTIVE 退为 RETIRED、单元/配置/秘密/拓扑和正式结果共用一次事务，失败整体回滚。内容相同的再次发布或重新激活复用原历史 UUID、首次创建执行和创建时间，不重写载荷。CANDIDATE、FAILED、UNKNOWN 可作为原记录状态读取，但本仓库不将它们按新执行直接提升为 ACTIVE；整图执行只有全部组件成功并完成健康核对后才正式提交一次。
 
 发布历史的两份 UTF-8 JSON object 固定 `formatVersion=1`：运行清单最大 16 MiB，独立整应用健康文档最大一 MiB。运行清单完整保留有序组件、单元身份、依赖、运行定义、路径/资源绑定，以及原组件摘要和不可变配置/秘密修订引用；二进制子载荷采用规范 Base64，沿用原格式和单项上限。两份规范 JSON 按独立 `windowstolinux-application-release-v1` 域和四字节大端长度前缀计算整应用 SHA-256，健康/依赖变化同样改变历史身份；原组件摘要和旧备份 release-set 算法不变。发布时间保留在正式执行结果，历史内容摘要不混入时间，秘密值不进入载荷。未知格式原文保留并阻止相关历史退役/激活；只读核验检查已知历史摘要、来源执行、配置/秘密引用、唯一 ACTIVE 与当前整图，以及成功执行的精确历史关联。16 MiB 是明确的整图容量上限，不保证 64 个均达到各自最大尺寸的组件能合并写入。
 
 ### 8.6 linux：受控 SSH 与文件操作
 
+`linux`：
+
 ```java
 package gold.debug.windowstolinux.appapi.linux;
 
-import java.time.Duration;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import java.util.List;
-import java.util.Optional;
-import java.nio.file.Path;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+
+public interface LinuxService {
+    RemoteSession connect(ServerId server, TaskContext task) throws ApiException;
+    List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException;
+}
+```
+
+`linux.session`：
+
+```java
+package gold.debug.windowstolinux.appapi.linux.session;
+
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 
 public record RemoteFacts(String operatingSystem, String architecture, String fingerprint) {}
-public record CommandRequest(String script, byte[] stdin, Duration timeout, long outputLimitBytes)
-    implements AutoCloseable {
-    public CommandRequest {
-        java.util.Objects.requireNonNull(script);
-        stdin = java.util.Objects.requireNonNull(stdin).clone();
-        java.util.Objects.requireNonNull(timeout);
-        if (timeout.isZero() || timeout.isNegative() || outputLimitBytes < 0)
-            throw new IllegalArgumentException("Invalid command limit");
-    }
-    @Override public synchronized byte[] stdin() { return stdin.clone(); }
-    public synchronized CommandRequest snapshot() {
-        return new CommandRequest(script, stdin, timeout, outputLimitBytes);
-    }
-    @Override public synchronized void close() {
-        java.util.Arrays.fill(stdin, (byte) 0);
-    }
-}
-public record CommandResult(Optional<Integer> exitCode, String stdout, String stderr, boolean truncated) {}
-public record TransferRequest(Path localPath, String remoteAbsolutePath, long maxBytes) {}
-public record TransferResult(long transferredBytes, String sha256,
-    Path localPath, String remoteAbsolutePath) {}
-public enum TransferConflictChoice { OVERWRITE, KEEP_BOTH, SKIP }
-public record TransferConflict(TransferRequest request, boolean upload,
-    long incomingBytes, long existingBytes) {}
-public record TransferProgress(java.util.UUID transferId, Stage stage,
-    long completedBytes, long totalBytes) {
-    public enum Stage { PREPARING, VERIFYING_SOURCE, VERIFYING_TARGET,
-        VERIFYING_PREFIX, TRANSFERRING, VERIFYING_STAGING, PUBLISHING,
-        VERIFYING_RESULT, CLEANING }
-}
-public enum TransferStallChoice { RETRY, TERMINATE }
-public record TransferStall(TransferProgress progress, TransferRequest request,
-    boolean upload, java.time.Duration idleTimeout) {}
-public record TransferCheckpoint(java.util.UUID id, ServerRef server, boolean upload,
-    TransferRequest request, String sha256, long size, boolean overwrite) {}
 public interface RemoteSession extends AutoCloseable {
     RemoteFacts facts();
     OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant)
@@ -1374,10 +1585,61 @@ public interface RemoteSession extends AutoCloseable {
         throws ApiException;
     @Override void close() throws ApiException;
 }
-public interface LinuxService {
-    RemoteSession connect(ServerRef server, TaskContext task) throws ApiException;
-    List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException;
+```
+
+`linux.command`：
+
+```java
+package gold.debug.windowstolinux.appapi.linux.command;
+
+import java.time.Duration;
+import java.util.Optional;
+
+public record CommandRequest(String script, byte[] stdin, Duration timeout, long outputLimitBytes)
+    implements AutoCloseable {
+    public CommandRequest {
+        java.util.Objects.requireNonNull(script);
+        stdin = java.util.Objects.requireNonNull(stdin).clone();
+        java.util.Objects.requireNonNull(timeout);
+        if (timeout.isZero() || timeout.isNegative() || outputLimitBytes < 0)
+            throw new IllegalArgumentException("Invalid command limit");
+    }
+    @Override public synchronized byte[] stdin() { return stdin.clone(); }
+    public synchronized CommandRequest snapshot() {
+        return new CommandRequest(script, stdin, timeout, outputLimitBytes);
+    }
+    @Override public synchronized void close() {
+        java.util.Arrays.fill(stdin, (byte) 0);
+    }
 }
+public record CommandResult(Optional<Integer> exitCode, String stdout, String stderr, boolean truncated) {}
+```
+
+`linux.transfer`：
+
+```java
+package gold.debug.windowstolinux.appapi.linux.transfer;
+
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import java.nio.file.Path;
+
+public record TransferRequest(Path localPath, String remoteAbsolutePath, long maxBytes) {}
+public record TransferResult(long transferredBytes, String sha256,
+    Path localPath, String remoteAbsolutePath) {}
+public enum TransferConflictChoice { OVERWRITE, KEEP_BOTH, SKIP }
+public record TransferConflict(TransferRequest request, boolean upload,
+    long incomingBytes, long existingBytes) {}
+public record TransferProgress(java.util.UUID transferId, Stage stage,
+    long completedBytes, long totalBytes) {
+    public enum Stage { PREPARING, VERIFYING_SOURCE, VERIFYING_TARGET,
+        VERIFYING_PREFIX, TRANSFERRING, VERIFYING_STAGING, PUBLISHING,
+        VERIFYING_RESULT, CLEANING }
+}
+public enum TransferStallChoice { RETRY, TERMINATE }
+public record TransferStall(TransferProgress progress, TransferRequest request,
+    boolean upload, java.time.Duration idleTimeout) {}
+public record TransferCheckpoint(java.util.UUID id, ServerId server, boolean upload,
+    TransferRequest request, String sha256, long size, boolean overwrite) {}
 ```
 
 会话绑定当前任务与所选服务器，平台处理凭据、指纹交互和连接释放，不向作者暴露 SSHD 类型。脚本经标准输入传输，不能把大脚本放进 shell 参数；具体部署 helper 载荷仍由部署 Mod 生成。UTF-8 脚本和 stdin 分别最大 16 MiB，脚本拒绝 NUL 与无效 UTF-16 输入；更大素材走文件传输，超限在发送前拒绝。`outputLimitBytes` 最大 8 MiB，标准输出与错误输出合计计算原始字节数；超过捕获限额后继续排空并返回 `truncated=true`，不因此终止命令。`CommandRequest` 复制并持有 stdin；作者在审批及执行流程退出后调用 `close()` 清零自己的请求副本，平台执行时先取得独立稳定快照，让授权摘要与实际发送使用同一份输入。平台发送副本在发送线程真实终止后清零；`UNKNOWN` 不提前释放仍在使用的副本。传输仅处理请求中的普通文件，路径、摘要和实际字节数核对后返回；调用方申请任务授权的本地路径范围仍生效。
@@ -1426,24 +1688,72 @@ SSH 客户端使用 `ssh.v1` 记录其实际启动代次，与任务最初启动
 
 ### 8.7 ai：通用模型调用
 
+`ai`：
+
 ```java
 package gold.debug.windowstolinux.appapi.ai;
 
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceListener;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceSession;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface AiService {
+    String configurationRevision(AiPurpose purpose, TaskContext task) throws ApiException;
+    OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException;
+    OperationResult<AiResponse> call(AiRequest request, String expectedRevision, TaskContext task)
+        throws ApiException;
+    OperationResult<VoiceResponse> call(VoiceRequest request, TaskContext task) throws ApiException;
+    OperationResult<VoiceResponse> call(VoiceRequest request, String expectedRevision, TaskContext task)
+        throws ApiException;
+    VoiceSession openVoice(VoiceOptions options, VoiceListener listener, TaskContext task) throws ApiException;
+}
+```
+
+`ai.model`：
+
+```java
+package gold.debug.windowstolinux.appapi.ai.model;
+
+import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
 
 public enum AiPurpose { LANGUAGE, APPROVAL, VISION, VOICE }
 public enum AiRole { SYSTEM, USER, ASSISTANT }
-public record AiImage(String mediaType, byte[] content) {}
 public record AiMessage(AiRole role, String text, List<AiImage> images) {}
 public record AiRequest(AiPurpose purpose, List<AiMessage> messages, int maxOutputTokens,
     Duration timeout, boolean jsonObjectResponse) {}
 public record AiUsage(Optional<Long> inputTokens, Optional<Long> outputTokens) {}
 public record AiResponse(String text, String modelId, String finishReason, AiUsage usage) {}
+```
+
+`ai.vision`：
+
+```java
+package gold.debug.windowstolinux.appapi.ai.vision;
+
+public record AiImage(String mediaType, byte[] content) {}
+```
+
+`ai.voice`：
+
+```java
+package gold.debug.windowstolinux.appapi.ai.voice;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import java.time.Duration;
+import java.util.List;
+
 public record VoiceRequest(byte[] audio, String filename, Duration timeout) {}
 public record VoiceOptions(Duration timeout, int maxBufferedBytes) {}
 public record VoiceEvent(String segmentId, int contentIndex, long sequence, long inputOrder,
@@ -1457,16 +1767,6 @@ public interface VoiceSession extends AutoCloseable {
     java.util.concurrent.CompletionStage<OperationResult<VoiceResponse>> completion();
     void cancel() throws ApiException;
     @Override void close() throws ApiException;
-}
-public interface AiService {
-    String configurationRevision(AiPurpose purpose, TaskContext task) throws ApiException;
-    OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException;
-    OperationResult<AiResponse> call(AiRequest request, String expectedRevision, TaskContext task)
-        throws ApiException;
-    OperationResult<VoiceResponse> call(VoiceRequest request, TaskContext task) throws ApiException;
-    OperationResult<VoiceResponse> call(VoiceRequest request, String expectedRevision, TaskContext task)
-        throws ApiException;
-    VoiceSession openVoice(VoiceOptions options, VoiceListener listener, TaskContext task) throws ApiException;
 }
 ```
 
@@ -1484,25 +1784,46 @@ public interface AiService {
 
 ### 8.8 file：通用文件、来源选择与快照
 
-```java
-package gold.debug.windowstolinux.appapi.file;
+`file.source`：
 
-import java.net.URI;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
+```java
+package gold.debug.windowstolinux.appapi.file.source;
+
 import java.util.UUID;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
 
 public record FileSelection(UUID id, String displayName) {}
-public record FilePath(java.util.Optional<gold.debug.windowstolinux.appapi.server.ServerRef> server,
+public record FileReadRequest(String relativePath, long maxBytes) {}
+public record FileContent(String relativePath, byte[] content, String sha256) {}
+public record FileEntry(String relativePath, EntryType type, long byteCount) {
+    public enum EntryType { FILE, DIRECTORY, OTHER }
+}
+```
+
+`file.model`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.model;
+
+import java.util.List;
+
+public record FilePath(java.util.Optional<gold.debug.windowstolinux.appapi.server.model.ServerId> server,
     String path) {}
 public record FileInfo(FilePath requested, FilePath actual, Kind kind, long bytes,
     java.time.Instant modified, String identity, java.util.Optional<String> target, List<Link> links) {
     public enum Kind { FILE, DIRECTORY, LINK, OTHER }
     public record Link(FilePath path, String identity, String target) {}
 }
+```
+
+`file.action`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.action;
+
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import java.util.List;
+import java.util.UUID;
+
 public record FileChoice(java.util.Optional<Directory> directory, java.util.Optional<Conflict> file) {
     public enum Directory { COPY, MERGE, SKIP }
     public enum Conflict { OVERWRITE, COPY, SKIP }
@@ -1512,20 +1833,27 @@ public record FileChoice(java.util.Optional<Directory> directory, java.util.Opti
     }
 }
 public enum DeleteEffect { RECYCLE, PERMANENT }
-public record FileReport(UUID operationId, gold.debug.windowstolinux.appapi.task.Outcome outcome,
+public record FileReport(UUID operationId, gold.debug.windowstolinux.appapi.task.result.TaskResult outcome,
     List<Item> items) {
     public record Item(FilePath source, java.util.Optional<FilePath> target,
-        gold.debug.windowstolinux.appapi.task.Outcome outcome, String detail) {}
+        gold.debug.windowstolinux.appapi.task.result.TaskResult outcome, String detail) {}
 }
 public record FileOperation(UUID id, UUID taskId, String type, String phase, FilePath source,
     java.util.Optional<FilePath> target, List<Step> steps) {
     public record Step(String phase, FilePath source, java.util.Optional<FilePath> target, String detail) {}
 }
-public record FileReadRequest(String relativePath, long maxBytes) {}
-public record FileContent(String relativePath, byte[] content, String sha256) {}
-public record FileEntry(String relativePath, EntryType type, long byteCount) {
-    public enum EntryType { FILE, DIRECTORY, OTHER }
-}
+```
+
+`file.snapshot`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.snapshot;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
+
 public record SnapshotRequest(List<String> relativePaths, long maxTotalBytes) {}
 public interface FileSnapshot extends AutoCloseable {
     UUID id();
@@ -1533,72 +1861,230 @@ public interface FileSnapshot extends AutoCloseable {
     Path directory();
     @Override void close() throws ApiException;
 }
+```
+
+`file.work`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.work;
+
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import java.nio.file.Path;
+import java.util.UUID;
+
 public interface FileWorkspace extends AutoCloseable {
     UUID id();
     Path directory() throws ApiException;
     FileSelection selection() throws ApiException;
     void close() throws ApiException;
 }
+```
+
+`file`：
+
+文件入口访问器不执行读写、不签发授权，也不创建独立资源寿命。具体方法仍要求原任务与审批；窄接口用于表达代码所需职责，不是新的授权凭据。
+
+```java
+context.file().actions().copyFile(from, to, task);
+context.file().sources().selectDirectory("选择源码", task);
+context.file().snapshots().snapshot(selection, request, task);
+```
+
+`gold.debug.windowstolinux.appapi.file`：
+
+```java
+package gold.debug.windowstolinux.appapi.file;
+
+import gold.debug.windowstolinux.appapi.file.query.FileQueryService;
+import gold.debug.windowstolinux.appapi.file.action.FileActionService;
+import gold.debug.windowstolinux.appapi.file.source.FileSourceService;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService;
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
 public interface FileService {
-    FileSelection selectDirectory(Path path, TaskContext task) throws ApiException;
-    FileInfo getFile(FilePath path, TaskContext task) throws ApiException;
-    FileInfo readLink(FilePath path, TaskContext task) throws ApiException;
-    byte[] readFile(FilePath path, int maxBytes, TaskContext task) throws ApiException;
-    List<FileInfo> list(FilePath directory, int limit, TaskContext task) throws ApiException;
-    List<FileInfo> list(FilePath directory, int limit, java.util.Optional<FileInfo.Kind> kind,
-        String nameContains, TaskContext task) throws ApiException;
-    FileReport createFile(FilePath path, TaskContext task) throws ApiException;
-    FileReport createDirectory(FilePath path, TaskContext task) throws ApiException;
-    FileReport writeFile(FilePath path, byte[] content, TaskContext task) throws ApiException;
-    FileReport createLink(FilePath path, String target, TaskContext task) throws ApiException;
-    void registerLink(FilePath path, TaskContext task) throws ApiException;
-    void unregisterLink(FilePath path, TaskContext task) throws ApiException;
-    FileReport copyFile(FilePath from, FilePath to, TaskContext task) throws ApiException;
-    FileReport copyFile(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
-    FileReport copyLink(FilePath from, FilePath to, TaskContext task) throws ApiException;
-    FileReport copyLink(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
-    FileReport moveFile(FilePath from, FilePath to, TaskContext task) throws ApiException;
-    FileReport moveFile(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
-    FileReport moveLink(FilePath from, FilePath to, TaskContext task) throws ApiException;
-    FileReport moveLink(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
-    FileReport renameFile(FilePath from, String name, TaskContext task) throws ApiException;
-    FileReport renameLink(FilePath from, String name, TaskContext task) throws ApiException;
-    FileReport deleteFile(FilePath path, TaskContext task) throws ApiException;
-    FileReport deleteFile(FilePath path, TaskContext task,
-        gold.debug.windowstolinux.appapi.task.ApprovalGrant permit) throws ApiException;
-    FileReport deleteLink(FilePath path, TaskContext task) throws ApiException;
-    FileReport deleteLink(FilePath path, TaskContext task,
-        gold.debug.windowstolinux.appapi.task.ApprovalGrant permit) throws ApiException;
-    FileReport uploadFile(FilePath local, FilePath remote, TaskContext task) throws ApiException;
-    FileReport uploadFile(FilePath local, FilePath remote, TaskContext task, FileChoice choice) throws ApiException;
-    FileReport downloadFile(FilePath remote, FilePath local, TaskContext task) throws ApiException;
-    FileReport downloadFile(FilePath remote, FilePath local, TaskContext task, FileChoice choice) throws ApiException;
-    List<FileOperation> operations(TaskContext task) throws ApiException;
-    FileReport checkOperation(UUID operation, TaskContext task) throws ApiException;
-    FileReport continueOperation(UUID operation, TaskContext task) throws ApiException;
-    URI location(FileSelection selection, TaskContext task) throws ApiException;
-    FileWorkspace workspace(TaskContext task) throws ApiException;
-    FileWorkspace workspace(TaskContext task, UUID workspaceId) throws ApiException;
-    Optional<byte[]> readWorkspaceEvidence(TaskContext task, UUID workspaceId,
-        String name, int maxBytes) throws ApiException;
+
+    FileQueryService queries();
+
+    FileActionService actions();
+
+    FileSourceService sources();
+
+    FileSnapshotService snapshots();
+
+    FileWorkspaceService workspaces();
+
     void closeTaskResources(TaskContext task) throws ApiException;
-    List<FileEntry> list(FileSelection selection, String relativeDirectory,
-            int maxEntries, TaskContext task) throws ApiException;
-    FileSelection selectDirectory(String title, TaskContext task) throws ApiException;
-    FileContent read(FileSelection selection, FileReadRequest request, TaskContext task)
-        throws ApiException;
-    FileSnapshot snapshot(FileSelection selection, SnapshotRequest request, TaskContext task)
-        throws ApiException;
 }
 ```
 
-通用操作使用绝对 `FilePath`，本机服务器字段为空，Linux 路径绑定原任务允许访问的 `ServerRef`；不人为限制到工作区、用户目录或临时目录，实际账户权限仍生效。`FilePath.local/remote` 提供构造入口，`parent/child` 构造同主机位置，`key` 返回用于登记的主机限定位置。位置、观测和持久记录本身不授予操作权限。文件服务与该 Mod 上下文共享原启用的交互、连接和许可登记。
+`gold.debug.windowstolinux.appapi.file.query`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.query;
+
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface FileQueryService {
+
+    FileInfo getFile(FilePath path, TaskContext task) throws ApiException;
+
+    FileInfo readLink(FilePath path, TaskContext task) throws ApiException;
+
+    byte[] readFile(FilePath path, int maxBytes, TaskContext task) throws ApiException;
+
+    java.util.List<FileInfo> list(FilePath directory, int limit, TaskContext task) throws ApiException;
+
+    java.util.List<FileInfo> list(FilePath directory, int limit, java.util.Optional<FileInfo.Kind> kind, String nameContains, TaskContext task) throws ApiException;
+}
+```
+
+`gold.debug.windowstolinux.appapi.file.action`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.action;
+
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.action.FileOperation;
+import gold.debug.windowstolinux.appapi.file.action.FileReport;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface FileActionService {
+
+    FileReport createFile(FilePath path, TaskContext task) throws ApiException;
+
+    FileReport createDirectory(FilePath path, TaskContext task) throws ApiException;
+
+    FileReport writeFile(FilePath path, byte[] content, TaskContext task) throws ApiException;
+
+    FileReport createLink(FilePath path, String target, TaskContext task) throws ApiException;
+
+    void registerLink(FilePath path, TaskContext task) throws ApiException;
+
+    void unregisterLink(FilePath path, TaskContext task) throws ApiException;
+
+    FileReport copyFile(FilePath from, FilePath to, TaskContext task) throws ApiException;
+
+    FileReport copyFile(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
+
+    FileReport copyLink(FilePath from, FilePath to, TaskContext task) throws ApiException;
+
+    FileReport copyLink(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
+
+    FileReport moveFile(FilePath from, FilePath to, TaskContext task) throws ApiException;
+
+    FileReport moveFile(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
+
+    FileReport moveLink(FilePath from, FilePath to, TaskContext task) throws ApiException;
+
+    FileReport moveLink(FilePath from, FilePath to, TaskContext task, FileChoice choice) throws ApiException;
+
+    FileReport renameFile(FilePath from, String name, TaskContext task) throws ApiException;
+
+    FileReport renameLink(FilePath from, String name, TaskContext task) throws ApiException;
+
+    FileReport deleteFile(FilePath path, TaskContext task) throws ApiException;
+
+    FileReport deleteFile(FilePath path, TaskContext task, gold.debug.windowstolinux.appapi.task.action.ApprovalGrant permit) throws ApiException;
+
+    FileReport deleteLink(FilePath path, TaskContext task) throws ApiException;
+
+    FileReport deleteLink(FilePath path, TaskContext task, gold.debug.windowstolinux.appapi.task.action.ApprovalGrant permit) throws ApiException;
+
+    FileReport uploadFile(FilePath local, FilePath remote, TaskContext task) throws ApiException;
+
+    FileReport uploadFile(FilePath local, FilePath remote, TaskContext task, FileChoice choice) throws ApiException;
+
+    FileReport downloadFile(FilePath remote, FilePath local, TaskContext task) throws ApiException;
+
+    FileReport downloadFile(FilePath remote, FilePath local, TaskContext task, FileChoice choice) throws ApiException;
+
+    java.util.List<FileOperation> operations(TaskContext task) throws ApiException;
+
+    FileReport checkOperation(java.util.UUID operation, TaskContext task) throws ApiException;
+
+    FileReport continueOperation(java.util.UUID operation, TaskContext task) throws ApiException;
+}
+```
+
+`gold.debug.windowstolinux.appapi.file.source`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.source;
+
+import gold.debug.windowstolinux.appapi.file.source.FileContent;
+import gold.debug.windowstolinux.appapi.file.source.FileEntry;
+import gold.debug.windowstolinux.appapi.file.source.FileReadRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface FileSourceService {
+
+    FileSelection selectDirectory(java.nio.file.Path path, TaskContext task) throws ApiException;
+
+    java.net.URI location(FileSelection selection, TaskContext task) throws ApiException;
+
+    java.util.List<FileEntry> list(FileSelection selection, String relativeDirectory, int maxEntries,
+                                   TaskContext task) throws ApiException;
+
+    FileSelection selectDirectory(String title, TaskContext task) throws ApiException;
+
+    FileContent read(FileSelection selection, FileReadRequest request, TaskContext task) throws ApiException;
+}
+```
+
+`gold.debug.windowstolinux.appapi.file.snapshot`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.snapshot;
+
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
+import gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest;
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface FileSnapshotService {
+
+    FileSnapshot snapshot(FileSelection selection, SnapshotRequest request, TaskContext task) throws ApiException;
+}
+```
+
+`gold.debug.windowstolinux.appapi.file.work`：
+
+```java
+package gold.debug.windowstolinux.appapi.file.work;
+
+import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface FileWorkspaceService {
+
+    FileWorkspace workspace(TaskContext task) throws ApiException;
+
+    FileWorkspace workspace(TaskContext task, java.util.UUID workspaceId) throws ApiException;
+
+    java.util.Optional<byte[]> readWorkspaceEvidence(TaskContext task, java.util.UUID workspaceId, String name,
+                                                     int maxBytes) throws ApiException;
+}
+```
+
+通用操作使用绝对 `FilePath`，本机服务器字段为空，Linux 路径绑定原任务允许访问的 `ServerId`；不人为限制到工作区、用户目录或临时目录，实际账户权限仍生效。`FilePath.local/remote` 提供构造入口，`parent/child` 构造同主机位置，`key` 返回用于登记的主机限定位置。`child(name)` 只接受不含分隔符且不为 `.` 或 `..` 的单个名称；本机名称还须不带根或盘符，包括同盘符的 `C:name`。远端 Linux 名称可以包含冒号。重命名沿用此名称规则，空来源、非法名称和根位置在合法任务下返回 `ApiException(INVALID_INPUT)`，不触发审批或文件副作用。位置、观测和持久记录本身不授予操作权限。文件服务与该 Mod 上下文共享原启用的交互、连接和许可登记。
 
 `getFile/readFile/*File` 解析链接后作用于实际对象，`readLink/*Link` 作用于链接自身。观测包含请求位置、实际位置、原生或认证身份和完整解析链。File 的既有对象解析遇到循环、断链、身份变化或不支持原语时明确失败；Link 只核实自身和指向文本，允许目标缺失或无权访问，未证明的目标关联保存为 UNVERIFIED。创建普通文件与目录只接受实际缺失的位置；`createFile` 先创建空文件，`writeFile` 再按原任务授权写入。`registerLink/unregisterLink` 维护受管关联登记，不创建或删除该链接。移动和重命名维护本次 APP 受管关联；单文件复制保持旧链接原目标，目录副本内部链接按实际映射指向副本，外部链接保持原目标。外部程序修改后的关联不由系统监听自动修复。
 
 `FileChoice.directory` 处理目录冲突，包括递归的同名子目录：副本、合并、不处理；`file` 独立处理文件或链接冲突：覆盖、副本、不处理。目录合并不授权文件覆盖，未指定的层仍走人工交互，平台授权模式不代替业务选择。报告逐项保留实际源、实际目标、结果与诊断；合并保留目标独有内容，跳过不取消整项任务。部分移动只清理确已交付的源，不把整个来源提前删除或一次改写全部关联。上传/下载复用原受管传输、摘要校验、发布、停滞重试与恢复记录，同一实际服务器内的文件操作使用 SFTP；不支持两个不同远端之间复制。
 
-通用 `list(FilePath,...)` 列举一层直接子项，先按 1～100,000 的容量核实完整观察，再应用类型和名称筛选，超限失败而不截断。`readFile` 的完整内容上限为 1～64 MiB，`writeFile` 至多 64 MiB；复制计划至多 100,000 项、4 GiB，不能把部分截取当作完整交付。
+通用 `list(FilePath,...)` 列举一层直接子项，先按 1～100,000 的容量核实完整观察，再应用类型和名称筛选，超限失败而不截断。`readFile` 的完整内容上限可设为 1 字节～64 MiB，`writeFile` 至多 64 MiB；复制计划至多 100,000 项、4 GiB，不能把部分截取当作完整交付。
 
 普通 `deleteFile/deleteLink` 无论平台授权档位均新做删除确认。系统回收条件可证明时转入回收位置，否则明确提示永久删除；不提供回收站浏览或恢复 API。默认开启的可选 AI 说明只发送目标元数据，不读取正文；仅使用 LANGUAGE 用途第一个已启用成员，失败或不可用时显示基础说明而不接替其他模型。关闭设置不取消确认或业务工作流的独立审批。拒绝后原任务进入 `WAITING`，不保留本项活动文件或连接；“继续”重新核对目标并再次确认，“请求取消”终止原任务。重启不会恢复旧调用栈或旧许可，仍走原工作流核对。
 
@@ -1612,7 +2098,7 @@ public interface FileService {
 
 选择由平台在 EDT 承载用户目录确认，后台调用等待交互；选择句柄绑定当前 Mod 和任务。相对路径使用 `/`，拒绝越界、绝对路径及指向根外的联接/链接；单次读取最多 8 MiB，快照最多 2 GiB/100,000 个文件，请求值可更小。快照文件集合由作者业务选择，平台不内置部署排除规则。生成到任务工作目录后冻结，摘要采用排序的路径＋长度＋文件 SHA-256，不把修改中源目录当作不可变快照；复制前后变化则失败并保留诊断。快照目录只在句柄有效期间可读，业务需要长期素材时必须另按所属数据生命周期保存。
 
-当前实现通过 `PlatformRuntime.capabilities().source` 装配真实 `FileService`，默认窗口提供可取消的目录选择器。用户选择与工作目录授权仅接受平台返回的原对象，同 UUID 的重建记录、其他任务或另一次启用不能复用；跨锁定代次的目录确认必须重新进行。读取和快照访问在后台线程执行。用户取消选择返回 `ApiException(CANCELLED)`；作者回调仍须根据自己的整体操作结果明确返回任务终态，未捕获的异常不代表整项业务已安全取消。
+当前实现通过 `PlatformRuntime.capabilities().source` 装配原文件所有者，并由 `PlatformFileService` 在 Mod 上下文中发布组合入口，默认窗口提供可取消的目录选择器。用户选择与工作目录授权仅接受平台返回的原对象，同 UUID 的重建记录、其他任务或另一次启用不能复用；跨锁定代次的目录确认必须重新进行。读取和快照访问在后台线程执行。用户取消选择返回 `ApiException(CANCELLED)`；作者回调仍须根据自己的整体操作结果明确返回任务终态，未捕获的异常不代表整项业务已安全取消。
 
 路径保留原拼写，拒绝空段、`.`/`..`、反斜线、Windows 设备名/流名称和歧义结尾；解析后仍在选定根内的链接可读取。`.env`、`target` 等业务路径不被平台自动排除。快照清单拒绝重复路径；空清单可生成空快照。摘要按 Java 字符串自然顺序排列名称，以 `WTL-SOURCE-1\0` 开头，逐项写入大端 32 位 UTF-8 路径长度、路径字节、大端 64 位内容长度和 32 字节文件摘要，再计算 SHA-256。
 
@@ -1630,7 +2116,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 官方 deployment 的归档器将同一份冻结素材写入受管可写目录，保持原 ustar/gzip 字节规则：原相对文件名排序、普通文件模式 0644、时间与所有者字段为零、不写目录条目，支持原 ustar 名称/前缀长度；超长名称明确失败。压缩输出（含 gzip 头尾）按调用方预算限制，最多 2 GiB；归档前后核对输入快照。完成后经平台再冻结 `source.tar.gz`，重新读取实际冻结字节核对长度和 SHA-256，并释放可写暂存目录后才返回。归档保留原源码快照 UUID 与清单 SHA-256，以及独立的归档压缩字节 SHA-256 和长度；规划入口同时核验原素材与这组来源关联，不要求两种摘要相等。输入素材与输出归档各自持有原快照，分别关闭。取消、归档变化及清理未知不交付成功归档，残留由原平台资源句柄收尾。
 
-官方 deployment 的 `file/git` 保留本机 CLASS 阶段可直接调用的受管取材构件；独立项目保存入口为固定类型 `deployment-git-source` 原任务，由 `Mod.start` 登记生产 TaskRecovery。默认静态部署页面现复用同一准备器、原任务观察和检查点，在自己的 `deployment-publication` 原任务内固定 Git 素材，不另起项目保存任务。两入口均先持久化完整已审阅 Git 请求、来源预算、目标项目完整旧行及预选 job、工作目录、进程 UUID，再只发起一次 Git。真实 worker/原生 Git/已观察后代及管道退出、原 task/process/job 回执一致后，先 CAS 保存完整物理回执，才删除 control；缺失或冲突保留 UNKNOWN，绝不重发。项目拟写完整行与保存边界另行持久化；页面仅在最终来源、清单和逐组件归档确认后保存真实项目行，正式执行关联该行及固定提交。已确认回滚保留原失败，保存确认丢失仅按原完整目标行与当前库状态相等的既有幂等语义核对，并持久改为 SAVED，已持久 SAVED 不因后来合法项目更新降级。准备恢复只读原检查点和最多 1 MiB 的原工作区回执，先核验原进程/FILE 资源和必要项目状态，再清理原 Source；不需要 Git 可执行文件、不重获用户源码授权、不开可写工作区。静态准备恢复还须在 Git 结清后核对原静态检查点；已建立正式执行则由原发布恢复器处理。预留后创建确认丢失、回执/身份/项目状态冲突或清理未证实均保留 UNKNOWN。协作取消可能先令平台请求观察 UNKNOWN，而原 worker 后续回执为 CANCELLED；只有物理退出和原资源释放后才能据已核实回执显式恢复原任务。SSH URI 仍拒绝，待平台凭据、主机信任和配置隔离接线；未完成真实远端、发行包、真实断电验收。正式项目库保存本地/Git 原位置、明确 Git 引用、固定提交与平台源码快照摘要；正式执行冻结现行格式 4 的已审阅项目修订，旧格式 1～3 只读。
+官方 deployment 的 `file/git` 保留本机 CLASS 阶段可直接调用的受管取材构件；独立项目保存入口为固定类型 `deployment-git-source` 原任务，由 `Mod.start` 登记生产 TaskRecovery。默认静态部署页面现复用同一准备器、原任务观察和检查点，在自己的 `deployment-publication` 原任务内固定 Git 素材，不另起项目保存任务。两入口均先持久化完整已审阅 Git 请求、来源预算、目标项目完整旧行及预选 job、工作目录、进程 UUID，再只发起一次 Git。真实 worker/原生 Git/已观察后代及管道退出、原 task/process/job 回执一致后，先 CAS 保存完整物理回执，才删除 control；缺失或冲突保留 UNKNOWN，绝不重发。项目拟写完整行与保存边界另行持久化；页面仅在最终来源、清单和逐组件归档确认后保存真实项目行，正式执行关联该行及固定提交。已确认回滚保留原失败，保存确认丢失仅按原完整目标行与当前库状态相等的既有幂等语义核对，并持久改为 SAVED，已持久 SAVED 不因后来合法项目更新降级。准备恢复只读原检查点和最多 1 MiB 的原工作区回执，先核验原进程/FILE 资源和必要项目状态，再清理原 Source；不需要 Git 可执行文件、不重获用户源码授权、不开可写工作区。静态准备恢复还须在 Git 结清后核对原静态检查点；已建立正式执行则由原发布恢复器处理。预留后创建确认丢失、回执/身份/项目状态冲突或清理未证实均保留 UNKNOWN。协作取消可能先令平台请求观察 UNKNOWN，而原 worker 后续回执为 CANCELLED；只有物理退出和原资源释放后才能据已核实回执显式恢复原任务。SSH URI 仍拒绝，待平台凭据、主机信任和配置隔离接线；未完成真实远端、发行包、真实断电验收。正式项目库保存本地/Git 原位置、明确 Git 引用、固定提交与平台源码快照摘要；正式执行冻结版本11的已审阅项目修订；旧版与未来版明确拒绝解释。
 
 默认静态页面在 NORMAL 模式惰性登记，可在本地目录和 Git 仓库之间选择；Git 输入要求明确逻辑项目名、无凭据 URL、默认分支或指定分支/标签/完整提交、原生 Git 可执行文件绝对路径，本地 `file:` 仓库还须明确允许。页面只收集输入，物理取材在原后台任务内进行；同一固定提交与冻结清单供分析及各组件归档使用，最终确认展示原 URL、所选引用和固定提交，并告知确认后保存本次来源项目。关闭或锁定会撤销未答审阅，最终确认后的原发布任务继续由平台持有；RECOVERY 模式不显示页面。页面短任务使用 `ServerService.listConfigured` 只读发现已保存的非秘密服务器摘要，游标绑定原查询任务且与已准入服务器列表区分；发现不授予连接、`get` 或引用预留权限，选定目标仍由新的 `deployment-publication` 原任务准入。秘密修订列表在独立无服务器占用的短任务中只读本 Mod 的业务标识、正修订号和原用途，不向页面交付不透明平台凭据 ID；新秘密在发布任务开始前经独立 `deployment-secret-revision` 原任务完成，发布审阅只选择已保存的精确引用。源码子树逐组件归档为去前缀 tar，保留原快照清单和各自 tar 摘要，规划时与实际组件来源根精确绑定。源码数据库声明先在原冻结素材中补全并校验；SQLite 首次初始化须另行确认组件、数据库、路径、seed、SQL 与整份冻结清单摘要，随后按该组件的实际检查摘要生成 `DatabaseSchemaReview`。单/多组件以最终受管身份生成配置和 SQLite 资源，连同原计划进入正式发布；本机 CLASS/H2 及受控 helper 证明配置和资源已持久合并，不代表真实目标机 SQLite 文件已初始化。普通数据库绑定输入不等于结构批准；服务器型数据库先完成全图本机预检，再在同一原任务内核对库存及实例、独立批准安装或替换、准备目标与冻结 SQL；受保护凭据、结构审阅、配置和绑定合入原单/多组件发布。
 
@@ -1640,57 +2126,44 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 官方 deployment 现已将旧标准静态分析的完整 10 语言生态、14 种可部署类型与只识别预览、多构建架构、数据库审阅和多组件冲突规则迁入 `service.standard.analyze`；所需纯值归 `service.core.model`，复用已有相同身份类型。`Mod.standardAnalyzer()` 供原已准入任务借用仍开放的 `DeploymentSourceMaterial`：调用方须明确传入已审阅逻辑项目名，本地取材可采用原选定目录名，Git 工作区的通用显示名不能代替已审阅项目名。分析只读取平台冻结目录；项目元数据名称优先，缺失时才按原各生态规则使用逻辑根名称，组件子目录用自身名称，整图继续使用明确 applicationId。结果保留原类型化 `REJECTED`、`REQUIRES_INPUT`、`READY_FOR_PLANNING` 和预览状态，并附原快照 UUID/摘要；其中 Path 仅为当次观察元数据，不是后续可重获的源码授权。遍历和组件边界检查原任务协作取消并返回 `CANCELLED`，不强杀。素材由调用方在分析及后续执行全部结束后关闭；纯分析不建立新的恢复账本。
 
-`DeploymentStaticReviewAssembler` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析保留旧默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；已独立确认的 SQLite 配置与资源按最终组件身份合并，冲突拒绝，不用运行表单的数据库模式伪造结构批准。无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口已由默认页面在同一个原任务内复用，不创建新的来源授权。
+`DeploymentStaticReviewBuilder` 已将原冻结素材上的单组件或整图确定性评估、显式审阅答案与原 `TaskContext` 接成可调用的请求和计划组装。静态运行解析使用当前正常配置默认值、缺项、健康、风险、配置及数据库审阅规则；同一原任务先核对开放快照 UUID、清单摘要、归档来源与物理源码根，再读取固定声明。服务器经任务绑定能力查询，配置、秘密修订和文件/数据库资源按原审阅内容映射；已独立确认的 SQLite 配置与资源按最终组件身份合并，冲突拒绝，不用运行表单的数据库模式伪造结构批准。无审阅确认、缺项、风险未接受或来源关闭均拒绝，平台取消与 UNKNOWN 不降级，结构化配置错误保留原事件码。确认事实由调用方实际审阅后提供，组装不会代用户确认；该入口已由默认页面在同一个原任务内复用，不创建新的来源授权。
 
-`Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerRef.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；旧 v5 的输入为归档 tar 字节 SHA-256，不沿旧域名改变语义。旧容器卷名仍以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面及完整 S5 本机适用合同已验证，实际目标机未验收。
+`Mod.standardPlanner()` 已接入确定性单/多组件规划及固定构建渲染。完整审阅请求保留原 `ServerId.id()` 字符串，不把旧服务器名称正则当平台身份，也不把来源 Path 当作授权；请求须核对同一仍开放的源码快照 UUID、源码清单 SHA-256、实际生成归档的来源关联与压缩字节 SHA-256。配置快照、秘密修订、文件/数据库绑定、运行与健康、访问 URL、构建限制和明确风险决定共同进入 `deployment-reviewed-plan-v1` 执行前摘要；可变长字段以长度/计数分界。该身份与远端 `reviewed-release-v5` 内容身份及本机完整发布清单身份均不同；当前 v5 的输入为归档 tar 字节 SHA-256，保持原摘要域及其语义。当前容器卷名以 `bindingId()` 映射受管文件绑定，校验路径、访问模式、文件类型及存储路径冲突。规划保留固定顺序、组件构建波次、健康检查与回滚动作；渲染器按精确项目类型与构建工具注册，生成有界固定脚本。原任务取消返回 `CANCELLED`，原素材关闭且未取消返回来源不可用；调用方仍须持有原素材至后续执行结束。单组件及最多 16 组件的可调用发布入口现已接入；默认页面及完整 S5 本机适用合同已验证，实际目标机未验收。
 
 当前 `deployment/linux` 已迁完整受管 helper 包的 41 个固定片段、5 个插入资源和独立 build-entry，以原资源和组装顺序为基础，为原任务只读观察更新四份片段并增补 53 片段，此前形成协议 11；本轮原生数据库回执升级为协议 12 与新固定 SHA-256；纯工具链选择策略已供受控构建入口的精确绑定使用。`DeploymentManagedHelper` 只借用调用方已在原任务下取得的 `RemoteSession`，自身不连接、保管 SSH 凭据或关闭会话；安装与只读探测分别通过固定 `RemoteActions.command`、带版本的 helper `ActionSemantics`、真实 `InteractionService.approve` 和原 `ApprovalGrant` 执行。调用方仍须持有原任务与会话；平台决定普通逐次审核或已批准工作流范围，本适配器不假定每条动作都会弹窗。安装脚本在目标上检查 root、固定包集合、helper 实际 SHA、恢复 unit、协议探测及安全状态，必须已知退出 0、输出未截断且末尾回执完整；随后独立探测要求完整 stdout、空 stderr、原 helper 协议与 SHA 一致。安装已可能产生副作用而回执不全、探测冲突或探测取消时返回 `UNKNOWN`，不得重新安装；宿主明确发送前拒绝保留原问题，发送前确认取消保持 `CANCELLED`。本机 Git Bash/Python 合同和 CLASS/H2 原任务审批验证不是实际目标机安装证据，不代表 S5-02 全流程完成。
 
-`DeploymentStandardCandidateExecutor` 是目前可调用的单组件已审阅素材与计划至候选构建入口，借用原 `TaskContext`、仍开放的源码/归档句柄与调用方负责关闭的 `RemoteSession`。它核对原计划、源码清单 SHA 与 tar.gz 实际字节 SHA，先独立执行已安装 helper 的严格 probe，再采集真实远端主机与生态事实，沿原发行版、CPU、安全及运行能力矩阵完成上传前准入。空间需求取压缩归档三倍与最大工作区限制的较大值，容量在首次部署已存在的 `/var/lib` 文件系统上只读探测，不提前创建业务根。固定隔离预检和精确工具准备在上传前完成；工具准备后再次采集同一会话的主机事实并核对运行能力，不重选工具。随后以原任务 UUID 创建候选任务，要求完整已知成功和原任务候选查询确认，再用公开上传接口交付原归档；必须逐一核对 `TransferResult` 的实际本地及远端路径、SHA-256 和字节数，远端再核对非链接普通文件的归属、摘要、长度及候选状态。候选路径值自身不证明上传，内部 `DeploymentStandardBuildExecutor` 仅在上述确认后消费同一准备对象，并在首条构建前重验原素材与计划。
+`DeploymentStandardCandidateRunner` 是目前可调用的单组件已审阅素材与计划至候选构建入口，借用原 `TaskContext`、仍开放的源码/归档句柄与调用方负责关闭的 `RemoteSession`。它核对原计划、源码清单 SHA 与 tar.gz 实际字节 SHA，先独立执行已安装 helper 的严格 probe，再采集真实远端主机与生态事实，沿原发行版、CPU、安全及运行能力矩阵完成上传前准入。空间需求取压缩归档三倍与最大工作区限制的较大值，容量在首次部署已存在的 `/var/lib` 文件系统上只读探测，不提前创建业务根。固定隔离预检和精确工具准备在上传前完成；工具准备后再次采集同一会话的主机事实并核对运行能力，不重选工具。随后以原任务 UUID 创建候选任务，要求完整已知成功和原任务候选查询确认，再用公开上传接口交付原归档；必须逐一核对 `TransferResult` 的实际本地及远端路径、SHA-256 和字节数，远端再核对非链接普通文件的归属、摘要、长度及候选状态。候选路径值自身不证明上传，内部 `DeploymentStandardBuildRunner` 仅在上述确认后消费同一准备对象，并在首条构建前重验原素材与计划。
 
 构建只从已审阅配置快照的 `BUILD` 项派生非秘密环境值；`RUNTIME` 值不进入脚本。按同一目录最多准备两个兼容候选，核验实际版本、分支和绑定摘要；仅已确认成功返回原归档与真实工具身份，不使用 `legacy` 工具占位。固定候选、预检、工具与构建命令绑定原任务、精确目标、审阅摘要和宿主授权。除独立 30 秒 helper probe 外，候选与构建命令共享累计远端执行预算，人工审批等待不计入执行耗时；SFTP 使用平台无进展期限，不占构建预算，也不被强加同一总期限。已知发送前拒绝或取消保留原结果；候选创建、上传或核对结果未知、版本/绑定/回执冲突、截断或缺退出均不自动重发、覆盖或清理可能已有的远端候选。已知编译失败公开固定大小、已遮蔽的头尾诊断，确认兼容失败才尝试第二候选，耗尽后报告不兼容。受管 helper 的远端原输出上限仍可达已审阅的 128 MiB，`linux` 固定 Python 流式适配器扫描全流，向平台只返回小于 8 MiB 的短回执，不更改 helper 包 SHA 或新增远端日志文件。本机真实 CLASS/H2/Source/Interaction 与受控会话测试只证明调用、授权及协议边界；实际目标机执行、发布及原候选/构建任务的持久恢复尚未验收。
 
-`DeploymentStandardPublicationExecutor` 与 `DeploymentMultiComponentPublicationExecutor` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；原执行格式 6 的模板格式 2 保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前协议 14 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理；无法完整证明的状态保持 UNKNOWN。半图仅核对原已发送组件，确知后回滚与清理为失败，不补发布未发送组件。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面和 S5 本机适用合同已按有效实际结果合集验证；真实远端与正式发行仍暂缓。
+`DeploymentStandardPublishRunner` 与 `DeploymentMultiPartPublishRunner` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；执行版本11中的当前模板格式2保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前协议 14 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理；无法完整证明的状态保持 UNKNOWN。半图仅核对原已发送组件，确知后回滚与清理为失败，不补发布未发送组件。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面和 S5 本机适用合同已按有效实际结果合集验证；真实远端与正式发行仍暂缓。
 
 ### 8.9 mod：入口、上下文和跨 Mod 服务
+
+`mod`：
 
 ```java
 package gold.debug.windowstolinux.appapi.mod;
 
-import java.util.Optional;
 import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
+import gold.debug.windowstolinux.appapi.file.FileService;
 import gold.debug.windowstolinux.appapi.linux.LinuxService;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.mod.service.ModServices;
 import gold.debug.windowstolinux.appapi.secret.SecretService;
 import gold.debug.windowstolinux.appapi.server.ServerService;
-import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.LogService;
-import gold.debug.windowstolinux.appapi.task.ProcessService;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
 import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
+import gold.debug.windowstolinux.appapi.task.process.ProcessService;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 
-public record ModIdentity(String id, String version, Optional<String> schemaVersion) {}
-public enum ModLaunchMode { NORMAL, RECOVERY }
-public enum StopReason { APPLICATION_EXIT, APPLICATION_RESTART, START_FAILURE, RECOVERY_FINISHED }
-public interface StopContext { StopReason reason(); }
 public interface ModEntrypoint {
     void start(ModContext context) throws Exception;
     void stop(StopContext context) throws Exception;
-}
-public interface ServiceRegistration extends AutoCloseable {
-    @Override void close() throws ApiException;
-}
-public interface ServiceCall<T, R> { R invoke(T service) throws Exception; }
-public interface ServiceHandle<T> extends AutoCloseable {
-    <R> R call(TaskContext task, ServiceCall<T, R> call) throws ApiException;
-    @Override void close() throws ApiException;
-}
-public interface ModServices {
-    <T> ServiceRegistration register(Class<T> contract, T implementation) throws ApiException;
-    <T> ServiceHandle<T> require(String providerModId, Class<T> contract) throws ApiException;
 }
 public interface ModContext {
     ModIdentity identity();
@@ -1707,6 +2180,49 @@ public interface ModContext {
     LogService logs();
     ProcessService processes();
     ModServices services();
+}
+```
+
+`mod.lifecycle`：
+
+```java
+package gold.debug.windowstolinux.appapi.mod.lifecycle;
+
+public enum ModLaunchMode { NORMAL, RECOVERY }
+
+public enum StopReason { APPLICATION_EXIT, APPLICATION_RESTART, START_FAILURE, RECOVERY_FINISHED }
+public interface StopContext { StopReason reason(); }
+```
+
+`mod.model`：
+
+```java
+package gold.debug.windowstolinux.appapi.mod.model;
+
+import java.util.Optional;
+
+public record ModIdentity(String id, String version, Optional<String> schemaVersion) {}
+```
+
+`mod.service`：
+
+```java
+package gold.debug.windowstolinux.appapi.mod.service;
+
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+
+public interface ServiceRegistration extends AutoCloseable {
+    @Override void close() throws ApiException;
+}
+public interface ServiceCall<T, R> { R invoke(T service) throws Exception; }
+public interface ServiceHandle<T> extends AutoCloseable {
+    <R> R call(TaskContext task, ServiceCall<T, R> call) throws ApiException;
+    @Override void close() throws ApiException;
+}
+public interface ModServices {
+    <T> ServiceRegistration register(Class<T> contract, T implementation) throws ApiException;
+    <T> ServiceHandle<T> require(String providerModId, Class<T> contract) throws ApiException;
 }
 ```
 
@@ -1755,7 +2271,7 @@ REQUEST/RESULT/ERROR 一对一关联，requestId 为 UUID；RESULT payload 固�
 当前实现补充约定：
 
 - HELLO/READY、STOP/STOPPED 使用控制类型 `wtl.process`；READY/STOPPED 的 payload 为空对象。ERROR 使用 RESULT 相同的结果封套，outcome 为 FAILED 或 UNKNOWN。`type` 为不含控制字符的非空字符串，最多 256 字符；JSON 嵌套最多 64 层。
-- 原请求超时只结束调用方的未知观察，仍计入 32 个未核实请求，直到收到可信终态或进程退出；不会用超时腾出无限新请求。取消尚未排入满队列时只重试该 CANCEL 的入队，已入队就不重发。最近 32 个终态响应用于核验完全重复的响应，JSON 对象字段顺序不影响比较；更早的关联 ID 不猜测恢复。EVENT 校验归属，不把任意载荷解释为任务终态或直接显示。
+- 原请求超时只结束调用方的未知观察，仍计入 32 个未核实请求，直到收到可信终态或进程退出；不会用超时腾出无限新请求。尚未返回的完成续接也计入同一 32 项准入上限。宿主完成通知及日志观察在协议锁、管道和超时线程外运行；同步续接可以关闭原进程，长工作仍应使用异步续接。取消尚未排入满队列时只重试该 CANCEL 的入队，已入队就不重发。最近 32 个终态响应用于核验完全重复的响应，JSON 对象字段顺序不影响比较；更早的关联 ID 不猜测恢复。EVENT 校验归属，不把任意载荷解释为任务终态或直接显示。
 - 启动前在原任务登记 PROCESS/`process.v1` 的 STARTING 事实；取得实际 PID 和系统启动时间后，只能从该原记录单向提交 STARTED，成功后才发 HELLO。字面参数不经过命令 shell；子进程只获得 `ProcessSpec.environment` 明确提供的环境，不默认继承宿主环境。作者不得在参数中放凭据。
 - 当前启动只通过保留的原 Java Process 对象关闭；重启核对只在原 PID 已消失，或同 PID 的系统启动时间不同、证明是另一进程时释放旧申请，不向另一进程发送信号。原进程仍存活、启动时间不可读取或崩溃留下不完整 STARTING 时保留 UNKNOWN，不能用平台已重启推断子进程也退出。核对不重新启动进程或重发业务请求。
 - stderr 独立持续消费，约每秒或 EOF 聚合一次，保留最多 8 KiB 片段后交原所有者 LogService 脱敏，并保留截断标记；不把大量输出逐块写成无数日志。非零退出单独记录，已确认业务结果保持原值。进程、实际管道工作线程和持久申请均释放后，任务才可结束。
@@ -1774,14 +2290,14 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.mod.ModEntrypoint;
-import gold.debug.windowstolinux.appapi.mod.StopContext;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.ui.ModPage;
-import gold.debug.windowstolinux.appapi.ui.PageRegistration;
-import gold.debug.windowstolinux.appapi.ui.PageSpec;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 public final class Mod implements ModEntrypoint {
     private PageRegistration registration;
@@ -1801,12 +2317,12 @@ public final class Mod implements ModEntrypoint {
                                      var statement = connection.prepareStatement("SELECT COUNT(*) FROM note");
                                      var rows = statement.executeQuery()) {
                                     rows.next();
-                                    return new OperationResult<>(Outcome.SUCCEEDED,
+                                    return new OperationResult<>(TaskResult.SUCCEEDED,
                                         Optional.of(rows.getLong(1)), Optional.empty());
                                 }
                             });
                             handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
-                                if (!closed) button.setText(failure == null && result.outcome() == Outcome.SUCCEEDED
+                                if (!closed) button.setText(failure == null && result.outcome() == TaskResult.SUCCEEDED
                                     ? "Count: " + result.value().orElseThrow() : "Task failed; see task details");
                             }));
                         } catch (Exception failure) {
@@ -1830,9 +2346,9 @@ package com.example.windowstolinux.mod.notes.db;
 
 import java.util.List;
 import java.util.Optional;
-import gold.debug.windowstolinux.appapi.db.ModSchemaLifecycle;
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.db.CheckResult;
+import gold.debug.windowstolinux.appapi.db.schema.ModSchemaLifecycle;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.db.schema.CheckResult;
 
 public final class NotesSchema implements ModSchemaLifecycle {
     public void initialize(SchemaAccess target) throws Exception {
@@ -1858,7 +2374,7 @@ public final class NotesSchema implements ModSchemaLifecycle {
 
 部署私有数据中的运行定义、工作负载、健康契约、数据路径及资源绑定使用既有版本化格式，存于 deployment 自有 Schema。只读数据验证采用有界载荷读取，不修复原字节；组件审阅运行必须使用原部署单元的健康契约，不能以默认健康策略替代缺失事实。不存在的可选草稿载荷与格式损坏的非空载荷分别处理。私有模型和编解码器不作为备份的调用接口；当前迁移及本机验证范围见[开发进度](development/PHASE-1.1.md)。
 
-完整应用图要求 1～64 个组件、唯一组件/部署单元、单服务器、无环依赖、图内健康组件以及完整审阅运行和资源路径覆盖。持久身份只包含精确平台 `ServerRef`，不通过跨 Schema JOIN 或默认端点补出服务器观测。拓扑替换要求已有部署单元的身份和运行契约仍匹配；同一事务清除原健康外键并转为草稿、替换组件及依赖、补齐健康契约后设置 `graph_ready=true`。失败回滚保留原图，提交无法确认保留 UNKNOWN；读取通过同一事务快照返回完整图，保留草稿不对外发布。此拓扑仓库不创建部署单元、不执行远端发布，也不替代调用流程的服务器/秘密预留和发布结果事务。
+完整应用图要求 1～64 个组件、唯一组件/部署单元、单服务器、无环依赖、图内健康组件以及完整审阅运行和资源路径覆盖。持久身份只包含精确平台 `ServerId`，不通过跨 Schema JOIN 或默认端点补出服务器观测。拓扑替换要求已有部署单元的身份和运行契约仍匹配；同一事务清除原健康外键并转为草稿、替换组件及依赖、补齐健康契约后设置 `graph_ready=true`。失败回滚保留原图，提交无法确认保留 UNKNOWN；读取通过同一事务快照返回完整图，保留草稿不对外发布。此拓扑仓库不创建部署单元、不执行远端发布，也不替代调用流程的服务器/秘密预留和发布结果事务。
 
 部署成功记录使用独立的发布仓库，在同一个所属 H2 事务中写入全部组件单元、当前发布、不可变配置、精确秘密修订集合及完整图；任一步失败回滚整组数据。旧单元不能被同名记录改到其他服务器、systemd 单元或发布根目录；同一当前发布摘要的时间、运行契约及所有权事实须保持一致。新发布保留旧配置/秘密绑定和无关展示、观测字段。秘密元数据仅保存原不透明凭据 ID、精确用途和修订时间，不解析其平台私有格式；尚未绑定与已确认空秘密集合分别表示，不以补秘密绑定覆盖已有配置。已审阅数据库密码必须包含在该发布的精确秘密集合中；只读校验拒绝缺配置、缺完整秘密绑定或缺必需密码引用的当前发布。元数据形状校验不代表平台授权，调用流程仍须先完成平台引用预留；这些私有数据仓库不执行远端发布、平台秘密创建或未知引用的恢复编排。
 
@@ -1872,44 +2388,44 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.PageSlice;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.query.PageSlice;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
-public record DeploymentApplicationRef(String id, ServerRef server) {}
+public record DeploymentApplicationId(String id, ServerId server) {}
 public enum ApplicationRunState { RUNNING, STOPPED, DEGRADED, UNKNOWN }
 public enum DeploymentLifecycleAction { START, STOP, RESTART }
 public record VersionedRuntime(int formatVersion, byte[] payload) {}
 public record DeploymentBinding(String id, String componentId, String kind, String path,
     String engine, boolean needsQuiescence, Optional<String> secretReferenceId) {}
-public record DeploymentApplicationSnapshot(DeploymentApplicationRef application,
+public record DeploymentApplicationSnapshot(DeploymentApplicationId application,
     String displayName, String revisionSha256, String ownershipSha256,
     ApplicationRunState state, Instant observedAt, VersionedRuntime runtime,
     List<DeploymentBinding> bindings, String healthPolicySha256) {}
-public record DeploymentLifecycleResult(DeploymentApplicationRef application,
+public record DeploymentLifecycleResult(DeploymentApplicationId application,
     ApplicationRunState before, ApplicationRunState after, String evidence) {}
-public record DeploymentCollectionRequest(DeploymentApplicationRef application,
+public record DeploymentCollectionRequest(DeploymentApplicationId application,
     String expectedRevisionSha256, List<String> bindingIds) {}
 public enum DeploymentHandoffState { REVIEWED, MAINTENANCE, COLLECTED, PREPARED,
     ACTIVATING, ACTIVE, COMPENSATING, FINISHED, UNKNOWN }
 public record DeploymentHandoff(UUID id, DeploymentHandoffState state,
-    DeploymentApplicationRef application, String revisionSha256, List<String> blockers) {}
+    DeploymentApplicationId application, String revisionSha256, List<String> blockers) {}
 public record DeploymentArtifact(String id, String bindingId, String remotePath,
     long byteCount, String sha256) {}
 public record DeploymentCollection(DeploymentHandoff handoff, List<DeploymentArtifact> artifacts) {}
 public record RestoreFile(String bindingId, Path verifiedLocalFile, long byteCount, String sha256) {}
 public record DeploymentRestoreRequest(DeploymentApplicationSnapshot archivedApplication,
-    ServerRef target, List<RestoreFile> files, String archiveSha256, String reviewedTargetSha256) {}
+    ServerId target, List<RestoreFile> files, String archiveSha256, String reviewedTargetSha256) {}
 public record DeploymentActivation(DeploymentHandoff handoff, String accessDescription,
     String healthEvidence, boolean cleanupComplete) {}
 public interface DeploymentApi {
     PageSlice<DeploymentApplicationSnapshot> listApplications(Optional<String> cursor, int limit,
         TaskContext task) throws ApiException;
-    OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationRef application,
+    OperationResult<DeploymentApplicationSnapshot> inspect(DeploymentApplicationId application,
         TaskContext task) throws ApiException;
-    OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationRef application,
+    OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationId application,
         String expectedRevisionSha256, DeploymentLifecycleAction action,
         TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> reviewCollection(DeploymentCollectionRequest request,
@@ -1919,7 +2435,7 @@ public interface DeploymentApi {
     OperationResult<DeploymentHandoff> finishCollection(UUID handoffId, TaskContext task)
         throws ApiException;
     OperationResult<String> reviewRestoreTarget(DeploymentApplicationSnapshot archivedApplication,
-        ServerRef target, String archiveSha256, TaskContext task) throws ApiException;
+        ServerId target, String archiveSha256, TaskContext task) throws ApiException;
     OperationResult<DeploymentHandoff> prepareRestore(DeploymentRestoreRequest request,
         TaskContext task) throws ApiException;
     OperationResult<DeploymentActivation> activate(UUID handoffId,
@@ -1929,7 +2445,7 @@ public interface DeploymentApi {
 }
 ```
 
-`listApplications` 返回持久化摘要，`observedAt` 是最后观测时间；`inspect` 才复核目标、所有权、各组件实际 CURRENT 摘要和当前运行状态。生命周期与所有 handoff 方法校验已认证原任务的调用 Mod、应用身份、修订及服务器集合；部署提供方在原跨 Mod 调用内按精确实际命令申请并消费自身的宿主授权，调用方不能传入另一个 Mod 所有的 `ApprovalGrant`。快照中的 `bindings` 是已审阅绑定，公开 `id` 为全应用唯一的 `componentId:localId`，helper 仍使用该组件内的 localId；`kind` 首版为 CONFIG/FILE/DATABASE，`engine` 为已有受管数据库类型或空字符串。`VersionedRuntime` 的当前未发行格式为 3：同一有界封套保存完整发布图、健康策略、每组件不可变 typed configuration 和必要的非秘密 credential identity/purpose 元数据，配置按原修订与规范摘要绑定；完整载荷最多 16 MiB，超额拒绝，不截断。getter 返回字节副本，备份可以保存/转交完整描述，但未知格式不能自行解释或修改。恢复再次严格校验规范摘要和元数据字段类型，并按当前目标服务器及原 purpose 核对平台秘密授权；归档引用不是当前授权。恢复快照中的来源 `ServerRef` 只是历史身份，不要求已移除的来源配置或 deployment 行仍然存在。
+`listApplications` 返回持久化摘要，`observedAt` 是最后观测时间；`inspect` 才复核目标、所有权、各组件实际 CURRENT 摘要和当前运行状态。生命周期与所有 handoff 方法校验已认证原任务的调用 Mod、应用身份、修订及服务器集合；部署提供方在原跨 Mod 调用内按精确实际命令申请并消费自身的宿主授权，调用方不能传入另一个 Mod 所有的 `ApprovalGrant`。快照中的 `bindings` 是已审阅绑定，公开 `id` 为全应用唯一的 `componentId:localId`，helper 仍使用该组件内的 localId；`kind` 首版为 CONFIG/FILE/DATABASE，`engine` 为已有受管数据库类型或空字符串。`VersionedRuntime` 的当前未发行格式为 3：同一有界封套保存完整发布图、健康策略、每组件不可变 typed configuration 和必要的非秘密 credential identity/purpose 元数据，配置按原修订与规范摘要绑定；完整载荷最多 16 MiB，超额拒绝，不截断。getter 返回字节副本，备份可以保存/转交完整描述，但未知格式不能自行解释或修改。恢复再次严格校验规范摘要和元数据字段类型，并按当前目标服务器及原 purpose 核对平台秘密授权；归档引用不是当前授权。恢复快照中的来源 `ServerId` 只是历史身份，不要求已移除的来源配置或 deployment 行仍然存在。
 
 `reviewCollection` 只创建本次审阅快照及 handoff，不改变远端；修订漂移要求重新审阅。`collect` 由部署执行其拥有的停写/生命周期及 helper 业务端口，备份确定要采集哪些已审阅绑定并组织归档；只返回本次操作所属的完整远端采集文件，备份经平台 Linux 能力下载并核对摘要。下载/归档成功或失败都调用 `finishCollection` 恢复本次改变前的运行状态并清除本次维护标记；已停止的应用不能被恢复逻辑擅自启动。原始失败、恢复失败、清理失败分别记录，取消不免除必要恢复。
 
@@ -1945,3 +2461,19 @@ public interface DeploymentApi {
 - [Spring Boot 对嵌套 JAR 的说明](https://docs.spring.io/spring-boot/specification/executable-jar/nested-jars.html)：Java 没有通用的标准嵌套 JAR 加载机制；专用加载器与解包加载属于不同实现选择。
 - [H2 连接模式](https://h2database.com/html/features.html#connection_modes)：嵌入式、服务器和混合模式的差异，及单个 JVM/类加载器统一打开嵌入式数据库的约束。
 - [H2 Schema 命令](https://h2database.com/html/commands.html#create_schema)：Schema 的所有权、创建和删除权限，以及部分结构变更提交当前事务的行为。
+
+
+## 类名更新与重新编译（2026-10-03）
+
+当前 SDK 使用 ServerId / SecretId 选择资源，ServerRef / SecretRef 表示业务引用；身份组合仍使用 Identity。任务业务结果使用 TaskResult，资源释放和清理状态继续独立。官方部署公开应用标识改为 DeploymentApplicationId。以上类型保留原字段、枚举值及授权约束。
+
+本次公开类型改名没有旧类型兼容壳。使用旧版类型编译的 CLASS/JAR Mod 及跨 Mod 调用方需要同步源码并重新编译；不需要因类名变化修改 Schema 或已有业务记录。逐项对应见[类名调整清单](development/CLASS-RENAMES.md)。
+
+
+### 当前执行与作者观察边界
+
+官方deployment执行信封统一版本11。请求自首次写入起包含全部字段，读取缺字段或旧版4～10/未来版本时拒绝，不补缺省身份、不重建任务、不重放原效果、不自动清理未知资源；原记录保持。构建、发布纠正仍需原证明和完整审阅，合计至多两次，其他协议继续各自当前格式。
+
+宿主安装/重装审阅的`packageInfo()`和原包清单的`packageInfo`只提供不可变展示信息，完整Inspection由服务私有持有。管理清单使用`ReleaseInfo`，日志使用`CategoryInfo`/`RecordInfo`；这些值不授予业务权利。官方源码分析要求明确审阅逻辑名称，运行配置要求完整身份策略及工作负载，Git准备必须使用原任务记账入口。
+
+受管助手只解释当前完整运行身份和工作负载，不接纳旧 Gradle 简写或缺参数的运行记录，不从旧 systemd unit 推导用户或重放旧生命周期。语言运行版本必须关联已核验工具链；旧助手内容摘要需要通过现有审阅安装流程替换，协议版本仍为当前14。远端应用 SQLite、原生构建和已登记的系统/容器适配不变。

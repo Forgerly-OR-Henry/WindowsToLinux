@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.server.ServerRef;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.api.VersionedRuntime;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord.DeploymentReleaseState;
@@ -32,8 +32,8 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
             DeploymentReleaseState.ACTIVE, runtime, health, OBSERVED);
 
         VersionedRuntime archived = DeploymentArchivedRuntimeCodec.encode(
-            new DeploymentPublicationProposal(graph, publications(graph, 1, List.of())), List.of(),
-            new DeploymentReleaseRepository(nullDatabase()));
+            new DeploymentPublishProposal(graph, publications(graph, 1, List.of())), List.of(),
+            new DeploymentReleaseStore(nullDatabase()));
         assertEquals(3, archived.formatVersion());
         assertEquals(snapshot, DeploymentReleaseCodec
             .snapshot(DeploymentArchivedRuntimeCodec.decode("application", digest, archived)));
@@ -52,11 +52,11 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
     @Test
     void restoresFullTypedConfigurationAndPurposeWithoutAnySourceDatabase() throws Exception {
         var graph = graph("application");
-        var secret = new DeploymentSecretReference("database-password", 7);
-        var proposal = new DeploymentPublicationProposal(graph, publications(graph, 4, List.of(secret)));
+        var secret = new DeploymentSecretRef("database-password", 7);
+        var proposal = new DeploymentPublishProposal(graph, publications(graph, 4, List.of(secret)));
         var metadata = new DeploymentSecretRevision(secret, "opaque-original-credential", OBSERVED,
             Optional.of("deployment-database"));
-        var repository = new DeploymentReleaseRepository(nullDatabase());
+        var repository = new DeploymentReleaseStore(nullDatabase());
         var runtime = DeploymentArchivedRuntimeCodec.encode(proposal, List.of(metadata), repository);
         var snapshot = publicSnapshot(proposal, runtime);
         var restored = DeploymentArchivedRuntimeCodec.restore(snapshot, repository);
@@ -71,9 +71,9 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
     @Test
     void rejectsFractionalAndTextCoercionInUntrustedCredentialMetadata() throws Exception {
         var graph = graph("application");
-        var secret = new DeploymentSecretReference("password", 1);
-        var proposal = new DeploymentPublicationProposal(graph, publications(graph, 1, List.of(secret)));
-        var repository = new DeploymentReleaseRepository(nullDatabase());
+        var secret = new DeploymentSecretRef("password", 1);
+        var proposal = new DeploymentPublishProposal(graph, publications(graph, 1, List.of(secret)));
+        var repository = new DeploymentReleaseStore(nullDatabase());
         var runtime = DeploymentArchivedRuntimeCodec.encode(proposal,
             List.of(new DeploymentSecretRevision(secret, "credential", OBSERVED, Optional.of("database"))),
             repository);
@@ -112,7 +112,7 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
             .put(old, 0, prefix + 4 + template).putInt(metadata.length).put(metadata).array());
     }
 
-    private DeploymentApplicationSnapshot publicSnapshot(DeploymentPublicationProposal proposal,
+    private DeploymentApplicationSnapshot publicSnapshot(DeploymentPublishProposal proposal,
                                                          VersionedRuntime runtime) throws Exception {
         var graph = proposal.graph();
         var release = DeploymentReleaseSnapshot.capture(graph, proposal.units());
@@ -131,7 +131,7 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
                 .thenComparing(DeploymentBinding::id))
             .toList();
         return new DeploymentApplicationSnapshot(
-            new DeploymentApplicationRef(graph.applicationId(), new ServerRef("server")), "Archived", revision,
+            new DeploymentApplicationId(graph.applicationId(), new ServerId("server")), "Archived", revision,
             sha(ownership.toString().getBytes(StandardCharsets.UTF_8)), ApplicationRunState.RUNNING, OBSERVED,
             runtime, bindings, sha(new DeploymentHealthCodec().write(graph.healthCheck())));
     }
@@ -142,11 +142,11 @@ class DeploymentArchivedRuntimeCodecTest extends DeploymentGraphFixture {
 
     private gold.debug.windowstolinux.appapi.db.ModDatabase nullDatabase() {
         return new gold.debug.windowstolinux.appapi.db.ModDatabase() {
-            public gold.debug.windowstolinux.appapi.db.SchemaIdentity identity() {
+            public gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity() {
                 throw new UnsupportedOperationException();
             }
 
-            public java.sql.Connection openConnection(gold.debug.windowstolinux.appapi.task.TaskContext task) {
+            public java.sql.Connection openConnection(gold.debug.windowstolinux.appapi.task.run.TaskContext task) {
                 throw new UnsupportedOperationException();
             }
         };

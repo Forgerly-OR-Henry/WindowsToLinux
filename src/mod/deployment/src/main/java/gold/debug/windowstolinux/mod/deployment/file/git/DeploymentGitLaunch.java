@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import gold.debug.windowstolinux.appapi.task.ProcessMessage;
-import gold.debug.windowstolinux.appapi.task.ProcessSpec;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
@@ -11,7 +8,9 @@ import java.util.*;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.appapi.mod.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
+import gold.debug.windowstolinux.appapi.task.process.ProcessSpec;
 
 /** Resolves only this Mod's code, private JSON libraries and the public API for its worker. / 仅为 worker 解析本 Mod 代码、私有 JSON 库及公开 API。 */
 final class DeploymentGitLaunch {

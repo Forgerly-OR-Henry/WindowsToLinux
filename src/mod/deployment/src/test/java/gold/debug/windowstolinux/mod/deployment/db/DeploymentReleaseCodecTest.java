@@ -7,7 +7,7 @@ import java.util.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord.DeploymentReleaseState;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -49,9 +49,9 @@ class DeploymentReleaseCodecTest extends DeploymentGraphFixture {
     @Test
     void aggregateManifestAboveOneMiBRetainsEveryImmutableReferenceWithoutChangingTheExecutionBound() throws Exception {
         var graph = graph("application");
-        var references = new ArrayList<DeploymentSecretReference>();
+        var references = new ArrayList<DeploymentSecretRef>();
         for (int i = 0; i < 18000; i++)
-            references.add(new DeploymentSecretReference("secret-" + i, 1));
+            references.add(new DeploymentSecretRef("secret-" + i, 1));
         var snapshot = DeploymentReleaseSnapshot.capture(graph, publications(graph, 1, references));
         String runtime = DeploymentReleaseCodec.runtime(snapshot);
         String health = DeploymentReleaseCodec.health(snapshot);

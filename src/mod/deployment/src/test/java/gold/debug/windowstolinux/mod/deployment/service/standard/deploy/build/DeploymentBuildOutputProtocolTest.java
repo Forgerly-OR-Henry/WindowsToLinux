@@ -44,7 +44,7 @@ class DeploymentBuildOutputProtocolTest {
             """.formatted(SafeBuildScriptEnvelope.shellQuote(python), SafeBuildScriptEnvelope.shellQuote(python),
             SafeBuildScriptEnvelope.shellQuote(python)), StandardCharsets.UTF_8);
         String command = DeploymentBuildOutputProtocol.script(new DeploymentRemoteWorkspace("demo", "a".repeat(64)),
-            300, 16, 512, 128L * 1024 * 1024, "ordinary", BuildCompatibilityPolicy.groups());
+            300, 16, 512, 128L * 1024 * 1024, "ordinary", BuildMatchPolicy.groups());
         command = command.replace("exec /usr/bin/python3", "exec " + SafeBuildScriptEnvelope.shellQuote(python))
             .replace("'" + DeploymentManagedHelperBundle.PATH + "' build-run",
                 SafeBuildScriptEnvelope.shellQuote(bash) + " "

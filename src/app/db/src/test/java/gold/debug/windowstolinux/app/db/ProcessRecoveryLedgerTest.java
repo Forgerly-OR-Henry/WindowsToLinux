@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.db;
 
-import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
@@ -15,7 +8,12 @@ import java.time.Instant;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -55,7 +53,7 @@ class ProcessRecoveryLedgerTest {
                 () -> ledger.checkpointProcess(UUID.randomUUID(), resource, original, observed));
             assertThrows(SQLException.class, () -> ledger.checkpointProcess(task,
                 new TaskResource("PROCESS", resource.id(), "other", false), original, observed));
-            assertFalse(ledger.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertFalse(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
         }
         try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
             var ledger = new TaskLedger(db);

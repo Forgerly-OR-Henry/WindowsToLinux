@@ -2,7 +2,7 @@ package gold.debug.windowstolinux.app.db.task;
 
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 
 /** One synchronous dependency call's exact provider and retained data generation. / 一次同步依赖调用的精确提供方及保留数据代次。
  * @param boot physical application boot / 物理应用启动

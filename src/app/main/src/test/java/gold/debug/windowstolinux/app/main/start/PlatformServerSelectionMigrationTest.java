@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.language.LocaleBinding;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
@@ -47,7 +47,7 @@ class PlatformServerSelectionMigrationTest {
                 settled(view.get());
                 onEdt(() -> {
                     assertEquals("Production EU", selected(table(view.get())));
-                    var dialog = new ServerProfileDialog(frame.get(), runtime.servers(), new DesktopComponentFactory(ThemePalette.light()), messages, first(), ignored -> fail("Unsaved draft cannot publish"));
+                    var dialog = new ServerProfileDialog(frame.get(), runtime.servers(), new DesktopPartFactory(ThemePalette.light()), messages, first(), ignored -> fail("Unsaved draft cannot publish"));
                     dialog.setModalityType(Dialog.ModalityType.MODELESS);
                     editor.set(dialog);
                     ((JTextField) named(dialog, "server.name")).setText("Unsaved draft");
@@ -157,7 +157,7 @@ class PlatformServerSelectionMigrationTest {
                 create(runtime, catalog, view, frame);
                 settled(view.get());
                 onEdt(() -> {
-                    var dialog = new ServerProfileDialog(frame.get(), runtime.servers(), new DesktopComponentFactory(ThemePalette.light()), new PageMessagePresenter(catalog), first(), value -> {
+                    var dialog = new ServerProfileDialog(frame.get(), runtime.servers(), new DesktopPartFactory(ThemePalette.light()), new PageMessagePresenter(catalog), first(), value -> {
                         saved.set(value);
                         notifications.incrementAndGet();
                     });
@@ -210,7 +210,7 @@ class PlatformServerSelectionMigrationTest {
     private void create(PlatformRuntime runtime, MessageCatalog catalog, AtomicReference<PlatformServersPane> view, AtomicReference<JFrame> frame) throws Exception {
         onEdt(() -> {
             var window = new JFrame("Platform selection migration");
-            var pane = new PlatformServersPane(window, runtime.servers(), new DesktopComponentFactory(ThemePalette.light()), new PageMessagePresenter(catalog));
+            var pane = new PlatformServersPane(window, runtime.servers(), new DesktopPartFactory(ThemePalette.light()), new PageMessagePresenter(catalog));
             view.set(pane);
             frame.set(window);
             window.setContentPane(pane);
@@ -240,6 +240,6 @@ class PlatformServerSelectionMigrationTest {
             if (frame.get() != null) frame.get().dispose();
             return null;
         });
-        await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor.hasActiveTasks());
+        await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
     }
 }

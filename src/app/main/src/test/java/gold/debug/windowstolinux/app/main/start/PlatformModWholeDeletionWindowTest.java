@@ -10,10 +10,10 @@ import java.nio.file.*;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
+import gold.debug.windowstolinux.app.db.setting.ModNavigationPreferences;
 import gold.debug.windowstolinux.app.ui.mod.ModNavigationPane;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -52,7 +52,7 @@ class PlatformModWholeDeletionWindowTest {
     void reviewsAllVersionsAndOwnedFilesAndCancelsBeforeDeletingWithOriginalsRetained() throws Exception {
         var original = fixture.installed();
         var second = ui.fixture.original("two.wtlmod", "2.0.0", "two");
-        assertEquals(Outcome.SUCCEEDED, ui.installer.install(ui.installer.review(second)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, ui.installer.install(ui.installer.review(second)).outcome());
         acknowledged(ui.runtime);
         Path cache = privateFile();
         var backend = new PlatformModWholeDeletionTest();
@@ -195,7 +195,7 @@ class PlatformModWholeDeletionWindowTest {
     @Test
     void emptyRegisteredOwnerCanBeDeletedWithoutSelectingANonexistentVersion() throws Exception {
         var original = fixture.installed();
-        assertEquals(Outcome.SUCCEEDED,
+        assertEquals(TaskResult.SUCCEEDED,
             ui.installer.deletion().delete(ui.installer.deletion().review(OWNER, "1.0.0"), false).outcome());
         fixture.window();
         assertFalse(onEdt(() -> named(ui.frame, "mods.deleteVersion").isEnabled()));

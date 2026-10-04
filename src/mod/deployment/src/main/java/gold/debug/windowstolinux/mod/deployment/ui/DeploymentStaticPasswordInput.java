@@ -15,7 +15,7 @@ import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Captures a one-shot owned UTF-8 password without retaining late EDT characters. / 不保留迟到 EDT 字符地获取一次性所属 UTF-8 密码。 */
 final class DeploymentStaticPasswordInput {

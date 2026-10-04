@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,12 +11,21 @@ import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.app.db.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.server.*;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskAdmission;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -79,7 +77,7 @@ class PlatformServerServiceTest {
             assertThrows(ApiException.class, () -> wrong.submit(request("server"), task -> success(null)));
             var handle = service.check(profile);
             var result = handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals(HOST, handle.snapshot().ownerId());
             assertEquals(runtime.version(), handle.snapshot().ownerVersion());
             assertEquals("", result.value().orElseThrow().operatingSystem());
@@ -128,12 +126,12 @@ class PlatformServerServiceTest {
                 });
                 assertEquals(TaskState.QUEUED, queued.snapshot().state());
                 queued.requestCancel();
-                assertEquals(Outcome.CANCELLED,
+                assertEquals(TaskResult.CANCELLED,
                     queued.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             } finally {
                 release.countDown();
             }
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
             service.delete(profile.id());
             assertTrue(service.list().isEmpty());
@@ -177,11 +175,11 @@ class PlatformServerServiceTest {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             var entered = new CountDownLatch(1);
             runtime.setInteractionPresenter(new PlatformInteractionTest.Prompts() {
-                public gold.debug.windowstolinux.appapi.linux.TransferConflictChoice transferConflict(
-                    gold.debug.windowstolinux.appapi.linux.TransferConflict conflict,
-                    gold.debug.windowstolinux.appapi.server.ServerRef server, TaskSnapshot task,
+                public gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice transferConflict(
+                    gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict conflict,
+                    gold.debug.windowstolinux.appapi.server.model.ServerId server, TaskSnapshot task,
                     CancelToken cancellation) {
-                    return gold.debug.windowstolinux.appapi.linux.TransferConflictChoice.SKIP;
+                    return gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP;
                 }
 
                 public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancel) {
@@ -209,7 +207,7 @@ class PlatformServerServiceTest {
             } finally {
                 service.cancel(handle.id());
             }
-            assertEquals(Outcome.CANCELLED,
+            assertEquals(TaskResult.CANCELLED,
                 handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
             assertEquals(TaskState.ENDED, handle.snapshot().state());
             assertEquals(0, remote.authentications.get());
@@ -223,7 +221,7 @@ class PlatformServerServiceTest {
     void earlierHostVersionReconcilesOnlyKnownProcessResourcesWithoutAnyConnectionReplay() throws Exception {
         UUID known, unexpected, foreign, extra;
         try (var db = PlatformDatabase.open(root, PlatformStartupTest.PROTECTION)) {
-            var persistence = new PlatformPersistence(db);
+            var persistence = new PlatformStorage(db);
             try (var security = new DesktopSecurityService(persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
             }
@@ -245,7 +243,7 @@ class PlatformServerServiceTest {
             assertEquals(2, service.checks().size());
             var done = service.reconcile(known).toCompletableFuture().get(8, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, done.state());
-            assertEquals(Outcome.FAILED, done.outcome().orElseThrow());
+            assertEquals(TaskResult.FAILED, done.outcome().orElseThrow());
             assertEquals("0.0.1-original", done.ownerVersion());
             assertTrue(reviews.approved.isEmpty());
             assertThrows(ApiException.class, () -> service.reconcile(foreign));
@@ -294,7 +292,7 @@ class PlatformServerServiceTest {
                 if (lease.get() != null)
                     lease.get().close();
             }
-            assertEquals(Outcome.FAILED, handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.FAILED, handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
         }
     }
 }

@@ -1,22 +1,20 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.io.IOException;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 
 /** Applies the selected independent model policy only to registered fixed deployment effects, preserving exact host grants. / 仅对已登记固定部署效果应用所选独立模型策略，保留精确宿主授权。 */
@@ -75,7 +73,7 @@ final class DeploymentAssistedApproval {
             if (risk.equals("HIGH") && policy.equals("AUTOMATIC")) {
                 var high = host.approve(new ActionIntent("deployment.assisted.high-risk", intent.serverIds(), intent.target(), intent.revision(), intent.exactAction(),
                     "Review the independently identified high risk before the exact fixed deployment effect"), task);
-                if (high.outcome() != Outcome.SUCCEEDED) return high;
+                if (high.outcome() != TaskResult.SUCCEEDED) return high;
             }
             var actual = host.approve(intent, task);
             context.ai().configurationRevision(AiPurpose.APPROVAL, task);

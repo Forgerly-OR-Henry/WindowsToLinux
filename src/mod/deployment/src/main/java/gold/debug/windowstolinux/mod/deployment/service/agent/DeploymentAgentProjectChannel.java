@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.ActionTarget;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
@@ -14,8 +7,17 @@ import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
@@ -35,7 +37,7 @@ public final class DeploymentAgentProjectChannel {
     private final InteractionService interaction;
 
     /** Exact admitted target server reference. / 精确已准入目标服务器引用。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Authentic original platform task context. / 真实原平台任务上下文。 */
     private final TaskContext task;
@@ -59,7 +61,7 @@ public final class DeploymentAgentProjectChannel {
      * @param task original task / 原任务
      * @param configurationRevision frozen model-policy revision / 冻结模型策略修订
      * @param currentRevision live task-authorized revision / 实时任务授权修订 */
-    public DeploymentAgentProjectChannel(RemoteSession session, InteractionService interaction, ServerRef server,
+    public DeploymentAgentProjectChannel(RemoteSession session, InteractionService interaction, ServerId server,
                                          TaskContext task, String configurationRevision, Supplier<String> currentRevision) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
@@ -127,9 +129,9 @@ public final class DeploymentAgentProjectChannel {
         String command = render("agent-run", candidate.workspace(), revision, Long.toString(timeout.toSeconds()),
             "1048576", engines.get(candidate.workspace().candidateId()));
         var result = send(command, script.getBytes(StandardCharsets.UTF_8), timeout.plusSeconds(20), 1048576);
-        if (result.outcome() == Outcome.UNKNOWN)
+        if (result.outcome() == TaskResult.UNKNOWN)
             return new DeploymentAgentDeliveryPort.CommandFeedback(false, false, -1, "Unknown command outcome");
-        if (result.outcome() != Outcome.SUCCEEDED)
+        if (result.outcome() != TaskResult.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                 result.outcome(), result.problem());
         var output = result.value().orElseThrow();
@@ -153,17 +155,17 @@ public final class DeploymentAgentProjectChannel {
         try {
             var result = send(render("agent-patch", candidate.workspace(), patch.sourceRevision(), binding), bytes,
                 Duration.ofSeconds(45), 4096);
-            if (result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
+            if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
                 && result.value().orElseThrow().exitCode().equals(Optional.of(0)))
                 return digest(result, "SOURCE_REVISION");
-            if (result.outcome() == Outcome.SUCCEEDED && result.value().isPresent()
+            if (result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
                 && result.value().orElseThrow().exitCode().isPresent()
                 && result.value().orElseThrow().exitCode().orElseThrow() != 0
                 && !result.value().orElseThrow().truncated()) {
                 read(candidate, patch.sourceRevision(), patch.path(), 0, 1);
                 throw new IllegalArgumentException("Patch rejected; old source revision verified");
             }
-            if (result.outcome() != Outcome.SUCCEEDED)
+            if (result.outcome() != TaskResult.SUCCEEDED)
                 throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                     result.outcome(), result.problem());
             throw new IllegalStateException("Agent patch outcome unknown");
@@ -288,7 +290,7 @@ public final class DeploymentAgentProjectChannel {
                 new ActionSemantics("deployment.agent.helper.v1", Set.of(new ActionTarget(server.id(),
                     "deployment-agent", sha256(script.getBytes(StandardCharsets.UTF_8))))));
             var review = interaction.approve(intent, task);
-            if (review.outcome() != Outcome.SUCCEEDED)
+            if (review.outcome() != TaskResult.SUCCEEDED)
                 throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                     review.outcome(), review.problem());
             if (effect)
@@ -307,7 +309,7 @@ public final class DeploymentAgentProjectChannel {
      * @param result original result / 原结果
      * @throws Exception if outcome or complete receipt is not successful / 结果或完整回执不成功时 */
     private static void knownSuccess(OperationResult<CommandResult> result) throws Exception {
-        if (result.outcome() != Outcome.SUCCEEDED)
+        if (result.outcome() != TaskResult.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                 result.outcome(), result.problem());
         if (result.value().isEmpty() || !result.value().orElseThrow().exitCode().equals(Optional.of(0))

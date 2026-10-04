@@ -13,12 +13,12 @@ import java.util.List;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.mod.PlatformModIntents.ModView;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,12 +30,12 @@ class PlatformModManagementTest {
 
     PlatformFrame frame;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
     PlatformModInitializationTest initial;
 
     void development(boolean enabled) throws Exception {
-        fixture = new PlatformModCoordinatorTest();
+        fixture = new PlatformModFlowTest();
         fixture.root = root;
         fixture.workspace();
         fixture.module(P, Map.of(), false);
@@ -56,9 +56,9 @@ class PlatformModManagementTest {
             value.setVisible(true);
             return value;
         });
-        DesktopMain.installModManagement(runtime, frame);
+        ApplicationLauncher.installModManagement(runtime, frame);
         await(() -> ((JList<?>) named(frame, "mods.inventory")).getModel().getSize() > 0
-            && !DesktopTaskExecutor.hasActiveTasks());
+            && !DesktopTaskRunner.hasActiveTasks());
         onEdt(() -> {
             var tabs = (JTabbedPane) named(frame, "platform.pages");
             tabs.setSelectedIndex(tabs.indexOfTab("Mod"));
@@ -75,7 +75,7 @@ class PlatformModManagementTest {
     }
 
     void idle() throws Exception {
-        await(() -> !DesktopTaskExecutor.hasActiveTasks() && !named(frame, "mods.progress").isVisible());
+        await(() -> !DesktopTaskRunner.hasActiveTasks() && !named(frame, "mods.progress").isVisible());
     }
 
     void select(String owner) throws Exception {
@@ -121,7 +121,7 @@ class PlatformModManagementTest {
                     window.dispose();
             return null;
         });
-        await(() -> !DesktopTaskExecutor.hasActiveTasks());
+        await(() -> !DesktopTaskRunner.hasActiveTasks());
         if (initial != null)
             initial.cleanup();
         if (runtime != null)
@@ -167,7 +167,7 @@ class PlatformModManagementTest {
 
     @Test
     void dependencyDisableListsCascadeAndCancellationRestoresWholeGroupWithoutStoppingBusiness() throws Exception {
-        fixture = new PlatformModCoordinatorTest();
+        fixture = new PlatformModFlowTest();
         fixture.root = root;
         fixture.workspace();
         fixture.module(P, Map.of(), false);

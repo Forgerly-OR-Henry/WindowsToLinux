@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.app.service.task;
 
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.app.db.task.TaskResource;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.service.task.PlatformTaskRuntimeTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -18,7 +10,13 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,7 +42,7 @@ class PlatformTaskArchivalTest {
     }
 
     static OperationResult<String> success(String value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
     }
 
     static void trap(PlatformDatabase db) throws Exception {
@@ -102,7 +100,7 @@ class PlatformTaskArchivalTest {
                 assertEquals(TaskState.ENDED,
                     runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
             }
-            assertEquals(Outcome.SUCCEEDED, result(task).outcome());
+            assertEquals(TaskResult.SUCCEEDED, result(task).outcome());
             assertTrue(result(task).value().isEmpty());
             assertEquals("next", result(waiting).value().orElseThrow());
             assertEquals(1, calls.get());
@@ -131,9 +129,9 @@ class PlatformTaskArchivalTest {
             cancelled.requestCancel();
             state(cancelled, TaskState.FINISHING);
             untrap(db);
-            assertEquals(Outcome.CANCELLED, runtime.reconcile(cancelled.id()).toCompletableFuture()
+            assertEquals(TaskResult.CANCELLED, runtime.reconcile(cancelled.id()).toCompletableFuture()
                 .get(8, TimeUnit.SECONDS).outcome().orElseThrow());
-            assertEquals(Outcome.CANCELLED, result(cancelled).outcome());
+            assertEquals(TaskResult.CANCELLED, result(cancelled).outcome());
             release.countDown();
             assertEquals("running", result(running).value().orElseThrow());
         } finally {
@@ -151,7 +149,7 @@ class PlatformTaskArchivalTest {
             assertTrue(ledger.tryStart(id));
             trap(db);
             var original = assertThrows(TaskLedger.FinalizationException.class,
-                () -> ledger.completeAndArchive(id, Outcome.SUCCEEDED, "{}", false, () -> {
+                () -> ledger.completeAndArchive(id, TaskResult.SUCCEEDED, "{}", false, () -> {
                 })).finalization();
             ledger.retainFinalization(original);
             untrap(db);
@@ -173,7 +171,7 @@ class PlatformTaskArchivalTest {
             id = ledger.enqueue(UUID.randomUUID(), "example.old", "1.0.0", request(),
                 List.of(new TaskResource("MOD", "example.old", "example.old", false)));
             assertTrue(ledger.tryStart(id));
-            assertTrue(ledger.complete(id, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(ledger.complete(id, TaskResult.SUCCEEDED, "{}", false));
         }
         try (var db = PlatformDatabase.open(root, PROTECTION); var security = security(db)) {
             // Inject only after formal database startup; task-runtime boot still sees the archival failure. / 仅在正式数据库启动后注入，任务运行时启动仍观察归档失败。

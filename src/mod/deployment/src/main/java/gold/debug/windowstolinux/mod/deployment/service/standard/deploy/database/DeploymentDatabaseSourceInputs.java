@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSql
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageLocationType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStorageLocation.StorageResourceType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.ecosystem.db.DatabaseRequirement;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectInspector;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 
 /** Completes source-derived DB declarations without connecting to a server or granting schema approval. / 补全源码派生的数据库声明，不连接服务器也不授予结构批准。 */
@@ -29,7 +29,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @param applicationId reviewed component identity / 经审阅组件身份
      * @param supplied previously supplied non-secret answers / 已提供的非秘密答案
      * @return fields to display before any database effect / 任何数据库效果前应显示的字段 */
-    public static List<DeploymentReviewField> questions(DatabaseProjectInspector.Assessment assessment,
+    public static List<DeploymentReviewField> questions(DatabaseProjectChecker.Report assessment,
                                                         String applicationId, Map<String, String> supplied) {
         return questions(assessment, applicationId, supplied, !supplied.isEmpty());
     }
@@ -40,7 +40,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @param supplied previous answers / 先前答案
      * @param correction whether every declaration field must be editable / 是否允许更正全部声明字段
      * @return bounded non-secret questions / 有界非秘密问题 */
-    public static List<DeploymentReviewField> questions(DatabaseProjectInspector.Assessment assessment,
+    public static List<DeploymentReviewField> questions(DatabaseProjectChecker.Report assessment,
                                                         String applicationId, Map<String, String> supplied, boolean correction) {
         var fields = new ArrayList<DeploymentReviewField>();
         if (assessment.unknownDatabase() && !supplied.containsKey("database.main.engine")) {
@@ -95,8 +95,8 @@ public final class DeploymentDatabaseSourceInputs {
      * @param supplied exact non-secret answers / 精确非秘密答案
      * @return resolved assessment without schema-effect approval / 不含结构效果批准的已解析评估
      * @throws IOException if a reviewed source file cannot be checked / 无法核验经审阅源码文件时 */
-    public static DatabaseProjectInspector.Assessment complete(Path root, String applicationId,
-                                                               DatabaseProjectInspector.Assessment assessment, Map<String, String> supplied) throws IOException {
+    public static DatabaseProjectChecker.Report complete(Path root, String applicationId,
+                                                         DatabaseProjectChecker.Report assessment, Map<String, String> supplied) throws IOException {
         var complete = new ArrayList<DatabaseRequirement>();
         for (var requirement : basis(assessment, supplied)) {
             String id = requirement.id();
@@ -124,7 +124,7 @@ public final class DeploymentDatabaseSourceInputs {
         if (assessment.schemaReviewRequired()
             && complete.stream().allMatch(value -> value.initializationFiles().isEmpty()))
             throw new IllegalArgumentException("Schema changes require explicit reviewed initialization files");
-        return new DatabaseProjectInspector.Assessment(complete, assessment.sqlCandidates(),
+        return new DatabaseProjectChecker.Report(complete, assessment.sqlCandidates(),
             assessment.schemaReviewRequired(), false, assessment.endpointConfirmationRequired());
     }
 
@@ -132,7 +132,7 @@ public final class DeploymentDatabaseSourceInputs {
      * @param assessment original observations / 原观测
      * @param supplied exact answers / 精确答案
      * @return declared and selected requirements / 声明及已选择要求 */
-    private static List<DatabaseRequirement> basis(DatabaseProjectInspector.Assessment assessment,
+    private static List<DatabaseRequirement> basis(DatabaseProjectChecker.Report assessment,
                                                    Map<String, String> supplied) {
         var values = new ArrayList<>(assessment.databases());
         if (assessment.unknownDatabase()) {

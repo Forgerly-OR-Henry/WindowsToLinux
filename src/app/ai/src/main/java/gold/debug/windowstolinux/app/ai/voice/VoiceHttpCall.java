@@ -9,8 +9,13 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import gold.debug.windowstolinux.app.ai.http.*;
-import gold.debug.windowstolinux.appapi.ai.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** One real multipart transcription request, never replayed after uncertainty. / 一个真实 multipart 转写请求，未知状态后不重放。 */
 public final class VoiceHttpCall implements AutoCloseable {
@@ -59,7 +64,20 @@ public final class VoiceHttpCall implements AutoCloseable {
      * @param input complete validated WAV / 完整已校验 WAV
      * @param timeout positive remaining deadline / 正剩余时限 */
     public VoiceHttpCall(URI endpoint, char[] key, String model, String modelId, VoiceRequest input, Duration timeout) {
-        ModelHttpCall.validateEndpoint(endpoint);
+        this(endpoint, key, model, modelId, input, timeout, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().connectSeconds());
+    }
+
+    /** Caps connection admission within the original operation deadline. / 在原操作时限内限制连接准入。
+     * @param endpoint explicit destination / 明确目的地
+     * @param key temporary credential / 临时凭据
+     * @param model provider model / 提供方模型
+     * @param modelId platform identity / 平台身份
+     * @param input immutable audio / 不可变音频
+     * @param timeout remaining operation budget / 剩余操作预算
+     * @param connectSeconds startup HTTP cap / 启动 HTTP 上限 */
+    public VoiceHttpCall(URI endpoint, char[] key, String model, String modelId, VoiceRequest input, Duration timeout, int connectSeconds) {
+        if (connectSeconds < 1) throw new IllegalArgumentException("Connection cap must be positive");
+        HttpUrlChecker.validate(endpoint);
         VoiceRequest.validateTimeout(timeout);
         VoiceProtocol.validateKey(key);
         if (model == null || !model.matches("[A-Za-z0-9._:/-]{1,128}"))
@@ -86,7 +104,7 @@ public final class VoiceHttpCall implements AutoCloseable {
             .header("Content-Type", "multipart/form-data; boundary=" + boundary)
             .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
-            .connectTimeout(timeout.compareTo(Duration.ofSeconds(10)) < 0 ? timeout : Duration.ofSeconds(10))
+            .connectTimeout(timeout.compareTo(Duration.ofSeconds(connectSeconds)) < 0 ? timeout : Duration.ofSeconds(connectSeconds))
             .version(HttpClient.Version.HTTP_1_1).build();
     }
 
@@ -110,20 +128,20 @@ public final class VoiceHttpCall implements AutoCloseable {
             started = true;
         }
         if (cancellation.requested() || Thread.currentThread().isInterrupted())
-            return failure(Outcome.CANCELLED, ProblemCode.CANCELLED, "VOICE_CANCELLED_BEFORE_SEND", "Voice input was cancelled before sending");
+            return failure(TaskResult.CANCELLED, ProblemCode.CANCELLED, "VOICE_CANCELLED_BEFORE_SEND", "Voice input was cancelled before sending");
         if (System.nanoTime() - start >= budget)
-            return failure(Outcome.FAILED, ProblemCode.TIMEOUT, "VOICE_BEFORE_SEND_TIMEOUT", "Voice deadline ended before sending");
+            return failure(TaskResult.FAILED, ProblemCode.TIMEOUT, "VOICE_BEFORE_SEND_TIMEOUT", "Voice deadline ended before sending");
         try {
             response = client.sendAsync(request, ignored -> new LimitedHttpBodySubscriber(VoiceProtocol.MAX_RESPONSE_BYTES));
             for (; ; ) {
                 if (cancellation.requested() || Thread.currentThread().isInterrupted()) {
                     response.cancel(true);
-                    return failure(Outcome.UNKNOWN, ProblemCode.CANCELLED, "VOICE_CANCELLED_AFTER_SEND", "The provider may have processed the cancelled audio");
+                    return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "VOICE_CANCELLED_AFTER_SEND", "The provider may have processed the cancelled audio");
                 }
                 long remaining = budget - (System.nanoTime() - start);
                 if (remaining <= 0) {
                     response.cancel(true);
-                    return failure(Outcome.UNKNOWN, ProblemCode.TIMEOUT, "VOICE_TIMEOUT", "The provider outcome is unknown after the deadline");
+                    return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "VOICE_TIMEOUT", "The provider outcome is unknown after the deadline");
                 }
                 try {
                     var result = response.get(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(25)), TimeUnit.NANOSECONDS);
@@ -138,15 +156,15 @@ public final class VoiceHttpCall implements AutoCloseable {
                                 } catch (
                                     IOException invalidError) { /* Known HTTP rejection still applies. / 仍按已知 HTTP 拒绝处理。 */ }
                             }
-                            return new OperationResult<>(Outcome.FAILED, Optional.empty(), Optional.of(new Problem(
+                            return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
                                 unsupported ? ProblemCode.INCOMPATIBLE : result.statusCode() == 401 || result.statusCode() == 403
                                     ? ProblemCode.ACCESS_DENIED : ProblemCode.IO_FAILURE,
                                 unsupported ? "VOICE_UNSUPPORTED" : "VOICE_HTTP_REJECTED", "The selected provider rejected the audio request",
                                 Map.of("modelId", modelId, "httpStatus", Integer.toString(result.statusCode())), Optional.empty())));
                         }
-                        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(VoiceProtocol.decode(bytes, modelId)), Optional.empty());
+                        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(VoiceProtocol.decode(bytes, modelId)), Optional.empty());
                     } catch (IOException invalid) {
-                        return failure(Outcome.FAILED, ProblemCode.CONTRACT_VIOLATION, "VOICE_RESPONSE_INVALID", "The transcription response is invalid");
+                        return failure(TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION, "VOICE_RESPONSE_INVALID", "The transcription response is invalid");
                     } finally {
                         Arrays.fill(bytes, (byte) 0);
                     }
@@ -155,9 +173,9 @@ public final class VoiceHttpCall implements AutoCloseable {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             if (response != null) response.cancel(true);
-            return failure(Outcome.UNKNOWN, ProblemCode.CANCELLED, "VOICE_INTERRUPTED", "The interrupted provider outcome is unknown");
+            return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "VOICE_INTERRUPTED", "The interrupted provider outcome is unknown");
         } catch (ExecutionException | RuntimeException lost) {
-            return failure(Outcome.UNKNOWN, ProblemCode.IO_FAILURE, "VOICE_TRANSPORT_UNKNOWN", "The provider outcome could not be established");
+            return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "VOICE_TRANSPORT_UNKNOWN", "The provider outcome could not be established");
         }
     }
 
@@ -167,7 +185,7 @@ public final class VoiceHttpCall implements AutoCloseable {
      * @param event safe event identity / 安全事件标识
      * @param message safe explanation / 安全说明
      * @return classified operation result / 已分类操作结果 */
-    private OperationResult<VoiceResponse> failure(Outcome outcome, ProblemCode code, String event, String message) {
+    private OperationResult<VoiceResponse> failure(TaskResult outcome, ProblemCode code, String event, String message) {
         return VoiceProtocol.failure(outcome, code, event, message, modelId, Optional.empty());
     }
 

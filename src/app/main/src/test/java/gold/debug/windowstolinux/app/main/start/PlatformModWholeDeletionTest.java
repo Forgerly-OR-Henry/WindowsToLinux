@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformModDeletionTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModInstallationTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.text;
@@ -16,13 +14,13 @@ import java.util.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.jna.platform.win32.*;
-import gold.debug.windowstolinux.app.db.log.LogRepository;
-import gold.debug.windowstolinux.app.db.mod.ModNavigationPreferences;
+import gold.debug.windowstolinux.app.db.log.LogStore;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-
+import gold.debug.windowstolinux.app.db.setting.ModNavigationPreferences;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -47,7 +45,7 @@ class PlatformModWholeDeletionTest {
     }
 
     void install(PlatformModInstallation installer, Path original) throws Exception {
-        assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
     }
 
     Path write(String relative, String bytes) throws Exception {
@@ -60,7 +58,7 @@ class PlatformModWholeDeletionTest {
         return root.resolve("data/mod").resolve(OWNER).resolve(name);
     }
 
-    LogRepository.Target category(PlatformRuntime runtime) throws Exception {
+    LogStore.Target category(PlatformRuntime runtime) throws Exception {
         var logs = new PlatformLogDeletionTest();
         return logs.category(runtime);
     }
@@ -122,7 +120,7 @@ class PlatformModWholeDeletionTest {
             assertTrue(review.bytes() > 0);
             assertTrue(review.ownedBytes() > 0);
             var result = installer.deletion().delete(review, false);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertNull(result.value().orElseThrow().version());
             assertFalse(Files.exists(root.resolve("mod").resolve(OWNER)));
             assertFalse(Files.exists(privateFile("")));
@@ -162,7 +160,7 @@ class PlatformModWholeDeletionTest {
             var review = installer.deletion().review(OWNER);
             assertEquals(Set.of(first, uninstalled), Set.copyOf(review.originals()));
             var later = fixture.original("later.wtlmod", "4.0.0", "later");
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().delete(review, true).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().delete(review, true).outcome());
             assertFalse(Files.exists(first));
             assertFalse(Files.exists(uninstalled));
             assertTrue(Files.exists(damaged));
@@ -185,7 +183,7 @@ class PlatformModWholeDeletionTest {
             assertThrows(IOException.class, () -> installer.deletion().delete(review, false));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertTrue(Files.exists(fixture.target("1.0.0").resolve("main/fixture.jar")));
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 installer.deletion().delete(installer.deletion().review(OWNER), false).outcome());
             assertEquals("unregistered", Files.readString(root.resolve("preserved-program/README.md")));
         }
@@ -210,7 +208,7 @@ class PlatformModWholeDeletionTest {
             var handle = hold(locked);
             try {
                 assertThrows(IOException.class, () -> Files.delete(locked));
-                assertEquals(Outcome.UNKNOWN, installer.deletion().delete(review, false).outcome());
+                assertEquals(TaskResult.UNKNOWN, installer.deletion().delete(review, false).outcome());
                 assertEquals("UNKNOWN/DATA_REMOVED", deletionPhase(runtime, operation));
                 assertFalse(Files.exists(privateFile("a.bin")));
                 assertTrue(Files.exists(locked));
@@ -225,7 +223,7 @@ class PlatformModWholeDeletionTest {
         }
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             assertEquals(accepted, request(runtime, operation));
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().reconcile(operation).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().reconcile(operation).outcome());
             assertFalse(Files.exists(privateFile("")));
             assertFalse(Files.exists(pending));
             assertTrue(Files.exists(original));
@@ -241,21 +239,21 @@ class PlatformModWholeDeletionTest {
             Path cache = write("data/mod/" + OWNER + "/cache.bin", "retained");
             var review = installer.deletion().review(OWNER);
             trap(runtime, "phase <> 'DATA_REMOVED'");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().delete(review, false).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().delete(review, false).outcome());
             untrap(runtime);
             assertEquals("UNKNOWN/PROGRAM_REMOVED", deletionPhase(runtime, review.id()));
             Path extra = write("data/mod/" + OWNER + "/added.bin", "not confirmed");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().reconcile(review.id()).outcome());
             assertTrue(Files.exists(cache));
             assertTrue(Files.exists(extra));
             Files.move(extra, root.resolve("preserved-extra.bin"));
             Files.move(privateFile(""), root.resolve("original-private-tree"));
             write("data/mod/" + OWNER + "/cache.bin", "retained");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().reconcile(review.id()).outcome());
             assertEquals("retained", Files.readString(cache));
             Files.move(privateFile(""), root.resolve("preserved-replacement-tree"));
             Files.move(root.resolve("original-private-tree"), privateFile(""));
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().reconcile(review.id()).outcome());
             assertTrue(Files.exists(root.resolve("preserved-extra.bin")));
             assertTrue(Files.exists(root.resolve("preserved-replacement-tree/cache.bin")));
         }
@@ -273,7 +271,7 @@ class PlatformModWholeDeletionTest {
             operation = review.id();
             var handle = hold(original);
             try {
-                assertEquals(Outcome.UNKNOWN, installer.deletion().delete(review, true).outcome());
+                assertEquals(TaskResult.UNKNOWN, installer.deletion().delete(review, true).outcome());
                 assertEquals("UNKNOWN/REGISTRY_REMOVED", deletionPhase(runtime, operation));
                 assertEquals(0, count(runtime.persistence().database(),
                     "SELECT COUNT(*) FROM mod_registry WHERE mod_id='" + OWNER + "'"));
@@ -285,7 +283,7 @@ class PlatformModWholeDeletionTest {
         }
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             var later = fixture.original("later.wtlmod", "3.0.0", "later");
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().reconcile(operation).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().reconcile(operation).outcome());
             assertFalse(Files.exists(original));
             assertTrue(Files.exists(later));
         }
@@ -303,7 +301,7 @@ class PlatformModWholeDeletionTest {
             Path outside = write("exported-backup.bin", "preserve");
             var review = installer.deletion().review(OWNER);
             trap(runtime, "phase <> 'PROGRAM_REMOVED'");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().delete(review, false).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().delete(review, false).outcome());
             untrap(runtime);
             String before = request(runtime, review.id());
             for (String area : List.of("auxiliary", "emergency")) {
@@ -318,7 +316,7 @@ class PlatformModWholeDeletionTest {
                 assertEquals("preserve", Files.readString(outside));
             }
             sql(runtime, "UPDATE mod_operation SET request_json=? WHERE operation_id=?", before, review.id());
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().reconcile(review.id()).outcome());
             assertTrue(Files.exists(outside));
         }
     }
@@ -329,17 +327,17 @@ class PlatformModWholeDeletionTest {
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
             install(installer, original);
             acknowledged(runtime);
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 installer.deletion().delete(installer.deletion().review(OWNER, "1.0.0"), false).outcome());
             var review = installer.deletion().review(OWNER);
             assertTrue(review.versions().isEmpty());
             sql(runtime,
                 "ALTER TABLE runtime_log ADD CONSTRAINT reject_whole_archive CHECK(event_code<>'MOD_DELETED')");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().delete(review, false).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().delete(review, false).outcome());
             assertEquals("UNKNOWN/CLEANUP", deletionPhase(runtime, review.id()));
             sql(runtime, "ALTER TABLE runtime_log DROP CONSTRAINT reject_whole_archive");
             var complete = installer.deletion().reconcile(review.id());
-            assertEquals(Outcome.SUCCEEDED, complete.outcome());
+            assertEquals(TaskResult.SUCCEEDED, complete.outcome());
             install(installer, original);
             assertEquals(complete, installer.deletion().reconcile(review.id()));
             assertTrue(Files.exists(fixture.target("1.0.0")));
@@ -357,7 +355,7 @@ class PlatformModWholeDeletionTest {
             Path cache = write("data/mod/" + OWNER + "/cache.bin", "retained");
             var review = installer.deletion().review(OWNER, "1.0.0");
             trap(runtime, "phase <> 'PROGRAM_REMOVED'");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().delete(review, false).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().delete(review, false).outcome());
             untrap(runtime);
             var request = (ObjectNode) json.readTree(request(runtime, review.id()));
             var files = (ObjectNode) json.readTree(request.get("files").textValue());
@@ -367,10 +365,10 @@ class PlatformModWholeDeletionTest {
             String originalEvidence = request.toString();
             sql(runtime, "UPDATE mod_operation SET request_json=? WHERE operation_id=?", originalEvidence, review.id());
             trap(runtime, "phase <> 'CLEANUP'");
-            assertEquals(Outcome.UNKNOWN, installer.deletion().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.UNKNOWN, installer.deletion().reconcile(review.id()).outcome());
             assertEquals(originalEvidence, request(runtime, review.id()));
             untrap(runtime);
-            assertEquals(Outcome.SUCCEEDED, installer.deletion().reconcile(review.id()).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.deletion().reconcile(review.id()).outcome());
             assertEquals("retained", Files.readString(cache));
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM mod_registry WHERE mod_id='" + OWNER + "'"));

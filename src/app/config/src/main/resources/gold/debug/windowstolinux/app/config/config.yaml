@@ -1,0 +1,41 @@
+common:
+  database:
+    data-directory: data
+  ui:
+    navigation-collapsed: false
+    advanced-expanded: false
+  defaults:
+    locale: system
+    theme: SYSTEM
+    connect-seconds: 30
+    idle-seconds: 300
+    delete-ai-explanation: true
+  ssh:
+    heartbeat-seconds: 30
+    recovery:
+      observation-seconds: 2
+      probe-interval-seconds: 10
+      probe-timeout-seconds: 15
+  ai:
+    connect-seconds: 10
+    recovery:
+      timeout-seconds: 60
+      max-tokens: 2048
+    deletion:
+      timeout-seconds: 30
+      max-tokens: 512
+    file:
+      timeout-seconds: 20
+      max-tokens: 256
+  logs:
+    emergency-records: 100
+  mod:
+    store:
+      base-url: ""
+class:
+  database:
+    data-directory: src/app/db/data
+  mod:
+    auto-load: false
+jar: {}
+app: {}

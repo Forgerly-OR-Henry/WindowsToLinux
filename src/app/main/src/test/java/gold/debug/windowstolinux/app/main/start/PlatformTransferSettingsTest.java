@@ -1,8 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformRemoteCapabilitiesTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -15,7 +12,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.service.linux.*;
-
+import gold.debug.windowstolinux.app.service.setting.TransferConfig;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,20 +26,20 @@ class PlatformTransferSettingsTest {
     void defaultsAndPartialPreferencesDoNotWriteWhileSavedPairSurvivesActualReopen() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
-            assertEquals(TransferConfiguration.DEFAULTS, runtime.transfers().read());
+            assertEquals(TransferConfig.DEFAULTS, runtime.transfers().read());
             assertEquals(0, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM desktop_preference WHERE preference_key LIKE 'transfer_%'"));
             runtime.persistence().preferences().save("transfer_connect_seconds", "45");
-            assertEquals(new TransferConfiguration(45, 300), runtime.transfers().read());
-            assertEquals(new TransferConfiguration(60, 1200),
-                runtime.transfers().save(new TransferConfiguration(60, 1200)));
+            assertEquals(new TransferConfig(45, 300), runtime.transfers().read());
+            assertEquals(new TransferConfig(60, 1200),
+                runtime.transfers().save(new TransferConfig(60, 1200)));
             runtime.persistence().preferences().save("deploy_approval", "MANUAL");
         }
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             assertThrows(gold.debug.windowstolinux.app.service.error.ApplicationServiceException.class,
                 runtime.transfers()::read);
             runtime.security().unlock(PASSWORD.toCharArray());
-            assertEquals(new TransferConfiguration(60, 1200), runtime.transfers().read());
+            assertEquals(new TransferConfig(60, 1200), runtime.transfers().read());
             assertEquals("MANUAL", runtime.persistence().preferences().find("deploy_approval").orElseThrow());
         }
     }
@@ -58,13 +57,13 @@ class PlatformTransferSettingsTest {
     void bothPreferencesRollBackIfSecondWriteFailsAndCorruptStoredValuesAreNotReplaced() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
-            var original = runtime.transfers().save(new TransferConfiguration(10, 20));
+            var original = runtime.transfers().save(new TransferConfig(10, 20));
             var db = runtime.persistence().database();
             FailSecondWrite.writes.set(0);
             sql(db, "CREATE TRIGGER fixture_preferences BEFORE UPDATE ON desktop_preference FOR EACH ROW CALL '"
                 + FailSecondWrite.class.getName() + "'");
             try {
-                assertThrows(SQLException.class, () -> runtime.transfers().save(new TransferConfiguration(15, 25)));
+                assertThrows(SQLException.class, () -> runtime.transfers().save(new TransferConfig(15, 25)));
                 assertEquals(2, FailSecondWrite.writes.get());
                 assertEquals(original, runtime.transfers().read());
             } finally {
@@ -74,12 +73,12 @@ class PlatformTransferSettingsTest {
             assertThrows(SQLException.class, runtime.transfers()::read);
             assertEquals("invalid", runtime.persistence().preferences().find("transfer_idle_seconds").orElseThrow());
             runtime.transfers().save(original);
-            assertThrows(IllegalArgumentException.class, () -> new TransferConfiguration(0, 10));
-            assertThrows(IllegalArgumentException.class, () -> new TransferConfiguration(10, 86401));
+            assertThrows(IllegalArgumentException.class, () -> new TransferConfig(0, 10));
+            assertThrows(IllegalArgumentException.class, () -> new TransferConfig(10, 86401));
             SwingUtilities.invokeAndWait(() -> assertThrows(IllegalStateException.class, runtime.transfers()::read));
             runtime.security().lock();
             assertThrows(gold.debug.windowstolinux.app.service.error.ApplicationServiceException.class,
-                () -> runtime.transfers().save(new TransferConfiguration(1, 1)));
+                () -> runtime.transfers().save(new TransferConfig(1, 1)));
             runtime.security().unlock(PASSWORD.toCharArray());
             assertEquals(original, runtime.transfers().read());
         }
@@ -107,7 +106,7 @@ class PlatformTransferSettingsTest {
                 }
             });
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
-                runtime.transfers().save(new TransferConfiguration(1, 300));
+                runtime.transfers().save(new TransferConfig(1, 300));
                 var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), context -> {
                     long start = System.nanoTime();
                     assertThrows(ApiException.class, () -> capabilities.linux().connect(SERVER, context));
@@ -117,7 +116,7 @@ class PlatformTransferSettingsTest {
                     return success(null);
                 });
                 try {
-                    assertEquals(Outcome.SUCCEEDED,
+                    assertEquals(TaskResult.SUCCEEDED,
                         task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 } finally {
                     release.countDown();

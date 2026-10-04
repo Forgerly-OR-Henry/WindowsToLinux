@@ -1,12 +1,17 @@
 package gold.debug.windowstolinux.app.file;
 
+import static gold.debug.windowstolinux.app.file.FileEngine.*;
+
 import java.io.*;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
-
-import static gold.debug.windowstolinux.app.file.FileEngine.*;
+import gold.debug.windowstolinux.app.file.model.FileActionLog;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** Captures exact copy destinations, collision choices and registered-link dependencies before effects. / 副作用前捕获精确复制位置、冲突选择及登记链接依赖。 */
 final class FileCopyPlan {
@@ -53,7 +58,7 @@ final class FileCopyPlan {
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
     FileCopyPlan(FileEngine origin, FileEngine destination, FilePath from, FilePath to, boolean link, boolean move,
-                 FileChoice choices, Decisions decisions, FileJournal journal, CancelToken cancel) throws IOException, ApiException {
+                 FileChoice choices, Decisions decisions, FileActionLog journal, CancelToken cancel) throws IOException, ApiException {
         this.origin = origin;
         this.destination = destination;
         source = origin.inspect(from, link, cancel);
@@ -134,7 +139,7 @@ final class FileCopyPlan {
      * @return verified original registered-link dependencies / 已验证原登记链接依赖
      * @throws IOException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
-    private List<LinkMove> managedLinks(FileJournal journal, CancelToken cancel) throws IOException {
+    private List<LinkMove> managedLinks(FileActionLog journal, CancelToken cancel) throws IOException {
         var result = new ArrayList<LinkMove>();
         for (FileInfo link : journal.links(source.actual())) {
             if (isInside(link.actual(), source.actual()) || link.actual().equals(source.actual())) continue;

@@ -1,18 +1,17 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -39,7 +38,7 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
             var control = new DeploymentAgentControl();
-            var journal = new DeploymentAgentJournal(context.db());
+            var journal = new DeploymentAgentActionLog(context.db());
             var entered = new CountDownLatch(1);
             var settled = new CountDownLatch(1);
             var refreshed = new AtomicInteger();
@@ -48,11 +47,11 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
             var original = new AtomicReference<UUID>();
             String type = "deployment-agent-control-test";
             try (var registration = context.tasks().registerRecovery(type, (previous,
-                                                                            task) -> new OperationResult<Void>(Outcome.UNKNOWN, Optional.empty(), Optional.empty()))) {
+                                                                            task) -> new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty()))) {
                 var handle = context.tasks()
                     .submit(new TaskRequest(type, "Original controlled worker", List.of(), true), task -> {
                         original.set(task.id());
-                        journal.create(task, new DeploymentAgentJournal.Identity("boundary-only", "a".repeat(64),
+                        journal.create(task, new DeploymentAgentActionLog.Identity("boundary-only", "a".repeat(64),
                             "a".repeat(64), "MANUAL_REVIEW"));
                         entered.countDown();
                         settled.await(5, TimeUnit.SECONDS);
@@ -84,10 +83,10 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
                             assertTrue(changed);
                             assertEquals(original.get(), task.id());
                             journal.state(task, "SUCCEEDED");
-                            return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                            return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                         } catch (CancellationException requested) {
                             journal.state(task, "CANCELLED");
-                            return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                            return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                         } catch (Throwable problem) {
                             failure.set(problem);
                             if (problem instanceof Exception exception)
@@ -125,7 +124,7 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
                 }
                 var result = handle.completion().toCompletableFuture().get(5, TimeUnit.SECONDS);
                 assertNull(failure.get());
-                assertEquals(cancel ? Outcome.CANCELLED : Outcome.SUCCEEDED, result.outcome());
+                assertEquals(cancel ? TaskResult.CANCELLED : TaskResult.SUCCEEDED, result.outcome());
                 assertEquals(cancel ? 0 : 1, continued.get());
                 assertEquals(original.get(), handle.id());
                 assertEquals(DeploymentAgentControl.State.FINISHED, control.state());

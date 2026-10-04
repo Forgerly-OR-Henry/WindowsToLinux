@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.app.main.runtime;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -187,7 +189,7 @@ class RunModeResolverTest {
         }
         assertEquals(packaged ? RunModeResolver.RunMode.RUN_JAR : RunModeResolver.RunMode.RUN_CLASS,
             RunModeResolver.detect());
-        Path expectedHome = packaged ? dbSource.getParent() : dbSource.getParent().getParent();
+        Path expectedHome = packaged ? mainSource.getParent() : dbSource.getParent().getParent();
         assertEquals(expectedHome.resolve("data"), RunModeResolver.resolveDataDirectory());
     }
 
@@ -210,6 +212,25 @@ class RunModeResolverTest {
         Files.createDirectories(root.resolve("app"));
         Files.createDirectories(root.resolve("runtime"));
         return root;
+    }
+
+    @Test
+    void configuredRelativeAndAbsolutePathsUseEachModeAnchor() {
+        var baseline = gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig();
+        var mainHome = temporaryDirectory.resolve("program");
+        var dbHome = mainHome.resolve("app/db-jars");
+        for (var mode : java.util.List.of(RunModeResolver.RunMode.RUN_CLASS, RunModeResolver.RunMode.RUN_JAR, RunModeResolver.RunMode.RUN_APP)) {
+            var anchors = new RunModeResolver.RuntimeLayout(mode, mainHome, dbHome.resolve("data"));
+            var configured = RunModeResolver.configured(anchors, baseline);
+            assertEquals(mainHome.resolve("data"), configured.dataDirectory());
+            assertEquals(mainHome, configured.applicationHome());
+            var nested = new gold.debug.windowstolinux.app.config.AppConfig("Data/archive", baseline.ui(), baseline.defaults(), baseline.ssh(), baseline.ai(), baseline.emergencyRecords(), baseline.modLoad(), baseline.storeUrl());
+            assertEquals(mainHome.resolve("Data/archive"), RunModeResolver.configured(anchors, nested).dataDirectory());
+            Path absolute = temporaryDirectory.resolve("explicit-" + mode);
+            var custom = new gold.debug.windowstolinux.app.config.AppConfig(absolute.toString(), baseline.ui(), baseline.defaults(), baseline.ssh(), baseline.ai(), baseline.emergencyRecords(), baseline.modLoad(), baseline.storeUrl());
+            assertEquals(absolute, RunModeResolver.configured(anchors, custom).dataDirectory());
+            assertFalse(Files.exists(absolute));
+        }
     }
 
     private static RunModeResolver.RuntimeLayout resolve(Optional<Path> processCommand, Optional<Path> codeSource) {

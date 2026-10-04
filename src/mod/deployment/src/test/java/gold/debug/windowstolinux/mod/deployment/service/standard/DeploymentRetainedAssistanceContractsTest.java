@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.net.InetSocketAddress;
@@ -23,20 +15,31 @@ import com.sun.net.httpserver.HttpServer;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
-import gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile;
+import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.file.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedAdvisor;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
-import gold.debug.windowstolinux.mod.deployment.file.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -69,12 +72,12 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                 return acceptManual;
             }
 
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -103,8 +106,8 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
             var handle = context.tasks().submit(new TaskRequest("legacy-assistance-role",
                 "Inspect original source evidence", List.of("server"), true), task -> {
                 try {
-                    var selected = context.file().selectDirectory("Original source", task);
-                    try (var material = new DeploymentSourcePreparer(context.file()).prepare(selected, 65536,
+                    var selected = context.file().sources().selectDirectory("Original source", task);
+                    try (var material = new DeploymentSourceSetup(context.file()).prepare(selected, 65536,
                         100, task)) {
                         assertFalse(Files.exists(material.snapshot().directory().resolve(".env")));
                         var advisor = new DeploymentAssistedAdvisor(context);
@@ -140,13 +143,13 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                             assertFalse(sent.toString().contains("9090"));
                         }
                     }
-                    return known(Outcome.SUCCEEDED);
+                    return known(TaskResult.SUCCEEDED);
                 } catch (Exception | AssertionError failure) {
                     failures.set(failure);
                     throw failure;
                 }
             });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome(),
                 () -> String.valueOf(failures.get()));
             if (failures.get() != null)
@@ -184,8 +187,8 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                 new TaskRequest("source-read-boundary", "Review original bounded source", List.of("server"), true),
                 task -> {
                     try {
-                        var selected = context.file().selectDirectory("Original source", task);
-                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selected, 65536,
+                        var selected = context.file().sources().selectDirectory("Original source", task);
+                        try (var material = new DeploymentSourceSetup(context.file()).prepare(selected, 65536,
                             100, task)) {
                             var advisor = new DeploymentAssistedAdvisor(context);
                             advisor.humanAnswers(Map.of("app/port", "9090"));
@@ -202,13 +205,13 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                             assertEquals(fields(), originalFields);
                             assertTrue(advisor.humanSupplied("app/port"));
                         }
-                        return known(Outcome.SUCCEEDED);
+                        return known(TaskResult.SUCCEEDED);
                     } catch (Exception | AssertionError caught) {
                         failure.set(caught);
                         throw caught;
                     }
                 });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS).outcome(),
                 () -> String.valueOf(failure.get()));
             if (failure.get() != null)
@@ -250,9 +253,9 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
             var handle = context.tasks().submit(new TaskRequest("legacy-assistance-manual",
                 "Review actual known model failure", List.of("server"), true), task -> {
                 try {
-                    var selected = context.file().selectDirectory("Original source", task);
+                    var selected = context.file().sources().selectDirectory("Original source", task);
                     phase.set("SOURCE_SELECTED");
-                    try (var material = new DeploymentSourcePreparer(context.file()).prepare(selected, 65536,
+                    try (var material = new DeploymentSourceSetup(context.file()).prepare(selected, 65536,
                         100, task)) {
                         phase.set("SOURCE_PREPARED");
                         var advisor = new DeploymentAssistedAdvisor(context);
@@ -260,17 +263,17 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                         var prompt = new DeploymentStaticWorkflow.Prompt("app", "demo",
                             DeploymentProjectKind.NODE_SERVICE, Map.of("port", "9090"), fields());
                         var assistance = new DeploymentStaticAssistance(context,
-                            new DeploymentStaticWorkflow(context, new DeploymentReferenceFlow(context)));
+                            new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context)));
                         if (accepted) {
-                            assertSame(prompt, assistance.prompt(new ServerRef("server"), prompt, advisor,
+                            assertSame(prompt, assistance.prompt(new ServerId("server"), prompt, advisor,
                                 material, task));
-                            assertEquals(prompt, assistance.prompt(new ServerRef("server"), prompt, advisor,
+                            assertEquals(prompt, assistance.prompt(new ServerId("server"), prompt, advisor,
                                 material, task));
                             assertEquals("9090", prompt.defaults().get("port"));
                             assertTrue(advisor.humanSupplied("app/port"));
                         } else {
                             assertThrows(CancellationException.class, () -> assistance
-                                .prompt(new ServerRef("server"), prompt, advisor, material, task));
+                                .prompt(new ServerId("server"), prompt, advisor, material, task));
                             phase.set("HUMAN_REFUSAL_CONFIRMED");
                         }
                         assertEquals(1, approvals.size());
@@ -279,7 +282,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                             "Known HTTP rejection cannot select an unassigned inventory model or retry after manual consent");
                     }
                     phase.set("MATERIAL_CLOSED_RETURNING_" + (accepted ? "SUCCEEDED" : "CANCELLED"));
-                    return known(accepted ? Outcome.SUCCEEDED : Outcome.CANCELLED);
+                    return known(accepted ? TaskResult.SUCCEEDED : TaskResult.CANCELLED);
                 } catch (Exception | AssertionError failure) {
                     failures.set(failure);
                     throw failure;
@@ -291,7 +294,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
             } catch (TimeoutException unconfirmed) {
                 throw new AssertionError(manualDiagnostic(runtime, handle, phase.get(), failures.get()), unconfirmed);
             }
-            assertEquals(accepted ? Outcome.SUCCEEDED : Outcome.CANCELLED, result.outcome(),
+            assertEquals(accepted ? TaskResult.SUCCEEDED : TaskResult.CANCELLED, result.outcome(),
                 () -> String.valueOf(failures.get()));
             if (failures.get() != null)
                 throw new AssertionError("Original manual continuation callback failed", failures.get());
@@ -361,7 +364,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
                 }
             }
             runtime.persistence().aiProfiles().saveVerified(
-                new StoredAiProviderProfile(id, http.endpoint(), "fixture/" + id, credential), id, Instant.now(),
+                new StoredAiModelProfile(id, http.endpoint(), "fixture/" + id, credential), id, Instant.now(),
                 AiCapabilityType.TEXT);
             runtime.persistence().aiProfiles().saveOutputLimit(id, 1600);
         }
@@ -381,7 +384,7 @@ class DeploymentRetainedAssistanceContractsTest extends DeploymentRuntimeFixture
         assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
     }
 
-    private static OperationResult<Void> known(Outcome outcome) {
+    private static OperationResult<Void> known(TaskResult outcome) {
         return new OperationResult<>(outcome, Optional.empty(), Optional.empty());
     }
 

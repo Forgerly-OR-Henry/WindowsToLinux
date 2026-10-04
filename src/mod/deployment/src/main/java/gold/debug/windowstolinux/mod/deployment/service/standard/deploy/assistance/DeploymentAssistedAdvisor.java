@@ -1,25 +1,23 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.io.IOException;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 
 /** Offers bounded advice only after a verified deterministic failure. / 仅在确定性步骤出现已证实失败后提供有界建议。 */
 public final class DeploymentAssistedAdvisor {
@@ -134,7 +132,7 @@ public final class DeploymentAssistedAdvisor {
      * @param task original task / 原任务
      * @return whether manual continuation was explicitly accepted / 是否明确接受人工继续
      * @throws Exception on uncertain host review / 宿主审阅不明时 */
-    public boolean manualContinuation(ServerRef server, String phase, Problem failure, String sourceRevision,
+    public boolean manualContinuation(ServerId server, String phase, Problem failure, String sourceRevision,
                                       TaskContext task) throws Exception {
         if (manual)
             return true;
@@ -144,16 +142,16 @@ public final class DeploymentAssistedAdvisor {
                 new ActionIntent("deployment.assisted.manual-continuation", List.of(server.id()), server.id(),
                     sourceRevision, facts, "Review the actual model failure before continuing manually"),
                 task);
-        if (review.outcome() == Outcome.UNKNOWN)
+        if (review.outcome() == TaskResult.UNKNOWN)
             throw new ApiException(review.problem().orElseGet(() -> new Problem(ProblemCode.UNKNOWN,
                 "DEPLOYMENT_ASSISTED_MANUAL_REVIEW_UNKNOWN", "Original manual continuation review is unknown",
                 Map.of("task", task.id().toString()), Optional.of(task.id()))));
-        if (review.outcome() == Outcome.CANCELLED) {
+        if (review.outcome() == TaskResult.CANCELLED) {
             var cancelled = new java.util.concurrent.CancellationException("Original manual continuation was cancelled");
             review.problem().ifPresent(problem -> cancelled.initCause(new ApiException(problem)));
             throw cancelled;
         }
-        manual = review.outcome() == Outcome.SUCCEEDED;
+        manual = review.outcome() == TaskResult.SUCCEEDED;
         return manual;
     }
 
@@ -166,13 +164,13 @@ public final class DeploymentAssistedAdvisor {
      * @param task original task / 原任务
      * @return approved bounded advice or a stop decision / 已批准的有界建议或停止决定
      * @throws Exception on unknown outcome, cancelled task, invalid advice or uncertain review / 未知结果、取消、无效建议或审核不明时 */
-    public Advice afterFailure(ServerRef server, String phase, OperationResult<?> failure, String sourceRevision,
+    public Advice afterFailure(ServerId server, String phase, OperationResult<?> failure, String sourceRevision,
                                List<DeploymentReviewField> fields, TaskContext task) throws Exception {
         Objects.requireNonNull(server);
         Objects.requireNonNull(task);
-        if (failure.outcome() == Outcome.UNKNOWN)
+        if (failure.outcome() == TaskResult.UNKNOWN)
             throw new DeploymentAiJson.CapabilityOutcomeException(failure.outcome(), failure.problem());
-        if (failure.outcome() != Outcome.FAILED || task.cancelToken().requested())
+        if (failure.outcome() != TaskResult.FAILED || task.cancelToken().requested())
             return new Advice(false, Map.of(), "No confirmed retryable failure");
         if (!Set.of("ANALYSIS", "PREFLIGHT", "BUILD", "HEALTH", "ROLLBACK_VERIFIED").contains(phase))
             throw new IllegalArgumentException("Unsupported assisted checkpoint");
@@ -220,7 +218,7 @@ public final class DeploymentAssistedAdvisor {
         var intent = new ActionIntent("deployment.assisted.retry", List.of(server.id()), server.id(), sourceRevision,
             exact, "Review suggested values and retry only the confirmed failed deployment checkpoint");
         var review = approveFixed(intent, task);
-        if (review.outcome() != Outcome.SUCCEEDED)
+        if (review.outcome() != TaskResult.SUCCEEDED)
             throw new DeploymentAiJson.CapabilityOutcomeException(review.outcome(), review.problem());
         requireRevision(task);
         return new Advice(true, values, reason);
@@ -256,7 +254,7 @@ public final class DeploymentAssistedAdvisor {
             if (risk.equals("HIGH") && approvalMode.equals("AUTOMATIC")) {
                 var escalated = context.interaction().approve(new ActionIntent("deployment.assisted.high-risk", intent.serverIds(),
                     intent.target(), frozen, intent.exactAction(), "Review the independently identified high risk before the fixed recovery action"), task);
-                if (escalated.outcome() != Outcome.SUCCEEDED) return escalated;
+                if (escalated.outcome() != TaskResult.SUCCEEDED) return escalated;
             }
         }
         requireRevision(task);

@@ -15,19 +15,19 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import gold.debug.windowstolinux.appapi.linux.CommandRequest;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.ApprovalGrant;
-import gold.debug.windowstolinux.appapi.task.InteractionService;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -105,9 +105,9 @@ class DeploymentManagedHelperTest {
         var requests = new ArrayList<CommandRequest>();
         var intents = new ArrayList<ActionIntent>();
         var helper = new DeploymentManagedHelper(session(replies, requests), reviews(intents),
-            new ServerRef("Server-Exact"), task(), "reviewed-plan-1");
+            new ServerId("Server-Exact"), task(), "reviewed-plan-1");
         var result = helper.install();
-        assertEquals(Outcome.SUCCEEDED, result.outcome());
+        assertEquals(TaskResult.SUCCEEDED, result.outcome());
         assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, result.value().orElseThrow().sha256());
         assertEquals(2, requests.size());
         assertEquals(List.of("deployment.helper.install.v1", "deployment.helper.probe.v1"),
@@ -127,14 +127,14 @@ class DeploymentManagedHelperTest {
         replies.add(ok("FORGED=1\n" + probeOutput(), ""));
         var requests = new ArrayList<CommandRequest>();
         var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-            new ServerRef("exact"), task(), "revision");
-        assertEquals(Outcome.FAILED, helper.probe().outcome());
+            new ServerId("exact"), task(), "revision");
+        assertEquals(TaskResult.FAILED, helper.probe().outcome());
         assertEquals(1, requests.size());
 
         replies.add(
-            new OperationResult<>(Outcome.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+            new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
                 "SSH_COMMAND_EXIT_UNKNOWN", "Unconfirmed", Map.of(), Optional.empty()))));
-        assertEquals(Outcome.UNKNOWN, helper.install().outcome());
+        assertEquals(TaskResult.UNKNOWN, helper.install().outcome());
         assertEquals(2, requests.size());
     }
 
@@ -144,7 +144,7 @@ class DeploymentManagedHelperTest {
         var denied = new InteractionService() {
             @Override
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) {
-                return new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
             }
 
             @Override
@@ -152,16 +152,16 @@ class DeploymentManagedHelperTest {
                 throw new AssertionError("No text input expected");
             }
         };
-        var helper = new DeploymentManagedHelper(session(new ArrayDeque<>(), requests), denied, new ServerRef("exact"),
+        var helper = new DeploymentManagedHelper(session(new ArrayDeque<>(), requests), denied, new ServerId("exact"),
             task(), "revision");
-        assertEquals(Outcome.CANCELLED, helper.install().outcome());
+        assertEquals(TaskResult.CANCELLED, helper.install().outcome());
         assertTrue(requests.isEmpty());
 
         var replies = new ArrayDeque<OperationResult<CommandResult>>();
-        replies.add(new OperationResult<>(Outcome.CANCELLED, Optional.empty(), Optional.empty()));
+        replies.add(new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty()));
         helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-            new ServerRef("exact"), task(), "revision");
-        assertEquals(Outcome.CANCELLED, helper.install().outcome());
+            new ServerId("exact"), task(), "revision");
+        assertEquals(TaskResult.CANCELLED, helper.install().outcome());
         assertEquals(1, requests.size());
     }
 
@@ -172,23 +172,23 @@ class DeploymentManagedHelperTest {
             new CommandResult(Optional.of(0), "incomplete", "", false));
         for (var result : badInstall) {
             var replies = new ArrayDeque<OperationResult<CommandResult>>();
-            replies.add(new OperationResult<>(Outcome.SUCCEEDED, Optional.of(result), Optional.empty()));
+            replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(result), Optional.empty()));
             var requests = new ArrayList<CommandRequest>();
             var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-                new ServerRef("exact"), task(), "revision");
-            assertEquals(Outcome.UNKNOWN, helper.install().outcome());
+                new ServerId("exact"), task(), "revision");
+            assertEquals(TaskResult.UNKNOWN, helper.install().outcome());
             assertEquals(1, requests.size());
         }
         for (var later : List.of(
-            new OperationResult<CommandResult>(Outcome.CANCELLED, Optional.empty(), Optional.empty()),
+            new OperationResult<CommandResult>(TaskResult.CANCELLED, Optional.empty(), Optional.empty()),
             ok("PROTOCOL=9\n", ""))) {
             var replies = new ArrayDeque<OperationResult<CommandResult>>();
             replies.add(ok(installTail(), "Package warning\n"));
             replies.add(later);
             var requests = new ArrayList<CommandRequest>();
             var helper = new DeploymentManagedHelper(session(replies, requests), reviews(new ArrayList<>()),
-                new ServerRef("exact"), task(), "revision");
-            assertEquals(Outcome.UNKNOWN, helper.install().outcome());
+                new ServerId("exact"), task(), "revision");
+            assertEquals(TaskResult.UNKNOWN, helper.install().outcome());
             assertEquals(2, requests.size());
         }
     }
@@ -206,7 +206,7 @@ class DeploymentManagedHelperTest {
                 }
                 throw new AssertionError(method.getName());
             });
-        var helper = new DeploymentManagedHelper(session, reviews(new ArrayList<>()), new ServerRef("exact"), task(),
+        var helper = new DeploymentManagedHelper(session, reviews(new ArrayList<>()), new ServerId("exact"), task(),
             "revision");
         ApiException failure = assertThrows(ApiException.class, helper::install);
         assertSame(denied, failure.problem());
@@ -227,7 +227,7 @@ class DeploymentManagedHelperTest {
             @Override
             public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) {
                 intents.add(intent);
-                return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())),
                     Optional.empty());
             }
 
@@ -253,7 +253,7 @@ class DeploymentManagedHelperTest {
     }
 
     private static OperationResult<CommandResult> ok(String out, String err) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), out, err, false)),
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), out, err, false)),
             Optional.empty());
     }
 

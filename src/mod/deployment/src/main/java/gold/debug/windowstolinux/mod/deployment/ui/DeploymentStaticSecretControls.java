@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
@@ -19,7 +13,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.*;
 
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRevision;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretSelection;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
@@ -158,7 +157,7 @@ final class DeploymentStaticSecretControls {
                             lookup = null;
                         if (!page.active(view))
                             return;
-                        if (failure != null || result.outcome() != Outcome.SUCCEEDED) {
+                        if (failure != null || result.outcome() != TaskResult.SUCCEEDED) {
                             state.setText(page.text("secretListError"));
                             return;
                         }
@@ -189,9 +188,9 @@ final class DeploymentStaticSecretControls {
             state.setText(page.text("secretNeedServer"));
             return;
         }
-        DeploymentSecretReference reference;
+        DeploymentSecretRef reference;
         try {
-            reference = new DeploymentSecretReference(identifier.getText().trim(),
+            reference = new DeploymentSecretRef(identifier.getText().trim(),
                 Long.parseLong(revision.getText().trim()));
         } catch (RuntimeException invalid) {
             state.setText(page.text("secretInvalidReference"));
@@ -233,7 +232,7 @@ final class DeploymentStaticSecretControls {
      * @param handle original secret task / 原秘密任务
      * @param reference original business revision / 原业务修订
      * @param view original view generation / 原视图代次 */
-    private void observe(TaskHandle<DeploymentSecretRevision> handle, DeploymentSecretReference reference, long view) {
+    private void observe(TaskHandle<DeploymentSecretRevision> handle, DeploymentSecretRef reference, long view) {
         try {
             while (!closed) {
                 var snapshot = handle.snapshot();
@@ -241,7 +240,7 @@ final class DeploymentStaticSecretControls {
                     SwingUtilities.invokeLater(() -> {
                         if (snapshot.state() == TaskState.UNKNOWN)
                             finish(view, page.text("secretUnknown") + " " + handle.id());
-                        else if (snapshot.outcome().orElse(Outcome.UNKNOWN) == Outcome.SUCCEEDED) {
+                        else if (snapshot.outcome().orElse(TaskResult.UNKNOWN) == TaskResult.SUCCEEDED) {
                             var selected = new DeploymentSecretSelection(reference, "deployment-application");
                             if (choices.stream().noneMatch(item -> item.reference().equals(reference))) {
                                 var updated = new java.util.ArrayList<>(choices);
@@ -255,7 +254,7 @@ final class DeploymentStaticSecretControls {
                                 refresh(view);
                         } else
                             finish(view,
-                                page.text("secretCreateError") + " " + snapshot.outcome().orElse(Outcome.UNKNOWN));
+                                page.text("secretCreateError") + " " + snapshot.outcome().orElse(TaskResult.UNKNOWN));
                     });
                     return;
                 }

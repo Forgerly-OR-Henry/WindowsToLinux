@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.app.ui.ai;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.ai.VoiceRequest;
-
 import java.awt.*;
 import java.awt.event.*;
 import java.net.URI;
@@ -18,12 +13,16 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
+import gold.debug.windowstolinux.app.service.ai.AiModelInfo;
+import gold.debug.windowstolinux.app.service.ai.AiModelProfile;
 import gold.debug.windowstolinux.app.service.ai.PlatformModelService;
-import gold.debug.windowstolinux.app.service.ai.AiProviderProfile;
-import gold.debug.windowstolinux.app.service.ai.AiProviderSummary;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
+import gold.debug.windowstolinux.appapi.ai.voice.VoiceRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 
 /** Saves explicit model configuration and separately observes capability verification. / 保存明确模型配置并单独观察能力验证。 */
 final class PlatformModelDialog extends JDialog {
@@ -49,7 +48,7 @@ final class PlatformModelDialog extends JDialog {
     private final JComboBox<AiCapabilityType> capability = new JComboBox<>(AiCapabilityType.values());
 
     /** Safe operation feedback. / 安全操作反馈。 */
-    private final JTextArea status = DesktopComponentFactory.outputArea();
+    private final JTextArea status = DesktopPartFactory.outputArea();
 
     /** Independent configuration action. / 独立配置操作。 */
     private final JButton save;
@@ -80,8 +79,8 @@ final class PlatformModelDialog extends JDialog {
      * @param existing optional current row / 可选当前行
      * @param outputLimit explicit existing budget / 明确已有预算
      * @param saved inventory refresh callback / 清单刷新回调 */
-    PlatformModelDialog(Window owner, PlatformModelService service, DesktopComponentFactory components,
-                        PageMessagePresenter messages, AiProviderSummary existing, OptionalInt outputLimit, Runnable saved) {
+    PlatformModelDialog(Window owner, PlatformModelService service, DesktopPartFactory components,
+                        PageMessagePresenter messages, AiModelInfo existing, OptionalInt outputLimit, Runnable saved) {
         this(owner, Optional.of(Objects.requireNonNull(service)), components, messages, existing, outputLimit, saved);
     }
 
@@ -94,7 +93,7 @@ final class PlatformModelDialog extends JDialog {
      * @param outputLimit explicit budget / 明确预算
      * @param saved refresh callback / 刷新回调 */
     private PlatformModelDialog(Window owner, Optional<PlatformModelService> service,
-                                DesktopComponentFactory components, PageMessagePresenter messages, AiProviderSummary existing,
+                                DesktopPartFactory components, PageMessagePresenter messages, AiModelInfo existing,
                                 OptionalInt outputLimit, Runnable saved) {
         super(owner, messages.text(existing == null ? "ai.models.add" : "ai.models.edit"), ModalityType.APPLICATION_MODAL);
         gold.debug.windowstolinux.app.ui.language.LocaleBinding.title(this,
@@ -158,7 +157,7 @@ final class PlatformModelDialog extends JDialog {
     /** Loads saved values without assuming a chat protocol exists. / 加载保存值，不假设聊天协议存在。
      * @param existing saved model or absent / 保存模型或空
      * @param outputLimit explicit budget / 明确预算 */
-    private void initialize(AiProviderSummary existing, OptionalInt outputLimit) {
+    private void initialize(AiModelInfo existing, OptionalInt outputLimit) {
         if (existing != null) {
             fields.name.setText(existing.name());
             fields.endpoint.setText(address(existing.profile().chatCompletionsEndpoint()));
@@ -177,7 +176,7 @@ final class PlatformModelDialog extends JDialog {
      * @param components original controls / 原控件
      * @param messages localized display / 本地化显示
      * @return editor with real effects unavailable / 真实副作用不可用的编辑器 */
-    static JDialog preview(Window owner, DesktopComponentFactory components, PageMessagePresenter messages) {
+    static JDialog preview(Window owner, DesktopPartFactory components, PageMessagePresenter messages) {
         var dialog = new PlatformModelDialog(owner, Optional.empty(), components, messages, null, OptionalInt.of(4096), () -> {
         });
         dialog.fields.name.setText(messages.text("debug.sample.model"));
@@ -199,7 +198,7 @@ final class PlatformModelDialog extends JDialog {
             fields.key.setText("");
             char[] input = supplied;
             setBusy(true);
-            DesktopTaskExecutor.run(() -> {
+            DesktopTaskRunner.run(() -> {
                 try {
                     var modelService = service.orElseThrow();
                     modelService.save(draft.profile(), draft.name(), input, draft.limit());
@@ -230,7 +229,7 @@ final class PlatformModelDialog extends JDialog {
         setBusy(true);
         unknown = false;
         status.setText(messages.text("ai.models.testing"));
-        DesktopTaskExecutor.run(() -> {
+        DesktopTaskRunner.run(() -> {
             VoiceRequest audio = null;
             if (selected == AiCapabilityType.VOICE_FILE || selected == AiCapabilityType.VOICE_REALTIME) {
                 var file = Path.of(path);
@@ -256,7 +255,7 @@ final class PlatformModelDialog extends JDialog {
                 setBusy(false);
                 saved.run();
                 if (failure != null) status.setText(messages.text("platform.models.failed"));
-                else if (result.outcome() == Outcome.SUCCEEDED) dispose();
+                else if (result.outcome() == TaskResult.SUCCEEDED) dispose();
                 else status.setText(result.problem().map(messages::safe).orElse(messages.text("button.cancel")));
                 if (closing) dispose();
             }));
@@ -274,7 +273,7 @@ final class PlatformModelDialog extends JDialog {
     /** Captures one valid current configuration. / 捕获一个有效当前配置。
      * @return exact visible draft / 精确可见草稿 */
     private SavedDraft draft() {
-        var profile = new AiProviderProfile(id, uri(fields.endpoint.getText()), fields.model.getText().strip(), credential,
+        var profile = new AiModelProfile(id, uri(fields.endpoint.getText()), fields.model.getText().strip(), credential,
             uri(fields.fileEndpoint.getText()), uri(fields.realtimeEndpoint.getText()));
         String configuredLimit = fields.limit.getText().strip();
         int limit = profile.chatCompletionsEndpoint() == null && configuredLimit.isEmpty()
@@ -311,7 +310,7 @@ final class PlatformModelDialog extends JDialog {
     /** Cancels the real task without interrupting the UI worker. / 取消真实任务，不中断界面工作线程。 */
     private void cancelTask() {
         var current = task;
-        if (current != null) DesktopTaskExecutor.run(() -> {
+        if (current != null) DesktopTaskRunner.run(() -> {
                 current.requestCancel();
                 return true;
             }, ignored -> {
@@ -365,7 +364,7 @@ final class PlatformModelDialog extends JDialog {
      * @param profile protocol configuration / 协议配置
      * @param name display name / 显示名
      * @param limit text output ceiling / 文字输出上限 */
-    private record SavedDraft(AiProviderProfile profile, String name, int limit) {
+    private record SavedDraft(AiModelProfile profile, String name, int limit) {
     }
 
     /** Owns the editable configuration and caller-provided verification sample controls. / 持有可编辑配置及调用者提供的验证样本控件。 */
@@ -382,7 +381,7 @@ final class PlatformModelDialog extends JDialog {
          * @param form actual layout / 实际布局
          * @param components themed controls / 主题控件
          * @param messages localized labels / 本地化标签 */
-        private void install(JPanel form, DesktopComponentFactory components, PageMessagePresenter messages) {
+        private void install(JPanel form, DesktopPartFactory components, PageMessagePresenter messages) {
             var fields = new JTextField[]{name, endpoint, fileEndpoint, realtimeEndpoint, model, key, limit, audio, expected};
             var labels = new String[]{"ai.models.name", "ai.models.chatEndpoint", "ai.models.fileEndpoint", "ai.models.realtimeEndpoint",
                 "field.model", "field.apiKey", "platform.models.limit", "ai.models.audio", "ai.models.expected"};

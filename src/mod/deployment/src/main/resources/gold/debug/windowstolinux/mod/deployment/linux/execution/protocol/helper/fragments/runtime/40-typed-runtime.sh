@@ -1,23 +1,3 @@
-assert_deployment_or_ordinary_current_or_empty() {
-    local app="$1" manifest="$2" root current
-    root="$(app_root "$app")"
-    if [ -e "$root/current" ] || [ -L "$root/current" ]; then
-        [ -L "$root/current" ] || reject current-not-link
-        current="$(readlink -f -- "$root/current")"
-        if [ -e "$current/.windowstolinux-deployment-parameters" ] || [ -L "$current/.windowstolinux-deployment-parameters" ]; then
-            assert_deployment_current_or_empty "$app" "$manifest"
-            previous_kind=deployment
-        else
-            [ ! -e "$current/.windowstolinux-container-parameters" ] && [ ! -L "$current/.windowstolinux-container-parameters" ] \
-                || reject ordinary-container-release
-            assert_current_or_empty "$app" "$manifest"
-            previous_kind=ordinary
-        fi
-    else
-        assert_deployment_current_or_empty "$app" "$manifest"
-        previous_kind=none
-    fi
-}
 rollback_deployment() {
     [ "$#" -eq 4 ] || reject rollback-deployment-arguments
     local app="$1" candidate_digest="$2" manifest="$3" token="$4"
@@ -36,7 +16,7 @@ rollback_deployment() {
     assert_root_owned_directory "$snapshot"
     for file in current-path kind unit runtime enabled; do assert_root_owned_regular "$snapshot/$file"; done
     previous_kind="$(cat -- "$snapshot/kind")"
-    [ "$previous_kind" = deployment ] || [ "$previous_kind" = ordinary ] || reject snapshot-kind
+    [ "$previous_kind" = deployment ] || reject snapshot-kind
     previous="$(cat -- "$snapshot/current-path")"
     previous_digest="${previous##*/}"
     require_digest "$previous_digest"
@@ -46,14 +26,10 @@ rollback_deployment() {
     assert_root_owned_directory "$previous"
     assert_root_owned_regular "$previous/.windowstolinux-owner"
     [ "$(cat -- "$previous/.windowstolinux-owner")" = "$manifest" ] || reject previous-owner
-    if [ "$previous_kind" = deployment ]; then
-        assert_root_owned_regular "$snapshot/deployment-parameters"
-        current_application="$app"
-        load_deployment_parameters "$snapshot/deployment-parameters"
-        expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
-    else
-        expected="$(expected_unit_digest "$app" "$snapshot/unit")"
-    fi
+    assert_root_owned_regular "$snapshot/deployment-parameters"
+    current_application="$app"
+    load_deployment_parameters "$snapshot/deployment-parameters"
+    expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
     [ "$(sha256sum -- "$snapshot/unit" | awk '{print $1}')" = "$expected" ] || reject snapshot-unit
     if [ -e "$candidate" ] || [ -L "$candidate" ]; then
         assert_root_owned_directory "$candidate"
@@ -62,7 +38,7 @@ rollback_deployment() {
         assert_root_owned_regular "$candidate/.windowstolinux-deployment-parameters"
     fi
     stop_application_unit "$app"
-    if [ "$previous_kind" = deployment ]; then prepare_managed_data_bindings "$previous/source"; fi
+    prepare_managed_data_bindings "$previous/source"
     ln -sfnT -- "$previous" "$root/current"
     install -o root -g root -m 644 -- "$snapshot/unit" "$unit"
     systemctl daemon-reload

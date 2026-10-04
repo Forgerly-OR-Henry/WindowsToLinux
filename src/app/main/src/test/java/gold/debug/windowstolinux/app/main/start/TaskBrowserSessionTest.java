@@ -1,12 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
-import gold.debug.windowstolinux.app.db.task.TaskLedger;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -16,11 +9,16 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.function.*;
 
-import gold.debug.windowstolinux.app.linux.ssh.recover.BrowserProcess;
-import gold.debug.windowstolinux.app.linux.ssh.recover.BrowserRecoveryException;
-import gold.debug.windowstolinux.app.linux.ssh.recover.PlaywrightTerminalSession;
-import gold.debug.windowstolinux.app.service.sshrecover.TaskBrowserSession;
-
+import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
+import gold.debug.windowstolinux.app.db.task.TaskLedger;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserProcess;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserRecoveryException;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.PlaywrightTerminalSession;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.TaskBrowserSession;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,7 +39,7 @@ class TaskBrowserSessionTest {
 
     static TaskBrowserSession create(PlatformRuntime runtime, TaskContext task,
                                      Function<Consumer<Boolean>, AutoCloseable> privacy) throws Exception {
-        return new TaskBrowserSession(runtime.persistence().database(), runtime.tasks(), task, OWNER, VERSION, privacy);
+        return new TaskBrowserSession(PlatformRecoveryHost.browser(runtime.persistence().database(), runtime.tasks()), task, OWNER, VERSION, privacy);
     }
 
     @Test
@@ -82,7 +80,7 @@ class TaskBrowserSessionTest {
                 worker.submit(original::close).get(15, TimeUnit.SECONDS);
                 owned.get().close();
                 assertFalse(process.isAlive());
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 assertEquals(0, claims(runtime));
             } finally {
@@ -100,8 +98,9 @@ class TaskBrowserSessionTest {
             initialize(runtime, false);
             var owned = new AtomicReference<TaskBrowserSession>();
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                assertThrows(ApiException.class, () -> new TaskBrowserSession(runtime.persistence().database(),
-                    runtime.tasks(), task, "foreign", VERSION, runtime.security()::observeLock));
+                assertThrows(ApiException.class, () -> new TaskBrowserSession(
+                    PlatformRecoveryHost.browser(runtime.persistence().database(), runtime.tasks()),
+                    task, "foreign", VERSION, runtime.security()::observeLock));
                 var browser = create(runtime, task, runtime.security()::observeLock);
                 owned.set(browser);
                 browser.open();
@@ -123,7 +122,7 @@ class TaskBrowserSessionTest {
                 assertEquals(1, claims(runtime));
                 assertThrows(BrowserRecoveryException.class, owned.get()::targets);
                 owned.get().close();
-                assertEquals(Outcome.SUCCEEDED,
+                assertEquals(TaskResult.SUCCEEDED,
                     handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
                 assertEquals(0, claims(runtime));
                 assertTrue(actual(owned.get()).resourcesClosed());

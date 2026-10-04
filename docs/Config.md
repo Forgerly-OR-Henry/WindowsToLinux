@@ -1,0 +1,140 @@
+# 启动配置填写说明
+
+本文件是 APP 配置字段的唯一集中说明。`app/config` 不依赖其他项目模块；main 在存储、服务和窗口创建前读取 Config 模块的 YAML 资源，合并为一次不可变 `AppConfig` 快照并注入消费者。配置不承载密码、私钥、API Key 或运行状态。
+
+## 文件位置与模式覆盖
+
+配置源文件位于 [Config 模块资源目录](../src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml)：`src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml`。Maven 自动将它复制到模块构建输出并打入 Config JAR；三种模式均通过 classpath 读取 `/gold/debug/windowstolinux/app/config/config.yaml`，不读取程序根或工作目录中的同名文件。
+
+YAML 的资源位置不改变数据目录的相对路径基准：
+
+| 模式 | 相对 database.data-directory 的基准 | 发布默认数据目录 |
+|---|---|---|
+| CLASS | 已验证工作区根目录 | src/app/db/data |
+| JAR | 最外层主入口 JAR 所在目录 | data |
+| APP | EXE 所在目录 | data |
+
+顶层仅允许 `common`、`class`、`jar`、`app` 四个区。通用字段按叶字段合并 `common` 与当前模式区；模式区明确填写的值优先，未填写的字段继承 common。唯一例外是 `mod.auto-load`：只允许填写 `class.mod.auto-load`，不能写入 common、jar 或 app，填写到这些区会报错。JAR/APP 固定加载 Mod，不存在配置开关。其他模式的合法字段不影响当前模式。区及中间映射允许省略或填写 `{}`，但合并后 21 个通用叶字段必须齐全；CLASS 还必须填写专属 Mod 开关。没有隐藏的加载器默认回退。表中默认值是随程序发布的 YAML 值。`null` 不代表继承，任何区的 null、未知字段或重复键均报错。有效区的错误类型、非法值、语法错误、缺失资源和缺失生效字段都停止启动并提示配置位置及原因。单文件上限 256 KiB。
+
+修改资源 YAML 后需重新构建并重启；CLASS 使用构建输出中的资源，JAR/APP 需重新打包 Config JAR。升级时如需保留定制配置，应先合并资源 YAML 再构建。配置不提供 ENV 覆盖、命令行字段覆盖、外置文件覆盖、运行时修改或热加载。路径可以明确填写绝对路径；Windows 示例建议使用 `/` 或 YAML 单引号。切换路径不自动搬迁、复制、覆盖或回退到已有数据库，迁移时应自行完整处理配对文件。用户在 DB 中保存的语言、主题、连接阈值及删除说明设置优先于 YAML 默认值；新数据库通过初始化接口接收删除说明初始偏好，已有数据库值不被改写。
+
+## 字段填写表
+
+以下键省略区名前缀；通用字段填写位置为 `common.<键>` 或对应模式 `<模式>.<键>`，Mod 自动加载开关仅填写 `class.mod.auto-load`。除商店地址允许空字符串外，字符串不得留空；布尔值必须使用不带引号的 true/false，整数不能使用小数或带引号文本。通用叶字段允许从模式区省略并继承 common，合并后的有效配置不能省略。
+
+### 数据目录
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `database.data-directory` | H2、配对材料及所属运行数据的根目录 | 字符串 / 路径 | common: `data`；class: `src/app/db/data` | 非空合法路径；禁止 `;`、NUL；相对或绝对均可 | `"D:/WTL/data"` | CLASS / JAR / APP |
+
+### 界面初态
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `ui.navigation-collapsed` | 本次启动导航栏初始折叠 | 布尔 | false | true / false | `true` | CLASS / JAR / APP |
+| `ui.advanced-expanded` | CLASS 高级区域初始展开 | 布尔 | false | true / false | `true` | CLASS；JAR/APP 可填写但不展示高级区 |
+
+### 用户设置默认值
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `defaults.locale` | DB 未存语言时的默认语言 | 字符串 | system | system / zh-CN / en-US | `zh-CN` | CLASS / JAR / APP |
+| `defaults.theme` | DB 未存主题时的默认主题 | 字符串 | SYSTEM | SYSTEM / LIGHT / DARK | `DARK` | CLASS / JAR / APP |
+| `defaults.connect-seconds` | DB 未存连接超时的默认值 | 整数 / 秒 | 30 | 1～86400 | `45` | CLASS / JAR / APP |
+| `defaults.idle-seconds` | DB 未存无进展超时的默认值 | 整数 / 秒 | 300 | 1～86400 | `600` | CLASS / JAR / APP |
+| `defaults.delete-ai-explanation` | 新数据库删除 AI 说明的初始偏好 | 布尔 | true | true / false | `false` | CLASS / JAR / APP |
+
+### SSH 参数
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `ssh.heartbeat-seconds` | SSH 心跳间隔 | 整数 / 秒 | 30 | 1～86400 | `30` | CLASS / JAR / APP |
+| `ssh.recovery.observation-seconds` | 救援观察间隔 | 整数 / 秒 | 2 | 1～86400 | `2` | CLASS / JAR / APP |
+| `ssh.recovery.probe-interval-seconds` | 救援恢复验证间隔 | 整数 / 秒 | 10 | 1～86400 | `10` | CLASS / JAR / APP |
+| `ssh.recovery.probe-timeout-seconds` | 单次救援验证超时 | 整数 / 秒 | 15 | 1～86400 | `15` | CLASS / JAR / APP |
+
+### 模型调用参数
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `ai.connect-seconds` | 文字、视觉、文件语音 HTTP 及实时语音 WebSocket 连接时限上限；同时受请求总超时限制 | 整数 / 秒 | 10 | 1～86400 | `10` | CLASS / JAR / APP |
+| `ai.recovery.timeout-seconds` | 救援模型请求总超时 | 整数 / 秒 | 60 | 1～86400 | `60` | CLASS / JAR / APP |
+| `ai.recovery.max-tokens` | 救援模型最大输出 Token | 整数 / Token | 2048 | 1～2147483647 | `2048` | CLASS / JAR / APP |
+| `ai.deletion.timeout-seconds` | 删除说明请求总超时 | 整数 / 秒 | 30 | 1～86400 | `30` | CLASS / JAR / APP |
+| `ai.deletion.max-tokens` | 删除说明最大输出 Token | 整数 / Token | 512 | 1～2147483647 | `512` | CLASS / JAR / APP |
+| `ai.file.timeout-seconds` | 文件判断请求总超时 | 整数 / 秒 | 20 | 1～86400 | `20` | CLASS / JAR / APP |
+| `ai.file.max-tokens` | 文件判断最大输出 Token | 整数 / Token | 256 | 1～2147483647 | `256` | CLASS / JAR / APP |
+
+### 日志参数
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `logs.emergency-records` | 每类应急日志新增记录时的保留数量 | 整数 / 条 | 100 | 1～100；旧日志读取及回填安全上限仍为 100 | `100` | CLASS / JAR / APP |
+
+### Mod 参数
+
+| 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+|---|---|---|---|---|---|---|
+| `mod.auto-load` | 源码开发启动时是否装配 Mod 能力 | 布尔 | class: false | true / false；只允许 class 区 | `false` | 仅 CLASS；JAR/APP 固定加载 |
+| `mod.store.base-url` | 后续商店服务基地址 | 字符串 / URL | 空字符串 | 允许 ""；否则绝对 https URL，须有主机，禁止用户信息、查询、片段 | `"https://mods.example.com/api"` | CLASS / JAR / APP |
+
+## Mod 关闭与商店边界
+
+CLASS 默认关闭自动加载，JAR/APP 固定装配并发现 Mod。只有 `class.mod.auto-load: false` 时只启动主 APP：不读取 Mod 源码、清单、配置、发行包或开发构建输出；不扫描、登记、校验、建立类加载器或调用 Mod 生命周期；不装配 Mod 专用服务和初始化查询；不挂载工作区、Mod 管理、Mod 设置、固定入口和商店；不要求 `wtl.workspace`。APP 的数据库结构检查、安全、任务、SSH、模型配置及日志仍正常初始化。CLASS 开启或运行 JAR/APP 时保留现有来源发现、各 Mod 用户启用选择和依赖启动流程；固定加载机制不自动启用被用户停用的 Mod。
+
+本期商店使用明确报告不可用的商店入口，不进行真实线上搜索、下载或签名验证；填写 URL 不代表服务端已经接通。未填地址或服务不可用显示“网络未连接，请点击重试”；重试保留搜索词，不后台轮询。未来适配器返回真实结果后，使用确认、下载、验证、已有安装器的流程，不自动启用或切换版本。CLASS 开启 Mod 时可以展示商店，仍不能安装发行包。成功流程的自动化验收使用测试适配器，属于模拟服务结果。
+
+入口排序、窗口尺寸、居中、布局、安全与协议常量不属于 YAML。外观中的平台入口顺序和固定 Mod 入口顺序进入 DB，分别使用 `platform_navigation_order` 和 `mod_navigation_pins`；隐藏项保留位置，新项追加，设置按钮保持底部。平台恢复默认按代码顺序，Mod 恢复默认按 ownerId/pageId 排序，不取消固定。损坏偏好报错并保留原值。
+
+启动页面同样由 DB 偏好管理，不新增 YAML 配置：`ui_restore_last_page` 保存恢复开关（缺失时为 false），`ui_last_page` 保存正常关闭时的页面身份 JSON；未启用恢复或找不到原页面时进入首页。记录不包含输入草稿、弹窗或凭据。
+
+## 完整可加载示例
+
+此示例与 Config 模块资源目录中的 `config.yaml` 相同，可直接保存到上述资源文件后重新构建。修改时保持全部有效叶字段齐全。
+
+```yaml
+common:
+  database:
+    data-directory: data
+  ui:
+    navigation-collapsed: false
+    advanced-expanded: false
+  defaults:
+    locale: system
+    theme: SYSTEM
+    connect-seconds: 30
+    idle-seconds: 300
+    delete-ai-explanation: true
+  ssh:
+    heartbeat-seconds: 30
+    recovery:
+      observation-seconds: 2
+      probe-interval-seconds: 10
+      probe-timeout-seconds: 15
+  ai:
+    connect-seconds: 10
+    recovery:
+      timeout-seconds: 60
+      max-tokens: 2048
+    deletion:
+      timeout-seconds: 30
+      max-tokens: 512
+    file:
+      timeout-seconds: 20
+      max-tokens: 256
+  logs:
+    emergency-records: 100
+  mod:
+    store:
+      base-url: ""
+class:
+  database:
+    data-directory: src/app/db/data
+  mod:
+    auto-load: false
+jar: {}
+app: {}
+```
+
+结构与依赖见 [File.md](File.md#module-dependencies)，运行路径见 [Runtime.md](Runtime.md#desktop-data)，发行携带规则见 [APP.md](APP.md)，Mod 作者的独立配置职责见 [Mod.md](Mod.md)。

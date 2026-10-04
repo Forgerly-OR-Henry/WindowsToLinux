@@ -11,6 +11,8 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 /** Mounts isolated author previews in host-owned dialogs. / 在宿主持有的对话框中挂载隔离作者预览。 */
 public final class UiDebugPreviewHost implements ModPageRegistry.PageHost {
@@ -48,7 +50,7 @@ public final class UiDebugPreviewHost implements ModPageRegistry.PageHost {
             public void windowClosing(WindowEvent event) {
                 try {
                     pages.closeView(key);
-                } catch (gold.debug.windowstolinux.appapi.task.ApiException failure) {
+                } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
                     dialog.getRootPane().putClientProperty("debug.cleanupProblem", failure.problem());
                 }
             }

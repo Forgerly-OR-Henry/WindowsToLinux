@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.mod.run;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.Proxy;
@@ -12,13 +8,23 @@ import java.util.*;
 
 import javax.tools.ToolProvider;
 
-import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
-import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
+import gold.debug.windowstolinux.app.mod.run.ModRuntimeSession;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.appapi.mod.*;
-
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
+import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,22 +34,24 @@ class ModRuntimeSessionTest {
 
     static final String ENTRY = """
         package example.fixture;
-        import gold.debug.windowstolinux.appapi.mod.*;
-        import gold.debug.windowstolinux.appapi.ui.*;
+        import gold.debug.windowstolinux.appapi.mod.ModContext; import gold.debug.windowstolinux.appapi.mod.ModEntrypoint; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext; import gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason;
+        import gold.debug.windowstolinux.appapi.ui.page.PageRegistration; import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
         public final class Mod implements ModEntrypoint {
           public static int instances, starts, stops;
           public static boolean failStart, failStop;
+          public static Error startError, stopError, constructorError;
           public static StopReason stoppedBecause;
           private PageRegistration registration;
-          public Mod(){instances++;}
+          public Mod(){instances++;if(constructorError!=null)throw constructorError;}
           public void start(ModContext context) throws Exception {
             if(javax.swing.SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT lifecycle");
             starts++;registration=context.ui().register(new PageSpec("main","title","Fixture",false),()->{throw new AssertionError("must stay lazy");});
+            if(startError!=null)throw startError;
             if(failStart)throw new IllegalStateException("fixture start failed");
           }
           public void stop(StopContext context) throws Exception {
             if(javax.swing.SwingUtilities.isEventDispatchThread())throw new AssertionError("EDT lifecycle");
-            stops++;stoppedBecause=context.reason();if(failStop)throw new IllegalStateException("fixture stop failed");
+            stops++;stoppedBecause=context.reason();if(stopError!=null)throw stopError;if(failStop)throw new IllegalStateException("fixture stop failed");
             if(registration!=null)registration.close();
           }
         }
@@ -197,6 +205,96 @@ class ModRuntimeSessionTest {
         assertEquals(1, count(entry, "stops"));
         assertEquals(1, lease.closes);
         assertEquals(ModRuntimeSession.SessionState.FAILED, session.state());
+        assertTrue(session.finalized());
+    }
+
+    @Test
+    void serviceConfigurationStartupErrorDrainsOriginalContributions() throws Exception {
+        var loader = loader();
+        var entry = loader.loadClass("example.fixture.Mod");
+        var failure = new ServiceConfigurationError("author start provider unavailable");
+        entry.getField("startError").set(null, failure);
+        var lease = new Lease();
+        var session = session(loader, lease);
+        assertSame(failure, assertThrows(ServiceConfigurationError.class, session::start));
+        assertEquals(ModRuntimeSession.SessionState.FAILED, session.state());
+        assertEquals(1, count(entry, "starts"));
+        assertEquals(1, count(entry, "stops"));
+        assertEquals(1, lease.closes);
+        assertTrue(lease.staged.isEmpty());
+        assertTrue(session.finalized());
+    }
+
+    @Test
+    void customStopErrorRetainsOriginalContextUntilSuccessfulRetry() throws Exception {
+        var loader = loader();
+        var entry = loader.loadClass("example.fixture.Mod");
+        var failure = new Error("author stop failed");
+        var lease = new Lease();
+        var session = session(loader, lease);
+        session.start();
+        entry.getField("stopError").set(null, failure);
+        assertSame(failure, assertThrows(Error.class, () -> session.stop(StopReason.APPLICATION_EXIT)));
+        assertEquals(ModRuntimeSession.SessionState.FAILED, session.state());
+        assertEquals(0, lease.closes);
+        assertFalse(session.resourcesClosed());
+        entry.getField("stopError").set(null, null);
+        session.stop(StopReason.APPLICATION_EXIT);
+        assertEquals(2, count(entry, "stops"));
+        assertEquals(1, lease.closes);
+        assertTrue(session.finalized());
+    }
+
+    @Test
+    void fatalLifecycleErrorsPropagateWithRetryableOriginalOwnership() throws Exception {
+        for (var fatal : List.of(new InternalError("synthetic start failure"), new ThreadDeath())) {
+            var loader = loader();
+            var entry = loader.loadClass("example.fixture.Mod");
+            var lease = new Lease();
+            var session = session(loader, lease);
+            entry.getField("startError").set(null, fatal);
+            assertSame(fatal, assertThrows(Error.class, session::start));
+            assertEquals(ModRuntimeSession.SessionState.FAILED, session.state());
+            assertFalse(session.resourcesClosed());
+            assertEquals(0, lease.closes);
+            assertThrows(IllegalStateException.class, session::start);
+            entry.getField("startError").set(null, null);
+            entry.getField("stopError").set(null, fatal);
+            assertSame(fatal, assertThrows(Error.class, () -> session.stop(StopReason.APPLICATION_EXIT)));
+            assertEquals(0, lease.closes);
+            entry.getField("stopError").set(null, null);
+            session.stop(StopReason.APPLICATION_EXIT);
+            assertTrue(session.finalized());
+            assertEquals(1, count(entry, "starts"));
+        }
+    }
+
+    @Test
+    void reflectiveFatalConstructorAndFatalCleanupAreNeverConvertedOrSuppressed() throws Exception {
+        var loader = loader();
+        var entry = loader.loadClass("example.fixture.Mod");
+        var fatal = new InternalError("synthetic constructor failure");
+        entry.getField("constructorError").set(null, fatal);
+        var lease = new Lease();
+        var session = session(loader, lease);
+        assertSame(fatal, assertThrows(InternalError.class, session::start));
+        assertEquals(ModRuntimeSession.SessionState.FAILED, session.state());
+        assertEquals(0, lease.closes);
+        session.stop(StopReason.APPLICATION_EXIT);
+        assertTrue(session.finalized());
+
+        loader = loader();
+        entry = loader.loadClass("example.fixture.Mod");
+        entry.getField("startError").set(null, new ServiceConfigurationError("startup unavailable"));
+        entry.getField("stopError").set(null, fatal);
+        lease = new Lease();
+        session = session(loader, lease);
+        var failing = session;
+        assertSame(fatal, assertThrows(InternalError.class, failing::start));
+        assertFalse(session.finalized());
+        assertEquals(0, lease.closes);
+        entry.getField("stopError").set(null, null);
+        session.stop(StopReason.APPLICATION_EXIT);
         assertTrue(session.finalized());
     }
 

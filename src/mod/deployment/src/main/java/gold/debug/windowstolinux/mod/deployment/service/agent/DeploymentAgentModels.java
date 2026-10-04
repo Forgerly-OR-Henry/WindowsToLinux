@@ -1,17 +1,15 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.util.*;
 import java.util.function.Supplier;
 
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAgentProtocol;
 
 /** Keeps deployment, approval and dispatch bound to one explicitly adopted model revision. / 将部署、审批及发送绑定到一份明确采用的模型修订。 */
@@ -23,13 +21,13 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
     private final TaskContext task;
 
     /** Original selected target. / 原所选目标。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Frozen human approval policy. / 冻结人工审批策略。 */
     private final String mode;
 
     /** Original durable action evidence. / 原持久动作依据。 */
-    private final DeploymentAgentJournal journal;
+    private final DeploymentAgentActionLog journal;
 
     /** Actual task-bound tools. / 实际任务绑定工具。 */
     private final DeploymentAgentDeliveryPort tools;
@@ -55,8 +53,8 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
      * @param current live route observer / 实时路由观察器
      * @param journal original evidence / 原依据
      * @param tools actual scoped tools / 实际限定工具 */
-    DeploymentAgentModels(ModContext context, TaskContext task, ServerRef server, String mode, String revision,
-                          Supplier<String> current, DeploymentAgentJournal journal, DeploymentAgentDeliveryPort tools) {
+    DeploymentAgentModels(ModContext context, TaskContext task, ServerId server, String mode, String revision,
+                          Supplier<String> current, DeploymentAgentActionLog journal, DeploymentAgentDeliveryPort tools) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server);
@@ -140,7 +138,7 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
     /** Requires no unacknowledged effects or pending transfer before replacing authority. / 替换权限前要求无未确认副作用或待结传输。
      * @throws Exception if the original boundary is unsettled / 原边界未结清时 */
     private void settled() throws Exception {
-        if (!DeploymentAgentJournal.effectsSettled(journal.events(task))
+        if (!DeploymentAgentActionLog.effectsSettled(journal.events(task))
             || !context.linux().pendingTransfers(task).isEmpty())
             throw new IllegalStateException("Unsettled original effects forbid pausing or model refresh");
     }

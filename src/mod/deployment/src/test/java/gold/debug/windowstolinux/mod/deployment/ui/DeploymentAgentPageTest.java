@@ -1,7 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
@@ -18,8 +16,11 @@ import javax.swing.*;
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -72,7 +73,7 @@ class DeploymentAgentPageTest extends DeploymentRuntimeFixture {
                 credentials.save("ai/visual-fixture", "fixture-only".toCharArray());
             }
             runtime.persistence().aiProfiles().saveVerified(
-                new gold.debug.windowstolinux.app.db.ai.StoredAiProviderProfile("visual-model",
+                new gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile("visual-model",
                     "https://example.invalid/v1/chat/completions", "fixture", "ai/visual-fixture"),
                 "Visual fixture", java.time.Instant.now());
             runtime.persistence().aiProfiles().purposes().save(

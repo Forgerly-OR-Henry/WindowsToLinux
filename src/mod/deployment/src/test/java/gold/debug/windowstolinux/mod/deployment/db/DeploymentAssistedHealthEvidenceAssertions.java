@@ -25,9 +25,9 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
         UUID previousOperation = taskId;
         var candidates = new HashSet<String>();
         for (int index = 0; index < retries; index++) {
-            var review = gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptReview
+            var review = gold.debug.windowstolinux.mod.deployment.db.DeploymentPublishAttemptReview
                 .decode(request.path("attemptReviews").get(index));
-            var proof = gold.debug.windowstolinux.mod.deployment.db.DeploymentPublicationAttemptProof
+            var proof = gold.debug.windowstolinux.mod.deployment.db.DeploymentPublishAttemptProof
                 .decode(request.path("attemptProofs").get(index));
             assertEquals(index + 1, review.retry());
             assertEquals(previousOperation, review.previousOperation());
@@ -70,7 +70,7 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
         try (var statement = connection.createStatement();
              var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             assertTrue(rows.next());
-            original = DeploymentExecutionRepository.row(rows);
+            original = DeploymentExecutionStore.row(rows);
             assertFalse(rows.next());
         }
         var proposal = DeploymentExecutionCodec.publicationTemplate(original).orElseThrow();
@@ -85,50 +85,50 @@ public final class DeploymentAssistedHealthEvidenceAssertions {
         var configuration = unit.configuration();
         var nanoTime = java.time.Instant.ofEpochMilli(configuration.createdAt().toEpochMilli()).plusNanos(123456);
         assertNotEquals(configuration.createdAt(), nanoTime);
-        var equivalent = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
+        var equivalent = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot
             .create(configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
                 nanoTime, configuration.entries());
         assertEquals(configuration.sha256(), equivalent.sha256());
         assertNotEquals(configuration, equivalent);
-        assertEquals(DeploymentPublicationAttemptCodec.withTemplate(beforeTemplate, proposal),
-            DeploymentPublicationAttemptCodec.withTemplate(beforeTemplate,
+        assertEquals(DeploymentPublishAttemptCodec.withTemplate(beforeTemplate, proposal),
+            DeploymentPublishAttemptCodec.withTemplate(beforeTemplate,
                 replaceConfiguration(proposal, equivalent)));
-        var revision = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
+        var revision = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot
             .create(configuration.applicationId(), configuration.revision() + 1, configuration.schemaVersion(),
                 configuration.createdAt(), configuration.entries());
         var entries = new ArrayList<>(configuration.entries());
-        entries.add(new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationEntry(
+        entries.add(new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigEntry(
             "CODEC_SENTINEL",
-            gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationScopeType.RUNTIME,
-            new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationValue.Text(
+            gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigScopeType.RUNTIME,
+            new gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigValue.Text(
                 "changed")));
-        var content = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot
+        var content = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot
             .create(configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
                 configuration.createdAt(), entries);
         assertNotEquals(configuration.sha256(), revision.sha256());
         assertNotEquals(configuration.sha256(), content.sha256());
-        var time = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot.create(
+        var time = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot.create(
             configuration.applicationId(), configuration.revision(), configuration.schemaVersion(),
             configuration.createdAt().plusMillis(1), configuration.entries());
         for (var changed : List.of(revision, content, time)) {
-            var rejected = assertThrows(java.sql.SQLException.class, () -> DeploymentPublicationAttemptCodec
+            var rejected = assertThrows(java.sql.SQLException.class, () -> DeploymentPublishAttemptCodec
                 .withTemplate(beforeTemplate, replaceConfiguration(proposal, changed)));
             assertEquals("Attempt changed original complete configuration", rejected.getMessage());
         }
         try (var statement = connection.createStatement();
              var rows = statement.executeQuery("SELECT * FROM deployment_execution")) {
             assertTrue(rows.next());
-            assertEquals(original, DeploymentExecutionRepository.row(rows));
+            assertEquals(original, DeploymentExecutionStore.row(rows));
             assertFalse(rows.next());
         }
     }
 
-    private static DeploymentPublicationProposal replaceConfiguration(DeploymentPublicationProposal proposal,
-                                                                      gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigurationSnapshot configuration) {
+    private static DeploymentPublishProposal replaceConfiguration(DeploymentPublishProposal proposal,
+                                                                  gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot configuration) {
         var units = new ArrayList<>(proposal.units());
         var original = units.getFirst();
         units.set(0, new DeploymentUnitCommit(original.unit(), original.runtime(), original.release(), configuration,
             original.secrets()));
-        return new DeploymentPublicationProposal(proposal.graph(), units);
+        return new DeploymentPublishProposal(proposal.graph(), units);
     }
 }

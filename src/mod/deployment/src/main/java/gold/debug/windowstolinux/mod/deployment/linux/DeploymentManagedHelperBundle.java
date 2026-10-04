@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "7ae55e01e280af793c42f000777012c2a5b12f8bd83b706cf85ccd11c004749f";
+    public static final String EXPECTED_SHA256 = "0abc9bd4162a23c127275982f6b241b4ff56d2c787897b12b81c0404ac69c1ce";
 
     /**
      * ROOT.
@@ -195,7 +195,7 @@ public final class DeploymentManagedHelperBundle {
                     content += "build_entry_sha256=" + sha256(renderBuildEntry().getBytes(StandardCharsets.UTF_8))
                         + "\n";
                 }
-                // The embedded Python resource is literal; legacy shell resources retain their established normalization. / 嵌入的 Python 资源保持字面内容，旧版 Shell 资源继续使用既有规范化处理。
+                // Embedded Python is literal; packaged shell fragments use their declared backslash encoding. / 嵌入的 Python 保持字面内容，打包 Shell 片段按声明的反斜杠编码输出。
                 output.write(((fragment.endsWith("27-agent-workspace.sh") || fragment.endsWith("10-native-instances.sh")
                     || fragment.endsWith("20-native-targets.sh") || fragment.endsWith("21-native-operations.sh") || fragment.endsWith("23-container-builder.sh")
                     || fragment.endsWith("12-container-image-input.sh")

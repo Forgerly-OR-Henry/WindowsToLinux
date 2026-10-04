@@ -5,15 +5,17 @@ import java.util.List;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.ui.PageSpec;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext;
+import gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApi;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentPageService;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
-import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentReferenceFlow;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApiProvider;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationsService;
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService;
@@ -21,7 +23,7 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticWorkflow;
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.DeploymentStandardAnalyzer;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.DeploymentStandardPlanner;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublicationRecovery;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
 import gold.debug.windowstolinux.mod.deployment.ui.DeploymentAgentPage;
 import gold.debug.windowstolinux.mod.deployment.ui.DeploymentApplicationsPage;
 import gold.debug.windowstolinux.mod.deployment.ui.DeploymentStaticPage;
@@ -36,7 +38,7 @@ public final class Mod implements ModEntrypoint {
     private ModContext context;
 
     /** Actual publication task and recovery implementation. / 实际发布任务及恢复实现。 */
-    private DeploymentReferenceFlow publicationFlow;
+    private DeploymentRefFlow publicationFlow;
 
     /** Production Git project source task and original recovery. / 生产 Git 项目来源任务及原恢复。 */
     private DeploymentGitSourceFlow gitSourceFlow;
@@ -74,7 +76,7 @@ public final class Mod implements ModEntrypoint {
             throw new IllegalStateException("Deployment context is already bound or retained");
         DeploymentSchema.requireIdentity(context.db().identity());
         context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
-        var flow = new DeploymentReferenceFlow(context, new DeploymentStandardPublicationRecovery(context));
+        var flow = new DeploymentRefFlow(context, new DeploymentStandardPublishRecovery(context));
         var gitFlow = new DeploymentGitSourceFlow(context);
         var secretFlow = new DeploymentSecretProvisionFlow(context);
         var workflow = new DeploymentStaticWorkflow(context, flow);
@@ -84,7 +86,7 @@ public final class Mod implements ModEntrypoint {
         var applicationTasks = new DeploymentApplicationsService(context);
         var deploymentApi = new DeploymentApiProvider(context);
         try {
-            registrations.add(context.tasks().registerRecovery(DeploymentReferenceFlow.TASK_TYPE,
+            registrations.add(context.tasks().registerRecovery(DeploymentRefFlow.TASK_TYPE,
                 new DeploymentStaticTaskRecovery(context, flow)));
             registrations.add(context.tasks().registerRecovery(DeploymentGitSourceFlow.TASK_TYPE, gitFlow));
             registrations.add(context.tasks().registerRecovery(DeploymentSecretProvisionFlow.TASK_TYPE, secretFlow));
@@ -109,14 +111,10 @@ public final class Mod implements ModEntrypoint {
                             "deployment.preview.runtime", "Runtime review: " + kind.name(), true),
                         () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentRuntimePreview(kind)));
 
-                registrations.add(context.ui().register(new PageSpec("static-deployment", "deployment.page.title",
-                    "Static / assisted deployment", false), () -> new DeploymentStaticPage(pageTasks)));
-                registrations.add(context.ui().register(
-                    new PageSpec("agent-deployment", "deployment.agent.page.title", "Autonomous deployment", false),
-                    () -> new DeploymentAgentPage(autonomousPageTasks)));
-                registrations.add(context.ui().register(
-                    new PageSpec("applications", "deployment.applications.page.title", "Applications", false),
-                    () -> new DeploymentApplicationsPage(applicationTasks)));
+                registrations.add(context.ui().register(new PageSpec("workspace", "deployment.workspace.title",
+                    "Deployment", false), () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentWorkspace(
+                    () -> new DeploymentStaticPage(pageTasks), () -> new DeploymentAgentPage(autonomousPageTasks),
+                    () -> new DeploymentApplicationsPage(applicationTasks))));
             }
         } catch (Exception failure) {
             closeRegistrations(failure);
@@ -136,7 +134,7 @@ public final class Mod implements ModEntrypoint {
 
     /** Returns the active production publication entrypoint. / 返回活动生产发布入口。
      * @return bound publication flow / 已绑定发布流程 */
-    public DeploymentReferenceFlow publicationFlow() {
+    public DeploymentRefFlow publicationFlow() {
         if (publicationFlow == null)
             throw new IllegalStateException("Deployment Mod is not started");
         return publicationFlow;

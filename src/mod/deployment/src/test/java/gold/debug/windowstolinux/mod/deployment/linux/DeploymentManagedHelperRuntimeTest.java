@@ -14,22 +14,22 @@ import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.linux.CommandResult;
-import gold.debug.windowstolinux.appapi.linux.RemoteSession;
-import gold.debug.windowstolinux.appapi.linux.TransferConflict;
-import gold.debug.windowstolinux.appapi.linux.TransferConflictChoice;
-import gold.debug.windowstolinux.appapi.linux.TransferProgress;
-import gold.debug.windowstolinux.appapi.linux.TransferStall;
-import gold.debug.windowstolinux.appapi.linux.TransferStallChoice;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
 
@@ -45,13 +45,13 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
         runtime.setInteractionPresenter(new PlatformInteractionService.Prompts() {
             @Override
-            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerRef server,
+            public TransferConflictChoice transferConflict(TransferConflict conflict, ServerId server,
                                                            TaskSnapshot task, CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
 
             @Override
-            public TransferStallChoice transferStalled(TransferStall stall, ServerRef server, TaskSnapshot task,
+            public TransferStallChoice transferStalled(TransferStall stall, ServerId server, TaskSnapshot task,
                                                        CancelToken cancellation) {
                 throw new AssertionError("No transfer expected");
             }
@@ -83,7 +83,7 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
         enable();
         try (var runtime = open()) {
             start(runtime, true);
-            var server = new ServerRef("server-exact");
+            var server = new ServerId("server-exact");
             runtime.servers().saveServerProfile(
                 ServerProfile.fromStored(
                     new StoredServerProfile(server.id(), "127.0.0.1", 22, "root", "fixture-password")),
@@ -93,7 +93,7 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
                 new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                     if (method.getName().equals("execute")) {
                         calls.incrementAndGet();
-                        return new OperationResult<>(Outcome.SUCCEEDED,
+                        return new OperationResult<>(TaskResult.SUCCEEDED,
                             Optional.of(new CommandResult(Optional.of(0),
                                 "HELPER=1\nPROTOCOL=14\nSHA256="
                                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n",
@@ -112,7 +112,7 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
                             "reviewed-plan-v1");
                         var result = helper.probe();
                         var foreign = new DeploymentManagedHelper(borrowed, context.interaction(),
-                            new ServerRef("unadmitted-server"), task, "reviewed-plan-v1");
+                            new ServerId("unadmitted-server"), task, "reviewed-plan-v1");
                         ApiException rejected = assertThrows(ApiException.class, foreign::probe);
                         assertEquals(ProblemCode.ACCESS_DENIED, rejected.problem().code());
                         return result;
@@ -123,7 +123,7 @@ class DeploymentManagedHelperRuntimeTest extends DeploymentRuntimeFixture {
                 });
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertNull(observed.get(), () -> String.valueOf(observed.get()));
-            assertEquals(Outcome.SUCCEEDED, result.outcome());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
             assertEquals(1, calls.get());
             assertEquals(1, reviewed.size());
             assertEquals("deployment.helper.probe.v1", reviewed.getFirst().semantics().orElseThrow().operation());

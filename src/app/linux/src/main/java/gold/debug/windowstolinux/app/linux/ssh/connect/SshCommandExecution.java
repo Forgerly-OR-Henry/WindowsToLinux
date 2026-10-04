@@ -1,17 +1,17 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.io.*;
 import java.time.Duration;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.linux.*;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import org.apache.sshd.client.channel.*;
 import org.apache.sshd.client.session.ClientSession;
 
@@ -63,7 +63,7 @@ final class SshCommandExecution {
         long started = System.nanoTime();
         try {
             if (cancellation.requested() || Thread.currentThread().isInterrupted())
-                return result(Outcome.CANCELLED, ProblemCode.CANCELLED, "SSH_COMMAND_CANCELLED",
+                return result(TaskResult.CANCELLED, ProblemCode.CANCELLED, "SSH_COMMAND_CANCELLED",
                     "SSH command was cancelled before dispatch", null);
             channel = session.createExecChannel(SshCommandFrame.COMMAND);
             channel.setOut(capture.stdout());
@@ -91,9 +91,9 @@ final class SshCommandExecution {
                         return unknown("SSH_COMMAND_EXIT_UNKNOWN",
                             "SSH channel closed without a confirmed command exit");
                     return exit == 0
-                        ? new OperationResult<>(Outcome.SUCCEEDED, Optional.of(capture.snapshot(exit)),
+                        ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(capture.snapshot(exit)),
                         Optional.empty())
-                        : result(Outcome.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO",
+                        : result(TaskResult.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO",
                         "SSH command reported a nonzero exit status", exit);
                 }
                 if (cancellation.requested() || Thread.currentThread().isInterrupted())
@@ -109,7 +109,7 @@ final class SshCommandExecution {
             return dispatched
                 ? unknown("SSH_COMMAND_TRANSPORT",
                 "SSH command effects could not be confirmed after transport failure")
-                : result(Outcome.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_NOT_SENT",
+                : result(TaskResult.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_NOT_SENT",
                 "SSH command could not be dispatched", null);
         }
     }
@@ -134,7 +134,7 @@ final class SshCommandExecution {
      * @return uncertain result with observed bounded output / 附带已观测有界输出的不确定结果
      */
     private OperationResult<CommandResult> unknown(String event, String message) {
-        return result(Outcome.UNKNOWN, ProblemCode.UNKNOWN, event, message,
+        return result(TaskResult.UNKNOWN, ProblemCode.UNKNOWN, event, message,
             channel == null ? null : channel.getExitStatus());
     }
 
@@ -147,7 +147,7 @@ final class SshCommandExecution {
      * @param exit actually observed exit status / 实际观测退出状态
      * @return bounded result and diagnostic / 有界结果及诊断
      */
-    private OperationResult<CommandResult> result(Outcome outcome, ProblemCode code, String event, String message,
+    private OperationResult<CommandResult> result(TaskResult outcome, ProblemCode code, String event, String message,
                                                   Integer exit) {
         return new OperationResult<>(outcome, Optional.of(capture.snapshot(exit)),
             Optional.of(new Problem(code, event, message, Map.of(), Optional.empty())));

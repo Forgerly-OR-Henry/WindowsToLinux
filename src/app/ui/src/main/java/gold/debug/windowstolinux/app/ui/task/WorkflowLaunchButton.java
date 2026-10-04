@@ -6,7 +6,7 @@ import java.util.function.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 
 /** Host start control capturing the actual selected workflow and its target scope. / 捕获实际选定流程及目标作用域的宿主启动控件。
  * @param <T> actual workflow result / 实际流程结果 */
@@ -55,7 +55,7 @@ public final class WorkflowLaunchButton<T> extends JButton implements AutoClosea
 
     /** Captures the form once, then admits a central task on a worker. / 一次捕获表单，再于工作线程准入中央任务。 */
     private void launch() {
-        if (locked || busy || closed || DesktopTaskExecutor.isLocked())
+        if (locked || busy || closed || DesktopTaskRunner.isLocked())
             return;
         final PlatformAuthorizationService.Launch<T> launch;
         try {
@@ -66,7 +66,7 @@ public final class WorkflowLaunchButton<T> extends JButton implements AutoClosea
         }
         busy = true;
         controls();
-        DesktopTaskExecutor.run(() -> launcher.submit(launch), task -> {
+        DesktopTaskRunner.run(() -> launcher.submit(launch), task -> {
             task.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                 busy = false;
                 controls();

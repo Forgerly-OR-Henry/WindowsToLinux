@@ -11,9 +11,9 @@ import java.util.Map;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentBuildToolType;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeAssessment;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentRuntimeReport;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentSupportLevel;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisCoordinator;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.core.DeploymentAnalysisFlow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,12 +30,12 @@ class LanguageServiceInspectionTest {
         write(root, "public/index.html", "fixture\n");
         write(root, "windowstolinux-application.properties",
             "version=1\nmode=DAEMON\nruntime.version=8.3\nruntime.secondary=router.php\n");
-        var assessment = new DeploymentAnalysisCoordinator().analyze(root, DeploymentProjectKind.PHP_SERVICE);
+        var assessment = new DeploymentAnalysisFlow().analyze(root, DeploymentProjectKind.PHP_SERVICE, (root).getFileName().toString());
         assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission());
         assertEquals("8.3", assessment.runtimeSuggestion().orElseThrow().values()
-            .get(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION));
+            .get(DeploymentRuntimeReport.RuntimeInputType.SERVICE_VERSION));
         assertEquals("router.php", assessment.runtimeSuggestion().orElseThrow().values()
-            .get(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT));
+            .get(DeploymentRuntimeReport.RuntimeInputType.SERVICE_ENTRYPOINT));
     }
 
     @Test
@@ -43,17 +43,17 @@ class LanguageServiceInspectionTest {
         List<Project> projects = List.of(go(), rust(), dotnet(), kotlin(), php(), ruby());
 
         for (Project project : projects) {
-            var assessment = new DeploymentAnalysisCoordinator().analyze(project.root(), project.type());
+            var assessment = new DeploymentAnalysisFlow().analyze(project.root(), project.type(), (project.root()).getFileName().toString());
             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING, assessment.admission(), project.type().name());
             assertEquals(DeploymentSupportLevel.EXPERIMENTAL_ADAPTER,
                 assessment.facts().orElseThrow().support().level(), project.type().name());
             assertEquals(project.buildTool(), assessment.facts().orElseThrow().buildTool(), project.type().name());
             var runtime = assessment.runtimeSuggestion().orElseThrow();
-            var expected = new java.util.EnumMap<DeploymentRuntimeAssessment.RuntimeInputType, String>(
-                DeploymentRuntimeAssessment.RuntimeInputType.class);
+            var expected = new java.util.EnumMap<DeploymentRuntimeReport.RuntimeInputType, String>(
+                DeploymentRuntimeReport.RuntimeInputType.class);
             expected.putAll(project.runtimeValues());
             if (project.type() == DeploymentProjectKind.KOTLIN_SERVICE)
-                expected.put(DeploymentRuntimeAssessment.RuntimeInputType.KOTLIN_JVM_TARGET, "21");
+                expected.put(DeploymentRuntimeReport.RuntimeInputType.KOTLIN_JVM_TARGET, "21");
             assertEquals(expected, runtime.values(), project.type().name());
             assertEquals(project.requiresServicePort(), runtime.requiredUserInput().stream()
                 .anyMatch(message -> message.key().equals("analysis.service.servicePort")), project.type().name());
@@ -65,7 +65,7 @@ class LanguageServiceInspectionTest {
         Project project = go();
         Files.delete(project.root().resolve("go.sum"));
 
-        var assessment = new DeploymentAnalysisCoordinator().analyze(project.root(), project.type());
+        var assessment = new DeploymentAnalysisFlow().analyze(project.root(), project.type(), (project.root()).getFileName().toString());
 
         assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT, assessment.admission());
         assertFalse(assessment.facts().orElseThrow().missingInformation().isEmpty());
@@ -80,9 +80,9 @@ class LanguageServiceInspectionTest {
             "plugins { application }\napplication { mainClass.set(\"demo.MainKt\") }\n");
 
         assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT,
-            new DeploymentAnalysisCoordinator().analyze(dotnet.root(), dotnet.type()).admission());
+            new DeploymentAnalysisFlow().analyze(dotnet.root(), dotnet.type(), (dotnet.root()).getFileName().toString()).admission());
         assertEquals(DeploymentAdmissionStatus.REQUIRES_INPUT,
-            new DeploymentAnalysisCoordinator().analyze(kotlin.root(), kotlin.type()).admission());
+            new DeploymentAnalysisFlow().analyze(kotlin.root(), kotlin.type(), (kotlin.root()).getFileName().toString()).admission());
     }
 
     private Project go() throws Exception {
@@ -164,14 +164,14 @@ class LanguageServiceInspectionTest {
     private static Project project(Path root, DeploymentProjectKind type, DeploymentBuildToolType buildTool,
                                    String version, String artifact, String entrypoint, boolean requiresServicePort) {
         return new Project(root, type, buildTool,
-            Map.of(DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_VERSION, version,
-                DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ARTIFACT, artifact,
-                DeploymentRuntimeAssessment.RuntimeInputType.SERVICE_ENTRYPOINT, entrypoint),
+            Map.of(DeploymentRuntimeReport.RuntimeInputType.SERVICE_VERSION, version,
+                DeploymentRuntimeReport.RuntimeInputType.SERVICE_ARTIFACT, artifact,
+                DeploymentRuntimeReport.RuntimeInputType.SERVICE_ENTRYPOINT, entrypoint),
             requiresServicePort);
     }
 
     private record Project(Path root, DeploymentProjectKind type, DeploymentBuildToolType buildTool,
-                           Map<DeploymentRuntimeAssessment.RuntimeInputType, String> runtimeValues,
+                           Map<DeploymentRuntimeReport.RuntimeInputType, String> runtimeValues,
                            boolean requiresServicePort) {
     }
 }

@@ -1,12 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.model;
 
-import gold.debug.windowstolinux.appapi.task.ManagedProcess;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalInt;
 
+import gold.debug.windowstolinux.appapi.task.process.ManagedProcess;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload;
 
@@ -172,7 +171,7 @@ public sealed interface DeploymentRuntimeDefinition permits DeploymentRuntimeDef
      */
     private static void requireIdentityPolicy(DeploymentIdentityMode actual, DeploymentIdentityMode supported) {
         Objects.requireNonNull(actual, "identityPolicy");
-        if (actual != supported && actual != DeploymentIdentityMode.LEGACY_UNSPECIFIED) {
+        if (actual != supported) {
             throw new IllegalArgumentException("runtime identity policy does not match its execution backend");
         }
     }

@@ -14,7 +14,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDat
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentDatabaseEngineType;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentFileBinding;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretReference;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentStoragePath;
 
 /**
@@ -251,7 +251,7 @@ public final class DeploymentResourceCodec {
                 input.readUTF(), input.readUTF(), readInitialization(input));
         } else {
             connection = new DeploymentDatabaseConnection.Server(engine, input.readUTF(), input.readInt(),
-                input.readUTF(), input.readUTF(), new DeploymentSecretReference(input.readUTF(), input.readLong()),
+                input.readUTF(), input.readUTF(), new DeploymentSecretRef(input.readUTF(), input.readLong()),
                 readBoolean(input, "managed database TLS value"));
         }
         return new DeploymentDatabaseBinding(databaseId, connection);

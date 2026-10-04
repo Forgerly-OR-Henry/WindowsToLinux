@@ -1,15 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-import gold.debug.windowstolinux.appapi.task.TaskWork;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -25,12 +15,25 @@ import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
+import gold.debug.windowstolinux.appapi.task.run.TaskWork;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.apache.sshd.server.channel.ChannelSession;
@@ -47,12 +50,12 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
                 return true;
             }
 
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall s, ServerRef target, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall s, ServerId target, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -122,10 +125,10 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
         var observed = new AtomicReference<String>();
         var handle = rootTask(runtime, task -> {
             var original = graph(application);
-            var components = new ArrayList<DeploymentApplicationGraph.Component>();
+            var components = new ArrayList<DeploymentApplicationGraph.Part>();
             for (var component : original.components()) {
                 var unit = DeploymentUnitIdentity.forManaged(application + "-" + component.componentId(),
-                    new ServerRef("server"), "a".repeat(64));
+                    new ServerId("server"), "a".repeat(64));
                 var current = component.runtime();
                 var workload = current.workload();
                 if (website && component.componentId().equals(original.healthComponentId())) {
@@ -137,34 +140,34 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
                         workload.verification(), workload.expectedOutput(), workload.client(), workload.inputs(),
                         workload.companions(), workload.buildDirectory(), workload.workers());
                 }
-                var runtimeValue = new DeploymentUnitRuntimeConfiguration(current.healthCheck(),
+                var runtimeValue = new DeploymentUnitRuntimeConfig(current.healthCheck(),
                     current.userAccessUrl(), current.identityPolicy(), workload);
-                components.add(new DeploymentApplicationGraph.Component(component.componentId(), unit, runtimeValue,
+                components.add(new DeploymentApplicationGraph.Part(component.componentId(), unit, runtimeValue,
                     component.dependencies(), component.reviewedRuntime(), component.dataPaths(),
                     component.resources()));
             }
             var graph = new DeploymentApplicationGraph(application, original.healthComponentId(),
                 original.healthCheck(), components);
-            var publication = new DeploymentPublication(graph, publications(graph, revision, List.of()));
+            var publication = new DeploymentPublish(graph, publications(graph, revision, List.of()));
             UUID id = UUID.randomUUID();
-            var plan = new DeploymentPublicationPlan(id, Optional.empty(), application, new ServerRef("server"),
+            var plan = new DeploymentPublishPlan(id, Optional.empty(), application, new ServerId("server"),
                 DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "a".repeat(64),
-                DeploymentOriginalPublicationCommit.references(new ServerRef("server"), publication, Map.of()),
+                DeploymentOriginalPublishCommit.references(new ServerId("server"), publication, Map.of()),
                 Instant.ofEpochMilli(System.currentTimeMillis()));
-            var commit = new DeploymentOriginalPublicationCommit(context(runtime));
+            var commit = new DeploymentOriginalPublishCommit(context(runtime));
             commit.begin(plan, publication, task, "deployment-publication");
-            assertEquals(Outcome.SUCCEEDED, commit.commitVerified(task, id, publication).outcome());
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED, commit.commitVerified(task, id, publication).outcome());
+            assertEquals(TaskResult.SUCCEEDED,
                 commit.finishKnown(task,
-                        new DeploymentExecutionRepository(context(runtime).db()).find(task, id).orElseThrow())
+                        new DeploymentExecutionStore(context(runtime).db()).find(task, id).orElseThrow())
                     .outcome());
             observed.set(new DeploymentApplicationReader(context(runtime).db())
-                .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationRef(application,
-                    new ServerRef("server")), task)
+                .find(new gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationId(application,
+                    new ServerId("server")), task)
                 .snapshot().revisionSha256());
             return success();
         });
-        assertEquals(Outcome.SUCCEEDED, await(handle).outcome());
+        assertEquals(TaskResult.SUCCEEDED, await(handle).outcome());
         return observed.get();
     }
 

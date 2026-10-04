@@ -11,6 +11,11 @@
   <dependencies>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-config</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-app-file</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -32,7 +37,7 @@
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-appapi</artifactId>
-      <version>1.0.0-dev.1</version>
+      <version>1.0.0-dev.2</version>
     </dependency>
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>

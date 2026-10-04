@@ -1,7 +1,7 @@
 package gold.debug.windowstolinux.app.linux.sftp;
 
-import gold.debug.windowstolinux.appapi.linux.TransferConflict;
-import gold.debug.windowstolinux.appapi.linux.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 
 /** Host-owned explicit same-name decision; independent of operation authorization. / 宿主持有的明确同名决定，独立于操作授权。 */
 @FunctionalInterface

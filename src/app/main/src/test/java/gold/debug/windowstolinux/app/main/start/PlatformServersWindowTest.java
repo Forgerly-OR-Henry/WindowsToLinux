@@ -16,7 +16,7 @@ import gold.debug.windowstolinux.app.ui.display.*;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.task.TaskInteractionPresenter;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,6 +28,79 @@ class PlatformServersWindowTest {
         return Arrays.stream(Window.getWindows())
             .filter(window -> window instanceof JDialog && window.isShowing() && name.equals(window.getName()))
             .map(window -> (JDialog) window).findFirst().orElse(null);
+    }
+
+    @Test
+    void serverWorkCompletionCannotCrossLockGenerationOrClearNewBusyState() throws Exception {
+        var oldEntered = new java.util.concurrent.CountDownLatch(1);
+        var oldRelease = new java.util.concurrent.CountDownLatch(1);
+        var newEntered = new java.util.concurrent.CountDownLatch(1);
+        var newRelease = new java.util.concurrent.CountDownLatch(1);
+        var displayed = new java.util.concurrent.atomic.AtomicInteger();
+        try (var runtime = PlatformRuntime.open(root.resolve("generation"), PlatformStartupTest.PROTECTION)) {
+            runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+            runtime.started();
+            runtime.setInteractionPresenter((gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts)
+                java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts.class},
+                    (proxy, method, args) -> {
+                        throw new AssertionError("No human interaction expected in a view query");
+                    }));
+            var pane = onEdt(() -> new gold.debug.windowstolinux.app.ui.server.PlatformServersPane(null,
+                runtime.servers(), new gold.debug.windowstolinux.app.ui.control.DesktopPartFactory(ThemePalette.light()),
+                new gold.debug.windowstolinux.app.ui.error.PageMessagePresenter(MessageCatalog.forLanguageTag("zh-CN"))));
+            var work = pane.getClass().getDeclaredMethod("work", java.util.concurrent.Callable.class, java.util.function.Consumer.class);
+            work.setAccessible(true);
+            try {
+                onEdt(() -> {
+                    pane.setLocked(false);
+                    return null;
+                });
+                await(() -> named(pane, "servers.refresh").isEnabled());
+                onEdt(() -> {
+                    work.invoke(pane, (java.util.concurrent.Callable<Integer>) () -> {
+                        oldEntered.countDown();
+                        assertTrue(oldRelease.await(8, java.util.concurrent.TimeUnit.SECONDS));
+                        return 1;
+                    }, (java.util.function.Consumer<Integer>) displayed::set);
+                    return null;
+                });
+                assertTrue(oldEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                onEdt(() -> {
+                    pane.setLocked(true);
+                    pane.setLocked(false);
+                    return null;
+                });
+                await(() -> named(pane, "servers.refresh").isEnabled());
+                onEdt(() -> {
+                    work.invoke(pane, (java.util.concurrent.Callable<Integer>) () -> {
+                        newEntered.countDown();
+                        assertTrue(newRelease.await(8, java.util.concurrent.TimeUnit.SECONDS));
+                        return 2;
+                    }, (java.util.function.Consumer<Integer>) displayed::set);
+                    return null;
+                });
+                assertTrue(newEntered.await(3, java.util.concurrent.TimeUnit.SECONDS));
+                oldRelease.countDown();
+                Thread.sleep(150);
+                onEdt(() -> {
+                    assertEquals(0, displayed.get());
+                    assertFalse(named(pane, "servers.refresh").isEnabled());
+                    return null;
+                });
+                newRelease.countDown();
+                await(() -> displayed.get() == 2);
+                await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
+            } finally {
+                oldRelease.countDown();
+                newRelease.countDown();
+                onEdt(() -> {
+                    pane.close();
+                    return null;
+                });
+                await(() -> !gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner.hasActiveTasks());
+            }
+        }
     }
 
     @Test
@@ -119,9 +192,10 @@ class PlatformServersWindowTest {
                 await(() -> named(frame.get(), "security.lock").isEnabled());
                 onEdt(() -> {
                     ((JButton) named(frame.get(), "security.lock")).doClick(0);
-                    assertFalse(frame.get().getContentPane().isVisible());
-                    assertEquals(0, ((JTable) named(frame.get(), "servers.table")).getRowCount());
-                    assertEquals("", ((JTextArea) named(frame.get(), "servers.output")).getText());
+                    assertTrue(frame.get().getContentPane().isVisible());
+                    assertTrue(frame.get().getGlassPane().isVisible());
+                    assertTrue(((JTable) named(frame.get(), "servers.table")).getRowCount() > 0);
+                    assertFalse(named(frame.get(), "servers.refresh").isEnabled());
                     return null;
                 });
             } finally {
@@ -142,7 +216,7 @@ class PlatformServersWindowTest {
         UUID task;
         try (var db = gold.debug.windowstolinux.app.db.connect.PlatformDatabase.open(root,
             PlatformStartupTest.PROTECTION)) {
-            var persistence = new gold.debug.windowstolinux.app.db.PlatformPersistence(db);
+            var persistence = new gold.debug.windowstolinux.app.db.PlatformStorage(db);
             try (var security = new gold.debug.windowstolinux.app.service.security.DesktopSecurityService(
                 persistence.security())) {
                 security.setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());

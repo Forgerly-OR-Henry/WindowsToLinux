@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.linux.ssh.connect;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
@@ -15,8 +11,10 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
-import gold.debug.windowstolinux.appapi.linux.*;
-
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.sshd.server.*;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
@@ -54,7 +52,7 @@ public class SshCommandExecutionTest {
             String script = "# 中文脚本 " + "x".repeat(200000) + "\n/usr/bin/sha256sum\nbuiltin printf 'warning' >&2\n";
             var result = connection.execute(new CommandRequest(script, input, Duration.ofSeconds(10), 4096),
                 () -> false);
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
             assertEquals(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(input)),
                 result.value().orElseThrow().stdout().split(" ")[0]);
             assertEquals("warning", result.value().orElseThrow().stderr());
@@ -62,12 +60,12 @@ public class SshCommandExecutionTest {
             assertTrue(wireCommand.get().length() < 1024);
             assertFalse(wireCommand.get().contains("中文脚本"));
             var failed = connection.execute(request("builtin printf 'observed'; exit 7", 1024), () -> false);
-            assertEquals(Outcome.FAILED, failed.outcome());
+            assertEquals(TaskResult.FAILED, failed.outcome());
             assertEquals(7, failed.value().orElseThrow().exitCode().orElseThrow());
             assertEquals("observed", failed.value().orElseThrow().stdout());
             var ignoredInput = connection.execute(new CommandRequest("", input, Duration.ofSeconds(5), 10),
                 () -> false);
-            assertEquals(Outcome.SUCCEEDED, ignoredInput.outcome());
+            assertEquals(TaskResult.SUCCEEDED, ignoredInput.outcome());
             assertEquals("", ignoredInput.value().orElseThrow().stdout());
         }
     }
@@ -84,7 +82,7 @@ public class SshCommandExecutionTest {
         }); var connector = new SshConnector(); var connection = connect(connector, fixture.server)) {
             for (long limit : new long[]{65, 0}) {
                 var result = connection.execute(request("fixture", limit), () -> false);
-                assertEquals(Outcome.SUCCEEDED, result.outcome());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome());
                 var captured = result.value().orElseThrow();
                 assertTrue(captured.truncated());
                 assertEquals(limit, captured.stdout().getBytes(StandardCharsets.UTF_8).length
@@ -116,7 +114,7 @@ public class SshCommandExecutionTest {
         try (var fixture = new WireFixture(root, command -> {
             throw new AssertionError("Cancelled work was dispatched");
         }); var connector = new SshConnector(); var connection = connect(connector, fixture.server)) {
-            assertEquals(Outcome.CANCELLED, connection.execute(request("fixture", 10), () -> true).outcome());
+            assertEquals(TaskResult.CANCELLED, connection.execute(request("fixture", 10), () -> true).outcome());
             assertEquals(0, fixture.calls.get());
         }
     }
@@ -140,7 +138,7 @@ public class SshCommandExecutionTest {
             assertEquals(ProblemCode.BUSY, assertThrows(ApiException.class, connection::close).problem().code());
             cancelled.set(true);
             var result = pending.get(8, TimeUnit.SECONDS);
-            assertEquals(Outcome.UNKNOWN, result.outcome());
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
             assertEquals("SSH_COMMAND_CANCELLED", result.problem().orElseThrow().eventCode());
             assertEquals(ProblemCode.BUSY,
                 assertThrows(ApiException.class, () -> connection.execute(request("write again", 100), () -> false))
@@ -169,7 +167,7 @@ public class SshCommandExecutionTest {
             }); var connector = new SshConnector(); var connection = connect(connector, fixture.server)) {
                 var result = connection.execute(new CommandRequest("fixture", new byte[0],
                     timeout ? Duration.ofMillis(300) : Duration.ofSeconds(5), 100), () -> false);
-                assertEquals(Outcome.UNKNOWN, result.outcome());
+                assertEquals(TaskResult.UNKNOWN, result.outcome());
                 assertEquals(timeout ? "SSH_COMMAND_TIMEOUT" : "SSH_COMMAND_EXIT_UNKNOWN",
                     result.problem().orElseThrow().eventCode());
                 assertTrue(result.value().orElseThrow().exitCode().isEmpty());

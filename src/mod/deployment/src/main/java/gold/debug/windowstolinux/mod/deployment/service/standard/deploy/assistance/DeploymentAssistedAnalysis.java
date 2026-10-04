@@ -4,12 +4,12 @@ import java.io.IOException;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.ai.AiPurpose;
+import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewField;
 
 /** Bounded read-only source analysis for missing technical input, without an execution port. / 不持有执行端口、用于技术缺项的有界只读源码分析。 */
 public final class DeploymentAssistedAnalysis {

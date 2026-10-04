@@ -1,7 +1,9 @@
 package gold.debug.windowstolinux.app.main.architecture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -26,6 +28,7 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.ExecutableElement;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -42,6 +45,8 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreeScanner;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.Trees;
 import org.junit.jupiter.api.Test;
 
 class PackageStructureArchitectureTest {
@@ -63,8 +68,8 @@ class PackageStructureArchitectureTest {
         "MavenBuildSupport.java", "ManagedReleaseProtocolExecutor.java", "ServiceDeploymentInspector.java",
         "DebianFamilySetupCatalog.java", "EnterpriseLinuxSetupCatalog.java");
 
-    private static final Set<String> ANALYSIS_CORE = Set.of("DeploymentAnalysisCoordinator.java",
-        "ProjectLanguageInspector.java");
+    private static final Set<String> ANALYSIS_CORE = Set.of("DeploymentAnalysisFlow.java",
+        "ProjectLanguageChecker.java");
 
     private static final Set<String> DESKTOP_SHELL = Set.of("DesktopDisplayChangeHandler.java", "DesktopFrame.java",
         "DesktopPageCoordinator.java", "DesktopViewState.java", "PageNavigationController.java",
@@ -80,11 +85,11 @@ class PackageStructureArchitectureTest {
         "MultiComponentFormState.java", "MultiComponentPage.java", "MultiComponentPageState.java",
         "MultiComponentResultPresenter.java");
 
-    private static final Set<String> REPOSITORIES = Set.of("AiProfileRepository.java", "AiPurposeRepository.java",
-        "AgentTaskRepository.java", "BrowserRecoveryRepository.java", "ApplicationSecretRepository.java",
-        "ConfigurationSnapshotRepository.java", "DesktopPreferenceRepository.java", "SecurityRepository.java",
+    private static final Set<String> REPOSITORIES = Set.of("AiModelStore.java", "AiPurposeStore.java",
+        "AgentTaskRepository.java", "BrowserRecoveryStore.java", "ApplicationSecretRepository.java",
+        "ConfigurationSnapshotRepository.java", "DesktopPreferenceStore.java", "SecurityStore.java",
         "ManagedApplicationRepository.java", "ManagedApplicationGraphRepository.java",
-        "RepositoryTransactionExecutor.java", "ServerProfileRepository.java", "ExternalApplicationRepository.java");
+        "StoreTransactionRunner.java", "ServerProfileStore.java", "ExternalApplicationRepository.java");
 
     private static final Set<String> HELPER_FRAGMENTS = Set.of("27-agent-workspace.sh", "source-operations.py",
         "21-workspace-volume.sh", "22-restricted-build.sh", "23-container-builder.sh", "24-build-entry.sh",
@@ -116,31 +121,28 @@ class PackageStructureArchitectureTest {
     private static final Set<String> FORBIDDEN_PACKAGE_SEGMENTS = Set.of("util", "common", "misc", "impl");
 
     private static final Set<String> ENUM_SUFFIXES = Set.of("Action", "Decision", "Disposition", "Event", "Kind",
-        "Level", "Mode", "Profile", "Scope", "Source", "State", "Status", "Type");
+        "Level", "Mode", "Profile", "Result", "Scope", "Source", "State", "Status", "Type");
 
-    private static final Set<String> STABLE_PUBLIC_ENUM_NAMES = Set.of("gold.debug.windowstolinux.appapi.ai.AiPurpose",
-        "gold.debug.windowstolinux.appapi.ai.AiRole",
-        "gold.debug.windowstolinux.appapi.file.DeleteEffect",
-        "gold.debug.windowstolinux.appapi.file.FileChoice.Directory",
-        "gold.debug.windowstolinux.appapi.file.FileChoice.Conflict",
-        "gold.debug.windowstolinux.appapi.linux.TransferConflictChoice",
-        "gold.debug.windowstolinux.appapi.linux.TransferStallChoice",
-        "gold.debug.windowstolinux.appapi.linux.TransferProgress.Stage",
-        "gold.debug.windowstolinux.appapi.mod.StopReason",
-        "gold.debug.windowstolinux.appapi.server.ReferenceResolution",
-        "gold.debug.windowstolinux.appapi.task.LogStorage", "gold.debug.windowstolinux.appapi.task.Outcome",
-        "gold.debug.windowstolinux.appapi.task.ProblemCode");
-
-    private static final Set<String> STABLE_PUBLIC_RESTRICTED_NAMES = Set
-        .of("gold.debug.windowstolinux.appapi.server.ServerInfo", "gold.debug.windowstolinux.appapi.file.FileInfo");
+    private static final Set<String> STABLE_PUBLIC_ENUM_NAMES = Set.of("gold.debug.windowstolinux.appapi.ai.model.AiPurpose",
+        "gold.debug.windowstolinux.appapi.ai.model.AiRole",
+        "gold.debug.windowstolinux.appapi.file.action.DeleteEffect",
+        "gold.debug.windowstolinux.appapi.file.action.FileChoice.Directory",
+        "gold.debug.windowstolinux.appapi.file.action.FileChoice.Conflict",
+        "gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice",
+        "gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice",
+        "gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress.Stage",
+        "gold.debug.windowstolinux.appapi.mod.lifecycle.StopReason",
+        "gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult",
+        "gold.debug.windowstolinux.appapi.task.log.LogStorage", "gold.debug.windowstolinux.appapi.task.result.TaskResult",
+        "gold.debug.windowstolinux.appapi.task.result.ProblemCode");
 
     private static final Set<String> OBSOLETE_ENUM_NAMES = Set.of("Access", "AiCollaborationRole", "AiResponseLanguage",
         "ContainerEngine", "DeploymentBuildTool", "DeploymentStep", "EvidenceConfidence", "HostSupport",
         "LanguageEcosystem", "LanguageFact", "LinuxDistro", "LinuxSecurityModule", "RuntimeInput",
         "SetupExpectation", "Severity", "SourceLanguage");
 
-    private static final Set<String> RESTRICTED_TYPE_TOKENS = Set.of("Base", "Bean", "Checker", "Common", "Concrete",
-        "Controller", "Data", "Generic", "Handler", "Helper", "Impl", "Implementation", "Info", "Legacy", "Manager",
+    private static final Set<String> RESTRICTED_TYPE_TOKENS = Set.of("Base", "Bean", "Common", "Concrete",
+        "Controller", "Data", "Generic", "Handler", "Helper", "Impl", "Implementation", "Legacy", "Manager",
         "Misc", "New", "Object", "Old", "Processor", "Support", "Temp", "Temporary", "Util", "Utils");
 
     private static final Set<String> ALLOWED_RESTRICTED_TYPE_NAMES = Set.of("AlmaLinuxSupportPolicy",
@@ -158,7 +160,7 @@ class PackageStructureArchitectureTest {
         "WebHealthController", "WebPreferenceController", "WebSecretController", "WebServerController",
         "WebSourceController", "WebTaskController");
 
-    private static final Set<String> FORBIDDEN_RESOURCE_TOKENS = Set.of("bean", "checker", "common", "concrete",
+    private static final Set<String> FORBIDDEN_RESOURCE_TOKENS = Set.of("bean", "common", "concrete",
         "generic", "impl", "implementation", "legacy", "misc", "new", "object", "old", "processor", "temp",
         "temporary", "util", "utils");
 
@@ -285,6 +287,26 @@ class PackageStructureArchitectureTest {
         "gold.debug.windowstolinux.app.service.deployment", "gold.debug.windowstolinux.app.ui.deployment");
 
     private static final List<PackageDependencyRule> FORBIDDEN_RESPONSIBILITY_DEPENDENCIES = List.of(
+        new PackageDependencyRule("gold.debug.windowstolinux.app.db.init",
+            Set.of("gold.debug.windowstolinux.app.db.connect")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.task.run",
+            Set.of("gold.debug.windowstolinux.appapi.task", "gold.debug.windowstolinux.appapi.task.recover")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.task.model",
+            Set.of("gold.debug.windowstolinux.appapi.task", "gold.debug.windowstolinux.appapi.task.recover")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.task.result",
+            Set.of("gold.debug.windowstolinux.appapi.task", "gold.debug.windowstolinux.appapi.task.recover")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.task.query",
+            Set.of("gold.debug.windowstolinux.appapi.task")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.task.recover",
+            Set.of("gold.debug.windowstolinux.appapi.task")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.server.ref",
+            Set.of("gold.debug.windowstolinux.appapi.server")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.server.model",
+            Set.of("gold.debug.windowstolinux.appapi.server", "gold.debug.windowstolinux.appapi.server.ref")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.secret",
+            Set.of("gold.debug.windowstolinux.appapi.server")),
+        new PackageDependencyRule("gold.debug.windowstolinux.appapi.db.schema",
+            Set.of("gold.debug.windowstolinux.appapi.db")),
         new PackageDependencyRule("gold.debug.windowstolinux.shared.ai.collaboration.advice",
             Set.of("gold.debug.windowstolinux.shared.ai.collaboration",
                 "gold.debug.windowstolinux.shared.ai.collaboration.invocation",
@@ -344,21 +366,23 @@ class PackageStructureArchitectureTest {
         Path root = projectRoot();
         assertEquals(ANALYSIS_CORE, fileNames(root.resolve(
             "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/analyze/core")));
-        assertEquals(Set.of("DesktopLockController.java", "PlatformFrame.java", "PlatformNavigationShell.java"),
+        assertEquals(Set.of("DesktopLockController.java", "PlatformFrame.java", "PlatformNavigationShell.java",
+                "DesktopUnlockDialog.java", "DesktopBrandLabel.java", "DesktopLockStatus.java",
+                "DesktopLockGate.java", "DesktopHomePane.java"),
             fileNames(root.resolve("src/app/ui/src/main/java/gold/debug/windowstolinux/app/ui/window")));
         for (var entry : Map.ofEntries(
-            Map.entry("ai/AiProfileRepository.java", "ai/StoredAiProviderProfile.java"),
-            Map.entry("server/ServerProfileRepository.java", "server/StoredServerProfile.java"),
-            Map.entry("security/SecurityRepository.java", "security/StoredSecurityProfile.java"),
-            Map.entry("setting/DesktopPreferenceRepository.java", "sshrecover/BrowserRecoveryRepository.java"),
-            Map.entry("connect/RepositoryTransactionExecutor.java", "schema/SchemaProvisioner.java")).entrySet()) {
+            Map.entry("ai/AiModelStore.java", "ai/StoredAiModelProfile.java"),
+            Map.entry("server/ServerProfileStore.java", "server/StoredServerProfile.java"),
+            Map.entry("security/SecurityStore.java", "security/StoredSecurityProfile.java"),
+            Map.entry("setting/DesktopPreferenceStore.java", "sshrecover/BrowserRecoveryStore.java"),
+            Map.entry("connect/StoreTransactionRunner.java", "schema/SchemaProvisioner.java")).entrySet()) {
             for (String relative : List.of(entry.getKey(), entry.getValue()))
                 assertTrue(Files.isRegularFile(root.resolve(
                     "src/app/db/src/main/java/gold/debug/windowstolinux/app/db/" + relative)), relative);
         }
         var modules = MavenModuleGraph.read(root);
         assertEquals(
-            Set.of("appapi", "mod/deployment", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
+            Set.of("appapi", "mod/deployment", "app/config", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
                 "app/service", "app/file", "app/ui", "app/windows"),
             modules.stream().filter(module -> !module.aggregate()).map(MavenModuleGraph.Module::path)
                 .collect(java.util.stream.Collectors.toSet()));
@@ -454,13 +478,16 @@ class PackageStructureArchitectureTest {
             assertTrue(periodNames.isEmpty(), () -> "production paths contain period names: " + periodNames);
         }
         String structure = Files.readString(root.resolve("docs/File.md"));
-        assertTrue(structure.contains("12 个 Maven 叶子模块"));
-        for (String required : List.of("db/connect", "linux/sftp", "service/core/model", "appapi",
+        assertTrue(structure.contains("13 个 Maven 叶子模块"));
+        for (String required : List.of("db/connect", "linux/sftp", "linux/ssh/recover", "service/ai", "appapi",
             "mod/deployment"))
             assertTrue(structure.contains(required), () -> "File.md is missing the active responsibility: " + required);
         for (String required : List.of("app/main/src/main/java/gold/debug/windowstolinux/app/main/start",
             "app/db/src/main/java/gold/debug/windowstolinux/app/db/schema",
             "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/http",
+            "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model",
+            "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/vision",
+            "app/ai/src/main/java/gold/debug/windowstolinux/app/ai/voice",
             "app/mod/src/main/java/gold/debug/windowstolinux/app/mod/run",
             "mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/analyze/core",
             "mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/linux/execution/protocol/helper/fragments/ecosystem"))
@@ -520,11 +547,11 @@ class PackageStructureArchitectureTest {
             "LanguageFactKind", "ProjectLanguageFacts", "SourceLanguageType");
         register(packages, "gold.debug.windowstolinux.shared.model.project", "DeploymentArchitectureType",
             "DeploymentBuildToolType", "DeploymentProjectFacts", "DeploymentProjectType",
-            "DeploymentRuntimeSpecification", "DeploymentRuntimeAssessment", "DeploymentSupportCatalog",
+            "DeploymentRuntimeSpecification", "DeploymentRuntimeReport", "DeploymentSupportCatalog",
             "RuntimeIdentityMode", "DeploymentSupportLevel", "DeploymentSupportProfile", "SourceRevision",
             "ValidatedDeploymentTarget");
         register(packages, "gold.debug.windowstolinux.shared.model.project.component", "ComponentDataPath",
-            "ComponentIsolationSpecification", "DeploymentComponent");
+            "PartIsolationSpec", "DeploymentPart");
         register(packages, "gold.debug.windowstolinux.shared.model.project.application", "ApplicationCommand",
             "ApplicationCompanion", "ApplicationEndpoint", "ApplicationInput", "ApplicationWorker",
             "ApplicationWorkload");
@@ -582,6 +609,10 @@ class PackageStructureArchitectureTest {
     private static SourceModel loadSourceModel() throws IOException {
         List<SourceUnit> units = loadSourceUnits(
             path -> path.toString().replace('\\', '/').contains("/src/main/java/"));
+        var attributed = ArchitectureSourceChecker.production().stream().collect(java.util.stream.Collectors.toMap(
+            source -> source.path().toAbsolutePath().normalize(), ArchitectureSourceChecker.JavaSource::references));
+        units = units.stream().map(source -> new SourceUnit(source.path, source.packageName,
+            attributed.get(source.path), source.tree)).toList();
         List<Path> sources = units.stream().map(SourceUnit::path).toList();
 
         Map<String, PackageStructureState> packages = new LinkedHashMap<>();
@@ -724,8 +755,8 @@ class PackageStructureArchitectureTest {
 
     @Test
     void acronymChecksRespectPascalCaseWordBoundaries() {
-        for (String name : List.of("CLanguageInspector", "CLanguageInspectorTest", "AiPage", "SshSession",
-            "JavaJarManifestInspector")) {
+        for (String name : List.of("CLanguageChecker", "CLanguageCheckerTest", "AiPage", "SshSession",
+            "JavaJarManifestChecker")) {
             assertFalse(UNNORMALIZED_ACRONYM.matcher(name).find(), name);
         }
         for (String name : List.of("AILanguageInspector", "SSHSession", "JavaJARInspector", "UIPage", "CMAKEInspector",
@@ -817,10 +848,11 @@ class PackageStructureArchitectureTest {
                         String qualifiedName = owner == null || owner.isBlank()
                             ? source.packageName + "." + simpleName
                             : owner + "." + simpleName;
+                        if ((owner == null || owner.isBlank()) && !hasObjectForRole(simpleName))
+                            problems.add(qualifiedName + " has a role without a domain object");
                         Set<String> restricted = new LinkedHashSet<>(camelCaseTokens(simpleName));
                         restricted.retainAll(RESTRICTED_TYPE_TOKENS);
-                        if (!restricted.isEmpty() && !ALLOWED_RESTRICTED_TYPE_NAMES.contains(simpleName)
-                            && !STABLE_PUBLIC_RESTRICTED_NAMES.contains(qualifiedName)) {
+                        if (!restricted.isEmpty() && !ALLOWED_RESTRICTED_TYPE_NAMES.contains(simpleName)) {
                             problems.add(qualifiedName + " uses restricted terms " + restricted);
                         }
                         if (PERIOD_NAME.matcher(simpleName).find()
@@ -845,18 +877,21 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
-    void explicitSdkNamesDoNotExemptOtherTypesOrUnreviewedSdkNames() {
-        assertTrue(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.ai.AiPurpose"));
-        assertTrue(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.server.ServerInfo"));
+    void sdkShortEnumsAndNamedRolesKeepTheirBoundaries() {
+        assertTrue(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.ai.model.AiPurpose"));
         assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.mod.deployment.ai.AiPurpose"));
         assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.ai.GenericPurpose"));
-        assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.server.OtherInfo"));
-        assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.app.service.server.ServerInfo"));
-        assertTrue(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.file.FileInfo"));
-        assertTrue(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.file.FileChoice.Directory"));
+        assertTrue(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.file.action.FileChoice.Directory"));
         assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.appapi.file.OtherChoice.Directory"));
         assertFalse(STABLE_PUBLIC_ENUM_NAMES.contains("gold.debug.windowstolinux.app.service.file.DeleteEffect"));
-        assertFalse(STABLE_PUBLIC_RESTRICTED_NAMES.contains("gold.debug.windowstolinux.appapi.file.OtherInfo"));
+        assertTrue(hasObjectForRole("AiModelInfo"));
+        assertTrue(hasObjectForRole("ModCodeChecker"));
+        assertFalse(hasObjectForRole("Info"));
+        assertFalse(hasObjectForRole("Checker"));
+    }
+
+    private static boolean hasObjectForRole(String name) {
+        return !Set.of("Checker", "Info").contains(name);
     }
 
     @Test
@@ -930,21 +965,21 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
-    void languageInspectorsStayAtEcosystemRootsAndDoNotDependOnBuildArchitectures() throws Exception {
-        Map<String, String> inspectors = Map.of("c", "CLanguageInspector", "dotnet", "DotNetLanguageInspector", "go",
-            "GoLanguageInspector", "java", "JavaLanguageInspector", "kotlin", "KotlinLanguageInspector", "node",
-            "NodeLanguageInspector", "php", "PhpLanguageInspector", "python", "PythonLanguageInspector", "ruby",
-            "RubyLanguageInspector", "rust", "RustLanguageInspector");
+    void languageCheckersStayAtEcosystemRootsAndDoNotDependOnBuildArchitectures() throws Exception {
+        Map<String, String> checkers = Map.of("c", "CLanguageChecker", "dotnet", "DotNetLanguageChecker", "go",
+            "GoLanguageChecker", "java", "JavaLanguageChecker", "kotlin", "KotlinLanguageChecker", "node",
+            "NodeLanguageChecker", "php", "PhpLanguageChecker", "python", "PythonLanguageChecker", "ruby",
+            "RubyLanguageChecker", "rust", "RustLanguageChecker");
         List<String> problems = new ArrayList<>();
         for (String root : List.of("gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.")) {
             Set<String> found = new HashSet<>();
             for (SourceUnit unit : sourceModel().units) {
                 String file = unit.path.getFileName().toString();
-                if (!unit.packageName.startsWith(root) || !file.endsWith("LanguageInspector.java"))
+                if (!unit.packageName.startsWith(root) || !file.endsWith("LanguageChecker.java"))
                     continue;
                 String ecosystem = unit.packageName.substring(root.length());
-                if (!file.equals(inspectors.get(ecosystem) + ".java")) {
-                    problems.add(unit.path + " must be the language inspector at its ecosystem root");
+                if (!file.equals(checkers.get(ecosystem) + ".java")) {
+                    problems.add(unit.path + " must be the language checker at its ecosystem root");
                 }
                 found.add(ecosystem);
                 for (String dependency : unit.imports) {
@@ -954,7 +989,7 @@ class PackageStructureArchitectureTest {
                     }
                 }
             }
-            assertEquals(ECOSYSTEM_CLASSIFICATION_PACKAGES, found, root + " requires every language inspector");
+            assertEquals(ECOSYSTEM_CLASSIFICATION_PACKAGES, found, root + " requires every language checker");
         }
         assertTrue(problems.isEmpty(), () -> "language/build boundary violations: " + problems);
     }
@@ -1088,14 +1123,202 @@ class PackageStructureArchitectureTest {
         }
     }
 
-    private static final Set<String> MOD_FIRST_LAYER = Set.of("ai", "api", "db", "file", "linux", "secret",
+    private static final Set<String> MOD_FIRST_LAYER = Set.of("ai", "api", "config", "db", "file", "linux", "secret",
         "service", "ui", "windows");
 
-    private static final Set<String> API_CAPABILITY_GROUPS = Set.of("ai", "db", "file", "linux", "mod",
-        "secret", "server", "task", "ui");
+    private static final Set<String> API_PACKAGES = Set.of("ai", "ai.model", "ai.voice", "ai.vision", "db", "db.schema",
+        "file", "file.model", "file.query", "file.action", "file.source", "file.snapshot", "file.work", "linux",
+        "linux.action", "linux.command", "linux.session", "linux.transfer", "mod", "mod.lifecycle", "mod.model",
+        "mod.service", "secret", "secret.access", "secret.model", "secret.ref", "server", "server.model",
+        "server.ref", "task", "task.run", "task.recover", "task.query", "task.model", "task.result",
+        "task.action", "task.log", "task.process", "task.ref", "ui", "ui.page");
+
+    private static final Map<String, Set<String>> API_ROOT_ENTRIES = Map.of(
+        "ai", Set.of("AiService"), "db", Set.of("ModDatabase"), "file", Set.of("FileService"),
+        "linux", Set.of("LinuxService"), "mod", Set.of("ModContext", "ModEntrypoint"),
+        "secret", Set.of("SecretService"), "server", Set.of("ServerService"),
+        "task", Set.of("TaskService"), "ui", Set.of("UiService"));
+
+    @Test
+    void publicApiRootsContainOnlyTheirApprovedEntrypoints() throws Exception {
+        String prefix = "gold.debug.windowstolinux.appapi.";
+        var actual = new HashMap<String, Set<String>>();
+        for (var source : sourceModel().units) {
+            if (!source.packageName.startsWith(prefix))
+                continue;
+            String relative = source.packageName.substring(prefix.length());
+            if (relative.contains("."))
+                continue;
+            for (var declaration : source.tree.getTypeDecls()) {
+                if (declaration instanceof ClassTree type) {
+                    assertEquals(Tree.Kind.INTERFACE, type.getKind(), source.path.toString());
+                    actual.computeIfAbsent(relative, ignored -> new HashSet<>()).add(type.getSimpleName().toString());
+                }
+            }
+        }
+        assertEquals(API_ROOT_ENTRIES, actual, "public API roots must contain only the approved capability entries");
+    }
+
+    @Test
+    void publicApiAllowsOnlyRegisteredRootsAndSecondLevelPackages() {
+        List<String> problems = new ArrayList<>();
+        for (String relative : API_PACKAGES)
+            verifyPackageLayout("gold.debug.windowstolinux.appapi." + relative,
+                relative.split("\\.").length - 1, problems);
+        assertEquals(41, API_PACKAGES.size());
+        assertTrue(problems.isEmpty(), () -> "registered public API packages rejected: " + problems);
+        for (String relative : List.of("task.error", "task.util", "file.transfer", "task.run.internal",
+            "server.ref.model", "ai.voice.realtime")) {
+            List<String> rejected = new ArrayList<>();
+            verifyPackageLayout("gold.debug.windowstolinux.appapi." + relative,
+                relative.split("\\.").length - 1, rejected);
+            assertFalse(rejected.isEmpty(), relative);
+        }
+    }
 
     private static boolean isModPackage(String packageName) {
         return packageName.contains(".windowstolinux.mod.");
+    }
+
+    @Test
+    void publicApiFileEntryOnlyComposesTheFiveResponsibilitiesAndCleanup() throws Exception {
+        checkFileEntry(Files.readString(projectRoot().resolve(
+            "src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java")));
+    }
+
+    @Test
+    void fileEntryGateRejectsExtraMembersImplementationsInheritanceAndChangedSignatures() throws Exception {
+        String source = Files.readString(projectRoot().resolve(
+            "src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java"));
+        String fullyQualified = source.replaceAll("(?m)^import .*;\\R", "");
+        for (var type : Map.of("FileQueryService", "file.query.FileQueryService",
+            "FileActionService", "file.action.FileActionService", "FileSourceService", "file.source.FileSourceService",
+            "FileSnapshotService", "file.snapshot.FileSnapshotService", "FileWorkspaceService", "file.work.FileWorkspaceService",
+            "TaskContext", "task.run.TaskContext", "ApiException", "task.result.ApiException").entrySet())
+            fullyQualified = fullyQualified.replaceAll("\\b" + type.getKey() + "\\b", "gold.debug.windowstolinux.appapi." + type.getValue());
+        checkFileEntry(fullyQualified);
+        checkFileEntry(source.replace("FileQueryService queries();", "public abstract FileQueryService queries();"));
+        var fixtures = new LinkedHashMap<String, String>();
+        for (String member : List.of("int VERSION = 1;", "interface Extra {}", "void extra();",
+            "private void hidden() {}", "FileQueryService queries(TaskContext task);"))
+            fixtures.put(member, source.substring(0, source.lastIndexOf('}')) + member + "\n}");
+        fixtures.put("default implementation", source.replace("FileQueryService queries();", "default FileQueryService queries() { return null; }"));
+        fixtures.put("static accessor", source.replace("FileQueryService queries();", "static FileQueryService queries() { return null; }"));
+        fixtures.put("parent interface", source.replace("public interface FileService", "public interface FileService extends java.lang.AutoCloseable"));
+        fixtures.put("generic interface", source.replace("public interface FileService", "public interface FileService<T>"));
+        fixtures.put("non-public interface", source.replace("public interface FileService", "interface FileService"));
+        fixtures.put("generic method", source.replace("FileQueryService queries();", "<T> FileQueryService queries();"));
+        fixtures.put("wrong return type", source.replace("FileQueryService queries();", "FileActionService queries();"));
+        fixtures.put("wrong task parameter", source.replace("closeTaskResources(TaskContext task)", "closeTaskResources(String task)"));
+        fixtures.put("accessor throws", source.replace("FileQueryService queries();", "FileQueryService queries() throws java.io.IOException;"));
+        fixtures.put("missing cleanup exception", source.replace("throws ApiException;", ";"));
+        fixtures.put("extra cleanup exception", source.replace("throws ApiException;", "throws ApiException, java.io.IOException;"));
+        for (var fixture : fixtures.entrySet())
+            assertThrows(AssertionError.class, () -> checkFileEntry(fixture.getValue()), fixture.getKey());
+    }
+
+    private static void checkFileEntry(String source) throws IOException {
+        var compiler = ToolProvider.getSystemJavaCompiler();
+        var diagnostics = new javax.tools.DiagnosticCollector<JavaFileObject>();
+        var input = new javax.tools.SimpleJavaFileObject(java.net.URI.create("string:///FileService.java"), JavaFileObject.Kind.SOURCE) {
+            @Override
+            public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+                return source;
+            }
+        };
+        try (var manager = compiler.getStandardFileManager(diagnostics, null, null)) {
+            var task = (JavacTask) compiler.getTask(null, manager, diagnostics,
+                List.of("-proc:none", "-Xlint:none", "--release", "21", "-classpath",
+                    System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"))), null, List.of(input));
+            var unit = task.parse().iterator().next();
+            task.analyze();
+            assertTrue(diagnostics.getDiagnostics().stream().noneMatch(d -> d.getKind() == javax.tools.Diagnostic.Kind.ERROR),
+                () -> "file entry attribution failed: " + diagnostics.getDiagnostics());
+            assertEquals(1, unit.getTypeDecls().size());
+            var type = (ClassTree) unit.getTypeDecls().getFirst();
+            assertEquals(Tree.Kind.INTERFACE, type.getKind());
+            assertTrue(type.getModifiers().getFlags().contains(Modifier.PUBLIC));
+            assertTrue(Set.of(Modifier.PUBLIC, Modifier.ABSTRACT).containsAll(type.getModifiers().getFlags()));
+            assertTrue(type.getImplementsClause().isEmpty(), "the file entry must not inherit contracts");
+            assertNull(type.getExtendsClause());
+            assertTrue(type.getTypeParameters().isEmpty());
+            assertTrue(type.getPermitsClause().isEmpty());
+            var syntax = Trees.instance(task);
+            var actual = new HashMap<String, String>();
+            for (var member : type.getMembers()) {
+                assertEquals(Tree.Kind.METHOD, member.getKind(), "the entry only declares methods");
+                var method = (MethodTree) member;
+                assertNull(method.getBody(), "the entry must not implement operations");
+                assertTrue(method.getTypeParameters().isEmpty());
+                var element = (ExecutableElement) syntax.getElement(TreePath.getPath(unit, method));
+                assertEquals(Set.of(Modifier.PUBLIC, Modifier.ABSTRACT), element.getModifiers());
+                String name = element.getSimpleName().toString();
+                assertNull(actual.put(name, element.getReturnType().toString()), "entry overload: " + name);
+                assertEquals(name.equals("closeTaskResources") ? 1 : 0, element.getParameters().size(), name);
+                if (name.equals("closeTaskResources")) {
+                    assertEquals("gold.debug.windowstolinux.appapi.task.run.TaskContext", element.getParameters().getFirst().asType().toString());
+                    assertEquals(List.of("gold.debug.windowstolinux.appapi.task.result.ApiException"), element.getThrownTypes().stream().map(Object::toString).toList());
+                } else
+                    assertTrue(element.getThrownTypes().isEmpty(), name);
+            }
+            String prefix = "gold.debug.windowstolinux.appapi.file.";
+            assertEquals(Map.of("queries", prefix + "query.FileQueryService", "actions", prefix + "action.FileActionService",
+                "sources", prefix + "source.FileSourceService", "snapshots", prefix + "snapshot.FileSnapshotService",
+                "workspaces", prefix + "work.FileWorkspaceService", "closeTaskResources", "void"), actual);
+        }
+    }
+
+    @Test
+    void documentedPublicApiDependenciesMatchAttributedGraph() throws Exception {
+        String prefix = "gold.debug.windowstolinux.appapi.";
+        var model = sourceModel();
+        var actual = new HashMap<String, Set<String>>();
+        for (var unit : model.units) {
+            if (!unit.packageName.startsWith(prefix))
+                continue;
+            String owner = unit.packageName.substring(prefix.length());
+            var targets = actual.computeIfAbsent(owner, ignored -> new HashSet<>());
+            for (var reference : unit.imports)
+                resolveImportedPackage(reference, model.packages.keySet())
+                    .filter(target -> target.startsWith(prefix) && !target.equals(unit.packageName))
+                    .ifPresent(target -> targets.add(target.substring(prefix.length())));
+        }
+        String document = Files.readString(projectRoot().resolve("docs/File.md"));
+        String anchor = "<a id=\"appapi-package-dependencies\"></a>";
+        assertEquals(1, document.split(Pattern.quote(anchor), -1).length - 1);
+        var documented = new HashMap<String, Set<String>>();
+        boolean inTable = false;
+        for (String line : document.substring(document.indexOf(anchor) + anchor.length()).split("\\R")) {
+            if (!line.startsWith("|")) {
+                if (inTable)
+                    break;
+                continue;
+            }
+            inTable = true;
+            var row = Pattern.compile("^\\|\\s*`([^`]+)`\\s*\\|(.+)\\|$").matcher(line);
+            if (!row.matches())
+                continue;
+            var targets = new HashSet<String>();
+            var values = Pattern.compile("`([^`]+)`").matcher(row.group(2));
+            while (values.find())
+                targets.add(values.group(1));
+            assertNull(documented.put(row.group(1), targets), "duplicate API dependency row");
+        }
+        assertEquals(API_PACKAGES, documented.keySet());
+        assertEquals(actual, documented, "document actual inferred and fully qualified dependencies");
+    }
+
+    @Test
+    void publicApiSharedReferenceAndPaginationContractsStayIndependent() throws Exception {
+        var model = sourceModel();
+        for (var unit : model.units) {
+            if (!Set.of("gold.debug.windowstolinux.appapi.task.ref",
+                "gold.debug.windowstolinux.appapi.task.query").contains(unit.packageName))
+                continue;
+            for (var reference : unit.imports)
+                resolveImportedPackage(reference, model.packages.keySet())
+                    .ifPresent(target -> assertEquals(unit.packageName, target, unit.path + " -> " + reference));
+        }
     }
 
     private static String declaredPackage(String content) {
@@ -1121,7 +1344,7 @@ class PackageStructureArchitectureTest {
             return;
         }
         String api = "gold.debug.windowstolinux.appapi.";
-        if (packageName.startsWith(api) && !API_CAPABILITY_GROUPS.contains(packageName.substring(api.length())))
+        if (packageName.startsWith(api) && !API_PACKAGES.contains(packageName.substring(api.length())))
             problems.add(packageName + " is outside a public API capability group");
         if (packageName.startsWith("gold.debug.windowstolinux.app.")) {
             Set<String> forbidden = new HashSet<>(List.of(packageName.split("\\.")));
@@ -1148,7 +1371,7 @@ class PackageStructureArchitectureTest {
     @Test
     void publicApiPackagesFollowTheDocumentedDependencyDirection() throws Exception {
         var allowed = Map.of("task", Set.<String>of(), "server", Set.of("task"), "ui", Set.of("task"), "db",
-            Set.of("task"), "ai", Set.of("task"), "file", Set.of("task", "server", "linux"), "secret", Set.of("task", "server"),
+            Set.of("task"), "ai", Set.of("task"), "file", Set.of("task", "server", "linux"), "secret", Set.of("task"),
             "linux", Set.of("task", "server"), "mod",
             Set.of("task", "server", "ui", "db", "ai", "file", "secret", "linux"));
         String prefix = "gold.debug.windowstolinux.appapi.";
@@ -1157,18 +1380,116 @@ class PackageStructureArchitectureTest {
         for (var unit : model.units) {
             if (!unit.packageName.startsWith(prefix))
                 continue;
-            String owner = unit.packageName.substring(prefix.length());
+            String owner = unit.packageName.substring(prefix.length()).split("\\.")[0];
             assertTrue(allowed.containsKey(owner), unit.path.toString());
             for (var imported : unit.imports) {
                 if (imported.startsWith("java.") || imported.startsWith("javax."))
                     continue;
                 var target = resolveImportedPackage(imported, model.packages.keySet());
-                if (target.isEmpty() || !target.get().equals(unit.packageName) && (!target.get().startsWith(prefix)
-                    || !allowed.get(owner).contains(target.get().substring(prefix.length()))))
+                String targetCapability = target.filter(name -> name.startsWith(prefix))
+                    .map(name -> name.substring(prefix.length()).split("\\.")[0]).orElse("");
+                if (!unit.packageName.equals(prefix + owner) && target.filter((prefix + owner)::equals).isPresent())
+                    violations.add(unit.path + " makes a secondary contract depend on its capability entry: " + imported);
+                if (target.isEmpty() || !target.get().equals(unit.packageName)
+                    && !targetCapability.equals(owner) && !allowed.get(owner).contains(targetCapability))
                     violations.add(unit.path + " -> " + imported);
             }
         }
         assertTrue(violations.isEmpty(), () -> "public API dependency direction violations: " + violations);
+    }
+
+    @Test
+    void dependencyWalkRejectsLongCrossModuleCyclesAndAllowsSharedBaseDiamonds() {
+        for (int size : List.of(3, 6)) {
+            var graph = new LinkedHashMap<String, Set<String>>();
+            for (int index = 0; index < size; index++)
+                graph.put("module" + index + ".capability", Set.of("module" + ((index + 1) % size) + ".capability"));
+            var cycle = findCycle(graph).orElseThrow();
+            assertEquals(size + 1, cycle.size());
+            assertEquals(cycle.getFirst(), cycle.getLast());
+        }
+        assertTrue(findCycle(Map.of("ui", Set.of("service", "model"), "service", Set.of("api"),
+            "model", Set.of("api"), "api", Set.of())).isEmpty());
+    }
+
+    @Test
+    void currentSourcesAndResourcesCannotReintroduceLegacyExecutionContracts() throws Exception {
+        Path root = projectRoot();
+        assertFalse(Files.exists(root.resolve(".mvn/probes/phase11")));
+        assertFalse(Files.exists(root.resolve("src/app/db/src/main/resources/schema/desktop.sql")));
+        for (var source : ArchitectureSourceChecker.production()) {
+            assertFalse(source.packageName().startsWith("gold.debug.windowstolinux.app.windows.workspace"), source.path().toString());
+            String text = Files.readString(source.path());
+            if (source.packageName().startsWith("gold.debug.windowstolinux.app.")) {
+                assertFalse(text.contains("jdbc:sqlite:"), source.path().toString());
+                assertFalse(text.contains("org.sqlite."), source.path().toString());
+            }
+            for (String removed : List.of("LEGACY_UNSPECIFIED", "LEGACY_RUNTIME_MISSING", "WindowsWorkspaceException", "WindowsWorkspaceFailureType"))
+                assertFalse(text.contains(removed), () -> source.path() + " reintroduces " + removed);
+        }
+        var recovery = root.resolve("src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/recover/BrowserRecoverySession.java");
+        assertFalse(Files.readString(recovery).contains("cancellation == null"));
+        var git = root.resolve("src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/file/git/DeploymentGitSetup.java");
+        assertFalse(Files.readString(git).contains("observer == null"));
+        for (var module : MavenModuleGraph.read(root)) {
+            if (module.path().startsWith("app/")) {
+                String pom = Files.readString(module.pom());
+                assertFalse(pom.contains("sqlite-jdbc"), module.pom().toString());
+            }
+            Path resources = module.pom().getParent().resolve("src/main/resources");
+            if (Files.isDirectory(resources)) {
+                try (var files = Files.walk(resources)) {
+                    for (var resource : files.filter(Files::isRegularFile).toList()) {
+                        String name = resource.getFileName().toString();
+                        if (!name.endsWith(".sh") && !name.endsWith(".properties"))
+                            continue;
+                        String text = Files.readString(resource);
+                        for (String removed : List.of("LEGACY_UNSPECIFIED", "legacy_runtime_user", "legacy_pattern",
+                            "render_unit()", "expected_unit_digest()", "assert_current_or_empty()", "legacy-gradle-write",
+                            "assert_deployment_or_ordinary_current_or_empty", "current_kind=ordinary", "previous_kind=ordinary",
+                            "legacy-runtime-version", "applications.legacyRuntime="))
+                            assertFalse(text.contains(removed), () -> resource + " reintroduces " + removed);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void deletionLedgerRequiresHostEvidenceWithoutFilesystemOrReverseDependencies() throws Exception {
+        var source = ArchitectureSourceChecker.production().stream()
+            .filter(candidate -> candidate.path().getFileName().toString().equals("ModDeletionLedger.java"))
+            .findFirst().orElseThrow();
+        assertFalse(source.references().stream().anyMatch(reference ->
+            reference.equals("java.nio.file.Files") || reference.startsWith("java.nio.file.attribute.")
+                || reference.startsWith("gold.debug.windowstolinux.app.service.")), source.references().toString());
+        var ledger = Class.forName("gold.debug.windowstolinux.app.db.mod.ModDeletionLedger");
+        var constructors = ledger.getDeclaredConstructors();
+        assertEquals(1, constructors.length);
+        assertEquals(List.of("gold.debug.windowstolinux.app.db.connect.PlatformDatabase", "java.nio.file.Path",
+                ledger.getName() + "$FileEvidence"),
+            java.util.Arrays.stream(constructors[0].getParameterTypes()).map(Class::getName).toList());
+        var proof = Class.forName(ledger.getName() + "$FileEvidence");
+        assertTrue(proof.isInterface());
+        assertEquals(Set.of("verifyHome", "verifyAbsent"),
+            java.util.Arrays.stream(proof.getDeclaredMethods()).map(java.lang.reflect.Method::getName)
+                .collect(java.util.stream.Collectors.toSet()));
+        for (var method : proof.getDeclaredMethods()) {
+            assertEquals(void.class, method.getReturnType());
+            assertEquals(List.of(Path.class), List.of(method.getParameterTypes()));
+            assertEquals(List.of(java.sql.SQLException.class), List.of(method.getExceptionTypes()));
+        }
+    }
+
+    @Test
+    void developmentCommandHasOneCurrentSourceAndAuthorParentEntrypoint() throws Exception {
+        var root = ArchitectureSourceChecker.projectRoot();
+        var prefix = "src/app/mod/src/main/java/gold/debug/windowstolinux/app/mod/";
+        assertTrue(Files.isRegularFile(root.resolve(prefix + "dev/ModPackageTool.java")));
+        assertFalse(Files.exists(root.resolve(prefix + "install/ModPackageTool.java")));
+        var parent = Files.readString(root.resolve(".mvn/wtlmod-author-parent/pom.xml"));
+        assertTrue(parent.contains("gold.debug.windowstolinux.app.mod.dev.ModPackageTool"));
+        assertFalse(parent.contains("gold.debug.windowstolinux.app.mod.install.ModPackageTool"));
     }
 
     @Test
@@ -1220,16 +1541,17 @@ class PackageStructureArchitectureTest {
     @Test
     void linuxAndUiHonorTheNarrowExecutionAndServiceBoundaries() throws Exception {
         var allowedUiServiceTypes = Set.of("gold.debug.windowstolinux.app.service.ai.PlatformModelService",
-            "gold.debug.windowstolinux.app.service.linux.TransferConfiguration",
-            "gold.debug.windowstolinux.app.service.linux.TransferSettingsService",
-            "gold.debug.windowstolinux.app.service.file.FileSettingsService",
+            "gold.debug.windowstolinux.app.service.setting.TransferConfig",
+            "gold.debug.windowstolinux.app.service.setting.TransferSettingsService",
+            "gold.debug.windowstolinux.app.service.setting.FileSettingsService",
             "gold.debug.windowstolinux.app.service.server.PlatformServerService",
-            "gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService",
             "gold.debug.windowstolinux.app.service.log.PlatformLogService",
-            "gold.debug.windowstolinux.app.service.mod.PlatformModDeletion",
-            "gold.debug.windowstolinux.app.service.mod.PlatformModInstallation",
+            "gold.debug.windowstolinux.app.service.mod.install.PlatformModDeletion",
+            "gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation",
             "gold.debug.windowstolinux.app.service.mod.PlatformModIntents",
-            "gold.debug.windowstolinux.app.service.mod.PlatformModReinstallation",
+            "gold.debug.windowstolinux.app.service.mod.store.ModStoreService",
+            "gold.debug.windowstolinux.app.service.setting.NavigationOrderService",
+            "gold.debug.windowstolinux.app.service.mod.install.PlatformModReinstallation",
             "gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService",
             "gold.debug.windowstolinux.app.service.task.PlatformInteractionService");
         Set<String> serviceContracts = serviceContractTypes(sourceModel());
@@ -1243,7 +1565,9 @@ class PackageStructureArchitectureTest {
                     problems.add(unit.path + " depends on persistence, service policy or UI: " + reference);
                 if (unit.packageName.startsWith("gold.debug.windowstolinux.app.ui.")) {
                     if (reference.startsWith("gold.debug.windowstolinux.app.db.")
-                        || reference.startsWith("gold.debug.windowstolinux.app.linux."))
+                        || reference.startsWith("gold.debug.windowstolinux.app.linux.")
+                        && ModuleDependencyArchitectureTest.UI_RESCUE_TYPES.stream()
+                        .noneMatch(type -> reference.equals(type) || reference.startsWith(type + ".")))
                         problems.add(unit.path + " reaches a database implementation or remote port: " + reference);
                     if (reference.startsWith("gold.debug.windowstolinux.app.service.")
                         && serviceContracts.stream().noneMatch(type -> reference.equals(type)
@@ -1256,8 +1580,8 @@ class PackageStructureArchitectureTest {
         }
         var linux = MavenModuleGraph.read(projectRoot()).stream().filter(module -> module.path().equals("app/linux"))
             .findFirst().orElseThrow();
-        assertEquals(Set.of("windowstolinux-appapi", "windowstolinux-app-ai", "windowstolinux-app-file",
-                "windowstolinux-app-windows"),
+        assertEquals(Set.of("windowstolinux-appapi", "windowstolinux-app-file",
+                "windowstolinux-app-windows", "windowstolinux-app-config"),
             linux.artifacts());
         assertTrue(problems.isEmpty(), () -> "execution/service boundary violations: " + problems);
     }
@@ -1281,7 +1605,7 @@ class PackageStructureArchitectureTest {
     void relocatedTestsAndRemovedDirectoriesMatchTheirResponsibilities() throws Exception {
         Path root = projectRoot();
         for (var entry : Map.of("DeploymentStaticInputTest", "service/standard/deploy/input",
-            "DeploymentConfigurationSnapshotTest", "service/core/config").entrySet()) {
+            "DeploymentConfigSnapshotTest", "service/core/config").entrySet()) {
             Path test = root.resolve("src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/"
                 + entry.getValue() + "/" + entry.getKey() + ".java");
             assertTrue(Files.isRegularFile(test), "Migrated validation test is absent: " + test);
@@ -1490,7 +1814,7 @@ class PackageStructureArchitectureTest {
         if (!call.getArguments().isEmpty() || !(call.getMethodSelect() instanceof com.sun.source.tree.MemberSelectTree member))
             return false;
         String target = parameterType(member.getExpression().toString(), source) + "." + member.getIdentifier();
-        return Set.of("java.util.Optional.empty", "gold.debug.windowstolinux.appapi.file.FileChoice.ask").contains(target);
+        return Set.of("java.util.Optional.empty", "gold.debug.windowstolinux.appapi.file.action.FileChoice.ask").contains(target);
     }
 
     @Test
@@ -1503,7 +1827,7 @@ class PackageStructureArchitectureTest {
         assertFalse(pureApiDelegate(delegateFixture("return backend.stat(path = \"fallback\");", true), signatures));
         assertFalse(pureApiDelegate(delegateFixture("return backend.stat(validate(path));", true), signatures));
         assertTrue(pureApiDelegate(delegateFixture("return backend.stat(java.util.Optional.empty());", true), signatures));
-        assertTrue(pureApiDelegate(delegateFixture("return backend.stat(gold.debug.windowstolinux.appapi.file.FileChoice.ask());", true), signatures));
+        assertTrue(pureApiDelegate(delegateFixture("return backend.stat(gold.debug.windowstolinux.appapi.file.action.FileChoice.ask());", true), signatures));
         assertFalse(pureApiDelegate(delegateFixture("return backend.stat(OtherChoice.ask());", true), signatures));
         assertFalse(pureApiDelegate(delegateFixture("return backend.stat(java.util.Objects.requireNonNull(path));", true), signatures));
         assertFalse(pureApiDelegate(delegateFixture("return backend.stat(path);", false), signatures));
@@ -1580,7 +1904,7 @@ class PackageStructureArchitectureTest {
         try (Stream<Path> files = Files.list(directory)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 long count = file.toString().endsWith(".java")
-                    ? JavadocCoverageInspector.implementationLines(Files.readString(file))
+                    ? JavadocCoverageChecker.implementationLines(Files.readString(file))
                     : Files.readAllLines(file).size();
                 long cap = FORMATTED_LINE_CAPS.getOrDefault(file.getFileName().toString(), maximum);
                 assertTrue(count <= cap,

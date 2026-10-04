@@ -14,15 +14,18 @@ import java.util.concurrent.atomic.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver.RunMode;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.app.ui.debug.UiDebugDialog;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
-import gold.debug.windowstolinux.app.ui.debug.UiDebugDialog;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.task.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.ui.*;
+import gold.debug.windowstolinux.appapi.ui.page.ModPage;
+import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -42,7 +45,7 @@ class PlatformUiDebugAcceptanceTest {
             var result = new PlatformFrame(runtime.security(), MessageCatalog.forLanguageTag("zh-CN"),
                 ThemePalette.light(), new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false),
                 FailureReportStore.disabled());
-            result.installAppearance(new DesktopDisplayConfiguration("zh-CN", ThemeMode.LIGHT), requested -> {
+            result.installAppearance(new DesktopDisplayConfig("zh-CN", ThemeMode.LIGHT), requested -> {
                 assertFalse(SwingUtilities.isEventDispatchThread());
                 appearanceSaves.incrementAndGet();
             });
@@ -240,15 +243,15 @@ class PlatformUiDebugAcceptanceTest {
                     return null;
                 });
                 var oldTitle = onEdt(gallery::getTitle);
-                for (var requested : java.util.List.of(new DesktopDisplayConfiguration("en", ThemeMode.DARK),
-                    new DesktopDisplayConfiguration("zh-CN", ThemeMode.LIGHT))) {
+                for (var requested : java.util.List.of(new DesktopDisplayConfig("en", ThemeMode.DARK),
+                    new DesktopDisplayConfig("zh-CN", ThemeMode.LIGHT))) {
                     onEdt(() -> {
                         ((JComboBox<?>) named(frame, "appearance.language")).setSelectedItem(requested.localeTag());
                         ((JComboBox<?>) named(frame, "appearance.theme")).setSelectedItem(requested.themeMode());
                         ((JButton) named(frame, "appearance.save")).doClick(0);
                         return null;
                     });
-                    await(() -> !DesktopTaskExecutor.hasActiveTasks() && gallery.getTitle()
+                    await(() -> !DesktopTaskRunner.hasActiveTasks() && gallery.getTitle()
                         .equals(MessageCatalog.forLanguageTag(requested.localeTag()).text("settings.debug.open")));
                     onEdt(() -> {
                         assertSame(gallery, owned(frame, "settings.uiDebug.gallery"));
@@ -272,7 +275,8 @@ class PlatformUiDebugAcceptanceTest {
                 await(() -> !gallery.isDisplayable() && !model.isDisplayable() && !preview.isDisplayable());
                 assertEquals(1, previewClosed.get());
                 onEdt(() -> {
-                    assertFalse(frame.getContentPane().isVisible());
+                    assertTrue(frame.getContentPane().isVisible());
+                    assertTrue(frame.getGlassPane().isVisible());
                     assertFalse(named(frame, "settings.uiDebug").isEnabled());
                     assertEquals(0, ((JPasswordField) named(server, "server.password")).getPassword().length);
                     return null;

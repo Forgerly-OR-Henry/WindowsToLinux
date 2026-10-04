@@ -1,13 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.db;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
@@ -19,9 +11,26 @@ import java.util.regex.Pattern;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
@@ -38,12 +47,12 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                 return true;
             }
 
-            public TransferConflictChoice transferConflict(TransferConflict c, ServerRef s, TaskSnapshot t,
+            public TransferConflictChoice transferConflict(TransferConflict c, ServerId s, TaskSnapshot t,
                                                            CancelToken token) {
                 throw new AssertionError();
             }
 
-            public TransferStallChoice transferStalled(TransferStall s, ServerRef target, TaskSnapshot t,
+            public TransferStallChoice transferStalled(TransferStall s, ServerId target, TaskSnapshot t,
                                                        CancelToken token) {
                 throw new AssertionError();
             }
@@ -85,15 +94,15 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                 var expected = graph.components().stream().filter(value -> value.componentId().equals("web"))
                     .findFirst().orElseThrow().unit();
                 assertEquals(expected, resolver.resolve(task, expected.id(), expected.server()));
-                assertEquals(expected, resolver.resolve(task, expected.id(), new ServerRef("server")));
+                assertEquals(expected, resolver.resolve(task, expected.id(), new ServerId("server")));
                 var original = new DeploymentApplicationReader(context.db())
-                    .find(new DeploymentApplicationRef("legacy-demo", new ServerRef("server")), task);
+                    .find(new DeploymentApplicationId("legacy-demo", new ServerId("server")), task);
                 var denied = assertThrows(ApiException.class,
-                    () -> resolver.resolve(task, expected.id(), new ServerRef("other-server")));
+                    () -> resolver.resolve(task, expected.id(), new ServerId("other-server")));
                 assertEquals(ProblemCode.INVALID_INPUT, denied.problem().code());
                 assertEquals("service.deployment.server-conflict", denied.problem().eventCode());
                 assertEquals(expected,
-                    new DeploymentPublicationRepository(context.db()).findUnit(task, expected.id()).orElseThrow());
+                    new DeploymentPublishStore(context.db()).findUnit(task, expected.id()).orElseThrow());
                 assertEquals(original,
                     new DeploymentApplicationReader(context.db()).find(original.snapshot().application(), task));
                 return success();
@@ -123,14 +132,14 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                 sql(runtime, task,
                     "UPDATE deployment_unit SET systemd_unit_name='windowstolinux-other.service' WHERE deployment_unit_id='web'");
                 var database = runtime.modContexts().get(OWNER).context().db();
-                var original = new DeploymentPublicationRepository(database).findUnit(task, "web").orElseThrow();
+                var original = new DeploymentPublishStore(database).findUnit(task, "web").orElseThrow();
                 assertEquals("windowstolinux-other.service", original.systemdUnit());
                 var denied = assertThrows(ApiException.class,
-                    () -> new DeploymentStaticUnitResolver(database).resolve(task, "web", new ServerRef("server")));
+                    () -> new DeploymentStaticUnitResolver(database).resolve(task, "web", new ServerId("server")));
                 assertEquals(ProblemCode.INVALID_INPUT, denied.problem().code());
                 assertEquals("service.deployment.identity-invalid", denied.problem().eventCode());
                 assertEquals(original,
-                    new DeploymentPublicationRepository(database).findUnit(task, "web").orElseThrow());
+                    new DeploymentPublishStore(database).findUnit(task, "web").orElseThrow());
                 return success();
             });
             assertEquals(references, references(runtime),
@@ -165,12 +174,12 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                         return invoke(actual.linux(), method, arguments);
                     });
                 var context = bind(actual, linux);
-                var application = new DeploymentApplicationRef("legacy-demo", new ServerRef("server"));
-                var rejected = assertThrows(ApiException.class, () -> new DeploymentApplicationExecutor(context)
+                var application = new DeploymentApplicationId("legacy-demo", new ServerId("server"));
+                var rejected = assertThrows(ApiException.class, () -> new DeploymentApplicationRunner(context)
                     .lifecycle(application, "b".repeat(64), DeploymentLifecycleAction.RESTART, task));
                 assertEquals("DEPLOYMENT_APPLICATION_NOT_PUBLISHED", rejected.problem().eventCode());
-                assertTrue(new DeploymentPublicationRepository(context.db()).findRuntime(task, "web").isEmpty());
-                assertTrue(new DeploymentManagementJournal(context).find(task).isEmpty());
+                assertTrue(new DeploymentPublishStore(context.db()).findRuntime(task, "web").isEmpty());
+                assertTrue(new DeploymentManagementActionLog(context).find(task).isEmpty());
                 return success();
             });
             assertEquals(0, connects.get());
@@ -191,7 +200,7 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
             run(runtime, task -> {
                 publishManaged(runtime, task, graph, 1);
                 persisted.set(new DeploymentApplicationReader(runtime.modContexts().get(OWNER).context().db())
-                    .find(new DeploymentApplicationRef("legacy-demo", new ServerRef("server")), task));
+                    .find(new DeploymentApplicationId("legacy-demo", new ServerId("server")), task));
                 return success();
             });
             assertResourcesReleased(runtime);
@@ -207,9 +216,9 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                     "Reopen must keep the original complete release and health policy");
                 assertEquals(graph.healthCheck(), restored.graph().healthCheck());
                 var context = bind(actual, peer.linux());
-                var result = new DeploymentApplicationExecutor(context).lifecycle(restored.snapshot().application(),
+                var result = new DeploymentApplicationRunner(context).lifecycle(restored.snapshot().application(),
                     restored.snapshot().revisionSha256(), DeploymentLifecycleAction.RESTART, task);
-                assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+                assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
                 assertEquals(ApplicationRunState.RUNNING, result.value().orElseThrow().after());
                 assertEquals(graph, reader.find(restored.snapshot().application(), task).graph());
                 assertEquals(restored.snapshot().healthPolicySha256(),
@@ -305,8 +314,8 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                     return List.of();
                 }
 
-                public RemoteSession connect(ServerRef server, TaskContext task) throws ApiException {
-                    assertEquals(new ServerRef("server"), server);
+                public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
+                    assertEquals(new ServerId("server"), server);
                     var lease = task.retain("controlled_ssh", "legacy-health-" + UUID.randomUUID(),
                         "Original controlled helper connection");
                     sessions.incrementAndGet();
@@ -392,7 +401,7 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
         }
 
         private static OperationResult<CommandResult> reply(String text) {
-            return new OperationResult<>(Outcome.SUCCEEDED,
+            return new OperationResult<>(TaskResult.SUCCEEDED,
                 Optional.of(new CommandResult(Optional.of(0), text, "", false)), Optional.empty());
         }
     }

@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.db.log;
 
-import gold.debug.windowstolinux.appapi.task.LogEvent;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.*;
@@ -13,6 +9,9 @@ import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** One bounded redacted record format shared by SQL and emergency storage. / SQL 与应急存储共用的有界脱敏记录格式。 */
 public final class LogRecordCodec {
@@ -37,7 +36,7 @@ public final class LogRecordCodec {
      * @param version actual producer release / 实际生产方发布版本
      * @param event diagnostic supplied by its owner / 所有者提供的诊断
      * @return immutable record with its original identifier and timestamp / 带原标识及时间的不可变记录 */
-    public static Record create(LogRepository.Target target, String version, LogEvent event) {
+    public static Record create(LogStore.Target target, String version, LogEvent event) {
         return createSummary(target, version, event, UUID.randomUUID(), System.currentTimeMillis(),
             target.owner().equals("app") ? null : target.owner());
     }
@@ -50,14 +49,14 @@ public final class LogRecordCodec {
      * @param recordedAt original recorded time / 原记录时间
      * @param subject associated Mod or null for platform work / 关联 Mod，平台工作可为空
      * @return bounded exact summary / 有界精确摘要 */
-    public static Record createSummary(LogRepository.Target target, String version, LogEvent event, UUID id,
+    public static Record createSummary(LogStore.Target target, String version, LogEvent event, UUID id,
                                        long recordedAt, String subject) {
         Objects.requireNonNull(event);
         Objects.requireNonNull(id);
         if (recordedAt < 0 || subject != null && (subject.isBlank() || subject.length() > 512))
             throw new IllegalArgumentException("Invalid summary attribution");
         if (!event.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || version == null || version.length() > 512
-            || version.isBlank() || event.outcome().orElse(null) == Outcome.UNKNOWN)
+            || version.isBlank() || event.outcome().orElse(null) == TaskResult.UNKNOWN)
             throw new IllegalArgumentException("Invalid diagnostic identity or terminal outcome");
         String message = redact(event.message()), details = event.details().map(LogRecordCodec::redact).orElse(null);
         boolean truncated = event.message().length() > 65536
@@ -151,7 +150,7 @@ public final class LogRecordCodec {
      * @param bytes one complete line including LF / 包含 LF 的一条完整行
      * @return original diagnostic without new identity or timestamp / 不生成新身份或时间的原诊断
      * @throws IOException if content, fields or attribution is invalid / 内容、字段或归属无效时 */
-    public static Record decode(LogRepository.Target target, byte[] bytes) throws IOException {
+    public static Record decode(LogStore.Target target, byte[] bytes) throws IOException {
         try {
             if (bytes.length == 0 || bytes.length > MAX_BYTES || bytes[bytes.length - 1] != '\n')
                 throw new IllegalArgumentException();
@@ -174,10 +173,10 @@ public final class LogRecordCodec {
                 text(n, "owner_id", false), text(n, "category", false), LogLevel.valueOf(text(n, "level", false)),
                 text(n, "event_code", false), text(n, "message", false), text(n, "details", true),
                 text(n, "subject_mod_id", true), text(n, "mod_version", true), uuid(n, "task_id", true),
-                uuid(n, "operation_id", true), outcome == null ? null : Outcome.valueOf(outcome),
+                uuid(n, "operation_id", true), outcome == null ? null : TaskResult.valueOf(outcome),
                 n.get("truncated").booleanValue());
             if (!target.owner().equals(record.owner()) || !target.category().equals(record.category())
-                || !record.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || record.outcome() == Outcome.UNKNOWN
+                || !record.eventCode().matches("[A-Za-z0-9_.:-]{1,128}") || record.outcome() == TaskResult.UNKNOWN
                 || record.message().isBlank() || record.message().getBytes(StandardCharsets.UTF_8).length > 2048
                 || !target.owner().equals("app")
                 && (!Objects.equals(record.subjectMod(), target.owner()) || record.version() == null)
@@ -260,7 +259,7 @@ public final class LogRecordCodec {
     public record Record(UUID id, long recordedAt, String owner, String category, LogLevel level, String eventCode,
                          String message, String details, String subjectMod, String version, UUID taskId,
                          UUID operationId,
-                         Outcome outcome, boolean truncated) {
+                         TaskResult outcome, boolean truncated) {
         /** Copies only the bounded body and truncation marker. / 仅复制有界正文及截断标记。
          * @param value replacement detail / 替换正文
          * @param shortened truncation state / 截断状态

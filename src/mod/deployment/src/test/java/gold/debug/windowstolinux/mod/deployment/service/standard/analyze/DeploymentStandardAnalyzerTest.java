@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.analyze;
 
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -12,12 +7,16 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceSetup;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
-import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.ComponentIsolationSpecification;
-import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.ComponentAnalysisRequest;
-import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourcePreparer;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.project.component.PartIsolationSpec;
+import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.component.PartAnalysisRequest;
 import org.junit.jupiter.api.Test;
 
 class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
@@ -50,8 +49,8 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
             var handle = context.tasks()
                 .submit(new TaskRequest("analysis-integration", "Analyze source", List.of(), true), task -> {
                     try {
-                        var selection = context.file().selectDirectory("Source", task);
-                        var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 4096, 100,
+                        var selection = context.file().sources().selectDirectory("Source", task);
+                        var material = new DeploymentSourceSetup(context.file()).prepare(selection, 4096, 100,
                             task);
                         Path frozen = material.snapshot().directory();
                         try (material) {
@@ -63,7 +62,7 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
                                 DeploymentProjectKind.RECOGNITION_PREVIEW, Optional.empty(), false, task));
                             var preview = analyzer.analyze(material, "Reviewed Service",
                                 DeploymentProjectKind.RECOGNITION_PREVIEW, Optional.empty(), false, task);
-                            assertEquals(Outcome.SUCCEEDED, preview.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, preview.outcome());
                             assertEquals(material.snapshot().id(), preview.value().orElseThrow().snapshotId());
                             assertEquals(material.snapshot().sha256(),
                                 preview.value().orElseThrow().snapshotSha256());
@@ -73,14 +72,14 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
                                 .orElseThrow().applicationId());
                             var namedFromMetadata = analyzer.analyze(material, "Reviewed Service",
                                 DeploymentProjectKind.NODE_SERVICE, Optional.empty(), false, task);
-                            assertEquals(Outcome.SUCCEEDED, namedFromMetadata.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, namedFromMetadata.outcome());
                             assertEquals("files", namedFromMetadata.value().orElseThrow().assessment().facts()
                                 .orElseThrow().applicationId());
                             var requests = List.of(component("api", 8080, Set.of("database")),
                                 component("database", 5432, Set.of()));
                             var graph = analyzer.analyzeComponents(material, "Reviewed Service", "shop", requests,
                                 Map.of(), false, task);
-                            assertEquals(Outcome.SUCCEEDED, graph.outcome());
+                            assertEquals(TaskResult.SUCCEEDED, graph.outcome());
                             assertEquals(DeploymentAdmissionStatus.READY_FOR_PLANNING,
                                 graph.value().orElseThrow().assessment().admission());
                             assertEquals(List.of("api", "database"), graph.value().orElseThrow().assessment()
@@ -92,7 +91,7 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
                         assertFalse(Files.exists(frozen));
                         assertEquals(0, scalar(runtime,
                             "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
-                        return new OperationResult<Void>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError failure) {
                         callbackFailure.set(failure);
                         throw failure;
@@ -101,7 +100,7 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             if (callbackFailure.get() != null)
                 throw new AssertionError("Analysis callback failed", callbackFailure.get());
-            assertEquals(Outcome.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
         }
     }
 
@@ -119,18 +118,18 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
             var handle = context.tasks()
                 .submit(new TaskRequest("analysis-cancellation", "Cancel analysis", List.of(), true), task -> {
                     try {
-                        var selection = context.file().selectDirectory("Source", task);
-                        try (var material = new DeploymentSourcePreparer(context.file()).prepare(selection, 4096,
+                        var selection = context.file().sources().selectDirectory("Source", task);
+                        try (var material = new DeploymentSourceSetup(context.file()).prepare(selection, 4096,
                             100, task)) {
                             ready.countDown();
                             assertTrue(proceed.await(8, TimeUnit.SECONDS));
                             var result = new DeploymentStandardAnalyzer().analyze(material, "Reviewed Service",
                                 DeploymentProjectKind.RECOGNITION_PREVIEW, Optional.empty(), false, task);
-                            assertEquals(Outcome.CANCELLED, result.outcome());
+                            assertEquals(TaskResult.CANCELLED, result.outcome());
                             assertTrue(result.value().isEmpty());
                             assertEquals(ProblemCode.CANCELLED, result.problem().orElseThrow().code());
                         }
-                        return new OperationResult<Void>(Outcome.CANCELLED, Optional.empty(), Optional.empty());
+                        return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
                     } catch (Exception | AssertionError failure) {
                         callbackFailure.set(failure);
                         throw failure;
@@ -148,17 +147,17 @@ class DeploymentStandardAnalyzerTest extends DeploymentRuntimeFixture {
             if (callbackFailure.get() != null)
                 throw new AssertionError("Cancellation callback failed", callbackFailure.get());
             var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
-            assertEquals(Outcome.CANCELLED, result.outcome(), result.toString());
+            assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL"));
         }
     }
 
-    private static ComponentAnalysisRequest component(String id, int port, Set<String> dependencies) {
-        return new ComponentAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE,
+    private static PartAnalysisRequest component(String id, int port, Set<String> dependencies) {
+        return new PartAnalysisRequest(id, id, DeploymentProjectKind.GO_SERVICE,
             Optional.of(new DeploymentRuntimeDefinition.GoService("1.24", id, "main.go",
                 new DeploymentHealthCheck.Tcp(port, 10, 2))),
             List.of(id + "/.w2l/bin/" + id), Set.of(port), List.of("PORT"), List.of(), List.of(), dependencies,
-            true, ComponentIsolationSpecification.managed());
+            true, PartIsolationSpec.managed());
     }
 }

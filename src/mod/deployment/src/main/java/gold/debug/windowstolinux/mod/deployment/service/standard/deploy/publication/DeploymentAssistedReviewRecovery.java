@@ -1,11 +1,9 @@
 package gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication;
 
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 
 /** Confirms only retained formal-to-checkpoint build review pointers after restart, never installs or builds. / 重启后仅确认留存正式账本到检查点的构建审阅指针，绝不安装或构建。 */
@@ -21,8 +19,8 @@ final class DeploymentAssistedReviewRecovery {
      * @param journal exact retained child / 精确留存子节点
      * @return whether observation and original cleanup remain admissible / 观察及原收尾是否仍可准入
      * @throws Exception if original access or framing is unavailable / 原访问或信封不可用时 */
-    static boolean child(ModContext context, TaskContext task, DeploymentExecutionRecord record, DeploymentPublicationCleanupJournal journal) throws Exception {
-        var repository = new DeploymentExecutionRepository(context.db());
+    static boolean child(ModContext context, TaskContext task, DeploymentExecutionRecord record, DeploymentPublishCleanupActionLog journal) throws Exception {
+        var repository = new DeploymentExecutionStore(context.db());
         var pending = repository.buildIntent(record);
         var facts = journal.facts();
         if (pending.isPresent() && pending.orElseThrow().unitId().equals(facts.path("application").asText())) {
@@ -58,12 +56,12 @@ final class DeploymentAssistedReviewRecovery {
      * @param root original retained root / 原留存根
      * @return whether the exact root is confirmed / 精确根是否确认
      * @throws Exception if original formal evidence is unavailable / 原正式依据不可用时 */
-    static boolean root(ModContext context, TaskContext task, DeploymentExecutionRecord record, DeploymentGraphPublicationJournal root) throws Exception {
+    static boolean root(ModContext context, TaskContext task, DeploymentExecutionRecord record, DeploymentGraphPublishActionLog root) throws Exception {
         var facts = root.facts();
         if (!facts.has("buildReviewState") || facts.path("buildReviewState").asText().equals("CONFIRMED"))
             return facts.path("planSha256").asText().equals(record.identity().reviewedRevision());
         if (!facts.path("buildReviewState").asText().equals("PENDING")) return false;
-        var repository = new DeploymentExecutionRepository(context.db());
+        var repository = new DeploymentExecutionStore(context.db());
         var pending = repository.buildIntent(record);
         if (pending.isPresent()) return facts.path("planSha256").asText().equals(record.identity().reviewedRevision())
             && pending.orElseThrow().previousRoot().equals(record.identity().reviewedRevision()) && pending.orElseThrow().nextRoot().equals(facts.path("buildReviewNext").asText());

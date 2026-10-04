@@ -1,8 +1,8 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
-import static gold.debug.windowstolinux.app.main.start.PlatformServerReferenceTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformAiServiceTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformServerRefTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -12,8 +12,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.ai.model.*;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
-import gold.debug.windowstolinux.appapi.file.*;
-import gold.debug.windowstolinux.appapi.task.*;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.model.FilePath;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -265,7 +274,7 @@ class FileApprovalIntegrationTest {
             } finally {
                 handle.requestCancel();
             }
-            assertEquals(Outcome.CANCELLED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskResult.CANCELLED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
         }
     }
 

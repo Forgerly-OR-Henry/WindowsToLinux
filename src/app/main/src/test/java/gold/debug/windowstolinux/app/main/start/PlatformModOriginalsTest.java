@@ -12,16 +12,21 @@ import java.util.*;
 import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.mod.*;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation.*;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
-import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
+import gold.debug.windowstolinux.app.service.mod.PlatformModIntents;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation.*;
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
 import gold.debug.windowstolinux.app.ui.display.*;
+import gold.debug.windowstolinux.app.ui.display.DesktopThemeService;
+import gold.debug.windowstolinux.app.ui.display.ThemeMode;
+import gold.debug.windowstolinux.app.ui.display.ThemePalette;
+import gold.debug.windowstolinux.app.ui.error.FailureReportStore;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
 import gold.debug.windowstolinux.app.ui.mod.PlatformModsPane;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.ui.UiEnvironment;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -62,11 +67,11 @@ class PlatformModOriginalsTest {
                         return runtime.modRecovery().review(owner, source);
                     }
 
-                    public Outcome retry(PlatformModIntents.RetryReview review) throws Exception {
+                    public TaskResult retry(PlatformModIntents.RetryReview review) throws Exception {
                         return runtime.modRecovery().retry(review);
                     }
 
-                    public Outcome reconcile(UUID operation) throws Exception {
+                    public TaskResult reconcile(UUID operation) throws Exception {
                         return runtime.modRecovery().reconcile(operation);
                     }
                 });
@@ -75,8 +80,8 @@ class PlatformModOriginalsTest {
             return window;
         });
         if (classMode)
-            DesktopMain.installModManagement(runtime, frame);
-        await(() -> !DesktopTaskExecutor.hasActiveTasks());
+            ApplicationLauncher.installModManagement(runtime, frame);
+        await(() -> !DesktopTaskRunner.hasActiveTasks());
         onEdt(() -> {
             var outer = (JTabbedPane) named(frame, "platform.pages");
             outer.setSelectedIndex(outer.indexOfTab("Mod"));
@@ -89,7 +94,7 @@ class PlatformModOriginalsTest {
     }
 
     void idle() throws Exception {
-        await(() -> !DesktopTaskExecutor.hasActiveTasks() && !named(frame, "originals.progress").isVisible());
+        await(() -> !DesktopTaskRunner.hasActiveTasks() && !named(frame, "originals.progress").isVisible());
     }
 
     void click(String name) throws Exception {
@@ -151,7 +156,7 @@ class PlatformModOriginalsTest {
                     window.dispose();
             return null;
         });
-        await(() -> !DesktopTaskExecutor.hasActiveTasks());
+        await(() -> !DesktopTaskRunner.hasActiveTasks());
         if (installer != null)
             installer.close();
         if (runtime != null)
@@ -208,11 +213,11 @@ class PlatformModOriginalsTest {
     @Test
     void cancellationConfirmsActualPartialScopeAndPreservesOriginalAndInstalledDraft() throws Exception {
         var first = fixture.original("first.wtlmod", "1.0.0", "first");
-        assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(first)).outcome());
+        assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(first)).outcome());
         var original = fixture.original("second.wtlmod", "2.0.0", "second");
         PlatformModInstallationTest.trap(runtime, "phase <> 'STAGED'");
         var installation = installer.review(original);
-        assertEquals(Outcome.UNKNOWN, installer.install(installation).outcome());
+        assertEquals(TaskResult.UNKNOWN, installer.install(installation).outcome());
         PlatformModInstallationTest.untrap(runtime);
         var stage = root.resolve(".mod-staging").resolve(installation.id().toString());
         Files.delete(stage.resolve("program/LICENSE"));
@@ -250,7 +255,7 @@ class PlatformModOriginalsTest {
         var original = fixture.original("original.wtlmod", "1.0.0", "one");
         PlatformModInstallationTest.trap(runtime, "phase <> 'STAGED'");
         var installation = installer.review(original);
-        assertEquals(Outcome.UNKNOWN, installer.install(installation).outcome());
+        assertEquals(TaskResult.UNKNOWN, installer.install(installation).outcome());
         PlatformModInstallationTest.untrap(runtime);
         Path readme = root.resolve(".mod-staging").resolve(installation.id().toString()).resolve("program/README.md");
         window(false);
@@ -279,7 +284,7 @@ class PlatformModOriginalsTest {
         var original = fixture.original("original.wtlmod", "1.0.0", "one");
         PlatformModInstallationTest.trap(runtime, "phase <> 'STAGED'");
         var installation = installer.review(original);
-        assertEquals(Outcome.UNKNOWN, installer.install(installation).outcome());
+        assertEquals(TaskResult.UNKNOWN, installer.install(installation).outcome());
         PlatformModInstallationTest.untrap(runtime);
         sql(runtime.persistence().database(),
             "ALTER TABLE runtime_log ADD CONSTRAINT ui_cancel_archive_trap CHECK(event_code <> 'MOD_INSTALL_CANCELLED')");
@@ -367,7 +372,7 @@ class PlatformModOriginalsTest {
         sql(runtime.persistence().database(),
             "ALTER TABLE mod_version ADD CONSTRAINT original_ui_trap CHECK(origin_kind <> 'LOCAL')");
         var review = installer.review(original);
-        assertEquals(Outcome.UNKNOWN, installer.install(review).outcome());
+        assertEquals(TaskResult.UNKNOWN, installer.install(review).outcome());
         Files.delete(original);
         window(false);
         assertEquals(0, rows());

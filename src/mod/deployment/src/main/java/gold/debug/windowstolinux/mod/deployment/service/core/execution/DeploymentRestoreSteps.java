@@ -1,10 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import static gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentRestoreEvidence.*;
 
 import java.nio.charset.StandardCharsets;
@@ -12,16 +7,19 @@ import java.time.*;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.secret.SecretRef;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.secret.model.SecretId;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.linux.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.*;
-import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublicationCommit;
+import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Original restore command identities and durable step receipts. / 原恢复命令身份及持久步骤回执。 */
@@ -87,7 +85,7 @@ final class DeploymentRestoreSteps {
      * @param component original component identity / 原组件身份
      * @return exact fixed preparation arguments / 精确固定准备参数 */
     static List<String> preparation(DeploymentRestorePlan plan, DeploymentRestoreState cursor,
-                                    DeploymentApplicationGraph.Component component) {
+                                    DeploymentApplicationGraph.Part component) {
         var inputs = plan.files.stream().filter(value -> value.artifact().componentId().equals(component.componentId()))
             .toList();
         var files = inputs.stream().filter(value -> value.artifact().kind().equals("file"))
@@ -128,7 +126,7 @@ final class DeploymentRestoreSteps {
      * @param component original component identity / 原组件身份
      * @param input original database input / 原数据库输入
      * @return stable original database candidate / 稳定原数据库候选 */
-    static String databaseCandidate(DeploymentRestoreState cursor, DeploymentApplicationGraph.Component component,
+    static String databaseCandidate(DeploymentRestoreState cursor, DeploymentApplicationGraph.Part component,
                                     DeploymentRestorePlan.FileInput input) {
         return component.unit().id() + "-"
             + UUID.nameUUIDFromBytes(
@@ -151,7 +149,7 @@ final class DeploymentRestoreSteps {
      * @param component original component identity / 原组件身份
      * @param input original database input / 原数据库输入
      * @return exact original database arguments / 精确原数据库参数 */
-    static List<String> databaseArguments(DeploymentRestoreState cursor, DeploymentApplicationGraph.Component component,
+    static List<String> databaseArguments(DeploymentRestoreState cursor, DeploymentApplicationGraph.Part component,
                                           DeploymentRestorePlan.FileInput input) {
         var args = new ArrayList<>(List.of(component.unit().id(), component.unit().id(),
             databaseCandidate(cursor, component, input), databaseArtifact(cursor, input)));
@@ -228,8 +226,8 @@ final class DeploymentRestoreSteps {
     /** Uses the validated graph's dependency order for original effects and compensation. / 以已校验图的依赖顺序处理原副作用与补偿。
      * @param graph validated original graph / 已校验原图
      * @return dependency-ordered original components / 按依赖排序的原组件 */
-    static List<DeploymentApplicationGraph.Component> order(DeploymentApplicationGraph graph) {
-        var result = new ArrayList<DeploymentApplicationGraph.Component>();
+    static List<DeploymentApplicationGraph.Part> order(DeploymentApplicationGraph graph) {
+        var result = new ArrayList<DeploymentApplicationGraph.Part>();
         var ids = new HashSet<String>();
         while (result.size() < graph.components().size())
             for (var component : graph.components())
@@ -281,6 +279,6 @@ final class DeploymentRestoreSteps {
                 "FORMAL_STARTED=1\nAPP=" + component.unit().id() + "\n"))
                 return cursor.uncertain("DEPLOYMENT_RESTORE_FORMAL_START_UNKNOWN");
         }
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.empty(), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
     }
 }

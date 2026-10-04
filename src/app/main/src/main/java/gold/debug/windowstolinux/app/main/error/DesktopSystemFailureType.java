@@ -10,6 +10,9 @@ public enum DesktopSystemFailureType {
      */
     STARTUP_LAYOUT_INVALID("desktop.startup.layout-invalid", "startup", "desktop.error.startupLayoutInvalid",
         "FATAL", "EXIT_PROCESS"),
+    /** Invalid external startup configuration. / 外置启动配置无效。 */
+    CONFIGURATION_INVALID("desktop.startup.configuration-invalid", "startup", "desktop.error.configurationInvalid",
+        "FATAL", "REQUEST_USER_CORRECTION"),
     /**
      * DATA DIRECTORY UNAVAILABLE classification within desktop system failure type.
      * <p>Desktop系统失败类型中的数据目录不可用分类。
@@ -171,19 +174,21 @@ public enum DesktopSystemFailureType {
      * @param diagnostic safe non-secret explanation / 安全非秘密说明
      * @return immutable diagnostic preserving the desktop classification / 保留桌面分类的不可变诊断
      * @throws NullPointerException if an input is missing / 输入缺失时 */
-    public gold.debug.windowstolinux.appapi.task.Problem problem(java.util.UUID identity, String diagnostic) {
+    public gold.debug.windowstolinux.appapi.task.result.Problem problem(java.util.UUID identity, String diagnostic) {
         java.util.Objects.requireNonNull(identity, "identity");
         java.util.Objects.requireNonNull(diagnostic, "diagnostic");
         var category = switch (this) {
-            case STARTUP_LAYOUT_INVALID -> gold.debug.windowstolinux.appapi.task.ProblemCode.INVALID_INPUT;
+            case STARTUP_LAYOUT_INVALID, CONFIGURATION_INVALID ->
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.INVALID_INPUT;
             case DATA_DIRECTORY_UNAVAILABLE, RESOURCE_EXHAUSTED ->
-                gold.debug.windowstolinux.appapi.task.ProblemCode.UNAVAILABLE;
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE;
             case DATABASE_INITIALIZATION_FAILED, DIAGNOSTIC_REPORT_WRITE_FAILED, SHUTDOWN_FAILED ->
-                gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE;
-            case UI_INITIALIZATION_FAILED -> gold.debug.windowstolinux.appapi.task.ProblemCode.CONTRACT_VIOLATION;
-            case UNKNOWN_RUNTIME_FAILURE -> gold.debug.windowstolinux.appapi.task.ProblemCode.UNKNOWN;
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE;
+            case UI_INITIALIZATION_FAILED ->
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.CONTRACT_VIOLATION;
+            case UNKNOWN_RUNTIME_FAILURE -> gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNKNOWN;
         };
-        return new gold.debug.windowstolinux.appapi.task.Problem(category, code, diagnostic,
+        return new gold.debug.windowstolinux.appapi.task.result.Problem(category, code, diagnostic,
             java.util.Map.of("domain", domain(), "phase", phase, "messageKey", messageKey,
                 "severity", severity, "recoveryAction", recoveryAction,
                 "recoveryDisposition", "NOT_ATTEMPTED"), java.util.Optional.of(identity));

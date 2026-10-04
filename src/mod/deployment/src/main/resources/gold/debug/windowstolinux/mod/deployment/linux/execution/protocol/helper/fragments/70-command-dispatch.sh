@@ -119,7 +119,6 @@ case "$verb" in
     retain) retain_releases "$@" ;;
     rollback-deployment) rollback_deployment "$@" ;;
     rollback-deployment-first) rollback_deployment_first "$@" ;;
-    lifecycle) lifecycle "$@" ;;
     inspect-runtime) inspect_managed_runtime "$@" ;;
     lifecycle-deployment) lifecycle_deployment "$@" ;;
     observe-deployment) observe_deployment "$@" ;;

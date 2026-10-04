@@ -1,9 +1,5 @@
 package gold.debug.windowstolinux.app.main.error;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.charset.StandardCharsets;
@@ -14,7 +10,9 @@ import java.util.*;
 import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
 import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
-
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,6 +34,23 @@ class DesktopFailureReportStoreTest {
     };
 
     @Test
+    void callbackDiagnosticReturnsOnlySavedReceiptsAndOmitsPrivateMessages() throws Exception {
+        var data = Files.createDirectories(temporaryDirectory.resolve("callbacks"));
+        var reports = new DesktopFailureReportStore(data);
+        var problem = new Problem(ProblemCode.UNKNOWN, "TASK_CALLBACK_UNCERTAIN", "Callback outcome unconfirmed",
+            Map.of("taskId", UUID.randomUUID().toString()), Optional.empty());
+        var id = reports.recordDiagnostic(new IllegalStateException("password=private-callback-secret"), problem).orElseThrow();
+        var record = new EmergencyLogs(data).read(LogStore.startupTarget()).getFirst();
+        assertEquals(id, record.id());
+        assertTrue(record.details().contains("IllegalStateException"));
+        assertTrue(record.details().contains("callbackDiagnosticReturnsOnlySavedReceipts"));
+        assertFalse(record.details().contains("private-callback-secret"));
+        var blocked = temporaryDirectory.resolve("blocked");
+        Files.writeString(blocked, "ordinary file blocks diagnostic directory");
+        assertTrue(new DesktopFailureReportStore(blocked).recordDiagnostic(new RuntimeException(), problem).isEmpty());
+    }
+
+    @Test
     void truncatesRotatesAndRedactsReportsWithoutRecordingUnknownMessages() throws Exception {
         Path data = Files.createDirectories(temporaryDirectory.resolve("data"));
         DesktopFailureReportStore reports = new DesktopFailureReportStore(data, "fixture-release");
@@ -46,11 +61,11 @@ class DesktopFailureReportStoreTest {
 
         Path first = reports.record(structured).orElseThrow().reportPath().orElseThrow();
         assertEquals(data.resolve("log/emergency"), first.getParent());
-        assertEquals(LogRepository.startupTarget().key() + ".log", first.getFileName().toString());
+        assertEquals(LogStore.startupTarget().key() + ".log", first.getFileName().toString());
         byte[] bytes = Files.readAllBytes(first);
         String content = new String(bytes, StandardCharsets.UTF_8);
         assertTrue(bytes.length <= LogRecordCodec.MAX_BYTES);
-        var bounded = new EmergencyLogs(data).read(LogRepository.startupTarget()).getFirst();
+        var bounded = new EmergencyLogs(data).read(LogStore.startupTarget()).getFirst();
         assertTrue(bounded.truncated());
         assertEquals(oversized.diagnosticId().orElseThrow(), bounded.id());
         assertTrue(content.contains("password=[redacted]"));
@@ -66,14 +81,14 @@ class DesktopFailureReportStoreTest {
             reports.record(DesktopStartupException.create(DesktopSystemFailureType.UNKNOWN_RUNTIME_FAILURE,
                 "bounded fixture " + index, null));
         }
-        var retained = new EmergencyLogs(data).read(LogRepository.startupTarget());
+        var retained = new EmergencyLogs(data).read(LogStore.startupTarget());
         assertEquals(100, retained.size());
         assertEquals(100, retained.stream().map(LogRecordCodec.Record::id).distinct().count());
         for (var record : retained)
-            assertTrue(LogRecordCodec.encode(LogRepository.startupTarget().key(),
+            assertTrue(LogRecordCodec.encode(LogStore.startupTarget().key(),
                 record).length <= LogRecordCodec.MAX_BYTES);
         try (var files = Files.list(reports.diagnosticsDirectory().orElseThrow())) {
-            assertEquals(List.of(LogRepository.startupTarget().key() + ".log"),
+            assertEquals(List.of(LogStore.startupTarget().key() + ".log"),
                 files.map(path -> path.getFileName().toString()).toList());
         }
     }
@@ -82,13 +97,13 @@ class DesktopFailureReportStoreTest {
     void originalSdkIdentityContextCauseAndSuppressedEvidenceAreRetainedWithoutUnknownMessages() throws Exception {
         var identity = java.util.UUID.randomUUID();
         var suppressedIdentity = java.util.UUID.randomUUID();
-        var problem = new Problem(gold.debug.windowstolinux.appapi.task.ProblemCode.IO_FAILURE, "fixture.original-sdk",
+        var problem = new Problem(gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE, "fixture.original-sdk",
             "password=do-not-record",
             java.util.Map.of("review", "approved", "evidence", "api-key=do-not-record-context"),
             java.util.Optional.of(identity));
-        var original = new gold.debug.windowstolinux.appapi.task.ApiException(problem);
+        var original = new gold.debug.windowstolinux.appapi.task.result.ApiException(problem);
         original.initCause(new IllegalStateException("Bearer unknown-cause-secret"));
-        original.addSuppressed(new gold.debug.windowstolinux.appapi.task.ApiException(
+        original.addSuppressed(new gold.debug.windowstolinux.appapi.task.result.ApiException(
             new Problem(problem.code(), "fixture.suppressed-sdk", "safe suppressed evidence",
                 java.util.Map.of("phase", "cleanup"), java.util.Optional.of(suppressedIdentity))));
         Path data = Files.createDirectories(temporaryDirectory.resolve("sdk"));
@@ -96,8 +111,8 @@ class DesktopFailureReportStoreTest {
         var record = reports.record(original).orElseThrow();
         org.junit.jupiter.api.Assertions.assertSame(problem, record.failure());
         var path = record.reportPath().orElseThrow();
-        assertEquals(LogRepository.startupTarget().key() + ".log", path.getFileName().toString());
-        var originalRecord = new EmergencyLogs(data).read(LogRepository.startupTarget()).getFirst();
+        assertEquals(LogStore.startupTarget().key() + ".log", path.getFileName().toString());
+        var originalRecord = new EmergencyLogs(data).read(LogStore.startupTarget()).getFirst();
         assertEquals(identity, originalRecord.id());
         assertEquals("app", originalRecord.owner());
         assertEquals("runtime", originalRecord.category());
@@ -137,29 +152,29 @@ class DesktopFailureReportStoreTest {
             Map.of("phase", "before-database"), Optional.of(identity));
         var recorded = reports.record(new ApiException(problem)).orElseThrow();
         assertSame(problem, recorded.failure());
-        var queued = new EmergencyLogs(data).read(LogRepository.startupTarget());
+        var queued = new EmergencyLogs(data).read(LogStore.startupTarget());
         assertEquals(1, queued.size());
         var original = queued.getFirst();
         assertEquals(identity, original.id());
         assertTrue(original.recordedAt() > 0);
         assertTrue(Files.isRegularFile(recorded.reportPath().orElseThrow()));
         try (var runtime = PlatformRuntime.open(data, PROTECTION)) {
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             var host = hostTarget(repository);
-            assertNotEquals(LogRepository.startupTarget().key(), host.key());
+            assertNotEquals(LogStore.startupTarget().key(), host.key());
             assertTrue(
                 repository.targets().stream()
-                    .noneMatch(target -> target.key().equals(LogRepository.startupTarget().key())),
+                    .noneMatch(target -> target.key().equals(LogStore.startupTarget().key())),
                 "The fixed pre-database queue must never be registered as a Mod or business category");
             assertEquals(List.of(original), repository.read(host));
-            assertTrue(new EmergencyLogs(data).read(LogRepository.startupTarget()).isEmpty());
+            assertTrue(new EmergencyLogs(data).read(LogStore.startupTarget()).isEmpty());
             runtime.logs().replayAll();
             assertEquals(List.of(original), repository.read(host));
         }
         try (var runtime = PlatformRuntime.open(data, PROTECTION)) {
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             assertEquals(List.of(original), repository.read(hostTarget(repository)));
-            assertTrue(new EmergencyLogs(data).read(LogRepository.startupTarget()).isEmpty());
+            assertTrue(new EmergencyLogs(data).read(LogStore.startupTarget()).isEmpty());
         }
     }
 
@@ -172,7 +187,7 @@ class DesktopFailureReportStoreTest {
             Map.of("phase", "before-commit"), Optional.of(identity));
         LogRecordCodec.Record original;
         try (var runtime = PlatformRuntime.open(data, PROTECTION)) {
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             var host = hostTarget(repository);
             try (var connection = runtime.persistence().database().openConnection();
                  var statement = connection.createStatement()) {
@@ -181,13 +196,13 @@ class DesktopFailureReportStoreTest {
             }
             Path queue = reports.record(new ApiException(problem)).orElseThrow().reportPath().orElseThrow();
             byte[] before = Files.readAllBytes(queue);
-            original = new EmergencyLogs(data).read(LogRepository.startupTarget()).getFirst();
+            original = new EmergencyLogs(data).read(LogStore.startupTarget()).getFirst();
             assertEquals(identity, original.id());
             try {
                 runtime.logs().replayAll();
                 assertArrayEquals(before, Files.readAllBytes(queue),
                     "Unconfirmed SQL commit cannot clear or rewrite original evidence");
-                assertEquals(List.of(original), new EmergencyLogs(data).read(LogRepository.startupTarget()));
+                assertEquals(List.of(original), new EmergencyLogs(data).read(LogStore.startupTarget()));
                 assertTrue(repository.read(host).isEmpty());
                 assertEquals("LOG_STARTUP_REPLAY_PENDING", runtime.logs().issue().orElseThrow().eventCode());
             } finally {
@@ -198,7 +213,7 @@ class DesktopFailureReportStoreTest {
             }
             runtime.logs().replayAll();
             assertEquals(List.of(original), repository.read(host));
-            assertTrue(new EmergencyLogs(data).read(LogRepository.startupTarget()).isEmpty());
+            assertTrue(new EmergencyLogs(data).read(LogStore.startupTarget()).isEmpty());
             reports.attach(runtime.logs(), runtime.version());
             var liveIdentity = UUID.randomUUID();
             var liveProblem = new Problem(ProblemCode.IO_FAILURE, "fixture.live-startup", "password=live-secret",
@@ -217,22 +232,22 @@ class DesktopFailureReportStoreTest {
             assertEquals(runtime.version(), liveRecord.version());
             assertFalse(liveRecord.message().contains("live-secret"));
             assertFalse(liveRecord.details().contains("live-secret"));
-            assertTrue(new EmergencyLogs(data).read(LogRepository.startupTarget()).isEmpty());
+            assertTrue(new EmergencyLogs(data).read(LogStore.startupTarget()).isEmpty());
             assertTrue(new EmergencyLogs(data).read(host).isEmpty());
             runtime.logs().replayAll();
             assertEquals(actual, repository.read(host));
         }
         try (var runtime = PlatformRuntime.open(data, PROTECTION)) {
-            var repository = new LogRepository(runtime.persistence().database());
+            var repository = new LogStore(runtime.persistence().database());
             var records = repository.read(hostTarget(repository));
             assertEquals(2, records.size());
             assertEquals(original,
                 records.stream().filter(record -> record.id().equals(identity)).findFirst().orElseThrow());
-            assertTrue(new EmergencyLogs(data).read(LogRepository.startupTarget()).isEmpty());
+            assertTrue(new EmergencyLogs(data).read(LogStore.startupTarget()).isEmpty());
         }
     }
 
-    private static LogRepository.Target hostTarget(LogRepository repository) throws Exception {
+    private static LogStore.Target hostTarget(LogStore repository) throws Exception {
         return repository.targets().stream()
             .filter(target -> target.owner().equals("app") && target.category().equals("runtime")).findFirst()
             .orElseThrow();

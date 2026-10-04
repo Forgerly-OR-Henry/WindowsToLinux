@@ -1,6 +1,6 @@
 package gold.debug.windowstolinux.app.linux.sftp;
 
-import gold.debug.windowstolinux.appapi.linux.TransferProgress;
+import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
 
 /** Host-owned progress publication without exposing the physical worker. / 不暴露物理工作线程的宿主所属进度发布。 */
 @FunctionalInterface

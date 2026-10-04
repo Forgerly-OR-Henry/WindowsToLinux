@@ -3,7 +3,7 @@ package gold.debug.windowstolinux.mod.deployment.db;
 import java.time.Instant;
 import java.util.*;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Read-only durable execution evidence, including uninterpreted future JSON versions. / 只读持久执行证据，包括不解释的未来JSON版本。
  * @param identity original immutable identity / 原不可变身份
@@ -16,7 +16,8 @@ import gold.debug.windowstolinux.appapi.task.Outcome;
  * @param cleanupComplete whether known cleanup was explicitly confirmed / 已知收尾是否明确确认
  * @param createdAt original creation time / 原创建时间
  * @param updatedAt latest persisted evidence time / 最新持久证据时间 */
-public record DeploymentExecutionRecord(DeploymentExecutionIdentity identity, String phase, Optional<Outcome> outcome,
+public record DeploymentExecutionRecord(DeploymentExecutionIdentity identity, String phase,
+                                        Optional<TaskResult> outcome,
                                         String requestJson, String recoveryJson, Optional<String> resultJson,
                                         boolean businessCommitted,
                                         boolean cleanupComplete, Instant createdAt, Instant updatedAt) {
@@ -41,7 +42,7 @@ public record DeploymentExecutionRecord(DeploymentExecutionIdentity identity, St
         Objects.requireNonNull(createdAt);
         Objects.requireNonNull(updatedAt);
         if (updatedAt.isBefore(createdAt) || businessCommitted && resultJson.isEmpty()
-            || cleanupComplete && (outcome.isEmpty() || outcome.get() == Outcome.UNKNOWN))
+            || cleanupComplete && (outcome.isEmpty() || outcome.get() == TaskResult.UNKNOWN))
             throw new IllegalArgumentException("Inconsistent execution evidence");
     }
 }

@@ -7,8 +7,8 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 
 import gold.debug.windowstolinux.app.service.log.PlatformLogService;
-import gold.debug.windowstolinux.app.ui.control.DesktopComponentFactory;
-import gold.debug.windowstolinux.app.ui.task.DesktopTaskExecutor;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 
 /** Host-only diagnostic inventory, bounded record view and explicit history cleanup. / 仅宿主的诊断清单、有界记录视图及明确历史清理。 */
@@ -44,7 +44,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
      * @param service actual log owner / 实际日志所有者
      * @param components themed controls / 主题控件
      * @param messages localized text / 本地化文字 */
-    public LogSettingsPane(PlatformLogService service, DesktopComponentFactory components,
+    public LogSettingsPane(PlatformLogService service, DesktopPartFactory components,
                            PageMessagePresenter messages) {
         super(new BorderLayout(10, 10));
         if (!SwingUtilities.isEventDispatchThread())
@@ -96,8 +96,6 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
      * @param value actual lock state / 实际锁定状态 */
     public void setLocked(boolean value) {
         locked = value;
-        if (value)
-            records.setText("");
         controls();
         if (!value)
             load(false);
@@ -112,7 +110,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
         controls();
         records.setText("");
         status.setText(messages.text("logs.working"));
-        DesktopTaskExecutor.run(() -> service.inventory(cleanup), result -> {
+        DesktopTaskRunner.run(() -> service.inventory(cleanup), result -> {
             busy = false;
             if (closed)
                 return;
@@ -179,7 +177,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
         busy = true;
         controls();
         status.setText(messages.text("logs.working"));
-        DesktopTaskExecutor.run(() -> service.inspect(target.key()), view -> {
+        DesktopTaskRunner.run(() -> service.inspect(target.key()), view -> {
             busy = false;
             if (closed)
                 return;
@@ -187,11 +185,11 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
                 var text = new StringBuilder(view.target().owner() + " / " + view.target().logical() + " / "
                     + view.target().category() + "\n\n");
                 for (var record : view.records()) {
-                    text.append(java.time.Instant.ofEpochMilli(record.recordedAt())).append("  ").append(record.level())
-                        .append("  ").append(record.eventCode()).append("  ").append(record.id()).append('\n')
-                        .append(record.message()).append('\n');
-                    if (record.details() != null)
-                        text.append(record.details()).append('\n');
+                    text.append(java.time.Instant.ofEpochMilli(record.recordedAt())).append("  ").append(record.event().level())
+                        .append("  ").append(record.event().eventCode()).append("  ").append(record.id()).append('\n')
+                        .append(record.event().message()).append('\n');
+                    if (record.event().details().isPresent())
+                        text.append(record.event().details().orElseThrow()).append('\n');
                     if (record.truncated())
                         text.append(messages.text("logs.truncated")).append('\n');
                     text.append('\n');
@@ -211,7 +209,7 @@ public final class LogSettingsPane extends JPanel implements AutoCloseable {
         boolean requested = debug.isSelected();
         busy = true;
         controls();
-        DesktopTaskExecutor.run(() -> {
+        DesktopTaskRunner.run(() -> {
             service.debug(requested);
             return service.debug();
         }, value -> {

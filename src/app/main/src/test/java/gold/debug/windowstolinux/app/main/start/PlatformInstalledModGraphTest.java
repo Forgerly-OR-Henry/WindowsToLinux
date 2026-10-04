@@ -1,8 +1,6 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
-import static gold.debug.windowstolinux.app.main.start.PlatformModCoordinatorTest.*;
+import static gold.debug.windowstolinux.app.main.start.PlatformModFlowTest.*;
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.choice;
 import static gold.debug.windowstolinux.app.main.start.PlatformModIntentsTest.text;
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
@@ -15,11 +13,11 @@ import java.util.*;
 import java.util.zip.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gold.debug.windowstolinux.app.main.mod.PlatformModCoordinator;
+import gold.debug.windowstolinux.app.main.mod.PlatformModFlow;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
-import gold.debug.windowstolinux.app.service.mod.PlatformModInstallation;
-
+import gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.apache.commons.compress.archivers.zip.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,13 +28,13 @@ class PlatformInstalledModGraphTest {
     @TempDir
     Path root;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
     Path home;
 
     @BeforeEach
     void setup() throws Exception {
-        fixture = new PlatformModCoordinatorTest();
+        fixture = new PlatformModFlowTest();
         fixture.root = root;
         fixture.workspace();
         home = Files.createDirectories(root.resolve("安装 程序"));
@@ -83,8 +81,8 @@ class PlatformInstalledModGraphTest {
         return archive;
     }
 
-    PlatformModCoordinator.Report start(PlatformRuntime runtime, boolean app) {
-        return DesktopMain.startMods(runtime,
+    PlatformModFlow.Report start(PlatformRuntime runtime, boolean app) {
+        return ApplicationLauncher.startMods(runtime,
             new RunModeResolver.RuntimeLayout(
                 app ? RunModeResolver.RunMode.RUN_APP : RunModeResolver.RunMode.RUN_JAR, home,
                 runtime.persistence().database().root()),
@@ -95,7 +93,7 @@ class PlatformInstalledModGraphTest {
         try (var runtime = fixture.open(true); var installer = installer(runtime)) {
             for (var owner : owners) {
                 var original = archive(owner, VERSION);
-                assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+                assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
                 Files.delete(original);
             }
             var report = start(runtime, false);
@@ -169,7 +167,7 @@ class PlatformInstalledModGraphTest {
         installAndEnable(P);
         try (var runtime = fixture.open(true); var installer = installer(runtime)) {
             assertEquals(Set.of(P), start(runtime, false).running());
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(archive(P, "2.0.0"))).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(archive(P, "2.0.0"))).outcome());
             assertEquals(VERSION, text(runtime, "SELECT actual_version FROM mod_registry"));
             var task = runtime.tasks().bind(P, VERSION, false).submit(request(), context -> success("completed"));
             assertEquals("completed", task.completion().toCompletableFuture()
@@ -185,7 +183,7 @@ class PlatformInstalledModGraphTest {
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             assertTrue(report.running().isEmpty());
             assertTrue(runtime.modIntents().list().getFirst().stopAcknowledged());
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 installer.deletion().delete(installer.deletion().review(P, VERSION), false).outcome());
             assertFalse(Files.exists(home.resolve("mod/" + P + "/" + VERSION)));
             assertTrue(Files.exists(home.resolve("mod/" + P + "/2.0.0/main/fixture.jar")));
@@ -235,7 +233,7 @@ class PlatformInstalledModGraphTest {
     void neverEnabledInstallationNeedsNextBootObservationBeforeMaintenance() throws Exception {
         fixture.module(P, Map.of(), false);
         try (var runtime = fixture.open(true); var installer = installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(archive(P, VERSION))).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(archive(P, VERSION))).outcome());
             assertTrue(start(runtime, false).running().isEmpty());
             assertFalse(runtime.modIntents().list().getFirst().stopAcknowledged());
             assertThrows(Exception.class, () -> installer.deletion().review(P, VERSION));
@@ -244,7 +242,7 @@ class PlatformInstalledModGraphTest {
             var report = start(runtime, false);
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             assertTrue(runtime.modIntents().list().getFirst().stopAcknowledged());
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 installer.deletion().delete(installer.deletion().review(P, VERSION), false).outcome());
         }
         assertTrue(fixture.actions().isEmpty());
@@ -261,7 +259,7 @@ class PlatformInstalledModGraphTest {
             assertTrue(start(runtime, false).running().isEmpty());
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
             var review = runtime.modRecovery().review(P, Optional.empty());
-            assertEquals(Outcome.FAILED, runtime.modRecovery().retry(review));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().retry(review));
             assertFalse(fixture.actions().stream().anyMatch(a -> a.endsWith(":construct")));
         }
         assertEquals(2, fixture.actions().stream().filter("schema:initialize"::equals).count());
@@ -275,7 +273,7 @@ class PlatformInstalledModGraphTest {
     void changedDisabledRevisionCannotUseTheOldBootSnapshot() throws Exception {
         fixture.module(P, Map.of(), false);
         try (var runtime = fixture.open(true); var installer = installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(archive(P, VERSION))).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(archive(P, VERSION))).outcome());
         }
         try (var runtime = fixture.open(true)) {
             sql(runtime.persistence().database(), "UPDATE mod_registry SET revision=revision+1 WHERE mod_id=?", P);
@@ -291,15 +289,15 @@ class PlatformInstalledModGraphTest {
         fixture.module(P, Map.of(), false);
         Path original = archive(P, VERSION);
         try (var runtime = fixture.open(true); var installer = installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
         }
         try (var runtime = fixture.open(true)) {
             assertTrue(start(runtime, false).problems().isEmpty());
         }
         try (var runtime = fixture.open(true); var installer = installer(runtime)) {
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 installer.deletion().delete(installer.deletion().review(P), false).outcome());
-            assertEquals(Outcome.SUCCEEDED, installer.install(installer.review(original)).outcome());
+            assertEquals(TaskResult.SUCCEEDED, installer.install(installer.review(original)).outcome());
             assertFalse(start(runtime, false).problems().isEmpty());
             assertFalse(runtime.modIntents().list().getFirst().stopAcknowledged());
         }

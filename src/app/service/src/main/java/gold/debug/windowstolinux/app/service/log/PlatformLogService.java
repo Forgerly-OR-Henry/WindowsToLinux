@@ -1,16 +1,5 @@
 package gold.debug.windowstolinux.app.service.log;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.LogCategory;
-import gold.debug.windowstolinux.appapi.task.LogEvent;
-import gold.debug.windowstolinux.appapi.task.LogLevel;
-import gold.debug.windowstolinux.appapi.task.LogService;
-import gold.debug.windowstolinux.appapi.task.LogStorage;
-import gold.debug.windowstolinux.appapi.task.LogTarget;
-import gold.debug.windowstolinux.appapi.task.LogWriteResult;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
@@ -19,16 +8,27 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.swing.SwingUtilities;
 
-import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
+import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
-import gold.debug.windowstolinux.appapi.db.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
+import gold.debug.windowstolinux.appapi.task.log.LogStorage;
+import gold.debug.windowstolinux.appapi.task.log.LogTarget;
+import gold.debug.windowstolinux.appapi.task.log.LogWriteResult;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Coordinates real SQL and emergency diagnostics independently of business outcomes. / 独立于业务结果协调真实 SQL 及应急诊断。 */
 public final class PlatformLogService implements AutoCloseable {
+
     /** Validated category persistence. / 已校验类别持久化。 */
-    private final LogRepository repository;
+    private final LogStore repository;
 
     /** Fixed-root emergency files. / 固定根应急文件。 */
     private final EmergencyLogs emergency;
@@ -83,10 +83,20 @@ public final class PlatformLogService implements AutoCloseable {
      * @param security current-user management boundary / 当前用户管理边界
      * @throws SQLException if category registration is inconsistent / 类别登记不一致时 */
     public PlatformLogService(PlatformDatabase database, DesktopSecurityService security) throws SQLException {
-        this.repository = new LogRepository(database);
-        this.emergency = new EmergencyLogs(database.root());
+        this(database, security, 100);
+    }
+
+    /** Captures the startup configuration. / 捕获启动配置。
+     * @param database supplied startup dependency / 启动依赖
+     * @param security supplied startup dependency / 启动依赖
+     * @param retention supplied startup dependency / 启动依赖
+     * @throws SQLException if composition fails / 装配失败时
+     */
+    public PlatformLogService(PlatformDatabase database, DesktopSecurityService security, int retention) throws SQLException {
+        this.repository = new LogStore(database);
+        this.emergency = new EmergencyLogs(database.root(), retention);
         this.security = Objects.requireNonNull(security);
-        for (String category : new TreeSet<>(LogRepository.PLATFORM_CATEGORIES))
+        for (String category : new TreeSet<>(LogStore.PLATFORM_CATEGORIES))
             repository.register("app", Optional.empty(), new LogCategory(category, category, Optional.empty()));
         blockedOwners.addAll(repository.deletingOwners());
     }
@@ -171,8 +181,8 @@ public final class PlatformLogService implements AutoCloseable {
         begin();
         CategoryAccess access = null;
         try {
-            var source = LogRepository.startupTarget();
-            synchronized (LogRepository.class) {
+            var source = LogStore.startupTarget();
+            synchronized (LogStore.class) {
                 if (emergency.read(source).isEmpty())
                     return;
             }
@@ -180,7 +190,7 @@ public final class PlatformLogService implements AutoCloseable {
                 .filter(value -> value.owner().equals("app") && value.category().equals("runtime")).findFirst()
                 .orElseThrow();
             access = lock(target);
-            synchronized (LogRepository.class) {
+            synchronized (LogStore.class) {
                 var pending = emergency.read(source);
                 if (pending.isEmpty())
                     return;
@@ -242,15 +252,15 @@ public final class PlatformLogService implements AutoCloseable {
      * @param clean explicit history cleanup request / 明确历史清理请求
      * @return actual report including files that must remain untouched / 包含须保留文件的实际报告
      * @throws Exception if storage or authority is unavailable / 存储或授权不可用时 */
-    public Inventory inventory(boolean clean) throws Exception {
+    public LogList inventory(boolean clean) throws Exception {
         try (var operation = security.enterOperation()) {
             begin();
             try {
                 var results = clean ? cleanHistory() : replayAll();
-                var keys = repository.targets().stream().map(LogRepository.Target::key)
+                var keys = repository.targets().stream().map(LogStore.Target::key)
                     .collect(java.util.stream.Collectors.toSet());
-                keys.add(LogRepository.startupTarget().key());
-                return new Inventory(results, emergency.unregistered(keys));
+                keys.add(LogStore.startupTarget().key());
+                return new LogList(results, emergency.unregistered(keys));
             } finally {
                 end();
             }
@@ -280,15 +290,15 @@ public final class PlatformLogService implements AutoCloseable {
                     var merged = new ArrayList<>(records);
                     merged.addAll(emergency.read(target));
                     if (target.owner().equals("app") && target.category().equals("runtime"))
-                        synchronized (LogRepository.class) {
-                            merged.addAll(emergency.read(LogRepository.startupTarget()));
+                        synchronized (LogStore.class) {
+                            merged.addAll(emergency.read(LogStore.startupTarget()));
                         }
                     records = new ArrayList<>(EmergencyLogs.merge(merged, 100));
                 } catch (Exception unavailable) {
                     problem = problem(ProblemCode.IO_FAILURE, "LOG_VIEW_EMERGENCY",
                         "Emergency diagnostics could not be verified");
                 }
-                return new View(target, List.copyOf(records), Optional.ofNullable(problem));
+                return new View(categoryInfo(target), records.stream().map(PlatformLogService::recordInfo).toList(), Optional.ofNullable(problem));
             } finally {
                 if (lock != null)
                     lock.close();
@@ -363,7 +373,7 @@ public final class PlatformLogService implements AutoCloseable {
                     if (lock != null)
                         lock.close();
                 }
-                results.add(new Maintenance(target, Optional.ofNullable(dbBefore), Optional.ofNullable(dbAfter),
+                results.add(new Maintenance(categoryInfo(target), Optional.ofNullable(dbBefore), Optional.ofNullable(dbAfter),
                     Optional.ofNullable(dbRemoved), Optional.ofNullable(fileBefore), Optional.ofNullable(fileAfter),
                     Optional.ofNullable(fileRemoved), Optional.ofNullable(problem)));
             }
@@ -379,7 +389,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @param target exact original category / 精确原类别
      * @param record already bounded redacted record / 已有界脱敏记录
      * @return actual persistence destination and optional replay problem / 实际持久位置及可选回填问题 */
-    private LogWriteResult write(LogRepository.Target target, LogRecordCodec.Record record) {
+    private LogWriteResult write(LogStore.Target target, LogRecordCodec.Record record) {
         CategoryAccess lock = null;
         try {
             lock = lock(target);
@@ -420,7 +430,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @param target actual category / 实际类别
      * @return original access scope / 原访问作用域
      * @throws Exception if deletion or existing storage prevents timely access / 删除或既有存储阻止及时访问时 */
-    private CategoryAccess lock(LogRepository.Target target) throws Exception {
+    private CategoryAccess lock(LogStore.Target target) throws Exception {
         var owner = ownerLocks.computeIfAbsent(target.owner(), ignored -> new ReentrantReadWriteLock(true));
         boolean acquired = false;
         try {
@@ -480,7 +490,7 @@ public final class PlatformLogService implements AutoCloseable {
                 deleting.add(owner);
                 sealed = true;
             }
-            var keys = repository.targets().stream().filter(t -> t.owner().equals(owner)).map(LogRepository.Target::key)
+            var keys = repository.targets().stream().filter(t -> t.owner().equals(owner)).map(LogStore.Target::key)
                 .toList();
             synchronized (this) {
                 deletionKeys.computeIfAbsent(owner, ignored -> new HashSet<>()).addAll(keys);
@@ -532,7 +542,7 @@ public final class PlatformLogService implements AutoCloseable {
                 throw new IllegalStateException("Deletion scope belongs to its worker");
             try {
                 if (!repository.deletingOwners().contains(owner)) {
-                    var remaining = repository.targets().stream().map(LogRepository.Target::key)
+                    var remaining = repository.targets().stream().map(LogStore.Target::key)
                         .collect(java.util.stream.Collectors.toSet());
                     synchronized (PlatformLogService.this) {
                         var known = deletionKeys.remove(owner);
@@ -591,7 +601,7 @@ public final class PlatformLogService implements AutoCloseable {
         private final PlatformTaskRuntime tasks;
 
         /** Original target objects are never reconstructed from copied UUIDs. / 原目标对象不从复制 UUID 重建。 */
-        private final Map<LogTarget, LogRepository.Target> targets = new IdentityHashMap<>();
+        private final Map<LogTarget, LogStore.Target> targets = new IdentityHashMap<>();
 
         /** Actual storage calls belonging to this binding. / 属于此绑定的实际存储调用。 */
         private int active;
@@ -662,7 +672,7 @@ public final class PlatformLogService implements AutoCloseable {
                     Optional.of(unavailable.problem())));
             }
             try {
-                LogRepository.Target target;
+                LogStore.Target target;
                 synchronized (targets) {
                     target = targets.get(handle);
                 }
@@ -723,6 +733,76 @@ public final class PlatformLogService implements AutoCloseable {
         }
     }
 
+    /** Registered category observations without physical storage internals. / 不含物理存储内部信息的登记类别观察。
+     * @param key original registration / 原登记
+     * @param owner original owner / 原所有者
+     * @param logical logical attribution / 逻辑归属
+     * @param category category identity / 类别身份
+     * @param displayName registered label / 登记标签 */
+    public record CategoryInfo(UUID key, String owner, String logical, String category, String displayName) {
+        /** Requires complete registration facts. / 要求完整登记事实。
+         * @param key registration / 登记
+         * @param owner owner / 所有者
+         * @param logical attribution / 归属
+         * @param category identity / 身份
+         * @param displayName label / 标签 */
+        public CategoryInfo {
+            Objects.requireNonNull(key);
+            Objects.requireNonNull(owner);
+            Objects.requireNonNull(logical);
+            Objects.requireNonNull(category);
+            Objects.requireNonNull(displayName);
+        }
+    }
+
+    /** Exact redacted record observations. / 精确脱敏记录观察。
+     * @param id original record / 原记录
+     * @param recordedAt original timestamp / 原时间
+     * @param owner original owner / 原所有者
+     * @param category original category / 原类别
+     * @param event original redacted event / 原脱敏事件
+     * @param subjectMod optional associated Mod / 可选关联 Mod
+     * @param version optional producer release / 可选生产方发布
+     * @param truncated whether content was bounded / 内容是否截断 */
+    public record RecordInfo(UUID id, long recordedAt, String owner, String category, LogEvent event,
+                             Optional<String> subjectMod, Optional<String> version, boolean truncated) {
+        /** Requires complete observations including explicit absence. / 要求完整观察及明确缺失。
+         * @param id record / 记录
+         * @param recordedAt time / 时间
+         * @param owner owner / 所有者
+         * @param category category / 类别
+         * @param event event / 事件
+         * @param subjectMod subject / 主体
+         * @param version release / 发布
+         * @param truncated truncation / 截断 */
+        public RecordInfo {
+            Objects.requireNonNull(id);
+            Objects.requireNonNull(owner);
+            Objects.requireNonNull(category);
+            Objects.requireNonNull(event);
+            Objects.requireNonNull(subjectMod);
+            Objects.requireNonNull(version);
+        }
+    }
+
+    /** Converts storage registration without granting authority. / 转换存储登记，不授予权限。
+     * @param target original target / 原目标
+     * @return immutable registration / 不可变登记 */
+    private static CategoryInfo categoryInfo(LogStore.Target target) {
+        return new CategoryInfo(target.key(), target.owner(), target.logical(), target.category(), target.displayName());
+    }
+
+    /** Preserves redacted identity and associations. / 保留脱敏身份与关联。
+     * @param record original stored record / 原存储记录
+     * @return immutable observation / 不可变观察 */
+    private static RecordInfo recordInfo(LogRecordCodec.Record record) {
+        return new RecordInfo(record.id(), record.recordedAt(), record.owner(), record.category(),
+            new LogEvent(record.level(), record.eventCode(), record.message(), Optional.ofNullable(record.details()),
+                Optional.ofNullable(record.taskId()), Optional.ofNullable(record.operationId()),
+                Optional.ofNullable(record.outcome())),
+            Optional.ofNullable(record.subjectMod()), Optional.ofNullable(record.version()), record.truncated());
+    }
+
     /** Actual category counts; empty counts mean unverified, never zero. / 实际类别计数；空计数表示未核验，不是零。
      * @param target original category / 原类别
      * @param databaseBefore observed original SQL count / 已观察原 SQL 计数
@@ -732,7 +812,7 @@ public final class PlatformLogService implements AutoCloseable {
      * @param fileAfter confirmed remaining emergency count / 已确认剩余应急计数
      * @param fileRemoved confirmed removed emergency records / 已确认移除应急记录数
      * @param problem any unconfirmed part / 任一未确认部分 */
-    public record Maintenance(LogRepository.Target target, Optional<Long> databaseBefore, Optional<Long> databaseAfter,
+    public record Maintenance(CategoryInfo target, Optional<Long> databaseBefore, Optional<Long> databaseAfter,
                               Optional<Long> databaseRemoved, Optional<Long> fileBefore, Optional<Long> fileAfter,
                               Optional<Long> fileRemoved, Optional<Problem> problem) {
     }
@@ -740,14 +820,30 @@ public final class PlatformLogService implements AutoCloseable {
     /** Complete host inventory retaining unknown files as explicit unresolved evidence. / 完整宿主清单，将未知文件保留为明确未解决证据。
      * @param categories actual per-category results / 实际逐类别结果
      * @param unregistered untouched files without a current registration / 没有当前登记且未触碰的文件 */
-    public record Inventory(List<Maintenance> categories, List<String> unregistered) {
+    public record LogList(List<Maintenance> categories, List<String> unregistered) {
+        /** Copies inventory observations. / 复制清单观察。
+         * @param categories observed categories / 已观察类别
+         * @param unregistered unresolved files / 未解决文件 */
+        public LogList {
+            categories = List.copyOf(categories);
+            unregistered = List.copyOf(unregistered);
+        }
     }
 
     /** Host-only record view; ordinary Mod capabilities cannot enumerate other owners. / 仅宿主的记录视图；普通 Mod 能力不能枚举其他所有者。
      * @param target selected target / 选定目标
      * @param records validated redacted records / 已校验脱敏记录
      * @param problem any location not successfully observed / 任一未成功观察的位置 */
-    public record View(LogRepository.Target target, List<LogRecordCodec.Record> records, Optional<Problem> problem) {
+    public record View(CategoryInfo target, List<RecordInfo> records, Optional<Problem> problem) {
+        /** Copies records without changing ordering or failures. / 复制记录，不改变顺序或失败。
+         * @param target observed registration / 已观察登记
+         * @param records original bounded records / 原有界记录
+         * @param problem unresolved location / 未解决位置 */
+        public View {
+            Objects.requireNonNull(target);
+            records = List.copyOf(records);
+            Objects.requireNonNull(problem);
+        }
     }
 
     /** Builds bounded non-recursive diagnostics without source exception text. / 不包含源异常文字地构造有界非递归诊断。

@@ -1,14 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.ResourceLease;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskRequest;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -23,12 +14,20 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
-import gold.debug.windowstolinux.app.db.connect.RepositoryConnections;
-import gold.debug.windowstolinux.app.db.security.SecurityRepository;
+import gold.debug.windowstolinux.app.db.connect.StoreConnections;
+import gold.debug.windowstolinux.app.db.security.SecurityStore;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
-import gold.debug.windowstolinux.appapi.task.CancelToken;
+import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -42,7 +41,7 @@ class PlatformTaskResourceObservationTest {
 
     private static DesktopSecurityService security(PlatformDatabase db) throws Exception {
         var security = new DesktopSecurityService(
-            new SecurityRepository(new RepositoryConnections(db::openConnection)));
+            new SecurityStore(new StoreConnections(db::openConnection)));
         security.setupAndUnlock("fixture-password".toCharArray(), "fixture-password".toCharArray());
         return security;
     }
@@ -57,7 +56,7 @@ class PlatformTaskResourceObservationTest {
     }
 
     private static <T> OperationResult<T> success(T value) {
-        return new OperationResult<>(Outcome.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.ofNullable(value), Optional.empty());
     }
 
     private static void state(TaskHandle<?> handle, TaskState expected) throws Exception {
@@ -171,7 +170,7 @@ class PlatformTaskResourceObservationTest {
                     runtime.reconcile(handle.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
             }
             assertEquals(List.of(false, true), observed.get());
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
         }
     }
@@ -194,7 +193,7 @@ class PlatformTaskResourceObservationTest {
                 assertThrows(ApiException.class, () -> service.resourcesReleased(context.get())).problem()
                     .eventCode());
             lease.get().close();
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS).outcome());
         }
     }

@@ -1,21 +1,19 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
-import gold.debug.windowstolinux.appapi.task.ActionIntent;
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.OperationResult;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.function.Supplier;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.*;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAgentProtocol;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
@@ -29,7 +27,7 @@ public final class DeploymentAgentSession {
     private final TaskContext task;
 
     /** Exact admitted server. / 精确已准入服务器。 */
-    private final ServerRef server;
+    private final ServerId server;
 
     /** Frozen nonsecret constraints and source. / 冻结的不含秘密约束与来源。 */
     private final Map<String, String> requirements;
@@ -44,7 +42,7 @@ public final class DeploymentAgentSession {
     private final DeploymentAgentDeliveryPort tools;
 
     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
-    private final DeploymentAgentJournal journal;
+    private final DeploymentAgentActionLog journal;
 
     /** Original cooperative safe-boundary control. / 原协作安全边界控制。 */
     private final DeploymentAgentControl control;
@@ -87,9 +85,9 @@ public final class DeploymentAgentSession {
      * @param approvalMode selected task review policy / 任务所选审核策略
      * @param configurationRevision exact frozen model configuration / 精确冻结模型配置
      * @param currentConfigurationRevision live task-authorized revision / 实时任务授权修订 */
-    public DeploymentAgentSession(ModContext context, TaskContext task, ServerRef server,
+    public DeploymentAgentSession(ModContext context, TaskContext task, ServerId server,
                                   Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
-                                  DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
+                                  DeploymentAgentActionLog journal, String approvalMode, String configurationRevision,
                                   Supplier<String> currentConfigurationRevision) {
         this(context, task, server, requirements, source, tools, journal, approvalMode, configurationRevision,
             currentConfigurationRevision, new DeploymentAgentControl());
@@ -107,9 +105,9 @@ public final class DeploymentAgentSession {
      * @param configurationRevision initial frozen route / 初始冻结路由
      * @param currentConfigurationRevision live route observer / 实时路由观察器
      * @param control original worker control / 原工作线程控制 */
-    public DeploymentAgentSession(ModContext context, TaskContext task, ServerRef server,
+    public DeploymentAgentSession(ModContext context, TaskContext task, ServerId server,
                                   Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
-                                  DeploymentAgentJournal journal, String approvalMode, String configurationRevision,
+                                  DeploymentAgentActionLog journal, String approvalMode, String configurationRevision,
                                   Supplier<String> currentConfigurationRevision, DeploymentAgentControl control) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
@@ -312,7 +310,7 @@ public final class DeploymentAgentSession {
     /** Requires a declared component. / 要求已声明组件。
      * @param id component ID / 组件标识
      * @return declared component / 已声明组件 */
-    private DeploymentAgentPlan.Component component(String id) {
+    private DeploymentAgentPlan.Part component(String id) {
         if (plan == null)
             throw new IllegalArgumentException("Source-backed plan required");
         return plan.components().stream().filter(c -> c.id().equals(id)).findFirst()
@@ -324,7 +322,7 @@ public final class DeploymentAgentSession {
     private Map<String, Object> context() {
         return Map.of("task", task.id().toString(), "requirements", requirements, "sourceRevision", source.revision(),
             "planRevision", planRevision, "components",
-            plan == null ? List.of() : plan.components().stream().map(DeploymentAgentPlan.Component::id).toList(),
+            plan == null ? List.of() : plan.components().stream().map(DeploymentAgentPlan.Part::id).toList(),
             "remoteRevisions", Map.copyOf(revisions), "sealed", Map.copyOf(artifacts), "readFiles",
             read.stream().sorted().toList());
     }
@@ -402,7 +400,7 @@ public final class DeploymentAgentSession {
             models.revision(), "source=" + old + "\nbefore=" + patch.beforeDigest() + "\npatch=" + patch,
             "Apply the exact reviewed diff only to the task-owned source candidate");
         var approval = context.interaction().approve(intent, task);
-        if (approval.outcome() != Outcome.SUCCEEDED)
+        if (approval.outcome() != TaskResult.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                 approval.outcome(), approval.problem());
         checkpoint();
@@ -465,7 +463,7 @@ public final class DeploymentAgentSession {
         if (question.isBlank() || question.length() > 2000)
             throw new IllegalArgumentException("Invalid agent question");
         var answer = context.interaction().requestText("Autonomous deployment input", question, false, task);
-        if (answer.outcome() != Outcome.SUCCEEDED)
+        if (answer.outcome() != TaskResult.SUCCEEDED)
             throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                 answer.outcome(), answer.problem());
         observe("USER_INPUT", answer.value().orElseThrow());
@@ -489,12 +487,12 @@ public final class DeploymentAgentSession {
             journal.state(task, "UNKNOWN");
             throw uncertain;
         }
-        if (result.outcome() == Outcome.UNKNOWN) {
+        if (result.outcome() == TaskResult.UNKNOWN) {
             journal.state(task, "UNKNOWN");
             return result;
         }
         journal.event(task, "DELIVERY_RESULT", binding, result.outcome().name());
-        if (result.outcome() == Outcome.SUCCEEDED) {
+        if (result.outcome() == TaskResult.SUCCEEDED) {
             var published = result.value().orElseThrow();
             if (!published.healthy().equals(artifacts.keySet())) {
                 journal.state(task, "UNKNOWN");
@@ -505,7 +503,7 @@ public final class DeploymentAgentSession {
             return result;
         }
         observe("DELIVERY", result.problem().map(Problem::eventCode).orElse(result.outcome().name()));
-        journal.state(task, result.outcome() == Outcome.CANCELLED ? "CANCELLED" : "FAILED");
+        journal.state(task, result.outcome() == TaskResult.CANCELLED ? "CANCELLED" : "FAILED");
         return result;
     }
 

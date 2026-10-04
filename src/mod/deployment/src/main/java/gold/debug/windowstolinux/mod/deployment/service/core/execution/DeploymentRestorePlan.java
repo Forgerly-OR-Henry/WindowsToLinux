@@ -8,8 +8,9 @@ import java.time.Instant;
 import java.util.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.linux.RemoteFacts;
-import gold.debug.windowstolinux.appapi.server.*;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
@@ -30,7 +31,7 @@ final class DeploymentRestorePlan {
     final DeploymentArchivedRuntimeCodec.Archive archive;
 
     /** Complete publication rebound only to the actual target server. / 仅重绑定实际目标服务器的完整发布。 */
-    final DeploymentPublicationProposal proposal;
+    final DeploymentPublishProposal proposal;
 
     /** Exact complete file coverage of the original reviewed bindings. / 原已审阅绑定的精确完整文件覆盖。 */
     final List<FileInput> files;
@@ -39,14 +40,14 @@ final class DeploymentRestorePlan {
      * @param request complete immutable request / 完整不可变请求
      * @param releases existing canonical release validator / 既有规范发布校验器
      * @throws Exception if archive identity, coverage or bounds differ / 归档身份、覆盖或界限不符时 */
-    DeploymentRestorePlan(DeploymentRestoreRequest request, DeploymentReleaseRepository releases) throws Exception {
+    DeploymentRestorePlan(DeploymentRestoreRequest request, DeploymentReleaseStore releases) throws Exception {
         this.request = Objects.requireNonNull(request);
         requireDigest(request.archiveSha256());
         requireDigest(request.reviewedTargetSha256());
         archive = DeploymentArchivedRuntimeCodec.restore(request.archivedApplication(), releases);
         var original = archive.publication();
         var components = original.graph().components().stream()
-            .map(value -> new DeploymentApplicationGraph.Component(value.componentId(),
+            .map(value -> new DeploymentApplicationGraph.Part(value.componentId(),
                 target(value.unit(), request.target()), value.runtime(), value.dependencies(),
                 value.reviewedRuntime(), value.dataPaths(), value.resources()))
             .toList();
@@ -56,7 +57,7 @@ final class DeploymentRestorePlan {
             .map(value -> new DeploymentUnitCommit(target(value.unit(), request.target()), value.runtime(),
                 value.release(), value.configuration(), value.secrets()))
             .toList();
-        proposal = new DeploymentPublicationProposal(graph, commits);
+        proposal = new DeploymentPublishProposal(graph, commits);
         var release = DeploymentReleaseSnapshot.capture(original.graph(), original.units());
         var data = new DeploymentApplicationReader.ApplicationFacts(request.archivedApplication(), original.graph(),
             release);
@@ -196,7 +197,7 @@ final class DeploymentRestorePlan {
      * @param original immutable original unit / 不可变原单元
      * @param target actual restored server / 实际恢复服务器
      * @return target-bound original identity / 绑定目标的原身份 */
-    private static DeploymentUnitIdentity target(DeploymentUnitIdentity original, ServerRef target) {
+    private static DeploymentUnitIdentity target(DeploymentUnitIdentity original, ServerId target) {
         return new DeploymentUnitIdentity(original.id(), target, original.systemdUnit(), original.releaseRoot(),
             original.ownershipManifestSha256());
     }

@@ -10,12 +10,12 @@ import java.util.*;
 
 import gold.debug.windowstolinux.app.db.mod.*;
 import gold.debug.windowstolinux.app.db.schema.SchemaAccessScope;
+import gold.debug.windowstolinux.app.db.schema.SchemaChecker;
 import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.schema.SchemaProvisioner;
 import gold.debug.windowstolinux.app.db.schema.SchemaSnapshot;
-import gold.debug.windowstolinux.app.db.schema.SchemaValidation;
-import gold.debug.windowstolinux.appapi.db.SchemaAccess;
-import gold.debug.windowstolinux.appapi.task.Outcome;
+import gold.debug.windowstolinux.appapi.db.schema.SchemaAccess;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,9 +25,9 @@ class PlatformModReconciliationTest {
 
     PlatformModInitializationTest initial;
 
-    PlatformModCoordinatorTest fixture;
+    PlatformModFlowTest fixture;
 
-    ModRestartLedger.Preparation plan;
+    ModRestartLedger.Setup plan;
 
     static final String OWNER = PlatformModInitializationTest.OWNER;
 
@@ -70,7 +70,7 @@ class PlatformModReconciliationTest {
         try (var runtime = fixture.open(true)) {
             assertTrue(fixture.start(runtime).running().isEmpty());
             assertTrue(fixture.actions().isEmpty());
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
             assertEquals("FALSE", text(runtime, "SELECT ever_used FROM mod_schema"));
             assertEquals(List.of("schema:validate"), fixture.actions());
@@ -91,7 +91,7 @@ class PlatformModReconciliationTest {
         interrupted("invalid", true, true);
         try (var runtime = fixture.open(true)) {
             fixture.start(runtime);
-            assertEquals(Outcome.FAILED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
             assertEquals(2, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM \"" + new SchemaCoordinates(plan.target()).physicalName() + "\".item"));
@@ -109,7 +109,7 @@ class PlatformModReconciliationTest {
         interrupted("valid", false, false);
         try (var runtime = fixture.open(true)) {
             fixture.start(runtime);
-            assertEquals(Outcome.FAILED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
             assertTrue(fixture.actions().isEmpty());
         }
@@ -120,10 +120,10 @@ class PlatformModReconciliationTest {
         interrupted("valid", true, false);
         try (var runtime = fixture.open(true)) {
             fixture.start(runtime);
-            assertEquals(Outcome.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("UNKNOWN", text(runtime, "SELECT state FROM mod_schema"));
             String original = text(runtime, "SELECT operation_id FROM mod_operation WHERE operation_type='RECONCILE'");
-            assertEquals(Outcome.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals(original,
                 text(runtime, "SELECT operation_id FROM mod_operation WHERE operation_type='RECONCILE'"));
             assertTrue(fixture.actions().isEmpty());
@@ -158,7 +158,7 @@ class PlatformModReconciliationTest {
             assertEquals(3, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertThrows(Exception.class, runtime::close);
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT reject_reconciliation");
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals(List.of("schema:validate"), fixture.actions());
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
         } finally {
@@ -177,7 +177,7 @@ class PlatformModReconciliationTest {
             assertThrows(SQLException.class, access::openConnection);
             assertThrows(Exception.class, runtime::close);
             ((Connection) System.getProperties().remove(PlatformModInitializationTest.CONNECTION)).close();
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals(List.of("schema:validate"), fixture.actions());
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema"));
         } finally {
@@ -193,7 +193,7 @@ class PlatformModReconciliationTest {
             sql(runtime.persistence().database(), "ALTER TABLE \"" + new SchemaCoordinates(plan.target()).physicalName()
                 + "\".item ADD CONSTRAINT bad CHECK(id>99) NOCHECK");
             fixture.start(runtime);
-            assertEquals(Outcome.FAILED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.FAILED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("FAILED", text(runtime, "SELECT state FROM mod_schema"));
         }
     }
@@ -231,7 +231,7 @@ class PlatformModReconciliationTest {
                 if (step.index() < plan.steps().size() - 1) {
                     String receipt;
                     try (var reader = new SchemaAccessScope(db, target, step.reader(), true)) {
-                        receipt = SchemaValidation.validate(reader);
+                        receipt = SchemaChecker.validate(reader);
                     }
                     ledger.completeStep(plan, step, before,
                         SchemaSnapshot.digest(db, ModRestartLedger.sourceCoordinates(plan, step)), receipt);
@@ -247,7 +247,7 @@ class PlatformModReconciliationTest {
         interruptedChain();
         try (var runtime = fixture.open(true)) {
             fixture.start(runtime);
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='3'"));
             assertEquals("READY", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='1'"));
             assertEquals(0, count(runtime.persistence().database(),
@@ -265,7 +265,7 @@ class PlatformModReconciliationTest {
                 "UPDATE \"" + new SchemaCoordinates(plan.source().orElseThrow()).physicalName()
                     + "\".item SET value_text='changed' WHERE id=1");
             fixture.start(runtime);
-            assertEquals(Outcome.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals("UNKNOWN", text(runtime, "SELECT state FROM mod_schema WHERE schema_version='3'"));
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name LIKE 't\\_%' ESCAPE '\\'"));
@@ -290,7 +290,7 @@ class PlatformModReconciliationTest {
         try (var runtime = fixture.open(true)) {
             assertEquals("UNKNOWN", text(runtime, "SELECT state FROM mod_operation WHERE operation_type='RECONCILE'"));
             fixture.start(runtime);
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM runtime_log WHERE event_code='MOD_SCHEMA_RECONCILED_READY' AND operation_id='"
                     + operation + "'"));
@@ -318,9 +318,9 @@ class PlatformModReconciliationTest {
             assertEquals(1, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM information_schema.users WHERE user_name='" + user + "'"));
             sql(runtime.persistence().database(), "REVOKE UPDATE ON \"" + schema + "\".item FROM \"" + user + "\"");
-            assertEquals(Outcome.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.UNKNOWN, runtime.modRecovery().reconcile(plan.operation()));
             assertTrue(fixture.actions().isEmpty());
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals(List.of("schema:validate"), fixture.actions());
         } finally {
             runtime.close();
@@ -341,12 +341,12 @@ class PlatformModReconciliationTest {
                     new gold.debug.windowstolinux.app.db.task.TaskResource("MOD", OWNER, "other.mod", false)));
             assertTrue(tasks.tryStart(task));
             assertThrows(SQLException.class, () -> ledger.begin(review));
-            assertTrue(tasks.complete(task, Outcome.SUCCEEDED, "{}", false));
+            assertTrue(tasks.complete(task, TaskResult.SUCCEEDED, "{}", false));
             sql(db, "UPDATE mod_registry SET revision=revision+1");
             assertThrows(SQLException.class, () -> ledger.begin(review));
             sql(db, "UPDATE mod_registry SET revision=revision-1");
             fixture.start(runtime);
-            assertEquals(Outcome.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
+            assertEquals(TaskResult.SUCCEEDED, runtime.modRecovery().reconcile(plan.operation()));
             assertEquals(List.of("schema:validate"), fixture.actions());
         }
     }

@@ -1,13 +1,12 @@
 package gold.debug.windowstolinux.app.mod.process;
 
-import gold.debug.windowstolinux.appapi.task.Outcome;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import org.junit.jupiter.api.Test;
 
 class ProcessProtocolTest {
@@ -59,7 +58,7 @@ class ProcessProtocolTest {
     void resultContractsAndObjectOrderAreVerifiedBeforeDelivery() throws Exception {
         var success = frame(ProcessProtocol.Kind.RESULT,
             "{\"outcome\":\"SUCCEEDED\",\"value\":{\"count\":2},\"problem\":null}");
-        assertEquals(Outcome.SUCCEEDED, ProcessProtocol.result(success).outcome());
+        assertEquals(TaskResult.SUCCEEDED, ProcessProtocol.result(success).outcome());
         var reordered = new ProcessProtocol.Frame(success.process(), success.task(), success.request(), success.kind(),
             success.type(), "{\"problem\":null,\"value\":{\"count\":2},\"outcome\":\"SUCCEEDED\"}");
         assertTrue(ProcessProtocol.equivalent(success, reordered));
@@ -71,7 +70,7 @@ class ProcessProtocolTest {
         assertThrows(IOException.class,
             () -> ProcessProtocol.result(frame(ProcessProtocol.Kind.ERROR, success.payload())));
         String problem = "{\"code\":\"IO_FAILURE\",\"eventCode\":\"READ_FAILED\",\"message\":\"safe diagnostic\",\"context\":{\"stage\":\"read\"},\"diagnosticId\":null}";
-        assertEquals(Outcome.FAILED, ProcessProtocol.result(frame(ProcessProtocol.Kind.ERROR,
+        assertEquals(TaskResult.FAILED, ProcessProtocol.result(frame(ProcessProtocol.Kind.ERROR,
             "{\"outcome\":\"FAILED\",\"value\":null,\"problem\":" + problem + "}")).outcome());
     }
 }

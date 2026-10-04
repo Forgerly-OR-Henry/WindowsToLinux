@@ -70,7 +70,7 @@ final class DeploymentPageStyle {
         if (root instanceof JLabel label && label.getClientProperty("deployment.style.title") instanceof String key)
             label.setText(messages.getString(key));
         if (root instanceof JButton button) {
-            button.putClientProperty("JButton.buttonType", "roundRect");
+            button.putClientProperty("JButton.buttonType", null);
             button.setMargin(new Insets(7, 13, 7, 13));
             if (Boolean.TRUE.equals(button.getClientProperty("deployment.style.primary"))) {
                 button.setBackground(UIManager.getColor("Component.focusColor"));
@@ -345,7 +345,7 @@ final class DeploymentPageStyle {
         private Card(LayoutManager layout) {
             super(layout);
             setOpaque(false);
-            setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
+            setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
         }
 
         /** Prevents vertical forms from stretching input cards. / 阻止纵向表单拉伸输入卡片。
@@ -362,10 +362,11 @@ final class DeploymentPageStyle {
             var g = (Graphics2D) graphics.create();
             try {
                 g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g.setColor(UIManager.getColor("TextField.background"));
-                g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 18, 18);
-                g.setColor(UIManager.getColor("Component.borderColor"));
-                g.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 18, 18);
+                String color = Boolean.TRUE.equals(getClientProperty("deployment.style.inventory"))
+                    ? Boolean.TRUE.equals(getClientProperty("deployment.style.selected")) ? "List.selectionBackground" : "Panel.background"
+                    : "List.background";
+                g.setColor(UIManager.getColor(color));
+                g.fillRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 12, 12);
             } finally {
                 g.dispose();
             }

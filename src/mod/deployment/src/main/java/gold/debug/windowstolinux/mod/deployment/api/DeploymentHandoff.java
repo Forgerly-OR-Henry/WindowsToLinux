@@ -9,7 +9,7 @@ import java.util.UUID;
  * @param application exact application / 精确应用
  * @param revisionSha256 reviewed revision / 已审阅修订
  * @param blockers outstanding recovery blockers / 未解决恢复阻碍 */
-public record DeploymentHandoff(UUID id, DeploymentHandoffState state, DeploymentApplicationRef application,
+public record DeploymentHandoff(UUID id, DeploymentHandoffState state, DeploymentApplicationId application,
                                 String revisionSha256, List<String> blockers) {
     /** Copies the blocker list. / 复制阻碍列表。
      * @param id original handoff ID / 原交接ID

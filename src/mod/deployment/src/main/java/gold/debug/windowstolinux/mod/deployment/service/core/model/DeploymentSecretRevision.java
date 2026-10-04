@@ -9,7 +9,7 @@ import java.util.Optional;
  * @param credentialId original platform-issued opaque identity / 原平台签发的不透明身份
  * @param createdAt immutable creation time / 不可变创建时间
  * @param purpose exact original credential purpose, absent only for migrated schema-1 rows / 精确原凭据用途，仅迁移自结构1的旧行可缺失 */
-public record DeploymentSecretRevision(DeploymentSecretReference reference, String credentialId, Instant createdAt,
+public record DeploymentSecretRevision(DeploymentSecretRef reference, String credentialId, Instant createdAt,
                                        Optional<String> purpose) {
     /** Retains the exact opaque identity without parsing a platform-private key format. / 保留精确不透明身份，不解析平台私有键格式。
      * @param reference exact business secret revision / 精确业务秘密修订

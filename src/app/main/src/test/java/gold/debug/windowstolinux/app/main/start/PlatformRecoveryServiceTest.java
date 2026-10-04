@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Outcome;
-import gold.debug.windowstolinux.appapi.task.TaskHandle;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-import gold.debug.windowstolinux.appapi.task.TaskState;
-
 import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -16,19 +10,28 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.microsoft.playwright.BrowserContext;
-import gold.debug.windowstolinux.app.linux.ssh.recover.BrowserProcess;
-import gold.debug.windowstolinux.app.linux.ssh.recover.PlaywrightTerminalSession;
-import gold.debug.windowstolinux.app.service.sshrecover.SshRecoverySession;
-import gold.debug.windowstolinux.app.service.sshrecover.RecoverySnapshot;
-import gold.debug.windowstolinux.app.service.server.ServerProfile;
-import gold.debug.windowstolinux.app.service.sshrecover.PlatformRecoveryService;
-
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
+import gold.debug.windowstolinux.app.linux.ssh.recover.BrowserRecoverySnapshot;
+import gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery;
+import gold.debug.windowstolinux.app.linux.ssh.recover.SshRecoverySession;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.BrowserProcess;
+import gold.debug.windowstolinux.app.linux.ssh.recover.browser.PlaywrightTerminalSession;
+import gold.debug.windowstolinux.app.service.server.ServerProfile;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class PlatformRecoveryServiceTest {
+    static SshRecovery.Server selection(ServerProfile profile) {
+        return new SshRecovery.Server(profile.id(), profile.host(), profile.sshPort(), profile.username(),
+            profile.credentialKey(), profile.displayName());
+    }
+
     @TempDir
     Path root;
 
@@ -86,10 +89,10 @@ class PlatformRecoveryServiceTest {
         try (var remote = new PlatformRemoteCapabilitiesTest.Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             var profile = save(runtime, remote.listener.server().getPort());
-            var session = runtime.recovery().start(profile);
+            var session = runtime.recovery().start(new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.Server(profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(), profile.displayName()));
             await(() -> task(runtime, session).state() == TaskState.ENDED);
-            assertEquals(RecoverySnapshot.State.RECOVERED, session.snapshot().state());
-            assertEquals(Optional.of(Outcome.SUCCEEDED), task(runtime, session).outcome());
+            assertEquals(BrowserRecoverySnapshot.State.RECOVERED, session.snapshot().state());
+            assertEquals(Optional.of(TaskResult.SUCCEEDED), task(runtime, session).outcome());
             assertEquals("@platform", task(runtime, session).ownerId());
             assertEquals(runtime.version(), task(runtime, session).ownerVersion());
             assertEquals(1, remote.authentications.get());
@@ -100,7 +103,7 @@ class PlatformRecoveryServiceTest {
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_task"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM browser_recovery_event"));
             var archived = summary(runtime, UUID.fromString(session.snapshot().id()));
-            assertEquals(PlatformRecoveryService.TASK_TYPE, archived.path("protocol").asText());
+            assertEquals(SshRecovery.TASK_TYPE, archived.path("protocol").asText());
             assertEquals("RECOVERED", archived.path("lastObservedState").asText());
             var remoteCapability = runtime.capabilities().remoteCapabilities("@platform", runtime.version());
             var linux = (gold.debug.windowstolinux.app.service.linux.PlatformLinuxService) remoteCapability.linux();
@@ -108,11 +111,11 @@ class PlatformRecoveryServiceTest {
                 context -> {
                     assertEquals("RESCUE_TASK_REQUIRED", assertThrows(ApiException.class,
                         () -> linux.verifyRecovery(
-                            new gold.debug.windowstolinux.appapi.server.ServerRef("server"), context))
+                            new gold.debug.windowstolinux.appapi.server.model.ServerId("server"), context))
                         .problem().eventCode());
                     return success(null);
                 });
-            assertEquals(Outcome.SUCCEEDED,
+            assertEquals(TaskResult.SUCCEEDED,
                 wrongType.completion().toCompletableFuture().get(5, TimeUnit.SECONDS).outcome());
             assertEquals(1, remote.commands.get());
         }
@@ -125,7 +128,7 @@ class PlatformRecoveryServiceTest {
             var profile = save(runtime, remote.listener.server().getPort());
             sql(runtime.persistence().database(),
                 "ALTER TABLE runtime_log ADD CONSTRAINT rescue_archive_fixture CHECK(category<>'browser_recovery')");
-            var session = runtime.recovery().start(profile);
+            var session = runtime.recovery().start(new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.Server(profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(), profile.displayName()));
             await(() -> task(runtime, session).state() == TaskState.FINISHING);
             var id = UUID.fromString(session.snapshot().id());
             assertEquals(1, remote.commands.get());
@@ -139,7 +142,7 @@ class PlatformRecoveryServiceTest {
                 () -> runtime.persistence().recovery().savePlatform(id, profile.id(), "RECOVERED", "", "late"));
             sql(runtime.persistence().database(), "ALTER TABLE runtime_log DROP CONSTRAINT rescue_archive_fixture");
             var ended = runtime.recovery().reconcile(id, true).toCompletableFuture().get(8, TimeUnit.SECONDS);
-            assertEquals(Optional.of(Outcome.SUCCEEDED), ended.outcome());
+            assertEquals(Optional.of(TaskResult.SUCCEEDED), ended.outcome());
             assertEquals(1, remote.commands.get());
             assertEquals(1, remote.authentications.get());
             assertEquals("RECOVERED", summary(runtime, id).path("lastObservedState").asText());
@@ -154,9 +157,9 @@ class PlatformRecoveryServiceTest {
              var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             var profile = save(runtime, remote.listener.server().getPort());
             runtime.servers().saveServerProfile(profile, "wrong-password".toCharArray());
-            var session = runtime.recovery().start(profile);
+            var session = runtime.recovery().start(new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.Server(profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(), profile.displayName()));
             await(() -> task(runtime, session).state() == TaskState.ENDED);
-            assertEquals(RecoverySnapshot.State.FAILED, session.snapshot().state());
+            assertEquals(BrowserRecoverySnapshot.State.FAILED, session.snapshot().state());
             assertEquals("authentication", session.snapshot().messageCode());
             assertEquals("SSH_AUTHENTICATION_FAILED", session.snapshot().failure().orElseThrow().eventCode());
             var completed = ((TaskHandle<?>) field(session, "handle")).completion().toCompletableFuture().get(5,
@@ -176,10 +179,10 @@ class PlatformRecoveryServiceTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             var profile = save(runtime, vacantPort());
             var service = runtime.recovery();
-            var session = service.start(profile);
+            var session = service.start(selection(profile));
             try {
-                await(() -> session.snapshot().state() == RecoverySnapshot.State.WAITING_TERMINAL);
-                assertSame(session, service.start(profile));
+                await(() -> session.snapshot().state() == BrowserRecoverySnapshot.State.WAITING_TERMINAL);
+                assertSame(session, service.start(selection(profile)));
                 assertEquals(1, service.pending().size());
                 assertTrue(browser(session).processes().getFirst().alive());
                 assertThrows(java.sql.SQLException.class, () -> runtime.servers().delete(profile.id()));
@@ -190,7 +193,7 @@ class PlatformRecoveryServiceTest {
                 session.close();
                 await(() -> task(runtime, session).state() == TaskState.ENDED);
                 var observed = session.snapshot();
-                assertEquals(Optional.of(Outcome.CANCELLED), task(runtime, session).outcome(),
+                assertEquals(Optional.of(TaskResult.CANCELLED), task(runtime, session).outcome(),
                     "Rescue state=" + observed.state() + ", event=" + observed.messageCode() + ", problem="
                         + observed.failure().map(problem -> problem.code() + "/" + problem.eventCode()).orElse("none"));
                 assertTrue(browser(session).processes().stream().noneMatch(BrowserProcess::alive));
@@ -218,10 +221,10 @@ class PlatformRecoveryServiceTest {
                 String reply = PlatformRecoveryModelsTest.response(
                     "{\"command\":\"printf fixture\",\"reason\":\"local fixture\",\"expected\":\"read-only marker\",\"highImpact\":false}");
                 model.handler.set(exchange -> PlatformAiServiceTest.Fixture.reply(exchange, 200, reply));
-                var session = runtime.recovery().start(profile);
+                var session = runtime.recovery().start(new gold.debug.windowstolinux.app.linux.ssh.recover.SshRecovery.Server(profile.id(), profile.host(), profile.sshPort(), profile.username(), profile.credentialKey(), profile.displayName()));
                 var submitted = new AtomicInteger();
                 try {
-                    await(() -> session.snapshot().state() == RecoverySnapshot.State.WAITING_TERMINAL);
+                    await(() -> session.snapshot().state() == BrowserRecoverySnapshot.State.WAITING_TERMINAL);
                     var actual = browser(session);
                     ((ExecutorService) field(actual, "worker")).submit(() -> {
                         var context = (BrowserContext) field(actual, "context");
@@ -242,7 +245,7 @@ class PlatformRecoveryServiceTest {
                     }).get(5, TimeUnit.SECONDS);
                     var target = session.terminals().getFirst();
                     session.bindTerminal(target.id(), profile.id(), true, false);
-                    await(() -> session.snapshot().state() == RecoverySnapshot.State.AWAITING_CONFIRMATION);
+                    await(() -> session.snapshot().state() == BrowserRecoverySnapshot.State.AWAITING_CONFIRMATION);
                     assertEquals(0, submitted.get());
                     assertEquals(1, model.calls.get());
                     assertThrows(IllegalArgumentException.class,
@@ -269,7 +272,7 @@ class PlatformRecoveryServiceTest {
                         await(() -> submitted.get() == 1);
                         try (var remote = new PlatformRemoteCapabilitiesTest.Remote(directory.resolve("ssh"), port)) {
                             await(() -> task(runtime, session).state() == TaskState.ENDED);
-                            assertEquals(RecoverySnapshot.State.RECOVERED, session.snapshot().state());
+                            assertEquals(BrowserRecoverySnapshot.State.RECOVERED, session.snapshot().state());
                             assertFalse(session.snapshot().resultUnknown());
                             assertEquals(1, remote.commands.get());
                             assertEquals(1, submitted.get());

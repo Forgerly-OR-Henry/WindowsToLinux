@@ -15,18 +15,18 @@ class JavadocCoverageTest {
     @Test
     void responsibilityLineLimitsExcludeOnlyActualDocumentation() throws Exception {
         String source = "class Example {\n    String script = \"\"\"\n/** protocol text */\n\"\"\";\n\n// implementation rationale\nvoid run() {}\n}\n";
-        assertEquals(8, JavadocCoverageInspector.implementationLines(source));
-        assertEquals(8, JavadocCoverageInspector.implementationLines(
+        assertEquals(8, JavadocCoverageChecker.implementationLines(source));
+        assertEquals(8, JavadocCoverageChecker.implementationLines(
             source.replace("void run()", "/**\n * Operation documentation.\n */\nvoid run()")));
-        assertEquals(8, JavadocCoverageInspector
+        assertEquals(8, JavadocCoverageChecker
             .implementationLines(source.replace("void run()", "/** Inline documentation. */ void run()")));
-        assertEquals(9, JavadocCoverageInspector
+        assertEquals(9, JavadocCoverageChecker
             .implementationLines(source.replace("void run()", "int additionalState;\nvoid run()")));
     }
 
     @Test
     void everyExplicitProductionDeclarationHasBilingualDocumentationAndTags() throws Exception {
-        var result = JavadocCoverageInspector.production();
+        var result = JavadocCoverageChecker.production();
         Path report = Path.of("target/javadoc-coverage.txt");
         Files.createDirectories(report.getParent());
         Files.writeString(report,
@@ -39,8 +39,8 @@ class JavadocCoverageTest {
     @Test
     void missingMonolingualAndIncompleteTagsFailWithoutRequiringSyntheticMembers() throws Exception {
         assertFalse(
-            JavadocCoverageInspector.snippets("class Example { int value; void run() {} }").violations().isEmpty());
-        assertFalse(JavadocCoverageInspector.snippets("/** English only. */ class Example {}").violations().isEmpty());
+            JavadocCoverageChecker.snippets("class Example { int value; void run() {} }").violations().isEmpty());
+        assertFalse(JavadocCoverageChecker.snippets("/** English only. */ class Example {}").violations().isEmpty());
         String valid = """
             /** Identity container. / 身份容器。
              * @param <T> payload type / 载荷类型
@@ -55,18 +55,18 @@ class JavadocCoverageTest {
                 private String text(String input) throws java.io.IOException { int local = 1; return input; }
             }
             """;
-        var result = JavadocCoverageInspector.snippets(valid);
+        var result = JavadocCoverageChecker.snippets(valid);
         assertEquals(2, result.declarations());
         assertTrue(result.violations().isEmpty(), result.violations().toString());
-        var annotated = JavadocCoverageInspector
+        var annotated = JavadocCoverageChecker
             .snippets(valid.replace("(T value)", "(@SuppressWarnings(\"private\") T value)"));
         assertEquals(2, annotated.declarations());
         assertTrue(annotated.violations().isEmpty(), annotated.violations().toString());
         for (String missing : List.of("@param <T> payload type / 载荷类型", "@param value stored payload / 保存的载荷",
             "@param input caller input / 调用方输入", "@return unchanged input / 未变的输入",
             "@throws java.io.IOException if a future input adapter fails / 输入适配器失败时"))
-            assertFalse(JavadocCoverageInspector.snippets(valid.replace(missing, "")).violations().isEmpty(), missing);
-        assertFalse(JavadocCoverageInspector.snippets(valid.replace("unchanged input / 未变的输入", "unchanged input"))
+            assertFalse(JavadocCoverageChecker.snippets(valid.replace(missing, "")).violations().isEmpty(), missing);
+        assertFalse(JavadocCoverageChecker.snippets(valid.replace("unchanged input / 未变的输入", "unchanged input"))
             .violations().isEmpty());
     }
 
@@ -83,7 +83,7 @@ class JavadocCoverageTest {
                 Runnable action = new Runnable() { public void run() {} };
             }
             """;
-        var result = JavadocCoverageInspector.snippets(source);
+        var result = JavadocCoverageChecker.snippets(source);
         assertEquals(7, result.declarations());
         assertEquals(4, result.violations().stream().filter(v -> v.endsWith("missing Javadoc")).count());
     }
@@ -99,7 +99,7 @@ class JavadocCoverageTest {
                 "-Xdoclint:all,-missing", "-Werror", "-d", "target/production-javadoc", "-classpath",
                 System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")));
             boolean valid = tool.getTask(diagnostics, manager, null, null, options,
-                manager.getJavaFileObjectsFromPaths(JavadocCoverageInspector.productionPaths())).call();
+                manager.getJavaFileObjectsFromPaths(JavadocCoverageChecker.productionPaths())).call();
             Files.writeString(Path.of("target/javadoc-doclint.txt"), diagnostics.toString());
             assertTrue(valid,
                 () -> diagnostics.toString().substring(0, Math.min(12000, diagnostics.toString().length())));

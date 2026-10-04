@@ -1,11 +1,5 @@
 package gold.debug.windowstolinux.mod.deployment.service.core.execution;
 
-import gold.debug.windowstolinux.appapi.task.ApiException;
-import gold.debug.windowstolinux.appapi.task.Problem;
-import gold.debug.windowstolinux.appapi.task.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.TaskContext;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -23,10 +17,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.server.ServerRef;
-
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRepository;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseStore;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 
 /** Stores original caller ownership, review and recovery facts in deployment's own Schema. / 在部署自身Schema中保存原调用归属、审阅与恢复事实。 */
@@ -54,7 +52,7 @@ public final class DeploymentHandoffLedger {
      * @param request immutable reviewed request / 不可变已审阅请求
      * @param recovery original recovery facts / 原恢复事实
      * @param result optional operation result / 可选操作结果 */
-    public record Entry(DeploymentHandoff publicValue, String ownerVersion, UUID taskId, Optional<ServerRef> target,
+    public record Entry(DeploymentHandoff publicValue, String ownerVersion, UUID taskId, Optional<ServerId> target,
                         JsonNode request, JsonNode recovery, Optional<JsonNode> result) {
     }
 
@@ -65,7 +63,7 @@ public final class DeploymentHandoffLedger {
      * @param task authentic original task / 真实原任务
      * @return retained handoff / 留存交接
      * @throws ApiException if original identity or commit is unavailable / 原身份或提交不可用时 */
-    public DeploymentHandoff reviewCollection(DeploymentApplicationRef application, String revision,
+    public DeploymentHandoff reviewCollection(DeploymentApplicationId application, String revision,
                                               List<String> bindingIds, TaskContext task) throws ApiException {
         TaskSnapshot caller = caller(task);
         var request = JSON.createObjectNode().put("formatVersion", 1).put("kind", "COLLECTION").put("ownerVersion",
@@ -113,7 +111,7 @@ public final class DeploymentHandoffLedger {
     private ObjectNode restoreRequest(DeploymentRestoreRequest request, TaskContext task) throws ApiException {
         var archived = request.archivedApplication();
         try {
-            DeploymentArchivedRuntimeCodec.verify(archived, new DeploymentReleaseRepository(context.db()));
+            DeploymentArchivedRuntimeCodec.verify(archived, new DeploymentReleaseStore(context.db()));
         } catch (IOException invalid) {
             throw invalid("DEPLOYMENT_RESTORE_ARCHIVE_INVALID");
         }
@@ -164,9 +162,9 @@ public final class DeploymentHandoffLedger {
                     throw denied();
                 var recovery = parse(rows.getBinaryStream("recovery_payload"));
                 String targetId = rows.getString("target_server_id");
-                var target = targetId == null ? Optional.<ServerRef>empty() : Optional.of(new ServerRef(targetId));
-                var application = new DeploymentApplicationRef(rows.getString("application_id"),
-                    new ServerRef(rows.getString("source_server_id")));
+                var target = targetId == null ? Optional.<ServerId>empty() : Optional.of(new ServerId(targetId));
+                var application = new DeploymentApplicationId(rows.getString("application_id"),
+                    new ServerId(rows.getString("source_server_id")));
                 if (request.path("kind").asText().equals("COLLECTION"))
                     context.servers().get(application.server(), task);
                 else if (request.path("kind").asText().equals("RESTORE") && target.isPresent())
@@ -236,7 +234,7 @@ public final class DeploymentHandoffLedger {
      * @param task host-certified original caller task / 宿主认证原调用方任务
      * @return original durable handoff / 原持久交接
      * @throws ApiException if original authorization or commit fails / 原授权或提交失败时 */
-    private DeploymentHandoff create(DeploymentApplicationRef application, String revision, Optional<ServerRef> target,
+    private DeploymentHandoff create(DeploymentApplicationId application, String revision, Optional<ServerId> target,
                                      ObjectNode request, ObjectNode recovery, TaskContext task) throws ApiException {
         TaskSnapshot owner = caller(task);
         if (!revision.matches("[0-9a-f]{64}"))
@@ -262,7 +260,7 @@ public final class DeploymentHandoffLedger {
             insert.setObject(3, owner.id());
             insert.setString(4, application.id());
             insert.setString(5, application.server().id());
-            insert.setString(6, target.map(ServerRef::id).orElse(null));
+            insert.setString(6, target.map(ServerId::id).orElse(null));
             insert.setString(7, revision);
             insert.setBytes(8, bytes(request));
             insert.setBytes(9, bytes(recovery));
@@ -279,7 +277,7 @@ public final class DeploymentHandoffLedger {
      * @param kind original collection or restore intent / 原采集或恢复意图
      * @param application exact original application / 精确原应用
      * @return stable original intent identity / 稳定原意图身份 */
-    private static UUID identity(TaskSnapshot owner, String kind, DeploymentApplicationRef application) {
+    private static UUID identity(TaskSnapshot owner, String kind, DeploymentApplicationId application) {
         return UUID.nameUUIDFromBytes(("deployment-handoff-v1\n" + owner.id() + "\n" + kind + "\n" + application.id())
             .getBytes(StandardCharsets.UTF_8));
     }
@@ -291,8 +289,8 @@ public final class DeploymentHandoffLedger {
      * @param target actual original restore target or absence / 实际原恢复目标或无
      * @param request complete immutable original intent / 完整不可变原意图
      * @throws ApiException if any original request fact differs / 任何原请求事实不符时 */
-    private static void requireRequest(Entry existing, DeploymentApplicationRef application, String revision,
-                                       Optional<ServerRef> target, ObjectNode request) throws ApiException {
+    private static void requireRequest(Entry existing, DeploymentApplicationId application, String revision,
+                                       Optional<ServerId> target, ObjectNode request) throws ApiException {
         final JsonNode canonical;
         try {
             canonical = JSON.readTree(request.toString());
@@ -383,7 +381,7 @@ public final class DeploymentHandoffLedger {
      * @param application exact original application / 精确原应用
      * @param kind fixed original operation kind / 固定原操作类别
      * @return stable original remote suffix / 稳定原远端后缀 */
-    private static String token(TaskContext task, DeploymentApplicationRef application, String kind) {
+    private static String token(TaskContext task, DeploymentApplicationId application, String kind) {
         return UUID.nameUUIDFromBytes((task.id() + application.id() + kind).getBytes(StandardCharsets.UTF_8)).toString()
             .replace("-", "");
     }

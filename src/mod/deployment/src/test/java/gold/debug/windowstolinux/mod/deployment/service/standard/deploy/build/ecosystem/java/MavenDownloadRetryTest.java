@@ -28,7 +28,7 @@ class MavenDownloadRetryTest {
         Path directory = Files.createDirectory(root.resolve(mode));
         Path log = directory.resolve("output.txt");
         String script = "set -euo pipefail\nexport PATH=/usr/bin:/bin:$PATH\nmutable=\"$PWD\"\n"
-            + MavenBuildRenderer.downloadRetry()
+            + MavenBuildWriter.downloadRetry()
             + """
             fake_maven() {
               printf 'attempt\\n' >> attempts

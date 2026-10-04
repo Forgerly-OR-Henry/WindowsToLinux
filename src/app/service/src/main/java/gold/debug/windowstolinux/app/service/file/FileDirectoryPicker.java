@@ -2,8 +2,8 @@ package gold.debug.windowstolinux.app.service.file;
 
 import java.nio.file.Path;
 
-import gold.debug.windowstolinux.appapi.task.CancelToken;
-import gold.debug.windowstolinux.appapi.task.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
 /** Host-owned callback for original-task directory selection. / 原任务目录选择的宿主回调契约。 */
 @FunctionalInterface
