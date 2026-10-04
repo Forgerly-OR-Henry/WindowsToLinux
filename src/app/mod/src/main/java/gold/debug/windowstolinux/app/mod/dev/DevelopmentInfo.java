@@ -69,6 +69,22 @@ public record DevelopmentInfo(Path manifestPath, Path mainOutput, List<Path> aut
         return root;
     }
 
+    /** Resolves the owned author region without adding development projects to runtime discovery. / 解析作者归属区域，不将开发项目加入运行时发现。
+     * @param root validated workspace / 已校验工作区
+     * @param module canonical author module / 规范作者模块
+     * @return author region containing the module / 模块所属作者区域
+     * @throws IOException if outside either author region or missing its aggregate / 越过两个作者区域或缺少聚合配置时 */
+    static Path authorRoot(Path root, Path module) throws IOException {
+        for (String name : List.of("src/mod", "src/moddev")) {
+            Path region = root.resolve(name);
+            if (module.startsWith(region) && !module.equals(region)) {
+                localFile(root, region.resolve("pom.xml"));
+                return region;
+            }
+        }
+        throw new IOException("Author modules must belong to the Mod or ModDev region");
+    }
+
     /** Reads and checks the description, compiled marker, current inputs and exact main entry file. / 读取并核对描述、编译标记、当前输入及精确主入口文件。
      * @param workspace explicit workspace / 明示工作区
      * @param descriptor fixed generated description path / 固定生成描述路径
@@ -177,14 +193,14 @@ public record DevelopmentInfo(Path manifestPath, Path mainOutput, List<Path> aut
     private void validate(Path root, Path descriptor) throws IOException {
         Path manifest = localFile(root, manifestPath);
         Path module = manifest.getParent();
-        if (!manifest.equals(module.resolve("mod.json")) || !module.startsWith(root.resolve("src/mod"))
-            || module.equals(root.resolve("src/mod")) || !mainOutput.equals(module.resolve("target/classes"))
+        Path region = authorRoot(root, module);
+        if (!manifest.equals(module.resolve("mod.json")) || !mainOutput.equals(module.resolve("target/classes"))
             || !descriptor.equals(module.resolve("target/wtlmod-development.json")))
             throw new IOException("Development main sources must belong to one Mod module");
         var inputs = new HashSet<Path>();
         for (Path input : buildInputs)
             inputs.add(localFile(root, input));
-        if (!inputs.contains(root.resolve("pom.xml")) || !inputs.contains(root.resolve("src/mod/pom.xml"))
+        if (!inputs.contains(root.resolve("pom.xml")) || !inputs.contains(region.resolve("pom.xml"))
             || !inputs.contains(module.resolve("pom.xml")))
             throw new IOException("Build inputs must include the workspace, Mod aggregate and main module POMs");
         var outputs = new HashSet<Path>();
@@ -192,7 +208,7 @@ public record DevelopmentInfo(Path manifestPath, Path mainOutput, List<Path> aut
             Path canonical = local(root, output);
             Path owner = canonical.getParent() == null ? null : canonical.getParent().getParent();
             if (!Files.isDirectory(canonical) || owner == null || !canonical.equals(owner.resolve("target/classes"))
-                || owner.startsWith(root.resolve("src/app")) || owner.startsWith(root.resolve("src/appapi"))
+                || !authorRoot(root, owner).equals(region)
                 || !inputs.contains(owner.resolve("pom.xml")) || !outputs.add(canonical))
                 throw new IOException(
                     "Companion outputs require distinct compiled Mod modules and declared POM inputs");

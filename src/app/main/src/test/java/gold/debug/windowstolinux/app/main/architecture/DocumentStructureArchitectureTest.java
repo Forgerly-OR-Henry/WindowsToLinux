@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import gold.debug.windowstolinux.app.mod.config.ManifestReader;
 import org.junit.jupiter.api.Test;
 
 /** Keeps implemented packages and planned document nodes distinct. / 区分已实现包与文档中的规划节点。 */
@@ -90,13 +90,12 @@ class DocumentStructureArchitectureTest {
             String path = root.relativize(module.pom().getParent()).toString().replace('\\', '/');
             kinds.put(path, module.aggregate() ? "[聚合]" : "[模块]");
             kinds.put(path.isEmpty() ? "pom.xml" : path + "/pom.xml", "[构建文件]");
-            if (!path.startsWith("src/mod/") || !Files.isRegularFile(module.pom().getParent().resolve("mod.json")))
+            if (!path.matches("src/(mod|moddev)/.*") || !Files.isRegularFile(module.pom().getParent().resolve("mod.json")))
                 continue;
             kinds.put(path + "/Mod.java", "[入口类]");
-            var descriptor = new ObjectMapper().readTree(module.pom().getParent().resolve("mod.json").toFile());
-            String base = "gold.debug.windowstolinux." + module.path().replace('/', '.');
-            for (var exported : descriptor.path("exports")) {
-                String name = exported.asText();
+            var descriptor = ManifestReader.read(Files.readAllBytes(module.pom().getParent().resolve("mod.json")));
+            String base = descriptor.rootPackage();
+            for (String name : descriptor.exports()) {
                 assertTrue(name.startsWith(base + "."), "Mod export must belong to its root package");
                 kinds.put(path + name.substring(base.length()).replace('.', '/'), "[公开包]");
             }

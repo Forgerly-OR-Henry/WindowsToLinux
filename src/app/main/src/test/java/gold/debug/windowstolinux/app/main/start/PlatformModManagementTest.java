@@ -42,8 +42,64 @@ class PlatformModManagementTest {
         if (enabled)
             fixture.enable(P);
         runtime = fixture.open(true);
+        if (!enabled)
+            new gold.debug.windowstolinux.app.service.mod.PlatformModCatalog(runtime.persistence().database()).refresh(fixture.workspace);
         fixture.start(runtime);
         window();
+    }
+
+    @Test
+    void firstDataPreparationUsesVisibleConfirmationAndLockRevokesTheUnsubmittedReview() throws Exception {
+        initial = new PlatformModInitializationTest();
+        initial.root = root;
+        initial.setup();
+        initial.module("valid", false);
+        fixture = initial.fixture;
+        runtime = fixture.open(true);
+        assertEquals("MOD_DATA_NOT_READY", fixture.start(runtime).problems().getFirst().eventCode());
+        window();
+        select(P);
+        onEdt(() -> {
+            assertTrue(named(frame, "mods.prepare").isVisible());
+            assertFalse(named(frame, "mods.save").isEnabled());
+            return null;
+        });
+        click("mods.prepare");
+        var confirm = dialog();
+        assertTrue(confirmation(confirm).contains("首次数据准备"));
+        answer(confirm, false);
+        idle();
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+        click("mods.prepare");
+        confirm = dialog();
+        var old = confirm;
+        var original = onEdt(() -> (JOptionPane) descendants(old).filter(JOptionPane.class::isInstance).findFirst().orElseThrow());
+        runtime.security().lock();
+        await(() -> !old.isDisplayable());
+        runtime.security().unlock(PASSWORD.toCharArray());
+        await(() -> named(frame, "mods.refresh").isEnabled());
+        onEdt(() -> {
+            original.setValue(JOptionPane.OK_OPTION);
+            return null;
+        });
+        idle();
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+        click("mods.refresh");
+        idle();
+        select(P);
+        click("mods.prepare");
+        answer(dialog(), true);
+        idle();
+        assertEquals("WAIT_RESTART", text(runtime, "SELECT phase FROM mod_operation"));
+        assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
+        assertTrue(fixture.actions().isEmpty());
+        assertFalse(onEdt(() -> named(frame, "mods.prepare").isVisible()));
+        click("mods.cancel");
+        answer(dialog(), true);
+        idle();
+        assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+        assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
+        assertTrue(onEdt(() -> named(frame, "mods.prepare").isVisible()));
     }
 
     void window() throws Exception {

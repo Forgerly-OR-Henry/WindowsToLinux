@@ -149,7 +149,7 @@ app.mainclass=example.Main
 
 作者使用独立 `wtlmod-author-parent` POM（同 groupId、同工程开发版本），包含 JDK 21 编译、资源处理、开发描述生成和 package 绑定；该 POM 不继承整个 APP reactor、不作为业务 Mod 运行依赖。作者通过 Maven provided 依赖平台 API，自行声明第三方依赖；同作者配套 JAR 在构建属性 `wtl.authorArtifacts` 中以完整 Maven 坐标列举，其余有效 runtime 依赖进入 lib。平台 API、H2、宿主依赖和 provided 的其他 Mod 不打入包，冲突在构建时失败。
 
-工具主类固定为 `gold.debug.windowstolinux.app.mod.dev.ModPackageTool`，归 app/mod 的开发描述生成职责，不新增 Maven 业务模块。当前只实现 describe，安装包读取和校验继续复用原安装能力；迁包不代表 pack/verify 或 ModDev 工程划分已经实施。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
+工具主类固定为 `gold.debug.windowstolinux.app.mod.dev.ModPackageTool`，归 app/mod 的开发描述生成职责，不新增 Maven 业务模块。当前只实现 describe，安装包读取和校验继续复用原安装能力；pack/verify 发行工具仍按原后置范围处理。`src/moddev` 通过独立聚合工程进行定向构建与测试，使用流程见 [ModDev 入口](../src/moddev/README.md)，阶段验收见 [1.3 S1](development/PHASE-1.3.md#mod-development-layout)。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
 
 ```text
 java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.dev.ModPackageTool describe --input <构建生成的输入JSON>

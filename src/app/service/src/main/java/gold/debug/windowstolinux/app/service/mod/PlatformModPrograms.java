@@ -55,10 +55,25 @@ public final class PlatformModPrograms {
      * @return independent discovery failures / 独立发现失败
      * @throws IOException if discovery is unavailable / 发现不可用时 */
     public List<Problem> refresh() throws IOException {
+        return refresh(false);
+    }
+
+    /** Discovers startup builds with first selection for new opted-in CLASS identities. / 发现启动构建，为明确开启的 CLASS 新身份建立首次选择。
+     * @return independent discovery failures / 独立发现失败
+     * @throws IOException if discovery is unavailable / 发现不可用时 */
+    public List<Problem> refreshForStartup() throws IOException {
+        return refresh(true);
+    }
+
+    /** Refreshes exact current sources under the caller's startup boundary. / 按调用方的启动边界刷新精确当前来源。
+     * @param enableNew whether new CLASS identities may be enabled / 是否可启用新 CLASS 身份
+     * @return independent discovery failures / 独立发现失败
+     * @throws IOException if discovery is unavailable / 发现不可用时 */
+    private List<Problem> refresh(boolean enableNew) throws IOException {
         requireWorker();
         if (!development)
             return List.of();
-        var result = new PlatformModCatalog(database).refresh(root);
+        var result = new PlatformModCatalog(database).refresh(root, enableNew);
         builds.clear();
         result.builds().forEach(b -> builds.put(b.candidate().manifest().id(), b));
         return result.rejections().stream().map(r -> r.problem()).toList();

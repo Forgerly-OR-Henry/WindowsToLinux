@@ -36,15 +36,31 @@ def in_scope(name):
     )
 
 
-def inventory():
+def selected_roots(values):
+    """Normalize explicit owned paths without admitting redirects. / 规范化明示归属路径，不准入重定向。"""
+    result = []
+    for value in values:
+        path = Path(os.path.abspath(ROOT / value))
+        if not path.is_relative_to(ROOT) or not path.exists() or path.resolve() != path:
+            raise ValueError("Formatting path must exist inside the unredirected workspace: " + str(value))
+        result.append(path)
+    return result
+
+
+def inventory(roots=None):
+    scope = [] if roots is None or ROOT in roots else ["--"] + [
+        ":(literal)" + path.relative_to(ROOT).as_posix() for path in roots
+    ]
     result = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", *scope],
         cwd=ROOT, check=True, capture_output=True,
     )
     return [
         ROOT / name
         for name in sorted(set(result.stdout.decode("utf-8").split("\0")))
         if in_scope(name) and (ROOT / name).is_file() and not (ROOT / name).is_symlink()
+        and (roots is None or any((ROOT / name).is_relative_to(path) for path in roots))
+        and (roots is None or (ROOT / name).resolve() == ROOT / name)
     ]
 
 
@@ -161,8 +177,9 @@ def main():
     mode.add_argument("--write", action="store_true")
     mode.add_argument("--list", action="store_true", help="List the exact scope without starting IDEA")
     parser.add_argument("--only", choices=["java"], help="Restrict to Java production and test sources")
+    parser.add_argument("--path", action="append", help="Restrict to an existing workspace file or directory; repeatable")
     args = parser.parse_args()
-    paths = inventory()
+    paths = inventory(selected_roots(args.path) if args.path else None)
     if args.only == "java":
         paths = [path for path in paths if path.suffix == ".java"]
     if args.list:

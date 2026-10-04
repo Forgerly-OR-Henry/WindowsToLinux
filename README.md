@@ -9,7 +9,7 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，�
 - 一个模型清单，分别配置文字/视觉、文件音频转写和实时转写地址。保存与验证分离：保存不发送探测请求，各能力独立验证；纯语音模型可以保存，用途从符合已验证能力的模型中明确选择。
 - 统一 `FileService` 提供本机及受管 SFTP 文件操作，区分文件目标与链接本身。复制、移动、传输、回收及许可都有原任务归属；未知结果先核对，不能通过重放掩盖中断。
 - 中英文界面、主题与输入状态保留，中央任务、进度、日志、人工确认和平台授权设置。
-- Mod 发现、已选版本启动、公开 API 与依赖准入、页面发布、Schema 准备及迁移、停止、安装和数据清理。发现不会自动启用新 Mod。
+- Mod 发现、已选版本启动、公开 API 与依赖准入、页面发布、Schema 准备及迁移、停止、安装和数据清理。发行安装与普通维护发现不自动启用；明确开启 CLASS 自动加载时，新调试身份按唯一有效构建建立首次启用选择，必要准备和已有用户选择仍受原流程约束。
 
 官方部署 Mod 的验证只覆盖已记录的本机及受控协议环境。真实 Linux、真实语音提供方与云控制台仍单独待验收；本机 HTTP/WebSocket、SSH/SFTP 夹具通过不等于生产环境全场景通过。商店连同下载及必要客户端接线已纳入 1.3 计划，当前尚未实施；备份迁移 Mod、官网投稿/审核/公开发布和正式发行打包仍属后续范围。
 
@@ -22,6 +22,7 @@ WindowsToLinux/
 ├─ src/appapi/         # 公开 Mod API，包括 file、ai、task 等能力
 ├─ src/app/            # config、ai、db、file、linux、main、mod、secret、service、ui、windows
 ├─ src/mod/deployment/ # 官方部署 Mod
+├─ src/moddev/         # 独立 Mod 开发与定向验证，不进入默认根构建/加载
 ├─ docs/               # 产品、架构、开发计划和验收记录
 ├─ test/               # 受控验证夹具
 ├─ history-src/        # 冻结的旧源码，不进入活动构建
@@ -62,7 +63,7 @@ mvn.cmd -B -ntp clean verify -Pidea-check '-Dmanaged.test.bash=E:/Program/Git/bi
 1. 用 JDK 21 打开根 `pom.xml` 并完成 Maven 导入。
 2. 创建 Application 配置，主类为 `gold.debug.windowstolinux.app.main.AppMain`，模块为 `windowstolinux-app-main`。
 3. Config 模块资源目录中的 [config.yaml](src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml) 默认在 CLASS 关闭 Mod，仅运行主 APP；填写说明见 [Config.md](docs/Config.md)。需要开发 Mod 时把 class.mod.auto-load 改为 true，重新构建并重启，VM 参数添加 `-Dwtl.workspace=<本仓库绝对路径>`；含空格时给整项加双引号。该值用于核验开发 Mod 来源，必须与实际 APP、DB 模块工作区一致。自动加载开关仅允许 class 区填写，JAR/APP 固定执行 Mod 加载流程。
-4. 启动前运行 Maven `-pl src/app/main -am process-classes`，使实际依赖和 Mod 开发描述就绪。使用此 Maven 前置任务时，可以关闭该运行配置的 IDEA Build 前置任务。
+4. 只启动主 APP 时，启动前运行 Maven `-pl src/app/main -am process-classes`；开启 Mod 调试时还须构建 `src/mod` 中本次参与集成的项目及其依赖，也可在根执行 `process-classes` 生成默认集成区的有效描述。`src/moddev` 不随根构建或运行发现参与。使用此 Maven 前置任务时，可以关闭该运行配置的 IDEA Build 前置任务。
 
 CLASS 数据根默认 `src/app/db/data/`，通过 Config 模块的 classpath YAML 及已验证路径锚点解析；YAML 随 Config JAR 发布，程序根不用放配置文件。程序根来自已验证工作区，不由任意启动目录或数据目录覆盖参数决定。CLASS/JAR 混合来源会被拒绝；JAR 与 APP 的正式布局见 [APP.md](docs/APP.md)。
 
@@ -71,6 +72,8 @@ CLASS 数据根默认 `src/app/db/data/`，通过 Config 模块的 classpath YAM
 开发库重建按 [1.2 期数据库调整](docs/development/PHASE-1.2.md#database-reset)处理：先关闭 APP 和占用该库的验证进程，核实运行模式、精确数据目录及文件归属，再按已确认范围清理开发库与配对材料，使用实际入口重建并重开验证。`windowstolinux.mv.db` 与 `db-access.bin` 有配对关系；已有库缺少或无法验证原材料时必须停止，不能生成新材料冒充恢复。用户密码不写入源码、文档或验收证据。
 
 Mod 主模块可继承 [.mvn/wtlmod-author-parent/pom.xml](.mvn/wtlmod-author-parent/pom.xml)接入 CLASS 描述生成。启用、选中版本与构建成功是不同状态；作者接线和校验见 [APP 作者构建约定](docs/APP.md#82-作者构建和校验工具)。
+
+独立开发使用 [src/moddev/README.md](src/moddev/README.md)的定向入口，主模块和同作者从模块保持一份源码。完成本项目验证后移入 `src/mod`、更新聚合声明并按新路径重建，才参与真实 APP 集成调试。根默认构建不聚合 ModDev，也不执行其业务测试；正式结构与格式检查覆盖两个区域。
 
 ## 安全与验收边界
 
@@ -94,7 +97,7 @@ helper v9 曾在 Ubuntu 24 上完成八个多语言原生项目的代表性部�
 
 - [产品说明书](docs/PRODUCT-MANUAL.md)：功能、使用流程和边界。
 - [1.2 期开发文档](docs/development/PHASE-1.2.md)：文件、语音、救援、数据库调整及逐项验收。
-- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0 与正式 S0 已完成，前序静态失败已修复，后续按阶段推进并本地提交。
+- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0、正式 S0 与 S1 已完成，前序静态失败已修复，后续按阶段推进并本地提交。
 - [APP 智能助手开发规划](docs/development/APP-ASSISTANT-DEVELOPMENT.md)：全软件操作助手与 APP/Mod 业务操作 API 的独立后期规划；不纳入 1.3，尚未排期或实施。
 - [开发总纲](docs/development/DEVELOPMENT.md)：各期导航、工程演进和通用规则。
 - [File.md](docs/File.md)、[Mod.md](docs/Mod.md)、[APP.md](docs/APP.md)、[Runtime.md](docs/Runtime.md)：结构、作者、交付和运行合同。

@@ -120,7 +120,7 @@ public final class PlatformModFlow implements AutoCloseable {
                     "This Mod graph cannot start again in the same boot", ProblemCode.UNAVAILABLE);
             started = true;
             try {
-                for (var issue : programs.refresh())
+                for (var issue : programs.refreshForStartup())
                     issues.put("source:" + issues.size(), issue);
                 issues.putAll(recovery.start());
                 var ready = prepareSelections();

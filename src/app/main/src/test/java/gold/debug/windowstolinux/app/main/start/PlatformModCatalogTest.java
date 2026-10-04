@@ -27,7 +27,11 @@ class PlatformModCatalogTest {
             assertFalse(loader.isClosed());
         }
         try (var paths = Files.list(root)) {
-            return paths.filter(p -> p.getFileName().toString().startsWith("workspace-")).findFirst().orElseThrow();
+            Path workspace = paths.filter(p -> p.getFileName().toString().startsWith("workspace-")).findFirst().orElseThrow();
+            Path manifest = module(workspace).resolve("mod.json");
+            Files.writeString(manifest, Files.readString(manifest).replace("\"platformApiRange\":\"1.0.0-dev.1\"", "\"platformApiRange\":\"[1.0.0-dev.1,1.0.0)\""));
+            generate(workspace, module(workspace));
+            return workspace;
         }
     }
 
@@ -70,6 +74,8 @@ class PlatformModCatalogTest {
             assertEquals("TRUE", text(runtime, "SELECT selection_initialized FROM mod_registry"));
             assertEquals("0", text(runtime, "SELECT revision FROM mod_registry"));
             assertEquals("STOPPED", text(runtime, "SELECT last_runtime_state FROM mod_registry"));
+            assertEquals(1, catalog.refresh(workspace, true).builds().size());
+            assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
             assertEquals(original.contentDigest(), text(runtime, "SELECT content_sha256 FROM mod_version"));
             PlatformModCatalog.verify(workspace, original);
@@ -108,9 +114,12 @@ class PlatformModCatalogTest {
             assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
             assertEquals("4", text(runtime, "SELECT revision FROM mod_registry"));
             assertEquals("ORIGINAL_FAILURE", text(runtime, "SELECT failure_code FROM mod_registry"));
+            assertEquals(1, catalog.refresh(workspace, true).builds().size());
+            assertEquals(VERSION, text(runtime, "SELECT selected_version FROM mod_registry"));
             assertEquals("2", text(runtime, "SELECT disable_ack_revision FROM mod_registry"));
             sql(db, "UPDATE mod_registry SET enabled=FALSE,selected_version=NULL,revision=5");
             registered(catalog, workspace);
+            assertEquals(1, catalog.refresh(workspace, true).builds().size());
             assertNull(text(runtime, "SELECT selected_version FROM mod_registry"));
             assertEquals("5", text(runtime, "SELECT revision FROM mod_registry"));
         }
@@ -126,6 +135,8 @@ class PlatformModCatalogTest {
             var intents = runtime.modIntents();
             var group = intents.apply(intents.review(OWNER, choice(true, VERSION), Optional.empty()), false);
             var operation = text(runtime, "SELECT operation_id FROM mod_operation");
+            assertEquals(1, catalog.refresh(workspace, true).builds().size());
+            assertEquals(operation, text(runtime, "SELECT operation_id FROM mod_operation"));
             assertEquals(original.contentDigest(), registered(catalog, workspace).contentDigest());
             resource(workspace, "recompiled while a request is waiting");
             var blocked = catalog.refresh(workspace);

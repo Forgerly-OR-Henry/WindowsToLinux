@@ -38,8 +38,7 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
         var project = Objects.requireNonNull(session.getCurrentProject());
         Path workspace = DevelopmentInfo.workspace(Path.of(property(project, "wtl.workspace", "")));
         Path module = project.getBasedir().toPath().toRealPath();
-        if (!module.startsWith(workspace.resolve("src/mod")) || module.equals(workspace.resolve("src/mod")))
-            throw new IOException("CLASS author projects must be inside the declared workspace Mod root");
+        Path region = DevelopmentInfo.authorRoot(workspace, module);
         Path output = Path.of(project.getBuild().getOutputDirectory()).toAbsolutePath().normalize();
         Path target = Path.of(project.getBuild().getDirectory()).toAbsolutePath().normalize();
         if (!output.equals(module.resolve("target/classes")) || !target.equals(module.resolve("target")))
@@ -59,7 +58,7 @@ public final class MavenDevelopmentInputs extends AbstractMojo {
         DevelopmentInfo.manifest(workspace, manifest);
         var inputs = new LinkedHashSet<Path>();
         inputs.add(workspace.resolve("pom.xml"));
-        inputs.add(workspace.resolve("src/mod/pom.xml"));
+        inputs.add(region.resolve("pom.xml"));
         parents(project, workspace, inputs);
         for (String config : List.of(".mvn/maven.config", ".mvn/jvm.config"))
             if (Files.exists(workspace.resolve(config)))
