@@ -949,7 +949,8 @@ public final class ModRestartLedger {
                     String type = base.path("enabled").booleanValue() != target.path("enabled").booleanValue()
                         ? target.path("enabled").booleanValue() ? "ENABLE" : "DISABLE"
                         : "SWITCH";
-                    require(type.equals(r.getString("operation_type")) && !base.equals(target)
+                    require(type.equals(r.getString("operation_type")) && (!base.equals(target)
+                            || firstPreparation(c, r, target, request.path("data")))
                             && Objects.equals(base.path("version").textValue(), r.getString("source_version"))
                             && Objects.equals(target.path("version").textValue(), r.getString("target_version"))
                             && r.getObject("accepted_revision") != null && r.getLong("accepted_revision") > 0,
@@ -967,6 +968,37 @@ public final class ModRestartLedger {
                         r.getString("phase"), r.getString("outcome"), request.path("data"),
                         r.getString("target_schema_version"), r.getObject("target_generation", UUID.class),
                         r.getString("recovery_json"), canonicalUuid(r.getString("archive_log_id")));
+                }
+            }
+        }
+
+        /** Admits same-choice restart evidence only for an absent explicitly planned data target. / 仅为缺失且明确计划的数据目标准入同选择重启证据。
+         * @param c original locked transaction / 原已锁事务
+         * @param row original operation row / 原操作行
+         * @param target exact selected choice / 精确已选选择
+         * @param data original strict preparation plan / 原严格准备计划
+         * @return whether the narrow first-preparation evidence is valid / 窄范围首次准备证据是否有效
+         * @throws SQLException if its original schema state cannot be read / 无法读取原数据状态时 */
+        private static boolean firstPreparation(Connection c, ResultSet row, JsonNode target, JsonNode data)
+            throws SQLException {
+            boolean plan = fields(data).equals(Set.of("mode", "target")) && "INITIALIZE".equals(data.path("mode").asText())
+                || fields(data).equals(Set.of("mode", "target", "source", "generation", "steps"))
+                && "MIGRATE".equals(data.path("mode").asText());
+            if (!plan || !target.path("enabled").booleanValue() || !target.path("version").isTextual()
+                || row.getString("target_schema_version") == null
+                || !row.getString("target_schema_version").equals(data.path("target").textValue()))
+                return false;
+            if (!"WAIT_RESTART".equals(row.getString("phase")))
+                return true;
+            try (var p = c.prepareStatement(
+                "SELECT (SELECT COUNT(*) FROM mod_schema WHERE mod_id=? AND schema_version=?)+(SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))")) {
+                p.setString(1, row.getString("mod_id"));
+                p.setString(2, row.getString("target_schema_version"));
+                for (int i = 3; i <= 5; i++)
+                    p.setString(i, row.getString("mod_id"));
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    return r.getLong(1) == 0;
                 }
             }
         }

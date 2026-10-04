@@ -127,6 +127,10 @@
           <argLine>
             "-Djava.io.tmpdir=${project.build.directory}" "-Djdk.net.unixdomain.tmpdir=${project.build.directory}"
           </argLine>
+          <systemPropertyVariables>
+            <wtl.test.mavenHome>${maven.home}</wtl.test.mavenHome>
+            <wtl.test.repository>${settings.localRepository}</wtl.test.repository>
+          </systemPropertyVariables>
           <classpathDependencyExcludes>
             <classpathDependencyExclude>gold.debug.windowstolinux:windowstolinux-app-*</classpathDependencyExclude>
             <classpathDependencyExclude>gold.debug.windowstolinux:windowstolinux-appapi</classpathDependencyExclude>

@@ -19,6 +19,27 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class DevelopmentModFinderTest {
+    @Test
+    void developmentRegionGeneratesAdmittedEvidenceButIsNeverDiscoveredAndRejectsCrossRegionCompanions() throws Exception {
+        Path root = workspace();
+        Path main = module(root, "main", "example.discovery");
+        Path companion = module(root, "helper", "example.helper");
+        Path development = Files.createDirectories(root.resolve("src/moddev"));
+        Files.writeString(development.resolve("pom.xml"), "<project/>\n");
+        Path moved = development.resolve("main");
+        Files.move(main, moved);
+        var inputs = List.of(root.resolve("pom.xml"), development.resolve("pom.xml"), moved.resolve("pom.xml"));
+        Path descriptor = DevelopmentInfo.generate(root, moved.resolve("mod.json"), moved.resolve("target/classes"), List.of(), inputs, List.of());
+        assertEquals(moved.resolve("mod.json"), DevelopmentInfo.read(root, descriptor).manifestPath());
+        System.clearProperty("wtl.discovery.initialized");
+        assertTrue(DevelopmentModFinder.scan(root).candidates().isEmpty());
+        assertNull(System.getProperty("wtl.discovery.initialized"));
+        var mixed = new ArrayList<>(inputs);
+        mixed.add(companion.resolve("pom.xml"));
+        assertThrows(IOException.class, () -> DevelopmentInfo.generate(root, moved.resolve("mod.json"),
+            moved.resolve("target/classes"), List.of(companion.resolve("target/classes")), mixed, List.of()));
+    }
+
     @TempDir
     Path temporary;
 

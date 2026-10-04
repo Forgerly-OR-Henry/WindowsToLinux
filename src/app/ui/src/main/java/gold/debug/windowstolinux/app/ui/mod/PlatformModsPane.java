@@ -247,6 +247,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         epoch++;
         if (confirmation != null)
             confirmation.dispose();
+        if (locked)
+            rows.clear();
         LocaleBinding.unbind(view.status);
         view.status.setText("");
         render();
@@ -387,6 +389,15 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             active && value != null && !maintaining && (!enabled.isSelected() || selectedVersion != null)
                 && (enabled.isSelected() != value.choice().enabled()
                 || !Optional.ofNullable(selectedVersion).equals(value.choice().version())));
+        view.prepare.setVisible(value != null && value.choice().enabled() && value.actual().isEmpty()
+            && Set.of("STOPPED", "FAILED").contains(value.runtime()) && value.operations().isEmpty()
+            && value.versions().stream().anyMatch(v -> v.state().equals("READY")
+            && value.choice().version().equals(Optional.of(v.manifest().version()))
+            && v.manifest().schemaVersion().isPresent() && value.data().stream()
+            .noneMatch(d -> v.manifest().schemaVersion().equals(Optional.of(d.identity().schemaVersion())))));
+        view.prepare.setEnabled(active && value != null && !maintaining
+            && enabled.isSelected() == value.choice().enabled()
+            && Optional.ofNullable(selectedVersion).equals(value.choice().version()));
         view.cancel.setVisible(value != null && value.operations().stream().anyMatch(o -> o.request().isPresent()));
         view.cancel.setEnabled(active);
         view.reconcile.setVisible(value != null && value.operations().stream()
@@ -487,15 +498,16 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         return messages.text("mods.repairPending");
     }
 
-    /** Reviews a draft without changing persistent choice before confirmation. / 在确认前不改变持久选择地审阅草稿。 */
-    private void reviewChoice() {
+    /** Reviews a draft or exact absent data target before confirmation. / 在确认前审阅草稿或精确缺失数据目标。
+     * @param preparing whether explicitly preparing the unchanged selection / 是否明确准备未改变的选择 */
+    private void reviewChoice(boolean preparing) {
         var value = inventory.getSelectedValue();
         var target = new Choice(enabled.isSelected(), Optional.ofNullable(selectedVersion));
         var source = target.enabled() ? source(value, selectedVersion, false) : Optional.<SchemaIdentity>empty();
         if (source == null)
             return;
-        run(() -> service.review(value.owner(), target, source), review -> {
-            if (confirm(summary(review, source)))
+        run(() -> preparing ? service.reviewPreparation(value.owner(), source) : service.review(value.owner(), target, source), review -> {
+            if (confirm((preparing ? messages.text("mods.confirmPreparation") + "\n" : "") + summary(review, source)))
                 run(() -> service.apply(review, true), ignored -> completed("mods.savedRestart"), true);
         });
     }
@@ -920,7 +932,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
         private final JButton openPage;
 
         /** Explicit management actions. / 明确管理操作。 */
-        private final JButton refresh, save, cancel, reconcile, retry, logs, deleteVersion, deleteMod,
+        private final JButton refresh, save, prepare, cancel, reconcile, retry, logs, deleteVersion, deleteMod,
             reconcileDeletion;
 
         /** Explicit same-release repair and original recovery actions. / 明确同版本修复及原恢复操作。 */
@@ -949,7 +961,8 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             });
             var actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             refresh = button("refresh", PlatformModsPane.this::refresh);
-            save = button("save", PlatformModsPane.this::reviewChoice);
+            save = button("save", () -> reviewChoice(false));
+            prepare = button("prepare", () -> reviewChoice(true));
             cancel = button("cancel", PlatformModsPane.this::cancelRequest);
             reconcile = button("reconcile", PlatformModsPane.this::reconcile);
             retry = button("retry", PlatformModsPane.this::retry);
@@ -963,7 +976,7 @@ public final class PlatformModsPane extends JPanel implements AutoCloseable {
             LocaleBinding.tooltip(repair, LocalizedMessage.of("mods.repairNotice"), messages.catalog());
             reconcileRepair = button("reconcileRepair", maintenance::reconcileRepair);
             restoreProgram = button("restoreProgram", maintenance::restoreProgram);
-            for (var button : List.of(refresh, save, cancel, reconcile, retry, logs))
+            for (var button : List.of(refresh, save, prepare, cancel, reconcile, retry, logs))
                 actions.add(button);
             for (var button : List.of(repair, deleteVersion, deleteMod))
                 programActions.add(button);

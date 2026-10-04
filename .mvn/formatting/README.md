@@ -21,9 +21,14 @@ Maven 默认不执行 IDEA 格式检查，普通 `mvn clean verify` 不依赖本
 python .mvn/formatting/format.py --list
 python .mvn/formatting/format.py --check
 python .mvn/formatting/format.py --check --only java
+python .mvn/formatting/format.py --check --path src/moddev/<project>
 python .mvn/formatting/format.py --write
 mvn clean verify -Pidea-check
 ```
+
+`--path` 将 Git 文件枚举和后续格式检查限定到已有的仓库内文件或目录，可重复传入多个目标。
+路径会规范化并拒绝仓库外、缺失或通过链接重定向的目标；原格式范围和生成物排除仍适用。
+未传入时保留默认完整工程范围。独立 ModDev 项目可使用该入口，不启动 APP 或检查其他开发项目。
 
 两种模式均在保留目录层级及 EditorConfig 的临时副本上执行 IDEA 格式化，然后逐字节比较结果；这是为了避免 IDEA dry-run 与实际写入结果不一致。`--check` 验证源码内容不变；只有 `--write` 会更新源码，检测到源文件被并发修改时停止写入。格式不符、跳过文件、缺少工具或启动失败均返回非零。两者都要求 UTF-8、LF 和末尾换行。工具或规则升级可能改变排版结果，格式差异需审阅后再执行写入。
 

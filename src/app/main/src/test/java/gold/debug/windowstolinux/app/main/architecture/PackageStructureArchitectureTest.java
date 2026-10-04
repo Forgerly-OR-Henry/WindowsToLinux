@@ -472,7 +472,7 @@ class PackageStructureArchitectureTest {
         Path root = projectRoot();
         try (Stream<Path> files = activeFiles()) {
             var periodNames = files.filter(path -> path.toString().contains("src" + java.io.File.separator + "main"))
-                .filter(path -> !root.relativize(path).toString().replace('\\', '/').startsWith("src/mod/"))
+                .filter(path -> !root.relativize(path).toString().replace('\\', '/').matches("src/(mod|moddev)/.*"))
                 .map(root::relativize).map(Path::toString).filter(name -> PERIOD_NAME.matcher(name).find())
                 .toList();
             assertTrue(periodNames.isEmpty(), () -> "production paths contain period names: " + periodNames);
@@ -924,7 +924,7 @@ class PackageStructureArchitectureTest {
                     || value.contains(
                     "src" + java.io.File.separator + "test" + java.io.File.separator + "resources");
             }).toList()) {
-                if (root.relativize(resource).toString().replace('\\', '/').startsWith("src/mod/"))
+                if (root.relativize(resource).toString().replace('\\', '/').matches("src/(mod|moddev)/.*"))
                     continue;
                 String fileName = resource.getFileName().toString();
                 String stem = fileName.contains(".") ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;

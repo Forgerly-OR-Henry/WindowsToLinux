@@ -148,7 +148,7 @@ class ModuleDependencyArchitectureTest {
         assertEquals(Set.of("appapi"), modules.get("mod/deployment"));
         for (var entry : modules.entrySet()) {
             if (entry.getKey().startsWith("app/"))
-                assertTrue(entry.getValue().stream().noneMatch(target -> target.startsWith("mod/")), entry.getKey());
+                assertTrue(entry.getValue().stream().noneMatch(target -> target.startsWith("mod/") || target.startsWith("moddev/")), entry.getKey());
             assertAcyclic(entry.getKey(), modules, new HashSet<>(), new HashSet<>());
         }
         assertTrue(modules.containsKey("app/main"));
@@ -311,8 +311,8 @@ class ModuleDependencyArchitectureTest {
 
     private static String moduleFor(String name, Set<String> modules) {
         return modules.stream().sorted(Comparator.comparingInt(String::length).reversed())
-            .filter(module -> name.equals(ROOT + module.replace('/', '.').replace('-', '.'))
-                || name.startsWith(ROOT + module.replace('/', '.').replace('-', '.') + "."))
+            .filter(module -> name.equals(ROOT + module.replaceFirst("^moddev/", "mod/").replace('/', '.').replace('-', '.'))
+                || name.startsWith(ROOT + module.replaceFirst("^moddev/", "mod/").replace('/', '.').replace('-', '.') + "."))
             .findFirst().orElse(null);
     }
 

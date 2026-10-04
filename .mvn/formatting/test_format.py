@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +13,28 @@ spec.loader.exec_module(formatter)
 
 
 class FormattingContractTest(unittest.TestCase):
+    def test_explicit_project_paths_keep_exclusions_and_do_not_enumerate_other_projects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            selected = root / "src/moddev/sample"
+            for name in ("src/main/java/Mod.java", "src/test/java/ModTest.java", "target/classes/Mod.java"):
+                file = selected / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text("fixture\n", encoding="utf-8")
+            other = root / "src/moddev/other/Mod.java"
+            other.parent.mkdir(parents=True)
+            other.write_text("fixture\n", encoding="utf-8")
+            output = "\0".join(path.relative_to(root).as_posix() for path in root.rglob("*.java")) + "\0"
+            with patch.object(formatter, "ROOT", root), patch.object(formatter.subprocess, "run", return_value=SimpleNamespace(stdout=output.encode())) as run:
+                roots = formatter.selected_roots(["src/moddev/sample/../sample"])
+                self.assertEqual([selected], roots)
+                self.assertEqual({selected / "src/main/java/Mod.java", selected / "src/test/java/ModTest.java"}, set(formatter.inventory(roots)))
+                self.assertEqual(["--", ":(literal)src/moddev/sample"], run.call_args.args[0][-2:])
+                with self.assertRaises(ValueError):
+                    formatter.selected_roots(["../outside"])
+                with self.assertRaises(ValueError):
+                    formatter.selected_roots(["src/moddev/missing"])
+
     def test_root_examples_are_excluded_but_module_tests_remain(self):
         for name in (
             "src/app/main/src/main/java/Main.java",

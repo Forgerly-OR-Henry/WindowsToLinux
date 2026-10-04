@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.app.main.mod.PlatformModFlow;
 import gold.debug.windowstolinux.app.main.runtime.RunModeResolver;
 import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
+import gold.debug.windowstolinux.app.service.mod.PlatformModCatalog;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -114,6 +115,8 @@ class PlatformModFlowTest {
 
     void enable(String... owners) throws Exception {
         try (var runtime = open(true)) {
+            // Existing saved disabled choices must survive opted-in startup. / 已保存禁用选择必须在开启自动接入的启动中保留。
+            new PlatformModCatalog(runtime.persistence().database()).refresh(workspace);
             var initial = start(runtime);
             assertTrue(initial.running().isEmpty());
             assertTrue(initial.problems().isEmpty(), initial.problems().toString());
@@ -133,7 +136,7 @@ class PlatformModFlowTest {
     }
 
     @Test
-    void defaultDiscoveryKeepsNewModsDisabledAndExplicitWorkspaceCannotBeReplacedByWorkingDirectory() throws Exception {
+    void optedInDiscoveryEnablesNewModsAndRequiresTheExplicitWorkspace() throws Exception {
         module(P, Map.of(), false);
         try (var runtime = open(false)) {
             var layout = new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, workspace,
@@ -142,10 +145,10 @@ class PlatformModFlowTest {
             assertFalse(ApplicationLauncher.startMods(runtime, layout, root.toString(), pages(true)).problems().isEmpty());
             assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_registry"));
             var report = start(runtime);
-            assertTrue(report.running().isEmpty());
+            assertEquals(Set.of(P), report.running());
             assertTrue(report.problems().isEmpty(), report.problems().toString());
-            assertEquals("FALSE", text(runtime, "SELECT enabled FROM mod_registry"));
-            assertFalse(Files.exists(trace));
+            assertEquals("TRUE", text(runtime, "SELECT enabled FROM mod_registry"));
+            assertEquals(List.of(P + ":construct", P + ":start"), actions());
             assertFalse(start(runtime).problems().isEmpty());
         }
     }
@@ -362,6 +365,8 @@ class PlatformModFlowTest {
         enable(P);
         var runtime = open(false);
         var frame = PlatformWindowTest.onEdt(() -> {
+            gold.debug.windowstolinux.app.ui.display.DesktopThemeService.install(
+                gold.debug.windowstolinux.app.ui.display.ThemeMode.LIGHT);
             var catalog = gold.debug.windowstolinux.app.ui.language.MessageCatalog.forLanguageTag("zh-CN");
             var window = new PlatformFrame(runtime.security(), catalog,
                 gold.debug.windowstolinux.app.ui.display.ThemePalette.light(),

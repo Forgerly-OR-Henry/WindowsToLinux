@@ -454,6 +454,12 @@ public final class PlatformModIntents implements AutoCloseable {
         /** Whether any commit attempt has begun; unknown commits are never replayed. / 是否开始过提交尝试，未知提交从不重放。 */
         private boolean attempted;
 
+        /** Whether this review explicitly withdraws its original pending group. / 此审阅是否明确撤回其原待执行组。 */
+        private boolean cancellation;
+
+        /** Whether an unchanged choice explicitly requests first data preparation. / 未改变的选择是否明确请求首次数据准备。 */
+        private boolean preparation;
+
         /** Captures the review without performing state changes. / 捕获审阅，不执行状态变更。
          * @param before exact catalog snapshot / 精确目录快照
          * @param choices complete proposed choices / 完整提议选择
@@ -511,7 +517,36 @@ public final class PlatformModIntents implements AutoCloseable {
         requireOpen();
         try (var operation = security.enterOperation()) {
             return locked(
-                c -> calculate(read(c), Map.of(owner, target), source.map(s -> Map.of(owner, s)).orElse(Map.of())));
+                c -> calculate(read(c), Map.of(owner, target), source.map(s -> Map.of(owner, s)).orElse(Map.of()), false));
+        } catch (SQLException failure) {
+            throw publicFailure(failure);
+        }
+    }
+
+    /** Reviews first data preparation for the exact enabled choice without changing it or running author code. / 审阅精确已启用选择的首次数据准备，不改选择或运行作者代码。
+     * @param owner exact selected owner / 精确已选所有者
+     * @param source explicitly confirmed migration source, or absent for empty initialization / 明确确认迁移来源，空初始化时缺省
+     * @return original restart review requiring explicit confirmation / 需要明确确认的原重启审阅
+     * @throws ApiException if already prepared, disabled, occupied, pending or incompatible / 已准备、禁用、占用、待处理或不兼容时 */
+    public synchronized Review reviewPreparation(String owner, Optional<SchemaIdentity> source) throws ApiException {
+        requireOpen();
+        try (var permission = security.enterOperation()) {
+            return locked(c -> {
+                var state = read(c);
+                var prior = state.owners().get(owner);
+                if (prior == null || !prior.choice().enabled() || prior.actual() != null
+                    || !Set.of("STOPPED", "FAILED").contains(prior.runtime())
+                    || state.pending().containsKey(owner) || state.busy().contains(owner))
+                    throw rejected("MOD_PREPARATION_UNAVAILABLE", "First preparation requires an idle enabled selection");
+                SchemaPreparation.requireIdle(c, owner);
+                var manifest = selected(state, owner, prior.choice());
+                if (manifest.schemaVersion().isEmpty() || state.schemas().getOrDefault(owner, Map.of())
+                    .containsKey(manifest.schemaVersion().get()))
+                    throw rejected("MOD_PREPARATION_UNAVAILABLE", "Only an absent selected data version may be prepared");
+                var review = calculate(state, Map.of(owner, prior.choice()), source.map(s -> Map.of(owner, s)).orElse(Map.of()), true);
+                review.preparation = true;
+                return review;
+            });
         } catch (SQLException failure) {
             throw publicFailure(failure);
         }
@@ -609,7 +644,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 if (data == null || !"FAILED".equals(data.state()) || data.used() || data.validatedAt() != null
                     || data.validationDigest() != null)
                     throw rejected("MOD_RETRY_UNAVAILABLE", "Only the first failed unused target may be rebuilt");
-                requireCoordinates(owner, schema, data);
+                SchemaPreparation.requireCoordinates(owner, schema, data);
                 var schemas = new TreeMap<>(state.schemas());
                 var remaining = new TreeMap<>(schemas.get(owner));
                 remaining.remove(schema);
@@ -617,7 +652,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 var withoutFailed = new Snapshot(state.revision(), state.owners(), state.releases(),
                     Map.copyOf(schemas), state.pending(), state.busy());
                 return new RetryReview(state, new SchemaIdentity(owner, schema, data.generation()), manifest,
-                    dataPlan(withoutFailed, manifest, source.orElse(null)));
+                    SchemaPreparation.plan(withoutFailed, manifest, source.orElse(null)));
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -663,7 +698,9 @@ public final class PlatformModIntents implements AutoCloseable {
                         targets.put(pending.owner(), pending.base());
                 if (targets.isEmpty())
                     throw rejected("MOD_REQUEST_NOT_PENDING", "The original request no longer awaits execution");
-                return calculate(snapshot, targets, Map.of());
+                var review = calculate(snapshot, targets, Map.of(), false);
+                review.cancellation = true;
+                return review;
             });
         } catch (SQLException failure) {
             throw publicFailure(failure);
@@ -688,6 +725,9 @@ public final class PlatformModIntents implements AutoCloseable {
             review.attempted = true;
             return locked(c -> {
                 var current = read(c);
+                if (review.preparation)
+                    for (String owner : review.choices.keySet())
+                        SchemaPreparation.requireIdle(c, owner);
                 if (!current.equals(review.before))
                     throw rejected("MOD_REVIEW_STALE", "Mod state changed; review the request again");
                 long now = System.currentTimeMillis();
@@ -695,10 +735,11 @@ public final class PlatformModIntents implements AutoCloseable {
                 for (var change : review.choices.entrySet()) {
                     String owner = change.getKey();
                     var prior = current.owners().get(owner);
-                    if (prior.choice().equals(change.getValue()))
+                    var pending = current.pending().get(owner);
+                    if (prior.choice().equals(change.getValue()) && !review.preparation
+                        && !(review.cancellation && pending != null))
                         continue;
                     changed = true;
-                    var pending = current.pending().get(owner);
                     Choice base = pending == null ? prior.choice() : pending.base();
                     if (pending != null)
                         archiveCancelled(c, pending, now);
@@ -719,7 +760,7 @@ public final class PlatformModIntents implements AutoCloseable {
                         if (p.executeUpdate() != 1)
                             throw rejected("MOD_REVIEW_STALE", "The original Mod revision changed");
                     }
-                    if (!base.equals(change.getValue()))
+                    if (!base.equals(change.getValue()) || review.preparation)
                         insert(c, review, owner, base, change.getValue(), revision, now);
                 }
                 if (changed) {
@@ -740,9 +781,11 @@ public final class PlatformModIntents implements AutoCloseable {
      * @param state locked current catalog / 已锁定当前目录
      * @param requested explicit owner choices / 明确所有者选择
      * @param sources explicitly confirmed migration sources / 明确确认的迁移来源
+     * @param preparing whether explicitly reviewing an unchanged absent data target / 是否明确审阅未改变选择的缺失数据目标
      * @return concrete immutable review / 具体不可变审阅
      * @throws SQLException if a requested target cannot be accepted / 请求目标无法接纳时 */
-    private Review calculate(Snapshot state, Map<String, Choice> requested, Map<String, SchemaIdentity> sources)
+    private Review calculate(Snapshot state, Map<String, Choice> requested, Map<String, SchemaIdentity> sources,
+                             boolean preparing)
         throws SQLException {
         var choices = new TreeMap<String, Choice>(requested);
         var dataPlans = new TreeMap<String, String>();
@@ -752,7 +795,7 @@ public final class PlatformModIntents implements AutoCloseable {
                 throw rejected("MOD_NOT_INSTALLED", "The requested Mod is not installed");
             if (prior.choice().version().isPresent() && change.getValue().version().isEmpty())
                 throw rejected("MOD_SELECTION_REQUIRED", "Disabling a Mod must preserve its selected version");
-            if (prior.choice().equals(change.getValue())) {
+            if (prior.choice().equals(change.getValue()) && !preparing) {
                 if (sources.containsKey(change.getKey()))
                     throw rejected("MOD_SOURCE_NOT_APPLICABLE",
                         "An unchanged choice cannot request a new migration source");
@@ -769,7 +812,7 @@ public final class PlatformModIntents implements AutoCloseable {
                     || Runtime.version().feature() < manifest.minJavaVersion())
                     throw rejected("MOD_HOST_INCOMPATIBLE",
                         "The selected release is incompatible with the actual host");
-                dataPlans.put(change.getKey(), dataPlan(state, manifest, sources.get(change.getKey())));
+                dataPlans.put(change.getKey(), SchemaPreparation.plan(state, manifest, sources.get(change.getKey())));
             }
         }
         var manifests = manifests(state, choices);
@@ -778,7 +821,7 @@ public final class PlatformModIntents implements AutoCloseable {
         var admission = new TreeSet<String>();
         var priorManifests = manifests(state, Map.of());
         for (var change : requested.entrySet()) {
-            if (state.owners().get(change.getKey()).choice().equals(change.getValue()))
+            if (state.owners().get(change.getKey()).choice().equals(change.getValue()) && !preparing)
                 continue;
             if (change.getValue().enabled() && plan.failures().containsKey(change.getKey()))
                 throw new SQLException("Mod dependency validation failed",
@@ -869,80 +912,6 @@ public final class PlatformModIntents implements AutoCloseable {
         } catch (java.io.IOException | IllegalArgumentException invalid) {
             throw rejected("MOD_MANIFEST_INVALID", "The selected release does not match its registered manifest");
         }
-    }
-
-    /** Selects reuse, first initialization or an explicitly confirmed unique migration path. / 选择复用、首次初始化或明确确认的唯一迁移路径。
-     * @param state original catalog / 原目录
-     * @param manifest selected release / 已选发布
-     * @param source explicitly selected source, or null / 明确选择的来源或空
-     * @return durable data preparation JSON / 持久数据准备 JSON
-     * @throws SQLException if data or source/path requires correction / 数据、来源或路径需更正时 */
-    private String dataPlan(Snapshot state, ModManifest manifest, SchemaIdentity source) throws SQLException {
-        var schemas = state.schemas().getOrDefault(manifest.id(), Map.of());
-        var plan = JSON.createObjectNode();
-        if (manifest.schemaVersion().isEmpty()) {
-            if (source != null)
-                throw rejected("MOD_SOURCE_NOT_APPLICABLE", "A stateless Mod cannot select a migration source");
-            return plan.put("mode", "NONE").toString();
-        }
-        String target = manifest.schemaVersion().orElseThrow();
-        var ready = schemas.get(target);
-        if (ready != null) {
-            if (!ready.state().equals("READY"))
-                throw rejected("MOD_SCHEMA_RECONCILIATION_REQUIRED",
-                    "The existing target needs its original migration recovery");
-            if (source != null)
-                throw rejected("MOD_SOURCE_NOT_APPLICABLE",
-                    "An existing ready target must be reused without migration");
-            requireCoordinates(manifest.id(), target, ready);
-            return plan.put("mode", "REUSE").put("target", target).put("generation", ready.generation().toString())
-                .toString();
-        }
-        if (schemas.isEmpty()) {
-            if (source != null)
-                throw rejected("MOD_SOURCE_NOT_AVAILABLE", "There is no registered source to migrate");
-            return plan.put("mode", "INITIALIZE").put("target", target).toString();
-        }
-        if (source == null)
-            throw rejected("MOD_MIGRATION_SOURCE_REQUIRED", "Select and confirm an existing source before this change");
-        var original = schemas.get(source.schemaVersion());
-        if (!manifest.id().equals(source.ownerId()) || original == null || !original.state().equals("READY")
-            || !original.generation().equals(source.generation()))
-            throw rejected("MOD_SOURCE_NOT_AVAILABLE", "The confirmed original data source is unavailable");
-        requireCoordinates(manifest.id(), source.schemaVersion(), original);
-        var paths = new HashMap<String, List<ModManifest.Migration>>();
-        var counts = new HashMap<String, Integer>();
-        paths.put(source.schemaVersion(), List.of());
-        counts.put(source.schemaVersion(), 1);
-        var edges = new ArrayList<>(manifest.migrations());
-        edges.sort(Comparator.comparing(e -> new java.math.BigInteger(e.from())));
-        for (var edge : edges) {
-            int count = counts.getOrDefault(edge.from(), 0);
-            if (count == 0)
-                continue;
-            counts.merge(edge.to(), count, (a, b) -> Math.min(2, a + b));
-            var steps = new ArrayList<>(paths.get(edge.from()));
-            steps.add(edge);
-            paths.put(edge.to(), List.copyOf(steps));
-        }
-        if (counts.getOrDefault(target, 0) != 1)
-            throw rejected("MOD_MIGRATION_PATH_INVALID",
-                "The selected source needs exactly one declared migration path");
-        plan.put("mode", "MIGRATE").put("target", target).put("source", source.schemaVersion()).put("generation",
-            source.generation().toString());
-        plan.set("steps", JSON.valueToTree(paths.get(target)));
-        return plan.toString();
-    }
-
-    /** Verifies original physical data coordinates before accepting reuse or migration. / 接纳复用或迁移前核验原物理数据坐标。
-     * @param owner exact owner / 精确所有者
-     * @param version logical data version / 逻辑数据版本
-     * @param data stored data identity / 已存数据身份
-     * @throws SQLException if coordinates differ / 坐标不符时 */
-    private static void requireCoordinates(String owner, String version, SchemaState data) throws SQLException {
-        var coordinates = new SchemaCoordinates(new SchemaIdentity(owner, version, data.generation()));
-        if (!coordinates.physicalName().equals(data.physical()) || !coordinates.databaseUser().equals(data.user()))
-            throw rejected("MOD_SCHEMA_IDENTITY", "The registered data identity does not match its original owner");
     }
 
     /** Reads the complete decision-relevant catalog under the platform lock. / 在平台锁内读取完整决策相关目录。
@@ -1194,6 +1163,101 @@ public final class PlatformModIntents implements AutoCloseable {
          * @return operation result / 操作结果
          * @throws SQLException if the operation cannot complete / 操作无法完成时 */
         T run(Connection connection) throws SQLException;
+    }
+
+    /** Plans exact data preparation and validates retained identities and target resource release. / 计划精确数据准备并校验保留身份及目标资源释放。 */
+    private static final class SchemaPreparation {
+        /** Requires physically released target task ownership, including claims by another Mod. / 要求目标任务归属物理释放，包括其他 Mod 的占用。
+         * @param c original locked transaction / 原已锁事务
+         * @param owner exact preparation owner / 精确准备所有者
+         * @throws SQLException if work still owns this target / 工作仍占用此目标时 */
+        private static void requireIdle(Connection c, String owner) throws SQLException {
+            try (var p = c.prepareStatement(
+                "SELECT (SELECT COUNT(*) FROM platform_task WHERE owner_id=? AND state<>'ENDED')+(SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND (owner_id=? OR resource_kind='MOD' AND resource_id=?))")) {
+                for (int i = 1; i <= 3; i++)
+                    p.setString(i, owner);
+                try (var r = p.executeQuery()) {
+                    r.next();
+                    if (r.getLong(1) != 0)
+                        throw rejected("MOD_PREPARATION_BUSY", "Original task resources must be released before first preparation");
+                }
+            }
+        }
+
+        /** Selects reuse, first initialization or an explicitly confirmed unique migration path. / 选择复用、首次初始化或明确确认的唯一迁移路径。
+         * @param state original catalog / 原目录
+         * @param manifest selected release / 已选发布
+         * @param source explicitly selected source, or null / 明确选择的来源或空
+         * @return durable data preparation JSON / 持久数据准备 JSON
+         * @throws SQLException if data or source/path requires correction / 数据、来源或路径需更正时 */
+        private static String plan(Snapshot state, ModManifest manifest, SchemaIdentity source) throws SQLException {
+            var schemas = state.schemas().getOrDefault(manifest.id(), Map.of());
+            var plan = JSON.createObjectNode();
+            if (manifest.schemaVersion().isEmpty()) {
+                if (source != null)
+                    throw rejected("MOD_SOURCE_NOT_APPLICABLE", "A stateless Mod cannot select a migration source");
+                return plan.put("mode", "NONE").toString();
+            }
+            String target = manifest.schemaVersion().orElseThrow();
+            var ready = schemas.get(target);
+            if (ready != null) {
+                if (!ready.state().equals("READY"))
+                    throw rejected("MOD_SCHEMA_RECONCILIATION_REQUIRED",
+                        "The existing target needs its original migration recovery");
+                if (source != null)
+                    throw rejected("MOD_SOURCE_NOT_APPLICABLE",
+                        "An existing ready target must be reused without migration");
+                requireCoordinates(manifest.id(), target, ready);
+                return plan.put("mode", "REUSE").put("target", target).put("generation", ready.generation().toString())
+                    .toString();
+            }
+            if (schemas.isEmpty()) {
+                if (source != null)
+                    throw rejected("MOD_SOURCE_NOT_AVAILABLE", "There is no registered source to migrate");
+                return plan.put("mode", "INITIALIZE").put("target", target).toString();
+            }
+            if (source == null)
+                throw rejected("MOD_MIGRATION_SOURCE_REQUIRED", "Select and confirm an existing source before this change");
+            var original = schemas.get(source.schemaVersion());
+            if (!manifest.id().equals(source.ownerId()) || original == null || !original.state().equals("READY")
+                || !original.generation().equals(source.generation()))
+                throw rejected("MOD_SOURCE_NOT_AVAILABLE", "The confirmed original data source is unavailable");
+            requireCoordinates(manifest.id(), source.schemaVersion(), original);
+            var paths = new HashMap<String, List<ModManifest.Migration>>();
+            var counts = new HashMap<String, Integer>();
+            paths.put(source.schemaVersion(), List.of());
+            counts.put(source.schemaVersion(), 1);
+            var edges = new ArrayList<>(manifest.migrations());
+            edges.sort(Comparator.comparing(e -> new java.math.BigInteger(e.from())));
+            for (var edge : edges) {
+                int count = counts.getOrDefault(edge.from(), 0);
+                if (count == 0)
+                    continue;
+                counts.merge(edge.to(), count, (a, b) -> Math.min(2, a + b));
+                var steps = new ArrayList<>(paths.get(edge.from()));
+                steps.add(edge);
+                paths.put(edge.to(), List.copyOf(steps));
+            }
+            if (counts.getOrDefault(target, 0) != 1)
+                throw rejected("MOD_MIGRATION_PATH_INVALID",
+                    "The selected source needs exactly one declared migration path");
+            plan.put("mode", "MIGRATE").put("target", target).put("source", source.schemaVersion()).put("generation",
+                source.generation().toString());
+            plan.set("steps", JSON.valueToTree(paths.get(target)));
+            return plan.toString();
+        }
+
+        /** Verifies original physical data coordinates before accepting reuse or migration. / 接纳复用或迁移前核验原物理数据坐标。
+         * @param owner exact owner / 精确所有者
+         * @param version logical data version / 逻辑数据版本
+         * @param data stored data identity / 已存数据身份
+         * @throws SQLException if coordinates differ / 坐标不符时 */
+        private static void requireCoordinates(String owner, String version, SchemaState data) throws SQLException {
+            var coordinates = new SchemaCoordinates(new SchemaIdentity(owner, version, data.generation()));
+            if (!coordinates.physicalName().equals(data.physical()) || !coordinates.databaseUser().equals(data.user()))
+                throw rejected("MOD_SCHEMA_IDENTITY", "The registered data identity does not match its original owner");
+        }
+
     }
 
     /** Decision-relevant owner state. / 决策相关所有者状态。

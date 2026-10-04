@@ -121,8 +121,12 @@ class ConfiguredRuntimeTest {
             try {
                 onEdt(() -> {
                     var tabs = (JTabbedPane) named(window, "platform.pages");
-                    assertEquals(1, tabs.getTabCount());
+                    assertEquals(2, tabs.getTabCount());
+                    assertEquals(List.of(MessageCatalog.forLanguageTag("zh-CN").text("shell.home"),
+                            MessageCatalog.forLanguageTag("zh-CN").text("security.settings")),
+                        java.util.stream.IntStream.range(0, tabs.getTabCount()).mapToObj(tabs::getTitleAt).toList());
                     assertEquals("展开导航", ((JButton) named(window, "navigation.collapse")).getToolTipText());
+                    tabs.setSelectedIndex(tabs.indexOfTab(MessageCatalog.forLanguageTag("zh-CN").text("security.settings")));
                     assertTrue(((JToggleButton) named(window, "settings.advanced")).isSelected());
                     assertTrue(named(window, "settings.uiDebug").isShowing());
                     assertTrue(descendants(window).noneMatch(c -> "mods.store".equals(c.getName()) || "mods.management".equals(c.getName()) || "mods.navigation".equals(c.getName())));

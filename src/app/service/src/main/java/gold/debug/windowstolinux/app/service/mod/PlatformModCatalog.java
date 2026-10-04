@@ -15,12 +15,11 @@ import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.connect.StoreConnections;
 import gold.debug.windowstolinux.app.mod.dev.DevelopmentInfo;
 import gold.debug.windowstolinux.app.mod.dev.DevelopmentModFinder;
-import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
-/** Registers verified CLASS builds without enabling them or changing an existing selection. / 登记已核验 CLASS 构建，不启用它们或改变已有单选。 */
+/** Registers verified CLASS builds and initializes new development identities only at requested startup. / 登记已核验 CLASS 构建，仅在请求的启动中初始化新开发身份。 */
 public final class PlatformModCatalog {
     /** Original physical engine boot. / 原物理引擎启动身份。 */
     private final UUID boot;
@@ -59,6 +58,15 @@ public final class PlatformModCatalog {
      * @return current registered builds and retained source failures / 当前登记构建及保留来源失败
      * @throws IOException if workspace discovery itself is unavailable / 工作区发现本身不可用时 */
     public Result refresh(Path workspace) throws IOException {
+        return refresh(workspace, false);
+    }
+
+    /** Registers current builds and optionally enables only identities created in this startup. / 登记当前构建，可选仅启用本次启动新建的身份。
+     * @param workspace explicit canonical development root / 明示规范开发根
+     * @param enableNew whether this is an opted-in CLASS startup / 是否为明确开启自动接入的 CLASS 启动
+     * @return current builds and independent rejections / 当前构建及独立拒绝
+     * @throws IOException if discovery is unavailable / 发现不可用时 */
+    public Result refresh(Path workspace, boolean enableNew) throws IOException {
         requireWorker();
         var discovered = DevelopmentModFinder.scan(workspace);
         var builds = new ArrayList<Build>();
@@ -67,7 +75,7 @@ public final class PlatformModCatalog {
             try {
                 var build = new Build(candidate, fingerprint(candidate));
                 verify(workspace, build);
-                register(build);
+                register(build, enableNew);
                 builds.add(build);
             } catch (IOException | SQLException failure) {
                 rejected.add(new DevelopmentModFinder.Rejection(candidate.module(), problem(failure, candidate)));
@@ -91,8 +99,9 @@ public final class PlatformModCatalog {
 
     /** Publishes only complete registration facts in the original platform transaction. / 仅在原平台事务内发布完整登记事实。
      * @param build verified compiled content / 已核验编译内容
+     * @param enableNew opted-in startup choice / 明确开启的启动选择
      * @throws SQLException if ownership, retained work or persistence prevents registration / 归属、保留工作或持久化阻止登记时 */
-    private void register(Build build) throws SQLException {
+    private void register(Build build, boolean enableNew) throws SQLException {
         connections.transaction(() -> {
             try (var c = connections.open()) {
                 StoreConnections.lockPlatformState(c);
@@ -107,9 +116,9 @@ public final class PlatformModCatalog {
                 var manifest = candidate.manifest();
                 String owner = manifest.id(), version = manifest.version().toString();
                 long now = System.currentTimeMillis();
-                ensureRegistry(c, owner, now);
+                boolean fresh = ensureRegistry(c, owner, now);
                 reconcileBuild(c, build, owner, version, now);
-                initializeSelection(c, owner, now);
+                initializeSelection(c, owner, version, enableNew && fresh, now);
             }
         });
     }
@@ -250,8 +259,9 @@ public final class PlatformModCatalog {
      * @param c original locked transaction / 原已锁事务
      * @param owner original Mod identity / 原Mod身份
      * @param now original registration timestamp / 原登记时间戳
+     * @return whether this transaction created the identity / 本事务是否创建了身份
      * @throws SQLException if original registration cannot be verified / 原登记不能核实时 */
-    private static void ensureRegistry(Connection c, String owner, long now) throws SQLException {
+    private static boolean ensureRegistry(Connection c, String owner, long now) throws SQLException {
         boolean fresh;
         try (var p = c.prepareStatement("SELECT COUNT(*) FROM mod_registry WHERE mod_id=?")) {
             p.setString(1, owner);
@@ -267,6 +277,7 @@ public final class PlatformModCatalog {
                 p.executeUpdate();
             }
         }
+        return fresh;
     }
 
     /** Reconciles only this exact compiled release inside the original transaction. / 在原事务中仅核对此精确编译发布。
@@ -328,35 +339,22 @@ public final class PlatformModCatalog {
         }
     }
 
-    /** Initializes only a previously untouched selection from actual ready releases. / 仅从实际就绪发布初始化未触碰的选择。
+    /** Initializes only an untouched selection from the unique current discovered build. / 仅从本次唯一发现构建初始化未触碰的选择。
      * @param c original locked transaction / 原已锁事务
      * @param owner original Mod identity / 原Mod身份
+     * @param version unique current build version / 唯一当前构建版本
+     * @param enabled whether this identity was just created in opted-in startup / 此身份是否在明确开启的启动中刚创建
      * @param now original registration timestamp / 原登记时间戳
      * @throws SQLException if original registration cannot be verified / 原登记不能核实时 */
-    private static void initializeSelection(Connection c, String owner, long now) throws SQLException {
-        var versions = new ArrayList<SemanticVersion>();
-        try (var p = c.prepareStatement("SELECT version FROM mod_version WHERE mod_id=? AND state='READY'")) {
-            p.setString(1, owner);
-            try (var r = p.executeQuery()) {
-                while (r.next()) {
-                    try {
-                        versions.add(SemanticVersion.parse(r.getString(1)));
-                    } catch (IllegalArgumentException invalid) {
-                        throw rejected(ProblemCode.INVALID_INPUT, "MOD_CATALOG_VERSION_INVALID",
-                            "Stored release identity is invalid");
-                    }
-                }
-            }
-        }
-        String initial = Collections
-            .max(versions,
-                Comparator.<SemanticVersion>naturalOrder().thenComparing(SemanticVersion::toString))
-            .toString();
+    private static void initializeSelection(Connection c, String owner, String version, boolean enabled, long now)
+        throws SQLException {
         try (var p = c.prepareStatement(
-            "UPDATE mod_registry SET selected_version=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0")) {
-            p.setString(1, initial);
-            p.setLong(2, now);
-            p.setString(3, owner);
+            "UPDATE mod_registry SET selected_version=?,enabled=?,selection_initialized=TRUE,updated_at=? WHERE mod_id=? AND selection_initialized=FALSE AND selected_version IS NULL AND enabled=FALSE AND revision=0 AND NOT EXISTS(SELECT 1 FROM mod_operation WHERE mod_id=? AND state<>'ENDED')")) {
+            p.setString(1, version);
+            p.setBoolean(2, enabled);
+            p.setLong(3, now);
+            p.setString(4, owner);
+            p.setString(5, owner);
             p.executeUpdate();
         }
     }
