@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.app.db.log.*;
 import gold.debug.windowstolinux.app.db.log.LogRecordCodec;
 import gold.debug.windowstolinux.app.db.log.LogStore;
 import gold.debug.windowstolinux.app.mod.config.ManifestReader;
+import gold.debug.windowstolinux.app.mod.config.ModManifest;
 import gold.debug.windowstolinux.app.mod.install.ModPackageReader;
 import gold.debug.windowstolinux.app.mod.version.SemanticVersion;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
@@ -151,6 +152,12 @@ public final class PlatformModInstallation implements AutoCloseable {
          * @return immutable facts / 不可变事实 */
         public ModPackageInfo packageInfo() {
             return PlatformModInstallation.packageInfo(inspection);
+        }
+
+        /** Returns the complete declaration inspected from the original package. / 返回从原包严格检验的完整声明。
+         * @return immutable original declaration / 不可变原声明 */
+        public ModManifest manifest() {
+            return inspection.manifest();
         }
 
         /** Returns the retention choice captured for this request. / 返回此请求捕获的留存选择。

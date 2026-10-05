@@ -6,48 +6,46 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import gold.debug.windowstolinux.appapi.task.result.ApiException;
-import gold.debug.windowstolinux.appapi.task.result.Problem;
-import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import gold.debug.windowstolinux.appapi.task.result.*;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 
-/** Explicit unavailable compatibility implementation; it performs no network calls. / 明确不可用的兼容实现，不发出网络请求。 */
+/** Explicit unavailable source; never invents transport results. / 明确不可用来源，从不伪造传输结果。 */
 public final class UnavailableModStoreGateway implements ModStoreGateway {
-    /** Rejects search while the store transport is disconnected. / 商店传输未接通时拒绝搜索。
-     * @param base configured root / 配置根地址
-     * @param keyword requested keyword / 请求搜索词
-     * @return no result because transport is unavailable / 传输不可用故无结果
-     * @throws ApiException always, with the unavailable contract / 始终抛出不可用合同 */
-    @Override
-    public QueryResult query(URI base, String keyword) throws ApiException {
+    /** Rejects catalog acquisition. / 拒绝目录获取。
+     * @param base configured root / 配置根
+     * @param cancellation cooperative request / 协作请求
+     * @return no fabricated catalog / 不返回伪造目录
+     * @throws ApiException always unavailable / 始终不可用 */
+    public Catalog catalog(URI base, CancelToken cancellation) throws ApiException {
         throw unavailable();
     }
 
-    /** Rejects download without creating a package. / 拒绝下载且不创建包。
-     * @param base configured root / 配置根地址
-     * @param release confirmed release / 已确认发布
-     * @param destination requested package position / 请求包位置
-     * @param progress transfer callback / 传输回调
-     * @return no package because transport is unavailable / 传输不可用故无包
-     * @throws ApiException always, with the unavailable contract / 始终抛出不可用合同 */
-    @Override
-    public DownloadResult download(URI base, Release release, Path destination, Consumer<Progress> progress) throws ApiException {
+    /** Rejects download without creating a file. / 不创建文件而拒绝下载。
+     * @param base configured root / 配置根
+     * @param release confirmed release / 确认发布
+     * @param destination requested child / 请求子文件
+     * @param progress actual observer / 实际观察者
+     * @param cancellation cooperative request / 协作请求
+     * @return no fabricated package / 不返回伪造包
+     * @throws ApiException always unavailable / 始终不可用 */
+    public DownloadResult download(URI base, Release release, Path destination, Consumer<Progress> progress,
+                                   CancelToken cancellation) throws ApiException {
         throw unavailable();
     }
 
-    /** Rejects trust verification while no adapter is connected. / 适配器未接通时拒绝信任验证。
-     * @param release confirmed release / 已确认发布
-     * @param download downloaded package / 下载包
-     * @return no verification because the adapter is unavailable / 适配器不可用故无验证
-     * @throws ApiException always, with the unavailable contract / 始终抛出不可用合同 */
-    @Override
+    /** Rejects unavailable verification. / 拒绝不可用核验。
+     * @param release confirmed declaration / 确认声明
+     * @param download actual file / 实际文件
+     * @return no fabricated verification / 不返回伪造核验
+     * @throws ApiException always unavailable / 始终不可用 */
     public Verification verify(Release release, DownloadResult download) throws ApiException {
         throw unavailable();
     }
 
-    /** Creates truthful service-unavailable feedback. / 创建真实服务不可用反馈。
-     * @return public rejection / 公开拒绝 */
+    /** Creates the truthful original unavailable problem. / 创建真实原不可用问题。
+     * @return actual rejection / 实际拒绝 */
     public static ApiException unavailable() {
         return new ApiException(new Problem(ProblemCode.UNAVAILABLE, "MOD_STORE_UNAVAILABLE",
-            "The Mod store transport is not connected", Map.of(), Optional.empty()));
+            "No store source is configured", Map.of(), Optional.empty()));
     }
 }

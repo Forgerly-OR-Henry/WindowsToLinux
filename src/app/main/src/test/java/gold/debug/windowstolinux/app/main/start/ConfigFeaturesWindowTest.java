@@ -47,16 +47,19 @@ class ConfigFeaturesWindowTest {
         fixture.root = root;
         fixture.compile();
         Path original = fixture.original("window-source.wtlmod", "1.0.0", "模拟商店");
-        var release = new ModStoreGateway.Release("sample.bundle", "1.0.0", "模拟商店包", "仅用于测试适配器验收");
+        var inspection = gold.debug.windowstolinux.app.mod.install.ModPackageReader.read(original);
+        var release = new ModStoreGateway.Release(inspection.manifest(), java.net.URI.create("packages/window.wtlmod"),
+            Files.size(original), inspection.archiveSha256(), Map.of());
         var started = new java.util.concurrent.CountDownLatch(1);
         var finish = new java.util.concurrent.CountDownLatch(1);
         var downloads = new java.util.concurrent.atomic.AtomicInteger();
         ModStoreGateway gateway = new ModStoreGateway() {
-            public QueryResult query(java.net.URI base, String keyword) {
-                return new QueryResult(List.of(release));
+            public Catalog catalog(java.net.URI base, gold.debug.windowstolinux.appapi.task.run.CancelToken cancellation) {
+                return new Catalog("a".repeat(64), List.of(release));
             }
 
-            public DownloadResult download(java.net.URI base, Release value, Path destination, java.util.function.Consumer<Progress> observer) throws Exception {
+            public DownloadResult download(java.net.URI base, Release value, Path destination, java.util.function.Consumer<Progress> observer,
+                                           gold.debug.windowstolinux.appapi.task.run.CancelToken cancellation) throws Exception {
                 downloads.incrementAndGet();
                 Files.copy(original, destination);
                 observer.accept(new Progress(50, 100));
@@ -71,7 +74,8 @@ class ConfigFeaturesWindowTest {
             }
         };
         try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
-            var service = new ModStoreService(Optional.of(java.net.URI.create("https://mods.example.com")), gateway, Optional.of(installer), runtime.security());
+            var service = new ModStoreService(Optional.of(java.net.URI.create("https://mods.example.com")), gateway, Optional.of(installer), runtime.security(),
+                runtime.persistence().database(), root, gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1"));
             var frame = onEdt(() -> {
                 DesktopThemeService.install(ThemeMode.LIGHT);
                 var host = new JFrame("Simulated store acceptance");
@@ -86,19 +90,19 @@ class ConfigFeaturesWindowTest {
             });
             try {
                 idle();
+                var robot = new java.awt.Robot();
+                robot.setAutoDelay(35);
+                var list = (JList<?>) named(frame, "store.results");
+                ModStoreWindowTest.clickArea(robot, list, onEdt(() -> list.getCellBounds(0, 0)));
+                idle();
                 onEdt(() -> {
-                    ((JList<?>) named(frame, "store.results")).setSelectedIndex(0);
                     assertTrue(((JTextArea) named(frame, "store.details")).getText().contains("sample.bundle"));
                     return null;
                 });
-                SwingUtilities.invokeLater(() -> ((JButton) named(frame, "store.install")).doClick(0));
+                ModStoreWindowTest.click(robot, (JComponent) named(frame, "store.install"));
                 await(() -> PlatformServersWindowTest.dialog("store.confirmation") != null);
                 assertEquals(0, downloads.get());
-                onEdt(() -> {
-                    descendants(PlatformServersWindowTest.dialog("store.confirmation")).filter(JOptionPane.class::isInstance)
-                        .map(JOptionPane.class::cast).findFirst().orElseThrow().setValue(JOptionPane.OK_OPTION);
-                    return null;
-                });
+                ModStoreWindowTest.click(robot, (JComponent) named(PlatformServersWindowTest.dialog("store.confirmation"), "store.confirm.accept"));
                 assertTrue(started.await(10, java.util.concurrent.TimeUnit.SECONDS));
                 onEdt(() -> {
                     assertTrue(named(frame, "store.progress").isVisible());
@@ -173,7 +177,8 @@ class ConfigFeaturesWindowTest {
         try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
             var password = "isolated-store-window-password".toCharArray();
             runtime.security().setupAndUnlock(password, password.clone());
-            var service = new ModStoreService(Optional.empty(), new UnavailableModStoreGateway(), Optional.empty(), runtime.security());
+            var service = new ModStoreService(Optional.empty(), new UnavailableModStoreGateway(), Optional.empty(), runtime.security(),
+                runtime.persistence().database(), root, gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse("1.0.0-dev.1"));
             var frame = onEdt(() -> {
                 DesktopThemeService.install(ThemeMode.LIGHT);
                 var host = new JFrame("Store acceptance");
@@ -190,9 +195,9 @@ class ConfigFeaturesWindowTest {
                 idle();
                 onEdt(() -> {
                     ((JTextField) named(frame, "store.search")).setText("保留搜索词");
-                    ((JButton) named(frame, "store.retry")).doClick(0);
                     return null;
                 });
+                ModStoreWindowTest.click(new java.awt.Robot(), (JComponent) named(frame, "store.retry"));
                 idle();
                 onEdt(() -> {
                     assertEquals("保留搜索词", ((JTextField) named(frame, "store.search")).getText());

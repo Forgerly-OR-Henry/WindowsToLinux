@@ -266,6 +266,11 @@ public final class ApplicationLauncher {
         var installation = runtime.startup().layout().mode() == RunModeResolver.RunMode.RUN_CLASS
             ? java.util.Optional.<gold.debug.windowstolinux.app.service.mod.install.PlatformModInstallation>empty()
             : java.util.Optional.of(runtime.modInstallation());
+        var store = new gold.debug.windowstolinux.app.service.mod.store.ModStoreService(
+            runtime.startup().config().storeUrl(),
+            new gold.debug.windowstolinux.app.service.mod.store.HttpModStoreGateway(), installation,
+            runtime.security(), runtime.persistence().database(), runtime.startup().layout().applicationHome(),
+            PlatformBuildIdentity.readApiVersion());
         var actions = new gold.debug.windowstolinux.app.ui.mod.PlatformModsPane.SchemaActions() {
             /** Delegates exact source review to the original graph. / 将精确来源审阅交给原图。
              * @param owner selected owner / 已选所有者
@@ -301,8 +306,7 @@ public final class ApplicationLauncher {
             if (frame.isDisplayable()) {
                 frame.installMods(service, actions);
                 frame.installOriginalPackages(installation);
-                frame.installStore(new gold.debug.windowstolinux.app.service.mod.store.ModStoreService(runtime.startup().config().storeUrl(),
-                    new gold.debug.windowstolinux.app.service.mod.store.UnavailableModStoreGateway(), installation, runtime.security()));
+                frame.installStore(store);
             }
             return null;
         });

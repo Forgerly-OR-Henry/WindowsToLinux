@@ -104,6 +104,19 @@ class ConfigLoaderTest {
     }
 
     @Test
+    void permitsOnlyExplicitSecureOrNumericLoopbackStoreRoots() throws Exception {
+        String yaml = sample();
+        for (String root : new String[]{"https://mods.example.com/api", "http://127.0.0.1:8123/store/", "http://[::1]:8123/store/"})
+            assertEquals(root, load(yaml.replace("base-url: \"\"", "base-url: \"" + root + "\""), "app")
+                .storeUrl().orElseThrow().toString());
+        for (String root : new String[]{"http://localhost:8123/", "http://example.com/", "http://127.0.0.2/",
+            "http://127.0.0.1.example.com/", "//mods.example.com/", "https://user@mods.example.com/",
+            "http://user@127.0.0.1/", "https://mods.example.com/?token=secret", "https://mods.example.com/#part",
+            "https://mods.example.com:0/", "http://127.0.0.1:65536/", "https:/missing-host", "http:/missing-host", "https://[invalid]/"})
+            assertThrows(IOException.class, () -> load(yaml.replace("base-url: \"\"", "base-url: \"" + root + "\""), "app"), root);
+    }
+
+    @Test
     void guideTableCoversAllKeysAndExampleIsActuallyLoadable() throws Exception {
         String guide = Files.readString(root().resolve("docs/Config.md")).replace("\r\n", "\n");
         var matcher = Pattern.compile("(?m)^\\| `([^`]+)` \\|").matcher(guide);

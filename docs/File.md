@@ -6,7 +6,7 @@
 
 本文是当前源码模块、包、命名、依赖和资源归属的结构规范。APP、appapi 与官方 deployment 的现行结构按实际源码核对，最新已确认规则优先于早期改造模板；历史迁移和验收见开发文档。目录或类型存在、编译及静态检查通过不代表真实 Linux、模型提供方或完整业务验收完成。
 
-- 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 15 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`，独立 Git 取材服务在 `mod/git`，独立可选文件管理在 `mod/files`。S0～S4 已完成本机适用验收；文件管理已完成独立作者验证、整体移入、新位置重建与真实 APP 接入验收。
+- 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 15 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`，独立 Git 取材服务在 `mod/git`，独立可选文件管理在 `mod/files`。S0～S5 已完成本机适用验收；文件管理已完成独立作者验证、整体移入、新位置重建与真实 APP 接入验收。
 - APP 与平台自有 API 使用本文命名和分包规则；官方 deployment 采用已确认类名词表，第三方 Mod 的内部命名与组织由作者决定。
 - 本文只维护结构；[AllFile.md](AllFile.md)索引实际生产文件，[Mod.md](Mod.md)维护作者与加载合同，[Runtime.md](Runtime.md)维护运行行为、数据与安全，[APP.md](APP.md)维护发布布局和构建交付；[Config.md](Config.md) 是配置字段和填写方式的唯一集中说明。
 - 更新日期：2026-10-05。现行规则与本机交付见 [1.2 开发文档](development/PHASE-1.2.md#app-structure-rules)，开发区调整及本期验收见 [1.3 开发文档](development/PHASE-1.3.md)，历史改造与后置任务见 [1.1 开发文档](development/PHASE-1.1.md)。
@@ -112,7 +112,7 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │  │  ├─ log/                      # [包]       所属日志访问、维护与应急记录回填
    │  │  ├─ mod/                      # [包]       Mod 管理入口、服务公开与任务所属能力
    │  │  │  ├─ install/               # [包]       Mod 安装、删除、重装及所属资源清理
-   │  │  │  └─ store/                 # [包]       Mod 商店查询、获取及验证的适配
+   │  │  │  └─ store/                 # [包]       Mod 商店完整目录、HTTP获取、依赖解析与逐包安装
    │  │  ├─ process/                  # [包]       任务所属辅助进程的受管访问
    │  │  ├─ secret/                   # [包]       秘密标识、业务引用与原任务授权绑定
    │  │  ├─ security/                 # [包]       解锁、主密码、加密设置与安全会话
@@ -396,7 +396,7 @@ APP 包名使用小写英文，采用常见、准确的名词或动词；`instal
 | 平台服务 | 模型配置与通用调用适配归 `app/service/ai`；其它接口与专属数据分别归 `server`、`file`、`security`、`task` 等功能；文件、传输与导航偏好服务归 `setting`；通用服务错误归 `error`。完整 SSH 救援归 `app/linux/ssh/recover`，Service 不另建救援包。 |
 | SSH 与 SFTP | `app/linux/ssh/connect` 和 `ssh/recover` 有实际独立职责；`ssh/recover` 根包持有救援状态机和原任务恢复；`ai` 保存专用模型与协议，`browser` 保存浏览器及终端控制，`model` 保存共享目标、动作及观测值；`app/linux/sftp` 使用已有受管 SSH 会话承担远端文件协议。DB 的救援存储保留 `db/sshrecover`，救援对话框归 `ui/server`；Service 不保留救援专属包，通用 AI 模块不保存救援专属协议。 |
 | 界面 | 控件和包内协作归 `control`，主窗口归 `window`，通用受管任务启动控件、后台与通用恢复归 `task`，Mod 挂载归 `mod`，调试归 `debug`，语言与错误分别归 `language`、`error`；服务器配置和 SSH 救援对话框归 `server`。 |
-| Mod 平台 | 安装、开发发现、运行与配置分别归 `app/mod/install`、`dev`、`run`、`config`；功能不同不因同词合并模块。服务中的安装、删除、重装和清理成组归 `service/mod/install`，商店适配归 `service/mod/store`。构建命令入口 `ModPackageTool` 归 `app/mod/dev`；`db/mod/ModDeletionLedger` 决定持久删除核验点，通过内部 `FileEvidence` 调用安装层 `PlatformModDeletionFileEvidence`，DB 不依赖 Service，也不自行读取安装文件属性。 |
+| Mod 平台 | 安装、开发发现、运行与配置分别归 `app/mod/install`、`dev`、`run`、`config`；功能不同不因同词合并模块。服务中的安装、删除、重装和清理成组归 `service/mod/install`；完整目录协议、HTTP获取、全局依赖解析和逐包实际安装归 `service/mod/store`，界面草稿与确认归 `ui/mod`。构建命令入口 `ModPackageTool` 归 `app/mod/dev`；`db/mod/ModDeletionLedger` 决定持久删除核验点，通过内部 `FileEvidence` 调用安装层 `PlatformModDeletionFileEvidence`，DB 不依赖 Service，也不自行读取安装文件属性。 |
 
 Windows 更新的清单及签名验证归 `windows/update/check`，状态、事件、版本及失败值归 `windows/update/model`；卸载共享决策、状态及失败值归 `windows/uninstall/model`。流程编排保留各自根包。主密码加密归 `secret`，Mod 导航持久化归 `db/setting`。`db/init`、`db/sshrecover`、`main/runtime`、`ui/debug`、`windows/security` 和 `windows/window` 继续保留独立职责。
 
@@ -687,7 +687,7 @@ UPPER_SNAKE_CASE
 | `ui`      | 平台 Swing 组件、服务表单、页面挂载及本地化                     |
 | `windows` | 原生保护与窗口隐私、文件/进程边界、签名与更新卸载安全核心       |
 
-`app/ui` 的普通平台操作通过服务协作，SSH 救援仅使用第 5.1 节的窄类型；平台装配可组合必要实现，低层实现不反向依赖装配。`app/linux/sftp` 复用受管 SSH 会话承担远端文件协议。Windows 更新、卸载的安全核心存在不等于 S7 独立执行器已经交付。
+`app/ui` 的普通平台操作通过服务协作，商店展示直接使用 `app/mod` 的清单和版本纯值，不调用加载器或安装执行；SSH 救援仅使用第 5.1 节的窄类型。平台装配可组合必要实现，低层实现不反向依赖装配。`app/linux/sftp` 复用受管 SSH 会话承担远端文件协议。Windows 更新、卸载的安全核心存在不等于 S7 独立执行器已经交付。
 
 H2 引擎、连接与事务由 `app/db/connect/PlatformDatabase` 持有；根包 `PlatformStorage` 组合 Store 和生命周期。任务、日志和 Schema 依赖连接层，连接层不反向引用业务存取；口令派生只接收 Schema 层的精确已编码数据库用户名，保留命名空间和算法。
 
@@ -878,7 +878,7 @@ app/ai ──→ app/config, appapi
 app/file ──→ app/windows, appapi
 app/linux ──→ app/config, app/file, app/windows, appapi
 app/mod ──→ appapi
-app/ui ──→ app/config, app/ai, app/service, app/linux, appapi
+app/ui ──→ app/config, app/ai, app/service, app/linux, app/mod, appapi
 app/windows ──→ appapi
 app/db ──→ app/ai, appapi
 app/secret ──→ app/db, appapi

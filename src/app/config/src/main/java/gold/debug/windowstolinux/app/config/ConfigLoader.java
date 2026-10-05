@@ -92,14 +92,7 @@ public final class ConfigLoader {
             Path.of(directory);
             String locale = choice(values, "defaults.locale", Set.of("system", "zh-CN", "en-US"));
             String theme = choice(values, "defaults.theme", Set.of("SYSTEM", "LIGHT", "DARK"));
-            String address = string(values, "mod.store.base-url");
-            Optional<URI> store = Optional.empty();
-            if (!address.isEmpty()) {
-                URI uri = URI.create(address);
-                if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null || uri.getQuery() != null)
-                    throw new IOException("mod.store.base-url must be an absolute HTTPS base URL");
-                store = Optional.of(uri);
-            }
+            Optional<URI> store = storeUrl(string(values, "mod.store.base-url"));
             return new AppConfig(directory,
                 new AppConfig.Ui(bool(values, "ui.navigation-collapsed"), bool(values, "ui.advanced-expanded")),
                 new AppConfig.Defaults(locale, theme, number(values, "defaults.connect-seconds", 86400), number(values, "defaults.idle-seconds", 86400), bool(values, "defaults.delete-ai-explanation")),
@@ -109,6 +102,27 @@ public final class ConfigLoader {
                 number(values, "logs.emergency-records", 100), !mode.equals("class") || bool(values, "mod.auto-load"), store);
         } catch (IllegalArgumentException invalid) {
             throw new IOException("Invalid configuration value: " + invalid.getMessage(), invalid);
+        }
+    }
+
+    /** Validates the configured store root, including the numeric loopback test boundary. / 校验商店根地址，包含数字回环测试边界。
+     * @param address exact configured text or empty / 精确配置文本或空字符串
+     * @return validated root or no configured store / 已校验根地址或未配置商店
+     * @throws IOException if the root is malformed or outside the transport boundary / 根地址无效或越过传输边界时 */
+    public static Optional<URI> storeUrl(String address) throws IOException {
+        if (address.isEmpty()) return Optional.empty();
+        try {
+            URI uri = URI.create(address);
+            boolean local = "http".equals(uri.getScheme())
+                && uri.getHost() != null
+                && Set.of("127.0.0.1", "[::1]").contains(uri.getHost());
+            if ((!"https".equals(uri.getScheme()) && !local) || uri.getHost() == null
+                || uri.getUserInfo() != null || uri.getFragment() != null || uri.getQuery() != null
+                || uri.getPort() == 0 || uri.getPort() > 65535)
+                throw new IOException("mod.store.base-url requires HTTPS or numeric loopback HTTP without credentials, query or fragment");
+            return Optional.of(uri);
+        } catch (IllegalArgumentException invalid) {
+            throw new IOException("Invalid mod.store.base-url", invalid);
         }
     }
 

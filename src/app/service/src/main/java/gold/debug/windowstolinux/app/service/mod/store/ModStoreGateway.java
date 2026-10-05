@@ -3,96 +3,124 @@ package gold.debug.windowstolinux.app.service.mod.store;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
-/** Future store transport and trust adapter; no HTTP or signing implementation is supplied. / 后续商店传输及信任适配器，本期不提供 HTTP 或签名实现。 */
+import gold.debug.windowstolinux.app.mod.config.ModManifest;
+import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+
+/** Complete catalog and ordinary package transport boundary. / 完整目录及普通包传输边界。 */
 public interface ModStoreGateway {
-    /** Advertised immutable release. / 商店声明的不可变发布。
-     * @param owner stable Mod identity / 稳定 Mod 身份
-     * @param version semantic release / 语义版本
-     * @param title display title / 展示标题
-     * @param description plain-text details / 纯文本详情 */
-    record Release(String owner, String version, String title, String description) {
-        /** Validates identities before any download. / 下载前验证身份。
-         * @param owner stable identity / 稳定身份
-         * @param version semantic version / 语义版本
-         * @param title display title / 展示标题
-         * @param description plain text / 纯文本 */
+    /** One complete obtainable declaration. / 一份完整可获取声明。
+     * @param manifest strict author declaration / 严格作者声明
+     * @param packageUri relative same-origin package URI / 相对同源包 URI
+     * @param bytes exact archive size / 精确归档大小
+     * @param sha256 exact archive digest / 精确归档摘要
+     * @param purposes explicit dependency purposes / 明确依赖用途 */
+    record Release(ModManifest manifest, URI packageUri, long bytes, String sha256, Map<String, String> purposes) {
+        /** Copies bounded declarations before requests. / 请求前复制有界声明。
+         * @param manifest strict declaration / 严格声明
+         * @param packageUri relative package URI / 相对包 URI
+         * @param bytes exact archive size / 精确归档大小
+         * @param sha256 exact archive digest / 精确归档摘要
+         * @param purposes explicit dependency purposes / 明确依赖用途 */
         public Release {
-            if (owner == null || !owner.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*") || owner.length() > 512)
-                throw new IllegalArgumentException("Invalid store Mod identity");
-            gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse(version);
-            if (title == null || title.isBlank() || title.length() > 256 || description == null || description.length() > 32768)
-                throw new IllegalArgumentException("Invalid store release details");
+            java.util.Objects.requireNonNull(manifest);
+            ModStoreProtocol.relative(packageUri);
+            if (bytes < 1 || bytes > gold.debug.windowstolinux.app.mod.install.ModPackageReader.MAX_BYTES
+                || sha256 == null || !sha256.matches("[0-9a-f]{64}"))
+                throw new IllegalArgumentException("Invalid package size or SHA256");
+            purposes = Map.copyOf(purposes);
+            for (var purpose : purposes.entrySet())
+                if (purpose.getValue().isBlank() || purpose.getValue().length() > 4096
+                    || manifest.dependencies().stream().noneMatch(d -> d.id().equals(purpose.getKey())))
+                    throw new IllegalArgumentException("Purpose must name an actual dependency");
+        }
+
+        /** Returns exact identity. / 返回精确身份。
+         * @return author Mod ID / 作者 Mod ID */
+        public String owner() {
+            return manifest.id();
+        }
+
+        /** Returns canonical version. / 返回规范版本。
+         * @return canonical version / 规范版本 */
+        public String version() {
+            return manifest.version().toString();
+        }
+
+        /** Returns author display name. / 返回作者展示名。
+         * @return plain display name / 纯文本展示名 */
+        public String title() {
+            return manifest.name();
+        }
+
+        /** Returns actual author description. / 返回实际作者说明。
+         * @return declared description or empty / 声明说明或空 */
+        public String description() {
+            return manifest.description().orElse("");
         }
     }
 
-    /** Bounded search result. / 有界搜索结果。
-     * @param releases advertised releases / 声明发布 */
-    record QueryResult(List<Release> releases) {
-        /** Copies releases and enforces the search result bound. / 复制发布并执行搜索结果界限。
-         * @param releases bounded advertised releases copied immutably / 不可变复制的有界声明发布 */
-        public QueryResult {
+    /** Complete transport snapshot. / 完整传输快照。
+     * @param sha256 complete catalog byte digest / 完整目录字节摘要
+     * @param releases all advertised versions / 全部声明版本 */
+    record Catalog(String sha256, List<Release> releases) {
+        /** Copies the bounded catalog. / 复制有界目录。
+         * @param sha256 complete byte digest / 完整字节摘要
+         * @param releases all releases / 全部发布 */
+        public Catalog {
             releases = List.copyOf(releases);
-            if (releases.size() > 1000) throw new IllegalArgumentException("Too many store results");
+            if (releases.size() > 1000) throw new IllegalArgumentException("Catalog exceeds 1000 releases");
         }
     }
 
-    /** Downloaded ordinary package result. / 下载普通包结果。
-     * @param file exact destination / 精确目标 */
+    /** Actual download position. / 实际下载位置。
+     * @param file exact requested ordinary file / 精确请求普通文件 */
     record DownloadResult(Path file) {
-        /** Requires an actual package position. / 要求实际包位置。
-         * @param file required downloaded package position / 必需的下载包位置 */
-        public DownloadResult {
-            java.util.Objects.requireNonNull(file);
-        }
     }
 
-    /** Trust verification result, independent of package structural checks. / 独立于包结构检查的信任验证结果。
-     * @param verified adapter-confirmed verification / 适配器确认验证
-     * @param detail plain-text explanation / 纯文本说明 */
+    /** Integrity result, not a publisher signature. / 完整性结果，不是发布者签名。
+     * @param verified whether bytes and digest match / 字节及摘要是否匹配
+     * @param detail plain explanation / 纯文本说明 */
     record Verification(boolean verified, String detail) {
-        /** Requires an explanation for the trust result. / 要求信任结果具备说明。
-         * @param verified adapter-confirmed trust result / 适配器确认的信任结果
-         * @param detail required plain-text explanation / 必需纯文本说明 */
-        public Verification {
-            java.util.Objects.requireNonNull(detail);
-        }
     }
 
-    /** Current transfer progress. / 当前传输进度。
-     * @param completed bytes downloaded / 已下载字节
-     * @param total known bytes, zero if unknown / 已知总字节，未知为零 */
+    /** Actual transfer progress. / 实际传输进度。
+     * @param completed received bytes / 已收字节
+     * @param total declared exact size / 声明精确大小 */
     record Progress(long completed, long total) {
-        /** Rejects negative or inconsistent transfer progress. / 拒绝负数或矛盾的传输进度。
-         * @param completed downloaded byte count / 已下载字节数
-         * @param total known total or zero when unknown / 已知总数，未知为零 */
+        /** Requires actual consistent byte observations. / 要求实际一致的字节观察。
+         * @param completed actual received bytes / 实际收到字节
+         * @param total exact expected size or zero / 精确预期大小或零 */
         public Progress {
             if (completed < 0 || total < 0 || total != 0 && completed > total)
-                throw new IllegalArgumentException("Invalid download progress");
+                throw new IllegalArgumentException("Invalid actual transfer progress");
         }
     }
 
-    /** Queries on explicit user requests. / 仅由明确用户请求查询。
-     * @param base configured base / 配置基址
-     * @param keyword preserved search term / 保留搜索词
-     * @return actual result / 实际结果
-     * @throws Exception if service is unavailable / 服务不可用时 */
-    QueryResult query(URI base, String keyword) throws Exception;
+    /** Fetches the complete catalog. / 获取完整目录。
+     * @param base validated root / 已校验根
+     * @param cancellation cooperative request / 协作请求
+     * @return complete actual catalog / 完整实际目录
+     * @throws Exception if acquisition fails / 获取失败时 */
+    Catalog catalog(URI base, CancelToken cancellation) throws Exception;
 
-    /** Writes a new package to the requested destination without replacing existing files. / 向请求目标写新包，不覆盖既有文件。
-     * @param base configured base / 配置基址
-     * @param release confirmed release / 已确认发布
-     * @param destination new ordinary mod-zip child / 新普通 mod-zip 子文件
-     * @param progress transfer callback / 传输回调
-     * @return actual downloaded package / 实际下载包
-     * @throws Exception if download fails / 下载失败时 */
-    DownloadResult download(URI base, Release release, Path destination, Consumer<Progress> progress) throws Exception;
+    /** Writes the requested new package. / 写请求的新包。
+     * @param base validated root / 已校验根
+     * @param release exact confirmed release / 精确确认发布
+     * @param destination new ordinary child / 新普通子文件
+     * @param progress actual transfer observer / 实际传输观察者
+     * @param cancellation cooperative request / 协作请求
+     * @return actual complete package / 实际完整包
+     * @throws Exception if transfer fails or is cancelled / 传输失败或取消时 */
+    DownloadResult download(URI base, Release release, Path destination, Consumer<Progress> progress,
+                            CancelToken cancellation) throws Exception;
 
-    /** Verifies transport integrity and future trust policy before installation review. / 安装审阅前验证传输完整性及后续信任策略。
+    /** Rechecks file integrity before review. / 审阅前复核文件完整性。
      * @param release confirmed declaration / 已确认声明
-     * @param download actual package / 实际包
-     * @return verified or rejected evidence / 验证或拒绝依据
-     * @throws Exception if verification is unavailable / 验证不可用时 */
+     * @param download actual file / 实际文件
+     * @return actual integrity result / 实际完整性结果
+     * @throws Exception if verification fails / 核验失败时 */
     Verification verify(Release release, DownloadResult download) throws Exception;
 }
