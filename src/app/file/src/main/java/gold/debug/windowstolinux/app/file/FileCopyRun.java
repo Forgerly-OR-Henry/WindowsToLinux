@@ -199,7 +199,7 @@ final class FileCopyRun {
      */
     private FilePath linkTarget(FileCopyPlan.Step step) throws IOException {
         FilePath old = resolveTarget(step.original, step.source.target().orElseThrow()), mapped = plan.mapping.get(old);
-        if (isInside(old, plan.source.actual()) && plan.source.kind() == FileInfo.Kind.DIRECTORY) {
+        if (plan.source.kind() == FileInfo.Kind.DIRECTORY && (old.equals(plan.source.actual()) || isInside(old, plan.source.actual()))) {
             boolean absent = origin.backend().stat(old).isEmpty();
             if (!absent || mapped != null) {
                 FilePath required = old;

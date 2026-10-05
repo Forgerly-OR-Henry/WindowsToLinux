@@ -32,6 +32,59 @@ class FileApprovalIntegrationTest {
     @TempDir
     Path root;
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void cancelledOriginalCopyOrMoveApprovalReportsCancellationWithoutChangingFiles(boolean move) throws Exception {
+        Path input = Files.writeString(root.resolve("original.txt"), "original survives");
+        Path output = root.resolve("not-created.txt");
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        try (var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            runtime.setSourcePicker((title, task, cancel) -> root);
+            runtime.setInteractionPresenter(new PlatformInteractionTest.Prompts() {
+                @Override
+                public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancel) {
+                    entered.countDown();
+                    try {
+                        assertTrue(release.await(20, TimeUnit.SECONDS));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new AssertionError(interrupted);
+                    }
+                    return true;
+                }
+            });
+            try (var file = runtime.capabilities().source(OWNER, VERSION)) {
+                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                    var failure = assertThrows(ApiException.class, () -> {
+                        if (move) file.moveFile(FilePath.local(input), FilePath.local(output), task);
+                        else file.copyFile(FilePath.local(input), FilePath.local(output), task);
+                    });
+                    assertEquals(ProblemCode.CANCELLED, failure.problem().code());
+                    assertEquals("FILE_OPERATION_CANCELLED", failure.problem().eventCode());
+                    assertEquals("original survives", Files.readString(input));
+                    assertFalse(Files.exists(output));
+                    assertTrue(file.operations(task).stream().flatMap(operation -> operation.steps().stream())
+                        .noneMatch(step -> step.phase().startsWith("BEFORE_TARGET") || step.phase().equals("BEFORE_SOURCE_REMOVE")));
+                    return new OperationResult<Void>(TaskResult.CANCELLED, Optional.empty(), Optional.of(failure.problem()));
+                });
+                try {
+                    assertTrue(entered.await(20, TimeUnit.SECONDS));
+                    handle.requestCancel();
+                } finally {
+                    release.countDown();
+                }
+                assertEquals(TaskResult.CANCELLED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                assertEquals("original survives", Files.readString(input));
+                assertFalse(Files.exists(output));
+            }
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            release.countDown();
+        }
+    }
+
     void presenters(PlatformRuntime runtime, AtomicInteger humans, boolean decision) {
         runtime.setSourcePicker((title, task, cancel) -> root);
         runtime.setInteractionPresenter(new PlatformInteractionTest.Prompts() {

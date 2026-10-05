@@ -12,5 +12,6 @@
   <modules>
     <module>git</module>
     <module>deployment</module>
+    <module>files</module>
   </modules>
 </project>
