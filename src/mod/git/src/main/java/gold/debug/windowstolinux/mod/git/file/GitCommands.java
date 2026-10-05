@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.mod.deployment.file.git;
+package gold.debug.windowstolinux.mod.git.file;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -13,7 +13,7 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Runs fixed Git argv inside the worker and waits for the original process, observed descendants and pipes. / 在 worker 内运行固定 Git 参数并等待原进程、已观察后代及管道退出。 */
-final class DeploymentGitCommands {
+final class GitCommands {
     /** Exact native Git executable. / 精确原生 Git 可执行文件。 */
     private final Path executable;
 
@@ -35,7 +35,7 @@ final class DeploymentGitCommands {
      * @param control private control files / 私有控制文件
      * @param cancelled cooperative cancellation / 协作取消
      * @param local explicit local permission / 明确本地许可 */
-    DeploymentGitCommands(Path executable, Path checkout, Path control, BooleanSupplier cancelled, boolean local) {
+    GitCommands(Path executable, Path checkout, Path control, BooleanSupplier cancelled, boolean local) {
         this.executable = executable;
         this.checkout = checkout;
         this.control = control;
@@ -50,7 +50,7 @@ final class DeploymentGitCommands {
      * @throws ApiException if cancelled, unavailable, oversized or unsuccessful / 取消、不可用、超限或不成功时 */
     byte[] run(List<String> arguments, int maximum) throws ApiException {
         if (cancelled.getAsBoolean())
-            throw problem(ProblemCode.CANCELLED, "DEPLOYMENT_GIT_CANCELLED");
+            throw problem(ProblemCode.CANCELLED, "GIT_SOURCE_CANCELLED");
         var command = configured(arguments);
         Process process;
         try {
@@ -58,23 +58,23 @@ final class DeploymentGitCommands {
             environment(builder.environment());
             process = builder.start();
         } catch (IOException failure) {
-            throw problem(ProblemCode.UNAVAILABLE, "DEPLOYMENT_GIT_TOOL");
+            throw problem(ProblemCode.UNAVAILABLE, "GIT_SOURCE_TOOL");
         }
         var output = new Capture(process.getInputStream(), maximum);
-        var reader = Thread.ofVirtual().name("deployment-git-output").start(output);
+        var reader = Thread.ofVirtual().name("git-source-output").start(output);
         var observed = observe(process, reader);
         if (process.exitValue() < 0)
-            throw problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_NATIVE_CRASH");
+            throw problem(ProblemCode.UNKNOWN, "GIT_SOURCE_NATIVE_CRASH");
         if (cancelled.getAsBoolean() || observed.interrupted())
-            throw problem(ProblemCode.CANCELLED, "DEPLOYMENT_GIT_CANCELLED");
+            throw problem(ProblemCode.CANCELLED, "GIT_SOURCE_CANCELLED");
         if (observed.timedOut())
-            throw problem(ProblemCode.TIMEOUT, "DEPLOYMENT_GIT_TIMEOUT");
+            throw problem(ProblemCode.TIMEOUT, "GIT_SOURCE_TIMEOUT");
         if (observed.inputCloseFailed() || output.failure != null || output.exceeded)
-            throw problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_GIT_OUTPUT");
+            throw problem(ProblemCode.IO_FAILURE, "GIT_SOURCE_OUTPUT");
         byte[] bytes = output.bytes.toByteArray();
         if (process.exitValue() != 0)
             throw problem(ProblemCode.IO_FAILURE,
-                transientFailure(bytes) ? "DEPLOYMENT_GIT_TRANSIENT" : "DEPLOYMENT_GIT_COMMAND");
+                transientFailure(bytes) ? "GIT_SOURCE_TRANSIENT" : "GIT_SOURCE_COMMAND");
         return bytes;
     }
 
@@ -132,7 +132,7 @@ final class DeploymentGitCommands {
                 process.getErrorStream().close();
                 process.getOutputStream().close();
             } catch (IOException failure) {
-                throw problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_PIPE_CLOSE");
+                throw problem(ProblemCode.UNKNOWN, "GIT_SOURCE_PIPE_CLOSE");
             } finally {
                 if (interrupted)
                     Thread.currentThread().interrupt();

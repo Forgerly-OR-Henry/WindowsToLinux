@@ -382,7 +382,7 @@ class PackageStructureArchitectureTest {
         }
         var modules = MavenModuleGraph.read(root);
         assertEquals(
-            Set.of("appapi", "mod/deployment", "app/config", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
+            Set.of("appapi", "mod/deployment", "mod/git", "app/config", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
                 "app/service", "app/file", "app/ui", "app/windows"),
             modules.stream().filter(module -> !module.aggregate()).map(MavenModuleGraph.Module::path)
                 .collect(java.util.stream.Collectors.toSet()));
@@ -478,9 +478,9 @@ class PackageStructureArchitectureTest {
             assertTrue(periodNames.isEmpty(), () -> "production paths contain period names: " + periodNames);
         }
         String structure = Files.readString(root.resolve("docs/File.md"));
-        assertTrue(structure.contains("13 个 Maven 叶子模块"));
+        assertTrue(structure.contains("14 个 Maven 叶子模块"));
         for (String required : List.of("db/connect", "linux/sftp", "linux/ssh/recover", "service/ai", "appapi",
-            "mod/deployment"))
+            "mod/deployment", "mod/git"))
             assertTrue(structure.contains(required), () -> "File.md is missing the active responsibility: " + required);
         for (String required : List.of("app/main/src/main/java/gold/debug/windowstolinux/app/main/start",
             "app/db/src/main/java/gold/debug/windowstolinux/app/db/schema",
@@ -1127,7 +1127,7 @@ class PackageStructureArchitectureTest {
         "service", "ui", "windows");
 
     private static final Set<String> API_PACKAGES = Set.of("ai", "ai.model", "ai.voice", "ai.vision", "db", "db.schema",
-        "file", "file.model", "file.query", "file.action", "file.source", "file.snapshot", "file.work", "linux",
+        "file", "file.model", "file.query", "file.action", "file.source", "file.snapshot", "file.work", "file.material", "linux",
         "linux.action", "linux.command", "linux.session", "linux.transfer", "mod", "mod.lifecycle", "mod.model",
         "mod.service", "secret", "secret.access", "secret.model", "secret.ref", "server", "server.model",
         "server.ref", "task", "task.run", "task.recover", "task.query", "task.model", "task.result",
@@ -1165,7 +1165,7 @@ class PackageStructureArchitectureTest {
         for (String relative : API_PACKAGES)
             verifyPackageLayout("gold.debug.windowstolinux.appapi." + relative,
                 relative.split("\\.").length - 1, problems);
-        assertEquals(41, API_PACKAGES.size());
+        assertEquals(42, API_PACKAGES.size());
         assertTrue(problems.isEmpty(), () -> "registered public API packages rejected: " + problems);
         for (String relative : List.of("task.error", "task.util", "file.transfer", "task.run.internal",
             "server.ref.model", "ai.voice.realtime")) {
@@ -1181,7 +1181,7 @@ class PackageStructureArchitectureTest {
     }
 
     @Test
-    void publicApiFileEntryOnlyComposesTheFiveResponsibilitiesAndCleanup() throws Exception {
+    void publicApiFileEntryOnlyComposesTheSixResponsibilitiesAndCleanup() throws Exception {
         checkFileEntry(Files.readString(projectRoot().resolve(
             "src/appapi/src/main/java/gold/debug/windowstolinux/appapi/file/FileService.java")));
     }
@@ -1194,6 +1194,7 @@ class PackageStructureArchitectureTest {
         for (var type : Map.of("FileQueryService", "file.query.FileQueryService",
             "FileActionService", "file.action.FileActionService", "FileSourceService", "file.source.FileSourceService",
             "FileSnapshotService", "file.snapshot.FileSnapshotService", "FileWorkspaceService", "file.work.FileWorkspaceService",
+            "FileMaterialService", "file.material.FileMaterialService",
             "TaskContext", "task.run.TaskContext", "ApiException", "task.result.ApiException").entrySet())
             fullyQualified = fullyQualified.replaceAll("\\b" + type.getKey() + "\\b", "gold.debug.windowstolinux.appapi." + type.getValue());
         checkFileEntry(fullyQualified);
@@ -1264,7 +1265,8 @@ class PackageStructureArchitectureTest {
             String prefix = "gold.debug.windowstolinux.appapi.file.";
             assertEquals(Map.of("queries", prefix + "query.FileQueryService", "actions", prefix + "action.FileActionService",
                 "sources", prefix + "source.FileSourceService", "snapshots", prefix + "snapshot.FileSnapshotService",
-                "workspaces", prefix + "work.FileWorkspaceService", "closeTaskResources", "void"), actual);
+                "workspaces", prefix + "work.FileWorkspaceService", "materials", prefix + "material.FileMaterialService",
+                "closeTaskResources", "void"), actual);
         }
     }
 
@@ -1390,12 +1392,26 @@ class PackageStructureArchitectureTest {
                     .map(name -> name.substring(prefix.length()).split("\\.")[0]).orElse("");
                 if (!unit.packageName.equals(prefix + owner) && target.filter((prefix + owner)::equals).isPresent())
                     violations.add(unit.path + " makes a secondary contract depend on its capability entry: " + imported);
-                if (target.isEmpty() || !target.get().equals(unit.packageName)
-                    && !targetCapability.equals(owner) && !allowed.get(owner).contains(targetCapability))
+                if (!materialSchemaIdentity(unit.packageName, imported) && (target.isEmpty() || !target.get().equals(unit.packageName)
+                    && !targetCapability.equals(owner) && !allowed.get(owner).contains(targetCapability)))
                     violations.add(unit.path + " -> " + imported);
             }
         }
         assertTrue(violations.isEmpty(), () -> "public API dependency direction violations: " + violations);
+    }
+
+    private static boolean materialSchemaIdentity(String owner, String reference) {
+        return owner.equals("gold.debug.windowstolinux.appapi.file.material")
+            && reference.equals("gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity");
+    }
+
+    @Test
+    void materialIdentityExceptionCannotExposeFileDatabaseExecution() {
+        String file = "gold.debug.windowstolinux.appapi.file.material";
+        assertTrue(materialSchemaIdentity(file, "gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity"));
+        for (String type : List.of("ModDatabase", "schema.SchemaAccess", "schema.SchemaMigration", "schema.*"))
+            assertFalse(materialSchemaIdentity(file, "gold.debug.windowstolinux.appapi.db." + type));
+        assertFalse(materialSchemaIdentity("gold.debug.windowstolinux.appapi.file.work", "gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity"));
     }
 
     @Test
@@ -1888,7 +1904,7 @@ class PackageStructureArchitectureTest {
                 }.scan(declaration, null);
             }
         }
-        assertEquals(Set.of("AppMain.java:main", "DeploymentGitWorker.java:main", "ModPackageTool.java:main"),
+        assertEquals(Set.of("AppMain.java:main", "GitWorker.java:main", "ModPackageTool.java:main"),
             new HashSet<>(entrypoints));
         assertEquals(3, entrypoints.size());
     }

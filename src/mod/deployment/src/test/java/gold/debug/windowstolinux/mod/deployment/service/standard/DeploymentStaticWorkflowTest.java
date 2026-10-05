@@ -39,6 +39,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Exercises frozen-source discovery, edited input and archive confirmation within one real CLASS/H2 task. / 在真实CLASS/H2同一任务中验证冻结来源发现、编辑输入及归档确认。 */
 class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
+    private boolean gitScenario;
+
+    @Override
+    protected boolean gitEnabled() {
+        return gitScenario;
+    }
+
     private enum RefusalStageType {
         GRAPH_SELECTION, RUNTIME_REVIEW, UNKNOWN_DATABASE_INPUTS
     }
@@ -236,6 +243,14 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
      * @throws Exception if the original task or registered recovery fails / 原任务或已登记恢复失败时 */
     @Test
     void originalWorkflowKeepsRecoveryMarkerWhenGitPreparationIsUnknown() throws Exception {
+        gitScenario = true;
+        Files.createDirectories(selectedSourceDirectory());
+        Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/recovery\n\ngo 1.24\n");
+        command(selectedSourceDirectory(), "init", "-b", "main");
+        command(selectedSourceDirectory(), "config", "user.email", "test@example.invalid");
+        command(selectedSourceDirectory(), "config", "user.name", "Test");
+        command(selectedSourceDirectory(), "add", ".");
+        command(selectedSourceDirectory(), "commit", "-m", "first");
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -245,10 +260,13 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
             var cleanupCalls = new AtomicInteger();
+            var captureCalls = new AtomicInteger();
             var source = gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.create(FileService.class.getClassLoader(), (proxy, method, arguments) -> {
-                if (method.getName().equals("workspace") && arguments.length == 2)
-                    throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_WORKSPACE_UNCONFIRMED",
-                        "Original workspace result is unavailable", Map.of(), Optional.empty()));
+                if (method.getName().equals("snapshot")) {
+                    captureCalls.incrementAndGet();
+                    throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_SOURCE_CAPTURE_UNCONFIRMED",
+                        "Original deployment source capture is unavailable", Map.of(), Optional.empty()));
+                }
                 if (method.getName().equals("closeTaskResources") && cleanupCalls.getAndIncrement() == 0)
                     throw new ApiException(new Problem(ProblemCode.UNKNOWN, "TEST_GIT_CLEANUP_UNCONFIRMED",
                         "Original source cleanup is unavailable", Map.of(), Optional.empty()));
@@ -268,8 +286,8 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                         throw wrapped.getCause();
                     }
                 });
-            var workflow = new DeploymentStaticWorkflow(bound, new DeploymentRefFlow(bound));
-            var request = new DeploymentGitRequest(new DeploymentGitRemote(root.resolve("unused-repo").toUri()),
+            var workflow = GitRuntimeTestBridge.staticWorkflow(runtime, bound);
+            var request = new DeploymentGitRequest(new DeploymentGitRemote(selectedSourceDirectory().toUri()),
                 new DeploymentGitRef.DefaultBranch(), Set.of(), 65536, true);
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String manifest,
@@ -296,13 +314,14 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
                 Thread.sleep(50);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+            assertEquals(1, captureCalls.get(), "Actual Git material reaches the original deployment capture");
             assertEquals(2, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND released_at IS NULL"));
             var recovered = reconcileReady(runtime, handle);
             assertEquals(TaskState.ENDED, recovered.state());
             assertEquals(Optional.of(TaskResult.FAILED), recovered.outcome());
             assertEquals(0, scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind IN ('CUSTOM','FILE','PROCESS') AND released_at IS NULL"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             assertEquals(1, cleanupCalls.get(), "Recovery uses the registered unwrapped source capability");
         }
     }
@@ -312,6 +331,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private void runReview(int count, boolean schema, boolean git, boolean cancelAfterConsent) throws Exception {
+        gitScenario = git;
         for (int i = 0; i < count; i++) {
             Path project = count == 1
                 ? selectedSourceDirectory()
@@ -348,7 +368,7 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
             var taskId = new java.util.concurrent.atomic.AtomicReference<UUID>();
             var confirmationEntered = new CountDownLatch(1);
             var confirmationRelease = new CountDownLatch(1);
-            var workflow = new DeploymentStaticWorkflow(context, new DeploymentRefFlow(context));
+            var workflow = GitRuntimeTestBridge.staticWorkflow(runtime, context);
             var reviewer = new DeploymentStaticWorkflow.Reviewer() {
                 @Override
                 public OperationResult<Map<String, String>> databaseInputs(ServerId server, String componentId,

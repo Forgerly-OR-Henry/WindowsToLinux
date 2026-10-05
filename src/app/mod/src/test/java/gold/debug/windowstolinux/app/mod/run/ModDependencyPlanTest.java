@@ -57,6 +57,64 @@ class ModDependencyPlanTest {
         return plan.failures().get(owner).eventCode();
     }
 
+    static ModManifest optional(String owner, String provider) throws Exception {
+        var json = new ObjectMapper();
+        var value = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(mod(owner, provider).json());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) value.path("dependencies").get(0)).put("optional", true);
+        return ManifestReader.read(json.writeValueAsBytes(value));
+    }
+
+    @Test
+    void missingIncompatibleAndFailedOptionalProvidersLeaveConsumerAvailable() throws Exception {
+        var consumer = optional("example.consumer", "example.provider");
+        for (var supplied : List.of(List.of(consumer), List.of(consumer, mod("example.provider", "example.absent")),
+            List.of(consumer, manifest("example.provider", "example.provider", "2.0.0", Map.of())))) {
+            var plan = ModDependencyPlan.resolve(supplied, API, 21);
+            assertTrue(order(plan).contains("example.consumer"));
+            assertFalse(plan.failures().containsKey("example.consumer"));
+        }
+        var enabled = ModDependencyPlan.resolve(List.of(consumer, mod("example.provider")), API, 21);
+        assertEquals(List.of("example.provider", "example.consumer"), order(enabled));
+    }
+
+    @Test
+    void optionalCyclesAndExportConflictsCannotBeDiscardedButOutsideOptionalConsumerCanStart() throws Exception {
+        var plan = ModDependencyPlan.resolve(List.of(optional("example.a", "example.b"), mod("example.b", "example.a"),
+            optional("example.consumer", "example.a")), API, 21);
+        assertEquals("MOD_DEPENDENCY_CYCLE", event(plan, "example.a"));
+        assertEquals("MOD_DEPENDENCY_CYCLE", event(plan, "example.b"));
+        assertEquals(List.of("example.consumer"), order(plan));
+        var provider = manifest("example.provider", "example.consumer", "1.0.0", Map.of(), "example.consumer");
+        plan = ModDependencyPlan.resolve(List.of(optional("example.consumer", "example.provider"), provider), API, 21);
+        assertEquals("MOD_EXPORT_CONFLICT", event(plan, "example.consumer"));
+    }
+
+    @Test
+    void optionalFlagRejectsCoercionAndDefaultsToRequired() throws Exception {
+        assertFalse(mod("example.consumer", "example.provider").dependencies().getFirst().optional());
+        var json = new ObjectMapper();
+        var value = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(optional("example.consumer", "example.provider").json());
+        var dependency = (com.fasterxml.jackson.databind.node.ObjectNode) value.path("dependencies").get(0);
+        for (String invalid : List.of("null", "\"true\"", "1")) {
+            dependency.set("optional", json.readTree(invalid));
+            assertThrows(java.io.IOException.class, () -> ManifestReader.read(json.writeValueAsBytes(value)));
+        }
+    }
+
+    @Test
+    void actualIncompatibleOptionalLoaderDoesNotEnterConsumerBinding() throws Exception {
+        var consumer = optional("example.consumer", "example.provider");
+        var provider = manifest("example.provider", "example.provider", "2.0.0", Map.of(), "example.provider.api");
+        var classes = compile("optional-consumer", Map.of("example.consumer.Mod",
+            "package example.consumer; public final class Mod implements gold.debug.windowstolinux.appapi.mod.ModEntrypoint { public void start(gold.debug.windowstolinux.appapi.mod.ModContext c){} public void stop(gold.debug.windowstolinux.appapi.mod.lifecycle.StopContext c){} }"));
+        var plan = ModDependencyPlan.resolve(List.of(consumer, provider), API, 21);
+        try (var wrongRange = new ModClassLoader(provider, List.of(), Map.of());
+             var loaded = plan.createLoader(consumer.id(), List.of(classes.toUri().toURL()), Map.of(provider.id(), wrongRange))) {
+            assertNotNull(ModEntryFactory.create(loaded));
+            assertThrows(ClassNotFoundException.class, () -> loaded.loadClass("example.provider.api.Value"));
+        }
+    }
+
     @Test
     void diamondHasStableDependencyFirstOrderWithoutChangingSelections() throws Exception {
         var a = mod("example.a", "example.b", "example.c");
@@ -94,8 +152,9 @@ class ModDependencyPlanTest {
         var plan = ModDependencyPlan.resolve(List.of(mod("example.a", "example.b"), mod("example.b", "example.a"),
             mod("example.child", "example.a"), mod("example.self", "example.self"), mod("example.free")), API, 21);
         assertEquals(Set.of("example.a", "example.b", "example.child", "example.self"), plan.failures().keySet());
-        for (var owner : plan.failures().keySet())
+        for (var owner : List.of("example.a", "example.b", "example.self"))
             assertEquals("MOD_DEPENDENCY_CYCLE", event(plan, owner));
+        assertEquals("MOD_DEPENDENCY_UNAVAILABLE", event(plan, "example.child"));
         assertEquals(List.of("example.free"), order(plan));
         assertThrows(ApiException.class, () -> plan.createLoader("example.a", List.of(), Map.of()));
     }

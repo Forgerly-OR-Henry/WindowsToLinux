@@ -65,7 +65,7 @@ public interface TaskService {
      */
     boolean resourcesReleased(TaskContext task) throws ApiException;
 
-    /** Atomically retains one checkpoint of at most 12,000 UTF-8 bytes for the original task's root owner. / 为原任务根所有者原子保留一项最多 12,000 UTF-8 字节的检查点。
+    /** Atomically retains one checkpoint of at most 12,000 UTF-8 bytes for the authenticated root or provider in its current synchronous call. / 为已认证根所有者或当前同步调用提供方原子保留一项最多 12,000 UTF-8 字节的检查点。
      * @param task authentic executing original task / 真实执行中的原任务
      * @param key stable owner-local checkpoint key / 稳定的所有者内部检查点键
      * @param initial bounded non-secret JSON object / 初始有界且不含秘密的 JSON 对象
@@ -73,7 +73,7 @@ public interface TaskService {
      * @throws ApiException if an original or released key already exists, or admission fails / 原键或已释放键存在、准入失败时 */
     TaskCheckpoint beginCheckpoint(TaskContext task, String key, String initial) throws ApiException;
 
-    /** Finds only an existing checkpoint for the original task's root owner in execution or recovery. / 仅查找原任务根所有者在执行或恢复中的既有检查点。
+    /** Finds only an existing checkpoint for the authenticated root or current synchronous provider in execution or original recovery. / 仅查找执行或原恢复中已认证根所有者或当前同步提供方的既有检查点。
      * @param task authentic original task / 真实原任务
      * @param key stable owner-local checkpoint key / 稳定的所有者内部检查点键
      * @return original row, including released evidence before task archival / 原行，包括任务归档前已释放的依据

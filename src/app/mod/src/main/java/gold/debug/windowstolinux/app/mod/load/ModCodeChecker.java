@@ -227,6 +227,13 @@ public final class ModCodeChecker {
             if (activation
                 && effective.values().stream().anyMatch(type -> type.major > Runtime.version().feature() + 44))
                 throw new IOException("Class version is incompatible with the current Java runtime");
+            if (activation && manifest.dependencies().stream().anyMatch(ModManifest.Dependency::optional))
+                for (String reference : shape.references) {
+                    var provider = provider(reference, providers);
+                    if (provider != null && manifest.dependencies().stream().anyMatch(d -> d.optional() && d.id().equals(provider.manifest.id()))
+                        || provider == null && !effective.containsKey(reference) && !trusted(reference))
+                        throw new IOException("Entry declaration requires an unavailable or optional type: " + reference);
+                }
             int contract = inherits(this, entry, release, providers, activation, new HashSet<>(), 0);
             if (contract == 0)
                 throw new IOException("Entry does not implement ModEntrypoint");
@@ -279,6 +286,8 @@ public final class ModCodeChecker {
             return exported(name) && accessible(own.get(name), own, new HashSet<>());
         var provider = provider(name, providers);
         if (provider != null) {
+            if (manifest.dependencies().stream().anyMatch(d -> d.id().equals(provider.manifest.id()) && d.optional()))
+                return false;
             var actual = provider.effective(release == 0 ? Runtime.version().feature() : release);
             return provider.exported(name) && actual.containsKey(name)
                 && accessible(actual.get(name), actual, new HashSet<>());
@@ -307,6 +316,9 @@ public final class ModCodeChecker {
             var shape = owner.effective(release).get(name);
             if (shape == null) {
                 var provider = owner.provider(name, providers);
+                if (provider != null && owner.manifest.dependencies().stream()
+                    .anyMatch(d -> d.id().equals(provider.manifest.id()) && d.optional()))
+                    throw new IOException("Entry hierarchy requires an optional provider: " + name);
                 if (provider != null && provider.exported(name))
                     return inherits(provider, name, release == 0 ? Runtime.version().feature() : release,
                         provider.bindings, activation, visiting, depth + 1);

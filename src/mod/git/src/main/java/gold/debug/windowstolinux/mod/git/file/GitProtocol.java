@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.mod.deployment.file.git;
+package gold.debug.windowstolinux.mod.git.file;
 
 import java.io.*;
 import java.nio.*;
@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 
 /** Author-side version-one Git worker frames matching the public process contract. / 符合公开进程契约的作者侧第一版 Git worker 帧。 */
-final class DeploymentGitProtocol {
+final class GitProtocol {
     /** Maximum encoded frame including LF. / 包含 LF 的编码帧上限。 */
     public static final int MAX_BYTES = 1024 * 1024;
 
@@ -32,7 +32,7 @@ final class DeploymentGitProtocol {
         "type", "payload");
 
     /** Prevents utility instances. / 禁止工具实例。 */
-    private DeploymentGitProtocol() {
+    private GitProtocol() {
     }
 
     /** Supported protocol directions and control messages. / 受支持协议方向及控制消息。 */

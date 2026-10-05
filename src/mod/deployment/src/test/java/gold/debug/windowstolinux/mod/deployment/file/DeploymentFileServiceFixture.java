@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.appapi.file.query.FileQueryService;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService;
 import gold.debug.windowstolinux.appapi.file.source.FileSourceService;
 import gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService;
+import gold.debug.windowstolinux.appapi.file.material.FileMaterialService;
 
 /** Intercepts actual responsibility calls without intercepting entry accessors. / 拦截实际职责调用，不将入口访问器作为操作。 */
 public final class DeploymentFileServiceFixture {
@@ -24,7 +25,7 @@ public final class DeploymentFileServiceFixture {
     public static FileService create(ClassLoader loader, InvocationHandler handler) {
         var views = new HashMap<Class<?>, Object>();
         for (var type : new Class<?>[]{FileQueryService.class, FileActionService.class, FileSourceService.class,
-            FileSnapshotService.class, FileWorkspaceService.class})
+            FileSnapshotService.class, FileWorkspaceService.class, FileMaterialService.class})
             views.put(type, Proxy.newProxyInstance(loader, new Class<?>[]{type}, handler));
         return (FileService) Proxy.newProxyInstance(loader, new Class<?>[]{FileService.class},
             (proxy, method, arguments) -> views.containsKey(method.getReturnType())
@@ -52,6 +53,7 @@ public final class DeploymentFileServiceFixture {
             case "FileSourceService" -> original.sources();
             case "FileSnapshotService" -> original.snapshots();
             case "FileWorkspaceService" -> original.workspaces();
+            case "FileMaterialService" -> original.materials();
             default -> original;
         };
     }

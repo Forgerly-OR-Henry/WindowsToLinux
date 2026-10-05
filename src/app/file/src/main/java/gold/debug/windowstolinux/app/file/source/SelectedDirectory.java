@@ -86,6 +86,28 @@ public final class SelectedDirectory {
         return new Entry(name, resolved, attributes, WindowsFileIdentity.read(resolved));
     }
 
+    /** Rejects every linked or aliased path component for platform-owned immutable material. / 为平台所属不可变素材拒绝每个链接或别名路径组件。
+     * @param name exact ordinary relative file / 精确普通相对文件
+     * @return stable original file observation / 稳定原文件观测
+     * @throws IOException if any component redirects access / 任一组件重定向访问时 */
+    public Entry inspectStrict(String name) throws IOException {
+        relative(name);
+        Path current = root;
+        String[] parts = name.split("/");
+        for (int i = 0; i < parts.length; i++) {
+            current = current.resolve(parts[i]);
+            var attributes = Files.readAttributes(current, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (attributes.isSymbolicLink() || attributes.isOther()
+                || (i + 1 < parts.length ? !attributes.isDirectory() : !attributes.isRegularFile())
+                || !current.equals(current.toRealPath()))
+                throw new IOException("Material path contains a link or alias");
+        }
+        var entry = inspect(name);
+        if (!entry.path().equals(current))
+            throw new IOException("Material path was redirected");
+        return entry;
+    }
+
     /** Lists immediate observations without traversing links or returning a truncated success. / 列举直接观测，不遍历链接或把截断结果当成功。
      * @param relativeDirectory exact directory or empty selected root / 精确目录或空的所选根
      * @param maximum maximum immediate entries / 最大直接子项数

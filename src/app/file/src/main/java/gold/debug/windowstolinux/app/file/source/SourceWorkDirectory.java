@@ -102,6 +102,31 @@ public final class SourceWorkDirectory implements AutoCloseable {
         return directory.resolve("files");
     }
 
+    /** Returns platform metadata outside the author-visible payload after verifying ownership. / 核验归属后返回作者载荷之外的平台元数据位置。
+     * @param name fixed host metadata name / 固定宿主元数据名称
+     * @return exact owned metadata position / 精确所属元数据位置
+     * @throws IOException if original physical ownership changed / 原物理归属变化时 */
+    public Path metadata(String name) throws IOException {
+        if (!"manifest.bin".equals(name))
+            throw new IllegalArgumentException("Unsupported source metadata");
+        requireOwned();
+        return directory.resolve(name);
+    }
+
+    /** Returns the verified original physical container identity. / 返回已核验原物理容器身份。
+     * @return original native identity / 原原生身份
+     * @throws IOException if ownership changed / 归属变化时 */
+    public String identity() throws IOException {
+        requireOwned();
+        return identity;
+    }
+
+    /** Reports only the original non-following absence established by recovery. / 仅报告恢复确立的原不跟随链接缺失。
+     * @return whether recovery proved the original container absent / 恢复是否证明原容器缺失 */
+    public boolean absent() {
+        return closed && !owned;
+    }
+
     /** Refuses cleanup or publication after path substitution. / 路径被替换后拒绝清理或发布。
      * @throws IOException if the owned physical directory changed / 所属物理目录变化时 */
     public void requireOwned() throws IOException {

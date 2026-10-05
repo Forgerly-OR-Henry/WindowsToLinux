@@ -9,6 +9,7 @@ import gold.debug.windowstolinux.app.db.schema.SchemaCoordinates;
 import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.app.mod.load.ModClassLoader;
 import gold.debug.windowstolinux.app.mod.service.ServiceValueCopier;
 import gold.debug.windowstolinux.app.service.task.*;
@@ -19,6 +20,8 @@ import gold.debug.windowstolinux.appapi.mod.service.ModServices;
 import gold.debug.windowstolinux.appapi.mod.service.ServiceCall;
 import gold.debug.windowstolinux.appapi.mod.service.ServiceHandle;
 import gold.debug.windowstolinux.appapi.mod.service.ServiceRegistration;
+import gold.debug.windowstolinux.appapi.mod.service.ServiceAvailability;
+import gold.debug.windowstolinux.appapi.mod.service.AvailabilityState;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -141,6 +144,66 @@ public final class PlatformModServices implements AutoCloseable {
          * @return exact release / 精确发布 */
         private String version() {
             return loader.manifest().version().toString();
+        }
+
+        /** Observes one declared provider without loading its types or starting work. / 观察声明提供方，不加载其类型或开始工作。
+         * @param providerModId explicitly declared provider identity / 明确声明提供方身份
+         * @return verified original result / 已核验原结果
+         * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+         */
+        @Override
+        public ServiceAvailability availability(String providerModId) throws ApiException {
+            synchronized (PlatformModServices.this) {
+                open();
+                var declaration = loader.manifest().dependencies().stream().filter(d -> d.id().equals(providerModId))
+                    .findFirst().orElseThrow(() -> error(ProblemCode.ACCESS_DENIED, "SERVICE_UNDECLARED",
+                        "Provider is not explicitly declared"));
+                try (var c = database.openConnection(); var p = c.prepareStatement(
+                    "SELECT enabled,selected_version,last_runtime_state,last_boot_id,actual_version FROM mod_registry WHERE mod_id=?")) {
+                    p.setString(1, providerModId);
+                    try (var r = p.executeQuery()) {
+                        if (!r.next()) return observation(providerModId, AvailabilityState.MISSING, Optional.empty());
+                        var version = Optional.ofNullable(r.getString(2));
+                        if (!r.getBoolean(1)) return observation(providerModId, AvailabilityState.DISABLED, version);
+                        if (version.isEmpty()) return observation(providerModId, AvailabilityState.MISSING, version);
+                        if (!declaration.versionRange().contains(gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse(version.get())))
+                            return observation(providerModId, AvailabilityState.INCOMPATIBLE, version);
+                        boolean failedAndDrained = mode == ModLaunchMode.NORMAL && "FAILED".equals(r.getString(3))
+                            && database.bootId().equals(r.getObject(4, UUID.class)) && r.getString(5) == null
+                            && tasks.ownerBlockers(providerModId).isEmpty();
+                        if (tasks.callbacks().ownerAdmissionBlocked(providerModId) && mode == ModLaunchMode.NORMAL
+                            && !failedAndDrained)
+                            return observation(providerModId, AvailabilityState.RECOVERY_BLOCKED, version);
+                        try {
+                            PlatformTaskAdmission.requireNoPendingIntent(c, providerModId);
+                        } catch (ApiException pending) {
+                            return observation(providerModId, AvailabilityState.RESTART_PENDING, version);
+                        }
+                        if (mode == ModLaunchMode.NORMAL && (!"RUNNING".equals(r.getString(3))
+                            || !database.bootId().equals(r.getObject(4, UUID.class))))
+                            return observation(providerModId, AvailabilityState.START_FAILED, version);
+                        var actual = bindings.get(new Key(providerModId, mode));
+                        if (actual != null && actual.published && !actual.stopping && !actual.detached && !actual.loader.isClosed()
+                            && actual.version().equals(version.get()))
+                            return observation(providerModId, AvailabilityState.AVAILABLE, version);
+                        return observation(providerModId, AvailabilityState.START_FAILED, version);
+                    }
+                } catch (SQLException | IllegalArgumentException failure) {
+                    throw error(ProblemCode.UNAVAILABLE, "SERVICE_AVAILABILITY_UNVERIFIED", "Provider availability cannot be established");
+                }
+            }
+        }
+
+        /** Builds a detached bounded provider availability value. / 构造分离且有界的提供方可用性值。
+         * @param provider exact original provider / 精确原提供方
+         * @param state current host availability observation / 当前宿主可用性观察
+         * @param version exact loaded release / 精确已加载发布
+         * @return verified original result / 已核验原结果
+         */
+        private ServiceAvailability observation(String provider, AvailabilityState state, Optional<String> version) {
+            return new ServiceAvailability(provider, state, version, state == AvailabilityState.AVAILABLE ? Optional.empty()
+                : Optional.of(new Problem(ProblemCode.UNAVAILABLE, "SERVICE_" + state, "Declared provider is unavailable",
+                Map.of("providerId", provider), Optional.empty())));
         }
 
         /** Registers only this loader's public exported interfaces and actual implementations. / 仅登记此加载器的公开导出接口及实际实现。
@@ -351,7 +414,7 @@ public final class PlatformModServices implements AutoCloseable {
             try {
                 return tasks.callbacks().dependencyCall(task, caller.owner(), caller.version(), provider.owner(),
                     provider.version(), provider.schema, caller.mode == ModLaunchMode.RECOVERY,
-                    connection -> claims(connection, provider, task), () -> {
+                    admission(caller, provider, task), () -> {
                         try {
                             if (tasks.reconciling(task)) {
                                 if (provider.recoveryCleanup == null)
@@ -443,6 +506,52 @@ public final class PlatformModServices implements AutoCloseable {
         }
     }
 
+    /** Binds exact live caller and provider proof under the original admission transaction. / 在原准入事务内绑定精确实时调用方及提供方证明。
+     * @param caller actual loaded caller / 实际已加载调用方
+     * @param provider actual loaded provider / 实际已加载提供方
+     * @param task authentic original task / 真实原任务
+     * @return original host admission policy / 原宿主准入策略 */
+    private PlatformTaskRuntime.DependencyAdmission admission(Binding caller, Binding provider, TaskContext task) {
+        return new PlatformTaskRuntime.DependencyAdmission() {
+            /** Returns exact shared original Mod and schema claims. / 返回精确共享原 Mod 及数据申请。
+             * @param c serialized original platform connection / 串行原平台连接
+             * @return verified original result / 已核验原结果
+             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+             * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+             */
+            @Override
+            public List<TaskResource> claims(Connection c) throws SQLException, ApiException {
+                return PlatformModServices.this.claims(c, provider, task);
+            }
+
+            /** Supplies verified exact provider required code and data closure. / 提供已核验精确提供方必需代码及数据闭包。
+             * @param c serialized original platform connection / 串行原平台连接
+             * @return verified original result / 已核验原结果
+             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+             * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+             */
+            @Override
+            public Optional<TaskRecoveryGraph> graph(Connection c) throws SQLException, ApiException {
+                return Optional.of(providerGraph(c, provider, task));
+            }
+
+            /** Proves the loaded caller declares this exact provider and range. / 证明已加载调用方声明此精确提供方及范围。
+             * @param c serialized original platform connection / 串行原平台连接
+             * @return verified original result / 已核验原结果
+             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+             * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+             */
+            @Override
+            public Optional<TaskRecoveryGraph.EdgeKind> kind(Connection c) throws SQLException, ApiException {
+                var d = caller.loader.manifest().dependencies().stream().filter(v -> v.id().equals(provider.owner()))
+                    .findFirst().orElseThrow(() -> error(ProblemCode.ACCESS_DENIED, "SERVICE_UNDECLARED", "Provider is not declared"));
+                if (!d.versionRange().contains(provider.loader.manifest().version()))
+                    throw error(ProblemCode.INCOMPATIBLE, "SERVICE_ORIGINAL_RANGE", "Original provider release differs");
+                return Optional.of(d.optional() ? TaskRecoveryGraph.EdgeKind.OPTIONAL_USED : TaskRecoveryGraph.EdgeKind.REQUIRED);
+            }
+        };
+    }
+
     /** Validates normal or original recovery provider state under the same acquisition transaction. / 在同一取得事务中校验普通或原恢复提供方状态。
      * @param connection locked platform transaction / 锁定的平台事务
      * @param provider exact loaded provider / 精确加载提供方
@@ -453,8 +562,8 @@ public final class PlatformModServices implements AutoCloseable {
     private List<TaskResource> claims(Connection connection, Binding provider, TaskContext task)
         throws SQLException, ApiException {
         if (provider.mode == ModLaunchMode.NORMAL) {
-            var actual = new PlatformTaskAdmission(database).claims(connection, provider.owner(), provider.version(),
-                new TaskRequest("service.call", "Synchronous service call", List.of(), false));
+            var actualRelease = new PlatformTaskAdmission(database).requireRunningGraph(connection, provider.owner(), provider.version()).release(provider.owner());
+            var actual = new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(), actualRelease.version(), actualRelease.schema()).claims();
             var expected = new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(),
                 provider.version(), provider.schema).claims();
             if (!new HashSet<>(actual).equals(new HashSet<>(expected)))
@@ -465,12 +574,14 @@ public final class PlatformModServices implements AutoCloseable {
         if (!tasks.reconciling(task))
             throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_ONLY",
                 "Recovery graph requires explicit reconciliation");
-        boolean original = TaskLedger.TaskLedgerQueries.readDependencies(connection, task.id()).keySet().stream()
+        var originalGraph = new TaskLedger(database).queries().recoveryGraph(task.id());
+        boolean matches = originalGraph.isPresent()
+            ? originalGraph.get().release(provider.owner()).version().equals(provider.version())
+            && originalGraph.get().release(provider.owner()).schema().equals(provider.schema)
+            : TaskLedger.TaskLedgerQueries.readDependencies(connection, task.id()).keySet().stream()
             .anyMatch(call -> call.provider().equals(provider.owner()) && call.version().equals(provider.version())
                 && call.schema().equals(provider.schema));
-        if (!original)
-            throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_VERSION",
-                "The original task does not retain this provider release and generation");
+        if (!matches) throw error(ProblemCode.ACCESS_DENIED, "SERVICE_RECOVERY_VERSION", "Original provider differs");
         try (var p = connection
             .prepareStatement("SELECT state,schema_version FROM mod_version WHERE mod_id=? AND version=?")) {
             p.setString(1, provider.owner());
@@ -486,6 +597,67 @@ public final class PlatformModServices implements AutoCloseable {
             new SchemaCoordinates(provider.schema.get()).requireRegistered(connection, Set.of("READY"));
         return new DependencyRecovery(database.bootId(), UUID.randomUUID(), provider.owner(), provider.version(),
             provider.schema).claims();
+    }
+
+    /** Checks actual normal or recorded recovery provider required closure. / 检查实际普通或已记录恢复提供方必需闭包。
+     * @param c serialized original platform connection / 串行原平台连接
+     * @param provider exact original provider / 精确原提供方
+     * @param task original accepted task identity / 原已接纳任务身份
+     * @return verified original result / 已核验原结果
+     * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+     * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+     */
+    private TaskRecoveryGraph providerGraph(Connection c, Binding provider, TaskContext task) throws SQLException, ApiException {
+        if (provider.mode == ModLaunchMode.NORMAL)
+            return new PlatformTaskAdmission(database).requireRunningGraph(c, provider.owner(), provider.version());
+        var original = new TaskLedger(database).queries().recoveryGraph(task.id()).orElseThrow(() -> new SQLException("Original graph absent"));
+        TaskRecoveryGraph graph;
+        if (!original.legacy()) graph = original.requiredClosure(provider.owner());
+        else {
+            var owners = new HashSet<String>();
+            var queue = new ArrayDeque<String>();
+            var edges = new ArrayList<TaskRecoveryGraph.Edge>();
+            queue.add(provider.owner());
+            while (!queue.isEmpty()) {
+                String owner = queue.removeFirst();
+                if (!owners.add(owner)) continue;
+                var release = original.release(owner);
+                try (var p = c.prepareStatement("SELECT manifest_json FROM mod_version WHERE mod_id=? AND version=? AND content_sha256=? AND state='READY'")) {
+                    p.setString(1, owner);
+                    p.setString(2, release.version());
+                    p.setString(3, release.digest());
+                    try (var r = p.executeQuery()) {
+                        if (!r.next()) throw new SQLException("Original provider code is absent");
+                        try {
+                            var manifest = gold.debug.windowstolinux.app.mod.config.ManifestReader.read(r.getString(1).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            for (var d : manifest.dependencies()) {
+                                if (d.optional())
+                                    throw new SQLException("Legacy graph cannot reinterpret optional dependencies");
+                                edges.add(new TaskRecoveryGraph.Edge(owner, d.id(), TaskRecoveryGraph.EdgeKind.REQUIRED));
+                                queue.add(d.id());
+                            }
+                        } catch (java.io.IOException invalid) {
+                            throw new SQLException("Original manifest invalid", invalid);
+                        }
+                    }
+                }
+            }
+            graph = new TaskRecoveryGraph(provider.owner(), original.releases().stream().filter(r -> owners.contains(r.owner())).toList(), edges);
+        }
+        for (var release : graph.releases()) {
+            try (var p = c.prepareStatement("SELECT schema_version FROM mod_version WHERE mod_id=? AND version=? AND content_sha256=? AND state='READY'")) {
+                p.setString(1, release.owner());
+                p.setString(2, release.version());
+                p.setString(3, release.digest());
+                try (var r = p.executeQuery()) {
+                    if (!r.next() || !Optional.ofNullable(r.getString(1)).equals(release.schema().map(SchemaIdentity::schemaVersion)))
+                        throw new SQLException("Original provider release is missing");
+                }
+            }
+            if (release.schema().isPresent())
+                new SchemaCoordinates(release.schema().get()).requireRegistered(c, Set.of("READY"));
+        }
+        return graph;
     }
 
     /** Distinguishes normal publication from an isolated recovery graph. / 区分普通发布及隔离恢复图。

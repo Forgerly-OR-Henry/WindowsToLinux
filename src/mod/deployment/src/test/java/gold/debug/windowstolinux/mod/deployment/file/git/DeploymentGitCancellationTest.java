@@ -24,7 +24,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+
 import gold.debug.windowstolinux.app.db.task.ProcessRecovery;
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
 import gold.debug.windowstolinux.app.db.task.ResourceRecovery;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
@@ -45,6 +49,11 @@ import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSource
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
+    @Override
+    protected boolean gitEnabled() {
+        return true;
+    }
+
     private static final Path GIT = gitExecutable();
 
     private static Path gitExecutable() {
@@ -95,12 +104,12 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
             var request = new DeploymentGitRequest(
                 DeploymentGitRemote.parse("https://127.0.0.1:" + transport.port() + "/source"),
                 new DeploymentGitRef.DefaultBranch(), Set.of("127.0.0.1"), 2 * 1024 * 1024, false);
-            var handle = new DeploymentGitSourceFlow(context).submit(request, GIT, UUID.randomUUID(),
+            var handle = GitRuntimeTestBridge.flow(runtime, context).submit(request, GIT, UUID.randomUUID(),
                 "Cancelled Git project", Optional.empty(), java.time.Instant.parse("2026-09-28T00:00:00Z"),
                 2 * 1024 * 1024, 100);
             try {
                 transport.hello().get(30, TimeUnit.SECONDS);
-                assertEquals(4, scalar(runtime,
+                assertEquals(5, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
                 handle.requestCancel();
                 long cancellationDeadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
@@ -109,7 +118,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(),
                     "Original cancellation must be observed before releasing the held transport");
                 assertFalse(handle.completion().toCompletableFuture().isDone());
-                assertEquals(4, scalar(runtime,
+                assertEquals(5, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
             } finally {
                 transport.release();
@@ -120,11 +129,11 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 Thread.sleep(10);
             assertTrue(Set.of(TaskState.UNKNOWN, TaskState.ENDED).contains(handle.snapshot().state()));
             while (scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')") != 0
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','PROCESS')") != 0
                 && System.nanoTime() < deadline)
                 Thread.sleep(10);
             assertEquals(0, scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','PROCESS')"));
             var recovered = handle.snapshot();
             if (recovered.state() == TaskState.UNKNOWN) {
                 assertFalse(handle.completion().toCompletableFuture().isDone());
@@ -145,6 +154,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
         try (var transport = new HeldTlsTransport(); var runtime = open()) {
             start(runtime, true);
             ModContext original = runtime.modContexts().get(OWNER).context();
+            var provider = new AtomicReference<ModContext>();
             var request = new DeploymentGitRequest(
                 DeploymentGitRemote.parse("https://127.0.0.1:" + transport.port() + "/source"),
                 new DeploymentGitRef.DefaultBranch(), Set.of("127.0.0.1"), 2 * 1024 * 1024, false);
@@ -153,7 +163,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
             var taskId = new AtomicReference<UUID>();
             var checkoutPath = new AtomicReference<Path>();
             var controlPath = new AtomicReference<Path>();
-            var physicalReceipt = new AtomicReference<DeploymentGitProtocol.Frame>();
+            var physicalReceipt = new AtomicReference<JsonNode>();
             var proxyFailure = new AtomicReference<Throwable>();
             var callerObservation = new CountDownLatch(1);
             var requestCount = new AtomicInteger();
@@ -167,7 +177,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 }
 
                 public void closeTaskResources(TaskContext task) throws ApiException {
-                    original.processes().closeTaskResources(task);
+                    provider.get().processes().closeTaskResources(task);
                 }
 
                 private ManagedProcess started(ProcessSpec spec, TaskContext task, UUID id) throws ApiException {
@@ -177,8 +187,8 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                     checkoutPath.set(spec.workingDirectory());
                     controlPath.set(receipt.getParent());
                     ManagedProcess actual = id == null
-                        ? original.processes().start(spec, task)
-                        : original.processes().start(spec, task, id);
+                        ? provider.get().processes().start(spec, task)
+                        : provider.get().processes().start(spec, task, id);
                     processId.set(actual.id());
                     return new ManagedProcess() {
                         public UUID id() {
@@ -205,10 +215,13 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                         public void close() throws ApiException {
                             actual.close();
                             if (physicalReceipt.get() == null && Files.isRegularFile(receipt)) {
-                                try (var input = Files.newInputStream(receipt)) {
-                                    physicalReceipt.set(DeploymentGitProtocol.read(input).orElseThrow());
-                                    if (input.read() != -1)
-                                        throw new AssertionError("Original physical receipt has trailing bytes");
+                                try {
+                                    byte[] bytes = Files.readAllBytes(receipt);
+                                    assertTrue(bytes.length <= 1_048_576);
+                                    assertEquals('\n', bytes[bytes.length - 1]);
+                                    physicalReceipt.set(JsonMapper.builder()
+                                        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                                        .build().readTree(bytes));
                                 } catch (Throwable failure) {
                                     proxyFailure.set(failure);
                                 }
@@ -217,36 +230,46 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                     };
                 }
             };
-            ModContext intercepted = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("processes"))
-                        return observed;
-                    try {
-                        return method.invoke(original, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
-            var preparer = new DeploymentGitSetup(intercepted, GIT);
+            var preparer = GitRuntimeTestBridge.preparation(runtime, original, GIT);
             var authorFailure = new AtomicReference<Throwable>();
             var preparationProblem = new AtomicReference<Problem>();
             var callbackFinished = new CountDownLatch(1);
+            var originalObserver = new AtomicReference<DeploymentGitSetup.Observer>();
+            var originalCalls = new AtomicReference<Map<DependencyRecovery, List<UUID>>>();
             var registration = original.tasks().registerRecovery("git-native-cancel", (previous, originalTask) -> {
-                assertTrue(original.tasks().resourcesReleased(originalTask));
-                var receipt = physicalReceipt.get();
-                assertNotNull(receipt);
-                var outcome = DeploymentGitProtocol.result(receipt).outcome();
-                assertTrue(outcome == TaskResult.CANCELLED || outcome == TaskResult.FAILED);
-                return new OperationResult<Void>(outcome, Optional.empty(),
-                    Optional.of(new Problem(
-                        outcome == TaskResult.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
-                        "TEST_GIT_RESULT", "Original local Git result was confirmed", Map.of(),
-                        Optional.empty())));
+                try {
+                    var observer = originalObserver.get();
+                    var source = GitRuntimeTestBridge.reconcileOriginal(runtime, original, observer.planned(), originalTask);
+                    assertEquals(TaskResult.CANCELLED, source.outcome());
+                    var reason = source.problem().orElseThrow();
+                    observer.receipt(new DeploymentGitSetup.Receipt(source.outcome(), Optional.empty(),
+                        Optional.of(reason.code()), Optional.of(reason.eventCode())));
+                    preparer.closeTaskResources(originalTask);
+                    GitRuntimeTestBridge.onlyOriginalCallsRemain(runtime, originalTask.id(), originalCalls.get());
+                    var receipt = physicalReceipt.get();
+                    assertNotNull(receipt);
+                    var outcome = TaskResult.valueOf(receipt.path("payload").path("outcome").textValue());
+                    assertTrue(outcome == TaskResult.CANCELLED || outcome == TaskResult.FAILED);
+                    return new OperationResult<Void>(outcome, Optional.empty(),
+                        Optional.of(new Problem(
+                            outcome == TaskResult.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
+                            "TEST_GIT_RESULT", "Original local Git result was confirmed", Map.of(),
+                            Optional.empty())));
+                } catch (Throwable problem) {
+                    authorFailure.set(problem);
+                    throw new AssertionError(problem);
+                }
             });
             var handle = original.tasks()
                 .submit(new TaskRequest("git-native-cancel", "Native Git cancellation", List.of(), true), task -> {
                     try {
-                        preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(original, task, request));
+                        GitProviderTestAccess.observeProcesses(runtime, original, task, actual -> {
+                            provider.set(actual);
+                            return observed;
+                        });
+                        var observer = gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(original, task, request);
+                        originalObserver.set(observer);
+                        preparer.prepare(request, 2 * 1024 * 1024, 100, task, observer);
                         throw new AssertionError("The held native Git fetch completed without cancellation");
                     } catch (ApiException failure) {
                         preparationProblem.set(failure.problem());
@@ -272,7 +295,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 assertTrue(Files.isDirectory(controlPath.get()));
                 assertEquals(2, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='FILE'"));
-                assertEquals(1, scalar(runtime,
+                assertEquals(2, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
                 assertEquals(1, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='PROCESS'"));
@@ -282,7 +305,7 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 assertTrue(worker.isAlive());
                 assertFalse(callbackFinished.await(100, TimeUnit.MILLISECONDS));
                 assertFalse(handle.completion().toCompletableFuture().isDone());
-                assertEquals(4, scalar(runtime,
+                assertEquals(5, scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
                 transport.release();
                 assertTrue(callbackFinished.await(30, TimeUnit.SECONDS));
@@ -293,26 +316,27 @@ class DeploymentGitCancellationTest extends DeploymentRuntimeFixture {
                 assertEquals(ProblemCode.UNKNOWN, preparationProblem.get().code());
                 var receipt = physicalReceipt.get();
                 assertNotNull(receipt);
-                assertEquals(processId.get(), receipt.process());
-                assertEquals(taskId.get(), receipt.task());
-                assertEquals(job.get(),
-                    DeploymentGitProtocol.uuid(
-                        DeploymentGitProtocol.object(
-                            DeploymentGitProtocol.result(receipt).value().orElseThrow().jsonObject()),
-                        "jobId"));
-                assertEquals(TaskResult.CANCELLED, DeploymentGitProtocol.result(receipt).outcome());
+                assertEquals(1, receipt.path("protocolVersion").intValue());
+                assertEquals(processId.get().toString(), receipt.path("processId").textValue());
+                assertEquals(taskId.get().toString(), receipt.path("taskId").textValue());
+                assertEquals(job.get().toString(), receipt.path("payload").path("value").path("jobId").textValue());
+                assertEquals("CANCELLED", receipt.path("payload").path("outcome").textValue());
                 assertFalse(nativeGit.isAlive());
                 assertFalse(worker.isAlive());
                 assertEquals(1, requestCount.get());
                 assertEquals(0, scalar(runtime,
-                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','PROCESS')"));
                 assertFalse(Files.exists(checkoutPath.get()));
                 assertFalse(Files.exists(controlPath.get()));
                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
                 assertFalse(handle.completion().toCompletableFuture().isDone());
+                originalCalls.set(GitRuntimeTestBridge.retainedCalls(runtime, handle.snapshot().id()));
                 reconcileReady(runtime, handle);
+                if (authorFailure.get() != null) throw new AssertionError(authorFailure.get());
                 assertEquals(TaskResult.CANCELLED,
                     handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                assertEquals(0, scalar(runtime,
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
             } finally {
                 transport.release();
                 assertTrue(callbackFinished.await(35, TimeUnit.SECONDS), "Original Git callback did not return");

@@ -1,0 +1,14 @@
+{
+  "formatVersion": 1,
+  "id": "gold.debug.windowstolinux.mod.git",
+  "name": "Git 来源",
+  "version": "1.0.0-dev.1",
+  "description": "受管只读 Git 抓取、固定提交与平台素材发布服务。",
+  "platformApiRange": "[1.0.0-dev.3,1.0.0)",
+  "minJavaVersion": 21,
+  "mainJar": "main/git.jar",
+  "entryClass": "gold.debug.windowstolinux.mod.git.Mod",
+  "exports": [
+    "gold.debug.windowstolinux.mod.git.api"
+  ]
+}

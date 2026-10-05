@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.GZIPInputStream;
 
+import gold.debug.windowstolinux.app.db.task.DependencyRecovery;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
@@ -32,6 +33,11 @@ import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentProjectSo
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
+    @Override
+    protected boolean gitEnabled() {
+        return true;
+    }
+
     private static final Path GIT = locateGit();
 
     private static Path locateGit() {
@@ -73,7 +79,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
         return repo;
     }
 
-    private void prepare(DeploymentGitSetup preparer, DeploymentGitRequest request, String expected)
+    private void prepare(GitRuntimeTestBridge.Preparation preparer, DeploymentGitRequest request, String expected)
         throws Exception {
         var failure = new AtomicReference<Throwable>();
         var context = activeContext();
@@ -112,21 +118,59 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
             throw new AssertionError(failure.get());
     }
 
-    private void rejected(DeploymentGitSetup preparer, DeploymentGitRequest request) throws Exception {
+    private void rejected(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime,
+                          GitRuntimeTestBridge.Preparation preparer, DeploymentGitRequest request) throws Exception {
         var failure = new AtomicReference<Throwable>();
+        var observer = new AtomicReference<DeploymentGitSetup.Observer>();
+        var originalCalls = new AtomicReference<Map<DependencyRecovery, List<UUID>>>();
+        var finished = new java.util.concurrent.CountDownLatch(1);
+        var registration = activeContext().tasks().registerRecovery("git-rejected", (previous, task) -> {
+            try {
+                var source = GitRuntimeTestBridge.reconcileOriginal(runtime, context, observer.get().planned(), task);
+                assertEquals(TaskResult.FAILED, source.outcome());
+                var reason = source.problem().orElseThrow();
+                observer.get().receipt(new DeploymentGitSetup.Receipt(source.outcome(), Optional.empty(),
+                    Optional.of(reason.code()), Optional.of(reason.eventCode())));
+                preparer.closeTaskResources(task);
+                GitRuntimeTestBridge.onlyOriginalCallsRemain(runtime, task.id(), originalCalls.get());
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+            } catch (Throwable problem) {
+                failure.set(problem);
+                throw new AssertionError(problem);
+            }
+        });
         var handle = activeContext().tasks().submit(new TaskRequest("git-rejected", "Git rejected", List.of(), true),
             task -> {
                 try {
-                    assertThrows(ApiException.class, () -> preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request)));
+                    observer.set(gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request));
+                    var rejected = assertThrows(ApiException.class,
+                        () -> preparer.prepare(request, 2 * 1024 * 1024, 100, task, observer.get()));
+                    if (rejected.problem().code() == ProblemCode.UNKNOWN)
+                        return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(rejected.problem()));
                     return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 } catch (Throwable problem) {
                     failure.set(problem);
                     return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
+                } finally {
+                    finished.countDown();
                 }
             });
-        handle.completion().toCompletableFuture().get(120, TimeUnit.SECONDS);
-        if (failure.get() != null)
-            throw new AssertionError(failure.get());
+        try {
+            assertTrue(finished.await(120, TimeUnit.SECONDS));
+            if (failure.get() != null) throw new AssertionError(failure.get());
+            for (int i = 0; i < 100 && handle.snapshot().state() != TaskState.UNKNOWN
+                && handle.snapshot().state() != TaskState.ENDED; i++)
+                Thread.sleep(20);
+            if (handle.snapshot().state() == TaskState.UNKNOWN) {
+                originalCalls.set(GitRuntimeTestBridge.retainedCalls(runtime, handle.snapshot().id()));
+                reconcileReady(runtime, handle);
+                if (failure.get() != null) throw new AssertionError(failure.get());
+            }
+            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            registration.close();
+        }
     }
 
     private gold.debug.windowstolinux.appapi.mod.ModContext context;
@@ -149,7 +193,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
             var handle = context.tasks().submit(new TaskRequest("git-project", "Git project", List.of(), true),
                 task -> {
                     try {
-                        var flow = new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow(context);
+                        var flow = GitRuntimeTestBridge.flow(runtime, context);
                         try (var prepared = flow.prepareForPublication(request, GIT, "Git 项目", 2 * 1024 * 1024, 100, task);
                              var material = prepared.material()) {
                             var project = prepared.save();
@@ -183,7 +227,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             context = runtime.modContexts().get(OWNER).context();
-            var preparer = new DeploymentGitSetup(context, GIT);
+            var preparer = GitRuntimeTestBridge.preparation(runtime, context, GIT);
             var remote = DeploymentGitRemote.parse(repo.toUri().toString());
             for (var ref : List.<DeploymentGitRef>of(new DeploymentGitRef.DefaultBranch(),
                 new DeploymentGitRef.Branch("main"), new DeploymentGitRef.Tag("v1"),
@@ -203,7 +247,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             context = runtime.modContexts().get(OWNER).context();
-            var preparer = new DeploymentGitSetup(context, GIT);
+            var preparer = GitRuntimeTestBridge.preparation(runtime, context, GIT);
             var remote = DeploymentGitRemote.parse(repo.toUri().toString());
             var request = new DeploymentGitRequest(remote, new DeploymentGitRef.Branch("main"), Set.of(),
                 2 * 1024 * 1024, true);
@@ -233,6 +277,55 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
     }
 
     @Test
+    void actualIsolatedProviderTransfersLargeTreeWithoutRaisingServiceValueBudget() throws Exception {
+        Path repo = repository();
+        Path large = repo.resolve("large-source.dat");
+        var random = new Random(7319);
+        var chunk = new byte[1024 * 1024];
+        try (var output = Files.newOutputStream(large)) {
+            for (int i = 0; i < 24; i++) {
+                random.nextBytes(chunk);
+                output.write(chunk);
+            }
+        }
+        String digest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(large)));
+        git(repo, "add", ".");
+        git(repo, "commit", "-m", "large source");
+        String commit = git(repo, "rev-parse", "HEAD");
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            context = runtime.modContexts().get(OWNER).context();
+            var preparer = GitRuntimeTestBridge.preparation(runtime, context, GIT);
+            var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
+                new DeploymentGitRef.Commit(commit), Set.of(), 32L * 1024 * 1024, true);
+            var failure = new AtomicReference<Throwable>();
+            var handle = context.tasks().submit(new TaskRequest("git-large-source", "Large Git source", List.of(), true), task -> {
+                try (var material = preparer.prepare(request, 32L * 1024 * 1024, 100, task,
+                    gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture
+                        .begin(context, task, request, 32L * 1024 * 1024, 100))) {
+                    assertEquals(commit, material.commit());
+                    assertEquals(24L * 1024 * 1024,
+                        Files.size(material.source().snapshot().directory().resolve("large-source.dat")));
+                    assertEquals(digest, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
+                        Files.readAllBytes(material.source().snapshot().directory().resolve("large-source.dat")))));
+                    assertTrue(material.archive().byteCount() > 16L * 1024 * 1024);
+                    assertTrue(material.source().includedFiles().contains("large-source.dat"));
+                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                } catch (Throwable problem) {
+                    failure.set(problem);
+                    return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
+                }
+            });
+            var result = handle.completion().toCompletableFuture().get(120, TimeUnit.SECONDS);
+            if (failure.get() != null) throw new AssertionError(failure.get());
+            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
+            assertEquals(0, scalar(runtime,
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+        }
+    }
+
+    @Test
     void invalidReferencesAndUnsupportedGitTreeFeaturesReleaseTheirOriginalResources() throws Exception {
         Path repo = repository();
         assertThrows(IllegalArgumentException.class,
@@ -252,25 +345,25 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
         try (var runtime = open()) {
             start(runtime, true);
             context = runtime.modContexts().get(OWNER).context();
-            var preparer = new DeploymentGitSetup(context, GIT);
-            var absentGit = new DeploymentGitSetup(context, root.resolve("missing-git.exe"));
+            var preparer = GitRuntimeTestBridge.preparation(runtime, context, GIT);
+            var absentGit = GitRuntimeTestBridge.preparation(runtime, context, root.resolve("missing-git.exe"));
             assertEquals(ProblemCode.INVALID_INPUT,
                 assertThrows(ApiException.class,
                     () -> absentGit.prepare(new DeploymentGitRequest(remote,
                             new DeploymentGitRef.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true),
                         2 * 1024 * 1024, 100, null, null))
                     .problem().code());
-            rejected(preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.Branch("missing"), Set.of(),
+            rejected(runtime, preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.Branch("missing"), Set.of(),
                 2 * 1024 * 1024, true));
             String blob = git(repo, "hash-object", "-w", "pom.xml");
             git(repo, "update-index", "--add", "--cacheinfo", "120000," + blob + ",link");
             git(repo, "commit", "-m", "link");
-            rejected(preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
+            rejected(runtime, preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
                 2 * 1024 * 1024, true));
             git(repo, "rm", "--cached", "link");
             git(repo, "update-index", "--add", "--cacheinfo", "160000," + git(repo, "rev-parse", "HEAD") + ",nested");
             git(repo, "commit", "-m", "gitlink");
-            rejected(preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
+            rejected(runtime, preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
                 2 * 1024 * 1024, true));
             git(repo, "rm", "--cached", "nested");
             Files.createDirectories(repo.resolve("sub"));
@@ -278,18 +371,18 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
             Files.writeString(repo.resolve("sub/blob.bin"), "version https://git-lfs.github.com/spec/v1\n");
             git(repo, "add", ".");
             git(repo, "commit", "-m", "lfs");
-            rejected(preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
+            rejected(runtime, preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
                 2 * 1024 * 1024, true));
             git(repo, "mv", "-f", "sub/.gitattributes", "sub/.GitAttributes");
             git(repo, "commit", "-m", "mixed-case lfs attributes");
-            rejected(preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
+            rejected(runtime, preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
                 2 * 1024 * 1024, true));
             git(repo, "rm", "sub/.GitAttributes");
             Files.writeString(repo.resolve("sub/.gitmodules"),
                 "[submodule \"fake\"]\n path = fake\n url = https://example.invalid/fake\n");
             git(repo, "add", ".");
             git(repo, "commit", "-m", "nested submodule metadata");
-            rejected(preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
+            rejected(runtime, preparer, new DeploymentGitRequest(remote, new DeploymentGitRef.DefaultBranch(), Set.of(),
                 2 * 1024 * 1024, true));
             assertEquals(0, scalar(runtime,
                 "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
@@ -304,6 +397,7 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
             start(runtime, true);
             context = runtime.modContexts().get(OWNER).context();
             var original = context;
+            var provider = new AtomicReference<ModContext>();
             var receiptPath = new AtomicReference<Path>();
             var receiptBytes = new AtomicReference<byte[]>();
             var requests = new AtomicInteger();
@@ -317,15 +411,15 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
                 }
 
                 public void closeTaskResources(TaskContext task) throws ApiException {
-                    original.processes().closeTaskResources(task);
+                    provider.get().processes().closeTaskResources(task);
                 }
 
                 private ManagedProcess started(ProcessSpec spec, TaskContext task, UUID id) throws ApiException {
                     Path receipt = Path.of(spec.arguments().get(8)).resolve("git-result.json");
                     receiptPath.set(receipt);
                     ManagedProcess actual = id == null
-                        ? original.processes().start(spec, task)
-                        : original.processes().start(spec, task, id);
+                        ? provider.get().processes().start(spec, task)
+                        : provider.get().processes().start(spec, task, id);
                     return new ManagedProcess() {
                         private boolean changed;
 
@@ -362,38 +456,49 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
                     };
                 }
             };
-            ModContext intercepted = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
-                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("processes"))
-                        return processes;
-                    try {
-                        return method.invoke(original, args);
-                    } catch (InvocationTargetException failure) {
-                        throw failure.getCause();
-                    }
-                });
-            var preparer = new DeploymentGitSetup(intercepted, GIT);
+            var preparer = GitRuntimeTestBridge.preparation(runtime, original, GIT);
             var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
                 new DeploymentGitRef.DefaultBranch(), Set.of(), 2 * 1024 * 1024, true);
             var failure = new AtomicReference<Throwable>();
             var callbackFinished = new CountDownLatch(1);
-            var registration = context.tasks().registerRecovery("git-receipt",
-                (previous, originalTask) -> new OperationResult<Void>(TaskResult.FAILED, Optional.empty(),
-                    Optional.of(new Problem(ProblemCode.IO_FAILURE, "TEST_RECEIPT_TAMPER",
-                        "Original delivery was withheld", Map.of(), Optional.empty()))));
+            var originalObserver = new AtomicReference<DeploymentGitSetup.Observer>();
+            var originalCalls = new AtomicReference<Map<DependencyRecovery, List<UUID>>>();
+            var registration = context.tasks().registerRecovery("git-receipt", (previous, originalTask) -> {
+                try {
+                    var observer = originalObserver.get();
+                    var source = GitRuntimeTestBridge.reconcileOriginal(runtime, original, observer.planned(), originalTask);
+                    assertEquals(TaskResult.FAILED, source.outcome(), source.toString());
+                    var reason = source.problem().orElseThrow();
+                    observer.receipt(new DeploymentGitSetup.Receipt(source.outcome(), Optional.empty(),
+                        Optional.of(reason.code()), Optional.of(reason.eventCode())));
+                    preparer.closeTaskResources(originalTask);
+                    GitRuntimeTestBridge.onlyOriginalCallsRemain(runtime, originalTask.id(), originalCalls.get());
+                    return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(),
+                        Optional.of(new Problem(ProblemCode.IO_FAILURE, "TEST_RECEIPT_TAMPER",
+                            "Original delivery was withheld", Map.of(), Optional.empty())));
+                } catch (Throwable problem) {
+                    failure.set(problem);
+                    throw new AssertionError(problem);
+                }
+            });
             var handle = context.tasks().submit(new TaskRequest("git-receipt", "Git receipt", List.of(), true),
                 task -> {
                     try {
+                        GitProviderTestAccess.observeProcesses(runtime, original, task, actual -> {
+                            provider.set(actual);
+                            return processes;
+                        });
+                        var observer = gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture
+                            .begin(context, task, request);
+                        originalObserver.set(observer);
                         var unknown = assertThrows(ApiException.class,
-                            () -> preparer.prepare(request, 2 * 1024 * 1024, 100, task, gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitJournalFixture.begin(context, task, request)));
+                            () -> preparer.prepare(request, 2 * 1024 * 1024, 100, task, observer));
                         assertEquals(ProblemCode.UNKNOWN, unknown.problem().code());
                         assertNotNull(receiptBytes.get());
                         assertTrue(scalar(runtime,
                             "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'") > 0);
                         assertEquals(2, scalar(runtime,
                             "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='FILE'"));
-                        Files.write(receiptPath.get(), receiptBytes.get());
-                        preparer.closeTaskResources(task);
                         return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(),
                             Optional.of(unknown.problem()));
                     } catch (Throwable problem) {
@@ -411,12 +516,15 @@ class DeploymentGitSetupTest extends DeploymentRuntimeFixture {
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertFalse(handle.completion().toCompletableFuture().isDone());
             assertEquals(1, requests.get());
+            Files.write(receiptPath.get(), receiptBytes.get());
+            originalCalls.set(GitRuntimeTestBridge.retainedCalls(runtime, handle.snapshot().id()));
             reconcileReady(runtime, handle);
+            if (failure.get() != null) throw new AssertionError(failure.get());
             assertEquals(TaskResult.FAILED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
             assertEquals(1, requests.get());
             registration.close();
             assertEquals(0, scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind IN ('FILE','CUSTOM','PROCESS')"));
+                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
         }
     }
 }

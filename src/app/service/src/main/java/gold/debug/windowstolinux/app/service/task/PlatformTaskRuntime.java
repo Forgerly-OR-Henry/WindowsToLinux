@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
 import gold.debug.windowstolinux.app.db.task.TaskResource;
 import gold.debug.windowstolinux.app.db.task.TaskResourceObservation;
+import gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph;
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
 import gold.debug.windowstolinux.appapi.task.TaskService;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
@@ -41,6 +42,39 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
     /** Credential, host and dependency calls sharing the exact original task scope. / 共用精确原任务作用域的凭据、宿主及依赖调用。 */
     public final class CapabilityCallbacks {
+        /** Reads original identity only for an authenticated root or current synchronous provider. / 仅为已认证根或当前同步提供方读取原身份。
+         * @param context authentic executing or original recovery context / 真实执行或原恢复上下文
+         * @param owner exact original Mod owner / 精确原 Mod 所有者
+         * @param version exact loaded release / 精确已加载发布
+         * @return verified original result / 已核验原结果
+         * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+         */
+        public TaskRecoveryGraph.Release originalRelease(TaskContext context, String owner, String version)
+            throws ApiException {
+            synchronized (PlatformTaskRuntime.this) {
+                requireCleanup(context, owner, version);
+                try {
+                    var release = ledger.queries().recoveryGraph(context.id())
+                        .orElseThrow(() -> new SQLException("Original Mod graph is absent")).release(owner);
+                    if (!release.version().equals(version)) throw new SQLException("Original release differs");
+                    return release;
+                } catch (SQLException | NoSuchElementException failure) {
+                    throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_ORIGINAL_RELEASE",
+                        "Original task release cannot be authenticated");
+                }
+            }
+        }
+
+        /** Observes whether original recovery blocks normal owner admission. / 观察原恢复是否阻止普通所有者准入。
+         * @param owner exact original Mod owner / 精确原 Mod 所有者
+         * @return verified original result / 已核验原结果
+         */
+        public boolean ownerAdmissionBlocked(String owner) {
+            synchronized (PlatformTaskRuntime.this) {
+                return blockedOwners.containsKey(owner);
+            }
+        }
+
         /** Owned by the surrounding runtime only. / 仅由外围运行时持有。 */
         private CapabilityCallbacks() {
         }
@@ -61,8 +95,100 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
-        /**
-         * Runs a retained adapter operation using the original task's credential scope. / 使用原任务凭据作用域运行已保留的适配操作。
+        /** Commits original provider proof and leases before synchronous effects. / 同步效果前提交原提供方证明及占用。
+         * @param context authentic original task / 真实原任务
+         * @param caller actual original caller / 实际原调用方
+         * @param callerVersion original caller release / 原调用方发布
+         * @param provider exact provider / 精确提供方
+         * @param providerVersion actual provider release / 实际提供方发布
+         * @param schema original provider generation / 原提供方代次
+         * @param recoveryOnly whether original reconciliation is required / 是否要求原核对
+         * @param resolver host proof under the platform transaction / 平台事务下的宿主证明
+         * @return original admitted synchronous scope / 原已准入同步作用域
+         * @throws ApiException if original admission cannot be confirmed / 无法确认原准入时 */
+        private DependencyScope admitCall(TaskContext context, String caller, String callerVersion, String provider,
+                                          String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
+                                          boolean recoveryOnly, DependencyAdmission resolver) throws ApiException {
+            var execution = executions.get(context.id());
+            var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, providerVersion, schema);
+            var scope = new DependencyScope(context, facts);
+            try {
+                if (ledger.queries().recoveryGraph(context.id()).isPresent()) {
+                    var admitted = ledger.dependencies().admitDependency(context.id(), caller, callerVersion, provider, providerVersion,
+                        schema, recoveryOnly, new TaskLedger.InitialClaims() {
+                            /** Resolves exact provider claims in the serialized admission transaction. / 在串行准入事务内解析精确提供方申请。
+                             * @param c serialized original platform connection / 串行原平台连接
+                             * @return verified original result / 已核验原结果
+                             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+                             */
+                            @Override
+                            public List<TaskResource> resolve(java.sql.Connection c) throws SQLException {
+                                try {
+                                    return resolver.claims(c);
+                                } catch (ApiException rejected) {
+                                    throw new AdmissionRejectedException(rejected);
+                                }
+                            }
+
+                            /** Supplies exact original provider code and data closure. / 提供精确原提供方代码及数据闭包。
+                             * @param c serialized original platform connection / 串行原平台连接
+                             * @return verified original result / 已核验原结果
+                             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+                             */
+                            @Override
+                            public Optional<TaskRecoveryGraph> recoveryGraph(java.sql.Connection c) throws SQLException {
+                                try {
+                                    return resolver.graph(c);
+                                } catch (ApiException rejected) {
+                                    throw new AdmissionRejectedException(rejected);
+                                }
+                            }
+
+                            /** Supplies the host-validated original caller declaration kind. / 提供宿主已校验的原调用方声明类别。
+                             * @param c serialized original platform connection / 串行原平台连接
+                             * @return verified original result / 已核验原结果
+                             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+                             */
+                            @Override
+                            public Optional<TaskRecoveryGraph.EdgeKind> dependencyKind(java.sql.Connection c) throws SQLException {
+                                try {
+                                    return resolver.kind(c);
+                                } catch (ApiException rejected) {
+                                    throw new AdmissionRejectedException(rejected);
+                                }
+                            }
+                        });
+                    facts = admitted.recovery();
+                    scope = new DependencyScope(context, facts);
+                    scope.leases = admitted.leases();
+                } else {
+                    scope.leases = ledger.dependencies().retainDependency(context.id(), facts, connection -> {
+                        try {
+                            return resolver.claims(connection);
+                        } catch (ApiException rejected) {
+                            throw new AdmissionRejectedException(rejected);
+                        }
+                    });
+                }
+                dependencyScopes.put(facts.call(), scope);
+            } catch (AdmissionRejectedException rejected) {
+                dependencyScopes.remove(facts.call());
+                throw rejected.rejection;
+            } catch (TaskLedger.DependencyBusyException busy) {
+                dependencyScopes.remove(facts.call());
+                throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_RESOURCE_BUSY",
+                    "Provider resources are held by maintenance or another exclusive operation");
+            } catch (SQLException failure) {
+                scope.active = false;
+                execution.uncertainEffect = true;
+                conclusion.uncertain(execution, "Dependency admission could not be confirmed");
+                throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_ADMISSION_PERSISTENCE",
+                    "Dependency admission requires reconciliation");
+            }
+            return scope;
+        }
+
+        /** Runs a retained adapter operation using the original task's credential scope. / 使用原任务凭据作用域运行已保留的适配操作。
          * @param <T> internal operation result / 内部操作结果
          * @param context authentic active task / 真实活动任务
          * @param ownerId bound Mod identity / 绑定的 Mod 身份
@@ -184,31 +310,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     || dependencyStack.get().size() >= 64)
                     throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_CALL_CYCLE",
                         "Dependency call cycles or excessive nesting are not permitted");
-                var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, providerVersion, schema);
-                scope = new DependencyScope(context, facts);
-                dependencyScopes.put(facts.call(), scope);
-                try {
-                    scope.leases = ledger.retainDependency(context.id(), facts, connection -> {
-                        try {
-                            return resolver.claims(connection);
-                        } catch (ApiException rejected) {
-                            throw new AdmissionRejectedException(rejected);
-                        }
-                    });
-                } catch (AdmissionRejectedException rejected) {
-                    dependencyScopes.remove(facts.call());
-                    throw rejected.rejection;
-                } catch (TaskLedger.DependencyBusyException busy) {
-                    dependencyScopes.remove(facts.call());
-                    throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_RESOURCE_BUSY",
-                        "Provider resources are held by maintenance or another exclusive operation");
-                } catch (SQLException failure) {
-                    scope.active = false;
-                    execution.uncertainEffect = true;
-                    conclusion.uncertain(execution, "Dependency admission could not be confirmed");
-                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_ADMISSION_PERSISTENCE",
-                        "Dependency admission requires reconciliation");
-                }
+                scope = admitCall(context, caller, callerVersion, provider, providerVersion, schema, recoveryOnly, resolver);
             }
             var stack = dependencyStack.get();
             stack.push(scope);
@@ -332,8 +434,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Whether orderly executor shutdown has started. / 是否已开始有序关闭执行器。 */
     private boolean closing;
 
-    /**
-     * Loads retained task identities without replaying their business callbacks. / 加载保留任务身份，不重放其业务回调。
+    /** Loads retained task identities without replaying their business callbacks. / 加载保留任务身份，不重放其业务回调。
      * @param database exclusively owned platform engine / 独占的平台引擎
      * @param admission host validation policy / 宿主校验策略
      * @param security current-user session owner / 当前用户会话所有者
@@ -389,8 +490,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         securityRegistration = security.trackRetainedTasks(() -> uncredentialedTasks);
     }
 
-    /**
-     * Returns a service whose owner and startup mode cannot be supplied by author calls. / 返回作者调用不能自行指定所有者及启动模式的服务。
+    /** Returns a service whose owner and startup mode cannot be supplied by author calls. / 返回作者调用不能自行指定所有者及启动模式的服务。
      * @param ownerId exact bound Mod identity / 精确绑定的 Mod 身份
      * @param version exact running release / 精确运行发布版本
      * @param recoveryOnly whether normal submissions are forbidden / 是否禁止普通提交
@@ -404,8 +504,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         return binding;
     }
 
-    /**
-     * Seals or reopens new work while accepted tasks retain their original resources. / 封闭或重开新工作，已接纳任务保留原有资源。
+    /** Seals or reopens new work while accepted tasks retain their original resources. / 封闭或重开新工作，已接纳任务保留原有资源。
      * @param sealed whether to reject new submissions / 是否拒绝新提交
      * @return previous admission gate, for restoring a rejected shutdown attempt / 原准入门状态，用于恢复被拒绝的关闭尝试
      */
@@ -417,8 +516,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         return previous;
     }
 
-    /**
-     * Seals one Mod before lifecycle occupancy checks. / 生命周期占用检查前封闭一个 Mod。
+    /** Seals one Mod before lifecycle occupancy checks. / 生命周期占用检查前封闭一个 Mod。
      * @param ownerId exact stable Mod identity / 精确稳定的 Mod 身份
      * @param reason non-secret host blocking reason / 不含秘密的宿主阻断原因
      */
@@ -426,8 +524,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         blockedOwners.put(Objects.requireNonNull(ownerId), Objects.requireNonNull(reason));
     }
 
-    /**
-     * Reopens an owner after successful host publication. / 宿主成功发布后重新开放所有者。
+    /** Reopens an owner after successful host publication. / 宿主成功发布后重新开放所有者。
      * @param ownerId exact stable Mod identity / 精确稳定的 Mod 身份
      */
     public synchronized void allowOwner(String ownerId) {
@@ -436,8 +533,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         blockedOwners.remove(ownerId);
     }
 
-    /**
-     * Reads all unfinished work that prevents the owner's shutdown. / 读取阻止所有者关闭的全部未结束工作。
+    /** Reads all unfinished work that prevents the owner's shutdown. / 读取阻止所有者关闭的全部未结束工作。
      * @param ownerId exact Mod identity across versions / 跨版本的精确 Mod 身份
      * @return immutable task blocking descriptions / 不可变任务阻断描述
      * @throws SQLException if occupancy cannot be verified / 无法核实占用时
@@ -447,8 +543,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             .toList();
     }
 
-    /**
-     * Revokes task bindings and original-version recovery callbacks after the owner drains. / 所有者排空后撤销任务绑定及原版本恢复回调。
+    /** Revokes task bindings and original-version recovery callbacks after the owner drains. / 所有者排空后撤销任务绑定及原版本恢复回调。
      * @param ownerId exact owning Mod identity / 精确所属 Mod 身份
      * @param version exact original release / 精确原始发布版本
      * @throws ApiException if work remains or occupancy cannot be verified / 仍有工作或无法核实占用时
@@ -470,8 +565,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
     }
 
-    /**
-     * Verifies the actual host-created context rather than trusting a copied UUID. / 验证实际宿主上下文，而不信任复制的 UUID。
+    /** Verifies the actual host-created context rather than trusting a copied UUID. / 验证实际宿主上下文，而不信任复制的 UUID。
      * @param context context received by a platform adapter / 平台适配器收到的上下文
      * @return current owned task snapshot / 当前所属任务快照
      * @throws ApiException if the context is forged or no longer active / 上下文伪造或不再活动时
@@ -485,8 +579,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         return task.snapshot;
     }
 
-    /**
-     * Verifies a capability's bound caller while its original callback or explicit recovery executes. / 在原回调或显式恢复执行期间核实能力绑定的调用方。
+    /** Verifies a capability's bound caller while its original callback or explicit recovery executes. / 在原回调或显式恢复执行期间核实能力绑定的调用方。
      * @param context authentic original task / 真实原始任务
      * @param ownerId caller bound by the host / 宿主绑定的调用方
      * @param version exact loaded caller release / 精确已加载调用方版本
@@ -573,8 +666,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Authenticates cleanup of already owned resources even after cancellation or uncertainty. / 即使已取消或出现不确定性，仍认证已持有资源的清理。
+    /** Authenticates cleanup of already owned resources even after cancellation or uncertainty. / 即使已取消或出现不确定性，仍认证已持有资源的清理。
      * @param context original currently executing or reconciling context / 原始且正在执行或核对的上下文
      * @param ownerId capability owner / 能力所有者
      * @param version exact bound release / 精确绑定版本
@@ -595,8 +687,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         return snapshot;
     }
 
-    /**
-     * Requires a server from the task's complete initial resource set. / 要求服务器属于任务的完整初始资源集合。
+    /** Requires a server from the task's complete initial resource set. / 要求服务器属于任务的完整初始资源集合。
      * @param context authentic original task / 真实原始任务
      * @param ownerId bound Mod identity / 绑定的 Mod 身份
      * @param version bound loaded release / 绑定的已加载版本
@@ -619,8 +710,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Returns cancellation for current work; explicit recovery does not replay an older cancellation. / 返回当前工作取消状态；显式恢复不重放旧取消。
+    /** Returns cancellation for current work; explicit recovery does not replay an older cancellation. / 返回当前工作取消状态；显式恢复不重放旧取消。
      * @param context authentic original task / 真实原始任务
      * @return cancellation checked dynamically during adapter work / 适配工作期间动态检查的取消状态
      */
@@ -631,8 +721,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         return () -> execution.snapshot.state() == TaskState.ENDED || !execution.reconciling && execution.cancelled;
     }
 
-    /**
-     * Retains uncertainty even if author code subsequently returns a known result. / 即使作者代码随后返回已知结果，仍保留已观察到的不确定性。
+    /** Retains uncertainty even if author code subsequently returns a known result. / 即使作者代码随后返回已知结果，仍保留已观察到的不确定性。
      * @param context original task whose external effect is uncertain / 外部副作用不确定的原始任务
      * @throws ApiException if the task identity is invalid / 任务身份无效时
      */
@@ -643,8 +732,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         conclusion.uncertain(execution, "A platform operation could not establish its external outcome");
     }
 
-    /**
-     * Registers actual host resources; adapters call close only after physical release. / 登记实际宿主资源；适配器仅在物理释放后调用关闭。
+    /** Registers actual host resources; adapters call close only after physical release. / 登记实际宿主资源；适配器仅在物理释放后调用关闭。
      * @param context original accepted context / 原始已接纳上下文
      * @param resource host-validated resource claim / 宿主已校验的资源申请
      * @return explicit release marker / 显式释放标记
@@ -763,8 +851,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Retains a JDBC connection only inside the task's already admitted Mod and schema generation. / 仅在任务已接纳的 Mod 与数据代次内保留 JDBC 连接。
+    /** Retains a JDBC connection only inside the task's already admitted Mod and schema generation. / 仅在任务已接纳的 Mod 与数据代次内保留 JDBC 连接。
      * @param context authentic original task / 真实原始任务
      * @param identity bound database generation / 绑定的数据代次
      * @return connection occupancy marker / 连接占用标记
@@ -866,7 +953,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 if (scope == null && entry.getKey().boot().equals(bootId))
                     throw TaskConclusion.error(ProblemCode.UNKNOWN, "SERVICE_CALL_OWNER",
                         "Current-boot call ownership cannot be confirmed");
-                ledger.releaseDependency(context.id(), entry.getKey(), entry.getValue());
+                ledger.dependencies().releaseDependency(context.id(), entry.getKey(), entry.getValue());
                 dependencyScopes.remove(entry.getKey().call());
             }
             for (var scope : scopes)
@@ -888,6 +975,26 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @throws ApiException if provider state rejects admission / 提供方状态拒绝准入时
          * @throws SQLException if storage is unavailable / 存储不可用时 */
         List<TaskResource> claims(java.sql.Connection connection) throws ApiException, SQLException;
+
+        /** Supplies verified exact provider required code and data closure. / 提供已核验精确提供方必需代码及数据闭包。
+         * @param connection serialized original platform connection / 串行原平台连接
+         * @return verified original result / 已核验原结果
+         * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+         * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+         */
+        default Optional<TaskRecoveryGraph> graph(java.sql.Connection connection) throws ApiException, SQLException {
+            return Optional.empty();
+        }
+
+        /** Proves the loaded caller declares this exact provider and range. / 证明已加载调用方声明此精确提供方及范围。
+         * @param connection serialized original platform connection / 串行原平台连接
+         * @return verified original result / 已核验原结果
+         * @throws ApiException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+         * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+         */
+        default Optional<TaskRecoveryGraph.EdgeKind> kind(java.sql.Connection connection) throws ApiException, SQLException {
+            return Optional.empty();
+        }
     }
 
     /** One actual call's authority and physical resource ownership. / 一次实际调用的授权及物理资源归属。 */
@@ -916,8 +1023,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Returns all current-session snapshots for the host task page. / 返回所有当前会话快照，供宿主任务页面使用。
+    /** Returns all current-session snapshots for the host task page. / 返回所有当前会话快照，供宿主任务页面使用。
      * @return immutable task snapshots / 不可变任务快照
      */
     public List<TaskSnapshot> snapshots() {
@@ -960,8 +1066,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Reconciles a retained task only after an explicit host action. / 仅在显式宿主操作后核对保留任务。
+    /** Reconciles a retained task only after an explicit host action. / 仅在显式宿主操作后核对保留任务。
      * @param taskId original task identity / 原始任务身份
      * @return completion of this reconciliation attempt, not a replayed business operation / 本次核对尝试的完成状态，不是重放业务操作
      * @throws ApiException if recovery is unavailable, busy or inappropriate / 恢复不可用、忙碌或不适用时
@@ -1043,8 +1148,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Closes cooperatively only after every accepted task has ended. / 仅在全部已接纳任务结束后协作关闭。
+    /** Closes cooperatively only after every accepted task has ended. / 仅在全部已接纳任务结束后协作关闭。
      * @throws ApiException if unfinished work or live workers remain / 仍有未结束工作或活动工作线程时
      */
     @Override
@@ -1086,8 +1190,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Host policy called while task admission is serialized. / 在任务准入串行化期间调用的宿主策略。 */
     @FunctionalInterface
     public interface Admission {
-        /**
-         * Validates the running caller and supplies the entire initial resource set. / 验证运行中的调用方并提供完整初始资源集合。
+        /** Validates the running caller and supplies the entire initial resource set. / 验证运行中的调用方并提供完整初始资源集合。
          * @param connection transaction already holding the platform state lock / 已持有平台状态锁的事务
          * @param ownerId exact caller identity / 精确调用方身份
          * @param version exact running release / 精确运行版本
@@ -1117,8 +1220,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Original public rejection. / 原始公开拒绝原因。 */
         private final ApiException rejection;
 
-        /**
-         * Retains the validation result before any task insert. / 在任何任务插入之前保留校验结果。
+        /** Retains the validation result before any task insert. / 在任何任务插入之前保留校验结果。
          * @param rejection original policy error / 原始策略错误
          */
         private AdmissionRejectedException(ApiException rejection) {
@@ -1127,8 +1229,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * Exact recovery implementation binding. / 精确恢复实现绑定。
+    /** Exact recovery implementation binding. / 精确恢复实现绑定。
      * @param owner owning Mod / 所属 Mod
      * @param version original release / 原始发布版本
      * @param type owner-local task type / 所有者内部任务类型
@@ -1150,8 +1251,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Whether the owning activation has invalidated this service object. / 所属启用是否已使此服务对象失效。 */
         private boolean revoked;
 
-        /**
-         * Binds trusted host ownership. / 绑定可信宿主归属。
+        /** Binds trusted host ownership. / 绑定可信宿主归属。
          * @param owner stable Mod identity / 稳定 Mod 身份
          * @param version exact release / 精确发布版本
          * @param recoveryOnly recovery-only mode / 仅恢复模式
@@ -1165,8 +1265,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Cursor ownership belongs to this exact activation, not only its stable Mod name. / 游标归属此精确启用，而非仅稳定 Mod 名称。 */
         private final UUID cursorBinding = UUID.randomUUID();
 
-        /**
-         * Persists admission before returning a new task handle. / 返回新任务句柄前持久化准入。
+        /** Persists admission before returning a new task handle. / 返回新任务句柄前持久化准入。
          * @param <T> public result type / 公开结果类型
          * @param request author request / 作者请求
          * @param work one-shot callback / 单次回调
@@ -1256,8 +1355,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
-        /**
-         * Returns only caller-owned active in-memory snapshots. / 仅返回调用方所属的活动内存快照。
+        /** Returns only caller-owned active in-memory snapshots. / 仅返回调用方所属的活动内存快照。
          * @param cursor opaque binding-bound submission continuation / 绑定服务的不可见提交后续游标
          * @param limit bounded page size / 有界页容量
          * @return copied active snapshot page / 活动快照页副本
@@ -1499,8 +1597,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
-        /**
-         * Registers an exact original-version recovery callback. / 登记精确原始版本的恢复回调。
+        /** Registers an exact original-version recovery callback. / 登记精确原始版本的恢复回调。
          * @param taskType owner-local type / 所有者内部类型
          * @param recovery explicit reconciliation implementation / 显式核对实现
          * @return owned registration / 所属登记
@@ -1534,8 +1631,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
-    /**
-     * One accepted execution and its current-session completion observation. / 一次已接纳执行及其当前会话完成观察。
+    /** One accepted execution and its current-session completion observation. / 一次已接纳执行及其当前会话完成观察。
      * @param <T> public result payload type / 公开结果载荷类型
      */
     private final class Execution<T> implements TaskHandle<T> {
@@ -1581,8 +1677,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Private completion promise exposed only as a minimal stage. / 仅以最小阶段暴露的私有完成承诺。 */
         private final CompletableFuture<OperationResult<T>> completion = new CompletableFuture<>();
 
-        /**
-         * Creates a handle after durable admission or recovery lookup. / 在持久化准入或恢复查找后创建句柄。
+        /** Creates a handle after durable admission or recovery lookup. / 在持久化准入或恢复查找后创建句柄。
          * @param snapshot persisted initial state / 持久化初始状态
          * @param work original callback, absent during recovery / 原始回调，恢复时为空
          * @param cancellable whether cooperative cancellation is supported / 是否支持协作取消
@@ -1621,8 +1716,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             return completion.minimalCompletionStage();
         }
 
-        /**
-         * Requests cancellation without interrupting a thread or releasing resources. / 请求取消，不中断线程或释放资源。
+        /** Requests cancellation without interrupting a thread or releasing resources. / 请求取消，不中断线程或释放资源。
          * @throws ApiException if cancellation or persistence fails / 取消或持久化失败时
          */
         @Override
@@ -1699,8 +1793,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Owning accepted execution. / 所属已接纳执行。 */
         private final Execution<?> execution;
 
-        /**
-         * Binds one accepted execution. / 绑定一个已接纳执行。
+        /** Binds one accepted execution. / 绑定一个已接纳执行。
          * @param execution accepted owner / 已接纳所有者
          */
         private ExecutionContext(Execution<?> execution) {
@@ -1721,8 +1814,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             return () -> execution.cancelled;
         }
 
-        /**
-         * Updates bounded progress within an active context. / 在活动上下文中更新有界进度。
+        /** Updates bounded progress within an active context. / 在活动上下文中更新有界进度。
          * @param text non-secret progress / 不含秘密的进度
          * @param fraction optional finite fraction from zero to one / 可选的零到一有限比例
          * @throws ApiException if context, progress or persistence fails / 上下文、进度或持久化失败时
@@ -1744,8 +1836,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
-        /**
-         * Retains an owner-local custom resource without acquiring a server lock. / 保留所有者内部自定义资源，不取得服务器锁。
+        /** Retains an owner-local custom resource without acquiring a server lock. / 保留所有者内部自定义资源，不取得服务器锁。
          * @param kind author-local category / 作者内部类别
          * @param localId author-local identity / 作者内部身份
          * @param description bounded non-secret description / 有界且不含秘密的描述
@@ -1777,8 +1868,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         /** Durable exact resource identity. / 持久化精确资源身份。 */
         private final UUID id;
 
-        /**
-         * Binds a persisted explicit resource. / 绑定已持久化显式资源。
+        /** Binds a persisted explicit resource. / 绑定已持久化显式资源。
          * @param execution original task / 原始任务
          * @param id exact lease identity / 精确占用身份
          */
@@ -1794,8 +1884,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             return id;
         }
 
-        /**
-         * Records the caller's actual release and retries known-result finishing. / 记录调用方的实际释放，并重试已知结果的收尾。
+        /** Records the caller's actual release and retries known-result finishing. / 记录调用方的实际释放，并重试已知结果的收尾。
          * @throws ApiException if release persistence fails / 释放持久化失败时
          */
         @Override
@@ -1847,8 +1936,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 && Set.of(TaskState.QUEUED, TaskState.RUNNING, TaskState.WAITING).contains(task.snapshot.state());
         }
 
-        /**
-         * Attempts queued work without taking partial resources or retrying unknown business effects. / 尝试排队工作，不取得部分资源或重试未知业务副作用。
+        /** Attempts queued work without taking partial resources or retrying unknown business effects. / 尝试排队工作，不取得部分资源或重试未知业务副作用。
          */
         private void dispatch() {
             for (var task : executions.values())
@@ -1865,8 +1953,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 }
         }
 
-        /**
-         * Invokes an admitted callback once on a background thread. / 在后台线程中仅调用一次已接纳回调。
+        /** Invokes an admitted callback once on a background thread. / 在后台线程中仅调用一次已接纳回调。
          * @param <T> public result payload type / 公开结果载荷类型
          * @param task admitted execution / 已准入执行
          */
@@ -1913,8 +2000,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 throw fatal;
         }
 
-        /**
-         * Commits the observed outcome or retains uncertainty after any persistence failure. / 提交已观察结果，持久化失败则保留不确定状态。
+        /** Commits the observed outcome or retains uncertainty after any persistence failure. / 提交已观察结果，持久化失败则保留不确定状态。
          * @param task execution with an observed result / 具有已观察结果的执行
          * @param reconciliation whether this is explicit recovery / 是否为显式恢复
          * @return whether the task reached durable terminal state / 任务是否达到持久化终态
@@ -1979,8 +2065,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 : Optional.empty());
         }
 
-        /**
-         * Persists bounded public uncertainty and failure evidence with its observed outcome. / 随已观察结果持久化有界公开不确定性及失败证据。
+        /** Persists bounded public uncertainty and failure evidence with its observed outcome. / 随已观察结果持久化有界公开不确定性及失败证据。
          * @param result author-provided public result / 作者提供的公开结果
          * @return diagnostic JSON without business payloads / 不含业务载荷的诊断 JSON
          * @throws SQLException if diagnostic encoding fails / 诊断编码失败时
@@ -2003,8 +2088,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
-        /**
-         * Keeps both resource ownership and an explicit local uncertainty diagnostic. / 同时保留资源归属及明确的本地不确定性诊断。
+        /** Keeps both resource ownership and an explicit local uncertainty diagnostic. / 同时保留资源归属及明确的本地不确定性诊断。
          * @param task affected task / 受影响任务
          * @param message non-secret host diagnostic / 不含秘密的宿主诊断
          */
@@ -2020,8 +2104,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 Optional.empty(), List.of(message)));
         }
 
-        /**
-         * Builds a public rejection without private exception text. / 构造公开拒绝原因，不包含私有异常原文。
+        /** Builds a public rejection without private exception text. / 构造公开拒绝原因，不包含私有异常原文。
          * @param code public failure category / 公开失败类别
          * @param event stable event identifier / 稳定事件标识
          * @param message non-secret diagnostic / 不含秘密的诊断
@@ -2031,8 +2114,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             return new ApiException(new Problem(code, event, message, Map.of(), Optional.empty()));
         }
 
-        /**
-         * Creates uncertainty without inventing a terminal failure. / 创建不确定结果，不虚构终态失败。
+        /** Creates uncertainty without inventing a terminal failure. / 创建不确定结果，不虚构终态失败。
          * @param <T> optional public payload type / 可选公开载荷类型
          * @param event stable event identifier / 稳定事件标识
          * @param message non-secret diagnostic / 不含秘密的诊断
@@ -2077,8 +2159,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         private TaskAuthorization() {
         }
 
-        /**
-         * Captures current-user authorization outside the runtime monitor. / 在执行器监视器之外取得当前用户授权。
+        /** Captures current-user authorization outside the runtime monitor. / 在执行器监视器之外取得当前用户授权。
          * @return independently retained credential scope / 独立保留的凭据作用域
          * @throws ApiException if the desktop is locked or changing security / 桌面锁定或正在变更安全设置时
          */
@@ -2122,7 +2203,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @throws ApiException if durable release is unconfirmed / 持久释放未确认时 */
         private void releaseDependency(DependencyScope scope, List<UUID> leases) throws ApiException {
             try {
-                ledger.releaseDependency(scope.context.id(), scope.recovery, leases);
+                ledger.dependencies().releaseDependency(scope.context.id(), scope.recovery, leases);
                 dependencyScopes.remove(scope.recovery.call());
                 executions.get(scope.context.id()).setSnapshot(ledger.queries().snapshot(scope.context.id()));
             } catch (SQLException failure) {

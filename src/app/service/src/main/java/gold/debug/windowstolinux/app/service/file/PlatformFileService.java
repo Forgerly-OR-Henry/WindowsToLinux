@@ -8,6 +8,7 @@ import gold.debug.windowstolinux.appapi.file.action.FileActionService;
 import gold.debug.windowstolinux.appapi.file.source.FileSourceService;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService;
 import gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService;
+import gold.debug.windowstolinux.appapi.file.material.FileMaterialService;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 
@@ -55,6 +56,13 @@ public final class PlatformFileService implements FileService {
     @Override
     public FileWorkspaceService workspaces() {
         return access;
+    }
+
+    /** Returns the original activation's material custody capability. / 返回原启用的素材接管能力。
+     * @return exact activation-bound material capability / 精确启用绑定素材能力 */
+    @Override
+    public FileMaterialService materials() {
+        return access.materials();
     }
 
     /** Reconciles only the original task resources. / 仅核对原任务资源。

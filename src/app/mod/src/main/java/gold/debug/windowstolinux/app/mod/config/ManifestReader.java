@@ -85,12 +85,14 @@ public final class ManifestReader {
             var dependencies = new ArrayList<ModManifest.Dependency>();
             var ids = new HashSet<String>();
             for (var dependency : array(node, "dependencies", 128)) {
-                object(dependency, Set.of("id", "versionRange"));
+                object(dependency, Set.of("id", "versionRange", "optional"));
                 var provider = javaName(text(dependency, "id", 512));
                 if (!ids.add(provider))
                     throw new IllegalArgumentException("Duplicate dependency: " + provider);
+                if (dependency.has("optional") && !dependency.path("optional").isBoolean())
+                    throw new IllegalArgumentException("Dependency optional must be a boolean");
                 dependencies.add(new ModManifest.Dependency(provider,
-                    VersionRange.parse(text(dependency, "versionRange", 512))));
+                    VersionRange.parse(text(dependency, "versionRange", 512)), dependency.path("optional").asBoolean(false)));
             }
             var exports = strings(node, "exports", 128, 512);
             var packages = new HashSet<String>();

@@ -26,6 +26,27 @@ class PlatformTaskRecoveryGraphTest {
 
     static final String LEAF = "example.leaf";
 
+    @Test
+    void absentOptionalProviderAllowsRealLocalTaskCompletionWithRootOnlyGraph() throws Exception {
+        try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            var db = runtime.persistence().database();
+            String manifest = PlatformModIntentsTest.manifest(OWNER, VERSION, Map.of(PROVIDER, "[1.0.0,2.0.0)"), null, List.of())
+                .replace("\"versionRange\":\"[1.0.0,2.0.0)\"", "\"versionRange\":\"[1.0.0,2.0.0)\",\"optional\":true");
+            sql(db, "UPDATE mod_version SET manifest_json=? WHERE mod_id=? AND version=?", manifest, OWNER, VERSION);
+            var task = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), context -> {
+                var graph = new TaskLedger(db).queries().recoveryGraph(context.id()).orElseThrow();
+                assertEquals(Set.of(OWNER), graph.releases().stream().map(TaskRecoveryGraph.Release::owner).collect(java.util.stream.Collectors.toSet()));
+                assertTrue(graph.edges().isEmpty());
+                return success("local-completed");
+            });
+            var result = task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals("local-completed", result.value().orElseThrow());
+            assertEquals(0, count(db, "SELECT COUNT(*) FROM platform_task"));
+        }
+    }
+
     static SchemaIdentity prepare(PlatformRuntime runtime) throws Exception {
         initialize(runtime, false);
         var db = runtime.persistence().database();
@@ -89,7 +110,7 @@ class PlatformTaskRecoveryGraphTest {
                     throw new AssertionError();
                 }));
                 assertEquals(2, count(db, "SELECT COUNT(*) FROM platform_task"));
-                assertEquals(0,
+                assertEquals(2,
                     count(db, "SELECT COUNT(*) FROM platform_task_resource WHERE owner_id='example.provider'"));
             } finally {
                 sql(db, "UPDATE mod_registry SET selected_version=? WHERE mod_id=?", VERSION, PROVIDER);

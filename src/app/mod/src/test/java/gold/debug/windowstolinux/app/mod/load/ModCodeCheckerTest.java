@@ -80,6 +80,31 @@ class ModCodeCheckerTest {
     }
 
     @Test
+    void optionalIntegrationStaysPrivateAndEntryLinksWithoutProvider() throws Exception {
+        var providerManifest = manifest("sample.provider", "sample.provider.Mod", "\"sample.provider.api\"", "");
+        var provider = compile(Map.of("sample.provider.Mod", entry("sample.provider"), "sample.provider.api.Value",
+            "package sample.provider.api; public record Value(String text) {}"));
+        var declaration = "{\"id\":\"sample.provider\",\"versionRange\":\"1.0.0\",\"optional\":true}";
+        var consumer = manifest("sample.owner", "sample.owner.Mod", "\"sample.owner.api\"", declaration);
+        var code = compile(Map.of("sample.owner.Mod", entry("sample.owner"), "sample.owner.PrivateAdapter",
+            "package sample.owner; final class PrivateAdapter { sample.provider.api.Value value; }",
+            "sample.owner.api.PublicValue", "package sample.owner.api; public record PublicValue(String text) {}"), provider);
+        inspect(consumer, code).validate(true, Map.of());
+        try (var absent = new ModClassLoader(consumer, List.of(code.toUri().toURL()), Map.of())) {
+            assertNotNull(absent.loadClass("sample.owner.Mod").getConstructor());
+        }
+        var providerCode = inspect(providerManifest, provider);
+        providerCode.validate(true, Map.of());
+        var leak = compile(Map.of("sample.owner.Mod", entry("sample.owner"), "sample.owner.api.Leak",
+            "package sample.owner.api; public record Leak(sample.provider.api.Value value) {}"), provider);
+        assertThrows(IOException.class, () -> inspect(consumer, leak).validate(true, Map.of("sample.provider.api", providerCode)));
+        var entryLeak = compile(Map.of("sample.owner.Mod", entry("sample.owner").replace(METHODS,
+            METHODS + " public sample.provider.api.Value value(){return null;}")), provider);
+        assertThrows(IOException.class, () -> inspect(consumer, entryLeak).validate(true, Map.of()));
+        assertThrows(IOException.class, () -> inspect(consumer, entryLeak).validate(true, Map.of("sample.provider.api", providerCode)));
+    }
+
+    @Test
     void provesInheritedEntryWithoutInitializingPrivateCompanionBase() throws Exception {
         Path base = compile(Map.of("privatebase.Base",
             "package privatebase; public class Base " + CONTRACT + " {" + METHODS + "}"));

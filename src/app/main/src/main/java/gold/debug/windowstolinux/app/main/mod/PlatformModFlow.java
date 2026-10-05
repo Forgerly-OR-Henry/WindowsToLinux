@@ -131,7 +131,7 @@ public final class PlatformModFlow implements AutoCloseable {
                 var providers = new HashMap<String, ModClassLoader>();
                 for (var manifest : plan.startupOrder()) {
                     var prepared = ready.get(manifest.id());
-                    if (manifest.dependencies().stream().anyMatch(d -> !providers.containsKey(d.id()))) {
+                    if (manifest.dependencies().stream().anyMatch(d -> !d.optional() && !providers.containsKey(d.id()))) {
                         reject(prepared,
                             failure(manifest.id(), "MOD_PROVIDER_START_FAILED",
                                 "A required original provider did not finish startup", ProblemCode.UNAVAILABLE)

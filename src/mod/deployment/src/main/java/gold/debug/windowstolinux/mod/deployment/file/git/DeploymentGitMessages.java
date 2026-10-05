@@ -1,55 +1,61 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import java.io.IOException;
 import java.net.URI;
+import java.io.IOException;
 import java.util.*;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
-import gold.debug.windowstolinux.appapi.task.result.Problem;
-import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.*;
 
-/** Exact business messages and exit receipts for one Git preparation request. / 一次 Git 准备请求的精确业务消息及退出凭据。 */
+/** Deployment-owned source-choice codec, independent of Git worker messages. / 独立于 Git worker 消息的部署所属来源选择编解码。 */
 public final class DeploymentGitMessages {
-    /** Versioned author-local request type. / 版本化作者内部请求类型。 */
-    static final String TYPE = "deployment.git.prepare.v1";
+    /** Strict original source-choice parser. / 严格原来源选择解析器。 */
+    private static final ObjectMapper JSON = new ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
+        .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+        .streamReadConstraints(com.fasterxml.jackson.core.StreamReadConstraints.builder().maxNestingDepth(4)
+            .maxStringLength(12000).build()).build())
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
-    /** Prevents utility construction. / 禁止构造工具实例。 */
+    /** Prevents utility construction. / 禁止工具构造。 */
     private DeploymentGitMessages() {
     }
 
-    /** Encodes an explicit credential-free request. / 编码明确的不含凭据请求。
-     * @param request original selection / 原选择
-     * @return exact business JSON / 精确业务 JSON */
+    /** Encodes original deployment choices and its independent archive budget. / 编码原部署选择及其独立归档预算。
+     * @param request original reviewed choice / 原已审阅选择
+     * @return exact bounded JSON / 精确有界 JSON */
     public static String encode(DeploymentGitRequest request) {
-        String kind = switch (request.reference()) {
+        var kind = switch (request.reference()) {
             case DeploymentGitRef.DefaultBranch ignored -> "DEFAULT";
             case DeploymentGitRef.Branch ignored -> "BRANCH";
             case DeploymentGitRef.Tag ignored -> "TAG";
             case DeploymentGitRef.Commit ignored -> "COMMIT";
         };
-        var node = DeploymentGitProtocol.empty().put("remote", request.remote().location().toString()).put("kind", kind)
+        var root = JSON.createObjectNode().put("remote", request.remote().location().toString()).put("kind", kind)
             .put("reference", request.reference().value()).put("maximumArchiveBytes", request.maximumArchiveBytes())
             .put("permitLocalFileRemote", request.permitLocalFileRemote());
-        var hosts = node.putArray("allowedHosts");
+        var hosts = root.putArray("allowedHosts");
         request.allowedHosts().stream().sorted().forEach(hosts::add);
-        return node.toString();
+        return root.toString();
     }
 
-    /** Decodes the exact request without accepting unknown fields or type coercion. / 解码精确请求，不接受未知字段或类型强转。
-     * @param text bounded protocol JSON / 有界协议 JSON
-     * @return validated request / 已验证请求
-     * @throws IOException if the request is malformed / 请求无效时 */
+    /** Decodes only strict source choices, never a provider physical receipt. / 仅解码严格来源选择，不解码提供方物理回执。
+     * @param text original bounded JSON / 原有界 JSON
+     * @return checked source choice / 已核验来源选择
+     * @throws IOException if original fields are invalid / 原字段无效时 */
     public static DeploymentGitRequest decode(String text) throws IOException {
         try {
-            var node = DeploymentGitProtocol.object(text);
-            DeploymentGitProtocol.fields(node, Set.of("remote", "kind", "reference", "allowedHosts",
-                "maximumArchiveBytes", "permitLocalFileRemote"));
-            String value = DeploymentGitProtocol.text(node, "reference");
-            DeploymentGitRef reference = switch (DeploymentGitProtocol.text(node, "kind")) {
+            if (text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
+                throw new IllegalArgumentException();
+            var root = JSON.readTree(text);
+            var keys = Set.of("remote", "kind", "reference", "allowedHosts", "maximumArchiveBytes", "permitLocalFileRemote");
+            if (root == null || !root.isObject() || root.size() != keys.size()) throw new IllegalArgumentException();
+            root.fieldNames().forEachRemaining(key -> {
+                if (!keys.contains(key)) throw new IllegalArgumentException();
+            });
+            String value = text(root, "reference");
+            DeploymentGitRef reference = switch (text(root, "kind")) {
                 case "DEFAULT" -> {
-                    if (!value.equals("HEAD"))
-                        throw new IllegalArgumentException();
+                    if (!value.equals("HEAD")) throw new IllegalArgumentException();
                     yield new DeploymentGitRef.DefaultBranch();
                 }
                 case "BRANCH" -> new DeploymentGitRef.Branch(value);
@@ -57,73 +63,25 @@ public final class DeploymentGitMessages {
                 case "COMMIT" -> new DeploymentGitRef.Commit(value);
                 default -> throw new IllegalArgumentException();
             };
-            if (!node.get("allowedHosts").isArray() || node.get("allowedHosts").size() > 1024
-                || !node.get("maximumArchiveBytes").isIntegralNumber()
-                || !node.get("maximumArchiveBytes").canConvertToLong()
-                || !node.get("permitLocalFileRemote").isBoolean())
-                throw new IllegalArgumentException();
+            if (!root.get("allowedHosts").isArray() || root.get("allowedHosts").size() > 1024
+                || !root.get("maximumArchiveBytes").isIntegralNumber() || !root.get("maximumArchiveBytes").canConvertToLong()
+                || !root.get("permitLocalFileRemote").isBoolean()) throw new IllegalArgumentException();
             var hosts = new HashSet<String>();
-            for (var host : node.get("allowedHosts"))
-                if (!host.isTextual() || !hosts.add(host.textValue()))
-                    throw new IllegalArgumentException();
-            return new DeploymentGitRequest(
-                new DeploymentGitRemote(URI.create(DeploymentGitProtocol.text(node, "remote"))), reference, hosts,
-                node.get("maximumArchiveBytes").longValue(), node.get("permitLocalFileRemote").booleanValue());
-        } catch (IllegalArgumentException failure) {
-            throw new IOException("Invalid Git worker request");
+            for (var host : root.get("allowedHosts"))
+                if (!host.isTextual() || !hosts.add(host.textValue())) throw new IllegalArgumentException();
+            return new DeploymentGitRequest(new DeploymentGitRemote(URI.create(text(root, "remote"))), reference, hosts,
+                root.get("maximumArchiveBytes").longValue(), root.get("permitLocalFileRemote").booleanValue());
+        } catch (RuntimeException invalid) {
+            throw new IOException("Invalid original deployment source choice");
         }
     }
 
-    /** Encodes a business result only after native processes and pipes returned. / 仅在原生进程及管道返回后编码业务结果。
-     * @param job original operation identity / 原操作身份
-     * @param commit resolved commit on success / 成功时解析的提交
-     * @param problem optional safe failure / 可选安全失败
-     * @return exact result envelope / 精确结果封套 */
-    static String result(UUID job, String commit, Problem problem) {
-        var root = DeploymentGitProtocol.empty();
-        root.put("outcome",
-            problem == null
-                ? "SUCCEEDED"
-                : problem.code() == ProblemCode.UNKNOWN
-                ? "UNKNOWN"
-                : problem.code() == ProblemCode.CANCELLED ? "CANCELLED" : "FAILED");
-        var value = root.putObject("value").put("jobId", job.toString()).put("processesClosed",
-            problem == null || problem.code() != ProblemCode.UNKNOWN);
-        if (commit == null)
-            value.putNull("commit");
-        else
-            value.put("commit", commit);
-        if (problem == null)
-            root.putNull("problem");
-        else {
-            root.putObject("problem").put("code", problem.code().name()).put("eventCode", problem.eventCode())
-                .put("message", problem.message()).putNull("diagnosticId").putObject("context");
-        }
-        return root.toString();
-    }
-
-    /** Requires original operation ownership and positive physical cleanup evidence. / 要求原操作归属及肯定物理清理证据。
-     * @param message original business value / 原业务值
-     * @param job expected original operation / 预期原操作
-     * @return optional successful commit / 可选成功提交
-     * @throws IOException if evidence is missing, conflicting or unknown / 证据缺失、冲突或未知时 */
-    static Optional<String> receipt(ProcessMessage message, UUID job) throws IOException {
-        try {
-            if (!message.type().equals(TYPE))
-                throw new IllegalArgumentException();
-            JsonNode node = DeploymentGitProtocol.object(message.jsonObject());
-            DeploymentGitProtocol.fields(node, Set.of("jobId", "commit", "processesClosed"));
-            if (!DeploymentGitProtocol.uuid(node, "jobId").equals(job) || !node.get("processesClosed").isBoolean()
-                || !node.get("processesClosed").booleanValue())
-                throw new IllegalArgumentException();
-            if (node.get("commit").isNull())
-                return Optional.empty();
-            String commit = DeploymentGitProtocol.text(node, "commit");
-            if (!commit.matches("[0-9a-f]{40}"))
-                throw new IllegalArgumentException();
-            return Optional.of(commit);
-        } catch (IllegalArgumentException failure) {
-            throw new IOException("Git cleanup receipt is unconfirmed");
-        }
+    /** Reads exact text without coercion. / 不强转地读取精确文本。
+     * @param object original object / 原对象
+     * @param key original key / 原键
+     * @return exact text / 精确文本 */
+    private static String text(JsonNode object, String key) {
+        if (!object.path(key).isTextual()) throw new IllegalArgumentException();
+        return object.get(key).textValue();
     }
 }

@@ -136,7 +136,7 @@ final class DeploymentGitSourceActionLog implements DeploymentGitSetup.Observer 
         this.facts = decode(snapshot.payload(), task);
     }
 
-    /** Creates the complete physical plan before any workspace or process exists. / 在任何工作目录或进程存在前创建完整物理计划。
+    /** Records source operation and material identities before calling the optional provider. / 调用可选提供方前记录来源操作及素材身份。
      * @param tasks original task service / 原任务服务
      * @param task original context / 原上下文
      * @param project target identity / 目标身份
@@ -151,8 +151,7 @@ final class DeploymentGitSourceActionLog implements DeploymentGitSetup.Observer 
     static DeploymentGitSourceActionLog begin(TaskService tasks, TaskContext task, UUID project, String name,
                                               Optional<DeploymentProjectRecord> expected, Instant observedAt, DeploymentGitRequest request,
                                               long maximumBytes, int maximumEntries) throws ApiException {
-        var plan = new DeploymentGitSetup.Planned(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-            UUID.randomUUID());
+        var plan = new DeploymentGitSetup.Planned(UUID.randomUUID(), UUID.randomUUID());
         var initial = new Facts(task.id(), plan, project, name, observedAt, expected, request, maximumBytes,
             maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
         var handle = tasks.beginCheckpoint(task, KEY, encode(initial));
@@ -169,8 +168,7 @@ final class DeploymentGitSourceActionLog implements DeploymentGitSetup.Observer 
      * @param maximumEntries entry budget / 条目预算 */
     static void validateInput(UUID project, String name, Optional<DeploymentProjectRecord> expected, Instant observedAt,
                               DeploymentGitRequest request, long maximumBytes, int maximumEntries) {
-        var plan = new DeploymentGitSetup.Planned(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-            UUID.randomUUID());
+        var plan = new DeploymentGitSetup.Planned(UUID.randomUUID(), UUID.randomUUID());
         var probe = new Facts(UUID.randomUUID(), plan, project, name, observedAt, expected, request, maximumBytes,
             maximumEntries, PhaseState.PLANNED, Optional.empty(), Optional.empty(), Optional.empty());
         if (encode(probe).getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
@@ -212,11 +210,14 @@ final class DeploymentGitSourceActionLog implements DeploymentGitSetup.Observer 
         advance(copy(PhaseState.REQUESTED, facts.receipt(), facts.next(), facts.failure()));
     }
 
-    /** Records only a complete verified physical result before control deletion. / 删除控制目录前仅记录完整已核实物理结果。
+    /** Records the proved original provider result separately from project persistence. / 将已证明原提供方结果与项目持久化独立记录。
      * @param value original verified receipt / 原已核实回执
      * @throws ApiException if CAS or result shape cannot be confirmed / CAS 或结果形态无法确认时 */
     @Override
     public void receipt(DeploymentGitSetup.Receipt value) throws ApiException {
+        refresh();
+        if (facts.receipt().equals(Optional.of(value)) && facts.phase() != PhaseState.PLANNED
+            && facts.phase() != PhaseState.REQUESTED) return;
         if (facts.phase() != PhaseState.REQUESTED)
             throw invalid();
         advance(copy(PhaseState.RECEIPT, Optional.of(value), facts.next(), facts.failure()));
@@ -300,9 +301,8 @@ final class DeploymentGitSourceActionLog implements DeploymentGitSetup.Observer 
      * @param value complete facts / 完整依据
      * @return bounded JSON / 有界 JSON */
     private static String encode(Facts value) {
-        var root = JSON.createObjectNode().put("formatVersion", 1).put("taskId", value.task().toString())
-            .put("jobId", value.plan().job().toString()).put("checkoutId", value.plan().checkout().toString())
-            .put("controlId", value.plan().control().toString()).put("processId", value.plan().process().toString())
+        var root = JSON.createObjectNode().put("formatVersion", 2).put("taskId", value.task().toString())
+            .put("jobId", value.plan().job().toString()).put("materialId", value.plan().material().toString())
             .put("projectId", value.project().toString()).put("displayName", value.displayName())
             .put("observedAt", value.observedAt().toEpochMilli()).put("phase", value.phase().name())
             .put("request", DeploymentGitMessages.encode(value.request())).put("maximumBytes", value.maximumBytes())
@@ -328,16 +328,15 @@ final class DeploymentGitSourceActionLog implements DeploymentGitSetup.Observer 
         try {
             var root = JSON.readTree(value);
             fields(root,
-                Set.of("formatVersion", "taskId", "jobId", "checkoutId", "controlId", "processId", "projectId",
+                Set.of("formatVersion", "taskId", "jobId", "materialId", "projectId",
                     "displayName", "observedAt", "phase", "request", "maximumBytes", "maximumEntries",
                     "expected", "next", "receipt", "failure"));
-            if (!root.get("formatVersion").isInt() || root.get("formatVersion").intValue() != 1
+            if (!root.get("formatVersion").isInt() || root.get("formatVersion").intValue() != 2
                 || !root.get("observedAt").isIntegralNumber() || !root.get("observedAt").canConvertToLong()
                 || !root.get("maximumBytes").isIntegralNumber() || !root.get("maximumBytes").canConvertToLong()
                 || !root.get("maximumEntries").isInt())
                 throw new IllegalArgumentException();
-            var plan = new DeploymentGitSetup.Planned(uuid(root, "jobId"), uuid(root, "checkoutId"),
-                uuid(root, "controlId"), uuid(root, "processId"));
+            var plan = new DeploymentGitSetup.Planned(uuid(root, "jobId"), uuid(root, "materialId"));
             var expected = root.get("expected").isNull()
                 ? Optional.<DeploymentProjectRecord>empty()
                 : Optional.of(project(root.get("expected")));

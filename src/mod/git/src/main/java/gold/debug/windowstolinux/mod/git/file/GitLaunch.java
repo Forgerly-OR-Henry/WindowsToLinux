@@ -1,4 +1,4 @@
-package gold.debug.windowstolinux.mod.deployment.file.git;
+package gold.debug.windowstolinux.mod.git.file;
 
 import java.io.File;
 import java.io.IOException;
@@ -13,9 +13,9 @@ import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
 import gold.debug.windowstolinux.appapi.task.process.ProcessSpec;
 
 /** Resolves only this Mod's code, private JSON libraries and the public API for its worker. / 仅为 worker 解析本 Mod 代码、私有 JSON 库及公开 API。 */
-final class DeploymentGitLaunch {
+final class GitLaunch {
     /** Prevents utility construction. / 禁止构造工具实例。 */
-    private DeploymentGitLaunch() {
+    private GitLaunch() {
     }
 
     /** Builds literal launch arguments without inheriting platform runtime internals. / 构建字面启动参数，不继承平台内部运行类。
@@ -28,7 +28,7 @@ final class DeploymentGitLaunch {
      * @throws IOException if a local code source cannot be resolved / 无法解析本机代码来源时 */
     static ProcessSpec spec(ModIdentity identity, Path git, Path checkout, Path control, UUID job) throws IOException {
         var sources = new LinkedHashSet<String>();
-        for (Class<?> type : List.of(DeploymentGitWorker.class, ObjectMapper.class, JsonFactory.class,
+        for (Class<?> type : List.of(GitWorker.class, ObjectMapper.class, JsonFactory.class,
             JsonProperty.class, ProcessMessage.class)) {
             try {
                 var url = type.getProtectionDomain().getCodeSource().getLocation();
@@ -46,7 +46,7 @@ final class DeploymentGitLaunch {
             environment.put("SystemRoot", systemRoot);
         return new ProcessSpec(Path.of(System.getProperty("java.home"), "bin", "java.exe"),
             List.of("-Dfile.encoding=UTF-8", "-Djava.io.tmpdir=" + control, "-cp",
-                String.join(File.pathSeparator, sources), DeploymentGitWorker.class.getName(), identity.id(),
+                String.join(File.pathSeparator, sources), GitWorker.class.getName(), identity.id(),
                 identity.version(), git.toString(), control.toString(), job.toString()),
             environment, checkout);
     }
