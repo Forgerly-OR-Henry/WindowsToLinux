@@ -1,116 +1,75 @@
 package gold.debug.windowstolinux.app.main.start;
 
-import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionIntegrationTest.count;
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.net.URI;
 import java.nio.file.*;
 import java.util.*;
-import java.util.function.Consumer;
 
-import gold.debug.windowstolinux.app.service.mod.*;
-import gold.debug.windowstolinux.app.service.mod.store.ModStoreGateway;
-import gold.debug.windowstolinux.app.service.mod.store.ModStoreService;
-import gold.debug.windowstolinux.app.service.mod.store.UnavailableModStoreGateway;
-import gold.debug.windowstolinux.appapi.task.result.ApiException;
-import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.app.service.mod.store.*;
+import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection.*;
+import gold.debug.windowstolinux.appapi.task.result.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Actual store availability, HTTP package integrity and original installer checks. / 实际商店可用性、HTTP 包完整性及原安装器核验。 */
 class ModStoreTest {
     @TempDir
     Path root;
 
-    final URI url = URI.create("https://mods.example.com/api");
-
-    final ModStoreGateway.Release release = new ModStoreGateway.Release("sample.bundle", "1.0.0", "测试包", "模拟服务，仅用于验收");
-
     @Test
-    void unavailableAndEmptyUrlNeverInventResultsOrDownloadAndClassCannotInstall() throws Exception {
-        try (var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {
-            var password = "isolated-store-password".toCharArray();
-            runtime.security().setupAndUnlock(password, password.clone());
-            var gateway = new UnavailableModStoreGateway();
-            for (var base : List.of(Optional.<URI>empty(), Optional.of(url))) {
-                var store = new ModStoreService(base, gateway, Optional.empty(), runtime.security());
-                assertFalse(store.canInstall());
-                var failure = assertThrows(ApiException.class, () -> store.query("saved keyword"));
-                assertEquals("MOD_STORE_UNAVAILABLE", failure.problem().eventCode());
-                assertThrows(IllegalStateException.class, () -> store.install(release, ignored -> {
-                }));
-            }
+    void absentSourceAndClassNeverInventCatalogOrInstallPackages() throws Exception {
+        try (var runtime = PlatformRuntime.open(root.resolve("data"), FilePlatformFixture.PROTECTION)) {
+            runtime.security().setupAndUnlock(ModStoreFixture.PASSWORD.toCharArray(), ModStoreFixture.PASSWORD.toCharArray());
+            var store = new ModStoreService(Optional.empty(), new UnavailableModStoreGateway(), Optional.empty(), runtime.security(),
+                runtime.persistence().database(), root, PlatformBuildIdentity.readApiVersion());
+            assertFalse(store.canInstall());
+            var failure = assertThrows(ApiException.class, () -> store.catalog(() -> false));
+            assertEquals("MOD_STORE_UNAVAILABLE", failure.problem().eventCode());
+            assertThrows(IllegalStateException.class, () -> store.install(1, () -> false, ignored -> {
+            }));
             assertFalse(Files.exists(root.resolve("mod-zip")));
         }
     }
 
     @Test
-    void simulatedSearchDownloadVerifyAndRealInstallerPreserveDisabledSelection() throws Exception {
-        var fixture = new PlatformModInstallationTest();
-        fixture.root = root;
-        fixture.compile();
-        Path original = fixture.original("test-adapter-source.wtlmod", "1.0.0", "模拟下载");
-        var events = new ArrayList<String>();
-        var progress = new ArrayList<ModStoreGateway.Progress>();
-        ModStoreGateway gateway = new ModStoreGateway() {
-            public QueryResult query(URI base, String keyword) {
-                assertEquals(url, base);
-                assertEquals("测试", keyword);
-                events.add("query");
-                return new QueryResult(List.of(release));
-            }
-
-            public DownloadResult download(URI base, Release selected, Path destination, Consumer<Progress> observer) throws Exception {
-                assertEquals(release, selected);
-                events.add("download");
-                Files.copy(original, destination);
-                observer.accept(new Progress(Files.size(destination), Files.size(destination)));
-                return new DownloadResult(destination);
-            }
-
-            public Verification verify(Release selected, DownloadResult downloaded) {
-                events.add("verify");
-                return new Verification(true, "TEST ADAPTER verification, no production signature");
-            }
-        };
-        try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
-            var store = new ModStoreService(Optional.of(url), gateway, Optional.of(installer), runtime.security());
-            assertEquals(release, store.query("测试").releases().getFirst());
-            var result = store.install(release, progress::add);
-            assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
-            assertEquals(List.of("query", "download", "verify"), events);
-            assertEquals(1, progress.size());
-            assertEquals("FALSE/1.0.0", PlatformModIntentsTest.text(runtime, "SELECT enabled || '/' || selected_version FROM mod_registry"));
-            assertTrue(Files.isRegularFile(fixture.target("1.0.0").resolve("mod.json")));
-            assertNull(System.getProperty(PlatformModInstallationTest.MARK));
+    void actualHttpCatalogDownloadAndInstallerPreserveDisabledSelectionAndNoAuthorExecution() throws Exception {
+        try (var fixture = new ModStoreFixture(root)) {
+            var key = fixture.publish("sample.bundle", "1.0.0", Map.of(), Map.of(), Map.of());
+            var catalog = fixture.service().catalog(() -> false);
+            assertEquals(key.owner(), catalog.releases().getFirst().owner());
+            var plan = fixture.service().plan(catalog.revision(), new ModStoreSelection(key, Set.of(), Map.of()), () -> false);
+            assertTrue(plan.valid(), plan.toString());
+            var progress = new ArrayList<ModStoreProgress>();
+            var actual = fixture.service().install(plan.revision(), () -> false, progress::add);
+            assertEquals(TaskResult.SUCCEEDED, actual.outcome(), actual.toString());
+            assertTrue(actual.requiredReady());
+            assertTrue(actual.allSelectedReady());
+            assertEquals(ModStoreBatchResult.State.INSTALLED, actual.packages().getFirst().state());
+            assertEquals("FALSE/1.0.0", fixture.text("SELECT enabled || '/' || selected_version FROM mod_registry"));
+            assertTrue(Files.isRegularFile(root.resolve("mod/sample.bundle/1.0.0/mod.json")));
+            assertEquals(1, fixture.requests(key));
+            assertFalse(progress.isEmpty());
+            assertNull(System.getProperty(ModStoreFixture.AUTHOR_MARK));
         }
     }
 
     @Test
-    void failedAdapterVerificationNeverRegistersPackage() throws Exception {
-        var fixture = new PlatformModInstallationTest();
-        fixture.root = root;
-        fixture.compile();
-        Path original = fixture.original("bad-trust.wtlmod", "1.0.0", "fixture");
-        ModStoreGateway gateway = new ModStoreGateway() {
-            public QueryResult query(URI base, String keyword) {
-                return new QueryResult(List.of(release));
+    void actualDigestFailureNeverRegistersOrExposesPartialOriginal() throws Exception {
+        try (var fixture = new ModStoreFixture(root)) {
+            var key = fixture.publish("sample.bundle", "1.0.0", Map.of(), Map.of(), Map.of());
+            fixture.badDigest(key);
+            var catalog = fixture.service().catalog(() -> false);
+            var plan = fixture.service().plan(catalog.revision(), new ModStoreSelection(key, Set.of(), Map.of()), () -> false);
+            var result = fixture.service().install(plan.revision(), () -> false, ignored -> {
+            });
+            assertEquals(TaskResult.FAILED, result.outcome());
+            assertFalse(result.requiredReady());
+            assertEquals(0, fixture.count("SELECT COUNT(*) FROM mod_version"));
+            assertFalse(Files.exists(root.resolve("mod/sample.bundle/1.0.0")));
+            try (var paths = Files.list(root.resolve("mod-zip"))) {
+                assertEquals(0, paths.count());
             }
-
-            public DownloadResult download(URI base, Release value, Path destination, Consumer<Progress> progress) throws Exception {
-                Files.copy(original, destination);
-                return new DownloadResult(destination);
-            }
-
-            public Verification verify(Release value, DownloadResult result) {
-                return new Verification(false, "rejected test evidence");
-            }
-        };
-        try (var runtime = fixture.runtime(); var installer = fixture.installer(runtime)) {
-            var store = new ModStoreService(Optional.of(url), gateway, Optional.of(installer), runtime.security());
-            assertThrows(java.io.IOException.class, () -> store.install(release, ignored -> {
-            }));
-            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_version"));
-            assertFalse(Files.exists(fixture.target("1.0.0")));
+            assertEquals(1, fixture.requests(key));
         }
     }
 }

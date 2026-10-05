@@ -295,7 +295,19 @@ WindowsToLinux/
    │  │  │  │  ├─ PlatformModInstallation.java  # 经持久阶段安装已审阅本地原包，不启用或执行作者代码
    │  │  │  │  └─ PlatformModReinstallation.java  # 修复原安装发布，保留数据、选择及可恢复旧程序
    │  │  │  └─ store/  # Mod 商店查询、获取及验证的适配
+   │  │  │     ├─ HttpModStoreGateway.java  # 实际同源 HTTP 传输，具备完整 body 期限且不重定向
+   │  │  │     ├─ ModStoreBatch.java  # 执行一份固定计划，保留实际凭据及原不确定性
+   │  │  │     ├─ ModStoreBatchResult.java  # 取消或不确定后仍保留的实际逐包事实
+   │  │  │     ├─ ModStoreBody.java  # 仅在 EOF 及文件关闭后完成的有界流式 body
+   │  │  │     ├─ ModStoreCatalog.java  # 完整远端目录及独立核验安装观察
+   │  │  │     ├─ ModStoreFacts.java  # 共用商店事实，与作者执行及安装权限分开
    │  │  │     ├─ ModStoreGateway.java  # 商店查询、发布、下载、进度及验证接口
+   │  │  │     ├─ ModStoreInstalled.java  # 读取实际登记安装程序，不启动作者或发现源码
+   │  │  │     ├─ ModStorePlan.java  # 一份修订绑定的完整获取计划
+   │  │  │     ├─ ModStoreProgress.java  # 原批次的实际阶段及字节观察
+   │  │  │     ├─ ModStoreProtocol.java  # 严格版本一目录协议，作者解析仍归 ManifestReader
+   │  │  │     ├─ ModStoreResolver.java  # 每分支从固定主项重建的有限全局搜索
+   │  │  │     ├─ ModStoreSelection.java  # 明确不可变用户选择，可选关系不会静默消失
    │  │  │     ├─ ModStoreService.java  # 确认下载与校验后复用已有安装器
    │  │  │     └─ UnavailableModStoreGateway.java  # 无真实 HTTP 的服务明确报告不可用的商店入口
    │  │  ├─ process/  # 任务所属辅助进程的受管访问
@@ -371,7 +383,11 @@ WindowsToLinux/
    │  │  │  ├─ ModNavigationPane.java  # 每个已发布根自动显示一次，不构造作者视图
    │  │  │  ├─ ModOriginalsPane.java  # 管理明确发现的原包及其原中断安装
    │  │  │  ├─ ModPageRegistry.java  # 持有暂存页面扩展及限定在 EDT 的作者视图生命周期
+   │  │  │  ├─ ModStoreConfirmation.java  # 持有明确接纳且可撤销的完整当前计划审阅
+   │  │  │  ├─ ModStoreFeedback.java  # 独立于传输阶段展示原逐包回执
    │  │  │  ├─ ModStorePane.java  # 商店搜索、详情、安装、进度和手动重试
+   │  │  │  ├─ ModStorePlanModel.java  # 展示精确已解析及未解析所有者，不执行依赖解析
+   │  │  │  ├─ ModStoreSelectionPane.java  # 编辑用户固定版本及可选边，同时展示原服务计划
    │  │  │  └─ PlatformModsPane.java  # 经原宿主管理 Mod 已存选择及明确数据维护
    │  │  ├─ server/  # 服务器配置、选择、编辑与 SSH 救援界面
    │  │  │  ├─ PlatformServersPane.java  # 带显式任务恢复的常驻配置及仅认证 SSH 页面

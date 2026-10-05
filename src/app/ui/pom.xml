@@ -35,6 +35,11 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <groupId>gold.debug.windowstolinux</groupId>
+      <artifactId>windowstolinux-app-mod</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.formdev</groupId>
       <artifactId>flatlaf</artifactId>
       <version>${flatlaf.version}</version>
