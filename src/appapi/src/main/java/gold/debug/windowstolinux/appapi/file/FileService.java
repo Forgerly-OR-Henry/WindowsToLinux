@@ -5,6 +5,7 @@ import gold.debug.windowstolinux.appapi.file.action.FileActionService;
 import gold.debug.windowstolinux.appapi.file.source.FileSourceService;
 import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshotService;
 import gold.debug.windowstolinux.appapi.file.work.FileWorkspaceService;
+import gold.debug.windowstolinux.appapi.file.material.FileMaterialService;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
@@ -30,6 +31,10 @@ public interface FileService {
     /** Returns the original activation-bound capability without performing I/O. / 返回原启用绑定能力，不执行读写。
      * @return original workspaces capability / 原workspaces能力 */
     FileWorkspaceService workspaces();
+
+    /** Returns original-task material custody without acquiring resources. / 返回原任务素材接管能力，不取得资源。
+     * @return activation-bound material capability / 启用绑定素材能力 */
+    FileMaterialService materials();
 
     /** Releases only physically verified work owned by this original task. / 仅释放此原任务物理已核实的工作素材。
      * @param task original task or recovery context / 原任务或恢复上下文

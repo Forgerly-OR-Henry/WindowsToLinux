@@ -78,6 +78,7 @@ class PlatformModServicesTest {
                     private final TaskService tasks;
                     private final Runnable hook;
                     private java.sql.Connection retained;
+                    private gold.debug.windowstolinux.appapi.task.run.ResourceLease retainedCustom;
                     public final List<String> values = new ArrayList<>(List.of("original"));
                     public Mod(ModDatabase db, ServerService servers, TaskService tasks, Runnable hook) {
                         this.db=db;this.servers=servers;this.tasks=tasks;this.hook=hook;
@@ -99,8 +100,22 @@ class PlatformModServicesTest {
                             case "servers" -> servers.list(Optional.empty(), 10, task).items().stream().map(s -> s.ref().id()).toList();
                             case "unadmitted" -> servers.get(new ServerId("other"), task);
                             case "snapshot" -> new example.provider.api.View(values);
+                            case "checkpoint" -> {
+                                try(var fact=tasks.beginCheckpoint(task,"same","{\\"provider\\":true}")) {
+                                    yield fact.snapshot().payload();
+                                }
+                            }
+                            case "asyncCheckpoint" -> {
+                                var result = new java.util.concurrent.atomic.AtomicReference<String>();
+                                Thread worker=Thread.ofVirtual().start(() -> {
+                                    try { tasks.findCheckpoint(task,"same"); result.set("WRONG"); }
+                                    catch(ApiException denied) { result.set(denied.problem().code().name()); }
+                                }); worker.join(); yield result.get();
+                            }
                             case "leak" -> { retained=db.openConnection(task); yield "retained"; }
                             case "close" -> { if(retained!=null) retained.close(); yield "closed"; }
+                            case "retainCustom" -> { retainedCustom=task.retain("provider_fixture", "original", "Original provider resource"); yield "retained"; }
+                            case "closeCustom" -> { if(retainedCustom!=null) retainedCustom.close(); yield "closed"; }
                             case "future" -> java.util.concurrent.CompletableFuture.completedFuture("done");
                             case "throw" -> throw new IllegalStateException("must-not-leak-secret");
                             case "providerError" -> throw new java.util.ServiceConfigurationError("must-not-leak-secret");
@@ -138,6 +153,11 @@ class PlatformModServicesTest {
 
     ModClassLoader loader(String owner, Path classes, boolean dependency, Map<String, ModClassLoader> exports)
         throws Exception {
+        return loader(owner, classes, dependency, exports, false);
+    }
+
+    ModClassLoader loader(String owner, Path classes, boolean dependency, Map<String, ModClassLoader> exports,
+                          boolean optional) throws Exception {
         String json = """
             {"formatVersion":1,"id":"%s","name":"fixture","version":"1.0.0","platformApiRange":"1.0.0-dev.1","minJavaVersion":21,"mainJar":"main/fixture.jar","entryClass":"%s.Mod"%s%s}
             """
@@ -146,6 +166,8 @@ class PlatformModServicesTest {
                 dependency
                     ? ",\"dependencies\":[{\"id\":\"example.provider\",\"versionRange\":\"[1.0.0,2.0.0)\"}]"
                     : "");
+        if (optional)
+            json = json.replace("\"versionRange\":\"[1.0.0,2.0.0)\"", "\"versionRange\":\"[1.0.0,2.0.0)\",\"optional\":true");
         return new ModClassLoader(ManifestReader.read(json.getBytes(StandardCharsets.UTF_8)),
             List.of(classes.toUri().toURL()), exports);
     }
@@ -203,6 +225,11 @@ class PlatformModServicesTest {
 
         @SuppressWarnings("unchecked")
         Fixture(Path classes, ModLaunchMode mode, SchemaIdentity original) throws Exception {
+            this(classes, mode, original, false);
+        }
+
+        @SuppressWarnings("unchecked")
+        Fixture(Path classes, ModLaunchMode mode, SchemaIdentity original, boolean optional) throws Exception {
             runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION);
             db = runtime.persistence().database();
             if (original == null) {
@@ -215,7 +242,7 @@ class PlatformModServicesTest {
             runtime.setInteractionPresenter(reviews);
             business = new TaskModDatabase(db, runtime.tasks(), schema);
             providerLoader = loader(PROVIDER, classes, false, Map.of());
-            callerLoader = loader(OWNER, classes, true, Map.of("example.provider.api", providerLoader));
+            callerLoader = loader(OWNER, classes, true, Map.of("example.provider.api", providerLoader), optional);
             sql(db, "UPDATE mod_version SET manifest_json=? WHERE mod_id=? AND version=?",
                 providerLoader.manifest().json(), PROVIDER, VERSION);
             sql(db, "UPDATE mod_version SET manifest_json=? WHERE mod_id=? AND version=?",
@@ -295,6 +322,113 @@ class PlatformModServicesTest {
     }
 
     @Test
+    void optionalUsePersistsExactGraphAndPinsBeforeAuthorHookWhileDiscoveryIsReadOnly() throws Exception {
+        try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null, true)) {
+            f.publish();
+            assertEquals(gold.debug.windowstolinux.appapi.mod.service.AvailabilityState.AVAILABLE,
+                f.callerBinding.availability(PROVIDER).state());
+            assertThrows(ApiException.class, () -> f.callerBinding.availability("example.undeclared"));
+            assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource"));
+            try (var handle = f.handle()) {
+                var task = f.tasks.submit(request(), context -> {
+                    var ledger = new TaskLedger(f.db);
+                    assertEquals(1, ledger.queries().recoveryGraph(context.id()).orElseThrow().releases().size());
+                    f.hook.set(() -> {
+                        try {
+                            var graph = ledger.queries().recoveryGraph(context.id()).orElseThrow();
+                            assertEquals(Optional.of(f.schema), graph.release(PROVIDER).schema());
+                            assertTrue(graph.edges().contains(new gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.Edge(OWNER, PROVIDER,
+                                gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.EdgeKind.OPTIONAL_USED)));
+                            assertTrue(ledger.queries().holds(context.id(), new TaskResource("MOD", PROVIDER, PROVIDER, false)));
+                            assertEquals("service.v2", ledger.queries().dependencies(context.id()).keySet().iterator().next().encode().protocol());
+                        } catch (Exception failure) {
+                            throw new AssertionError(failure);
+                        }
+                    });
+                    assertEquals(1, f.call(handle, "write", context));
+                    assertTrue(ledger.queries().holds(context.id(), new TaskResource("MOD", PROVIDER, PROVIDER, false)));
+                    return success(null);
+                });
+                assertEquals(TaskResult.SUCCEEDED, task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
+            }
+            assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+    }
+
+    @Test
+    void busyOptionalProviderCannotExpandOriginalGraphOrReachAuthorCode() throws Exception {
+        try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null, true)) {
+            f.publish();
+            f.hook.set(() -> fail("Rejected optional call reached provider"));
+            var ledger = new TaskLedger(f.db);
+            var maintenance = ledger.enqueue(UUID.randomUUID(), PROVIDER, VERSION, request(),
+                List.of(new TaskResource("MOD", PROVIDER, PROVIDER, true)));
+            assertTrue(ledger.tryStart(maintenance));
+            try (var handle = f.handle()) {
+                var task = f.tasks.submit(request(), context -> {
+                    assertEquals(ProblemCode.BUSY,
+                        assertThrows(ApiException.class, () -> f.call(handle, "write", context)).problem().code());
+                    assertEquals(List.of(OWNER), ledger.queries().recoveryGraph(context.id()).orElseThrow()
+                        .releases().stream().map(gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph.Release::owner)
+                        .toList());
+                    assertTrue(ledger.queries().dependencies(context.id()).isEmpty());
+                    assertFalse(ledger.queries().holds(context.id(), new TaskResource("MOD", PROVIDER, PROVIDER, false)));
+                    return success(null);
+                });
+                assertEquals(TaskResult.SUCCEEDED,
+                    task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
+            } finally {
+                assertTrue(ledger.complete(maintenance, TaskResult.SUCCEEDED, "{}", false));
+            }
+        }
+    }
+
+    @Test
+    void availabilityTracksHostStateWithoutLoadingProviderTypesOrRetainingClaims() throws Exception {
+        try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null, true)) {
+            f.publish();
+            var available = gold.debug.windowstolinux.appapi.mod.service.AvailabilityState.AVAILABLE;
+            var unavailable = gold.debug.windowstolinux.appapi.mod.service.AvailabilityState.START_FAILED;
+            assertEquals(available, f.callerBinding.availability(PROVIDER).state());
+            sql(f.db, "UPDATE mod_registry SET enabled=FALSE WHERE mod_id=?", PROVIDER);
+            assertEquals(gold.debug.windowstolinux.appapi.mod.service.AvailabilityState.DISABLED,
+                f.callerBinding.availability(PROVIDER).state());
+            sql(f.db, "UPDATE mod_registry SET enabled=TRUE,last_runtime_state='FAILED' WHERE mod_id=?", PROVIDER);
+            assertEquals(unavailable, f.callerBinding.availability(PROVIDER).state());
+            f.runtime.tasks().blockOwner(PROVIDER, "Failed startup remains sealed");
+            var blocked = gold.debug.windowstolinux.appapi.mod.service.AvailabilityState.RECOVERY_BLOCKED;
+            assertEquals(blocked, f.callerBinding.availability(PROVIDER).state(), "A still-owned activation remains blocked");
+            sql(f.db, "UPDATE mod_registry SET actual_version=NULL WHERE mod_id=?", PROVIDER);
+            assertEquals(unavailable, f.callerBinding.availability(PROVIDER).state());
+            assertTrue(f.runtime.tasks().callbacks().ownerAdmissionBlocked(PROVIDER));
+            var ledger = new TaskLedger(f.db);
+            var original = ledger.enqueue(UUID.randomUUID(), PROVIDER, VERSION,
+                new gold.debug.windowstolinux.appapi.task.model.TaskRequest("classification-proof", "Original retained provider work", List.of(), false),
+                List.of(new TaskResource("MOD", PROVIDER, PROVIDER, false)));
+            assertTrue(ledger.tryStart(original));
+            assertEquals(blocked, f.callerBinding.availability(PROVIDER).state(), "An actual retained task overrides failed startup");
+            assertTrue(ledger.complete(original, TaskResult.CANCELLED, "{}", false));
+            assertEquals(unavailable, f.callerBinding.availability(PROVIDER).state());
+            sql(f.db, "UPDATE mod_registry SET last_boot_id=? WHERE mod_id=?", UUID.randomUUID(), PROVIDER);
+            assertEquals(blocked, f.callerBinding.availability(PROVIDER).state(), "A previous boot is not confirmed current startup failure");
+            f.runtime.tasks().allowOwner(PROVIDER);
+            sql(f.db, "UPDATE mod_registry SET last_runtime_state='RUNNING',last_boot_id=? WHERE mod_id=?",
+                UUID.randomUUID(), PROVIDER);
+            assertEquals(unavailable, f.callerBinding.availability(PROVIDER).state());
+            sql(f.db, "UPDATE mod_registry SET last_boot_id=?,actual_version=? WHERE mod_id=?", f.db.bootId(), VERSION, PROVIDER);
+            f.runtime.tasks().blockOwner(PROVIDER, "Original retained recovery");
+            assertEquals(gold.debug.windowstolinux.appapi.mod.service.AvailabilityState.RECOVERY_BLOCKED,
+                f.callerBinding.availability(PROVIDER).state());
+            f.runtime.tasks().allowOwner(PROVIDER);
+            assertEquals(available, f.callerBinding.availability(PROVIDER).state());
+            assertEquals(1, count(f.db, "SELECT COUNT(*) FROM platform_task_resource"));
+            assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            assertEquals(1, count(f.db, "SELECT COUNT(*) FROM platform_task"));
+            assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task WHERE state<>'ENDED'"));
+        }
+    }
+
+    @Test
     void actualProviderUsesOwnJdbcAndOriginalServersThenReleasesAllClaims() throws Exception {
         try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null)) {
             assertThrows(ApiException.class, f::handle);
@@ -338,13 +472,34 @@ class PlatformModServicesTest {
                     assertThrows(ApiException.class, () -> f.invoke(escaped.get(), "write", context));
                     assertThrows(ApiException.class, () -> f.business.openConnection(context));
                     assertTrue(new TaskLedger(f.db).queries().dependencies(context.id()).isEmpty());
-                    assertTrue(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
+                    assertFalse(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                     return success(null);
                 });
                 assertEquals(TaskResult.SUCCEEDED,
                     task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
                 assertEquals(1, count(f.db, "SELECT COUNT(*) FROM mod_schema WHERE ever_used=TRUE"));
                 assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            }
+        }
+    }
+
+    @Test
+    void providerCheckpointExistsOnlyInCurrentSynchronousScopeAndOwnNamespace() throws Exception {
+        try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null)) {
+            f.publish();
+            try (var handle = f.handle()) {
+                var task = f.tasks.submit(request(), context -> {
+                    var providerTasks = f.runtime.tasks().bind(PROVIDER, VERSION, false);
+                    assertThrows(ApiException.class, () -> providerTasks.findCheckpoint(context, "same"));
+                    try (var rootFact = f.tasks.beginCheckpoint(context, "same", "{\"root\":true}")) {
+                        assertEquals("{\"provider\":true}", f.call(handle, "checkpoint", context));
+                        assertEquals("ACCESS_DENIED", f.call(handle, "asyncCheckpoint", context));
+                        assertEquals("{\"root\":true}", rootFact.snapshot().payload());
+                        assertThrows(ApiException.class, () -> providerTasks.findCheckpoint(context, "same"));
+                    }
+                    return success(null);
+                });
+                assertEquals(TaskResult.SUCCEEDED, task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
             }
         }
     }
@@ -375,6 +530,54 @@ class PlatformModServicesTest {
                     assertFalse(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
                     assertEquals(TaskState.ENDED, f.reconcile(task.id()).state());
                 }
+            }
+        }
+    }
+
+    @Test
+    void knownRecoveryCannotReleaseOriginalCallGroupWhileProviderCustomResourceRemains() throws Exception {
+        try (var f = new Fixture(compileProvider(), ModLaunchMode.NORMAL, null, true)) {
+            f.publish();
+            var closePhysical = new AtomicBoolean();
+            var knownCallbacks = new AtomicInteger();
+            try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
+                knownCallbacks.incrementAndGet();
+                if (closePhysical.get())
+                    assertEquals("closed", f.call(handle, "closeCustom", context));
+                return success(null);
+            })) {
+                var task = f.tasks.submit(request(), context -> {
+                    var pending = assertThrows(ApiException.class, () -> f.call(handle, "retainCustom", context));
+                    assertEquals("SERVICE_RELEASE_PENDING", pending.problem().eventCode());
+                    return success(null);
+                });
+                state(task, TaskState.UNKNOWN);
+                var ledger = new TaskLedger(f.db);
+                var groups = ledger.queries().dependencies(task.id());
+                assertEquals(1, groups.size());
+                var original = groups.keySet().iterator().next();
+                assertEquals("service.v2", original.encode().protocol());
+                assertEquals(OWNER, original.caller());
+                assertEquals(PROVIDER, original.provider());
+                String physical = "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + task.id()
+                    + "' AND owner_id='" + PROVIDER + "' AND resource_kind='CUSTOM' AND released_at IS NULL";
+                assertEquals(1, count(f.db, physical));
+                try {
+                    assertEquals(TaskState.UNKNOWN, f.reconcile(task.id()).state());
+                    assertEquals(1, knownCallbacks.get(), "The explicit author recovery actually returned KNOWN");
+                    assertEquals(groups, ledger.queries().dependencies(task.id()), "Original call proof and scoped leases remain intact");
+                    assertEquals(1, count(f.db, physical));
+                    assertTrue(ledger.queries().hasDependencyResources(task.id(), Set.of(PROVIDER)));
+                    assertFalse(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
+                    assertFalse(task.completion().toCompletableFuture().isDone());
+                } finally {
+                    closePhysical.set(true);
+                    assertEquals(TaskState.ENDED, f.reconcile(task.id()).state());
+                }
+                assertEquals(2, knownCallbacks.get());
+                assertEquals(TaskResult.SUCCEEDED, task.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
+                assertEquals(0, count(f.db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                assertTrue(f.runtime.tasks().ownerBlockers(PROVIDER).isEmpty());
             }
         }
     }
@@ -489,22 +692,34 @@ class PlatformModServicesTest {
                 assertTrue(new TaskLedger(f.db).queries().dependencies(task.id()).isEmpty());
                 sql(f.db, "UPDATE mod_registry SET enabled=TRUE WHERE mod_id=?", PROVIDER);
                 var ledger = new TaskLedger(f.db);
-                var maintenance = ledger.enqueue(UUID.randomUUID(), PROVIDER, VERSION, request(),
-                    List.of(new TaskResource("MOD", PROVIDER, PROVIDER, true)));
-                assertTrue(ledger.tryStart(maintenance));
+                var maintenanceStarted = new CountDownLatch(1);
+                var releaseMaintenance = new CountDownLatch(1);
+                f.runtime.started();
+                var maintenance = f.runtime.tasks().bind("@platform", f.runtime.version(), false).submit(request(), context -> {
+                    try (var lease = f.runtime.tasks().retain(context, new TaskResource("MOD", PROVIDER, PROVIDER, true))) {
+                        maintenanceStarted.countDown();
+                        assertTrue(releaseMaintenance.await(12, TimeUnit.SECONDS));
+                    }
+                    return success(null);
+                });
+                assertTrue(maintenanceStarted.await(8, TimeUnit.SECONDS));
+                gold.debug.windowstolinux.appapi.task.run.TaskHandle<Object> blocked;
                 try {
-                    var blocked = f.tasks.submit(request(), context -> {
-                        assertEquals(ProblemCode.BUSY,
-                            assertThrows(ApiException.class, () -> f.call(handle, "write", context)).problem()
-                                .code());
-                        assertTrue(ledger.queries().dependencies(context.id()).isEmpty());
+                    blocked = f.tasks.submit(request(), context -> {
+                        assertEquals(1, f.call(handle, "write", context));
                         return success(null);
                     });
-                    assertEquals(TaskResult.SUCCEEDED,
-                        blocked.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
+                    assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.QUEUED,
+                        blocked.snapshot().state());
+                    assertFalse(blocked.completion().toCompletableFuture().isDone());
+                    assertTrue(ledger.queries().dependencies(blocked.id()).isEmpty());
                 } finally {
-                    assertTrue(ledger.complete(maintenance, TaskResult.SUCCEEDED, "{}", false));
+                    releaseMaintenance.countDown();
                 }
+                assertEquals(TaskResult.SUCCEEDED,
+                    maintenance.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
+                assertEquals(TaskResult.SUCCEEDED,
+                    blocked.completion().toCompletableFuture().get(12, TimeUnit.SECONDS).outcome());
             }
         }
     }
@@ -693,7 +908,7 @@ class PlatformModServicesTest {
                 List.of(new TaskResource("MOD", OWNER, OWNER, false)));
             assertTrue(ledger.tryStart(taskId));
             var old = new DependencyRecovery(db.bootId(), UUID.randomUUID(), PROVIDER, VERSION, Optional.of(schema));
-            ledger.retainDependency(taskId, old, c -> old.claims());
+            ledger.dependencies().retainDependency(taskId, old, c -> old.claims());
             sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'2.0.0','next',?,'1','{}','CLASS',1,'READY')",
                 PROVIDER, "1".repeat(64));
             sql(db, "UPDATE mod_registry SET selected_version='2.0.0' WHERE mod_id=?", PROVIDER);
@@ -713,6 +928,69 @@ class PlatformModServicesTest {
                 assertEquals(TaskState.ENDED, f.reconcile(taskId).state());
                 assertEquals(1, count(f.db,
                     "SELECT COUNT(*) FROM mod_registry WHERE mod_id='example.provider' AND selected_version='2.0.0'"));
+            }
+        }
+    }
+
+    @Test
+    void usedOptionalRecoveryBlocksUnavailableOriginalProviderInsteadOfSelectingNewRelease() throws Exception {
+        Path classes = compileProvider();
+        SchemaIdentity schema;
+        UUID taskId;
+        gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph original;
+        try (var f = new Fixture(classes, ModLaunchMode.NORMAL, null, true)) {
+            f.publish();
+            schema = f.schema;
+            try (var handle = f.handle(); var recovery = f.recovery((before, context) -> success(null))) {
+                var task = f.tasks.submit(request(), context -> {
+                    assertEquals(1, f.call(handle, "write", context));
+                    return PlatformTaskManagementWindowTest.unknown();
+                });
+                taskId = task.id();
+                state(task, TaskState.UNKNOWN);
+                original = new TaskLedger(f.db).queries().recoveryGraph(taskId).orElseThrow();
+                assertEquals(TaskState.ENDED, f.reconcile(taskId).state());
+            }
+        }
+        try (var db = PlatformDatabase.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            var ledger = new TaskLedger(db);
+            ledger.enqueue(taskId, OWNER, VERSION, request(), new TaskLedger.InitialClaims() {
+                public List<TaskResource> resolve(java.sql.Connection c) {
+                    return original.claims();
+                }
+
+                public Optional<gold.debug.windowstolinux.app.db.task.TaskRecoveryGraph> recoveryGraph(java.sql.Connection c) {
+                    return Optional.of(original);
+                }
+            });
+            assertTrue(ledger.tryStart(taskId));
+            ledger.uncertain(taskId);
+            sql(db, "INSERT INTO mod_version(mod_id,version,install_path,content_sha256,schema_version,manifest_json,origin_kind,installed_at,state) VALUES(?,'2.0.0','next',?,'1','{}','CLASS',1,'READY')",
+                PROVIDER, "2".repeat(64));
+            sql(db, "UPDATE mod_registry SET selected_version='2.0.0' WHERE mod_id=?", PROVIDER);
+            sql(db, "UPDATE mod_version SET state='REINSTALLING' WHERE mod_id=? AND version=?", PROVIDER, VERSION);
+        }
+        try (var f = new Fixture(classes, ModLaunchMode.RECOVERY, schema, true)) {
+            f.publish();
+            f.hook.set(() -> fail("Unavailable original provider reached author code"));
+            try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
+                assertEquals("SERVICE_ADMISSION_PERSISTENCE",
+                    assertThrows(ApiException.class, () -> f.call(handle, "read", context)).problem().eventCode());
+                return PlatformTaskManagementWindowTest.unknown();
+            })) {
+                assertEquals(TaskState.UNKNOWN, f.reconcile(taskId).state());
+                assertEquals(original, new TaskLedger(f.db).queries().recoveryGraph(taskId).orElseThrow());
+                assertEquals(1, count(f.db, "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='MOD' AND owner_id='example.provider' AND released_at IS NULL"));
+            }
+            sql(f.db, "UPDATE mod_version SET state='READY' WHERE mod_id=? AND version=?", PROVIDER, VERSION);
+            f.hook.set(() -> {
+            });
+            try (var handle = f.handle(); var recovery = f.recovery((before, context) -> {
+                assertEquals(1, f.call(handle, "read", context));
+                return success(null);
+            })) {
+                assertEquals(TaskState.ENDED, f.reconcile(taskId).state());
+                assertEquals(1, count(f.db, "SELECT COUNT(*) FROM mod_registry WHERE mod_id='example.provider' AND selected_version='2.0.0'"));
             }
         }
     }

@@ -258,11 +258,20 @@ public final class TaskAuthorCheckpoint {
     private static void requireTask(Connection connection, UUID task, String owner, String version)
         throws SQLException {
         try (var query = connection
-            .prepareStatement("SELECT owner_id,owner_version FROM platform_task WHERE task_id=?")) {
+            .prepareStatement("SELECT owner_id,owner_version,recovery_json FROM platform_task WHERE task_id=?")) {
             query.setObject(1, task);
             try (var rows = query.executeQuery()) {
-                if (!rows.next() || !owner.equals(rows.getString(1)) || !version.equals(rows.getString(2)))
-                    throw new SQLException("Original checkpoint task identity differs");
+                if (!rows.next()) throw new SQLException("Original checkpoint task is absent");
+                if (owner.equals(rows.getString(1)) && version.equals(rows.getString(2))) return;
+                try {
+                    var document = JSON.readTree(rows.getString(3));
+                    if (!Set.of(2, 3).contains(document.path("formatVersion").asInt()))
+                        throw new IllegalArgumentException();
+                    var original = TaskRecoveryGraph.decode(document.path("graph")).release(owner);
+                    if (!original.version().equals(version)) throw new IllegalArgumentException();
+                } catch (java.io.IOException | IllegalArgumentException | NoSuchElementException invalid) {
+                    throw new SQLException("Original checkpoint provider identity differs", invalid);
+                }
             }
         }
     }

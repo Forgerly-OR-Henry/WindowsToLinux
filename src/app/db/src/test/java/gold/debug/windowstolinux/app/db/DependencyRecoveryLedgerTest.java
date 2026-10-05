@@ -37,31 +37,31 @@ class DependencyRecoveryLedgerTest {
                 s.execute(
                     "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_acquire CHECK(resource_kind<>'SCHEMA')");
             }
-            assertThrows(SQLException.class, () -> ledger.retainDependency(task, first, c -> first.claims()));
+            assertThrows(SQLException.class, () -> ledger.dependencies().retainDependency(task, first, c -> first.claims()));
             assertTrue(ledger.queries().dependencies(task).isEmpty());
             assertFalse(ledger.queries().holds(task, first.claims().getFirst()));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_acquire");
             }
-            var one = ledger.retainDependency(task, first, c -> first.claims());
-            var two = ledger.retainDependency(task, second, c -> second.claims());
+            var one = ledger.dependencies().retainDependency(task, first, c -> first.claims());
+            var two = ledger.dependencies().retainDependency(task, second, c -> second.claims());
             assertEquals(2, ledger.queries().dependencies(task).size());
-            assertThrows(SQLException.class, () -> ledger.releaseDependency(task, first, two));
+            assertThrows(SQLException.class, () -> ledger.dependencies().releaseDependency(task, first, two));
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute(
                     "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_release CHECK(resource_kind<>'SCHEMA' OR released_at IS NULL)");
             }
-            assertThrows(SQLException.class, () -> ledger.releaseDependency(task, first, one));
+            assertThrows(SQLException.class, () -> ledger.dependencies().releaseDependency(task, first, one));
             assertEquals(2, ledger.queries().dependencies(task).size());
             try (var c = db.openConnection(); var s = c.createStatement()) {
                 s.execute("ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_release");
             }
-            ledger.releaseDependency(task, first, one);
-            ledger.releaseDependency(task, first, one);
+            ledger.dependencies().releaseDependency(task, first, one);
+            ledger.dependencies().releaseDependency(task, first, one);
             assertEquals(Set.of(second), ledger.queries().dependencies(task).keySet());
             assertTrue(ledger.queries().holds(task, first.claims().getFirst()));
             assertFalse(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
-            ledger.releaseDependency(task, second, two);
+            ledger.dependencies().releaseDependency(task, second, two);
             assertTrue(ledger.complete(task, TaskResult.SUCCEEDED, "{}", false));
         }
     }
@@ -75,7 +75,7 @@ class DependencyRecoveryLedgerTest {
             task = new TaskLedgerTest().queue(ledger, "caller");
             assertTrue(ledger.tryStart(task));
             original = call(db, new SchemaIdentity("provider", "1", UUID.randomUUID()));
-            ledger.retainDependency(task, original, c -> original.claims());
+            ledger.dependencies().retainDependency(task, original, c -> original.claims());
             for (String owner : List.of("caller", "provider"))
                 ledger.retain(task, new TaskResource("CONNECTION", "ssh-" + UUID.randomUUID(), owner, false),
                     new ResourceRecovery("ssh.v1", Map.of("bootId", db.bootId().toString(), "serverId", "server")),

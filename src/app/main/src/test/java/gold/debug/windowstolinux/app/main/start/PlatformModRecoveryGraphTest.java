@@ -142,7 +142,7 @@ class PlatformModRecoveryGraphTest {
         ledger.enqueue(id, graph.owner(), graph.release(graph.owner()).version(),
             new TaskRequest("fixture", "Original task", List.of(), false), new TaskLedger.InitialClaims() {
                 public List<TaskResource> resolve(Connection c) {
-                    return List.of(new TaskResource("MOD", graph.owner(), graph.owner(), false));
+                    return graph.claims();
                 }
 
                 public Optional<TaskRecoveryGraph> recoveryGraph(Connection c) {
@@ -350,7 +350,7 @@ class PlatformModRecoveryGraphTest {
                     .map(release -> release.owner().equals(P)
                         ? new TaskRecoveryGraph.Release(P, "2.0.0", release.digest(), release.schema())
                         : release)
-                    .toList());
+                    .toList(), graph.edges());
             String document;
             try (var c = db.openConnection();
                  var s = c.createStatement();

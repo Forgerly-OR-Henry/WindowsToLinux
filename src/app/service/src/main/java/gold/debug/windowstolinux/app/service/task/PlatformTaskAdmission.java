@@ -77,9 +77,8 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
             schema = requireRunningGraph(connection, ownerId, version).release(ownerId).schema();
         }
         var claims = new ArrayList<TaskResource>();
-        claims.add(new TaskResource("MOD", ownerId, ownerId, false));
-        schema.ifPresent(
-            identity -> claims.add(new TaskResource("SCHEMA", identity.generation().toString(), ownerId, false)));
+        if (ownerId.equals(PLATFORM_OWNER)) claims.add(new TaskResource("MOD", ownerId, ownerId, false));
+        else claims.addAll(requireRunningGraph(connection, ownerId, version).claims());
         try (var statement = connection.prepareStatement(
             "SELECT s.host,s.ssh_port,s.username,s.credential_id FROM server_profile s JOIN credential c ON c.credential_id=s.credential_id WHERE s.server_profile_id=?")) {
             for (var id : request.serverIds()) {
@@ -119,12 +118,14 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      * @return original releases and data generations / 原发布及数据代次
      * @throws SQLException if the graph cannot be read / 无法读取图时
      * @throws ApiException if any original provider is unavailable or incompatible / 任一原提供方不可用或不兼容时 */
-    private TaskRecoveryGraph requireRunningGraph(Connection connection, String owner, String version)
+    public TaskRecoveryGraph requireRunningGraph(Connection connection, String owner, String version)
         throws SQLException, ApiException {
+        requireNoPendingIntent(connection, owner);
         var remaining = new ArrayDeque<Map.Entry<String, String>>();
         remaining.add(Map.entry(owner, version));
         var visited = new HashSet<String>();
         var releases = new ArrayList<TaskRecoveryGraph.Release>();
+        var edges = new ArrayList<TaskRecoveryGraph.Edge>();
         while (!remaining.isEmpty()) {
             var selected = remaining.removeFirst();
             if (!visited.add(selected.getKey()))
@@ -157,6 +158,9 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                 }
             }
             for (var dependency : manifest.dependencies()) {
+                if (dependency.optional()) continue;
+                requireNoPendingIntent(connection, dependency.id());
+                edges.add(new TaskRecoveryGraph.Edge(manifest.id(), dependency.id(), TaskRecoveryGraph.EdgeKind.REQUIRED));
                 try (var p = connection.prepareStatement("SELECT actual_version FROM mod_registry WHERE mod_id=?")) {
                     p.setString(1, dependency.id());
                     try (var r = p.executeQuery()) {
@@ -177,7 +181,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
                 }
             }
         }
-        return new TaskRecoveryGraph(owner, releases);
+        return new TaskRecoveryGraph(owner, releases, edges);
     }
 
     /** Reads the exact ready data generation of an original release. / 读取原发布的精确就绪数据代次。
@@ -213,7 +217,7 @@ public final class PlatformTaskAdmission implements PlatformTaskRuntime.Admissio
      * @param owner exact new task owner / 精确新任务所有者
      * @throws SQLException if stored evidence cannot be read / 无法读取已存证据时
      * @throws ApiException if the owner is affected or scope cannot be verified / 所有者受影响或范围无法核验时 */
-    private static void requireNoPendingIntent(Connection connection, String owner) throws SQLException, ApiException {
+    public static void requireNoPendingIntent(Connection connection, String owner) throws SQLException, ApiException {
         var json = new com.fasterxml.jackson.databind.ObjectMapper()
             .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);

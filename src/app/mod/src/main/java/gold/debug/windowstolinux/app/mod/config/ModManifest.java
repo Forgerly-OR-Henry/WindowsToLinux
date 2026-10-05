@@ -30,8 +30,7 @@ public record ModManifest(String id, String name, SemanticVersion version, Versi
                           Optional<URI> homepage, List<Dependency> dependencies, List<String> exports,
                           Optional<String> schemaVersion,
                           List<Migration> migrations, String json) {
-    /**
-     * Copies author collections after strict reader validation. / 严格读取器验证后复制作者集合。
+    /** Copies author collections after strict reader validation. / 严格读取器验证后复制作者集合。
      * @param id stable exact Mod identity / 稳定且精确的插件身份
      * @param name author display name / 作者声明的显示名
      * @param version canonical release version / 规范发布版本
@@ -63,8 +62,17 @@ public record ModManifest(String id, String name, SemanticVersion version, Versi
 
     /** One required provider and its supported release range. / 一个必需提供方及其受支持发布范围。
      * @param id exact required Mod identity / 精确的必需插件身份
-     * @param versionRange accepted provider releases / 接受的提供方发布版本 */
-    public record Dependency(String id, VersionRange versionRange) {
+     * @param versionRange accepted provider releases / 接受的提供方发布版本
+     * @param optional whether absence leaves base consumer work available / 缺失时是否保留消费方基础工作可用
+     */
+    public record Dependency(String id, VersionRange versionRange, boolean optional) {
+        /** Keeps existing declarations required when optional is omitted. / optional 省略时保持既有声明必需。
+         * @param id exact declared provider identity / 精确声明提供方身份
+         * @param versionRange supported exact provider release range / 支持的精确提供方发布范围
+         */
+        public Dependency(String id, VersionRange versionRange) {
+            this(id, versionRange, false);
+        }
     }
 
     /** One explicit increasing data migration edge. / 一条显式递增的数据迁移边。

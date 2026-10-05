@@ -37,6 +37,11 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 import org.junit.jupiter.api.Test;
 
 class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
+    @Override
+    protected boolean gitEnabled() {
+        return true;
+    }
+
     private static final Path GIT = locateGit();
 
     private static Path locateGit() {
@@ -80,7 +85,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             var request = new DeploymentGitRequest(DeploymentGitRemote.parse(repo.toUri().toString()),
                 new DeploymentGitRef.Branch("main"), Set.of(), 2 * 1024 * 1024, true);
-            var flow = new DeploymentGitSourceFlow(context);
+            var flow = GitRuntimeTestBridge.flow(runtime, context);
             var id = UUID.randomUUID();
             var handle = flow.submit(request, GIT, id, "Git project", Optional.empty(),
                 Instant.parse("2026-09-28T00:00:00Z"), 2 * 1024 * 1024, 100);
@@ -115,7 +120,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
                 var journal = DeploymentGitSourceActionLog.begin(context.tasks(), task, UUID.randomUUID(),
                     "Unwritten Git project", Optional.empty(), Instant.parse("2026-09-28T00:00:00Z"),
                     request, 2 * 1024 * 1024, 100);
-                try (var material = new DeploymentGitSetup(context, GIT).prepare(request, 2 * 1024 * 1024,
+                try (var material = GitRuntimeTestBridge.preparation(runtime, context, GIT).prepare(request, 2 * 1024 * 1024,
                     100, task, journal)) {
                     assertNotNull(material.commit());
                 }
@@ -244,7 +249,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
             task -> {
                 DeploymentStaticSetupActionLog.begin(context.tasks(), task,
                     new gold.debug.windowstolinux.appapi.server.model.ServerId("server"));
-                var pinned = new DeploymentGitSourceFlow(context).prepareForPublication(request, GIT,
+                var pinned = GitRuntimeTestBridge.flow(runtime, context).prepareForPublication(request, GIT,
                     "reviewed-project", 65536, 100, task);
                 var journal = DeploymentGitSourceActionLog.find(context.tasks(), task).orElseThrow();
                 var facts = journal.facts();
@@ -349,8 +354,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
                 new TaskRequest(DeploymentGitSourceFlow.TASK_TYPE, "Interrupted original Git", List.of(), true),
                 new TaskLedger.InitialClaims() {
                     public List<TaskResource> resolve(java.sql.Connection connection) {
-                        return List.of(new TaskResource("MOD", OWNER, OWNER, false),
-                            new TaskResource("SCHEMA", schema.generation().toString(), OWNER, false));
+                        return graph.get().claims();
                     }
 
                     public Optional<TaskRecoveryGraph> recoveryGraph(java.sql.Connection connection) {
@@ -387,7 +391,8 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
                 }
             }, new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             var report = runtime.startDevelopmentMods(workspace(), pages);
-            assertTrue(report.running().isEmpty());
+            assertEquals(Set.of("gold.debug.windowstolinux.mod.git"), report.running(),
+                "Unused optional Git starts normally while only the original root graph recovers");
             assertEquals(List.of("MOD_RECOVERY_READY"), report.problems().stream().map(Problem::eventCode).toList());
             var recovered = runtime.tasks().reconcile(interrupted).toCompletableFuture().get(20, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, recovered.state());
@@ -413,7 +418,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
                 "Lost project write acknowledgement", List.of(), true), task -> {
                 var journal = DeploymentGitSourceActionLog.begin(context.tasks(), task, id,
                     "Proposed Git project", Optional.empty(), observedAt, request, 2 * 1024 * 1024, 100);
-                try (var material = new DeploymentGitSetup(context, GIT).prepare(request, 2 * 1024 * 1024,
+                try (var material = GitRuntimeTestBridge.preparation(runtime, context, GIT).prepare(request, 2 * 1024 * 1024,
                     100, task, journal)) {
                     var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT,
                         request.remote().location(), Optional.of("DEFAULT:HEAD"),
@@ -464,7 +469,7 @@ class DeploymentGitSourceFlowTest extends DeploymentRuntimeFixture {
                 });
             assertEquals(TaskResult.SUCCEEDED,
                 seed.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
-            var handle = new DeploymentGitSourceFlow(context).submit(request, GIT, id, "Conflicting Git source",
+            var handle = GitRuntimeTestBridge.flow(runtime, context).submit(request, GIT, id, "Conflicting Git source",
                 Optional.empty(), observed, 2 * 1024 * 1024, 100);
             var result = handle.completion().toCompletableFuture().get(120, TimeUnit.SECONDS);
             assertEquals(TaskResult.FAILED, result.outcome(), result.toString());

@@ -6,7 +6,7 @@
 
 本文是当前源码模块、包、命名、依赖和资源归属的结构规范。APP、appapi 与官方 deployment 的现行结构按实际源码核对，最新已确认规则优先于早期改造模板；历史迁移和验收见开发文档。目录或类型存在、编译及静态检查通过不代表真实 Linux、模型提供方或完整业务验收完成。
 
-- 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 13 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`。
+- 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 14 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`，独立 Git 取材服务在 `mod/git`。S2 当前在实施及验证中，源码归属不代表阶段已验收。
 - APP 与平台自有 API 使用本文命名和分包规则；官方 deployment 采用已确认类名词表，第三方 Mod 的内部命名与组织由作者决定。
 - 本文只维护结构；[AllFile.md](AllFile.md)索引实际生产文件，[Mod.md](Mod.md)维护作者与加载合同，[Runtime.md](Runtime.md)维护运行行为、数据与安全，[APP.md](APP.md)维护发布布局和构建交付；[Config.md](Config.md) 是配置字段和填写方式的唯一集中说明。
 - 更新日期：2026-10-05。现行规则与本机交付见 [1.2 开发文档](development/PHASE-1.2.md#app-structure-rules)，开发区调整及本期验收见 [1.3 开发文档](development/PHASE-1.3.md)，历史改造与后置任务见 [1.1 开发文档](development/PHASE-1.1.md)。
@@ -152,6 +152,7 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │  │  └─ schema/                   # [公开包]   Schema 身份、初始化、校验与迁移合同
    │  ├─ file/                        # [公开包]   任务限定的通用文件能力入口
    │  │  ├─ action/                   # [公开包]   文件审批意图、操作策略、记录与结果
+   │  │  ├─ material/                 # [公开包]   原任务素材引用、读取持有与精确恢复清理
    │  │  ├─ model/                    # [公开包]   带主机身份的文件位置与对象观测
    │  │  ├─ query/                    # [公开包]   任务绑定的文件观测与有界读取
    │  │  ├─ snapshot/                 # [公开包]   不可变来源快照的请求与资源持有合同
@@ -187,6 +188,12 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │     └─ page/                     # [公开包]   页面创建、登记句柄、描述、环境更新与关闭合同
    ├─ mod/                            # [聚合]     官方 Mod 的 Maven 模块分组
    │  ├─ pom.xml                      # [构建文件] Maven 模块与依赖声明
+   │  ├─ git/                         # [模块]     独立无状态 Git 来源服务
+   │  │  ├─ pom.xml                   # [构建文件] Maven 模块与依赖声明
+   │  │  ├─ Mod.java                  # [入口类]   Git 来源服务登记与生命周期
+   │  │  ├─ api/                      # [公开包]   固定 Git 请求、结果与原操作核对合同
+   │  │  ├─ file/                     # [包]       受控 Git worker、检出及原物理回执
+   │  │  └─ service/                  # [包]       原提供方检查点及素材发布核对
    │  └─ deployment/                  # [模块]     官方部署 Mod：分析、部署与应用管理
    │     ├─ pom.xml                   # [构建文件] Maven 模块与依赖声明
    │     ├─ Mod.java                  # [入口类]   根包装配、公开服务注册和 Mod 生命周期
@@ -194,7 +201,7 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │     ├─ api/                      # [公开包]   向其他 Mod 公开的应用与部署管理合同
    │     ├─ db/                       # [包]       部署私有 Schema、业务记录与发布恢复依据
    │     ├─ file/                     # [包]       部署素材筛选、封存、归档与来源核对
-   │     │  └─ git/                   # [包]       通过平台能力准备和冻结 Git 来源
+   │     │  └─ git/                   # [包]       Git 公开服务适配、原素材消费及部署筛选归档
    │     ├─ linux/                    # [包]       通过平台远程会话执行固定部署协议
    │     ├─ secret/                   # [包]       部署秘密修订、引用与发布绑定
    │     ├─ service/                  # [包]       部署分析、审阅、执行与管理流程
@@ -356,7 +363,7 @@ test/                                                                           
 | 范围 | 现行组织方式 |
 | --- | --- |
 | `src/app` | 模块内先确定实际功能与所有权，默认只保留模块下面第一层必要功能包；接口、专属数据与实现就近归包。模块本身已准确表达单一职责且不需分类时，具体实现可以直接位于模块 Java 根包。 |
-| `src/appapi` | 保留 9 个一级能力包，在其下按实际职责使用已登记的二级包；根包只保留主要入口，具体合同归二级职责包；当前共 41 个公开包，不新增三级包。 |
+| `src/appapi` | 保留 9 个一级能力包，在其下按实际职责使用已登记的二级包；根包只保留主要入口，具体合同归二级职责包；当前共 42 个公开包，新增 `file.material`，不新增三级包。 |
 | `src/mod`、`src/moddev` | 第一层职责包与相应平台模块同名，按需使用 `ai`、`db`、`file`、`linux`、`secret`、`service`、`ui`、`windows`；`api` 是 Mod 专属公开包，根包入口是 `Mod.java`。第一层之后由作者自主组织，APP 的词表、父子包模板、层数与内部命名门禁均不适用，也不提供同类推荐词表。 |
 
 APP 不强制套用 `contract`、`generation`、`extension`、`execution`、`persistence` 中间层。只有实际独立功能、所有权、访问隔离或依赖边界需要时才增加子包；默认一层不是禁止子包，类数达到 6～8 个时检查职责；只有 1～2 个类型时也核对是否适合合并。数量只触发检查，不决定合并或拆分，不凑数，不把无关类型塞进同一包；职责独立的小包保留。包合并前核对包内可见成员、重名、资源定位与引用，不能通过扩大可见性代替职责整理。
@@ -856,10 +863,11 @@ app/db ──→ app/ai, appapi
 app/secret ──→ app/db, appapi
 app/service ──→ app/config, app/ai, app/db, app/linux, app/mod, app/secret, app/file, app/windows, appapi
 app/main ──→ app/config, app/ai, app/db, app/linux, app/mod, app/secret, app/service, app/file, app/ui, app/windows, appapi
-mod/deployment ──→ appapi
+mod/git ──→ appapi
+mod/deployment ──→ appapi, mod/git
 ```
 
-1. `appapi` 是独立公开合同，不反向依赖 APP 实现或业务 Mod。官方 deployment 的生产依赖仅为 appapi 和其明确外部编解码依赖；APP 的 Maven 主体不依赖业务 Mod。测试宿主依赖不构成生产授权。
+1. `appapi` 是独立公开合同，不反向依赖 APP 实现或业务 Mod。官方 Git 生产依赖仅为 appapi 及明确编解码库；deployment 通过 `provided` 编译依赖及清单可选依赖，只在私有适配器引用 Git 实际导出的 `api`，不依赖其 `file`、`service` 或私有表。APP 的 Maven 主体不依赖业务 Mod。测试宿主依赖不构成生产授权。
 2. `app/main` 是实际装配根。平台 Linux、来源、秘密及 AI 实现不反向引用 UI，业务 Mod 不读取 APP 私有实现或其它 Mod 私有数据。
 3. `app/config` 仅提供启动配置解析与不可变值，不依赖其他项目模块。`app/ai` 包含平台模型调用及纯值，不依赖数据库或界面。DB 和 UI 显式依赖 `app/ai`，复用 `AiCapabilityType`、`AiCapabilityStatus`、`AiCapabilityCheck`、`AiPurposeType`、`AiPurposeAssignment` 的能力证据及用途值；内部用途名称不替代公开 Mod 的 `AiPurpose` 合同。
 4. APP UI 的普通平台操作经 `app/service` 发起；SSH 救援只可访问 Linux 的受控 `SshRecovery`、`SshRecoverySession` 及其选择、快照和终端纯值。不能直接使用 DB、Windows、Linux 传输、浏览器、宿主注入接口、来源、秘密或 Mod 执行实现，也不能绕过平台准入直接调用公开 SDK 的 Linux、进程、来源写入或秘密能力。SDK 的任务、问题、UI、审阅和只读值合同可按实际用途使用，不设旧业务整包例外。
@@ -880,8 +888,9 @@ mod/deployment ──→ appapi
 | `ai.voice` | `task.result` |
 | `db` | `db.schema`、`task.result`、`task.run` |
 | `db.schema` | 无，仅使用 JDK。 |
-| `file` | `file.action`、`file.query`、`file.snapshot`、`file.source`、`file.work`、`task.result`、`task.run` |
+| `file` | `file.action`、`file.material`、`file.query`、`file.snapshot`、`file.source`、`file.work`、`task.result`、`task.run` |
 | `file.action` | `file.model`、`server.model`、`task.action`、`task.result`、`task.run` |
+| `file.material` | `db.schema`、`file.source`、`file.work`、`task.result`、`task.run` |
 | `file.model` | `server.model` |
 | `file.query` | `file.model`、`task.result`、`task.run` |
 | `file.snapshot` | `file.source`、`task.result`、`task.run` |
@@ -916,7 +925,7 @@ mod/deployment ──→ appapi
 | `ui` | `task.result`、`ui.page` |
 | `ui.page` | `task.result` |
 
-跨能力限制按一级能力归属检查，实际包图仍按所有一级与二级包检查无环，不反向引用 ModContext 或具体 Mod；db 中 JDBC、ui 中 Swing 均为 JDK 合同，不引入 H2 或 APP 实现。内部模型用途与公开 AiPurpose 分开，Id / Ref / Identity 的类型区分见第 2.6 节。
+跨能力限制按一级能力归属检查，实际包图仍按所有一级与二级包检查无环，不反向引用 ModContext 或具体 Mod；`file.material` 仅为不可变生产方身份引用 `db.schema.SchemaIdentity`，不取得 DB 执行能力。db 中 JDBC、ui 中 Swing 均为 JDK 合同，不引入 H2 或 APP 实现。内部模型用途与公开 AiPurpose 分开，Id / Ref / Identity 的类型区分见第 2.6 节。
 
 ### 5.3 官方 deployment 内部依赖
 
@@ -929,7 +938,7 @@ mod/deployment ──→ appapi
 | `deployment/db`                       | 平台公开 JDBC/凭据契约、本包存储映射及 service/core 下 config/model 纯数据值                                                           | 不依赖 core 业务编排、UI 或 AI，不访问其他 Mod 私有表                                    |
 | `deployment/linux`                    | 平台 Linux/服务器/任务审核契约、service/core/model 所需纯值与固定 helper、构建及发布回执协议适配                                       | 不接管 SSHD、连接、指纹或独立救援；不调用 UI 或两个部署引擎                              |
 | `deployment/secret`                   | 平台秘密/任务契约、本 Mod db 与 service/core/model 纯值、一次性秘密修订创建及原任务恢复                                                | 不持有 APP 主密钥，不持久化或长期留存明文，不绕过凭据归属/任务授权，不调用 UI 或部署引擎 |
-| `deployment/file`                   | 平台 File/任务契约、业务取材规则及 service/core/model 纯值                                                                           | 不接管平台快照寿命，不调用 UI 或部署引擎；Git 固定取材属于本包                           |
+| `deployment/file`                   | 平台 File/任务契约、业务取材规则及 service/core/model 纯值                                                                           | 不接管平台快照寿命，不调用 UI 或部署引擎；消费 Git 固定素材，筛选与归档留在本包             |
 | `deployment/windows`                  | 平台公开 File/进程/交互等契约及本机业务适配                                                                                          | 不依赖 app/windows 私有类，不接管平台更新、卸载和窗口隐私                                |
 | `deployment/service/core`             | 平台 API、部署公开契约及必要业务能力                                                                                                   | 不反向依赖 standard 或 agent；具体存储/远端实现经窄端口接入                              |
 | `deployment/service/standard/analyze` | 平台任务 API、原冻结素材句柄及 `service/core/model` 纯值                                                                               | 保持确定性静态分析，不依赖 agent 或 UI；不接管原快照寿命                                 |

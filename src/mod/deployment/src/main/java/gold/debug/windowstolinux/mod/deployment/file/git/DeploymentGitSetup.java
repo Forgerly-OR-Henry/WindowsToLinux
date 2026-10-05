@@ -1,58 +1,56 @@
 package gold.debug.windowstolinux.mod.deployment.file.git;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.nio.file.*;
-import java.time.Duration;
+import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.*;
 
-import gold.debug.windowstolinux.appapi.file.FileService;
-import gold.debug.windowstolinux.appapi.file.work.FileWorkspace;
-import gold.debug.windowstolinux.appapi.mod.*;
-import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
-import gold.debug.windowstolinux.appapi.task.process.ManagedProcess;
-import gold.debug.windowstolinux.appapi.task.process.ProcessMessage;
-import gold.debug.windowstolinux.appapi.task.process.ProcessService;
-import gold.debug.windowstolinux.appapi.task.result.ApiException;
-import gold.debug.windowstolinux.appapi.task.result.Problem;
-import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
-import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import gold.debug.windowstolinux.appapi.file.material.FileMaterialHold;
+import gold.debug.windowstolinux.appapi.file.material.MaterialRef;
+import gold.debug.windowstolinux.appapi.file.material.MaterialState;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.mod.service.AvailabilityState;
+import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 
-/** Prepares pinned Git material through original platform processes and source ownership. / 经原平台进程及来源归属准备固定 Git 素材。 */
+/** Consumes optional Git material through platform grants and keeps deployment filtering locally. / 经平台授权消费可选 Git 素材，并在部署侧保留筛选。 */
 public final class DeploymentGitSetup {
-    /** Immutable identities persisted before the first physical effect. / 首个物理效果前持久化的不可变身份。
-     * @param job original Git operation / 原 Git 操作
-     * @param checkout original checkout workspace / 原检出工作目录
-     * @param control original receipt workspace / 原回执工作目录
-     * @param process original worker process / 原 worker 进程 */
-    public record Planned(UUID job, UUID checkout, UUID control, UUID process) {
-        /** Requires all four distinct, non-null identities. / 要求四个非空且不同的身份。
-         * @param job original Git operation / 原 Git 操作
-         * @param checkout original checkout workspace / 原检出工作目录
-         * @param control original receipt workspace / 原回执工作目录
-         * @param process original worker process / 原 worker 进程 */
+    /** Exact provider identity without resolving optional public types. / 不解析可选公开类型的精确提供方身份。 */
+    private static final String PROVIDER = "gold.debug.windowstolinux.mod.git";
+
+    /** Original consumer platform capabilities. / 原消费方平台能力。 */
+    private final ModContext context;
+
+    /** Explicit original native tool choice. / 明确原原生工具选择。 */
+    private final Path executable;
+
+    /** Original material holds whose release needs retry. / 需要重试释放的原素材持有。 */
+    private final Set<Consumption> pending = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /** Source identities recorded before the first provider call. / 首次提供方调用前记录的来源身份。
+     * @param job original source operation / 原来源操作
+     * @param material original platform material / 原平台素材 */
+    public record Planned(UUID job, UUID material) {
+        /** Requires two distinct original identities. / 要求两个不同原身份。
+         * @param job original operation / 原操作
+         * @param material original material / 原素材 */
         public Planned {
-            if (job == null || checkout == null || control == null || process == null
-                || Set.of(job, checkout, control, process).size() != 4)
-                throw new IllegalArgumentException("Git attempt identities differ");
+            if (job == null || material == null || job.equals(material))
+                throw new IllegalArgumentException("Source operation identities differ");
         }
     }
 
-    /** Safe result proven after the real worker, native descendants and pipes exited. / 真实 worker、原生后代及管道退出后证明的安全结果。
-     * @param outcome actual worker result / 实际 worker 结果
-     * @param commit exact successful commit / 精确成功提交
-     * @param problemCode bounded failure category / 有界失败类别
-     * @param eventCode bounded diagnostic event / 有界诊断事件 */
+    /** Original provider outcome; deployment project writes remain separate. / 原提供方结果；部署项目写入保持独立。
+     * @param outcome exact source outcome / 精确来源结果
+     * @param commit original immutable commit / 原不可变提交
+     * @param problemCode original known failure category / 原已知失败类别
+     * @param eventCode original known diagnostic / 原已知诊断 */
     public record Receipt(TaskResult outcome, Optional<String> commit, Optional<ProblemCode> problemCode,
                           Optional<String> eventCode) {
-        /** Checks complete result shape. / 校验完整结果形态。
-         * @param outcome actual worker result / 实际 worker 结果
-         * @param commit exact successful commit / 精确成功提交
-         * @param problemCode bounded failure category / 有界失败类别
-         * @param eventCode bounded diagnostic event / 有界诊断事件 */
+        /** Rejects incomplete original outcome evidence. / 拒绝不完整原结果依据。
+         * @param outcome original outcome / 原结果
+         * @param commit original commit / 原提交
+         * @param problemCode known category / 已知类别
+         * @param eventCode known diagnostic / 已知诊断 */
         public Receipt {
             Objects.requireNonNull(outcome);
             Objects.requireNonNull(commit);
@@ -63,247 +61,178 @@ public final class DeploymentGitSetup {
                 : commit.isPresent() || problemCode.isEmpty() || eventCode.isEmpty()
                 || problemCode.orElseThrow() == ProblemCode.UNKNOWN
                 || !eventCode.orElseThrow().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}"))
-                throw new IllegalArgumentException("Git receipt result is incomplete");
+                throw new IllegalArgumentException("Source result is incomplete");
             if (commit.isPresent() && !commit.orElseThrow().matches("[0-9a-f]{40}"))
-                throw new IllegalArgumentException("Git receipt commit is invalid");
+                throw new IllegalArgumentException("Source commit is invalid");
         }
     }
 
-    /** Durable original-task facts supplied by the production Git flow. / 生产 Git 流提供的原任务持久依据。 */
+    /** Original deployment checkpoint effect boundaries. / 原部署检查点效果边界。 */
     public interface Observer {
-        /** Returns identities already durable before any physical creation. / 返回任何物理创建前已持久化的身份。
+        /** Returns already recorded source identities. / 返回已记录来源身份。
          * @return original plan / 原计划 */
         Planned planned();
 
-        /** Persists that a request might be delivered before sending it. / 发送前持久化请求可能被投递的事实。
-         * @throws ApiException if persistence is unconfirmed / 持久化未确认时 */
+        /** Records possible service invocation before calling. / 调用前记录可能的服务调用。
+         * @throws ApiException if original durability fails / 原持久化失败时 */
         void beforeRequest() throws ApiException;
 
-        /** Persists the verified complete physical result before control deletion. / 删除控制目录前持久化已验证的完整物理结果。
-         * @param receipt verified receipt / 已核实回执
-         * @throws ApiException if persistence is unconfirmed / 持久化未确认时 */
+        /** Records only a proved original provider result. / 仅记录已证明原提供方结果。
+         * @param receipt exact original result / 精确原结果
+         * @throws ApiException if original durability fails / 原持久化失败时 */
         void receipt(Receipt receipt) throws ApiException;
     }
 
-    /** Original source capability. / 原来源能力。 */
-    private final FileService sources;
-
-    /** Original process capability. / 原进程能力。 */
-    private final ProcessService processes;
-
-    /** Original activating identity. / 原启用身份。 */
-    private final ModIdentity identity;
-
-    /** Explicit native Git executable. / 明确原生 Git 可执行文件。 */
-    private final Path executable;
-
-    /** Attempts whose physical or durable cleanup has not completed. / 物理或持久清理尚未完成的尝试。 */
-    private final Set<Attempt> pending = Collections.newSetFromMap(new IdentityHashMap<>());
-
-    /** Binds an actual Mod context and explicit local Git executable. / 绑定实际 Mod 上下文及明确本机 Git 可执行文件。
-     * @param context original public Mod context / 原公开 Mod 上下文
-     * @param executable absolute native Git path / 绝对原生 Git 路径 */
+    /** Binds source consumption without linking optional Git types. / 绑定来源消费，不链接可选 Git 类型。
+     * @param context original deployment activation / 原部署启用
+     * @param executable explicit native tool / 明确原生工具 */
     public DeploymentGitSetup(ModContext context, Path executable) {
-        Objects.requireNonNull(context);
-        sources = context.file();
-        processes = context.processes();
-        identity = context.identity();
-        this.executable = Objects.requireNonNull(executable).toAbsolutePath().normalize();
-        if (!executable.isAbsolute())
-            throw new IllegalArgumentException("Git executable must be absolute");
+        this.context = Objects.requireNonNull(context);
+        this.executable = Objects.requireNonNull(executable);
+        if (!executable.isAbsolute()) throw new IllegalArgumentException("Native Git path must be absolute");
     }
 
-    /** Executes one previously journaled production attempt without generating replacement identities. / 用预先记账的身份执行一次生产尝试，不生成替代身份。
-     * @param request original reviewed request / 原已审阅请求
-     * @param maximumSourceBytes bounded source bytes / 有界源码字节
-     * @param maximumEntries bounded entry count / 有界条目数
-     * @param task original task / 原任务
-     * @param observer durable original journal / 原持久日志
-     * @return original frozen Git material / 原冻结 Git 素材
-     * @throws ApiException if evidence or cleanup is unconfirmed / 依据或清理未确认时 */
+    /** Uses the real provider, then preserves original deployment selection and archive budgets. / 使用真实提供方，随后保留原部署筛选及归档预算。
+     * @param request original reviewed source choice / 原已审阅来源选择
+     * @param maximumSourceBytes filtered byte budget / 筛选后字节预算
+     * @param maximumEntries original discovery budget / 原发现预算
+     * @param task authentic original task / 真实原任务
+     * @param observer original deployment checkpoint / 原部署检查点
+     * @return owned deployment source and archive / 所属部署来源及归档
+     * @throws ApiException if original work, result or release is unconfirmed / 原工作、结果或释放未确认时 */
     public DeploymentGitMaterial prepare(DeploymentGitRequest request, long maximumSourceBytes, int maximumEntries,
                                          TaskContext task, Observer observer) throws ApiException {
-        Objects.requireNonNull(request);
-        if (!Files.isRegularFile(executable) || maximumSourceBytes < 0 || maximumSourceBytes > 2L * 1024 * 1024 * 1024
+        if (!java.nio.file.Files.isRegularFile(executable)
+            || maximumSourceBytes < 0 || maximumSourceBytes > 2L * 1024 * 1024 * 1024
             || maximumEntries < 1 || maximumEntries > 100000)
-            throw DeploymentGitCommands.problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT");
-        var attempt = new Attempt(task, observer);
-        synchronized (this) {
-            pending.add(attempt);
-        }
-        DeploymentSourceMaterial material = null;
-        DeploymentSourceArchive archive = null;
-        boolean published = false;
+            throw problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT");
+        var availability = context.services().availability(PROVIDER);
+        if (availability.state() != AvailabilityState.AVAILABLE)
+            throw new ApiException(new Problem(ProblemCode.UNAVAILABLE, "DEPLOYMENT_GIT_" + availability.state().name(),
+                "Git source provider is unavailable: " + availability.state().name(), Map.of(), Optional.empty()));
+        observer.beforeRequest();
+        var access = new DeploymentGitAccess(context);
+        MaterialRef reference;
         try {
-            attempt.checkout = sources.workspaces().workspace(task, attempt.plan.checkout());
-            attempt.control = sources.workspaces().workspace(task, attempt.plan.control());
-            Path checkout = attempt.checkout.directory();
-            attempt.controlPath = attempt.control.directory();
-            var spec = DeploymentGitLaunch.spec(identity, executable, checkout, attempt.controlPath, attempt.id);
-            attempt.process = processes.start(spec, task, attempt.plan.process());
-            observer.beforeRequest();
-            attempt.requested = true;
-            var response = attempt.process
-                .request(new ProcessMessage(DeploymentGitMessages.TYPE, DeploymentGitMessages.encode(request)),
-                    Duration.ofMinutes(12))
-                .toCompletableFuture().get();
-            attempt.stopWorker();
-            if (response.outcome() != TaskResult.SUCCEEDED)
-                throw new ApiException(response.problem().orElseGet(() -> DeploymentGitCommands
-                    .problem(ProblemCode.CANCELLED, "DEPLOYMENT_GIT_CANCELLED").problem()));
-            String commit = DeploymentGitMessages.receipt(response.value().orElseThrow(), attempt.id).orElseThrow();
-            if (!attempt.commit.orElseThrow().equals(commit))
-                throw new IOException("Git result differs from original receipt");
-            material = new DeploymentSourceSetup(sources).prepare(attempt.checkout.selection(), maximumSourceBytes,
+            reference = access.prepare(request, executable, observer.planned(), task);
+        } catch (ApiException failure) {
+            var original = access.reconcile(observer.planned(), task);
+            if (original.outcome() == TaskResult.UNKNOWN)
+                throw problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_RESULT_UNCONFIRMED");
+            if (original.outcome() != TaskResult.SUCCEEDED) {
+                var reason = original.problem().orElseThrow();
+                observer.receipt(new Receipt(original.outcome(), Optional.empty(), Optional.of(reason.code()), Optional.of(reason.eventCode())));
+                throw new ApiException(reason);
+            }
+            reference = original.value().orElseThrow();
+        }
+        observer.receipt(new Receipt(TaskResult.SUCCEEDED, Optional.of(reference.revision()), Optional.empty(), Optional.empty()));
+        var consumption = new Consumption(task, reference);
+        synchronized (this) {
+            pending.add(consumption);
+        }
+        DeploymentSourceMaterial source = null;
+        DeploymentSourceArchive archive = null;
+        boolean returned = false;
+        try {
+            consumption.hold = context.file().materials().acquire(reference, task);
+            source = new DeploymentSourceSetup(context.file()).prepare(consumption.hold.selection(), maximumSourceBytes,
                 maximumEntries, task);
-            archive = new DeploymentSourceArchiver(sources).prepare(material, request.maximumArchiveBytes(), task);
-            attempt.close();
-            var result = new DeploymentGitMaterial(request.remote(), commit, material, archive);
-            published = true;
+            archive = new DeploymentSourceArchiver(context.file()).prepare(source, request.maximumArchiveBytes(), task);
+            consumption.close();
+            var result = new DeploymentGitMaterial(request.remote(), reference.revision(), source, archive);
+            returned = true;
             return result;
-        } catch (InterruptedException failure) {
-            Thread.currentThread().interrupt();
-            throw DeploymentGitCommands.problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_WAIT_INTERRUPTED");
-        } catch (IOException | ExecutionException | IllegalStateException failure) {
-            throw DeploymentGitCommands.problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_RESULT_UNCONFIRMED");
         } finally {
             try {
-                attempt.close();
+                consumption.close();
             } finally {
-                if (!published) {
+                if (!returned) {
                     try {
-                        if (archive != null)
-                            archive.close();
+                        if (archive != null) archive.close();
                     } finally {
-                        if (material != null)
-                            material.close();
+                        if (source != null) source.close();
                     }
                 }
             }
         }
     }
 
-    /** Retries only the original in-memory attempts without sending another Git request. / 仅重试原内存尝试，不再发送 Git 请求。
-     * @param task exact original task object / 精确原任务对象
-     * @throws ApiException if original native work or cleanup evidence remains unresolved / 原原生工作或清理证据仍未决时 */
+    /** Retries only known original in-memory material cleanup. / 仅重试已知原内存素材清理。
+     * @param task authentic original task / 真实原任务
+     * @throws ApiException if an original hold or release remains unconfirmed / 原持有或释放仍未确认时 */
     public void closeTaskResources(TaskContext task) throws ApiException {
-        List<Attempt> attempts;
+        List<Consumption> values;
         synchronized (this) {
-            attempts = List.copyOf(pending);
+            values = List.copyOf(pending);
         }
-        for (var attempt : attempts)
-            if (attempt.task == task)
-                attempt.close();
+        for (var value : values) if (value.task == task) value.close();
     }
 
-    /** Verifies a copied original receipt without reopening a source grant or Git request. / 不重新打开来源授权或 Git 请求，仅核验复制的原回执。
-     * @param bytes bounded original control file / 有界原控制文件
-     * @param task original task identity / 原任务身份
-     * @param process original worker identity / 原 worker 身份
-     * @param job original Git operation / 原 Git 操作
-     * @return complete physical result / 完整物理结果
-     * @throws IOException if any frame, identity or native cleanup fact differs / 帧、身份或原生清理依据不符时 */
-    public static Receipt readReceipt(byte[] bytes, UUID task, UUID process, UUID job) throws IOException {
-        try (var input = new ByteArrayInputStream(bytes)) {
-            var frame = DeploymentGitProtocol.read(input).orElseThrow();
-            if (input.read() != -1 || !frame.process().equals(process) || !frame.task().equals(task))
-                throw new IOException("Foreign Git receipt");
-            var result = DeploymentGitProtocol.result(frame);
-            var commit = DeploymentGitMessages.receipt(result.value().orElseThrow(), job);
-            if ((result.outcome() == TaskResult.SUCCEEDED) != commit.isPresent())
-                throw new IOException("Git result and commit disagree");
-            return new Receipt(result.outcome(), commit, result.problem().map(Problem::code),
-                result.problem().map(Problem::eventCode));
-        } catch (RuntimeException invalid) {
-            throw new IOException("Original Git receipt is invalid", invalid);
-        }
+    /** Reconciles the exact provider without constructing new requests or workspaces. / 不构造新请求或工作目录，核对精确提供方。
+     * @param context original consumer activation / 原消费方启用
+     * @param plan original recorded source identities / 原记录来源身份
+     * @param task authentic original execution or recovery / 真实原执行或恢复
+     * @return proved original provider outcome / 已证明原提供方结果
+     * @throws ApiException if original provider or authority is unavailable / 原提供方或授权不可用时 */
+    public static OperationResult<MaterialRef> reconcileOriginal(ModContext context, Planned plan, TaskContext task)
+        throws ApiException {
+        return new DeploymentGitAccess(context).reconcile(plan, task);
     }
 
-    /** Retains the complete operation until worker and native cleanup are independently proved. / 保留完整操作，直至分别证明 worker 及原生清理完成。 */
-    private final class Attempt {
-        /** Original task context. / 原任务上下文。 */
+    /** Cleans retained original holds only after the caller has settled its business facts. / 仅在调用方确定业务依据后清理留存原持有。
+     * @param context original consumer activation / 原消费方启用
+     * @param plan original recorded identities / 原记录身份
+     * @param task authentic original recovery task / 真实原恢复任务
+     * @param recovery whether this is the original explicit recovery callback / 是否原显式恢复回调
+     * @throws ApiException if retained original material or release is unconfirmed / 留存原素材或释放未确认时 */
+    public static void releaseOriginal(ModContext context, Planned plan, TaskContext task, boolean recovery) throws ApiException {
+        var original = context.file().materials().find(plan.material(), plan.job(), task);
+        var retained = context.file().materials().inspect(plan.material(), plan.job(), task);
+        if (!retained.reference().equals(Optional.of(original)))
+            throw problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_MATERIAL_IDENTITY");
+        if (retained.state() == MaterialState.RELEASED) return;
+        if (recovery) for (var hold : context.file().materials().recoverHolds(original, task)) hold.close();
+        context.file().materials().release(original, task);
+    }
+
+    /** Constructs a safe bounded failure. / 构造安全有界失败。
+     * @param code public category / 公开类别
+     * @param event stable event / 稳定事件
+     * @return public failure / 公开失败 */
+    private static ApiException problem(ProblemCode code, String event) {
+        return new ApiException(new Problem(code, event, "Original Git source operation could not be completed", Map.of(), Optional.empty()));
+    }
+
+    /** Root-owned material lifetime during original filtering. / 原筛选期间根持有素材寿命。 */
+    private final class Consumption {
+        /** Authentic original root task. / 真实原根任务。 */
         private final TaskContext task;
 
-        /** Original operation identity used by receipt and custom lease. / 凭据及自定义租约使用的原操作身份。 */
-        private final UUID id;
+        /** Exact original source reference. / 精确原来源引用。 */
+        private final MaterialRef reference;
 
-        /** Pre-persisted production identities. / 预持久化的生产身份。 */
-        private final Planned plan;
+        /** Original platform read hold. / 原平台读取持有。 */
+        private FileMaterialHold hold;
 
-        /** Production durability observer. / 生产持久观察器。 */
-        private final Observer observer;
+        /** Whether physical and durable custody release completed. / 物理及持久持有释放是否完成。 */
+        private boolean released;
 
-        /** Original writable source files. / 原可写来源文件。 */
-        private FileWorkspace checkout;
-
-        /** Original control files. / 原控制文件。 */
-        private FileWorkspace control;
-
-        /** Original control coordinates retained for cleanup checks after revocation. / 为撤销后清理核对保留的原控制坐标。 */
-        private Path controlPath;
-
-        /** Original managed worker. / 原受管 worker。 */
-        private ManagedProcess process;
-
-        /** Whether one request may have been delivered. / 一个请求是否可能已经投递。 */
-        private boolean requested;
-
-        /** Whether worker and native exit evidence were confirmed. / 是否已确认 worker 及原生退出证据。 */
-        private boolean stopped;
-
-        /** Commit retained in the original physical receipt. / 原物理凭据保留的提交。 */
-        private Optional<String> commit = Optional.empty();
-
-        /** Whether all physical and durable cleanup completed. / 全部物理及持久清理是否完成。 */
-        private boolean closed;
-
-        /** Binds the original task before allocating resources. / 分配资源前绑定原任务。
+        /** Records original identities before acquiring read access. / 取得读访问前记录原身份。
          * @param task original task / 原任务
-         * @param observer original durable facts / 原持久依据 */
-        private Attempt(TaskContext task, Observer observer) {
-            this.task = Objects.requireNonNull(task);
-            this.observer = Objects.requireNonNull(observer);
-            this.plan = Objects.requireNonNull(observer.planned());
-            this.id = plan.job();
+         * @param reference original reference / 原引用 */
+        private Consumption(TaskContext task, MaterialRef reference) {
+            this.task = task;
+            this.reference = reference;
         }
 
-        /** Requires actual worker exit and a matching positive native cleanup receipt. / 要求 worker 实际退出及匹配的肯定原生清理凭据。
-         * @throws ApiException if either fact cannot be proved / 任一事实无法证明时 */
-        private synchronized void stopWorker() throws ApiException {
-            if (stopped)
-                return;
-            if (process != null)
-                process.close();
-            if (requested) {
-                try {
-                    if (process.exitCode().toCompletableFuture().join() != 0)
-                        throw new IOException("Git worker did not exit normally");
-                    var file = controlPath.resolve("git-result.json");
-                    if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
-                        throw new IOException("Missing original Git receipt");
-                    if (Files.size(file) > DeploymentGitProtocol.MAX_BYTES)
-                        throw new IOException("Original Git receipt exceeds its bound");
-                    var receipt = readReceipt(Files.readAllBytes(file), task.id(), process.id(), id);
-                    commit = receipt.commit();
-                    observer.receipt(receipt);
-                } catch (IOException | RuntimeException failure) {
-                    throw DeploymentGitCommands.problem(ProblemCode.UNKNOWN, "DEPLOYMENT_GIT_NATIVE_EXIT_UNCONFIRMED");
-                }
-            }
-            stopped = true;
-        }
-
-        /** Releases actual workspaces before the final original group lease. / 在最后的原进程组租约前释放实际工作目录。
-         * @throws ApiException if any original physical or durable resource remains / 任一原物理或持久资源仍存在时 */
+        /** Releases only original read and root custody, preserving uncertainty. / 仅释放原读取和根持有，保留不确定性。
+         * @throws ApiException if either original release fails / 任一原释放失败时 */
         private synchronized void close() throws ApiException {
-            if (closed)
-                return;
-            stopWorker();
-            if (checkout != null)
-                checkout.close();
-            if (control != null)
-                control.close();
-            closed = true;
+            if (released) return;
+            if (hold != null) hold.close();
+            context.file().materials().release(reference, task);
+            released = true;
             synchronized (DeploymentGitSetup.this) {
                 pending.remove(this);
             }

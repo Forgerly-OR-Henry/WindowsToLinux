@@ -105,8 +105,6 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
         boolean cancelled = original.wasCancelled() || gitOutcome.filter(TaskResult.CANCELLED::equals).isPresent();
         context.file().closeTaskResources(task);
         original.close();
-        if (!context.tasks().resourcesReleased(task))
-            return unknown();
         var code = cancelled ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE;
         var outcome = cancelled ? TaskResult.CANCELLED : TaskResult.FAILED;
         return new OperationResult<>(outcome, Optional.empty(), Optional.of(new Problem(code,

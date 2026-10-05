@@ -202,6 +202,62 @@ class PlatformModIntentsTest {
         }
     }
 
+    static void optionalDependency(PlatformRuntime runtime, String owner) throws Exception {
+        var node = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(
+            text(runtime, "SELECT manifest_json FROM mod_version WHERE mod_id='" + owner + "'"));
+        ((com.fasterxml.jackson.databind.node.ObjectNode) node.get("dependencies").get(0)).put("optional", true);
+        sql(runtime.persistence().database(), "UPDATE mod_version SET manifest_json=? WHERE mod_id=?", node.toString(),
+            owner);
+    }
+
+    @Test
+    void disablingOptionalProviderPreservesConsumersButSealsTheirBindingsUntilRestart() throws Exception {
+        try (var runtime = runtime()) {
+            graph(runtime);
+            optionalDependency(runtime, C);
+            var manager = runtime.modIntents();
+            var review = manager.review(P, choice(false, "1.0.0"), Optional.empty());
+            assertTrue(review.cascade().isEmpty());
+            assertEquals(Set.of(P, C, G), review.affected());
+            manager.apply(review, false);
+            enabled(runtime, 3);
+            assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM mod_operation"));
+            assertEquals("MOD_RESTART_PENDING", assertThrows(ApiException.class,
+                () -> runtime.tasks().bind(C, "1.0.0", false).submit(work(), t -> success(null))).problem().eventCode());
+            manager.apply(manager.reviewCancellation(review.id()), false);
+            enabled(runtime, 4);
+        }
+    }
+
+    @Test
+    void consumerCanBeEnabledWithMissingOptionalProvider() throws Exception {
+        try (var runtime = runtime()) {
+            add(runtime, C, false, Map.of(P, "1.0.0"), null);
+            optionalDependency(runtime, C);
+            var manager = runtime.modIntents();
+            var review = manager.review(C, choice(true, "1.0.0"), Optional.empty());
+            assertTrue(review.cascade().isEmpty());
+            assertEquals(Set.of(C), review.affected());
+            manager.apply(review, false);
+            enabled(runtime, 1);
+        }
+    }
+
+    @Test
+    void failedOptionalProviderDoesNotBlockConsumerEnablement() throws Exception {
+        try (var runtime = runtime()) {
+            add(runtime, P, true, Map.of(), null);
+            add(runtime, C, false, Map.of(P, "1.0.0"), null);
+            optionalDependency(runtime, C);
+            sql(runtime.persistence().database(), "UPDATE mod_registry SET last_runtime_state='FAILED' WHERE mod_id=?", P);
+            var manager = runtime.modIntents();
+            var review = manager.review(C, choice(true, "1.0.0"), Optional.empty());
+            assertTrue(review.cascade().isEmpty());
+            manager.apply(review, false);
+            enabled(runtime, 2);
+        }
+    }
+
     @Test
     void missingFailedDependenciesAndStaleReviewsNeverSaveRejectedIntent() throws Exception {
         try (var runtime = runtime()) {

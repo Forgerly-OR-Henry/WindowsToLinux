@@ -10,6 +10,7 @@
   <artifactId>windowstolinux-mod</artifactId>
   <packaging>pom</packaging>
   <modules>
+    <module>git</module>
     <module>deployment</module>
   </modules>
 </project>

@@ -31,7 +31,7 @@ class ModuleDependencyArchitectureTest {
     private static final Set<String> UI_EXECUTION_TYPES = Set.of(ROOT + "appapi.linux.LinuxService",
         ROOT + "appapi.linux.session.RemoteSession", ROOT + "appapi.task.process.ProcessService",
         ROOT + "appapi.task.process.ManagedProcess", ROOT + "appapi.file.FileService",
-        ROOT + "appapi.file.query.FileQueryService", ROOT + "appapi.file.action.FileActionService", ROOT + "appapi.file.source.FileSourceService", ROOT + "appapi.file.snapshot.FileSnapshotService", ROOT + "appapi.file.work.FileWorkspaceService", ROOT + "appapi.file.work.FileWorkspace", ROOT + "appapi.secret.SecretService",
+        ROOT + "appapi.file.query.FileQueryService", ROOT + "appapi.file.action.FileActionService", ROOT + "appapi.file.source.FileSourceService", ROOT + "appapi.file.snapshot.FileSnapshotService", ROOT + "appapi.file.work.FileWorkspaceService", ROOT + "appapi.file.work.FileWorkspace", ROOT + "appapi.file.material.FileMaterialService", ROOT + "appapi.file.material.FileMaterialHold", ROOT + "appapi.secret.SecretService",
         ROOT + "appapi.db.ModDatabase", ROOT + "appapi.db.schema.SchemaAccess");
 
     @Test
@@ -126,7 +126,7 @@ class ModuleDependencyArchitectureTest {
             "action.FileActionService", "createFile(null, null)",
             "source.FileSourceService", "read(null, null, null)",
             "snapshot.FileSnapshotService", "snapshot(null, null, null)",
-            "work.FileWorkspaceService", "workspace(null)").entrySet()) {
+            "work.FileWorkspaceService", "workspace(null)", "material.FileMaterialService", "find(null, null, null)").entrySet()) {
             var source = ArchitectureSourceChecker.snippets(Map.of("fixture.FileUse", """
                 package fixture;
                 class FileUse {
@@ -145,7 +145,8 @@ class ModuleDependencyArchitectureTest {
     void platformApiAndExtensionsHaveIndependentDependencyBoundaries() throws Exception {
         var modules = declaredDependencies();
         assertEquals(Set.of(), modules.get("appapi"));
-        assertEquals(Set.of("appapi"), modules.get("mod/deployment"));
+        assertEquals(Set.of("appapi", "mod/git"), modules.get("mod/deployment"));
+        assertEquals(Set.of("appapi"), modules.get("mod/git"));
         for (var entry : modules.entrySet()) {
             if (entry.getKey().startsWith("app/"))
                 assertTrue(entry.getValue().stream().noneMatch(target -> target.startsWith("mod/") || target.startsWith("moddev/")), entry.getKey());
@@ -167,6 +168,20 @@ class ModuleDependencyArchitectureTest {
         assertEquals(List.of(), referenceViolations("mod/deployment",
             List.of(ROOT + "appapi.file.FileService", ROOT + "mod.deployment.service.impl.CustomWorkflow"),
             allowed, declared));
+    }
+
+    @Test
+    void declaredModProviderPermitsOnlyItsExactExportedApi() throws Exception {
+        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+        var declared = declaredDependencies();
+        assertEquals(List.of(), referenceViolations("mod/deployment", List.of(ROOT + "mod.git.api.GitSourceService"), allowed, declared));
+        for (String ref : List.of(ROOT + "mod.git.service.GitSourceProvider", ROOT + "mod.git.file.GitArchive",
+            ROOT + "mod.git.apiPrivate.Secret", ROOT + "mod.git.Mod"))
+            assertFalse(referenceViolations("mod/deployment", List.of(ref), allowed, declared).isEmpty(), ref);
+        assertFalse(referenceViolations("mod/git", List.of(ROOT + "mod.deployment.api.DeploymentMode"), allowed, declared).isEmpty());
+        var noDirect = new HashMap<>(declared);
+        noDirect.put("mod/deployment", Set.of("appapi"));
+        assertFalse(referenceViolations("mod/deployment", List.of(ROOT + "mod.git.api.GitSourceService"), allowed, noDirect).isEmpty());
     }
 
     @Test
@@ -261,7 +276,7 @@ class ModuleDependencyArchitectureTest {
     }
 
     private static List<String> referenceViolations(String owner, List<String> references,
-                                                    Map<String, Set<String>> allowed, Map<String, Set<String>> declared) {
+                                                    Map<String, Set<String>> allowed, Map<String, Set<String>> declared) throws Exception {
         List<String> violations = new ArrayList<>();
         for (String reference : references) {
             if (!reference.startsWith(ROOT))
@@ -282,8 +297,18 @@ class ModuleDependencyArchitectureTest {
             if (dependency == null || !allowed.getOrDefault(owner, Set.of()).contains(dependency)
                 || !declared.getOrDefault(owner, Set.of()).contains(dependency))
                 violations.add(owner + " references " + reference + " without an allowed direct dependency");
+            else if (owner.startsWith("mod/") && dependency.startsWith("mod/") && !exportedModReference(owner, dependency, reference))
+                violations.add(owner + " references a private or undeclared provider type " + reference);
         }
         return violations;
+    }
+
+    private static boolean exportedModReference(String owner, String provider, String reference) throws Exception {
+        var root = ArchitectureSourceChecker.projectRoot().resolve("src");
+        var consumer = gold.debug.windowstolinux.app.mod.config.ManifestReader.read(Files.readAllBytes(root.resolve(owner).resolve("mod.json")));
+        var supplied = gold.debug.windowstolinux.app.mod.config.ManifestReader.read(Files.readAllBytes(root.resolve(provider).resolve("mod.json")));
+        return consumer.dependencies().stream().anyMatch(d -> d.id().equals(supplied.id()) && d.versionRange().contains(supplied.version()))
+            && supplied.exports().stream().anyMatch(pkg -> reference.startsWith(pkg + "."));
     }
 
     static Map<String, Set<String>> declaredDependencies() throws Exception {

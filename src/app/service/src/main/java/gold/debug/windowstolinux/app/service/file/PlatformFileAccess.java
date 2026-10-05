@@ -529,6 +529,9 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
     /** Writable handles retained until physical and durable cleanup. / 保留至物理及持久清理完成的可写句柄。 */
     private final Set<Workspace> workspaces = Collections.newSetFromMap(new IdentityHashMap<>());
 
+    /** Material coordinator sharing this exact file activation. / 共用此精确文件启用的素材协调器。 */
+    private final PlatformFileMaterials materials;
+
     /** Activation admission state. / 启用准入状态。 */
     private volatile boolean closed;
 
@@ -544,7 +547,7 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
             synchronized (this) {
                 selected = selections.get(selection);
             }
-            if (selected == null || selected.task() != task || selected.workspace() != null)
+            if (selected == null || selected.task() != task || selected.workspace() != null || selected.material() != null)
                 throw error(ProblemCode.ACCESS_DENIED, "SOURCE_LOCATION_SELECTION",
                     "Only an original user-selected directory has a persistent location");
             return selected.directory().location(cancelToken(task));
@@ -567,6 +570,69 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
         this.version = Objects.requireNonNull(version);
         this.picker = Objects.requireNonNull(picker);
         scope = new TaskCapabilityScope(database, tasks, owner, version, Optional.empty(), "source-access-");
+        materials = new PlatformFileMaterials(database, tasks, owner, version, this);
+    }
+
+    /** Same activation original workspace custody bridge. / 同启用原工作目录接管桥。 */
+    final WorkspaceCustody custody = new WorkspaceCustody();
+
+    /** Returns the same activation's original-task material coordinator. / 返回同启用的原任务素材协调器。
+     * @return exact host material coordinator / 精确宿主素材协调器 */
+    PlatformFileMaterials materials() {
+        return materials;
+    }
+
+    /** Issues only this consumer activation's own original selection. / 仅发放此消费方启用自己的原选择。
+     * @param task authentic original root task / 真实原根任务
+     * @param directory verified immutable payload / 已核验不可变载荷
+     * @param material exact original read hold / 精确原读持有
+     * @return original consumer token / 原消费方令牌 */
+    synchronized FileSelection materialSelection(TaskContext task, SelectedDirectory directory, PlatformMaterialGrant material) {
+        if (closed)
+            throw new IllegalStateException("File activation is closed");
+        var grant = new FileSelection(UUID.randomUUID(), "Task source material");
+        selections.put(grant, new Selection(task, directory, null, material));
+        return grant;
+    }
+
+    /** Revokes only this hold's original selection. / 仅撤销此持有的原选择。
+     * @param grant exact original token / 精确原令牌 */
+    synchronized void revokeMaterial(FileSelection grant) {
+        selections.remove(grant);
+    }
+
+    /** Original workspace transfer responsibility, kept separate from source selection. / 原工作目录转交职责，与来源选择分离。 */
+    final class WorkspaceCustody {
+        /** Consumes only this activation's original writable handle before custody recording. / 接管登记前仅消费此启用的原可写句柄。
+         * @param original exact original workspace / 精确原工作目录
+         * @param task authentic original task / 真实原任务
+         * @return trusted revoked-handle transfer coordinates / 可信已撤销句柄转移坐标
+         * @throws ApiException if the original workspace is foreign or still active / 原工作目录属于他方或仍活动时 */
+        PlatformWorkspaceTransfer transfer(FileWorkspace original, TaskContext task) throws ApiException {
+            tasks.requireExecuting(task, owner, version);
+            if (!(original instanceof PlatformFileAccess.Workspace workspace) || workspace.task != task)
+                throw error(ProblemCode.ACCESS_DENIED, "MATERIAL_WORKSPACE", "Material requires the original owned workspace");
+            synchronized (PlatformFileAccess.this) {
+                if (closed || !workspaces.contains(workspace))
+                    throw error(ProblemCode.ACCESS_DENIED, "MATERIAL_WORKSPACE", "Material workspace belongs to another activation");
+            }
+            return workspace.transfer();
+        }
+
+        /** Completes only an already published original handle after a lost transfer acknowledgement. / 丢失转移确认后仅完成已发布原句柄。
+         * @param task authentic original task / 真实原任务
+         * @param id exact original workspace / 精确原工作目录
+         * @throws ApiException if original actual lease release is uncertain / 原实际占用释放不确定时 */
+        void confirmMaterialWorkspace(TaskContext task, UUID id) throws ApiException {
+            List<Workspace> original;
+            synchronized (PlatformFileAccess.this) {
+                original = List.copyOf(workspaces);
+            }
+            for (var workspace : original)
+                if (workspace.task == task && workspace.id.equals(id))
+                    workspace.confirmTransfer();
+        }
+
     }
 
     /** Presents explicit directory consent within the current unlock generation. / 在当前解锁代次内呈现明确目录同意。
@@ -609,8 +675,14 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
     public FileContent read(FileSelection selection, FileReadRequest request, TaskContext task) throws ApiException {
         if (request == null)
             throw error(ProblemCode.INVALID_INPUT, "SOURCE_REQUEST", "Source read request is required");
-        return access(task,
-            () -> selection(selection, task).read(request.relativePath(), request.maxBytes(), cancelToken(task)));
+        return access(task, () -> {
+            var selected = selected(selection, task);
+            var expected = selected.material() == null ? null : selected.material().file(request.relativePath());
+            var content = selected.directory().read(request.relativePath(), request.maxBytes(), cancelToken(task));
+            if (expected != null && (!content.sha256().equals(expected.sha256()) || content.content().length != expected.size()))
+                throw new IOException("Material content differs from original manifest");
+            return content;
+        });
     }
 
     /** Lists only an original-task directory under the public entry ceiling. / 仅在公开子项上限内列举原任务目录。
@@ -623,7 +695,11 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
     @Override
     public List<FileEntry> list(FileSelection selection, String relativeDirectory, int maxEntries,
                                 TaskContext task) throws ApiException {
-        return access(task, () -> selection(selection, task).list(relativeDirectory, maxEntries, cancelToken(task)));
+        return access(task, () -> {
+            var selected = selected(selection, task);
+            return selected.material() == null ? selected.directory().list(relativeDirectory, maxEntries, cancelToken(task))
+                : selected.material().list(relativeDirectory, maxEntries);
+        });
     }
 
     /** Creates and registers a frozen copy of exactly the author-selected files. / 创建并登记精确作者选定文件的冻结副本。
@@ -638,8 +714,10 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
         if (request == null)
             throw error(ProblemCode.INVALID_INPUT, "SOURCE_REQUEST", "Source snapshot request is required");
         return access(task, () -> {
-            var source = selection(selection, task);
+            var selected = selected(selection, task);
+            var source = selected.directory();
             FrozenSourceWork.validate(request);
+            String expected = selected.material() == null ? null : selected.material().snapshotDigest(request);
             var id = UUID.randomUUID();
             var lease = tasks.retain(task, new TaskResource("FILE", PREFIX + id, owner, false));
             var snapshot = new Snapshot(task, id, lease);
@@ -650,6 +728,8 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
             try {
                 snapshot.work.prepare();
                 snapshot.work.capture(source, request, cancelToken(task));
+                if (expected != null && !snapshot.work.sha256().equals(expected))
+                    throw new IOException("Material snapshot differs from the original subset manifest");
                 published = true;
                 return snapshot;
             } finally {
@@ -780,7 +860,7 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
      * @param task original task / 原任务
      * @return selected directory / 选定目录
      * @throws ApiException if selection belongs to another task or activation / 选择属于其他任务或启用时 */
-    private SelectedDirectory selection(FileSelection value, TaskContext task) throws ApiException {
+    private Selection selected(FileSelection value, TaskContext task) throws ApiException {
         Selection selected;
         synchronized (this) {
             selected = selections.get(value);
@@ -789,7 +869,9 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
             throw error(ProblemCode.ACCESS_DENIED, "SOURCE_SELECTION", "Source selection is foreign or expired");
         if (selected.workspace() != null)
             selected.workspace().directory();
-        return selected.directory();
+        if (selected.material() != null)
+            selected.material().require();
+        return selected;
     }
 
     /** Runs bounded synchronous work with actual lifetime accounting and safe failures. / 使用实际寿命记账及安全失败运行有界同步工作。
@@ -872,6 +954,8 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
                     String resource = entry.getValue();
                     boolean writableWork = resource.startsWith(WORKSPACE_PREFIX);
                     String prefix = writableWork ? WORKSPACE_PREFIX : PREFIX;
+                    if (writableWork && new PlatformMaterialStore(database).custody(task.id(), resourceId(resource.substring(prefix.length()))))
+                        throw new IOException("Original workspace remains in platform material custody");
                     var work = new SourceWorkDirectory(
                         database.root().resolve(writableWork ? "work/source-workspace" : "work/source"), task.id(),
                         resourceId(resource.substring(prefix.length())), owner);
@@ -913,6 +997,7 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
         }
 
         scope.close();
+        materials.close();
         synchronized (this) {
             selections.clear();
             if (!snapshots.isEmpty() || !workspaces.isEmpty())
@@ -932,8 +1017,17 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
     /** Exact original selection ownership. / 精确原选择归属。
      * @param task original object / 原对象
      * @param directory confirmed boundary / 已确认边界
-     * @param workspace optional generated-file owner / 可选生成文件所有者 */
-    private record Selection(TaskContext task, SelectedDirectory directory, Workspace workspace) {
+     * @param workspace optional generated-file owner / 可选生成文件所有者
+     * @param material optional exact material hold whitelist / 可选精确素材持有白名单 */
+    private record Selection(TaskContext task, SelectedDirectory directory, Workspace workspace,
+                             PlatformMaterialGrant material) {
+        /** Keeps ordinary source selections free of material authority. / 保持普通来源选择不含素材授权。
+         * @param task original task / 原任务
+         * @param directory original boundary / 原边界
+         * @param workspace optional original writable handle / 可选原可写句柄 */
+        Selection(TaskContext task, SelectedDirectory directory, Workspace workspace) {
+            this(task, directory, workspace, null);
+        }
     }
 
     /** Writable staging handle with the same original-task lifetime as its file lease. / 与文件租约共用原任务寿命的可写暂存句柄。 */
@@ -962,6 +1056,9 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
         /** Whether physical and durable release completed. / 物理及持久释放是否完成。 */
         private boolean released;
 
+        /** Custody has revoked writes even if its commit result is uncertain. / 即使接管提交结果不明，接管已撤销写入。 */
+        private boolean custody;
+
         /** Captures the original lease before creating files. / 创建文件前捕获原租约。
          * @param task original task / 原任务
          * @param id exact resource identity / 精确资源身份
@@ -987,7 +1084,7 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
         @Override
         public synchronized Path directory() throws ApiException {
             return access(task, () -> {
-                if (building || closing || released)
+                if (building || closing || released || custody)
                     throw error(ProblemCode.ACCESS_DENIED, "SOURCE_WORKSPACE_CLOSED",
                         "Source workspace is unavailable");
                 if (tasks.reconciling(task))
@@ -1013,6 +1110,12 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
         public synchronized void close() throws ApiException {
             if (released)
                 return;
+            try {
+                if (custody || new PlatformMaterialStore(database).custody(task.id(), id))
+                    throw error(ProblemCode.UNKNOWN, "MATERIAL_CUSTODY", "Original workspace is retained by platform material custody");
+            } catch (SQLException failure) {
+                throw error(ProblemCode.UNKNOWN, "MATERIAL_CUSTODY", "Original workspace custody cannot be verified");
+            }
             if (SwingUtilities.isEventDispatchThread() || building)
                 throw error(ProblemCode.BUSY, "SOURCE_WORKSPACE_ACTIVE",
                     "Workspace cleanup requires returned creation on a worker");
@@ -1031,6 +1134,33 @@ public final class PlatformFileAccess implements FileQueryService, FileActionSer
             released = true;
             synchronized (PlatformFileAccess.this) {
                 workspaces.remove(this);
+            }
+        }
+
+        /** Revokes the original writable grant without deleting its physical container. / 撤销原可写授权，不删除物理容器。
+         * @return exact transfer coordinates / 精确转移坐标
+         * @throws ApiException if creation or prior cleanup remains active / 创建或此前清理仍活动时 */
+        synchronized PlatformWorkspaceTransfer transfer() throws ApiException {
+            if (SwingUtilities.isEventDispatchThread() || building || closing || released || custody)
+                throw error(ProblemCode.BUSY, "MATERIAL_WORKSPACE_ACTIVE", "Workspace transfer requires quiescent original ownership");
+            custody = true;
+            synchronized (PlatformFileAccess.this) {
+                selections.remove(grant);
+            }
+            return new PlatformWorkspaceTransfer(id, work, lease, () -> {
+                confirmTransfer();
+            });
+        }
+
+        /** Concludes only revoked original custody without deleting its physical files. / 仅终结已撤销原接管，不删除其物理文件。
+         * @throws ApiException if original resource release remains uncertain / 原资源释放仍不确定时 */
+        synchronized void confirmTransfer() throws ApiException {
+            if (!custody)
+                throw error(ProblemCode.UNKNOWN, "MATERIAL_TRANSFER_STATE", "Original workspace revocation is unconfirmed");
+            lease.close();
+            released = true;
+            synchronized (PlatformFileAccess.this) {
+                workspaces.remove(Workspace.this);
             }
         }
     }

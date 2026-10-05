@@ -38,7 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class DeploymentRuntimeFixture {
     protected static final String OWNER = DeploymentSchema.OWNER;
 
-    protected static final String VERSION = "1.1.0-dev.1";
+    protected static final String VERSION = "1.1.0-dev.2";
 
     protected static final String PASSWORD = "deployment-isolated-password";
 
@@ -132,6 +132,12 @@ public class DeploymentRuntimeFixture {
         throw new AssertionError("No source selection expected");
     }
 
+    /** Chooses whether this scenario explicitly enables the optional source provider. / 选择此场景是否明确启用可选来源提供方。
+     * @return true only for Git source scenarios / 仅 Git 来源场景为真 */
+    protected boolean gitEnabled() {
+        return false;
+    }
+
     protected void start(PlatformRuntime runtime, boolean enabled) throws Exception {
         var pages = new ModPageRegistry(new ModPageRegistry.PageHost() {
             public void show(ModPageRegistry.PageKey key, PageSpec spec, JComponent component) {
@@ -149,11 +155,13 @@ public class DeploymentRuntimeFixture {
         }, new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
         var report = runtime.startDevelopmentMods(workspace(), pages);
         assertTrue(report.problems().isEmpty(), report.problems().toString());
-        assertEquals(enabled ? Set.of(OWNER) : Set.of(), report.running());
+        assertEquals(enabled ? gitEnabled() ? Set.of(OWNER, "gold.debug.windowstolinux.mod.git") : Set.of(OWNER) : Set.of(), report.running());
     }
 
     protected void enable() throws Exception {
         try (var runtime = open()) {
+            var catalog = new gold.debug.windowstolinux.app.service.mod.PlatformModCatalog(runtime.persistence().database());
+            assertTrue(catalog.refresh(workspace()).rejections().isEmpty());
             start(runtime, false);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM mod_schema"));
             assertEquals(1, scalar(runtime,
@@ -162,6 +170,8 @@ public class DeploymentRuntimeFixture {
             intents.apply(
                 intents.review(OWNER, new PlatformModIntents.Choice(true, Optional.of(VERSION)), Optional.empty()),
                 false);
+            if (gitEnabled()) intents.apply(intents.review("gold.debug.windowstolinux.mod.git",
+                new PlatformModIntents.Choice(true, Optional.of("1.0.0-dev.1")), Optional.empty()), false);
         }
     }
 

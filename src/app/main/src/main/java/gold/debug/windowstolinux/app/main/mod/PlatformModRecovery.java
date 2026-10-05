@@ -152,8 +152,15 @@ final class PlatformModRecovery {
                 for (var dependency : tasks.queries().dependencies(task).keySet()) {
                     var original = graph.release(dependency.provider());
                     if (!original.version().equals(dependency.version())
-                        || !original.schema().equals(dependency.schema()))
+                        || !original.schema().equals(dependency.schema())
+                        || !dependency.digest().isEmpty() && !original.digest().equals(dependency.digest()))
                         throw new SQLException("Retained dependency differs from original graph");
+                    if (!dependency.caller().isEmpty()) {
+                        if (!graph.release(dependency.caller()).version().equals(dependency.callerVersion())
+                            || !graph.legacy() && graph.edges().stream().noneMatch(e -> e.caller().equals(dependency.caller())
+                            && e.provider().equals(dependency.provider())))
+                            throw new SQLException("Retained call differs from original edge");
+                    }
                 }
                 candidates.add(new Candidate(List.of(graph), graph.releases(), List.of(), false));
             } catch (SQLException | IllegalArgumentException | NoSuchElementException failure) {
@@ -276,7 +283,23 @@ final class PlatformModRecovery {
             var build = builds.get(owner);
             if (build == null)
                 throw new SQLException("Original provider is absent");
-            build.manifest().dependencies().forEach(dependency -> queue.add(dependency.id()));
+            for (var dependency : build.manifest().dependencies()) {
+                if (graph.legacy() && dependency.optional())
+                    throw new SQLException("Legacy graph cannot reinterpret optional declarations");
+                var kind = dependency.optional() ? TaskRecoveryGraph.EdgeKind.OPTIONAL_USED : TaskRecoveryGraph.EdgeKind.REQUIRED;
+                boolean recorded = graph.legacy() || graph.edges().contains(new TaskRecoveryGraph.Edge(owner, dependency.id(), kind));
+                if (!dependency.optional() && !recorded) throw new SQLException("Original required edge is missing");
+                if (!recorded) continue;
+                var provider = graph.release(dependency.id());
+                if (!dependency.versionRange().contains(gold.debug.windowstolinux.app.mod.version.SemanticVersion.parse(provider.version())))
+                    throw new SQLException("Original provider version is incompatible");
+                queue.add(dependency.id());
+            }
+            if (!graph.legacy())
+                for (var edge : graph.edges().stream().filter(e -> e.caller().equals(owner)).toList())
+                    if (build.manifest().dependencies().stream().noneMatch(d -> d.id().equals(edge.provider())
+                        && (d.optional() ? TaskRecoveryGraph.EdgeKind.OPTIONAL_USED : TaskRecoveryGraph.EdgeKind.REQUIRED) == edge.kind()))
+                        throw new SQLException("Original used edge is undeclared");
         }
         if (!reached.equals(graph.releases().stream().map(TaskRecoveryGraph.Release::owner)
             .collect(java.util.stream.Collectors.toSet())))

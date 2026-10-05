@@ -62,16 +62,23 @@ public final class ModDependencyPlan {
                     "The selected release is incompatible with this host", manifest.id(), manifest.id()));
             var packages = new TreeMap<String, String>();
             for (var dependency : manifest.dependencies()) {
-                consumers.computeIfAbsent(dependency.id(), key -> new TreeSet<>()).add(manifest.id());
+                if (!dependency.optional())
+                    consumers.computeIfAbsent(dependency.id(), key -> new TreeSet<>()).add(manifest.id());
                 var provider = selected.get(dependency.id());
                 if (provider == null) {
+                    if (dependency.optional()) continue;
                     failures.putIfAbsent(manifest.id(), problem("MOD_DEPENDENCY_MISSING",
                         "A required Mod has no enabled selection", manifest.id(), dependency.id()));
                     continue;
                 }
-                if (!dependency.versionRange().contains(provider.version()))
+                if (!dependency.versionRange().contains(provider.version())) {
+                    if (dependency.optional()) continue;
                     failures.putIfAbsent(manifest.id(), problem("MOD_DEPENDENCY_INCOMPATIBLE",
                         "The selected dependency release is incompatible", manifest.id(), dependency.id()));
+                    continue;
+                }
+                if (dependency.optional() && (javaVersion < provider.minJavaVersion() || !provider.platformApiRange().contains(platformApi)))
+                    continue;
                 for (String exported : provider.exports()) {
                     if (overlaps(exported, manifest.rootPackage())
                         || packages.keySet().stream().anyMatch(prior -> overlaps(prior, exported)))
@@ -84,21 +91,18 @@ public final class ModDependencyPlan {
             }
             exports.put(manifest.id(), Map.copyOf(packages));
         }
-        var rejected = new ArrayDeque<>(failures.keySet());
-        while (!rejected.isEmpty()) {
-            var unavailable = rejected.removeFirst();
-            for (var consumer : consumers.getOrDefault(unavailable, Set.of())) {
-                if (failures.putIfAbsent(consumer, problem("MOD_DEPENDENCY_UNAVAILABLE",
-                    "A required Mod failed dependency validation", consumer, unavailable)) == null)
-                    rejected.addLast(consumer);
-            }
-        }
+        var cycleOwners = new HashSet<String>();
+        for (var owner : selected.keySet())
+            cycles(owner, selected, failures, new ArrayList<>(), new HashSet<>(), cycleOwners);
+        for (var owner : cycleOwners)
+            failures.putIfAbsent(owner, problem("MOD_DEPENDENCY_CYCLE", "Enabled dependency graph contains a cycle", owner, owner));
+        propagateRequiredFailures(consumers, failures);
         var remaining = new HashMap<String, Integer>();
         var ready = new PriorityQueue<String>();
         for (var manifest : selected.values()) {
             if (failures.containsKey(manifest.id()))
                 continue;
-            int count = manifest.dependencies().size();
+            int count = (int) manifest.dependencies().stream().filter(d -> selected.containsKey(d.id()) && !failures.containsKey(d.id()) && d.versionRange().contains(selected.get(d.id()).version())).count();
             remaining.put(manifest.id(), count);
             if (count == 0)
                 ready.add(manifest.id());
@@ -108,7 +112,7 @@ public final class ModDependencyPlan {
             String owner = ready.remove();
             order.add(selected.get(owner));
             remaining.remove(owner);
-            for (var consumer : consumers.getOrDefault(owner, Set.of())) {
+            for (var consumer : selected.values().stream().filter(m -> m.dependencies().stream().anyMatch(d -> d.id().equals(owner) && d.versionRange().contains(selected.get(owner).version()))).map(ModManifest::id).toList()) {
                 if (remaining.containsKey(consumer) && remaining.compute(consumer, (key, count) -> count - 1) == 0)
                     ready.add(consumer);
             }
@@ -148,14 +152,22 @@ public final class ModDependencyPlan {
         for (var dependency : manifest.dependencies()) {
             var loader = originals.get(dependency.id());
             var expected = selected.get(dependency.id());
-            if (loader == null || loader.isClosed() || !loader.manifest().id().equals(dependency.id())
+            if (dependency.optional() && (expected == null || failures.containsKey(dependency.id())
+                || !dependency.versionRange().contains(expected.version()))) continue;
+            if (dependency.optional() && (loader == null || loader.isClosed())) continue;
+            if (loader == null || expected == null || loader.isClosed() || !loader.manifest().id().equals(dependency.id())
+                || !dependency.versionRange().contains(loader.manifest().version())
                 || !loader.manifest().version().equals(expected.version())
                 || !loader.manifest().json().equals(expected.json()))
                 throw new ApiException(problem("MOD_PROVIDER_CHANGED",
                     "A required original provider loader is unavailable or changed", owner, dependency.id()));
         }
         var bindings = new TreeMap<String, ModClassLoader>();
-        exports.get(owner).forEach((name, provider) -> bindings.put(name, originals.get(provider)));
+        exports.get(owner).forEach((name, provider) -> {
+            var original = originals.get(provider);
+            if (original != null && !original.isClosed() && !failures.containsKey(provider))
+                bindings.put(name, original);
+        });
         var loader = new ModClassLoader(manifest, sources, bindings);
         try {
             loader.inspectCode();
@@ -169,6 +181,46 @@ public final class ModDependencyPlan {
             throw new ApiException(
                 problem("MOD_CODE_INVALID", "Selected Mod code failed static admission", owner, owner));
         }
+    }
+
+    /** Propagates failure only to required consumers. / 仅向必需消费方传播失败。
+     * @param consumers original required consumer edges / 原必需消费方边
+     * @param failures established dependency failures / 已确立依赖失败 */
+    private static void propagateRequiredFailures(Map<String, Set<String>> consumers, Map<String, Problem> failures) {
+        var rejected = new ArrayDeque<>(failures.keySet());
+        while (!rejected.isEmpty()) {
+            var unavailable = rejected.removeFirst();
+            for (var consumer : consumers.getOrDefault(unavailable, Set.of())) {
+                if (failures.putIfAbsent(consumer, problem("MOD_DEPENDENCY_UNAVAILABLE",
+                    "A required Mod failed dependency validation", consumer, unavailable)) == null)
+                    rejected.addLast(consumer);
+            }
+        }
+    }
+
+    /** Marks actual enabled cycle members while leaving outside optional consumers independent. / 标记实际启用环成员并保持外部可选消费方独立。
+     * @param owner exact original Mod owner / 精确原 Mod 所有者
+     * @param selected enabled selected author manifests / 启用选择作者清单
+     * @param failures already established invalid selections / 已确立无效选择
+     * @param path active original dependency path / 活动原依赖路径
+     * @param done already inspected graph nodes / 已检验图节点
+     * @param cyclic exact cycle members / 精确环成员
+     */
+    private static void cycles(String owner, Map<String, ModManifest> selected, Map<String, Problem> failures,
+                               List<String> path, Set<String> done, Set<String> cyclic) {
+        int at = path.indexOf(owner);
+        if (at >= 0) {
+            cyclic.addAll(path.subList(at, path.size()));
+            return;
+        }
+        if (!done.add(owner) || failures.containsKey(owner)) return;
+        path.add(owner);
+        for (var d : selected.get(owner).dependencies()) {
+            var provider = selected.get(d.id());
+            if (provider != null && d.versionRange().contains(provider.version()))
+                cycles(d.id(), selected, failures, path, done, cyclic);
+        }
+        path.removeLast();
     }
 
     /** Checks equal or containing package names without treating textual prefixes as packages. / 检查相同或包含包名，不将文本前缀误当作包。

@@ -848,7 +848,7 @@ public final class PlatformModIntents implements AutoCloseable {
             for (var dependent : affected) {
                 if (requested.containsKey(dependent))
                     continue;
-                if (!change.getValue().enabled() || plan.failures().containsKey(dependent)) {
+                if (plan.failures().containsKey(dependent)) {
                     cascade.add(dependent);
                     choices.put(dependent, new Choice(false, state.owners().get(dependent).choice().version()));
                 }
@@ -862,6 +862,8 @@ public final class PlatformModIntents implements AutoCloseable {
                     if (!seen.add(owner))
                         continue;
                     for (var dependency : manifests.get(owner).dependencies()) {
+                        if (dependency.optional())
+                            continue;
                         var provider = state.owners().get(dependency.id());
                         if (Set.of("FAILED", "UNKNOWN").contains(provider.runtime()))
                             throw rejected("MOD_DEPENDENCY_NOT_RUNNING",

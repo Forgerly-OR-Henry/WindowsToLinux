@@ -103,7 +103,7 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublishAcceptance
      * @param peer existing strict build receipt peer / 既有严格构建回执端
      * @param running actual remote running units / 实际远端运行单元
      * @return context with only its remote boundary controlled / 仅远端边界受控的上下文 */
-    private ModContext bind(ModContext original, DeploymentAssistedBuildPeer peer, Set<String> running) {
+    protected static ModContext bind(ModContext original, DeploymentAssistedBuildPeer peer, Set<String> running) {
         LinuxService linux = new LinuxService() {
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 var session = peer.session(task);
@@ -152,7 +152,7 @@ class DeploymentPublishedApplicationStopTest extends DeploymentPublishAcceptance
      * @param count complete expected unit count / 完整预期单元数
      * @return canonical original business row bytes / 规范原业务行字节
      * @throws Exception if retained data differs or is unavailable / 留存数据不符或不可用时 */
-    private Map<String, List<List<String>>> business(PlatformRuntime runtime, SchemaIdentity identity, int count)
+    protected static Map<String, List<List<String>>> business(PlatformRuntime runtime, SchemaIdentity identity, int count)
         throws Exception {
         var result = new LinkedHashMap<String, List<List<String>>>();
         try (var access = new SchemaAccessScope(runtime.persistence().database(), identity, UUID.randomUUID(), true);

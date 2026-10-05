@@ -7,6 +7,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.file.material.MaterialState;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.recover.TaskRecovery;
@@ -229,7 +230,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             var journal = DeploymentGitSourceActionLog.find(context.tasks(), task);
             if (journal.isEmpty())
                 return unknown();
-            var settled = settle(task, journal.orElseThrow(), null);
+            var settled = settle(task, journal.orElseThrow(), null, false);
             return new OperationResult<>(settled.outcome(), Optional.empty(), settled.problem());
         } catch (Exception | LinkageError | AssertionError uncertain) {
             return unknown();
@@ -314,7 +315,7 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @param task original context / 原上下文
      * @param journal original checkpoint / 原检查点
      * @param preparer current-boot attempt or null / 当前启动尝试或空值
-     * @param wholeTask whether this is the standalone Git task / 是否独立 Git 整任务
+     * @param wholeTask whether to observe all task resources before returning; original recovery leaves dependency finalization to the host / 是否返回前观察全任务资源；原恢复将依赖收尾交宿主
      * @return known Git result or retained uncertainty / 已知 Git 结果或保留未知
      * @throws ApiException if original evidence or cleanup is unavailable / 原依据或清理不可用时
      * @throws SQLException if exact project observation fails / 精确项目观察失败时 */
@@ -325,16 +326,21 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
         var facts = journal.refresh();
         context.processes().closeTaskResources(task);
         if (facts.phase() == DeploymentGitSourceActionLog.PhaseState.REQUESTED) {
-            var bytes = context.file()
-                .workspaces().readWorkspaceEvidence(task, facts.plan().control(), "git-result.json", 1_048_576).orElse(null);
-            if (bytes == null)
-                return unknown();
-            try {
-                journal.receipt(DeploymentGitSetup.readReceipt(bytes, task.id(), facts.plan().process(),
-                    facts.plan().job()));
-            } catch (java.io.IOException invalid) {
-                return unknown();
+            var original = DeploymentGitSetup.reconcileOriginal(context, facts.plan(), task);
+            if (original.outcome() == TaskResult.UNKNOWN) {
+                var publication = context.file().materials().inspect(facts.plan().material(), facts.plan().job(), task);
+                if (publication.state() == MaterialState.CAPTURING
+                    || publication.state() == MaterialState.RELEASE_REQUESTED && publication.reference().isEmpty()) {
+                    publication = context.file().materials().releaseUnpublished(facts.plan().material(), facts.plan().job(), task);
+                }
+                if (publication.state() != MaterialState.RELEASED || publication.reference().isPresent())
+                    return unknown();
+                original = DeploymentGitSetup.reconcileOriginal(context, facts.plan(), task);
+                if (original.outcome() == TaskResult.UNKNOWN) return unknown();
             }
+            var reason = original.problem();
+            journal.receipt(new DeploymentGitSetup.Receipt(original.outcome(), original.value().map(value -> value.revision()),
+                reason.map(Problem::code), reason.map(Problem::eventCode)));
             facts = journal.facts();
         }
         if (facts.phase() == DeploymentGitSourceActionLog.PhaseState.REQUESTED)
@@ -342,6 +348,8 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
         var result = business(task, journal);
         if (result.outcome() == TaskResult.UNKNOWN)
             return result;
+        if (facts.receipt().isPresent() && facts.receipt().orElseThrow().outcome() == TaskResult.SUCCEEDED)
+            DeploymentGitSetup.releaseOriginal(context, facts.plan(), task, preparer == null);
         context.file().closeTaskResources(task);
         journal.close();
         if (wholeTask && !context.tasks().resourcesReleased(task))

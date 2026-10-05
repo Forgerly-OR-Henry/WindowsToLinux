@@ -22,8 +22,13 @@ public final class DeploymentGitJournalFixture {
      * @return durable observer / 持久观察器
      * @throws ApiException if original checkpoint is unavailable / 原检查点不可用时 */
     public static DeploymentGitSetup.Observer begin(ModContext context, TaskContext task, DeploymentGitRequest request) throws ApiException {
+        return begin(context, task, request, 2 * 1024 * 1024, 100);
+    }
+
+    public static DeploymentGitSetup.Observer begin(ModContext context, TaskContext task, DeploymentGitRequest request,
+                                                    long maximumBytes, int maximumEntries) throws ApiException {
         var journal = DeploymentGitSourceActionLog.begin(context.tasks(), task, UUID.randomUUID(), "Preparation fixture",
-            Optional.empty(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS), request, 2 * 1024 * 1024, 100);
+            Optional.empty(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS), request, maximumBytes, maximumEntries);
         return new DeploymentGitSetup.Observer() {
             public DeploymentGitSetup.Planned planned() {
                 return journal.planned();
