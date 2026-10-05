@@ -171,4 +171,61 @@ class DeploymentWorkspaceTest {
             assertEquals(1, replacement.closes);
         });
     }
+
+    @Test
+    void preferenceCancellationFailureStillClosesViewsAndRetainsOriginalFailure() throws Exception {
+        var original = java.util.UUID.randomUUID();
+        var observed = new java.util.concurrent.CountDownLatch(1);
+        var completion = new java.util.concurrent.CompletableFuture<gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection>>();
+        var cancellation = new gold.debug.windowstolinux.appapi.task.result.ApiException(
+            new gold.debug.windowstolinux.appapi.task.result.Problem(
+                gold.debug.windowstolinux.appapi.task.result.ProblemCode.IO_FAILURE, "TASK_CANCEL_PERSISTENCE",
+                "Cancellation request could not be confirmed", java.util.Map.of(), java.util.Optional.of(original)));
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var handle = new gold.debug.windowstolinux.appapi.task.run.TaskHandle<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection>() {
+            @Override
+            public java.util.UUID id() {
+                return original;
+            }
+
+            @Override
+            public gold.debug.windowstolinux.appapi.task.model.TaskSnapshot snapshot() {
+                throw new AssertionError("Preference observation uses original completion");
+            }
+
+            @Override
+            public java.util.concurrent.CompletionStage<gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection>> completion() {
+                observed.countDown();
+                return completion;
+            }
+
+            @Override
+            public void requestCancel() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+                if (calls.getAndIncrement() == 0) throw cancellation;
+                completion.complete(new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(
+                    gold.debug.windowstolinux.appapi.task.result.TaskResult.CANCELLED, java.util.Optional.empty(), java.util.Optional.empty()));
+            }
+        };
+        var standard = new Page();
+        var agent = new Page();
+        var workspace = new DeploymentWorkspace(() -> standard, () -> agent, Page::new, Page::new, () -> handle);
+        try {
+            edt(() -> workspace.create(INITIAL));
+            assertTrue(observed.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            edt(() -> {
+                workspace.restoreNavigation("static-deployment");
+                workspace.restoreNavigation("agent-deployment");
+                assertSame(cancellation, assertThrows(Exception.class, workspace::close));
+                assertEquals(1, standard.closes);
+                assertEquals(1, agent.closes);
+                assertFalse(completion.isDone());
+                workspace.close();
+                assertEquals(1, standard.closes);
+                assertEquals(1, agent.closes);
+                assertEquals(2, calls.get());
+            });
+        } finally {
+            edt(workspace::close);
+        }
+    }
 }

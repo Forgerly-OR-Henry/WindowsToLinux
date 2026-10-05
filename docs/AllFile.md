@@ -974,7 +974,7 @@ WindowsToLinux/
    │  │  │  │  ├─ DeploymentEnvironmentHelper.java  # 使用原环境操作保存 helper 回执，包括不创建另一检查点的恢复
    │  │  │  │  ├─ DeploymentEnvironmentJournal.java  # 严格原任务 CAS 依据，恢复不能重新创建已发送副作用
    │  │  │  │  ├─ DeploymentEnvironmentObservation.java  # 精确有界的原主机观测及回执
-   │  │  │  │  ├─ DeploymentEnvironmentPending.java  # 停止后续发送并保留精确原操作依据
+   │  │  │  │  ├─ DeploymentEnvironmentPendingException.java  # 停止后续发送并保留精确原操作依据
    │  │  │  │  ├─ DeploymentEnvironmentProfiles.java  # 原实现自有软件包配置，调用者不能选择任意软件包
    │  │  │  │  ├─ DeploymentEnvironmentRunner.java  # 推进一项原环境操作，后续认证前关闭每个物理会话
    │  │  │  │  ├─ DeploymentEnvironmentScripts.java  # 固定完整审核资源，不含调用方提供的 Shell 或软件包

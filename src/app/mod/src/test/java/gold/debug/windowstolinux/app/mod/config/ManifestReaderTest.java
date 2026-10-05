@@ -123,8 +123,26 @@ class ManifestReaderTest {
         assertThrows(IOException.class, () -> read(tooMany));
         var extraField = node();
         extraField.putArray("dependencies").addObject().put("id", "example.mod.provider").put("versionRange", "1.0.0")
-            .put("optional", true);
+            .put("unexpected", true);
         assertThrows(IOException.class, () -> read(extraField));
+    }
+
+    @Test
+    void optionalDependencyFlagDefaultsRequiredAndRequiresAnExactBoolean() throws Exception {
+        var declaration = node();
+        var dependency = declaration.putArray("dependencies").addObject().put("id", "example.mod.provider")
+            .put("versionRange", "1.0.0");
+        assertFalse(read(declaration).dependencies().getFirst().optional());
+        dependency.put("optional", true);
+        assertTrue(read(declaration).dependencies().getFirst().optional());
+        dependency.put("optional", false);
+        assertFalse(read(declaration).dependencies().getFirst().optional());
+        dependency.putNull("optional");
+        assertThrows(IOException.class, () -> read(declaration));
+        dependency.put("optional", "true");
+        assertThrows(IOException.class, () -> read(declaration));
+        dependency.put("optional", 1);
+        assertThrows(IOException.class, () -> read(declaration));
     }
 
     @Test

@@ -42,8 +42,8 @@ final class DeploymentEnvironmentHelper {
     /** Probes an existing helper or sends one installation under the already retained original operation. / 探测既有 helper 或在已保留原操作下发送一次安装。
      * @param state original installed-package proof / 原已安装包证明
      * @throws ApiException if original authentication or CAS fails / 原认证或 CAS 失败时
-     * @throws DeploymentEnvironmentPending if helper identity or sent outcome is unknown / helper 身份或发送结果未知时 */
-    void prepare(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if helper identity or sent outcome is unknown / helper 身份或发送结果未知时 */
+    void prepare(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         try (var session = context.linux().connect(state.target(), task)) {
             var helper = helper(session, state);
             var observed = helper.probe();
@@ -52,23 +52,23 @@ final class DeploymentEnvironmentHelper {
                 return;
             }
             if (observed.outcome() != TaskResult.FAILED)
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_HELPER_PROBE_UNCONFIRMED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_PROBE_UNCONFIRMED");
             String script = installer(state);
             var sent = state.next("HELPER_DISPATCHED", DeploymentEnvironmentScripts.digest(script), state.observation().orElseThrow());
             var result = helper.installTracked(script.getBytes(StandardCharsets.UTF_8), () -> journal.advance(state, sent));
             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
                 || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated())
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_HELPER_DISPATCH_UNCONFIRMED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_DISPATCH_UNCONFIRMED");
         }
     }
 
     /** Checks only the original receipt and helper bytes through a fresh authenticated connection. / 经新认证连接仅核对原回执及 helper 字节。
      * @param state original sent helper stage / 原已发送 helper 阶段
      * @throws ApiException if original connection, approval or CAS fails / 原连接、审核或 CAS 失败时
-     * @throws DeploymentEnvironmentPending if exact original proof is unavailable / 精确原证明不可用时 */
-    void reconcile(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if exact original proof is unavailable / 精确原证明不可用时 */
+    void reconcile(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         if (!state.requestSha().equals(DeploymentEnvironmentScripts.digest(installer(state))))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_HELPER_ORIGINAL_REQUEST_CHANGED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_ORIGINAL_REQUEST_CHANGED");
         try (var session = context.linux().connect(state.target(), task)) {
             var helper = helper(session, state);
             var observed = helper.installationStatus(state.operation());
@@ -77,7 +77,7 @@ final class DeploymentEnvironmentHelper {
             if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()
                 || !observed.value().orElseThrow().exitCode().equals(Optional.of(0)) || observed.value().orElseThrow().truncated()
                 || !receipt.equals(observed.value().orElseThrow().stdout()) || helper.probe().outcome() != TaskResult.SUCCEEDED)
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_HELPER_ORIGINAL_RECEIPT_UNCONFIRMED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_HELPER_ORIGINAL_RECEIPT_UNCONFIRMED");
             journal.advance(state, state.next("HELPER_INSTALLED", state.requestSha(), state.observation().orElseThrow()));
         }
     }
