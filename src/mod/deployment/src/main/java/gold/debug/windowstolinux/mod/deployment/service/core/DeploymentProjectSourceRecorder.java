@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.file.FileService;
+import gold.debug.windowstolinux.appapi.file.source.FileSelection;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
@@ -70,6 +71,24 @@ public final class DeploymentProjectSourceRecorder {
             }
             throw failure;
         }
+    }
+
+    /** Constructs a project row from this task's already frozen local material, without selecting or freezing again. / 从本任务已冻结本地素材构建项目行，不再次选择或冻结。
+     * @param task authentic original task / 真实原任务
+     * @param selection original selection / 原选择
+     * @param material original frozen material / 原冻结素材
+     * @param id selected stable identity / 所选稳定身份
+     * @param displayName user name / 用户名称
+     * @param expected complete old row / 完整旧行
+     * @param observedAt actual millisecond observation / 实际毫秒观测
+     * @return complete same-source project row / 完整同源项目行
+     * @throws ApiException if original selection authority fails / 原选择权限失败时 */
+    public DeploymentProjectRecord localRecord(TaskContext task, FileSelection selection,
+                                               DeploymentSourceMaterial material, UUID id, String displayName,
+                                               Optional<DeploymentProjectRecord> expected, Instant observedAt) throws ApiException {
+        var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.LOCAL,
+            sources.sources().location(selection, task), Optional.empty(), Optional.empty(), material.snapshot().sha256());
+        return record(id, displayName, source, expected, observedAt);
     }
 
     /** Builds a complete revision with caller-observed time, retaining stable identity on update. / 使用调用方观测时间构建完整修订，更新时保持稳定身份。

@@ -18,6 +18,7 @@ import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.ModPage;
 import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +38,8 @@ class ModPageRegistryTest {
 
         boolean locked;
 
+        final List<PlatformPageKind> platformTargets = new ArrayList<>();
+
         public void show(PageKey key, PageSpec spec, JComponent view) {
             assertTrue(SwingUtilities.isEventDispatchThread());
             views.put(key, view);
@@ -46,6 +49,11 @@ class ModPageRegistryTest {
             assertTrue(SwingUtilities.isEventDispatchThread());
             assertTrue(views.containsKey(key));
             focuses++;
+        }
+
+        public void openPlatform(PlatformPageKind target) {
+            assertTrue(SwingUtilities.isEventDispatchThread());
+            platformTargets.add(target);
         }
 
         public void remove(PageKey key) {
@@ -129,6 +137,41 @@ class ModPageRegistryTest {
             assertEquals(1, host.focuses);
         }
         assertTrue(host.views.isEmpty());
+    }
+
+    @Test
+    void platformNavigationRequiresPublishedNormalUnlockedOwnerAndRetainsOriginalView() throws Exception {
+        var host = new Host();
+        var registry = new ModPageRegistry(host, INITIAL);
+        var page = new Page();
+        var creations = new AtomicInteger();
+        try (var scope = registry.begin("example.platform-consumer", false)) {
+            scope.register(spec("main", false), () -> {
+                creations.incrementAndGet();
+                return page;
+            });
+            assertThrows(ApiException.class, () -> scope.openPlatform(PlatformPageKind.SERVERS));
+            assertTrue(host.platformTargets.isEmpty());
+            scope.commit();
+            scope.open("main");
+            var original = host.views.get(new PageKey("example.platform-consumer", "main"));
+            for (var target : PlatformPageKind.values()) scope.openPlatform(target);
+            assertEquals(List.of(PlatformPageKind.values()), host.platformTargets);
+            registry.environment(new UiEnvironment(Locale.ENGLISH, "light", true));
+            assertThrows(ApiException.class, () -> scope.openPlatform(PlatformPageKind.AI_MODELS));
+            assertEquals(3, host.platformTargets.size());
+            registry.environment(INITIAL);
+            scope.open("main");
+            assertSame(original, host.views.get(new PageKey("example.platform-consumer", "main")));
+            assertEquals(1, creations.get());
+            scope.close();
+            assertThrows(ApiException.class, () -> scope.openPlatform(PlatformPageKind.TASKS));
+        }
+        try (var recovery = registry.begin("example.recovery-consumer", true)) {
+            recovery.commit();
+            assertThrows(ApiException.class, () -> recovery.openPlatform(PlatformPageKind.TASKS));
+        }
+        assertEquals(3, host.platformTargets.size());
     }
 
     @Test

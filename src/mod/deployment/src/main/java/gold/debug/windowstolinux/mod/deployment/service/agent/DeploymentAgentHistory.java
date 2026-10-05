@@ -130,9 +130,10 @@ public final class DeploymentAgentHistory {
     /** Observes exact original candidates without cleanup, publication or result mutation. / 观察精确原候选，不清理、发布或改变结果。
      * @param task actual query or original retained callback / 实际查询或原留存回调
      * @param detail exact original evidence / 精确原依据
+     * @param recovery whether this is the explicit original recovery callback / 是否为明确原恢复回调
      * @return actual candidate facts, including verified absence / 实际候选事实，包括已核实不存在
      * @throws Exception if permission, profile, fingerprint or candidate facts differ / 权限、资料、指纹或候选事实不符时 */
-    public Map<String, String> inspect(TaskContext task, Detail detail) throws Exception {
+    public Map<String, String> inspect(TaskContext task, Detail detail, boolean recovery) throws Exception {
         String profile = detail.events().stream().filter(event -> event.type().equals("TARGET_PROFILE"))
             .reduce((before, after) -> after).orElseThrow(() -> new SQLException("Original endpoint binding missing")).detail();
         var server = detail.entry().server();
@@ -141,13 +142,20 @@ public final class DeploymentAgentHistory {
         var workspaces = DeploymentAgentRecovery.originalWorkspaces(detail.events()).orElseThrow(
             () -> new SQLException("Original candidate identities are incomplete"));
         var result = new LinkedHashMap<String, String>();
-        try (var session = context.linux().connect(server, task)) {
+        String revision = detail.snapshot().identity().configurationDigest();
+        var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.DeploymentCommandReviewScope(context,
+            context.interaction(), task, detail.snapshot().identity().approvalMode(), detail.snapshot().identity().authorizationMode(), () -> revision);
+        var identity = detail.snapshot().identity();
+        try (var permission = recovery ? gold.debug.windowstolinux.mod.deployment.ai.DeploymentWorkflowAuthorization.recover(
+            context, task, server, revision, identity.approvalMode(), identity.authorizationMode(), "inspect-original=" + detail.entry().id())
+            : gold.debug.windowstolinux.mod.deployment.ai.DeploymentWorkflowAuthorization.open(
+            context, task, server, revision, identity.approvalMode(), identity.authorizationMode(), "inspect-original=" + detail.entry().id());
+             var session = context.linux().connect(server, task)) {
             if (!detail.snapshot().identity().targetDigest().equals(DeploymentAgentWorkflow.targetDigest(server, session)))
                 throw new SQLException("Original inspection fingerprint changed");
-            String revision = detail.snapshot().identity().configurationDigest();
-            if (new DeploymentManagedHelper(session, context.interaction(), server, task, revision).probe().outcome() != TaskResult.SUCCEEDED)
+            if (new DeploymentManagedHelper(session, reviewed.interaction(), server, task, revision).probe().outcome() != TaskResult.SUCCEEDED)
                 throw new SQLException("Original inspection helper is unconfirmed");
-            var channel = new DeploymentAgentProjectChannel(session, context.interaction(), server, task, revision, () -> revision);
+            var channel = new DeploymentAgentProjectChannel(session, reviewed.interaction(), server, task, revision, () -> revision);
             for (var workspace : workspaces) {
                 if (!profile.equals(DeploymentAgentWorkflow.targetProfile(context.servers().get(server, task))))
                     throw new SQLException("Original inspection endpoint changed before query");

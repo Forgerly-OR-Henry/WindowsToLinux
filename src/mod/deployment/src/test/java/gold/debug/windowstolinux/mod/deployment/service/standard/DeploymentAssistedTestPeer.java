@@ -41,7 +41,7 @@ final class DeploymentAssistedTestPeer {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
             new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                 if (method.getName().equals("facts"))
-                    return new RemoteFacts("linux", "x86_64", "SHA256:assisted-test");
+                    return new RemoteFacts("linux", "x86_64", "SHA256:" + "A".repeat(43));
                 if (method.getName().equals("close")) {
                     lease.close();
                     closed.run();

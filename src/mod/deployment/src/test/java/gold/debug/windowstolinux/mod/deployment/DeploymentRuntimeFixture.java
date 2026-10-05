@@ -38,7 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
 public class DeploymentRuntimeFixture {
     protected static final String OWNER = DeploymentSchema.OWNER;
 
-    protected static final String VERSION = "1.1.0-dev.2";
+    protected static final String VERSION = "1.1.0-dev.3";
 
     protected static final String PASSWORD = "deployment-isolated-password";
 

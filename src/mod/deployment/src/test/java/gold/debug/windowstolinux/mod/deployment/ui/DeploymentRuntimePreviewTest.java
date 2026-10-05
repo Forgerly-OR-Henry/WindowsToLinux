@@ -10,6 +10,7 @@ import java.util.concurrent.FutureTask;
 import java.util.stream.Stream;
 
 import javax.swing.*;
+import javax.swing.text.JTextComponent;
 
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
@@ -70,7 +71,7 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
             var report = runtime.startDevelopmentMods(workspace(), pages);
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             assertEquals(Set.of(OWNER), report.running());
-            assertEquals(Set.of("static-deployment", "agent-deployment", "applications"), pages.contributions().stream()
+            assertEquals(Set.of("workspace"), pages.contributions().stream()
                 .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
             assertEquals(Set.of("runtime-preview-go_service", "runtime-preview-node_service"), pages.previews().stream()
                 .map(value -> value.key().pageId()).collect(java.util.stream.Collectors.toSet()));
@@ -80,7 +81,7 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
             var context = runtime.modContexts().get(OWNER).context();
             assertThrows(ApiException.class, () -> context.ui().open(key.pageId()));
             assertThrows(ApiException.class,
-                () -> pages.openPreview(new ModPageRegistry.PageKey(OWNER, "static-deployment")));
+                () -> pages.openPreview(new ModPageRegistry.PageKey(OWNER, "workspace")));
             pages.openPreview(key);
             pages.openPreview(key);
             var original = onEdt(() -> views.get(key));
@@ -147,12 +148,15 @@ class DeploymentRuntimePreviewTest extends DeploymentRuntimeFixture {
     }
 
     private static void assertRuntimeFields(JComponent root, DeploymentProjectKind kind, Locale locale) {
-        var values = descendants(root).filter(JTextField.class::isInstance).map(JTextField.class::cast)
-            .map(JTextField::getText).toList();
+        var values = descendants(root).filter(JTextComponent.class::isInstance).map(JTextComponent.class::cast)
+            .map(JTextComponent::getText).toList();
         for (String expected : List.of(kind == DeploymentProjectKind.NODE_SERVICE ? "22" : "1.25", "8080", "TCP",
             "https://example.invalid/preview", "APP_MODE=preview", "1800", "1024", "4096", "4194304", "4294967296"))
             assertTrue(values.contains(expected), "Missing actual ordinary runtime control value: " + expected);
         assertEquals(2, values.stream().filter("8080"::equals).count());
+        assertTrue(descendants(root).filter(JTextArea.class::isInstance).map(JTextArea.class::cast)
+                .anyMatch(field -> "APP_MODE=preview".equals(field.getText()) && field.isEditable()),
+            "The ordinary configuration must remain a real editable multiline control");
         var catalog = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-page", locale);
         assertTrue(descendants(root).filter(JLabel.class::isInstance).map(JLabel.class::cast).anyMatch(
             label -> (catalog.getString("application") + ": preview-application").equals(label.getText())));

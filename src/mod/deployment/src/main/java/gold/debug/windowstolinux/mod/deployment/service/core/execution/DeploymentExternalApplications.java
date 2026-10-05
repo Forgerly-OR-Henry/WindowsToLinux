@@ -704,6 +704,10 @@ public final class DeploymentExternalApplications {
                 || !sameIdentity(stored.target(), preflight.value().orElseThrow().applications().getFirst())
                 || preflight.value().orElseThrow().applications().getFirst().managed())
                 return failed("DEPLOYMENT_EXTERNAL_IDENTITY_CHANGED");
+            var actual = preflight.value().orElseThrow().applications().getFirst();
+            if (action.equals("START") && !actual.canStart() || action.equals("STOP") && !actual.canStop()
+                || action.equals("RESTART") && (!actual.canStart() || !actual.canStop()))
+                return failed("DEPLOYMENT_EXTERNAL_ACTION_UNSUPPORTED");
             var facts = DeploymentManagementActionLog.facts()
                 .put("before", preflight.value().orElseThrow().applications().getFirst().state())
                 .put("kind", stored.target().kind()).put("identity", stored.target().identity())

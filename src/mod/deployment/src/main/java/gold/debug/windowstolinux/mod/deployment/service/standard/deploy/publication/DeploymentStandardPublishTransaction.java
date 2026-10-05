@@ -111,6 +111,8 @@ public final class DeploymentStandardPublishTransaction {
             return unknown("DEPLOYMENT_SNAPSHOT_RETAINED_AFTER_CANCEL");
         if (!journal.publishing(releaseSha256))
             return unknown("DEPLOYMENT_PUBLICATION_EVIDENCE_UNCONFIRMED");
+        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+            "Publishing the verified original candidate / 发布已核实原候选");
         var published = channel.publish(unit, request.facts(), request.runtime(), request.resources(),
             request.configuration().sha256(), digests, build.candidateId(), releaseSha256,
             build.toolchainBindingSha256(), !build.toolchains().selections().isEmpty());
@@ -122,6 +124,8 @@ public final class DeploymentStandardPublishTransaction {
         journal.mark("PUBLISHED_VERIFIED");
         if (cancelled(task))
             return unknown("DEPLOYMENT_PUBLISHED_AFTER_CANCEL");
+        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+            "Verifying the original published runtime and health / 核验原发布运行时及健康");
         var health = channel.healthCheck(unit, request.runtime().healthCheck());
         if (health.outcome() == TaskResult.UNKNOWN || health.outcome() == TaskResult.CANCELLED)
             return uncertain(health, "DEPLOYMENT_HEALTH_UNCONFIRMED");

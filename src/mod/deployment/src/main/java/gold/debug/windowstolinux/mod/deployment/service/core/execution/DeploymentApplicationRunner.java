@@ -13,6 +13,8 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.query.PageSlice;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
@@ -25,6 +27,7 @@ import gold.debug.windowstolinux.mod.deployment.db.DeploymentSchema;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentPublishChannel;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentRemoteRuntimeObservation;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader.ApplicationFacts;
+import gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationReader.Observation;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentApplicationGraph;
 
 /** Manages only published deployment-owned applications through verified helper observations. / 仅通过已验证helper观测管理部署所属的已发布应用。 */
@@ -68,13 +71,14 @@ public final class DeploymentApplicationRunner {
         var observations = observe(data, task);
         if (observations.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(observations);
-        var states = observations.value().orElseThrow();
+        var states = observations.value().orElseThrow().components();
         persist(data, states, task);
         var state = overall(states);
         var original = data.snapshot();
         return success(new DeploymentApplicationSnapshot(original.application(), original.displayName(),
             original.revisionSha256(), original.ownershipSha256(), state, Instant.now(), original.runtime(),
-            original.bindings(), original.healthPolicySha256()));
+            original.bindings(), original.healthPolicySha256(),
+            ApplicationAutostartState.combine(states.values().stream().map(Observation::autostart).toList())));
     }
 
     /** Applies one action after revisiting exact release, ownership, dependencies and health. / 重核精确发布、归属、依赖与健康后执行一次动作。
@@ -86,24 +90,34 @@ public final class DeploymentApplicationRunner {
      * @throws ApiException if platform access fails / 平台访问失败时 */
     public OperationResult<DeploymentLifecycleResult> lifecycle(DeploymentApplicationId application, String revision,
                                                                 DeploymentLifecycleAction action, TaskContext task) throws ApiException {
-        var data = reader.find(application, task);
-        if (!data.snapshot().revisionSha256().equals(revision))
-            return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_APPLICATION_REVISION_CHANGED");
         var prior = journal.find(task);
-        var before = observe(data, task);
+        if (prior.isPresent() && (!prior.orElseThrow().applicationId().equals(application.id())
+            || !prior.orElseThrow().server().equals(application.server())
+            || !prior.orElseThrow().currentRevision().equals(revision)
+            || !prior.orElseThrow().action().equals("LIFECYCLE_" + action.name())))
+            return lifecycleRefusal(prior, "DEPLOYMENT_LIFECYCLE_ORIGINAL_INTENT_CHANGED");
+        Optional<RemoteTarget> originalTarget = Optional.empty();
+        if (prior.isPresent()) {
+            try {
+                originalTarget = Optional.of(DeploymentManagementActionLog.target(prior.orElseThrow(), task));
+            } catch (ApiException incomplete) {
+                return unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+            }
+        }
+        var data = reader.find(application, task);
+        var incompatible = lifecycleIncompatibility(data, revision);
+        if (incompatible.isPresent())
+            return lifecycleRefusal(prior, incompatible.orElseThrow());
+        var before = observe(data, task, originalTarget);
         if (before.outcome() != TaskResult.SUCCEEDED) {
             if (prior.isPresent() && Set.of("EFFECTING", "UNKNOWN").contains(prior.orElseThrow().phase()))
                 return unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_OBSERVATION_UNCONFIRMED");
             return withoutValue(before);
         }
-        var states = before.value().orElseThrow();
+        var states = before.value().orElseThrow().components();
         var initial = overall(states);
         if (prior.isPresent() && !prior.orElseThrow().phase().equals("REVIEWED")) {
             var original = prior.orElseThrow();
-            if (!original.applicationId().equals(application.id()) || !original.server().equals(application.server())
-                || !original.currentRevision().equals(revision)
-                || !original.action().equals("LIFECYCLE_" + action.name()))
-                return failure(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_LIFECYCLE_ORIGINAL_INTENT_CHANGED");
             return reconcileLifecycle(data, action, initial, states, original, task);
         }
         if (initial == ApplicationRunState.UNKNOWN)
@@ -115,16 +129,24 @@ public final class DeploymentApplicationRunner {
         if (task.cancelToken().requested())
             return cancelled();
         ObjectNode facts = DeploymentManagementActionLog.facts().put("before", initial.name());
+        DeploymentManagementActionLog.target(facts, before.value().orElseThrow().target());
         var parts = facts.putObject("components");
         for (var component : graph.components())
-            parts.putObject(component.componentId()).put("before", states.get(component.unit().id()).name())
+            parts.putObject(component.componentId()).put("before", states.get(component.unit().id()).state().name())
+                .put("beforeAutostart", states.get(component.unit().id()).autostart().name())
                 .put("attempted", false).put("verified", false);
         var operation = journal.begin(application.id(), application.server(), "LIFECYCLE_" + action.name(), revision,
             Optional.empty(), facts, task);
         if (!operation.phase().equals("REVIEWED"))
             return reconcileLifecycle(data, action, initial, states, operation, task);
         markUnknown(data, task);
-        try (var session = context.linux().connect(application.server(), task)) {
+        var dispatchTarget = DeploymentManagementActionLog.target(operation, task);
+        try (var session = context.linux().connect(dispatchTarget, task)) {
+            if (!dispatchTarget.fingerprint().equals(Optional.of(session.facts().fingerprint()))) {
+                journal.advance(operation, "UNKNOWN", DeploymentManagementActionLog.copy(operation)
+                    .put("originalTargetUnconfirmed", true), task);
+                return unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+            }
             var helper = new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
                 context.interaction(), application.server(), task, revision).probe();
             if (helper.outcome() != TaskResult.SUCCEEDED)
@@ -143,13 +165,38 @@ public final class DeploymentApplicationRunner {
                     return withoutValue(started);
             } else {
                 var sequence = action == DeploymentLifecycleAction.STOP ? ordered.reversed() : ordered;
-                var effected = run(channel, identity, data, sequence, action.name().toLowerCase(java.util.Locale.ROOT),
+                var effected = run(channel, identity, data, sequence, action.verb(),
                     task, operation);
                 if (effected.outcome() != TaskResult.SUCCEEDED)
                     return withoutValue(effected);
             }
         }
         return finishLifecycle(data, action, initial, task);
+    }
+
+    /** Checks the current complete graph before opening any lifecycle connection. / 打开任何生命周期连接前核对当前完整图。
+     * @param data exact current complete publication / 精确当前完整发布
+     * @param revision fixed originally selected revision / 固定原所选修订
+     * @return bounded refusal identity or absence / 有界拒绝身份或无值 */
+    private static Optional<String> lifecycleIncompatibility(ApplicationFacts data, String revision) {
+        if (data.graph().components().stream().anyMatch(value -> !value.runtime().workload().reviewed()
+            || !value.runtime().workload().equals(value.reviewedRuntime().workload())))
+            return Optional.of("DEPLOYMENT_APPLICATION_DECLARATION_UNREVIEWED");
+        if (!data.snapshot().revisionSha256().equals(revision))
+            return Optional.of("DEPLOYMENT_APPLICATION_REVISION_CHANGED");
+        if (data.graph().components().stream().noneMatch(value -> value.runtime().workload().supportsLifecycle()))
+            return Optional.of("DEPLOYMENT_APPLICATION_LIFECYCLE_NOT_APPLICABLE");
+        return Optional.empty();
+    }
+
+    /** Keeps prior attempted effects unknown while rejecting genuinely new requests as known failures. / 保留既有已尝试效果的未知，同时将真实新请求拒绝为已知失败。
+     * @param prior original task's authenticated durable operation or absence / 原任务认证持久操作或无值
+     * @param event exact incompatibility discovered before connection / 连接前发现的精确不兼容
+     * @return preserved original uncertainty or known pre-effect refusal / 保留原未知或已知效果前拒绝 */
+    private static OperationResult<DeploymentLifecycleResult> lifecycleRefusal(
+        Optional<DeploymentManagementActionLog.Entry> prior, String event) {
+        return prior.filter(value -> !value.phase().equals("REVIEWED")).isPresent()
+            ? unknown(event) : failure(ProblemCode.INCOMPATIBLE, event);
     }
 
     /** Concludes only a fully verified original lifecycle after all provider sessions close. / 全部提供方会话关闭后仅结束完整已核实原生命周期。
@@ -161,7 +208,8 @@ public final class DeploymentApplicationRunner {
      * @throws ApiException if original evidence cannot be confirmed / 原依据无法确认时 */
     private OperationResult<DeploymentLifecycleResult> finishLifecycle(ApplicationFacts data,
                                                                        DeploymentLifecycleAction action, ApplicationRunState initial, TaskContext task) throws ApiException {
-        var after = observe(data, task);
+        var originalOperation = journal.find(task).orElseThrow();
+        var after = observe(data, task, Optional.of(DeploymentManagementActionLog.target(originalOperation, task)));
         if (after.outcome() != TaskResult.SUCCEEDED) {
             markUnknown(data, task);
             var current = journal.find(task).orElseThrow();
@@ -170,21 +218,20 @@ public final class DeploymentApplicationRunner {
                 task);
             return unknown("DEPLOYMENT_LIFECYCLE_FINAL_OBSERVATION_UNCONFIRMED");
         }
-        var finalStates = after.value().orElseThrow();
+        var finalStates = after.value().orElseThrow().components();
         persist(data, finalStates, task);
         var finalState = overall(finalStates);
-        if (action == DeploymentLifecycleAction.STOP && finalState != ApplicationRunState.STOPPED
-            || action != DeploymentLifecycleAction.STOP && finalState != ApplicationRunState.RUNNING) {
-            var current = journal.find(task).orElseThrow();
+        var current = journal.find(task).orElseThrow();
+        if (!matchesGoal(data, action, finalStates, current)) {
             journal.advance(current, "UNKNOWN",
                 DeploymentManagementActionLog.copy(current).put("final", finalState.name()), task);
             return unknown("DEPLOYMENT_APPLICATION_FINAL_STATE");
         }
-        var current = journal.find(task).orElseThrow();
         journal.advance(current, "FINISHED", DeploymentManagementActionLog.copy(current).put("final", finalState.name()),
             task);
         return success(new DeploymentLifecycleResult(data.snapshot().application(), initial, finalState,
-            "Verified original helper ownership, runtime and application health"));
+            action.autostart() ? "Verified original automatic-startup target and unchanged component runtime observations"
+                : "Verified original helper ownership, runtime and application health"));
     }
 
     /** Observes a prior original-task action without sending it again. / 只读观察原任务既有动作，不再次发送。
@@ -197,32 +244,61 @@ public final class DeploymentApplicationRunner {
      * @return verified original result or uncertainty / 已核实原结果或未知
      * @throws ApiException if persisted evidence cannot be confirmed / 持久依据无法确认时 */
     private OperationResult<DeploymentLifecycleResult> reconcileLifecycle(ApplicationFacts data,
-                                                                          DeploymentLifecycleAction action, ApplicationRunState observed, Map<String, ApplicationRunState> states,
+                                                                          DeploymentLifecycleAction action, ApplicationRunState observed, Map<String, Observation> states,
                                                                           DeploymentManagementActionLog.Entry operation, TaskContext task) throws ApiException {
         if (!operation.phase().equals("EFFECTING") && !operation.phase().equals("UNKNOWN")
             && !operation.phase().equals("FINISHED"))
             return unknown("DEPLOYMENT_LIFECYCLE_PHASE_UNVERIFIED");
         if (observed == ApplicationRunState.UNKNOWN)
             return unknown("DEPLOYMENT_LIFECYCLE_OBSERVATION_UNKNOWN");
-        var goal = action == DeploymentLifecycleAction.STOP ? ApplicationRunState.STOPPED : ApplicationRunState.RUNNING;
-        if (observed != goal)
+        if (!matchesGoal(data, action, states, operation))
             return unknown("DEPLOYMENT_LIFECYCLE_PARTIAL_STATE");
         var parts = operation.facts().path("components");
         for (var component : data.graph().components()) {
+            if (!component.runtime().workload().supportsLifecycle())
+                continue;
             var part = parts.path(component.componentId());
             if (!part.path("attempted").asBoolean(false)
                 || action == DeploymentLifecycleAction.RESTART && !part.path("verified").asBoolean(false)
-                || states.get(component.unit().id()) != goal)
+                || !part.path("verb").asText().equals(action == DeploymentLifecycleAction.RESTART ? "start" : action.verb()))
                 return unknown("DEPLOYMENT_LIFECYCLE_COMPONENT_UNVERIFIED");
         }
         if (!operation.phase().equals("FINISHED")) {
             persist(data, states, task);
-            journal.advance(operation, "FINISHED", DeploymentManagementActionLog.copy(operation).put("final", goal.name())
+            journal.advance(operation, "FINISHED", DeploymentManagementActionLog.copy(operation).put("final", observed.name())
                 .put("reconciledReadOnly", true), task);
         }
         return success(new DeploymentLifecycleResult(data.snapshot().application(),
-            ApplicationRunState.valueOf(operation.facts().path("before").asText()), goal,
-            "Original action effects verified by read-only current identity and component health"));
+            ApplicationRunState.valueOf(operation.facts().path("before").asText()), observed,
+            action.autostart() ? "Original automatic-startup target state verified by read-only current identity and component observations"
+                : "Original action target state verified by read-only current identity and component health"));
+    }
+
+    /** Checks every applicable target and installed job without inferring command history. / 核对每个适用目标与已安装任务，不推断命令历史。
+     * @param data complete original release / 完整原发布
+     * @param action original reviewed action / 原已审阅动作
+     * @param states exact current component observations / 精确当前组件观察
+     * @param operation original durable intent and before facts / 原持久意图与前态事实
+     * @return whether all original target states are established / 是否确认所有原目标状态 */
+    private static boolean matchesGoal(ApplicationFacts data, DeploymentLifecycleAction action, Map<String, Observation> states,
+                                       DeploymentManagementActionLog.Entry operation) {
+        for (var component : data.graph().components()) {
+            var state = states.get(component.unit().id());
+            if (state == null)
+                return false;
+            if (component.runtime().workload().mode() == gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.ON_DEMAND) {
+                if (state.state() != ApplicationRunState.INSTALLED || state.autostart() != ApplicationAutostartState.NOT_APPLICABLE)
+                    return false;
+            } else if (action.autostart()) {
+                var expected = action == DeploymentLifecycleAction.ENABLE_AUTOSTART ? ApplicationAutostartState.ENABLED
+                    : ApplicationAutostartState.DISABLED;
+                if (state.autostart() != expected || !state.state().name().equals(operation.facts().path("components")
+                    .path(component.componentId()).path("before").asText()))
+                    return false;
+            } else if (state.state() != (action == DeploymentLifecycleAction.STOP ? ApplicationRunState.STOPPED : ApplicationRunState.RUNNING))
+                return false;
+        }
+        return true;
     }
 
     /** Dispatches reviewed components in one dependency-safe phase. / 在一个依赖安全阶段发送已审阅组件。
@@ -239,6 +315,8 @@ public final class DeploymentApplicationRunner {
                                       ApplicationFacts data, List<DeploymentApplicationGraph.Part> sequence, String verb, TaskContext task,
                                       DeploymentManagementActionLog.Entry entry) throws ApiException {
         for (var component : sequence) {
+            if (!component.runtime().workload().supportsLifecycle())
+                continue;
             if (task.cancelToken().requested()) {
                 journal.advance(entry, "UNKNOWN", DeploymentManagementActionLog.copy(entry).put("interrupted", true),
                     task);
@@ -278,11 +356,29 @@ public final class DeploymentApplicationRunner {
      * @param task authenticated original task / 已认证原任务
      * @return complete component observations or failure / 完整组件观察或失败
      * @throws ApiException if session or authorization fails / 会话或授权失败时 */
-    private OperationResult<Map<String, ApplicationRunState>> observe(ApplicationFacts data, TaskContext task)
+    private OperationResult<LiveObservation> observe(ApplicationFacts data, TaskContext task)
         throws ApiException {
-        var states = new HashMap<String, ApplicationRunState>();
+        return observe(data, task, Optional.empty());
+    }
+
+    /** Uses a fixed original endpoint and wire key before authentication and every observation. / 认证及每次观察前使用固定原端点与wire密钥。
+     * @param data complete original release / 完整原发布
+     * @param task authentic current original task / 真实当前原任务
+     * @param expected fixed original target or an initial current expectation / 固定原目标或初次当前预期
+     * @return exact component observations and authenticated target / 精确组件观察与已认证目标
+     * @throws ApiException if initial authority or provider access fails / 初次权限或提供方访问失败时 */
+    private OperationResult<LiveObservation> observe(ApplicationFacts data, TaskContext task, Optional<RemoteTarget> expected)
+        throws ApiException {
+        var states = new HashMap<String, Observation>();
         var graph = data.graph();
-        try (var session = context.linux().connect(data.snapshot().application().server(), task)) {
+        var target = expected.isPresent() ? expected.orElseThrow() : currentTarget(data.snapshot().application().server(), task);
+        if (!target.server().equals(data.snapshot().application().server()) || !target.taskId().equals(task.id()))
+            return unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+        try (var session = context.linux().connect(target, task)) {
+            if (target.fingerprint().filter(value -> !value.equals(session.facts().fingerprint())).isPresent())
+                return unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+            var authenticated = new RemoteTarget(target.server(), task.id(), target.host(), target.port(), target.username(),
+                Optional.of(session.facts().fingerprint()));
             var helper = new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
                 context.interaction(), data.snapshot().application().server(), task,
                 data.snapshot().revisionSha256()).probe();
@@ -303,19 +399,20 @@ public final class DeploymentApplicationRunner {
                     return withoutValue(observed);
                 var state = switch (observed.value().orElseThrow().state()) {
                     case RUNNING -> ApplicationRunState.RUNNING;
-                    case STOPPED, INSTALLED -> ApplicationRunState.STOPPED;
+                    case STOPPED -> ApplicationRunState.STOPPED;
+                    case INSTALLED -> ApplicationRunState.INSTALLED;
                     case ERROR -> ApplicationRunState.DEGRADED;
                 };
-                states.put(component.unit().id(), state);
+                states.put(component.unit().id(), new Observation(state, observed.value().orElseThrow().autostart()));
             }
             for (var component : graph.components()) {
-                if (states.get(component.unit().id()) != ApplicationRunState.RUNNING)
+                if (states.get(component.unit().id()).state() != ApplicationRunState.RUNNING)
                     continue;
                 var checked = channel.healthCheck(component.unit(), component.reviewedRuntime().healthCheck());
                 if (checked.outcome() == TaskResult.UNKNOWN || checked.outcome() == TaskResult.CANCELLED)
                     return withoutValue(checked);
                 if (checked.outcome() != TaskResult.SUCCEEDED)
-                    states.put(component.unit().id(), ApplicationRunState.DEGRADED);
+                    states.put(component.unit().id(), new Observation(ApplicationRunState.DEGRADED, states.get(component.unit().id()).autostart()));
             }
             if (overall(states) == ApplicationRunState.RUNNING) {
                 var health = graph.components().stream()
@@ -325,10 +422,30 @@ public final class DeploymentApplicationRunner {
                 if (checked.outcome() == TaskResult.UNKNOWN || checked.outcome() == TaskResult.CANCELLED)
                     return withoutValue(checked);
                 if (checked.outcome() != TaskResult.SUCCEEDED)
-                    states.put(health.unit().id(), ApplicationRunState.DEGRADED);
+                    states.put(health.unit().id(), new Observation(ApplicationRunState.DEGRADED, states.get(health.unit().id()).autostart()));
             }
-            return success(Map.copyOf(states));
+            return success(new LiveObservation(Map.copyOf(states), authenticated));
+        } catch (ApiException failure) {
+            if (expected.isPresent())
+                return unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+            throw failure;
         }
+    }
+
+    /** Copies current admitted metadata into an initial fixed expectation without credentials. / 不含凭据地将当前准入元数据复制为初次固定预期。
+     * @param server exact saved identity / 精确保存身份
+     * @param task authentic current task / 真实当前任务
+     * @return exact initial endpoint and previously trusted wire key / 精确初次端点与先前受信wire密钥
+     * @throws ApiException if original metadata is unavailable / 原元数据不可用时 */
+    private RemoteTarget currentTarget(ServerId server, TaskContext task) throws ApiException {
+        var info = context.servers().get(server, task);
+        return new RemoteTarget(server, task.id(), info.host(), info.port(), info.username(), info.trustedFingerprint());
+    }
+
+    /** Keeps per-call observations and authenticated identity outside shared runner fields. / 将每次调用观察及认证身份保持在共享runner字段之外。
+     * @param components exact current component facts / 精确当前组件事实
+     * @param target actual authenticated original target / 实际已认证原目标 */
+    private record LiveObservation(Map<String, Observation> components, RemoteTarget target) {
     }
 
     /** Topologically orders components so start and restart follow dependencies. / 按拓扑排序组件，使启动和重启遵循依赖。
@@ -356,7 +473,7 @@ public final class DeploymentApplicationRunner {
      * @param states complete component observations / 完整组件观察
      * @param task authenticated original task / 已认证原任务
      * @throws ApiException if the original release or commit differs / 原发布或提交不符时 */
-    private void persist(ApplicationFacts data, Map<String, ApplicationRunState> states, TaskContext task)
+    private void persist(ApplicationFacts data, Map<String, Observation> states, TaskContext task)
         throws ApiException {
         writeState(data, states, task);
     }
@@ -366,9 +483,9 @@ public final class DeploymentApplicationRunner {
      * @param task authenticated original task / 已认证原任务
      * @throws ApiException if uncertainty cannot be persisted / 未知无法持久化时 */
     private void markUnknown(ApplicationFacts data, TaskContext task) throws ApiException {
-        var unknown = new HashMap<String, ApplicationRunState>();
+        var unknown = new HashMap<String, Observation>();
         for (var component : data.graph().components())
-            unknown.put(component.unit().id(), ApplicationRunState.UNKNOWN);
+            unknown.put(component.unit().id(), new Observation(ApplicationRunState.UNKNOWN, ApplicationAutostartState.UNKNOWN));
         writeState(data, unknown, task);
     }
 
@@ -377,7 +494,7 @@ public final class DeploymentApplicationRunner {
      * @param states complete component states / 完整组件状态
      * @param task authenticated original task / 已认证原任务
      * @throws ApiException if active identity or commit cannot be confirmed / 活动身份或提交无法确认时 */
-    private void writeState(ApplicationFacts data, Map<String, ApplicationRunState> states, TaskContext task)
+    private void writeState(ApplicationFacts data, Map<String, Observation> states, TaskContext task)
         throws ApiException {
         DeploymentSchema.requireIdentity(context.db().identity());
         try (var connection = context.db().openConnection(task)) {
@@ -392,18 +509,21 @@ public final class DeploymentApplicationRunner {
                     }
                 }
                 try (var update = connection.prepareStatement(
-                    "UPDATE deployment_unit SET runtime_state=?,autostart_state='UNKNOWN',is_ownership_verified=?,observation_evidence=?,observed_at=? WHERE deployment_unit_id=? AND current_release_sha256=?")) {
+                    "UPDATE deployment_unit SET runtime_state=?,autostart_state=?,is_ownership_verified=?,observation_evidence=?,observed_at=? WHERE deployment_unit_id=? AND current_release_sha256=? AND ownership_manifest_sha256=? AND server_profile_id=?")) {
                     for (var component : data.graph().components()) {
                         var state = states.get(component.unit().id());
-                        update.setString(1, state.name());
-                        update.setInt(2, state == ApplicationRunState.UNKNOWN ? 0 : 1);
-                        update.setString(3, "deployment-helper-observation-v1");
-                        update.setLong(4, Instant.now().toEpochMilli());
-                        update.setString(5, component.unit().id());
+                        update.setString(1, state.state().name());
+                        update.setString(2, state.autostart().name());
+                        update.setInt(3, state.state() == ApplicationRunState.UNKNOWN ? 0 : 1);
+                        update.setString(4, "deployment-helper-observation-v1");
+                        update.setLong(5, Instant.now().toEpochMilli());
+                        update.setString(6, component.unit().id());
                         var binding = data.release().bindings().stream()
                             .filter(value -> value.unitId().equals(component.unit().id())).findFirst()
                             .orElseThrow();
-                        update.setString(6, binding.releaseSha256());
+                        update.setString(7, binding.releaseSha256());
+                        update.setString(8, component.unit().ownershipManifestSha256());
+                        update.setString(9, component.unit().server().id());
                         if (update.executeUpdate() != 1)
                             throw new SQLException("Current release changed");
                     }
@@ -425,16 +545,8 @@ public final class DeploymentApplicationRunner {
     /** Combines exact component states. / 合并精确组件状态。
      * @param states complete component states / 完整组件状态
      * @return conservative whole-application state / 保守整应用状态 */
-    private static ApplicationRunState overall(Map<String, ApplicationRunState> states) {
-        if (states.containsValue(ApplicationRunState.UNKNOWN))
-            return ApplicationRunState.UNKNOWN;
-        if (states.containsValue(ApplicationRunState.DEGRADED))
-            return ApplicationRunState.DEGRADED;
-        boolean running = states.containsValue(ApplicationRunState.RUNNING);
-        boolean stopped = states.containsValue(ApplicationRunState.STOPPED);
-        return running && stopped
-            ? ApplicationRunState.DEGRADED
-            : running ? ApplicationRunState.RUNNING : ApplicationRunState.STOPPED;
+    private static ApplicationRunState overall(Map<String, Observation> states) {
+        return DeploymentApplicationReader.overall(states);
     }
 
     /** Returns success with a copied payload. / 返回带副本载荷的成功结果。

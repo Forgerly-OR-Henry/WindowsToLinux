@@ -51,6 +51,167 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Checks the actual lazily registered Swing view, lock/close lifetime and optional visual evidence. / 检查真实惰性登记Swing视图、锁定关闭寿命及可选视觉证据。 */
 class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
+    private Path pickerDirectory;
+
+    private CountDownLatch pickerEntered, pickerRelease;
+
+    @Override
+    protected Path selectedSourceDirectory() {
+        if (pickerDirectory == null) return super.selectedSourceDirectory();
+        if (pickerEntered != null) {
+            pickerEntered.countDown();
+            try {
+                if (!pickerRelease.await(10, TimeUnit.SECONDS))
+                    throw new AssertionError("Original picker was not released");
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new java.util.concurrent.CancellationException("Original picker interrupted");
+            }
+        }
+        return pickerDirectory;
+    }
+
+    @Test
+    void selectedLocalMetadataClosesPickerGrantAndExplicitClearAllowsActualPathImport() throws Exception {
+        var directory = Files.createDirectories(root.resolve("picked-source"));
+        Files.writeString(directory.resolve("main.txt"), "actual local data");
+        pickerDirectory = directory;
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers().saveServerProfile(ServerProfile.fromStored(
+                new StoredServerProfile("source-server", "127.0.0.1", 22, "root", "fixture-password")), "fixture-password".toCharArray());
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                new DeploymentStaticWorkflow(context, new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(context))));
+            var mounted = new AtomicReference<JComponent>();
+            try {
+                SwingUtilities.invokeAndWait(() -> mounted.set(page.create(new UiEnvironment(Locale.ENGLISH, "LIGHT", false))));
+                awaitControlEnabled(mounted.get(), "deployment.local.choose");
+                SwingUtilities.invokeAndWait(() -> ((JButton) namedControl(mounted.get(), "deployment.local.choose")).doClick());
+                awaitControlEnabled(mounted.get(), "deployment.local.clear");
+                awaitLocalLocation(mounted.get(), directory.toRealPath().toUri().toString());
+                assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+                SwingUtilities.invokeAndWait(() -> {
+                    assertNull(((JComboBox<?>) namedControl(mounted.get(), "deployment.server")).getSelectedItem());
+                    assertFalse(findButton(mounted.get(), "Start static / assisted deployment").isEnabled());
+                    var location = (JTextField) namedControl(mounted.get(), "deployment.local.location");
+                    var duplicate = new TransferHandler.TransferSupport(location, new java.awt.datatransfer.StringSelection(directory.toString()));
+                    assertFalse(location.getTransferHandler().importData(duplicate), "Another path requires an explicit clear");
+                    ((JButton) namedControl(mounted.get(), "deployment.local.clear")).doClick();
+                    assertEquals("", location.getText());
+                    var relative = new TransferHandler.TransferSupport(location, new java.awt.datatransfer.StringSelection("relative/path"));
+                    assertFalse(location.getTransferHandler().importData(relative));
+                    var original = new TransferHandler.TransferSupport(location, new java.awt.datatransfer.StringSelection(directory.toString()));
+                    assertTrue(location.getTransferHandler().importData(original));
+                });
+                awaitLocalLocation(mounted.get(), directory.toRealPath().toUri().toString());
+                awaitServerTasks(context);
+                assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            } finally {
+                SwingUtilities.invokeAndWait(page::close);
+            }
+            awaitServerTasks(context);
+        }
+    }
+
+    @Test
+    void clearingOriginalPickerRejectsItsDelayedResultWithoutAReplacementGrant() throws Exception {
+        var directory = Files.createDirectories(root.resolve("late-source"));
+        Files.writeString(directory.resolve("main.txt"), "actual local data");
+        pickerDirectory = directory;
+        pickerEntered = new CountDownLatch(1);
+        pickerRelease = new CountDownLatch(1);
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                new DeploymentStaticWorkflow(context, new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(context))));
+            var mounted = new AtomicReference<JComponent>();
+            try {
+                SwingUtilities.invokeAndWait(() -> mounted.set(page.create(new UiEnvironment(Locale.ENGLISH, "LIGHT", false))));
+                awaitControlEnabled(mounted.get(), "deployment.local.choose");
+                SwingUtilities.invokeAndWait(() -> ((JButton) namedControl(mounted.get(), "deployment.local.choose")).doClick());
+                assertTrue(pickerEntered.await(10, TimeUnit.SECONDS));
+                SwingUtilities.invokeAndWait(() -> {
+                    var clear = (JButton) namedControl(mounted.get(), "deployment.local.clear");
+                    assertTrue(clear.isEnabled());
+                    clear.doClick();
+                });
+                pickerRelease.countDown();
+                awaitControlEnabled(mounted.get(), "deployment.local.choose");
+                awaitServerTasks(context);
+                SwingUtilities.invokeAndWait(() -> assertEquals("", ((JTextField) namedControl(mounted.get(), "deployment.local.location")).getText()));
+                assertTrue(context.tasks().list(Optional.empty(), 200).items().stream().filter(task -> task.type().equals("deployment-source-selection"))
+                    .allMatch(task -> task.state() == TaskState.ENDED && task.outcome().equals(Optional.of(TaskResult.CANCELLED))));
+                assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+            } finally {
+                pickerRelease.countDown();
+                SwingUtilities.invokeAndWait(page::close);
+            }
+            awaitServerTasks(context);
+        }
+    }
+
+    @Test
+    void invalidRuntimeNumberReopensSameOriginalComponentAndCorrectsActualFieldWithoutDroppingValues() throws Exception {
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var context = runtime.modContexts().get(OWNER).context();
+            var page = new DeploymentStaticPage(new gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticPageService(context,
+                new DeploymentStaticWorkflow(context, new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow(context))));
+            SwingUtilities.invokeAndWait(() -> page.create(new UiEnvironment(Locale.ENGLISH, "LIGHT", false)));
+            try {
+                var resolver = new DeploymentStaticRuntimeResolver();
+                var prompts = new ArrayList<DeploymentStaticWorkflow.Prompt>();
+                for (String id : List.of("first", "second")) {
+                    var values = new LinkedHashMap<String, String>();
+                    values.put("primary", id + "-bin");
+                    values.put("secondary", "main.go");
+                    values.put("version", "1.24");
+                    values.put("healthMode", "TCP");
+                    values.put("port", id.equals("second") ? "private-entered-text" : "8080");
+                    values.put("exposure", "INTERNAL");
+                    values.put("configuration", "RUNTIME:MODE=retained;\nRUNTIME:VALUE=unchanged");
+                    values.put("databaseMode", "NONE");
+                    values.put("databaseDetails", "");
+                    values.put("secrets", "");
+                    prompts.add(new DeploymentStaticWorkflow.Prompt(id, id, DeploymentProjectKind.GO_SERVICE, values, resolver.corrections(id, values)));
+                }
+                var reviewer = new DeploymentStaticPageReviewer(page, 0);
+                var handle = context.tasks().submit(new TaskRequest("runtime-correction-modal", "Original runtime review", List.of(), true),
+                    task -> reviewer.review(new gold.debug.windowstolinux.appapi.server.model.ServerId("server"), "a".repeat(64), prompts, task));
+                var firstDialog = awaitDialog("Review runtime and bindings");
+                var originalInput = (JTextField) namedControl(firstDialog, "deployment.runtime.second/port");
+                var configuration = (JTextArea) namedControl(firstDialog, "deployment.runtime.second/configuration");
+                assertNotNull(originalInput);
+                assertNotNull(configuration);
+                acceptDialog(firstDialog);
+                var correctedDialog = awaitDialog("Review runtime and bindings");
+                SwingUtilities.invokeAndWait(() -> {
+                    assertSame(originalInput, namedControl(correctedDialog, "deployment.runtime.second/port"));
+                    assertEquals("private-entered-text", originalInput.getText());
+                    assertEquals("error", originalInput.getClientProperty("JComponent.outline"));
+                    assertNotNull(findLabel(correctedDialog, "Please correct the marked input and review again. second / Port"));
+                    assertEquals("RUNTIME:MODE=retained;\nRUNTIME:VALUE=unchanged", configuration.getText());
+                    originalInput.setText("8081");
+                });
+                acceptDialog(correctedDialog);
+                var result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
+                assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.toString());
+                assertEquals("8081", result.value().orElseThrow().get("second").values().get("port"));
+                assertEquals("RUNTIME:MODE=retained;\nRUNTIME:VALUE=unchanged", result.value().orElseThrow().get("second").values().get("configuration"));
+                assertEquals(TaskState.ENDED, handle.snapshot().state());
+            } finally {
+                SwingUtilities.invokeAndWait(page::close);
+            }
+            awaitServerTasks(context);
+            assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+    }
+
     @Test
     void reviewRuntimeExceptionsKeepTheirOriginalIdentityOnAndOffEdt() throws Exception {
         enable();
@@ -243,7 +404,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
                 () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
-            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
+            awaitStart(mounted.get());
             var secretPanel = (JPanel) namedControl(advancedControls(mounted.get()), "deployment.secrets");
             SwingUtilities.invokeAndWait(() -> {
                 ((JTextField) namedControl(secretPanel, "deployment.secret.identifier")).setText("confirmed-secret");
@@ -291,7 +452,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
                 () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
-            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
+            awaitStart(mounted.get());
             var secretPanel = (JPanel) namedControl(advancedControls(mounted.get()), "deployment.secrets");
             SwingUtilities.invokeAndWait(() -> {
                 ((JTextField) namedControl(secretPanel, "deployment.secret.identifier")).setText("cancelled-secret");
@@ -384,7 +545,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var mounted = new AtomicReference<JComponent>();
             SwingUtilities.invokeAndWait(
                 () -> mounted.set(page.create(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false))));
-            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
+            awaitStart(mounted.get());
             var controls = advancedControls(mounted.get());
             SwingUtilities.invokeAndWait(() -> {
                 var identifier = inputAfterLabel(controls, page.text("secretIdentifier"));
@@ -491,18 +652,16 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             }, new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             var report = runtime.startDevelopmentMods(workspace(), pages);
             assertTrue(report.problems().isEmpty(), report.problems().toString());
-            var key = new ModPageRegistry.PageKey(OWNER, "static-deployment");
+            var key = new ModPageRegistry.PageKey(OWNER, "workspace");
             assertEquals(
-                List.of(key, new ModPageRegistry.PageKey(OWNER, "agent-deployment"),
-                    new ModPageRegistry.PageKey(OWNER, "applications")),
+                List.of(key),
                 pages.contributions().stream().map(ModPageRegistry.PageContribution::key).toList());
             assertNull(mounted.get(), "Registration must remain lazy");
             pages.openView(key);
             var first = mounted.get();
             assertNotNull(first);
-            var start = findButton(first, "开始静态 / 辅助部署");
+            var start = awaitStart(first);
             assertNotNull(start);
-            awaitEnabled(start);
             SwingUtilities.invokeAndWait(() -> render(first, "page"));
             var advanced = advancedControls(first);
             var mode = (JComboBox<?>) namedControl(first, "deployment.sourceMode");
@@ -545,7 +704,7 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             pages.environment(new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             pages.openView(key);
             assertNotSame(first, mounted.get());
-            awaitEnabled(findButton(mounted.get(), "开始静态 / 辅助部署"));
+            awaitStart(mounted.get());
             pages.closeView(key);
             awaitServerTasks(runtime.modContexts().get(OWNER).context());
         }
@@ -967,17 +1126,50 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
         return null;
     }
 
-    private static void awaitEnabled(JButton button) throws Exception {
-        assertNotNull(button);
+    private static JButton awaitStart(JComponent root) throws Exception {
         long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
-        var enabled = new AtomicReference<Boolean>();
+        var enabled = new AtomicReference<JButton>();
         while (System.nanoTime() < until) {
-            SwingUtilities.invokeAndWait(() -> enabled.set(button.isEnabled()));
-            if (Boolean.TRUE.equals(enabled.get()))
-                return;
+            SwingUtilities.invokeAndWait(() -> {
+                var server = (JComboBox<?>) namedControl(root, "deployment.server");
+                var button = findButton(root, "开始静态 / 辅助部署");
+                if (server == null || button == null || server.getItemCount() == 0 || !server.isEnabled()) return;
+                if (server.getSelectedItem() == null) {
+                    assertFalse(button.isEnabled(), "A populated server list must not implicitly select a target");
+                    server.setSelectedIndex(0);
+                }
+                if (button.isEnabled()) enabled.set(button);
+            });
+            if (enabled.get() != null) return enabled.get();
             Thread.sleep(20);
         }
         fail("Actual server-list task did not populate the page");
+        return null;
+    }
+
+    private static void awaitControlEnabled(JComponent root, String name) throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        var enabled = new AtomicBoolean();
+        while (System.nanoTime() < until) {
+            SwingUtilities.invokeAndWait(() -> {
+                var actual = namedControl(root, name);
+                enabled.set(actual != null && actual.isEnabled());
+            });
+            if (enabled.get()) return;
+            Thread.sleep(20);
+        }
+        fail("Original control did not become available: " + name);
+    }
+
+    private static void awaitLocalLocation(JComponent root, String uri) throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        var present = new AtomicBoolean();
+        while (System.nanoTime() < until) {
+            SwingUtilities.invokeAndWait(() -> present.set(uri.equals(((JTextField) namedControl(root, "deployment.local.location")).getText())));
+            if (present.get()) return;
+            Thread.sleep(20);
+        }
+        fail("Original metadata task did not install the exact location");
     }
 
     private static void awaitServerTasks(gold.debug.windowstolinux.appapi.mod.ModContext context) throws Exception {
@@ -986,7 +1178,8 @@ class DeploymentStaticPageTest extends DeploymentRuntimeFixture {
             var tasks = context.tasks().list(Optional.empty(), 200).items();
             if (tasks.stream()
                 .filter(item -> item.type().equals("deployment-server-list")
-                    || item.type().equals("deployment-secret-list"))
+                    || item.type().equals("deployment-secret-list") || item.type().equals("deployment-project-list")
+                    || item.type().equals("deployment-source-selection"))
                 .allMatch(item -> item.state() == TaskState.ENDED))
                 return;
             Thread.sleep(20);

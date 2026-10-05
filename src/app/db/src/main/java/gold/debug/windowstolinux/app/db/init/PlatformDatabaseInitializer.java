@@ -79,6 +79,7 @@ public final class PlatformDatabaseInitializer {
                     p.executeUpdate();
                 }
                 try (var s = connection.createStatement()) {
+                    retainOriginalCancellation(connection);
                     s.executeUpdate(
                         "UPDATE platform_task SET state='UNKNOWN',outcome=NULL,ended_at=NULL WHERE state<>'ENDED' AND NOT(state='FINISHING' AND outcome IS NOT NULL AND ended_at IS NOT NULL)");
                     if (modLoading) {
@@ -121,4 +122,18 @@ public final class PlatformDatabaseInitializer {
         }
     }
 
+    /** Preserves known legacy cancellation before nonterminal work becomes UNKNOWN on startup. / 启动将非终态工作改为UNKNOWN前保留已知旧取消。
+     * @param connection original startup transaction / 原启动事务
+     * @throws SQLException if original cancellation metadata cannot be retained / 原取消元数据无法保留时 */
+    private static void retainOriginalCancellation(Connection connection) throws SQLException {
+        try (var query = connection.prepareStatement("SELECT task_id,recovery_json FROM platform_task WHERE state='CANCEL_REQUESTED'");
+             var rows = query.executeQuery();
+             var update = connection.prepareStatement("UPDATE platform_task SET recovery_json=? WHERE task_id=? AND state='CANCEL_REQUESTED'")) {
+            while (rows.next()) {
+                update.setString(1, gold.debug.windowstolinux.app.db.task.metadata.TaskCancellationDocument.request(rows.getString(2)));
+                update.setObject(2, rows.getObject(1, UUID.class));
+                if (update.executeUpdate() != 1) throw new SQLException("Original cancellation changed during startup");
+            }
+        }
+    }
 }

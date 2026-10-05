@@ -79,6 +79,9 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
     /** One confirmed helper identity and prepared component IDs. / 一份已确认 helper 身份与已准备组件标识。 */
     private boolean helperReady;
 
+    /** One actual first-helper refusal retained to prevent repeatedly reviewing the same fixed installer. / 保留一次真实首个helper拒绝，防止反复审核同一固定安装器。 */
+    private DeploymentLowRiskRequiredException helperRefusal;
+
     /** Component IDs whose original preparation has already started. / 原准备已开始的组件标识。 */
     private final Set<String> prepared = new HashSet<>();
 
@@ -92,12 +95,14 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @param configurationRevision frozen AI configuration / 冻结 AI 配置
      * @param currentRevision live revision / 实时修订
      * @param journal dedicated original ledger / 专有原账本
-     * @param project reviewed persisted source association / 经审阅已存来源关联 */
+     * @param project reviewed persisted source association / 经审阅已存来源关联
+     * @param approvalMode original immutable command policy / 原不可变命令策略
+     * @param authorizationMode original immutable authorization repetition / 原不可变授权重复规则
+     * @throws ApiException if an original independent model role is unavailable / 原独立模型角色不可用时 */
     public DeploymentAgentRemoteTools(ModContext context, RemoteSession session, InteractionService interaction, ServerId server,
                                       TaskContext task, DeploymentSourceArchive archive, String configurationRevision,
                                       Supplier<String> currentRevision, DeploymentAgentActionLog journal,
-                                      Optional<DeploymentProjectRecord> project) {
-        this.context = Objects.requireNonNull(context);
+                                      Optional<DeploymentProjectRecord> project, String approvalMode, String authorizationMode) throws ApiException {
         this.session = Objects.requireNonNull(session);
         this.server = Objects.requireNonNull(server);
         this.task = Objects.requireNonNull(task);
@@ -106,18 +111,19 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
         this.project = Objects.requireNonNull(project);
         this.configurationRevision = Objects.requireNonNull(configurationRevision);
         this.currentRevision = Objects.requireNonNull(currentRevision);
-        this.interaction = Objects.requireNonNull(interaction);
+        this.context = new DeploymentCommandReviewScope(context, interaction, task, approvalMode, authorizationMode, () -> this.configurationRevision);
+        this.interaction = this.context.interaction();
         this.beforeSend = () -> {
             if (!this.configurationRevision.equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task)))
                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
                     "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED", "AI configuration changed before remote dispatch",
                     Map.of(), Optional.empty()));
         };
-        this.candidates = new DeploymentCandidateChannel(session, interaction, server, task, configurationRevision,
+        this.candidates = new DeploymentCandidateChannel(session, this.interaction, server, task, configurationRevision,
             budget, beforeSend);
-        this.helper = new DeploymentManagedHelper(session, interaction, server, task, configurationRevision,
+        this.helper = new DeploymentManagedHelper(session, this.interaction, server, task, configurationRevision,
             beforeSend);
-        this.projects = new DeploymentAgentProjectChannel(session, interaction, server, task, configurationRevision,
+        this.projects = new DeploymentAgentProjectChannel(session, this.interaction, server, task, configurationRevision,
             currentRevision);
     }
 
@@ -137,10 +143,17 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
      * @throws Exception if preparation or its exact receipt fails / 准备或其精确回执失败时 */
     @Override
     public Prepared prepare(String applicationId, DeploymentAgentPlan.Part component) throws Exception {
+        if (helperRefusal != null) throw helperRefusal;
         if (!prepared.add(component.id()))
             throw new IllegalStateException("Agent component was already prepared");
         if (!helperReady) {
-            value(helper.install());
+            try {
+                value(helper.install());
+            } catch (DeploymentLowRiskRequiredException refused) {
+                prepared.remove(component.id());
+                helperRefusal = DeploymentLowRiskRequiredException.beforePreparation(task, refused);
+                throw helperRefusal;
+            }
             helperReady = true;
         }
         var facts = value(candidates.hostFacts());

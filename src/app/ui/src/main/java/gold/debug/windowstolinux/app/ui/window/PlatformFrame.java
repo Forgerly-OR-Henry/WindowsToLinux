@@ -72,9 +72,6 @@ public final class PlatformFrame extends JFrame {
         /** Permanent connection and transfer threshold settings. / 常驻连接及传输阈值设置。 */
         private gold.debug.windowstolinux.app.ui.setting.TransferSettingsPane transfers;
 
-        /** Permanent policy preference independent of AI review. / 独立于 AI 审批的常驻策略偏好。 */
-        private gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane authorization;
-
         /** Optional file explanation settings. / 可选文件说明设置。 */
         private gold.debug.windowstolinux.app.ui.setting.FileSettingsPane fileSettings;
 
@@ -85,7 +82,6 @@ public final class PlatformFrame extends JFrame {
          * @param locked current privacy state / 当前隐私状态 */
         private void locked(boolean locked) {
             if (transfers != null) transfers.setLocked(locked);
-            if (authorization != null) authorization.setLocked(locked);
             if (fileSettings != null) fileSettings.setLocked(locked);
             if (logs != null) logs.setLocked(locked);
         }
@@ -93,7 +89,6 @@ public final class PlatformFrame extends JFrame {
         /** Detaches every mounted settings view without cancelling accepted writes. / 分离所有已挂载设置视图而不取消已接纳写入。 */
         private void close() {
             if (transfers != null) transfers.close();
-            if (authorization != null) authorization.close();
             if (fileSettings != null) fileSettings.close();
             if (logs != null) logs.close();
         }
@@ -185,6 +180,11 @@ public final class PlatformFrame extends JFrame {
         shell = new PlatformNavigationShell(content, catalog, palette);
         extensions = new ExtensionPagePane(this::closePage, owner -> owner, () -> catalog.text("security.locked"),
             this::selectModSurface);
+        extensions.platformNavigation(target -> shell.select(switch (target) {
+            case SERVERS -> "platform.servers";
+            case AI_MODELS -> "platform.models";
+            case TASKS -> "tasks.title";
+        }));
         pages = new ModPageRegistry(extensions, environment);
         var settings = new SecuritySettingsPane(security, appearance.components, messages);
         var settingsSurface = appearance.components.pagePanel();
@@ -462,18 +462,6 @@ public final class PlatformFrame extends JFrame {
         content.addTab(messages.text("transfer.settings.title"), messages.bind(settingsViews.transfers, "transfer.settings.title"));
         shell.register(settingsViews.transfers, "transfer.settings.title", "action/arrow-right", 30, true);
         settingsViews.transfers.setLocked(!security.securityState().unlocked());
-    }
-
-    /** Mounts platform settingsViews.authorization preferences independently of business AI modes. / 独立于业务 AI 模式挂载平台授权偏好。
-     * @param service actual preference and scope owner / 实际偏好及作用域所有者 */
-    public void installAuthorization(gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService service) {
-        if (!SwingUtilities.isEventDispatchThread() || settingsViews.authorization != null)
-            throw new IllegalStateException("Authorization settings must be installed once on the EDT");
-        settingsViews.authorization = new gold.debug.windowstolinux.app.ui.setting.AuthorizationSettingsPane(service,
-            appearance.components, messages);
-        content.addTab(messages.text("authorization.title"), messages.bind(settingsViews.authorization, "authorization.title"));
-        shell.register(settingsViews.authorization, "authorization.title", "security/shield-alert", 40, true);
-        settingsViews.authorization.setLocked(!security.securityState().unlocked());
     }
 
     /** Mounts the persistent optional deletion explanation preference. / 挂载持久可选删除说明偏好。

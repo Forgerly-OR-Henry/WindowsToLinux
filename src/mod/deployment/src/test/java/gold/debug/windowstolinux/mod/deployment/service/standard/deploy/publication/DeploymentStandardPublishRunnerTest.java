@@ -27,6 +27,7 @@ import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
@@ -88,6 +89,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 /** Executes the real original publication task, source handles, H2 and host review against a controlled peer. / 用受控对等端执行真实原发布任务、来源句柄、H2和宿主审核。 */
 class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
+    /** Declared wire identity of this controlled peer; actual loopback recovery captures its own key. / 此受控对等端声明的 wire 身份；实际回环恢复捕获自身密钥。 */
+    private static final String CONTROLLED_FINGERPRINT = "SHA256:"
+        + Base64.getEncoder().withoutPadding().encodeToString(new byte[32]);
+
     private static final Path GIT = Arrays.stream(System.getenv("PATH").split(java.io.File.pathSeparator))
         .map(path -> Path.of(path).resolve("git.exe")).filter(Files::isRegularFile).findFirst().orElseThrow()
         .toAbsolutePath().normalize();
@@ -102,6 +107,14 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
 
     /** Optional controlled loopback port for a later cross-process recovery probe. / 后续跨进程恢复探针可用的受控回环端口。 */
     private int recoveryPort = 22;
+
+    /** Whether this fixture selects the actual optional Git provider. / 此夹具是否选择实际可选 Git 提供方。 */
+    private boolean gitScenario;
+
+    @Override
+    protected boolean gitEnabled() {
+        return gitScenario;
+    }
 
     /** Starts an actual CLASS/H2 runtime with controlled host interactions. / 启动带受控宿主交互的真实CLASS/H2运行时。
      * @return actual platform / 真实平台
@@ -350,6 +363,7 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
      * @throws Exception if original publication fails / 原发布失败时 */
     private void runStaticWorkflow(boolean git, boolean sqlite, boolean installHelper, boolean nativeDatabase,
                                    boolean authRetry, boolean rotateStored, NativeInstallType nativeInstall) throws Exception {
+        gitScenario = git;
         boolean noPortNode = nativeInstall == NativeInstallType.NO_PORT_NODE;
         Files.createDirectories(selectedSourceDirectory());
         if (noPortNode) {
@@ -705,9 +719,11 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
                         new DeploymentGitRef.DefaultBranch(), Set.of(), 65536, true),
                     GIT))
                     : Optional.<DeploymentStaticWorkflow.GitSource>empty();
-                var handle = workflow.submit(server,
-                    new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536),
-                    gitInput, reviewer, fullControl, fullControl ? "FULL_CONTROL" : "MANUAL_REVIEW");
+                var draft = new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-project" : "", 65536, 100, 65536);
+                var handle = git
+                    ? GitRuntimeTestBridge.staticWorkflow(runtime, bound).submit(server, draft, gitInput, reviewer)
+                    : workflow.submit(server, draft, gitInput, reviewer, fullControl,
+                    fullControl ? "FULL_CONTROL" : "MANUAL_REVIEW");
                 if (nativeInstall == NativeInstallType.START_UNKNOWN) {
                     long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
                     while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < deadline)
@@ -728,7 +744,9 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
                     System.out.println("ORIGINAL_NATIVE_WORKFLOW_UNKNOWN_VERIFIED");
                     System.exit(0);
                 }
-                assertTrue(callbackEnded.await(25, TimeUnit.SECONDS), () -> handle.snapshot().toString());
+                assertTrue(callbackEnded.await(25, TimeUnit.SECONDS),
+                    () -> handle.snapshot() + " result=" + handle.completion().toCompletableFuture().getNow(null)
+                        + " actions=" + actions);
                 OperationResult<Void> result;
                 try {
                     result = handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS);
@@ -1199,8 +1217,12 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
                 ? Map.of(reference, reviewedSecret)
                 : Map.<DeploymentSecretRef, SecretId>of();
             var handle = executor.submit(unit, Optional.empty(), credentials, task -> {
-                if (recoveryPort != 22)
-                    real.linux().connect(server, task);
+                if (recoveryPort != 22) {
+                    var policy = DeploymentPublishPolicyFacts.begin(real, task, server,
+                        "STATIC", "MANUAL_REVIEW", "GENERAL", "");
+                    var connected = real.linux().connect(policy.facts().fixedTarget(), task);
+                    policy.authenticated(connected.facts().fingerprint());
+                }
                 var selection = real.file().sources().selectDirectory("Source", task);
                 var material = new DeploymentSourceSetup(real.file()).prepare(selection, 65536, 100, task);
                 var archive = new DeploymentSourceArchiver(real.file()).prepare(material, 65536, task);
@@ -1426,8 +1448,9 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
         throws Exception {
         try (var connection = runtime.persistence().database().openConnection();
              var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource "
-                 + "WHERE task_id=? AND resource_kind='CUSTOM' AND released_at IS NULL")) {
+                 + "WHERE task_id=? AND resource_kind='CUSTOM' AND resource_id=? AND released_at IS NULL")) {
             query.setObject(1, task);
+            query.setString(2, OWNER + "/checkpoint/deployment-publication-remote");
             try (var rows = query.executeQuery()) {
                 assertTrue(rows.next());
                 return rows.getString(1).contains(candidate) && rows.getString(1).contains(phase);
@@ -1575,8 +1598,23 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
         var commitRefused = new AtomicBoolean();
         LinuxService linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
             new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("pendingTransfers"))
+                    return real.linux().pendingTransfers((TaskContext) args[0]);
                 assertEquals("connect", method.getName());
-                assertEquals("server-publication", ((ServerId) args[0]).id());
+                if (args[0] instanceof RemoteTarget expected) {
+                    var task = (TaskContext) args[1];
+                    var server = real.servers().get(expected.server(), task);
+                    assertEquals("server-publication", expected.server().id());
+                    assertEquals(task.id(), expected.taskId());
+                    assertEquals(server.ref(), expected.server());
+                    assertEquals(server.host(), expected.host());
+                    assertEquals(server.port(), expected.port());
+                    assertEquals(server.username(), expected.username());
+                    expected.fingerprint().ifPresent(value -> assertEquals(value, session.facts().fingerprint(),
+                        "The fixed expectation binds the controlled peer's observed wire identity"));
+                } else {
+                    assertEquals("server-publication", ((ServerId) args[0]).id());
+                }
                 return session;
             });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
@@ -1599,19 +1637,19 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
                         }
                     };
                 if (method.getName().equals("interaction"))
-                    return new InteractionService() {
-                        public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
-                            throws ApiException {
-                            var approved = real.interaction().approve(intent, task);
-                            approved.value().ifPresent(value -> grants.put(value, intent));
-                            return approved;
-                        }
-
-                        public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                                                                   TaskContext task) throws ApiException {
-                            return real.interaction().requestText(title, prompt, secret, task);
-                        }
-                    };
+                    return Proxy.newProxyInstance(InteractionService.class.getClassLoader(),
+                        new Class<?>[]{InteractionService.class}, (interactionProxy, operation, arguments) -> {
+                            try {
+                                var result = operation.invoke(real.interaction(), arguments);
+                                if ((operation.getName().equals("approve") || operation.getName().equals("approveRequired"))
+                                    && result instanceof OperationResult<?> approved)
+                                    approved.value().filter(ApprovalGrant.class::isInstance).map(ApprovalGrant.class::cast)
+                                        .ifPresent(value -> grants.put(value, (ActionIntent) arguments[0]));
+                                return result;
+                            } catch (InvocationTargetException failure) {
+                                throw failure.getCause();
+                            }
+                        });
                 try {
                     return method.invoke(real, args);
                 } catch (InvocationTargetException failure) {
@@ -2006,7 +2044,7 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
             new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                 if (method.getName().equals("facts"))
-                    return new RemoteFacts("", "", "SHA256:fixture-host");
+                    return new RemoteFacts("", "", CONTROLLED_FINGERPRINT);
                 if (method.getName().equals("close")) {
                     callbackEnded.countDown();
                     if (scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN)

@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -71,11 +70,10 @@ class PlatformAuthorizationTest {
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 for (var mode : AuthorizationMode.values()) {
-                    runtime.authorization().saveMode(mode);
                     long before = prompts(reviews);
                     assertEquals(TaskResult.SUCCEEDED,
                         result(capabilities.launcher().submit(
-                            new Launch<>(request("server"), Set.of(APP), task -> repeat(capabilities, task))))
+                            new Launch<>(request("server"), Set.of(APP), mode, task -> repeat(capabilities, task))))
                             .outcome());
                     assertEquals(mode == AuthorizationMode.ONCE ? 3 : mode == AuthorizationMode.GENERAL ? 1 : 0,
                         prompts(reviews) - before);
@@ -83,12 +81,11 @@ class PlatformAuthorizationTest {
                 assertEquals(9, remote.commands.get());
                 assertEquals(1,
                     reviews.approved.stream().filter(intent -> intent.type().equals("platform.ssh.trust")).count());
-                runtime.authorization().saveMode(AuthorizationMode.GENERAL);
                 for (int i = 0; i < 2; i++) {
                     long before = prompts(reviews);
                     assertEquals(TaskResult.SUCCEEDED,
                         result(capabilities.launcher().submit(
-                            new Launch<>(request("server"), Set.of(APP), task -> repeat(capabilities, task))))
+                            new Launch<>(request("server"), Set.of(APP), AuthorizationMode.GENERAL, task -> repeat(capabilities, task))))
                             .outcome());
                     assertEquals(1, prompts(reviews) - before);
                 }
@@ -106,7 +103,7 @@ class PlatformAuthorizationTest {
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var handle = capabilities.launcher()
-                    .submit(new Launch<>(request("server"), Set.of(APP, OTHER), task -> {
+                    .submit(new Launch<>(request("server"), Set.of(APP, OTHER), AuthorizationMode.GENERAL, task -> {
                         try (var session = capabilities.linux().connect(SERVER, task)) {
                             var command = command("builtin printf 'exact'");
                             var grant = capabilities.interaction()
@@ -142,17 +139,16 @@ class PlatformAuthorizationTest {
     }
 
     @Test
-    void preferenceChangesDoNotAlterRunningScopeAndFullDoesNotAuthorizeOrdinaryTasks() throws Exception {
+    void legacyPreferenceChangesDoNotAlterCapturedScopeAndFullDoesNotAuthorizeOrdinaryTasks() throws Exception {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
-                runtime.authorization().saveMode(AuthorizationMode.ONCE);
                 assertEquals(TaskResult.SUCCEEDED,
-                    result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
-                        runtime.authorization().saveMode(AuthorizationMode.FULL);
+                    result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), AuthorizationMode.ONCE, task -> {
+                        runtime.persistence().preferences().save("platform_authorization_mode", "FULL");
                         return repeat(capabilities, task);
                     }))).outcome());
                 assertEquals(3, prompts(reviews));
@@ -160,7 +156,7 @@ class PlatformAuthorizationTest {
                     .submit(request("server"), task -> repeat(capabilities, task))).outcome());
                 assertEquals(6, prompts(reviews));
                 assertEquals(TaskResult.SUCCEEDED,
-                    result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
+                    result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), AuthorizationMode.FULL, task -> {
                         try (var session = capabilities.linux().connect(SERVER, task)) {
                             var command = command("builtin printf unclassified");
                             var grant = capabilities.interaction()
@@ -184,7 +180,7 @@ class PlatformAuthorizationTest {
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
-                var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
+                var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), AuthorizationMode.GENERAL, task -> {
                     try (var session = capabilities.linux().connect(SERVER, task);
                          var workers = Executors.newVirtualThreadPerTaskExecutor()) {
                         var command = command("builtin printf accepted");
@@ -221,7 +217,6 @@ class PlatformAuthorizationTest {
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
-            runtime.authorization().saveMode(AuthorizationMode.FULL);
             Files.writeString(remote.files.resolve("file"), "old");
             var source = Files.writeString(root.resolve("source"), "new");
             var choices = new java.util.concurrent.atomic.AtomicInteger();
@@ -232,7 +227,7 @@ class PlatformAuthorizationTest {
             };
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
-                var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
+                var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), AuthorizationMode.FULL, task -> {
                     assertThrows(ApiException.class, () -> capabilities.interaction()
                         .approve(action(command("true"), "application.restart", OTHER), task));
                     try (var session = capabilities.linux().connect(SERVER, task)) {
@@ -265,14 +260,13 @@ class PlatformAuthorizationTest {
     void retainedOriginalTaskRecoveryCannotReviveFinishedWorkflowPermission() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
-            runtime.authorization().saveMode(AuthorizationMode.FULL);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
                 var grant = new java.util.concurrent.atomic.AtomicReference<ApprovalGrant>();
                 var lease = new java.util.concurrent.atomic.AtomicReference<ResourceLease>();
                 var intent = action(command("true"), "application.restart", APP);
-                var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), task -> {
+                var handle = capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), AuthorizationMode.FULL, task -> {
                     grant.set(capabilities.interaction().approve(intent, task).value().orElseThrow());
                     lease.set(task.retain("fixture", "retained", "Actual retained cleanup"));
                     return success(null);
@@ -296,32 +290,39 @@ class PlatformAuthorizationTest {
                 assertEquals(1, prompts(reviews));
                 capabilities.launcher().close();
                 assertThrows(ApiException.class, () -> capabilities.launcher()
-                    .submit(new Launch<>(request("server"), Set.of(APP), task -> success(null))));
+                    .submit(new Launch<>(request("server"), Set.of(APP), AuthorizationMode.FULL, task -> success(null))));
             }
         }
     }
 
     @Test
-    void preferenceSurvivesActualReopenIndependentlyOfAiAndInvalidDataDoesNotGrantFullAccess() throws Exception {
+    void explicitModesIgnoreRetainedLegacyPreferencesAcrossActualReopen() throws Exception {
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
-            assertEquals(AuthorizationMode.GENERAL, runtime.authorization().mode());
             assertEquals(0, count(runtime.persistence().database(),
                 "SELECT COUNT(*) FROM desktop_preference WHERE preference_key='platform_authorization_mode'"));
             runtime.persistence().preferences().save("deploy_approval", "MANUAL_REVIEW");
-            runtime.authorization().saveMode(AuthorizationMode.FULL);
-            assertEquals("MANUAL_REVIEW", runtime.persistence().preferences().find("deploy_approval").orElseThrow());
-        }
-        try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
-            assertThrows(gold.debug.windowstolinux.app.service.error.ApplicationServiceException.class,
-                runtime.authorization()::mode);
-            runtime.security().unlock(PASSWORD.toCharArray());
-            assertEquals(AuthorizationMode.FULL, runtime.authorization().mode());
             runtime.persistence().preferences().save("platform_authorization_mode", "invalid");
-            assertThrows(SQLException.class, runtime.authorization()::mode);
+        }
+        try (var remote = new Remote(root.resolve("ssh")); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            runtime.security().unlock(PASSWORD.toCharArray());
+            register(runtime.persistence().database(), null);
+            try (var operation = runtime.security().enterOperation(); var credentials = runtime.security().openCredentials()) {
+                credentials.save("credential", "fixture-secret".toCharArray());
+            }
+            runtime.persistence().servers().saveServerProfile(new gold.debug.windowstolinux.app.db.server.StoredServerProfile("server", "127.0.0.1", remote.listener.server().getPort(), "alice", "credential", "Explicit mode"));
+            var reviews = new Reviews();
+            runtime.setInteractionPresenter(reviews);
+            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
+                for (var mode : AuthorizationMode.values()) {
+                    long before = prompts(reviews);
+                    assertEquals(TaskResult.SUCCEEDED, result(capabilities.launcher().submit(new Launch<>(request("server"), Set.of(APP), mode, task -> repeat(capabilities, task)))).outcome());
+                    assertEquals(mode == AuthorizationMode.ONCE ? 3 : mode == AuthorizationMode.GENERAL ? 1 : 0, prompts(reviews) - before);
+                }
+                assertEquals(9, remote.commands.get());
+            }
             assertEquals("invalid",
                 runtime.persistence().preferences().find("platform_authorization_mode").orElseThrow());
-            runtime.authorization().saveMode(AuthorizationMode.GENERAL);
             assertEquals("MANUAL_REVIEW", runtime.persistence().preferences().find("deploy_approval").orElseThrow());
         }
     }

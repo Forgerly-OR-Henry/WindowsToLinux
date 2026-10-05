@@ -87,7 +87,7 @@ class ModuleDependencyArchitectureTest {
             package fixture;
             class Indirect {
                 gold.debug.windowstolinux.appapi.mod.ModContext context;
-                void run() throws gold.debug.windowstolinux.appapi.task.result.ApiException { var linux = context.linux(); linux.connect(null, null); }
+                void run() throws gold.debug.windowstolinux.appapi.task.result.ApiException { var linux = context.linux(); linux.connect((gold.debug.windowstolinux.appapi.server.model.ServerId) null, null); }
             }
             """)).getFirst();
         assertFalse(executionCalls(indirect).isEmpty());

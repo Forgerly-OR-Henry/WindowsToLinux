@@ -25,7 +25,7 @@ class DeploymentAgentHistoryTest extends DeploymentRuntimeFixture {
             var original = context.tasks().submit(new TaskRequest(DeploymentAgentWorkflow.TASK_TYPE,
                 "Original evidence owner", List.of(), true), task -> {
                 journal.create(task, new DeploymentAgentActionLog.Identity("evidence-only", "a".repeat(64),
-                    "b".repeat(64), "MANUAL_REVIEW"));
+                    "b".repeat(64), "MANUAL_REVIEW", "GENERAL"));
                 journal.event(task, "COMMAND_EXECUTING", "original-binding", "10");
                 journal.event(task, "COMMAND_RESULT", "original-binding", "1");
                 journal.state(task, "FAILED");
@@ -46,9 +46,11 @@ class DeploymentAgentHistoryTest extends DeploymentRuntimeFixture {
             assertNotEquals(entry.id(), query.id());
             assertEquals(entry, detail.entry());
             assertEquals("b".repeat(64), detail.snapshot().identity().configurationDigest());
-            assertEquals(List.of("COMMAND_EXECUTING", "COMMAND_RESULT", "STATE"),
+            assertEquals("GENERAL", detail.snapshot().identity().authorizationMode());
+            assertEquals(List.of("AUTHORIZATION_POLICY", "COMMAND_EXECUTING", "COMMAND_RESULT", "STATE"),
                 detail.events().stream().map(DeploymentAgentActionLog.Event::type).toList());
-            assertEquals("original-binding", detail.events().getFirst().action());
+            assertEquals("authorization.v1", detail.events().getFirst().action());
+            assertEquals("original-binding", detail.events().get(1).action());
             var rejected = page.requestInspection(entry.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
             assertEquals(TaskResult.FAILED, rejected.outcome());
             assertEquals("DEPLOYMENT_AGENT_INSPECT_NOT_RETAINED", rejected.problem().orElseThrow().eventCode());

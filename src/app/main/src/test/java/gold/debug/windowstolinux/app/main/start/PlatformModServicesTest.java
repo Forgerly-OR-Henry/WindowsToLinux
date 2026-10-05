@@ -757,11 +757,10 @@ class PlatformModServicesTest {
                     }
                 });
                 for (var mode : AuthorizationMode.values()) {
-                    f.runtime.authorization().saveMode(mode);
                     long before = PlatformAuthorizationTest.prompts(reviews);
                     var task = caller.launcher().submit(
                         new gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService.Launch<>(
-                            request("server"), Set.of(PlatformAuthorizationTest.APP), context -> {
+                            request("server"), Set.of(PlatformAuthorizationTest.APP), mode, context -> {
                             original.set(context);
                             for (int i = 0; i < 3; i++)
                                 assertEquals("ready", f.call(handle, "ready", context));
@@ -780,7 +779,6 @@ class PlatformModServicesTest {
                         PlatformAuthorizationTest.prompts(reviews) - before);
                 }
                 assertEquals(9, remote.commands.get());
-                f.runtime.authorization().saveMode(AuthorizationMode.FULL);
                 var source = root.resolve("source.txt");
                 var destination = root.resolve("destination.txt");
                 Files.writeString(source, "service-file");
@@ -816,7 +814,7 @@ class PlatformModServicesTest {
                 });
                 var transfer = caller.launcher()
                     .submit(new gold.debug.windowstolinux.app.service.task.PlatformAuthorizationService.Launch<>(
-                        request("server"), Set.of(PlatformAuthorizationTest.APP), context -> {
+                        request("server"), Set.of(PlatformAuthorizationTest.APP), AuthorizationMode.FULL, context -> {
                         original.set(context);
                         return success(f.call(handle, "ready", context));
                     }));

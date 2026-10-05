@@ -103,7 +103,7 @@ public final class DeploymentNativeDatabaseWire {
             ActionIntent intent = RemoteActions.command(server, revision, request)
                 .withSemantics(new ActionSemantics("deployment.native-db." + action + ".v1",
                     Set.of(new ActionTarget(server.id(), "native-database", target))));
-            var grant = interaction.approve(intent, task);
+            var grant = DeploymentCommandReviews.approve(interaction, intent, request, task);
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), java.util.Optional.empty(), grant.problem());
             if (task.cancelToken().requested())

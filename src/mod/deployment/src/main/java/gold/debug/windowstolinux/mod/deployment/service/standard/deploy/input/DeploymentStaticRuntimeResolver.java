@@ -199,7 +199,13 @@ public final class DeploymentStaticRuntimeResolver {
      * @throws IllegalArgumentException if an input violates the constraints checked by this contract / 输入违反当前契约检查的约束时
      */
     public DeploymentRuntimeDefinition runtime(DeploymentProjectKind type, Map<String, String> v) {
-        v = ApplicationSpec.completed(v);
+        try {
+            v = ApplicationSpec.completed(v);
+        } catch (IllegalArgumentException invalid) {
+            if (!v.getOrDefault("applicationDeclaration", "").isBlank())
+                throw new DeploymentReviewFieldException("applicationDeclaration", invalid);
+            throw invalid;
+        }
         DeploymentHealthCheck health = health(v);
         if (type == DeploymentProjectKind.STATIC_SITE && !(health instanceof DeploymentHealthCheck.Http))
             throw new IllegalArgumentException("static sites require HTTP health checks");
@@ -213,10 +219,10 @@ public final class DeploymentStaticRuntimeResolver {
             case JAVA_SOURCE -> new DeploymentRuntimeDefinition.JavaSource(primary, secondary, version,
                 DeploymentStaticInputParser.arguments(v.getOrDefault("jvmArguments", "")),
                 DeploymentStaticInputParser.arguments(v.getOrDefault("arguments", "")), health);
-            case NODE_SERVICE -> new DeploymentRuntimeDefinition.NodeService(Integer.parseInt(version), health);
+            case NODE_SERVICE -> new DeploymentRuntimeDefinition.NodeService(integer(v, "version", ""), health);
             case PYTHON_SERVICE -> new DeploymentRuntimeDefinition.PythonService(primary, secondary, health);
             case STATIC_SITE -> new DeploymentRuntimeDefinition.StaticSite(primary,
-                version.isBlank() ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(version)),
+                version.isBlank() ? OptionalInt.empty() : OptionalInt.of(integer(v, "version", "")),
                 (DeploymentHealthCheck.Http) health);
             case DOCKERFILE_CONTAINER -> new DeploymentRuntimeDefinition.Container(
                 DeploymentRuntimeDefinition.ContainerEngineType
@@ -270,14 +276,14 @@ public final class DeploymentStaticRuntimeResolver {
      */
     public DeploymentHealthCheck health(Map<String, String> v) {
         v = ApplicationSpec.completed(v);
-        int timeout = Integer.parseInt(v.getOrDefault("timeout", "10"));
+        int timeout = integer(v, "timeout", "10");
         String mode = v.getOrDefault("healthMode", "TCP");
         if (v.getOrDefault("executionMode", "DAEMON").equals("ON_DEMAND") || mode.equals("COMMAND"))
             return new DeploymentHealthCheck.Command(ApplicationSpec.command(v, "verification"),
                 v.getOrDefault("application.expectedOutput", ""), timeout);
         if (mode.equals("PROCESS"))
-            return new DeploymentHealthCheck.Process(timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
-        int port = Integer.parseInt(v.get("port"));
+            return new DeploymentHealthCheck.Process(timeout, integer(v, "stability", "5"));
+        int port = integer(v, "port", "");
         if (mode.equals("UDP"))
             return new DeploymentHealthCheck.Udp(port, v.getOrDefault("requestHex", ""),
                 v.getOrDefault("responseHex", ""),
@@ -288,10 +294,23 @@ public final class DeploymentStaticRuntimeResolver {
         if (mode.equals("HTTP"))
             return new DeploymentHealthCheck.Http(
                 URI.create(v.getOrDefault("healthEndpoint", "http://127.0.0.1:" + port + "/")),
-                Integer.parseInt(v.getOrDefault("expectedStatus", "200")), timeout);
+                integer(v, "expectedStatus", "200"), timeout);
         if (!mode.equals("TCP"))
             throw new IllegalArgumentException("unsupported health mode");
-        return new DeploymentHealthCheck.Tcp(port, timeout, Integer.parseInt(v.getOrDefault("stability", "5")));
+        return new DeploymentHealthCheck.Tcp(port, timeout, integer(v, "stability", "5"));
+    }
+
+    /** Keeps the exact failing numeric input identity alongside the existing parser rejection. / 在既有解析拒绝旁保留精确失败数字输入身份。
+     * @param values completed original input / 完成的原输入
+     * @param key exact field / 精确字段
+     * @param fallback existing absent-field default / 既有缺失字段默认值
+     * @return parsed original value / 解析的原值 */
+    private static int integer(Map<String, String> values, String key, String fallback) {
+        try {
+            return Integer.parseInt(values.getOrDefault(key, fallback));
+        } catch (IllegalArgumentException invalid) {
+            throw new DeploymentReviewFieldException(key, invalid);
+        }
     }
 
     /**

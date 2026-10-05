@@ -191,6 +191,8 @@ public final class DeploymentStandardPublishRunner {
                 ReviewedPlanIdentity.from(request), request.runtime());
             cleanupFacts.set(journal);
             if (correction.isEmpty()) {
+                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                    "Preparing, uploading and building the original candidate / 准备、上传并构建原候选");
                 var build = new DeploymentStandardCandidateRunner().execute(plan, session, context.interaction(), task);
                 result = build.outcome() == TaskResult.SUCCEEDED
                     ? new DeploymentStandardPublishTransaction(context).publish(plan, unit,

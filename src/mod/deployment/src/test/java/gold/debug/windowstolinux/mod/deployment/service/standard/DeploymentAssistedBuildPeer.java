@@ -57,6 +57,8 @@ final class DeploymentAssistedBuildPeer {
 
     boolean unknownBuild, active;
 
+    volatile String fingerprint = "SHA256:" + "B".repeat(43);
+
     /** Enables distinct source-preserving publication attempts only in the new health fixture. / 仅新健康夹具启用保留来源的独立发布尝试。 */
     boolean publicationAttempts;
 
@@ -86,7 +88,7 @@ final class DeploymentAssistedBuildPeer {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
             new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                 if (method.getName().equals("facts"))
-                    return new RemoteFacts("linux", "x86_64", "SHA256:assisted-build");
+                    return new RemoteFacts("linux", "x86_64", fingerprint);
                 if (method.getName().equals("close")) {
                     lease.close();
                     sessionsClosed++;

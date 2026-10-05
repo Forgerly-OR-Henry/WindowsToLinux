@@ -60,7 +60,7 @@ WHERE 1 = 0;
 SELECT deployment_unit_id, release_sha256, configuration_revision, configuration_sha256, is_secret_binding_complete
 FROM deployment_unit_release_binding
 WHERE 1 = 0;
-SELECT secret_id, secret_revision, credential_id, created_at
+SELECT secret_id, secret_revision, credential_id, created_at, purpose
 FROM secret_revision
 WHERE 1 = 0;
 SELECT deployment_unit_id, release_sha256, secret_id, secret_revision
@@ -157,3 +157,11 @@ SELECT log_id,
        truncated
 FROM deployment_log
 WHERE 1 = 0;
+SELECT operation_id,
+       platform_task_id,
+       owner_mod_id,
+       owner_mod_version,
+       application_id,
+       server_profile_id, action, current_release_sha256, target_release_sha256, phase, component_state, updated_at
+FROM deployment_management_operation
+WHERE 1=0;

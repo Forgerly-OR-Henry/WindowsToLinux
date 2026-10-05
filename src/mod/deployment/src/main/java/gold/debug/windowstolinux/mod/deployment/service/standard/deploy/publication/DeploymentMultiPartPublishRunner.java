@@ -341,6 +341,8 @@ public final class DeploymentMultiPartPublishRunner {
                 if (!root.mark("ALL_PREPARED"))
                     return unknown("DEPLOYMENT_GRAPH_PREPARE_BOUNDARY_UNCONFIRMED");
                 while (true) {
+                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                        "Uploading and building the original component graph / 上传并构建原组件图");
                     var built = buildAll(ordering, plans, units, prepared, healthComponent, health, session, task, root,
                         journals, corrections, assisted);
                     if (built.outcome() != TaskResult.SUCCEEDED)

@@ -7,7 +7,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,10 +16,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
@@ -46,6 +48,9 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyContext;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyFacts;
 import org.junit.jupiter.api.Test;
 
 /** Checks actual helper receipt processing against the original CLASS/H2 task and recovery. / 以原 CLASS/H2 任务和恢复核对实际 helper 回执处理。 */
@@ -215,10 +220,18 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
     @Test
     void originalRecoveryReadsActualHelperReceiptAndNeverReplaysStart() throws Exception {
         enable();
-        try (var runtime = open()) {
+        try (var ssh = new LoopbackSshServer(Files.createDirectory(root.resolve("native-ssh")), ignored -> {
+        });
+             var runtime = open()) {
             start(runtime, true);
             var server = saved(runtime);
+            runtime.servers().saveServerProfile(ServerProfile.fromStored(new StoredServerProfile(server.id(),
+                "127.0.0.1", ssh.server().getPort(), "root", "fixture-password")), "fixture-password".toCharArray());
             var original = runtime.modContexts().get(OWNER).context();
+            runtime.tasks().revokeOwnerServices(OWNER, VERSION);
+            var tasks = runtime.tasks().bind(OWNER, VERSION, false);
+            var wire = new AtomicReference<RemoteFacts>();
+            var fixedTarget = new AtomicReference<RemoteTarget>();
             var state = Files.createDirectory(root.resolve("native-state"));
             var starts = new AtomicInteger();
             var statuses = new AtomicInteger();
@@ -239,17 +252,41 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                 }
                 return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256="
                     + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
-            });
+            }, wire);
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
                 new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
-                    if (method.getName().equals("connect"))
+                    if (method.getName().equals("connect")) {
+                        var task = (TaskContext) args[1];
+                        var expected = fixedTarget.get();
+                        assertNotNull(expected, "The original callback must capture the actual authenticated wire before effects");
+                        assertEquals(expected.taskId(), task.id());
+                        if (args[0] instanceof RemoteTarget target) assertEquals(expected, target);
+                        else assertEquals(server, args[0]);
+                        var current = original.servers().get(server, task);
+                        assertEquals(expected.host(), current.host());
+                        assertEquals(expected.port(), current.port());
+                        assertEquals(expected.username(), current.username());
+                        assertEquals(Optional.of(wire.get().fingerprint()), expected.fingerprint());
                         return session;
+                    }
+                    if (method.getName().equals("pendingTransfers"))
+                        return original.linux().pendingTransfers((TaskContext) args[0]);
                     throw new AssertionError("Only original connection is needed");
                 });
             var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
                 new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
                     if (method.getName().equals("linux"))
                         return linux;
+                    if (method.getName().equals("tasks")) return tasks;
+                    try {
+                        return method.invoke(original, args);
+                    } catch (InvocationTargetException wrapped) {
+                        throw wrapped.getCause();
+                    }
+                });
+            var capture = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
+                new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("tasks")) return tasks;
                     try {
                         return method.invoke(original, args);
                     } catch (InvocationTargetException wrapped) {
@@ -257,44 +294,66 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
                     }
                 });
             var callbackFailure = new AtomicReference<Throwable>();
-            var handle = original.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
-                "Reconcile original native DB receipt", List.of(server.id()), true), task -> {
-                try {
-                    DeploymentStaticSetupActionLog.begin(original.tasks(), task, server);
-                    var channel = new DeploymentNativeDatabaseChannel(session, original.interaction(), server,
-                        task);
-                    assertEquals(TaskResult.UNKNOWN,
-                        channel.start(original.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64))
-                            .outcome());
-                    var journal = DeploymentNativeDatabaseActionLog.find(original.tasks(), task).orElseThrow();
-                    assertEquals("DISPATCHED", journal.facts().phase());
-                    var prior = new TaskSnapshot(task.id(), OWNER, VERSION, DeploymentRefFlow.TASK_TYPE,
-                        TaskState.RUNNING, Optional.empty(), "", Instant.now(), Optional.empty(),
-                        List.of());
-                    var reconciled = new DeploymentStaticTaskRecovery(bound, new DeploymentRefFlow(bound))
-                        .reconcile(prior, task);
-                    assertEquals(TaskResult.FAILED, reconciled.outcome(),
-                        reconciled + " status=" + observedStatus.get());
-                    assertTrue(journal.facts().effectsObserved());
-                    assertTrue(original.tasks().resourcesReleased(task));
-                } catch (Throwable failure) {
-                    callbackFailure.set(failure);
+            var recovery = new DeploymentStaticTaskRecovery(bound, new DeploymentRefFlow(bound));
+            try (var registration = tasks.registerRecovery(DeploymentRefFlow.TASK_TYPE, (previous, task) -> {
+                var reconciled = recovery.reconcile(previous, task);
+                assertEquals(TaskResult.FAILED, reconciled.outcome(), reconciled + " status=" + observedStatus.get());
+                assertTrue(DeploymentNativeDatabaseActionLog.find(tasks, task).orElseThrow().facts().effectsObserved());
+                assertTrue(tasks.resourcesReleased(task));
+                return reconciled;
+            })) {
+                var handle = tasks.submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
+                    "Reconcile original native DB receipt", List.of(server.id()), true), task -> {
+                    try {
+                        var preferences = new DeploymentPreferences(original.db());
+                        preferences.save(task, new DeploymentPreferences.Selection("STATIC", "MANUAL_REVIEW", "ONCE"));
+                        var policy = preferences.read(task);
+                        assertEquals("STATIC", policy.mode());
+                        var guarded = DeploymentPublishPolicyContext.begin(capture, task, server, false,
+                            policy.approval(), policy.authorization(), "Original native database fixture");
+                        try {
+                            try (var actual = guarded.linux().connect(server, task)) {
+                                wire.set(actual.facts());
+                            }
+                            fixedTarget.set(DeploymentPublishPolicyFacts.find(capture, task).orElseThrow().facts().fixedTarget());
+                        } finally {
+                            guarded.finish(TaskResult.UNKNOWN);
+                        }
+                        DeploymentStaticSetupActionLog.begin(tasks, task, server);
+                        var channel = new DeploymentNativeDatabaseChannel(session, original.interaction(), server,
+                            task);
+                        assertEquals(TaskResult.UNKNOWN,
+                            channel.start(tasks, "POSTGRESQL", "postgresql.service", "a".repeat(64))
+                                .outcome());
+                        var journal = DeploymentNativeDatabaseActionLog.find(tasks, task).orElseThrow();
+                        assertEquals("DISPATCHED", journal.facts().phase());
+                    } catch (Throwable failure) {
+                        callbackFailure.set(failure);
+                    }
+                    return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+                        ProblemCode.UNKNOWN, "TEST_NATIVE_DATABASE_REPLY_LOST", "Original database receipt requires reconciliation",
+                        Map.of(), Optional.empty())));
+                });
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                while (callbackFailure.get() == null && handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < until)
+                    Thread.sleep(20);
+                if (callbackFailure.get() != null)
+                    throw new AssertionError("Original native DB recovery failed", callbackFailure.get());
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+                var recovered = reconcileReady(runtime, handle);
+                assertEquals(handle.id(), recovered.id());
+                assertEquals(TaskState.ENDED, recovered.state(), recovered.toString());
+                assertEquals(Optional.of(TaskResult.FAILED), recovered.outcome());
+                assertEquals(TaskResult.FAILED,
+                    handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                assertEquals(1, starts.get());
+                assertEquals(1, statuses.get());
+                try (var files = Files.list(state)) {
+                    assertEquals(1, files.filter(path -> path.getFileName().toString().startsWith("operation-")).count());
                 }
-                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
-            });
-            for (int attempt = 0; attempt < 100 && callbackFailure.get() == null
-                && handle.snapshot().state() != TaskState.ENDED; attempt++)
-                Thread.sleep(50);
-            if (callbackFailure.get() != null)
-                throw new AssertionError("Original native DB recovery failed", callbackFailure.get());
-            assertEquals(TaskResult.SUCCEEDED,
-                handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
-            assertEquals(1, starts.get());
-            assertEquals(1, statuses.get());
-            try (var files = Files.list(state)) {
-                assertEquals(1, files.filter(path -> path.getFileName().toString().startsWith("operation-")).count());
+                assertTrue(approved.get() >= 3);
+                assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id() + "' AND released_at IS NULL"));
             }
-            assertTrue(approved.get() >= 3);
         }
     }
 
@@ -312,12 +371,18 @@ class DeploymentNativeDatabaseOperationTest extends DeploymentRuntimeFixture {
     }
 
     private static RemoteSession session(Reply reply) {
+        return session(reply, null);
+    }
+
+    private static RemoteSession session(Reply reply, AtomicReference<RemoteFacts> wire) {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
             new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                 if (method.getName().equals("execute"))
                     return reply.execute((CommandRequest) args[0]);
                 if (method.getName().equals("close"))
                     return null;
+                if (method.getName().equals("facts") && wire != null)
+                    return java.util.Objects.requireNonNull(wire.get());
                 throw new AssertionError("Unexpected borrowed session call: " + method.getName());
             });
     }

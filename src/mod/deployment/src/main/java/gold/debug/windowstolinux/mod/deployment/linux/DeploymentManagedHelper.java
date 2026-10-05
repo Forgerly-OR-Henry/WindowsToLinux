@@ -25,6 +25,20 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Runs the fixed helper installation and probe through one borrowed, host-authorized remote session. / 通过借用的宿主授权远端会话执行固定 helper 安装与探测。 */
 public final class DeploymentManagedHelper {
+    /** Actual original-mode approval for the complete helper request. / 完整 helper 请求的实际原模式审核。 */
+    @FunctionalInterface
+    public interface CommandReview {
+        /** Reviews actual script and complete input before original dispatch. / 原发送前审核实际脚本及完整输入。
+         * @param intent original helper semantics and revision / 原 helper 语义及修订
+         * @param request complete actual request / 完整实际请求
+         * @param task original authentic task / 原真实任务
+         * @return actual host grant after required reviews / 所需审核后的实际宿主授权
+         * @throws ApiException if original approval fails / 原审核失败时 */
+        OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> approve(
+            gold.debug.windowstolinux.appapi.task.action.ActionIntent intent, CommandRequest request, TaskContext task)
+            throws ApiException;
+    }
+
     /** Durable transition immediately before the reviewed installer is sent. / 经审核安装发送紧前的持久阶段转换。 */
     @FunctionalInterface
     public interface BeforeExecute {
@@ -65,6 +79,9 @@ public final class DeploymentManagedHelper {
     /** Caller-owned check immediately before remote dispatch. / 远端发送紧前调用方持有的核对。 */
     private final DeploymentSendGuard beforeSend;
 
+    /** Optional actual-mode reviewer; null preserves the existing host path. / 可选实际模式审核器，null 保留既有宿主路径。 */
+    private final CommandReview commandReview;
+
     /** Binds one original task and its borrowed session. / 绑定一项原任务及其借用会话。
      * @param session original authenticated session / 原已认证会话
      * @param interaction host review capability / 宿主审核能力
@@ -85,12 +102,26 @@ public final class DeploymentManagedHelper {
      * @param beforeSend caller-owned check / 调用方持有的核对 */
     public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerId server,
                                    TaskContext task, String revision, DeploymentSendGuard beforeSend) {
+        this(session, interaction, server, task, revision, beforeSend, null);
+    }
+
+    /** Binds an exact request reviewer without changing existing default approval semantics. / 绑定精确请求审核器，不改变既有默认审核语义。
+     * @param session original authenticated session / 原认证会话
+     * @param interaction original host review capability / 原宿主审核能力
+     * @param server original server / 原服务器
+     * @param task original task / 原任务
+     * @param revision exact original revision / 精确原修订
+     * @param beforeSend original pre-dispatch check / 原发送前核对
+     * @param commandReview optional complete actual request reviewer / 可选完整实际请求审核器 */
+    public DeploymentManagedHelper(RemoteSession session, InteractionService interaction, ServerId server,
+                                   TaskContext task, String revision, DeploymentSendGuard beforeSend, CommandReview commandReview) {
         this.session = Objects.requireNonNull(session);
         this.interaction = Objects.requireNonNull(interaction);
         this.server = Objects.requireNonNull(server);
         this.task = Objects.requireNonNull(task);
         this.revision = Objects.requireNonNull(revision);
         this.beforeSend = Objects.requireNonNull(beforeSend);
+        this.commandReview = commandReview;
         if (revision.isBlank() || revision.length() > 512 || revision.indexOf('\0') >= 0)
             throw new IllegalArgumentException("Invalid reviewed revision");
     }
@@ -103,7 +134,7 @@ public final class DeploymentManagedHelper {
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofHours(2),
             131072)) {
             java.util.Arrays.fill(body, (byte) 0);
-            var grant = interaction.approve(intent("deployment.helper.install.v1", request), task);
+            var grant = approve("deployment.helper.install.v1", request);
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return withoutValue(grant);
             final OperationResult<CommandResult> response;
@@ -144,7 +175,7 @@ public final class DeploymentManagedHelper {
         Objects.requireNonNull(beforeExecute);
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofHours(2),
             131072)) {
-            var grant = interaction.approve(intent("deployment.helper.install.tracked.v1", request), task);
+            var grant = approve("deployment.helper.install.tracked.v1", request);
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             if (task.cancelToken().requested())
@@ -165,7 +196,7 @@ public final class DeploymentManagedHelper {
         try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", script, Duration.ofSeconds(30),
             2048)) {
             java.util.Arrays.fill(script, (byte) 0);
-            var grant = interaction.approve(intent("deployment.helper.install.status.v1", request), task);
+            var grant = approve("deployment.helper.install.status.v1", request);
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             beforeSend.verify();
@@ -180,7 +211,7 @@ public final class DeploymentManagedHelper {
      * @throws ApiException if review or original remote access fails / 审核或原远端访问失败时 */
     public OperationResult<Identity> probe() throws ApiException {
         try (var request = new CommandRequest(probeScript(), new byte[0], Duration.ofSeconds(30), 4096)) {
-            var grant = interaction.approve(intent("deployment.helper.probe.v1", request), task);
+            var grant = approve("deployment.helper.probe.v1", request);
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return withoutValue(grant);
             beforeSend.verify();
@@ -195,6 +226,17 @@ public final class DeploymentManagedHelper {
             return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
                 Optional.of(problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_HELPER_IDENTITY")));
         }
+    }
+
+    /** Uses the exact original default or required mode callback before any dispatch. / 任何发送前使用精确原默认或所需模式回调。
+     * @param operation original helper action / 原 helper 动作
+     * @param request complete actual command / 完整实际命令
+     * @return actual single-use host grant / 实际单次宿主授权
+     * @throws ApiException if original review fails / 原审阅失败时 */
+    private OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> approve(
+        String operation, CommandRequest request) throws ApiException {
+        var intent = intent(operation, request);
+        return commandReview == null ? DeploymentCommandReviews.approve(interaction, intent, request, task) : commandReview.approve(intent, request, task);
     }
 
     /** Produces a stable, exact platform review for one fixed helper operation. / 为固定 helper 操作生成稳定且精确的平台审核。

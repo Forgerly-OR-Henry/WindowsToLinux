@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationSnapshot;
+import gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord.DeploymentReleaseState;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseStore;
 
@@ -34,11 +35,13 @@ public final class DeploymentApplicationList {
      * @param deployedAt actual formal active release creation time / 正式活动发布的实际创建时间
      * @param adoptedAt actual original registration time / 原登记的实际接管时间
      * @param managed original complete publication review / 原完整发布审阅
-     * @param external original adopted runtime review / 原接管运行审阅 */
+     * @param external original adopted runtime review / 原接管运行审阅
+     * @param usage validated active managed usage or absence / 已校验活动受管用法或无值 */
     public record Entry(String key, ServerId server, String name, String category, Optional<String> accessUrl,
                         Optional<Instant> deployedAt, Optional<Instant> adoptedAt,
                         Optional<DeploymentApplicationSnapshot> managed,
-                        Optional<DeploymentExternalApplications.Registered> external) {
+                        Optional<DeploymentExternalApplications.Registered> external,
+                        Optional<DeploymentApplicationUsage> usage) {
         /** Requires exactly one original payload and its corresponding real date. / 要求恰好一份原载荷及其对应真实时间。
          * @param key stable selection identity / 稳定选择身份
          * @param server original endpoint / 原端点
@@ -48,7 +51,8 @@ public final class DeploymentApplicationList {
          * @param deployedAt formal release time / 正式发布时间
          * @param adoptedAt registration time / 登记时间
          * @param managed original complete managed review / 原完整受管审阅
-         * @param external original adopted review / 原接管审阅 */
+         * @param external original adopted review / 原接管审阅
+         * @param usage validated active managed usage or absence / 已校验活动受管用法或无值 */
         public Entry {
             Objects.requireNonNull(key);
             Objects.requireNonNull(server);
@@ -58,8 +62,10 @@ public final class DeploymentApplicationList {
             Objects.requireNonNull(adoptedAt);
             Objects.requireNonNull(managed);
             Objects.requireNonNull(external);
+            Objects.requireNonNull(usage);
             if (!Set.of("APP", "WEBSITE").contains(category) || managed.isPresent() == external.isPresent()
-                || deployedAt.isPresent() != managed.isPresent() || adoptedAt.isPresent() != external.isPresent())
+                || deployedAt.isPresent() != managed.isPresent() || adoptedAt.isPresent() != external.isPresent()
+                || usage.isPresent() != managed.isPresent())
                 throw new IllegalArgumentException("Incomplete original inventory identity");
             if (managed.isPresent()
                 && (!key.equals("managed:" + managed.orElseThrow().application().id())
@@ -108,9 +114,10 @@ public final class DeploymentApplicationList {
      * @throws ApiException if original metadata no longer matches / 原元数据不再匹配时 */
     public List<Entry> list(TaskContext task) throws ApiException {
         var result = new ArrayList<Entry>();
+        var hosts = DeploymentApplicationHosts.read(context, task);
         try {
             for (var snapshot : managed(task))
-                result.add(managedEntry(snapshot, task));
+                result.add(managedEntry(snapshot, hosts, task));
             for (var saved : new DeploymentExternalApplications(context).list(task))
                 result.add(externalEntry(saved, task));
         } catch (SQLException invalid) {
@@ -124,11 +131,12 @@ public final class DeploymentApplicationList {
 
     /** Keeps the original release time and distinguishes a cleared display URL from an absent override. / 保留原发布时间，区分已清空展示URL与无覆盖。
      * @param snapshot complete selected publication / 完整所选发布
+     * @param hosts complete current nonsecret server discovery / 完整当前非秘密服务器发现
      * @param task original local task / 原本地任务
      * @return original managed entry / 原受管条目
      * @throws ApiException if complete evidence differs / 完整依据不符时
      * @throws SQLException if metadata is unavailable / 元数据不可用时 */
-    private Entry managedEntry(DeploymentApplicationSnapshot snapshot, TaskContext task)
+    private Entry managedEntry(DeploymentApplicationSnapshot snapshot, Map<ServerId, String> hosts, TaskContext task)
         throws ApiException, SQLException {
         var data = new DeploymentApplicationReader(context.db()).find(snapshot.application(), task);
         if (!snapshot.equals(data.snapshot()))
@@ -165,7 +173,8 @@ public final class DeploymentApplicationList {
         return new Entry("managed:" + snapshot.application().id(), snapshot.application().server(),
             snapshot.displayName(), health.runtime().workload().category().name(), url,
             Optional.of(releases.getFirst().createdAt()), Optional.empty(), Optional.of(snapshot),
-            Optional.empty());
+            Optional.empty(), Optional.of(DeploymentApplicationReader.projectUsage(data,
+            DeploymentApplicationHosts.require(hosts, snapshot.application().server()))));
     }
 
     /** Reads adoption time only for the exact saved runtime identity and fingerprint. / 仅为精确保存的运行身份及指纹读取接管时间。
@@ -192,7 +201,7 @@ public final class DeploymentApplicationList {
             }
         }
         return new Entry("external:" + saved.id(), saved.server(), saved.displayName(), saved.category(),
-            saved.accessUrl(), Optional.empty(), Optional.of(adopted), Optional.empty(), Optional.of(saved));
+            saved.accessUrl(), Optional.empty(), Optional.of(adopted), Optional.empty(), Optional.of(saved), Optional.empty());
     }
 
     /** Refuses an incomplete local view without claiming a successful application. / 拒绝不完整本地视图，不宣称应用成功。

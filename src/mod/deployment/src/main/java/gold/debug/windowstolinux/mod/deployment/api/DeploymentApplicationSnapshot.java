@@ -13,13 +13,14 @@ import java.util.Objects;
  * @param observedAt last observation time / 最后观测时间
  * @param runtime opaque versioned runtime / 不透明版本化运行数据
  * @param bindings reviewed data bindings / 已审阅数据绑定
- * @param healthPolicySha256 exact health policy digest / 精确健康策略摘要 */
+ * @param healthPolicySha256 exact health policy digest / 精确健康策略摘要
+ * @param autostart last actually observed automatic-startup state / 最后实际观察的自动启动状态 */
 public record DeploymentApplicationSnapshot(DeploymentApplicationId application, String displayName,
                                             String revisionSha256, String ownershipSha256, ApplicationRunState state,
                                             Instant observedAt,
                                             VersionedRuntime runtime, List<DeploymentBinding> bindings,
-                                            String healthPolicySha256) {
-    /** Copies public facts without interpreting runtime bytes. / 复制公开事实，不解释运行字节。
+                                            String healthPolicySha256, ApplicationAutostartState autostart) {
+    /** Preserves old callers without inferring missing automatic-startup facts. / 保留旧调用方，不推断缺失的自动启动事实。
      * @param application exact application identity / 精确应用身份
      * @param displayName current display text / 当前展示名称
      * @param revisionSha256 complete current release digest / 当前完整发布摘要
@@ -29,6 +30,25 @@ public record DeploymentApplicationSnapshot(DeploymentApplicationId application,
      * @param runtime opaque versioned runtime / 不透明版本化运行数据
      * @param bindings reviewed data bindings / 已审阅数据绑定
      * @param healthPolicySha256 exact health policy digest / 精确健康策略摘要 */
+    public DeploymentApplicationSnapshot(DeploymentApplicationId application, String displayName,
+                                         String revisionSha256, String ownershipSha256, ApplicationRunState state,
+                                         Instant observedAt, VersionedRuntime runtime, List<DeploymentBinding> bindings,
+                                         String healthPolicySha256) {
+        this(application, displayName, revisionSha256, ownershipSha256, state, observedAt, runtime, bindings,
+            healthPolicySha256, ApplicationAutostartState.UNKNOWN);
+    }
+
+    /** Copies public facts without interpreting runtime bytes. / 复制公开事实，不解释运行字节。
+     * @param application exact application identity / 精确应用身份
+     * @param displayName current display text / 当前展示名称
+     * @param revisionSha256 complete current release digest / 当前完整发布摘要
+     * @param ownershipSha256 reviewed ownership digest / 已审阅归属摘要
+     * @param state last observed run state / 最后观测运行状态
+     * @param observedAt last observation time / 最后观测时间
+     * @param runtime opaque versioned runtime / 不透明版本化运行数据
+     * @param bindings reviewed data bindings / 已审阅数据绑定
+     * @param healthPolicySha256 exact health policy digest / 精确健康策略摘要
+     * @param autostart last actually observed automatic-startup state / 最后实际观察的自动启动状态 */
     public DeploymentApplicationSnapshot {
         Objects.requireNonNull(application);
         Objects.requireNonNull(displayName);
@@ -39,5 +59,6 @@ public record DeploymentApplicationSnapshot(DeploymentApplicationId application,
         Objects.requireNonNull(runtime);
         bindings = List.copyOf(bindings);
         Objects.requireNonNull(healthPolicySha256);
+        Objects.requireNonNull(autostart);
     }
 }

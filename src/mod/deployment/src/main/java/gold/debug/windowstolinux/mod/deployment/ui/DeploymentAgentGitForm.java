@@ -37,6 +37,7 @@ final class DeploymentAgentGitForm {
     /** Creates the bounded source controls. / 创建有界来源控件。 */
     DeploymentAgentGitForm() {
         kind.addActionListener(ignored -> reference.setEnabled(!"DEFAULT".equals(kind.getSelectedItem())));
+        url.setEditable(false);
     }
 
     /** Adds the actual localized controls in source row order. / 按来源行顺序添加实际本地化控件。
@@ -51,11 +52,29 @@ final class DeploymentAgentGitForm {
     }
 
     /** Applies actual source and locale availability. / 应用实际来源及语言可用性。
+     * @param enabled whether original edits are admitted / 是否接纳原编辑
      * @param git whether Git is selected / 是否选择Git
      * @param text actual localized checkbox label / 实际本地化复选标签 */
-    void configure(boolean git, String text) {
-        reference.setEnabled(git && !"DEFAULT".equals(kind.getSelectedItem()));
+    void configure(boolean enabled, boolean git, String text) {
+        name.setEnabled(enabled && git);
+        url.setEnabled(enabled && git);
+        kind.setEnabled(enabled && git);
+        executable.setEnabled(enabled && git);
+        local.setEnabled(enabled && git);
+        reference.setEnabled(enabled && git && !"DEFAULT".equals(kind.getSelectedItem()));
         local.setText(text);
+    }
+
+    /** Loads only explicitly accepted remote metadata without fetching it. / 仅加载明确接受的远端元数据，不获取来源。
+     * @param value accepted remote or explicit clear / 已接受远端或明确清除 */
+    void loadRemote(String value) {
+        url.setText(value);
+    }
+
+    /** Reads the original remote display for exact captured metadata comparison. / 读取原远端显示用于精确抓取元数据比较。
+     * @return displayed metadata / 显示元数据 */
+    String remote() {
+        return url.getText().trim();
     }
 
     /** Captures validated fixed source values on the owning EDT. / 在所属EDT抓取已校验固定来源值。

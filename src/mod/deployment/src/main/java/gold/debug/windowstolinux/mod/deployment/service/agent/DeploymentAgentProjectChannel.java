@@ -12,13 +12,12 @@ import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
-import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
-import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.ai.*;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentCommandReviews;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRemoteWorkspace;
 
@@ -287,9 +286,9 @@ public final class DeploymentAgentProjectChannel {
             requireConfiguration();
         try (var request = new CommandRequest(script, stdin, timeout, limit)) {
             var intent = RemoteActions.command(server, configurationRevision, request).withSemantics(
-                new ActionSemantics("deployment.agent.helper.v1", Set.of(new ActionTarget(server.id(),
-                    "deployment-agent", sha256(script.getBytes(StandardCharsets.UTF_8))))));
-            var review = interaction.approve(intent, task);
+                DeploymentAgentQuestionScope.meaning(server.id(), script, stdin,
+                    sha256((script + "\n" + sha256(stdin)).getBytes(StandardCharsets.UTF_8))));
+            var review = DeploymentCommandReviews.approve(interaction, intent, request, task);
             if (review.outcome() != TaskResult.SUCCEEDED)
                 throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
                     review.outcome(), review.problem());

@@ -209,7 +209,7 @@ class FileApprovalIntegrationTest {
                 completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                     var path = FilePath.local(input);
                     var intent = FileActions.delete(file.getFile(path, task), false, DeleteEffect.RECYCLE);
-                    var grant = ((PlatformInteractionService) remote.interaction()).confirmDeletion(intent, "", task).value().orElseThrow();
+                    var grant = ((PlatformInteractionService) remote.interaction()).confirmDeletion(intent, file.getFile(path, task), "", task).value().orElseThrow();
                     assertEquals("FILE_DELETE_INDEPENDENT_REVIEW", assertThrows(ApiException.class,
                         () -> file.deleteFile(path, task, grant)).problem().eventCode());
                     assertEquals("keep", Files.readString(input));

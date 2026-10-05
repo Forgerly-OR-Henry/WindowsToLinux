@@ -100,6 +100,7 @@ final class DeploymentMultiPartPublishRecovery {
         for (var index : root.indexes()) {
             var child = DeploymentPublishCleanupActionLog.reopen(context, task, index.key());
             if (child.isEmpty()
+                || child.orElseThrow().facts().path("environmentRecovery").asText().equals("MAY_HAVE_RUN")
                 || !DeploymentPublishAttemptRecovery.child(context, task, record, child.orElseThrow())
                 || !DeploymentAssistedReviewRecovery.child(context, task, record, child.orElseThrow()))
                 return false;
@@ -578,13 +579,16 @@ final class DeploymentMultiPartPublishRecovery {
                                                              OperationResult<DeploymentPublishProposal> known) throws ApiException {
         if (known.outcome() == TaskResult.UNKNOWN || !context.linux().pendingTransfers(task).isEmpty())
             return unknown("DEPLOYMENT_GRAPH_LOCAL_CLEANUP_NOT_PROVEN");
-        context.file().closeTaskResources(task);
         if (!root.released()) {
             for (var component : components.values())
                 if (!component.journal().released() && !component.journal().sessionClosed())
                     return known;
             if (!root.mark("SESSION_CLOSED"))
                 return known;
+        }
+        DeploymentPublishPolicyContext.releaseKnown(context, task);
+        context.file().closeTaskResources(task);
+        if (!root.released()) {
             for (var component : components.values())
                 if (!component.journal().released() && !component.journal().release())
                     return known;

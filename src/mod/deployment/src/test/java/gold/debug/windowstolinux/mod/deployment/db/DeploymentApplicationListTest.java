@@ -131,10 +131,10 @@ class DeploymentApplicationListTest extends DeploymentApplicationsFixture {
             assertTrue(report.problems().isEmpty(), report.problems().toString());
             assertEquals(Set.of(OWNER), report.running());
             prepareInventory(runtime, ssh.server().getPort());
-            var key = new ModPageRegistry.PageKey(OWNER, "applications");
+            var key = new ModPageRegistry.PageKey(OWNER, "workspace");
             assertTrue(pages.contributions().stream().anyMatch(value -> value.key().equals(key)));
             assertNull(mounted.get());
-            pages.openView(key);
+            pages.navigateView(key, "applications");
             var component = mounted.get();
             assertNotNull(component);
             var actualControls = new AtomicReference<List<Component>>();
@@ -193,6 +193,22 @@ class DeploymentApplicationListTest extends DeploymentApplicationsFixture {
                 assertEquals(new ServerId("server"), servers.getSelectedItem());
             });
             assertSame(component, mounted.get());
+            assertEquals(reads, peer.reads.get());
+            assertEquals(effects, peer.effects.get());
+            pages.closeView(key);
+            assertNull(mounted.get());
+            pages.navigateView(key, "applications");
+            var reopened = mounted.get();
+            assertNotNull(reopened);
+            assertNotSame(component, reopened);
+            var reopenedInventory = new AtomicReference<JList<?>>();
+            SwingUtilities.invokeAndWait(() -> reopenedInventory.set((JList<?>) named(reopened, "applications.inventory")));
+            waitEdt(() -> reopenedInventory.get().isEnabled() && reopenedInventory.get().getModel().getSize() == 4);
+            SwingUtilities.invokeAndWait(() -> {
+                reopenedInventory.get().setSelectedIndex(2);
+                assertEquals("managed:a", entryKey(reopenedInventory.get().getSelectedValue()));
+                assertTrue(((JTextArea) named(reopened, "applications.details")).getText().contains(BUSINESS_URL));
+            });
             assertEquals(reads, peer.reads.get());
             assertEquals(effects, peer.effects.get());
             pages.closeView(key);

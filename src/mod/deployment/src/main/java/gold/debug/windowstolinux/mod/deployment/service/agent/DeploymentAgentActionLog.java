@@ -26,19 +26,21 @@ public final class DeploymentAgentActionLog {
      * @param server server profile / 服务器资料
      * @param targetDigest authenticated target digest / 已认证目标摘要
      * @param configurationDigest original model configuration digest / 原模型配置摘要
-     * @param approvalMode selected review policy / 所选审核策略 */
-    public record Identity(String server, String targetDigest, String configurationDigest, String approvalMode) {
+     * @param approvalMode selected review policy / 所选审核策略
+     * @param authorizationMode original question repetition / 原问题重复规则 */
+    public record Identity(String server, String targetDigest, String configurationDigest, String approvalMode,
+                           String authorizationMode) {
         /** Checks immutable persisted fields. / 校验不可变持久字段。
          * @param server server identity / 服务器身份
          * @param targetDigest target digest / 目标摘要
          * @param configurationDigest model configuration digest / 模型配置摘要
-         * @param approvalMode review policy / 审核策略 */
+         * @param approvalMode review policy / 审核策略
+         * @param authorizationMode authorization repetition / 授权重复规则 */
         public Identity {
             Objects.requireNonNull(server);
             if (!targetDigest.matches("[0-9a-f]{64}") || !configurationDigest.matches("[0-9a-f]{64}"))
                 throw new IllegalArgumentException("Invalid agent identity digest");
-            if (!Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode))
-                throw new IllegalArgumentException("Invalid agent approval mode");
+            gold.debug.windowstolinux.mod.deployment.ai.DeploymentAuthorizationPolicy.requireAllowed(approvalMode, authorizationMode);
         }
     }
 
@@ -82,6 +84,12 @@ public final class DeploymentAgentActionLog {
                 }
                 requireAvailable(connection, task, identity, endpoint);
                 insert(connection, task, identity);
+                try (var policy = connection.prepareStatement("INSERT INTO deployment_agent_event(task_id,action_id,event_type,event_detail,created_at) VALUES(?,'authorization.v1','AUTHORIZATION_POLICY',?,?)")) {
+                    policy.setString(1, task.id().toString());
+                    policy.setString(2, identity.authorizationMode());
+                    policy.setLong(3, Instant.now().toEpochMilli());
+                    policy.executeUpdate();
+                }
                 if (endpoint.isPresent()) {
                     try (var target = connection.prepareStatement("INSERT INTO deployment_agent_event(task_id,action_id,event_type,event_detail,created_at) VALUES(?,'','REMOTE_TARGET',?,?)")) {
                         target.setString(1, task.id().toString());
@@ -353,7 +361,7 @@ public final class DeploymentAgentActionLog {
                     || !"deployment-approval-v2".equals(rows.getString(7)) || rows.getInt(8) != 2)
                     throw new SQLException("Agent persisted semantics changed");
                 var snapshot = new Snapshot(
-                    new Identity(rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4)),
+                    new Identity(rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4), authorization(events(connection, selected))),
                     rows.getString(5));
                 if (rows.next())
                     throw new SQLException("Duplicate agent task");
@@ -375,7 +383,22 @@ public final class DeploymentAgentActionLog {
                 .contains(event.type()))
                 pending.computeIfPresent(List.of(event.type().substring(0, event.type().length() - "_RESULT".length()), event.action()),
                     (key, count) -> count == 1 ? null : count - 1);
+            if (Set.of("PREPARE_NOT_SENT", "COMMAND_NOT_SENT", "PATCH_NOT_SENT").contains(event.type()) && event.detail().equals("LOWER_RISK_REQUIRED"))
+                pending.computeIfPresent(List.of(event.type().substring(0, event.type().length() - "_NOT_SENT".length()), event.action()),
+                    (key, count) -> count == 1 ? null : count - 1);
         }
         return pending.isEmpty();
+    }
+
+    /** Reads exactly one original policy fact, never borrowing current preferences. / 精确读取一个原策略事实，绝不借用当前偏好。
+     * @param events complete original event stream / 完整原事件流
+     * @return original captured repetition strategy / 原已抓取重复策略
+     * @throws SQLException if the original fact is absent, duplicated or malformed / 原事实缺失、重复或损坏时 */
+    private static String authorization(List<Event> events) throws SQLException {
+        var values = events.stream().filter(event -> event.type().equals("AUTHORIZATION_POLICY")).toList();
+        if (values.size() != 1 || !values.getFirst().action().equals("authorization.v1")
+            || !Set.of("ONCE", "GENERAL", "FULL").contains(values.getFirst().detail()))
+            throw new SQLException("Original agent authorization policy is unconfirmed");
+        return values.getFirst().detail();
     }
 }

@@ -45,11 +45,23 @@ public final class DeploymentProtocolBootstrap {
      * @param interaction host review capability / 宿主审核能力 */
     public DeploymentProtocolBootstrap(TaskService tasks, TaskContext task, ServerId server, RemoteSession session,
                                        InteractionService interaction) {
+        this(tasks, task, server, session, interaction, null);
+    }
+
+    /** Keeps original installer journaling while reviewing complete actual commands under the original mode. / 保留原安装日志，同时在原模式审核完整实际命令。
+     * @param tasks original checkpoint service / 原检查点服务
+     * @param task original task / 原任务
+     * @param server original server / 原服务器
+     * @param session original borrowed session / 原借用会话
+     * @param interaction original host review / 原宿主审核
+     * @param review optional original-mode actual command review / 可选原模式实际命令审核 */
+    public DeploymentProtocolBootstrap(TaskService tasks, TaskContext task, ServerId server, RemoteSession session,
+                                       InteractionService interaction, DeploymentManagedHelper.CommandReview review) {
         this.tasks = Objects.requireNonNull(tasks);
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server);
         this.helper = new DeploymentManagedHelper(Objects.requireNonNull(session), Objects.requireNonNull(interaction),
-            server, task, "deployment-helper-bootstrap-v1");
+            server, task, "deployment-helper-bootstrap-v1", gold.debug.windowstolinux.mod.deployment.linux.DeploymentSendGuard.NONE, review);
     }
 
     /** Verifies an already installed helper or performs one original tracked installation. / 核实既有 helper 或执行一次原任务留痕安装。

@@ -116,7 +116,7 @@ public final class PlatformFileInteraction implements FileInteraction {
      * @throws ApiException if authorization fails / 授权失败时 */
     @Override
     public OperationResult<ApprovalGrant> approve(ActionIntent intent, FileInfo object, boolean delete, String explanation, TaskContext task) throws ApiException {
-        return delete ? interaction.confirmDeletion(intent, explanation, task) : interaction.approve(intent, task);
+        return delete ? interaction.confirmDeletion(intent, object, explanation, task) : interaction.approve(intent, task);
     }
 
     /** Suspends only after all file scopes and transactions returned. / 仅在文件作用域及事务返回后挂起。

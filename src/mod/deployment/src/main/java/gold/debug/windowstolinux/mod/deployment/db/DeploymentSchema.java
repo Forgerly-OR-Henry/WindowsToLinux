@@ -17,7 +17,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
     public static final String OWNER = "gold.debug.windowstolinux.mod.deployment";
 
     /** Current independently versioned business data format. / 当前独立版本化业务数据格式。 */
-    public static final String VERSION = "3";
+    public static final String VERSION = "1";
 
     /** Creates the platform-discovered schema lifecycle independently of business startup. / 独立于业务启动创建平台发现的数据生命周期。 */
     public DeploymentSchema() {
@@ -38,7 +38,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
     @Override
     public void initialize(SchemaAccess target) throws SQLException, IOException {
         requireIdentity(target.identity());
-        String script = resource("schema-v3.sql");
+        String script = resource("schema-v1.sql");
         try (var connection = target.openConnection()) {
             if (!tables(connection).isEmpty())
                 throw new SQLException("Deployment initialization requires an empty target");
@@ -58,7 +58,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
     public CheckResult validate(SchemaAccess target) throws Exception {
         requireIdentity(target.identity());
         var violations = new ArrayList<String>();
-        String inventory = resource("validation-v3.sql");
+        String inventory = resource("validation-v1.sql");
         try (var connection = target.openConnection()) {
             var expected = new TreeSet<String>();
             for (var query : inventory.split(";")) {
@@ -79,7 +79,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
                 }
             }
             if (!tables(connection).equals(expected))
-                violations.add("Deployment table inventory differs from schema version 3");
+                violations.add("Deployment table inventory differs from schema version 1");
             if (violations.isEmpty()) {
                 validateBindings(connection, violations);
                 try {
@@ -129,7 +129,7 @@ public final class DeploymentSchema implements ModSchemaLifecycle {
             }
         }
         var digest = MessageDigest.getInstance("SHA-256")
-            .digest((resource("schema-v3.sql") + inventory).getBytes(StandardCharsets.UTF_8));
+            .digest((resource("schema-v1.sql") + inventory).getBytes(StandardCharsets.UTF_8));
         return new CheckResult(violations.isEmpty(), violations,
             violations.isEmpty() ? Optional.of(HexFormat.of().formatHex(digest)) : Optional.empty());
     }

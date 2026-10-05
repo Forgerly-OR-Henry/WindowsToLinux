@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService;
 
 /** Provides agent-only page queries and original task admission. / 提供自主专用页面查询与原任务接纳。 */
 public final class DeploymentAgentPageService implements TaskRecovery {
@@ -35,6 +36,35 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     public DeploymentAgentPageService(ModContext context, DeploymentAgentWorkflow workflow) {
         this.context = Objects.requireNonNull(context);
         this.workflow = Objects.requireNonNull(workflow);
+    }
+
+    /** Returns the original owned diagnostic reader without storage on the EDT. / 返回原所属诊断读取器，不在EDT访问存储。
+     * @return original task feedback reader / 原任务反馈读取器 */
+    public gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics feedback() {
+        return new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context);
+    }
+
+    /** Reads delivery only for the exact original successful host task. / 仅为精确原成功宿主任务读取交付。
+     * @param originalTaskUUID actual completed original UUID / 实际已完成原UUID
+     * @return actual bounded owned delivery query / 实际有界所属交付查询
+     * @throws ApiException if original query admission fails / 原查询准入失败时 */
+    public TaskHandle<Optional<gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage>> delivery(UUID originalTaskUUID)
+        throws ApiException {
+        return new gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationsService(context)
+            .usageForCompletedTask(originalTaskUUID);
+    }
+
+    /** Opens one fixed actual host destination. / 打开一个固定实际宿主目的页。
+     * @param target explicit finite destination / 明确有限目的页
+     * @throws ApiException if original UI access is revoked / 原UI访问被撤销时 */
+    public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) throws ApiException {
+        context.ui().openPlatform(target);
+    }
+
+    /** Returns the common original picker without standard-engine or project-write access. / 返回共用原选择器，不取得标准引擎或项目写入访问。
+     * @return same-owner short metadata service / 同所属短元数据服务 */
+    public DeploymentSourceSelectionService sources() {
+        return new DeploymentSourceSelectionService(context);
     }
 
     /** Loads the owned page selection through the actual worker query. / 经实际工作线程查询加载所属页面选择。
@@ -158,7 +188,7 @@ public final class DeploymentAgentPageService implements TaskRecovery {
             if (!actual.entry().equals(selected)
                 || !Set.of("FAILED", "CANCELLED", "SUCCEEDED", "INTERRUPTED").contains(actual.entry().state()))
                 throw new IllegalArgumentException("Original terminal inspection identity changed");
-            return history.inspect(task, actual);
+            return history.inspect(task, actual, false);
         });
     }
 
@@ -207,11 +237,13 @@ public final class DeploymentAgentPageService implements TaskRecovery {
     /** Starts one original local agent task. / 启动一项原本地自主任务。
      * @param server reviewed target / 经审阅目标
      * @param request bounded agent policy / 有界自主策略
+     * @param location completed short picker metadata / 已完成短选择器元数据
      * @return original observable task / 原可观察任务
      * @throws ApiException on failed admission / 准入失败时 */
     public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server,
-                                                                         DeploymentAgentWorkflow.Request request) throws ApiException {
-        return workflow.submitLocal(server, request);
+                                                                         DeploymentAgentWorkflow.Request request,
+                                                                         DeploymentSourceSelectionService.LocalLocation location) throws ApiException {
+        return workflow.submitLocal(server, request, location);
     }
 
     /** Starts one original pinned Git agent task. / 启动一项原固定 Git 自主任务。

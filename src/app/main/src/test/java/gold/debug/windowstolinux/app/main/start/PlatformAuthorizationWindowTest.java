@@ -24,7 +24,6 @@ import gold.debug.windowstolinux.app.ui.window.PlatformFrame;
 import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
-import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -33,68 +32,42 @@ class PlatformAuthorizationWindowTest {
     Path root;
 
     @Test
-    void realSelectorPersistsIndependentPreferenceAndRollsBackFailedWrite() throws Exception {
+    void actualPlatformSettingsHaveNoAuthorizationPageOrDeploymentPolicyPreference() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
-            runtime.persistence().preferences().save("deploy_approval", "MANUAL_REVIEW");
+            var models = runtime.models();
             var frame = onEdt(() -> {
-                DesktopThemeService.install(ThemeMode.LIGHT);
-                var window = new PlatformFrame(runtime.security(), MessageCatalog.forLanguageTag("zh-CN"),
-                    ThemePalette.light(), new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false),
-                    FailureReportStore.disabled());
-                window.installAuthorization(runtime.authorization());
-                ((JTabbedPane) named(window, "platform.pages"))
-                    .setSelectedComponent(named(window, "platform.authorization"));
+                var window = ApplicationLauncher.createWindow(runtime, MessageCatalog.forLanguageTag("zh-CN"),
+                    new DesktopDisplayConfig("zh-CN", ThemeMode.LIGHT), ThemeMode.LIGHT,
+                    FailureReportStore.disabled(), models);
                 window.setVisible(true);
                 return window;
             });
             try {
-                await(() -> named(frame, "authorization.mode").isEnabled());
+                runtime.started();
                 onEdt(() -> {
-                    @SuppressWarnings("unchecked")
-                    var selector = (JComboBox<AuthorizationMode>) named(frame, "authorization.mode");
-                    assertEquals(AuthorizationMode.GENERAL, selector.getSelectedItem());
-                    for (var mode : AuthorizationMode.values()) {
-                        var label = (JLabel) selector.getRenderer().getListCellRendererComponent(new JList<>(), mode, 0,
-                            false, false);
-                        assertNotNull(label.getIcon());
-                        assertTrue(label.getText().endsWith("授权"));
-                    }
-                    selector.setSelectedItem(AuthorizationMode.FULL);
+                    ((JButton) named(frame, "navigation.settings")).doClick(0);
+                    assertNoPlatformAuthorization(frame);
+                    ((JButton) named(frame, "navigation.security.settings")).doClick(0);
+                    assertTrue(named(frame, "security.settings.password").isShowing(), "Actual platform settings remain reachable");
                     return null;
                 });
-                await(() -> ((JLabel) named(frame, "authorization.status")).getText().startsWith("已保存"));
-                assertEquals(AuthorizationMode.FULL, runtime.authorization().mode());
-                assertEquals("MANUAL_REVIEW",
-                    runtime.persistence().preferences().find("deploy_approval").orElseThrow());
-                sql(runtime.persistence().database(),
-                    "ALTER TABLE desktop_preference ADD CONSTRAINT fixture_auth_save CHECK(preference_value <> 'ONCE')");
-                try {
-                    onEdt(() -> {
-                        ((JComboBox<?>) named(frame, "authorization.mode")).setSelectedItem(AuthorizationMode.ONCE);
-                        return null;
-                    });
-                    await(() -> ((JLabel) named(frame, "authorization.status")).getText().startsWith("操作未获确认"));
-                    onEdt(() -> {
-                        assertEquals(AuthorizationMode.FULL,
-                            ((JComboBox<?>) named(frame, "authorization.mode")).getSelectedItem());
-                        capture(frame, "platform-authorization-settings.png");
-                        return null;
-                    });
-                    assertEquals(AuthorizationMode.FULL, runtime.authorization().mode());
-                } finally {
-                    sql(runtime.persistence().database(),
-                        "ALTER TABLE desktop_preference DROP CONSTRAINT fixture_auth_save");
-                }
                 onEdt(() -> {
                     ((JButton) named(frame, "security.lock")).doClick(0);
                     return null;
                 });
-                await(() -> !named(frame, "authorization.mode").isEnabled());
-                runtime.security().unlock(PASSWORD.toCharArray());
-                await(() -> named(frame, "authorization.mode").isEnabled());
+                await(() -> !runtime.security().securityState().unlocked());
+                unlockPassword(frame, PASSWORD);
+                await(() -> runtime.security().securityState().unlocked()
+                    && !runtime.security().securityState().changing());
                 await(() -> !DesktopTaskRunner.hasActiveTasks());
+                onEdt(() -> {
+                    assertNoPlatformAuthorization(frame);
+                    return null;
+                });
+                for (var key : List.of("deploy_mode", "deploy_approval", "deploy_authorization", "platform_authorization_mode"))
+                    assertTrue(runtime.persistence().preferences().find(key).isEmpty(), "APP settings must not own " + key);
             } finally {
                 onEdt(() -> {
                     frame.dispose();
@@ -104,13 +77,28 @@ class PlatformAuthorizationWindowTest {
         }
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void assertNoPlatformAuthorization(PlatformFrame frame) {
+        assertTrue(descendants(frame).noneMatch(component -> "platform.authorization".equals(component.getName())
+            || "navigation.authorization.title".equals(component.getName())
+            || component.getName() != null && component.getName().startsWith("authorization.")));
+        var pages = (JTabbedPane) named(frame, "platform.pages");
+        for (int index = 0; index < pages.getTabCount(); index++)
+            assertNotEquals("平台授权", pages.getTitleAt(index));
+        var categories = (JComboBox<?>) named(frame, "settings.category");
+        for (int index = 0; index < categories.getItemCount(); index++) {
+            var label = (JLabel) ((ListCellRenderer) categories.getRenderer()).getListCellRendererComponent(new JList<>(),
+                categories.getItemAt(index), index, false, false);
+            assertNotEquals("平台授权", label.getText(), "No detached authorization category may remain");
+        }
+    }
+
     @Test
     void nativeStartCapturesSelectedTargetAndAcceptedWorkflowSurvivesViewDetach() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         try (var remote = new Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
             remote.configure(runtime);
-            runtime.authorization().saveMode(AuthorizationMode.FULL);
             var reviews = new Reviews();
             runtime.setInteractionPresenter(reviews);
             try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
@@ -122,7 +110,7 @@ class PlatformAuthorizationWindowTest {
                 var button = onEdt(() -> new WorkflowLaunchButton<Void>("一键部署", capabilities.launcher(), () -> {
                     assertTrue(SwingUtilities.isEventDispatchThread());
                     reads.incrementAndGet();
-                    return new Launch<>(request("server"), Set.of(selection.get()), task -> {
+                    return new Launch<>(request("server"), Set.of(selection.get()), AuthorizationMode.FULL, task -> {
                         assertTrue(continueWork.await(8, TimeUnit.SECONDS));
                         return repeat(capabilities, task);
                     });

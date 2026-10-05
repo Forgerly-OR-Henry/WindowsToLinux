@@ -28,13 +28,13 @@ public interface FileInteraction {
      */
     FileChoice.Conflict chooseFile(FileInfo source, FileInfo target, TaskContext task) throws ApiException;
 
-    /** Obtains exact approval; delete always requires ordinary user confirmation. / 取得精确审批，常规删除始终人工确认。
-     * @param intent exact proposed external effect / 精确拟执行外部副作用
+    /** Obtains exact approval; ordinary deletion lets the user select an available effect. / 取得精确审批，普通删除由用户选择可用效果。
+     * @param intent exact proposed external effect, or the default offered deletion effect / 精确拟执行外部副作用或默认可选删除效果
      * @param object exact observed deletion object / 精确观测删除对象
      * @param delete whether unconditional ordinary deletion confirmation applies / 是否适用无条件普通删除确认
      * @param explanation optional metadata-only file explanation / 可选仅元数据文件说明
      * @param task authentic original executing task / 真实原执行任务
-     * @return exact bounded result of the documented operation / 已描述操作的精确有界结果
+     * @return grant for the actual selected effect, or refusal / 用户实际选择效果的许可或拒绝
      * @throws ApiException if actual identity, admission, I/O or durable evidence cannot be verified / 实际身份、准入、I/O或持久依据无法核实时
      */
     OperationResult<ApprovalGrant> approve(ActionIntent intent, FileInfo object, boolean delete, String explanation, TaskContext task) throws ApiException;

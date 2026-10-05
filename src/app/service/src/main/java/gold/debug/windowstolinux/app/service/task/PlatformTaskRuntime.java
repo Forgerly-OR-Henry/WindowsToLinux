@@ -1681,11 +1681,13 @@ public final class PlatformTaskRuntime implements AutoCloseable {
          * @param snapshot persisted initial state / 持久化初始状态
          * @param work original callback, absent during recovery / 原始回调，恢复时为空
          * @param cancellable whether cooperative cancellation is supported / 是否支持协作取消
+         * @throws SQLException if original cancellation metadata cannot be verified / 无法核实原取消元数据时
          */
-        private Execution(TaskSnapshot snapshot, TaskWork<T> work, boolean cancellable) {
+        private Execution(TaskSnapshot snapshot, TaskWork<T> work, boolean cancellable) throws SQLException {
             this.snapshot = snapshot;
             this.work = work;
             this.cancellable = cancellable;
+            this.cancelled = ledger.queries().cancellationRequested(snapshot.id());
         }
 
         /** Returns the durable task identity. / 返回持久化任务身份。

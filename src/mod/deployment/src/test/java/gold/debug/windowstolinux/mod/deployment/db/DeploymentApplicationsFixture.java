@@ -193,7 +193,11 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
 
         volatile boolean managed;
 
+        volatile boolean canStart = true, canStop = true;
+
         volatile List<String> scanIssues = List.of();
+
+        volatile boolean failScan;
 
         String response(List<String> args) {
             if (args.equals(List.of("SCAN")))
@@ -214,7 +218,7 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
             String identity = Base64.getEncoder().encodeToString("example.service".getBytes(StandardCharsets.UTF_8));
             String name = Base64.getEncoder().encodeToString("External service".getBytes(StandardCharsets.UTF_8));
             return "APP\tSYSTEMD\t" + identity + "\t" + fingerprint + "\t" + name + "\t" + state
-                + (managed ? "\t0\t0\t1\n" : "\t1\t1\t0\n")
+                + (managed ? "\t0\t0\t1\n" : "\t" + (canStart ? 1 : 0) + "\t" + (canStop ? 1 : 0) + "\t0\n")
                 + (args.equals(List.of("SCAN"))
                 ? scanIssues.stream().map(issue -> "ISSUE\t" + issue + "\n")
                 .collect(java.util.stream.Collectors.joining())
@@ -272,6 +276,10 @@ abstract class DeploymentApplicationsFixture extends DeploymentGraphFixture {
                         assertNotNull(scanner);
                         assertArrayEquals(scanner.readAllBytes(), input.readAllBytes(),
                             "Actual archived Python must reach the SSH peer unchanged");
+                    }
+                    if (args.equals(List.of("SCAN")) && peer.failScan) {
+                        callback.onExit(1);
+                        return;
                     }
                     String response = peer.response(args);
                     if (args.size() == 4 && args.get(3).equals("START")

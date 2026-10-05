@@ -84,6 +84,7 @@ public final class Mod implements ModEntrypoint {
         var autonomous = new DeploymentAgentWorkflow(context);
         var autonomousPageTasks = new DeploymentAgentPageService(context, autonomous);
         var applicationTasks = new DeploymentApplicationsService(context);
+        var environmentTasks = new gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow(context);
         var deploymentApi = new DeploymentApiProvider(context);
         try {
             registrations.add(context.tasks().registerRecovery(DeploymentRefFlow.TASK_TYPE,
@@ -94,6 +95,16 @@ public final class Mod implements ModEntrypoint {
                 .add(context.tasks().registerRecovery(DeploymentStaticPageService.SERVER_LIST_TASK, pageTasks));
             registrations
                 .add(context.tasks().registerRecovery(DeploymentStaticPageService.SECRET_LIST_TASK, pageTasks));
+            registrations.add(context.tasks().registerRecovery(
+                gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService.PICKER_TASK,
+                pageTasks.sources().selection()));
+            for (var type : List.of(
+                gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticSourceService.PROJECT_LIST_TASK,
+                gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStaticSourceService.PROJECT_SAVE_TASK))
+                registrations.add(context.tasks().registerRecovery(type, pageTasks.sources()));
+            registrations.add(context.tasks().registerRecovery(
+                gold.debug.windowstolinux.mod.deployment.service.environment.DeploymentEnvironmentWorkflow.TASK_TYPE,
+                environmentTasks::reconcile));
             registrations.add(context.tasks().registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, autonomous));
             registrations.add(
                 context.tasks().registerRecovery(DeploymentAgentPageService.SERVER_LIST_TASK, autonomousPageTasks));
@@ -114,7 +125,9 @@ public final class Mod implements ModEntrypoint {
                 registrations.add(context.ui().register(new PageSpec("workspace", "deployment.workspace.title",
                     "Deployment", false), () -> new gold.debug.windowstolinux.mod.deployment.ui.DeploymentWorkspace(
                     () -> new DeploymentStaticPage(pageTasks), () -> new DeploymentAgentPage(autonomousPageTasks),
-                    () -> new DeploymentApplicationsPage(applicationTasks))));
+                    () -> new DeploymentApplicationsPage(applicationTasks),
+                    () -> new gold.debug.windowstolinux.mod.deployment.ui.environment.DeploymentEnvironmentPage(pageTasks, environmentTasks),
+                    pageTasks::preferences)));
             }
         } catch (Exception failure) {
             closeRegistrations(failure);

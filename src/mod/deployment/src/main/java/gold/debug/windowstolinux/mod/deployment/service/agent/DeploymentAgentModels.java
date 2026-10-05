@@ -26,6 +26,9 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
     /** Frozen human approval policy. / 冻结人工审批策略。 */
     private final String mode;
 
+    /** Original immutable question repetition. / 原不可变问题重复规则。 */
+    private final String authorization;
+
     /** Original durable action evidence. / 原持久动作依据。 */
     private final DeploymentAgentActionLog journal;
 
@@ -49,16 +52,18 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
      * @param task original task / 原任务
      * @param server exact target / 精确目标
      * @param mode frozen approval mode / 冻结审批模式
+     * @param authorization frozen authorization repetition / 冻结授权重复规则
      * @param revision initial route / 初始路由
      * @param current live route observer / 实时路由观察器
      * @param journal original evidence / 原依据
      * @param tools actual scoped tools / 实际限定工具 */
-    DeploymentAgentModels(ModContext context, TaskContext task, ServerId server, String mode, String revision,
+    DeploymentAgentModels(ModContext context, TaskContext task, ServerId server, String mode, String authorization, String revision,
                           Supplier<String> current, DeploymentAgentActionLog journal, DeploymentAgentDeliveryPort tools) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server);
         this.mode = Objects.requireNonNull(mode);
+        this.authorization = Objects.requireNonNull(authorization);
         this.current = Objects.requireNonNull(current);
         this.journal = Objects.requireNonNull(journal);
         this.tools = Objects.requireNonNull(tools);
@@ -107,7 +112,7 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
         final String selected;
         try {
             selected = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-            if (!mode.equals("MANUAL_REVIEW") && !selected.equals(
+            if (!selected.equals(
                 context.ai().configurationRevision(AiPurpose.APPROVAL, task)))
                 throw new IllegalArgumentException("Agent purposes differ from the selected route");
         } catch (ApiException | IllegalArgumentException rejected) {
@@ -148,6 +153,6 @@ final class DeploymentAgentModels implements DeploymentAgentControl.Boundary {
     private void replace(String selected) {
         revision = selected;
         model = new DeploymentAgentProtocol(context, selected);
-        reviewer = new DeploymentAgentReview(context, server, task, mode, selected, current, journal);
+        reviewer = new DeploymentAgentReview(context, server, task, mode, authorization, selected, current, journal);
     }
 }

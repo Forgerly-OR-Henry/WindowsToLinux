@@ -7,6 +7,7 @@ import javax.swing.*;
 
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.app.ui.language.MessageCatalog;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
@@ -210,6 +211,45 @@ public final class TaskInteractionPresenter
             var pane = new JOptionPane(scroll, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options,
                 options[1]);
             return options[0].equals(show(pane, messages.text("task.review.title"), cancellation));
+        });
+    }
+
+    /** Lets the user choose only an offered exact deletion effect, with refusal selected initially. / 仅允许用户选择已提供的精确删除效果，初始选择暂不处理。
+     * @param choices immutable effects available for the observed object / 观测对象可用的不可变效果
+     * @param explanation optional metadata-only purpose information / 可选仅元数据用途说明
+     * @param task original task identity / 原任务身份
+     * @param cancellation cooperative prompt cancellation / 协作提示取消
+     * @return selected effect, or null for refusal or dismissal / 选定效果，暂不处理或关闭时为 null */
+    @Override
+    public DeleteEffect delete(java.util.Map<DeleteEffect, ActionIntent> choices, String explanation, TaskSnapshot task, CancelToken cancellation) {
+        return onEdt(() -> {
+            var details = new StringBuilder(task.ownerId() + " @ " + task.ownerVersion() + "\n"
+                + messages.text("task.review.task") + ": " + task.id() + "\n\n"
+                + messages.text(choices.containsKey(DeleteEffect.RECYCLE) ? "task.review.delete.choose" : "task.review.delete.unavailable") + "\n\n");
+            for (DeleteEffect effect : DeleteEffect.values()) {
+                ActionIntent intent = choices.get(effect);
+                if (intent != null)
+                    details.append(messages.text(effect == DeleteEffect.RECYCLE ? "task.review.delete.recycleChoice" : "task.review.delete.permanentChoice"))
+                        .append("\n").append(deletionWarning(intent)).append(intent.effectSummary()).append("\n\n");
+            }
+            details.append(explanation);
+            var text = new JTextArea(details.toString());
+            text.setName("task.review.exactAction");
+            text.setEditable(false);
+            text.setLineWrap(true);
+            text.setWrapStyleWord(true);
+            text.setCaretPosition(0);
+            var scroll = new JScrollPane(text);
+            scroll.setPreferredSize(new Dimension(760, 450));
+            String recycle = messages.text("task.review.delete.recycleChoice");
+            String permanent = messages.text("task.review.delete.permanentChoice");
+            String decline = messages.text("task.review.delete.declineChoice");
+            String[] options = choices.containsKey(DeleteEffect.RECYCLE)
+                ? new String[]{recycle, permanent, decline} : new String[]{permanent, decline};
+            var pane = new JOptionPane(scroll, JOptionPane.WARNING_MESSAGE, JOptionPane.DEFAULT_OPTION, null, options, decline);
+            Object result = show(pane, messages.text("task.review.delete.title"), cancellation);
+            return choices.containsKey(DeleteEffect.RECYCLE) && recycle.equals(result) ? DeleteEffect.RECYCLE
+                : permanent.equals(result) ? DeleteEffect.PERMANENT : null;
         });
     }
 

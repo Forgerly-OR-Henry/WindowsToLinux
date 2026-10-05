@@ -19,6 +19,7 @@ import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
@@ -74,6 +75,10 @@ import org.junit.jupiter.params.provider.EnumSource;
 
 /** Runs a real original graph task, frozen source and H2 against one reviewed controlled SSH session. / 针对同一获审阅受控SSH会话运行真实原图任务、冻结来源和H2。 */
 class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
+    /** Declared wire identity of this controlled peer; actual loopback recovery captures its own key. / 此受控对等端声明的 wire 身份；实际回环恢复捕获自身密钥。 */
+    private static final String CONTROLLED_FINGERPRINT = "SHA256:"
+        + Base64.getEncoder().withoutPadding().encodeToString(new byte[32]);
+
     /** Confirmed publication and confirmed middle-component health failure. / 已确认发布与已确认中途组件健康失败。 */
     private enum ScenarioType {
         SUCCESS, HEALTH_FAILED_ROLLBACK, MIDDLE_HEALTH_FAILED_ROLLBACK, PUBLISH_UNKNOWN, ROLLBACK_KNOWN_FAILURE, ORIGINAL_CLEANUP_REFUSED, STAGE_UNKNOWN, CLOSE_UNKNOWN, TOO_MANY, DUPLICATE_ORDER, ROLLBACK_CLEANUP_REFUSED, CANCELLED_BEFORE_SOURCE, TOTAL_SPACE_EXCEEDED, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
@@ -84,6 +89,14 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
 
     /** Optional actual loopback SSH connection retained by the original task before its child exits. / 原任务子进程退出前可选保留的真实回环SSH连接。 */
     private int recoveryPort = 22;
+
+    /** Whether this fixture selects the actual optional Git provider. / 此夹具是否选择实际可选 Git 提供方。 */
+    private boolean gitScenario;
+
+    @Override
+    protected boolean gitEnabled() {
+        return gitScenario;
+    }
 
     /** One original cleanup review refused before dispatch. / 一次原清理在发送前被拒绝。 */
     private final AtomicBoolean refuseOriginalCleanup = new AtomicBoolean();
@@ -196,6 +209,7 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
      * @param invalidLater missing Web SQL source / Web SQL 来源缺失
      * @throws Exception if original task setup fails / 原任务准备失败时 */
     private void runStaticGraph(boolean git, boolean sqlite, boolean mixed, boolean invalidLater) throws Exception {
+        gitScenario = git;
         for (String id : List.of("api", "web")) {
             var source = selectedSourceDirectory().resolve(id);
             Files.createDirectories(source);
@@ -413,9 +427,10 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
                         new DeploymentGitRef.DefaultBranch(), Set.of(), 65536, true),
                     locateGit()))
                 : Optional.<DeploymentStaticWorkflow.GitSource>empty();
-            var handle = workflow.submit(server,
-                new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-graph" : "", 65536, 100, 65536), gitInput,
-                reviewer);
+            var draft = new DeploymentStaticWorkflow.Draft(git ? "reviewed-git-graph" : "", 65536, 100, 65536);
+            var handle = git
+                ? GitRuntimeTestBridge.staticWorkflow(runtime, bound).submit(server, draft, gitInput, reviewer)
+                : workflow.submit(server, draft, gitInput, reviewer);
             if (invalidLater) {
                 var rejected = handle.completion().toCompletableFuture().get(25, TimeUnit.SECONDS);
                 assertEquals(TaskResult.FAILED, rejected.outcome(), rejected.toString());
@@ -426,7 +441,9 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
                     scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
                 return;
             }
-            assertTrue(callbackEnded.await(30, TimeUnit.SECONDS), () -> handle.snapshot() + " actions=" + actions);
+            assertTrue(callbackEnded.await(30, TimeUnit.SECONDS),
+                () -> handle.snapshot() + " result=" + handle.completion().toCompletableFuture().getNow(null)
+                    + " actions=" + actions);
             OperationResult<Void> result;
             try {
                 result = handle.completion().toCompletableFuture().get(12, TimeUnit.SECONDS);
@@ -682,8 +699,12 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
                             Optional.of(
                                 new Problem(ProblemCode.CANCELLED, "FIXTURE_GRAPH_PREPARATION_CANCELLED",
                                     "Original preparation cancelled", Map.of(), Optional.empty())));
-                    if (recoveryPort != 22)
-                        real.linux().connect(server, original);
+                    if (recoveryPort != 22) {
+                        var policy = DeploymentPublishPolicyFacts.begin(real, original, server,
+                            "STATIC", "MANUAL_REVIEW", "GENERAL", "");
+                        var connected = real.linux().connect(policy.facts().fixedTarget(), original);
+                        policy.authenticated(connected.facts().fingerprint());
+                    }
                     var selection = real.file().sources().selectDirectory("Source", original);
                     var material = new DeploymentSourceSetup(real.file()).prepare(selection, 65536, 100,
                         original);
@@ -897,7 +918,23 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
     private ModContext withSession(ModContext real, RemoteSession session) {
         LinuxService linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
             new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
+                if (method.getName().equals("pendingTransfers"))
+                    return real.linux().pendingTransfers((TaskContext) args[0]);
                 assertEquals("connect", method.getName());
+                if (args[0] instanceof RemoteTarget expected) {
+                    var task = (TaskContext) args[1];
+                    var server = real.servers().get(expected.server(), task);
+                    assertEquals("server-publication", expected.server().id());
+                    assertEquals(task.id(), expected.taskId());
+                    assertEquals(server.ref(), expected.server());
+                    assertEquals(server.host(), expected.host());
+                    assertEquals(server.port(), expected.port());
+                    assertEquals(server.username(), expected.username());
+                    expected.fingerprint().ifPresent(value -> assertEquals(value, session.facts().fingerprint(),
+                        "The fixed expectation binds the controlled peer's observed wire identity"));
+                } else {
+                    assertEquals("server-publication", ((ServerId) args[0]).id());
+                }
                 return session;
             });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
@@ -905,19 +942,19 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
                 if (method.getName().equals("linux"))
                     return linux;
                 if (method.getName().equals("interaction"))
-                    return new InteractionService() {
-                        public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task)
-                            throws ApiException {
-                            var approved = real.interaction().approve(intent, task);
-                            approved.value().ifPresent(value -> grants.put(value, intent));
-                            return approved;
-                        }
-
-                        public OperationResult<String> requestText(String title, String prompt, boolean secret,
-                                                                   TaskContext task) throws ApiException {
-                            return real.interaction().requestText(title, prompt, secret, task);
-                        }
-                    };
+                    return Proxy.newProxyInstance(InteractionService.class.getClassLoader(),
+                        new Class<?>[]{InteractionService.class}, (interactionProxy, operation, arguments) -> {
+                            try {
+                                var result = operation.invoke(real.interaction(), arguments);
+                                if ((operation.getName().equals("approve") || operation.getName().equals("approveRequired"))
+                                    && result instanceof OperationResult<?> approved)
+                                    approved.value().filter(ApprovalGrant.class::isInstance).map(ApprovalGrant.class::cast)
+                                        .ifPresent(value -> grants.put(value, (ActionIntent) arguments[0]));
+                                return result;
+                            } catch (InvocationTargetException failure) {
+                                throw failure.getCause();
+                            }
+                        });
                 try {
                     return method.invoke(real, args);
                 } catch (InvocationTargetException failure) {
@@ -972,7 +1009,7 @@ class DeploymentMultiPartPublishRunnerTest extends DeploymentRuntimeFixture {
         return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
             new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                 if (method.getName().equals("facts"))
-                    return new RemoteFacts("", "", "SHA256:fixture-host");
+                    return new RemoteFacts("", "", CONTROLLED_FINGERPRINT);
                 if (method.getName().equals("close")) {
                     callbackEnded.countDown();
                     return null;

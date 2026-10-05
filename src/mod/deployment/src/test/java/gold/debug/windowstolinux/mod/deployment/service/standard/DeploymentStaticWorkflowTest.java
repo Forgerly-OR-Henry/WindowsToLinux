@@ -315,8 +315,18 @@ class DeploymentStaticWorkflowTest extends DeploymentRuntimeFixture {
                 Thread.sleep(50);
             assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
             assertEquals(1, captureCalls.get(), "Actual Git material reaches the original deployment capture");
-            assertEquals(2, scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CUSTOM' AND released_at IS NULL"));
+            var retained = new HashSet<String>();
+            try (var connection = runtime.persistence().database().openConnection();
+                 var query = connection.prepareStatement("SELECT resource_id FROM platform_task_resource"
+                     + " WHERE task_id=? AND resource_kind='CUSTOM' AND released_at IS NULL")) {
+                query.setObject(1, handle.id());
+                try (var rows = query.executeQuery()) {
+                    while (rows.next()) assertTrue(retained.add(rows.getString(1)));
+                }
+            }
+            assertEquals(Set.of(OWNER + "/checkpoint/deployment-static-preparation",
+                OWNER + "/checkpoint/deployment-git-source",
+                OWNER + "/checkpoint/deployment-publication-policy"), retained);
             var recovered = reconcileReady(runtime, handle);
             assertEquals(TaskState.ENDED, recovered.state());
             assertEquals(Optional.of(TaskResult.FAILED), recovered.outcome());

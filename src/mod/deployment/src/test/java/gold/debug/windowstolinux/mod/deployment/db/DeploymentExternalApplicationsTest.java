@@ -24,6 +24,30 @@ class DeploymentExternalApplicationsTest extends DeploymentApplicationsFixture {
         PRESENTATION, ENDPOINT, OBSERVATION
     }
 
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"START,false,true", "STOP,true,false", "RESTART,true,false", "RESTART,false,true"})
+    void freshExternalCapabilitiesRejectForcedServiceActionsBeforeEffect(String action, boolean canStart, boolean canStop)
+        throws Exception {
+        enable();
+        try (var ssh = ssh(); var runtime = open()) {
+            start(runtime, true);
+            server(runtime, ssh.server().getPort(), "tester");
+            var service = new DeploymentApplicationsService(context(runtime));
+            var scan = await(service.scan(new ServerId("server"))).value().orElseThrow();
+            assertEquals(TaskResult.SUCCEEDED, await(service.adopt(new ServerId("server"), scan.applications().getFirst())).outcome());
+            var selected = await(service.externalApplications()).value().orElseThrow().getFirst();
+            assertTrue(selected.target().canStart() && selected.target().canStop(), "Stored capabilities are intentionally stale");
+            peer.canStart = canStart;
+            peer.canStop = canStop;
+            int before = peer.effects.get();
+            var result = await(service.externalAction(selected, action));
+            assertEquals(TaskResult.FAILED, result.outcome());
+            assertEquals("DEPLOYMENT_EXTERNAL_ACTION_UNSUPPORTED", result.problem().orElseThrow().eventCode());
+            assertEquals(before, peer.effects.get());
+            assertNoActiveResources(runtime);
+        }
+    }
+
     @Test
     void scanAdoptAndRepeatOriginalTaskPersistOneExactRegistrationAndReference() throws Exception {
         enable();

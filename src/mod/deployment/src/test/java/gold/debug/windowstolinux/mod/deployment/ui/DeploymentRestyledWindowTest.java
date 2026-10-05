@@ -4,8 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.beans.PropertyChangeListener;
 import java.nio.file.*;
+import java.util.ArrayDeque;
 import java.util.concurrent.*;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
@@ -38,7 +41,8 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
             for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
                 for (String language : new String[]{"zh-CN", "en"}) {
                     String variant = theme + "-" + language + "-" + scale;
-                    try (var runtime = PlatformRuntime.open(root.resolve("data"), PROTECTION)) {
+                    try (var runtime = PlatformRuntime.open(root.resolve("data"), PROTECTION);
+                         var focusTrace = edt(FocusTrace::new)) {
                         runtime.security().unlock(PASSWORD.toCharArray());
                         var models = runtime.models();
                         var create = ApplicationLauncher.class.getDeclaredMethod("createWindow", PlatformRuntime.class,
@@ -141,6 +145,7 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
                             await(() -> named(frame, "platform.sidebar").getWidth() == com.formdev.flatlaf.util.UIScale
                                 .scale(168));
                             var field = edt(() -> (JTextField) named(frame, "deployment.sourceName"));
+                            var originalTabs = edt(() -> (JTabbedPane) named(frame, "deployment.workspace.tabs"));
                             edt(() -> {
                                 frame.setSize(1120, 760);
                                 field.setText("unsaved-中文-project");
@@ -173,33 +178,109 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
                                 && !DesktopTaskRunner.hasActiveTasks());
                             openInside(frame, "static-deployment");
                             edt(() -> {
+                                focusTrace.bind(originalTabs);
+                                return null;
+                            });
+                            {
+                                edt(() -> {
+                                    assertSame(field, named(frame, "deployment.sourceName"));
+                                    assertSame(originalTabs, named(frame, "deployment.workspace.tabs"));
+                                    assertEquals(language.equals("en") ? "标准 / 辅助部署" : "Standard / assisted deployment",
+                                        originalTabs.getTitleAt(0));
+                                    assertEquals("unsaved-中文-project", field.getText());
+                                    assertEquals(language.equals("en") ? "高级选项" : "Advanced options", advanced.getTitle());
+                                    ((JButton) named(frame, "deployment.advanced")).doClick(0);
+                                    assertEquals("https://example.invalid/retained.git",
+                                        ((JTextField) named(advanced, "deployment.git.url")).getText());
+                                    ((JButton) named(frame, "security.lock")).doClick(0);
+                                    return null;
+                                });
+                                await(() -> !runtime.security().securityState().unlocked()
+                                    && frame.getContentPane().isVisible() && frame.getGlassPane().isVisible());
+                                var tabRobot = new Robot();
+                                tabRobot.setAutoDelay(40);
+                                edt(() -> {
+                                    frame.toFront();
+                                    frame.requestFocus();
+                                    return null;
+                                });
+                                tabRobot.waitForIdle();
+                                await(() -> frame.isActive() && frame.isFocused());
+                                Point tabPoint = edt(() -> {
+                                    var tabs = (JTabbedPane) named(frame, "deployment.workspace.tabs");
+                                    assertEquals(0, tabs.getSelectedIndex());
+                                    assertTrue(tabs.isShowing() && tabs.isEnabled() && tabs.isFocusable());
+                                    Rectangle header = tabs.getBoundsAt(0);
+                                    Point gatePoint = SwingUtilities.convertPoint(tabs, header.x + header.width / 2,
+                                        header.y + header.height / 2, frame.getGlassPane());
+                                    assertFalse(frame.getGlassPane().contains(gatePoint.x, gatePoint.y), "The actual locked tab header remains admitted navigation");
+                                    Point origin = tabs.getLocationOnScreen();
+                                    return new Point(origin.x + header.x + header.width / 2,
+                                        origin.y + header.y + header.height / 2);
+                                });
+                                tabRobot.mouseMove(tabPoint.x, tabPoint.y);
+                                tabRobot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                                tabRobot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                                tabRobot.waitForIdle();
+                                edt(() -> {
+                                    var tabs = (JTabbedPane) named(frame, "deployment.workspace.tabs");
+                                    capture(frame, variant + "-locked-focus");
+                                    assertTrue(navigationHasFocus(tabs) || tabs.requestFocusInWindow(), "An active unlocked-navigation target must have or accept keyboard focus: "
+                                        + focusTrace.describe(frame));
+                                    return null;
+                                });
+                                await(() -> navigationHasFocus(originalTabs), () -> focusTrace.describe(frame));
+                                edt(() -> {
+                                    focusTrace.bindings();
+                                    return null;
+                                });
+                                tabRobot.keyPress(java.awt.event.KeyEvent.VK_RIGHT);
+                                tabRobot.keyRelease(java.awt.event.KeyEvent.VK_RIGHT);
+                                tabRobot.waitForIdle();
+                                await(() -> originalTabs.getSelectedIndex() == 1, () -> focusTrace.describe(frame));
+                            }
+                            edt(() -> {
+                                assertSame(originalTabs, named(frame, "deployment.workspace.tabs"));
+                                originalTabs.setSelectedIndex(0);
+                                originalTabs.revalidate();
+                                return null;
+                            });
+                            var businessRobot = new Robot();
+                            businessRobot.setAutoDelay(40);
+                            businessRobot.waitForIdle();
+                            await(() -> {
+                                frame.validate();
+                                if (!field.isShowing() || field.getWidth() <= 0 || field.getHeight() <= 0)
+                                    return false;
+                                var viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, field);
+                                assertNotNull(viewport, "The original form must retain its real scroll viewport");
+                                var view = (JComponent) viewport.getView();
+                                view.scrollRectToVisible(SwingUtilities.convertRectangle(field,
+                                    new Rectangle(0, 0, field.getWidth(), field.getHeight()), view));
+                                Rectangle visible = field.getVisibleRect();
+                                return visible.width > 0 && visible.height > 0;
+                            }, () -> businessGeometry(field, originalTabs));
+                            Point businessPoint = edt(() -> {
+                                assertSame(field, named(frame, "deployment.sourceName"));
+                                assertEquals(0, originalTabs.getSelectedIndex());
+                                assertTrue(field.isShowing());
+                                Rectangle visible = field.getVisibleRect();
+                                assertTrue(visible.width > 0 && visible.height > 0, () -> businessGeometry(field, originalTabs));
+                                Point gatePoint = SwingUtilities.convertPoint(field, visible.x + visible.width / 2,
+                                    visible.y + visible.height / 2, frame.getGlassPane());
+                                assertTrue(frame.getGlassPane().contains(gatePoint.x, gatePoint.y), "The locked business text field must remain blocked");
+                                Point origin = field.getLocationOnScreen();
+                                return new Point(origin.x + visible.x + visible.width / 2, origin.y + visible.y + visible.height / 2);
+                            });
+                            businessRobot.mouseMove(businessPoint.x, businessPoint.y);
+                            businessRobot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                            businessRobot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                            businessRobot.keyPress(java.awt.event.KeyEvent.VK_Q);
+                            businessRobot.keyRelease(java.awt.event.KeyEvent.VK_Q);
+                            businessRobot.waitForIdle();
+                            edt(() -> {
                                 assertSame(field, named(frame, "deployment.sourceName"));
                                 assertEquals("unsaved-中文-project", field.getText());
-                                assertEquals(language.equals("en") ? "高级选项" : "Advanced options", advanced.getTitle());
-                                ((JButton) named(frame, "deployment.advanced")).doClick(0);
-                                assertEquals("https://example.invalid/retained.git",
-                                    ((JTextField) named(advanced, "deployment.git.url")).getText());
-                                ((JButton) named(frame, "security.lock")).doClick(0);
-                                return null;
-                            });
-                            await(() -> !runtime.security().securityState().unlocked()
-                                && frame.getContentPane().isVisible() && frame.getGlassPane().isVisible());
-                            var tabRobot = new Robot();
-                            tabRobot.setAutoDelay(40);
-                            edt(() -> {
-                                frame.toFront();
-                                ((JTabbedPane) named(frame, "deployment.workspace.tabs")).requestFocusInWindow();
-                                return null;
-                            });
-                            await(() -> named(frame, "deployment.workspace.tabs").isFocusOwner());
-                            tabRobot.keyPress(java.awt.event.KeyEvent.VK_RIGHT);
-                            tabRobot.keyRelease(java.awt.event.KeyEvent.VK_RIGHT);
-                            await(() -> ((JTabbedPane) named(frame, "deployment.workspace.tabs")).getSelectedIndex() == 1);
-                            edt(() -> {
-                                ((JTabbedPane) named(frame, "deployment.workspace.tabs")).setSelectedIndex(0);
-                                return null;
-                            });
-                            edt(() -> {
                                 assertFalse(advanced.isVisible());
                                 capture(frame, variant + "-locked");
                                 return null;
@@ -243,11 +324,12 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
 
     private static void openInside(PlatformFrame frame, String id) throws Exception {
         frame.pages().openView(new ModPageRegistry.PageKey(OWNER, "workspace"));
-        edt(() -> {
-            var tabs = (JTabbedPane) named(frame, "deployment.workspace.tabs");
-            tabs.setSelectedIndex(java.util.List.of("static-deployment", "agent-deployment", "applications").indexOf(id));
-            return null;
-        });
+        await(() -> components(frame).filter(component -> "deployment.workspace.tabs".equals(component.getName()))
+            .anyMatch(Component::isEnabled));
+        frame.pages().navigateView(new ModPageRegistry.PageKey(OWNER, "workspace"), id);
+        await(() -> id.equals(frame.currentPage().detailId()) && components(frame).anyMatch(component -> component.isShowing()
+            && (id.equals("applications") ? "applications.refresh"
+            : id.equals("agent-deployment") ? "deployment.agent.server" : "deployment.server").equals(component.getName())));
     }
 
     private static <T> int inventoryPixel(JList<T> list, boolean selected) {
@@ -288,13 +370,156 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
     }
 
     private static void await(java.util.function.BooleanSupplier condition) throws Exception {
+        await(condition, () -> "Condition did not become true");
+    }
+
+    private static void await(java.util.function.BooleanSupplier condition, Supplier<String> diagnostic) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         while (System.nanoTime() < deadline) {
             if (edt(condition::getAsBoolean))
                 return;
             Thread.sleep(25);
         }
-        assertTrue(edt(condition::getAsBoolean));
+        edt(() -> {
+            assertTrue(condition.getAsBoolean(), diagnostic);
+            return null;
+        });
+    }
+
+    private static boolean navigationHasFocus(JTabbedPane tabs) {
+        Component focus = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+        return focus == tabs || focus != null && SwingUtilities.isDescendingFrom(focus, tabs)
+            && !SwingUtilities.isDescendingFrom(focus, tabs.getSelectedComponent());
+    }
+
+    private static String businessGeometry(JTextField field, JTabbedPane tabs) {
+        var details = new StringBuilder("The original business hit must be visible after tab layout: selectedIndex=")
+            .append(tabs.getSelectedIndex()).append(", fieldVisibleRect=").append(field.getVisibleRect());
+        for (Component ancestor = field; ancestor != null; ancestor = ancestor.getParent()) {
+            details.append("\n").append(ancestor.getClass().getName()).append('[').append(ancestor.getName())
+                .append("] bounds=").append(ancestor.getBounds()).append(", showing=").append(ancestor.isShowing())
+                .append(", valid=").append(ancestor.isValid());
+            if (ancestor instanceof JViewport viewport)
+                details.append(", viewRect=").append(viewport.getViewRect()).append(", viewSize=").append(viewport.getViewSize())
+                    .append(", extent=").append(viewport.getExtentSize()).append(", position=").append(viewport.getViewPosition());
+        }
+        return details.toString();
+    }
+
+    private static String identity(Component component) {
+        return component == null ? "null" : component.getClass().getName() + "@"
+            + Integer.toHexString(System.identityHashCode(component)) + "[name=" + component.getName()
+            + ",showing=" + component.isShowing() + ",enabled=" + component.isEnabled() + "]";
+    }
+
+    private static final class FocusTrace implements AutoCloseable {
+        private JTabbedPane tabs;
+
+        private final KeyboardFocusManager manager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+
+        private final ArrayDeque<String> events = new ArrayDeque<>();
+
+        private String bindings = "not observed";
+
+        private final KeyEventDispatcher before = event -> {
+            key("before gate", event);
+            return false;
+        };
+
+        private final KeyEventDispatcher after = event -> {
+            key("after gate", event);
+            return false;
+        };
+
+        private final java.awt.event.KeyListener componentKeys = new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyPressed(java.awt.event.KeyEvent event) {
+                key("tab pressed", event);
+            }
+
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent event) {
+                key("tab released", event);
+            }
+        };
+
+        private final PropertyChangeListener listener = event -> {
+            if (events.size() == 64) events.removeFirst();
+            events.addLast(event.getPropertyName() + ": " + describeValue(event.getOldValue())
+                + " -> " + describeValue(event.getNewValue()));
+        };
+
+        private FocusTrace() {
+            manager.addKeyEventDispatcher(before);
+        }
+
+        private void bind(JTabbedPane tabs) {
+            this.tabs = tabs;
+            for (String property : new String[]{"focusOwner", "permanentFocusOwner", "activeWindow", "focusedWindow"})
+                manager.addPropertyChangeListener(property, listener);
+            tabs.addPropertyChangeListener("UI", listener);
+            tabs.addKeyListener(componentKeys);
+            manager.addKeyEventDispatcher(after);
+        }
+
+        private void key(String stage, java.awt.event.KeyEvent event) {
+            if (tabs == null || event.getKeyCode() != java.awt.event.KeyEvent.VK_RIGHT
+                && event.getKeyCode() != java.awt.event.KeyEvent.VK_Q) return;
+            if (events.size() == 64) events.removeFirst();
+            events.addLast(stage + ": id=" + event.getID() + ", code=" + event.getKeyCode()
+                + ", modifiers=" + event.getModifiersEx() + ", consumed=" + event.isConsumed()
+                + ", source=" + identity(event.getComponent()) + ", focus=" + identity(manager.getFocusOwner()));
+        }
+
+        private void bindings() {
+            var stroke = KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, 0, false);
+            Object binding = tabs.getInputMap(JComponent.WHEN_FOCUSED).get(stroke);
+            Action action = binding == null ? null : tabs.getActionMap().get(binding);
+            var enabled = new java.util.ArrayList<Boolean>();
+            for (int index = 0; index < tabs.getTabCount(); index++) enabled.add(tabs.isEnabledAt(index));
+            bindings = "count=" + tabs.getTabCount() + ", placement=" + tabs.getTabPlacement()
+                + ", leftToRight=" + tabs.getComponentOrientation().isLeftToRight() + ", enabled=" + enabled
+                + ", focusedBinding=" + binding + ", ancestorBinding="
+                + tabs.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).get(stroke)
+                + ", action=" + (action == null ? "null" : action.getClass().getName() + "/enabled=" + action.isEnabled())
+                + ", selectionFollowsFocus=" + UIManager.get("TabbedPane.selectionFollowsFocus");
+        }
+
+        private String describe(PlatformFrame frame) {
+            var currentTabs = named(frame, "deployment.workspace.tabs");
+            Component focus = manager.getFocusOwner();
+            return "Locked navigation keyboard state: frameActive=" + frame.isActive() + ", frameFocused=" + frame.isFocused()
+                + ", activeWindow=" + identity(manager.getActiveWindow()) + ", focusedWindow=" + identity(manager.getFocusedWindow())
+                + ", focusOwner=" + identity(focus) + ", permanentFocusOwner=" + identity(manager.getPermanentFocusOwner())
+                + ", originalTabs=" + identity(tabs) + ", currentTabs=" + identity(currentTabs)
+                + ", sameTabs=" + (tabs == currentTabs) + ", tabUI=" + tabs.getUI().getClass().getName()
+                + ", descendantFocus=" + (focus != null && SwingUtilities.isDescendingFrom(focus, tabs))
+                + ", headerFocus=" + navigationHasFocus(tabs) + ", selectedIndex=" + tabs.getSelectedIndex()
+                + ", bindings=" + bindings + ", focusEvents=" + events;
+        }
+
+        private static String describeValue(Object value) {
+            return value instanceof Component component ? identity(component) : String.valueOf(value);
+        }
+
+        @Override
+        public void close() throws Exception {
+            if (!SwingUtilities.isEventDispatchThread()) {
+                edt(() -> {
+                    close();
+                    return null;
+                });
+                return;
+            }
+            manager.removeKeyEventDispatcher(before);
+            manager.removeKeyEventDispatcher(after);
+            for (String property : new String[]{"focusOwner", "permanentFocusOwner", "activeWindow", "focusedWindow"})
+                manager.removePropertyChangeListener(property, listener);
+            if (tabs != null) {
+                tabs.removePropertyChangeListener("UI", listener);
+                tabs.removeKeyListener(componentKeys);
+            }
+        }
     }
 
     private static void capture(Window window, String name) throws Exception {
@@ -334,7 +559,7 @@ class DeploymentRestyledWindowTest extends DeploymentRuntimeFixture {
                 Files.writeString(Path.of("target/phase13-p0/layout.csv"), row, StandardOpenOption.APPEND);
                 assertTrue(actual.getWidth() > 0 && actual.getHeight() > 0);
                 var tabs = (JTabbedPane) named(window, "deployment.workspace.tabs");
-                assertEquals(3, tabs.getTabCount());
+                assertEquals(4, tabs.getTabCount(), "The actual production workspace also retains the explicit environment entry");
                 assertTrue(tabs.getSelectedComponent().getWidth() > 0 && tabs.getSelectedComponent().getHeight() > 0);
                 var close = named(window, "mods.workspace.close");
                 assertTrue(close.getWidth() > 0 && close.getX() + close.getWidth() <= close.getParent().getWidth());

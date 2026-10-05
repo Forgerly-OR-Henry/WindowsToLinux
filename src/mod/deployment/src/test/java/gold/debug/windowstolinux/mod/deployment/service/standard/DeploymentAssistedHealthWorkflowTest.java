@@ -54,6 +54,8 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
 
     private final Set<String> reviewedOperations = ConcurrentHashMap.newKeySet();
 
+    private final DeploymentAssistedWorkflowTest.FixedReviewFixture fixedReviews = new DeploymentAssistedWorkflowTest.FixedReviewFixture();
+
     private final List<ActionIntent> hostApprovals = new CopyOnWriteArrayList<>();
 
     private boolean returnToOriginal;
@@ -91,6 +93,7 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             }
 
             public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
+                fixedReviews.beforeHost(intent, task.id());
                 hostApprovals.add(intent);
                 reviewFault.accept(intent);
                 return true;
@@ -122,8 +125,12 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             peer.healthFailuresRemaining = failures;
             var ai = models(false);
             LinuxService linux = new LinuxService() {
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                    return fixedReviews.connect(expected, task, actual, this);
+                }
+
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
-                    return peer.session(task);
+                    return fixedReviews.session(peer.session(task), task);
                 }
 
                 public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
@@ -175,7 +182,10 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
             assertEquals(retries, hostApprovals.stream()
                 .filter(intent -> intent.type().equals("deployment.assisted.environment-recovery")).count());
             assertEquals(changed ? retries : 1, recoveries.get());
-            assertEquals(0, independent.get());
+            assertTrue(independent.get() >= fixedReviews.sends.get());
+            assertEquals(peer.commands.size(), fixedReviews.sends.get());
+            assertTrue(reviewedOperations.containsAll(Set.of("deployment.build.run.v1",
+                "deployment.publication.publish.v1", "deployment.publication.health.v1", "deployment.publication.rollback.v1")));
             try (var access = scope(runtime, true);
                  var connection = access.openConnection();
                  var statement = connection.createStatement();
@@ -352,6 +362,7 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
 
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
                 assertTrue(Set.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL).contains(purpose));
+                fixedReviews.sameTask(task);
                 return "a".repeat(64);
             }
 
@@ -371,11 +382,13 @@ class DeploymentAssistedHealthWorkflowTest extends DeploymentRuntimeFixture {
                 lastModelFacts.set(facts.deepCopy());
                 String response;
                 if (request.purpose() == AiPurpose.APPROVAL) {
+                    fixedReviews.review(request, facts, task);
                     independent.incrementAndGet();
                     reviewedOperations.add(facts.path("operation").asText());
                     response = "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact registered fixed action\"}";
                 } else {
                     assertEquals(AiPurpose.LANGUAGE, request.purpose());
+                    fixedReviews.sameTask(task);
                     language.incrementAndGet();
                     if (Set.of("BUILD", "ROLLBACK_VERIFIED").contains(facts.path("phase").asText())) {
                         assertEquals("ROLLBACK_VERIFIED", facts.path("phase").asText(),

@@ -29,7 +29,9 @@ final class DeploymentApiCallerFixture {
 
     static final String PROVIDER = DeploymentSchema.OWNER;
 
-    static final String VERSION = "1.1.0-dev.1";
+    static final String PROVIDER_VERSION = "1.1.0-dev.3";
+
+    static final String CALLER_VERSION = "1.1.0-dev.1";
 
     static final String API_PACKAGE = "gold.debug.windowstolinux.mod.deployment.api";
 
@@ -65,7 +67,7 @@ final class DeploymentApiCallerFixture {
         var descriptor = DevelopmentInfo.read(workspace,
             workspace.resolve("src/mod/deployment/target/wtlmod-development.json"));
         assertEquals(PROVIDER, descriptor.manifest().id());
-        assertEquals(VERSION, descriptor.manifest().version().toString());
+        assertEquals(PROVIDER_VERSION, descriptor.manifest().version().toString());
         Path callerWorkspace = temporary.toAbsolutePath().normalize();
         Files.createDirectories(callerWorkspace);
         callerWorkspace = callerWorkspace.toRealPath();
@@ -100,19 +102,19 @@ final class DeploymentApiCallerFixture {
         Path classes = compileCaller(module, providerClasses);
         String manifest = """
             {"formatVersion":1,"id":"example.deploymentcaller","name":"Deployment API caller fixture",
-             "version":"1.1.0-dev.1","platformApiRange":"[1.0.0-dev.1,1.0.0)","minJavaVersion":21,
+             "version":"%s","platformApiRange":"[1.0.0-dev.4,1.0.0)","minJavaVersion":21,
              "mainJar":"main/caller.jar","entryClass":"example.deploymentcaller.Mod",
-             "dependencies":[{"id":"%s","versionRange":"[1.1.0-dev.1,1.1.0)"}]}
-            """.formatted(PROVIDER);
+             "dependencies":[{"id":"%s","versionRange":"[%s,1.1.0)"}]}
+            """.formatted(CALLER_VERSION, PROVIDER, PROVIDER_VERSION);
         Files.writeString(module.resolve("mod.json"), manifest);
         Files.writeString(module.resolve("pom.xml"), """
             <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
-            <groupId>example</groupId><artifactId>deployment-caller-fixture</artifactId><version>1.1.0-dev.1</version>
+            <groupId>example</groupId><artifactId>deployment-caller-fixture</artifactId><version>%s</version>
             <dependencies><dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-appapi</artifactId>
-            <version>1.0.0-dev.1</version><scope>provided</scope></dependency>
+            <version>1.0.0-dev.4</version><scope>provided</scope></dependency>
             <dependency><groupId>gold.debug.windowstolinux</groupId><artifactId>windowstolinux-mod-deployment</artifactId>
-            <version>1.1.0-dev.1</version><scope>provided</scope></dependency></dependencies></project>
-            """);
+            <version>%s</version><scope>provided</scope></dependency></dependencies></project>
+            """.formatted(CALLER_VERSION, PROVIDER_VERSION));
         Path callerDescription = DevelopmentInfo.generate(callerWorkspace, module.resolve("mod.json"), classes, List.of(),
             List.of(callerWorkspace.resolve("pom.xml"), callerWorkspace.resolve("src/mod/pom.xml"), module.resolve("pom.xml")), List.of());
         assertEquals(CALLER, DevelopmentInfo.read(callerWorkspace, callerDescription).manifest().id());

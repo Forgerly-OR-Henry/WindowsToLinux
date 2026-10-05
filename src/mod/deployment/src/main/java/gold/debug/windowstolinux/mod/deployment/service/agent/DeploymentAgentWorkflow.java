@@ -45,19 +45,23 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     /** User-reviewed bounded source and action policy. / 用户审核过的有界来源及动作策略。
      * @param requirements nonsecret task requirements / 不含秘密的任务要求
      * @param approvalMode manual, automatic or full control / 人工、自动或全控
+     * @param authorizationMode captured question repetition / 已抓取问题重复规则
      * @param sourceBytes source capture limit / 来源捕获上限
      * @param sourceEntries discovery limit / 发现上限
      * @param archiveBytes archive limit / 归档上限 */
-    public record Request(Map<String, String> requirements, String approvalMode, long sourceBytes, int sourceEntries,
+    public record Request(Map<String, String> requirements, String approvalMode, String authorizationMode,
+                          long sourceBytes, int sourceEntries,
                           long archiveBytes) {
         /** Freezes the exact user choice. / 冻结精确用户选择。
          * @param requirements bounded constraints / 有界约束
          * @param approvalMode chosen policy / 所选策略
+         * @param authorizationMode chosen authorization repetition / 所选授权重复规则
          * @param sourceBytes source budget / 来源额度
          * @param sourceEntries discovery budget / 发现额度
          * @param archiveBytes archive budget / 归档额度 */
         public Request {
             requirements = Map.copyOf(requirements);
+            gold.debug.windowstolinux.mod.deployment.ai.DeploymentAuthorizationPolicy.requireAllowed(approvalMode, authorizationMode);
             if (requirements.size() > 64 || requirements.toString().length() > 8000
                 || !Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode) || sourceBytes < 1
                 || sourceBytes > 2L * 1024 * 1024 * 1024 || sourceEntries < 1 || sourceEntries > 100_000
@@ -97,6 +101,30 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
      * @throws ApiException on failed task admission / 任务准入失败时 */
     public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server, Request request)
         throws ApiException {
+        return submitLocal(server, request, Optional.empty());
+    }
+
+    /** Reauthorizes preselected position metadata in a fresh original autonomous task. / 在新的原自主任务重新授权预选位置元数据。
+     * @param server explicit original target / 明确原目标
+     * @param request frozen bounded policy / 冻结有界策略
+     * @param location completed picker position metadata, never a file grant / 已完成选择器位置元数据，不是文件授权
+     * @return original root handle / 原根句柄
+     * @throws ApiException if original admission fails / 原准入失败时 */
+    public TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server, Request request,
+                                                                         gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService.LocalLocation location)
+        throws ApiException {
+        return submitLocal(server, request, Optional.of(Objects.requireNonNull(location)));
+    }
+
+    /** Captures one route and keeps all source analysis, archive and execution on its original task. / 抓取一条路径，将全部来源分析、归档及执行保留在其原任务。
+     * @param server exact target / 精确目标
+     * @param request original policy / 原策略
+     * @param location explicit metadata or original in-task picker / 明确元数据或原任务内选择器
+     * @return original accepted task / 原已接纳任务
+     * @throws ApiException if original admission fails / 原准入失败时 */
+    private TaskHandle<DeploymentAgentDeliveryPort.Published> submitLocal(ServerId server, Request request,
+                                                                          Optional<gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService.LocalLocation> location)
+        throws ApiException {
         Objects.requireNonNull(request);
         return context.tasks().submit(new TaskRequest(TASK_TYPE, "Autonomous deployment", List.of(server.id()), true),
             task -> {
@@ -111,7 +139,11 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 }
                 final DeploymentSourceMaterial material;
                 try {
-                    var selection = context.file().sources().selectDirectory("Autonomous deployment source", task);
+                    var selection = location.isPresent()
+                        ? context.file().sources().selectDirectory(java.nio.file.Path.of(location.orElseThrow().location()), task)
+                        : context.file().sources().selectDirectory("Autonomous deployment source", task);
+                    if (task.cancelToken().requested()) throw new ApiException(new Problem(ProblemCode.CANCELLED,
+                        "DEPLOYMENT_AGENT_SOURCE_CANCELLED", "Original source selection cancelled", Map.of(), Optional.empty()));
                     material = new DeploymentSourceSetup(context.file()).prepare(selection,
                         request.sourceBytes(), request.sourceEntries(), task);
                 } catch (ApiException failure) {
@@ -214,10 +246,13 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED",
                     "Original agent configuration changed before execution", Map.of("task", task.id().toString()),
                     Optional.of(task.id())));
-            try (var remote = context.linux().connect(server, task)) {
+            try (var workflow = gold.debug.windowstolinux.mod.deployment.ai.DeploymentWorkflowAuthorization.open(
+                context, task, server, configuration, request.approvalMode(), request.authorizationMode(),
+                "source=" + material.snapshot().sha256() + "\narchive=" + archive.sha256() + "\nrequirements=" + new TreeMap<>(request.requirements()));
+                 var remote = context.linux().connect(server, task)) {
                 String target = targetDigest(server, remote);
                 journal.create(task,
-                    new DeploymentAgentActionLog.Identity(server.id(), target, configuration, request.approvalMode()),
+                    new DeploymentAgentActionLog.Identity(server.id(), target, configuration, request.approvalMode(), request.authorizationMode()),
                     Optional.of(physicalTarget(context.servers().get(server, task))));
                 created = true;
                 if (controls.putIfAbsent(task.id(), control) != null)
@@ -232,9 +267,9 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
                     }
                 };
                 try (var tools = new DeploymentAgentRemoteTools(context, remote, context.interaction(), server, task,
-                    archive, configuration, current, journal, project)) {
+                    archive, configuration, current, journal, project, request.approvalMode(), request.authorizationMode())) {
                     var session = new DeploymentAgentSession(context, task, server, request.requirements(), source,
-                        tools, journal, request.approvalMode(), configuration, current, control);
+                        tools, journal, request.approvalMode(), request.authorizationMode(), configuration, current, control);
                     var result = session.run();
                     if (result.outcome() == TaskResult.FAILED)
                         journal.state(task, "FAILED");
@@ -342,6 +377,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext originalTask) throws Exception {
         if (!TASK_TYPE.equals(previous.type()) || !previous.id().equals(originalTask.id()))
             return unknown();
+        context.interaction().closeWorkflowResources(originalTask);
         var saved = journal.find(originalTask);
         if (saved.isEmpty())
             return unknown();
@@ -350,7 +386,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
             var history = new DeploymentAgentHistory(context);
             String facts;
             try {
-                facts = history.inspect(originalTask, history.detail(originalTask, originalTask.id())).toString();
+                facts = history.inspect(originalTask, history.detail(originalTask, originalTask.id()), true).toString();
             } catch (Exception unconfirmed) {
                 facts = "UNCONFIRMED:" + unconfirmed.getClass().getSimpleName();
             }
@@ -422,7 +458,7 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
         try {
             new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).save(task,
                 new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection("AGENT",
-                    request.approvalMode()));
+                    request.approvalMode(), request.authorizationMode()));
             return Optional.empty();
         } catch (ApiException unavailable) {
             return Optional.of(failed(task, false, unavailable));
@@ -443,8 +479,8 @@ public final class DeploymentAgentWorkflow implements TaskRecovery {
     private String admittedConfiguration(ServerId server, Request request, TaskContext task) throws ApiException {
         context.servers().get(server, task);
         String configuration = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-        if (!configuration.matches("[0-9a-f]{64}") || !request.approvalMode().equals("MANUAL_REVIEW")
-            && !configuration.equals(context.ai().configurationRevision(AiPurpose.APPROVAL, task)))
+        if (!configuration.matches("[0-9a-f]{64}")
+            || !configuration.equals(context.ai().configurationRevision(AiPurpose.APPROVAL, task)))
             throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED",
                 "Original agent model purposes do not share an authorized configuration",
                 Map.of("task", task.id().toString()), Optional.of(task.id())));

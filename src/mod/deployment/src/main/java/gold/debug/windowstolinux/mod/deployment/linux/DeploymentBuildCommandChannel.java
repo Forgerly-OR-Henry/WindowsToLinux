@@ -221,7 +221,7 @@ public final class DeploymentBuildCommandChannel {
             Duration.ofSeconds(Math.min(timeout.toSeconds(), available)), output);
         var intent = RemoteActions.command(server, planRevision, request)
             .withSemantics(new ActionSemantics(operation, Set.of(new ActionTarget(server.id(), kind, target))));
-        var grant = interaction.approve(intent, task);
+        var grant = DeploymentCommandReviews.approve(interaction, intent, request, task);
         if (grant.outcome() != TaskResult.SUCCEEDED)
             return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
         beforeSend.verify();

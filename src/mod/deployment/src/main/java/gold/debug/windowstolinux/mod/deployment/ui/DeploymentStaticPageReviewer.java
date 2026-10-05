@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+
+import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentReviewInputs;
+import gold.debug.windowstolinux.mod.deployment.ui.component.DeploymentComponentEditor;
+
 import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -365,7 +370,7 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         }
     }
 
-    /** Selects only actual discovered component roots. / 仅选择实际发现的组件根。
+    /** Edits the actual graph inside this original frozen source. / 在本原冻结来源内编辑实际图。
      * @param server exact selected server / 精确选定服务器
      * @param sourceSha256 frozen source digest / 冻结来源摘要
      * @param discovered actual roots / 实际根
@@ -374,9 +379,9 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
     @Override
     public OperationResult<DeploymentStaticWorkflow.Selection> select(ServerId server, String sourceSha256,
                                                                       List<DiscoveredProjectPart> discovered, TaskContext task) {
-        var form = page.onEdt(() -> new SelectionForm(page, discovered));
+        var form = page.onEdt(() -> new DeploymentComponentEditor(page::text, discovered));
         while (page.active(view)) {
-            if (!page.approve(view, form.panel, page.text("componentReview"), task))
+            if (!page.approve(view, form.panel(), page.text("componentReview"), task))
                 return cancelled();
             try {
                 var selection = page.onEdt(form::selection);
@@ -385,97 +390,12 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                 return success(selection);
             } catch (IllegalArgumentException invalid) {
                 page.onEdt(() -> {
-                    form.error.setText(page.text("invalidForm"));
+                    form.showInvalid();
                     return null;
                 });
             }
         }
         return cancelled();
-    }
-
-    /** The component choices are built and read only by the EDT. / 组件选择仅由 EDT 构建和读取。 */
-    private static final class SelectionForm {
-        /** Editable selection controls. / 可编辑选择控件。 */
-        private final JPanel panel = new JPanel(new GridLayout(0, 2, 8, 8));
-
-        /** Validation message. / 校验提示。 */
-        private final JLabel error = new JLabel();
-
-        /** Shared application identity. / 共享应用身份。 */
-        private final JTextField application;
-
-        /** Actual discovered components. / 实际发现组件。 */
-        private final List<DiscoveredProjectPart> discovered;
-
-        /** Project-kind choices. / 项目类型选择。 */
-        private final Map<String, JComboBox<DeploymentProjectKind>> types = new LinkedHashMap<>();
-
-        /** Explicit dependency inputs. / 明确依赖输入。 */
-        private final Map<String, JTextField> dependencies = new LinkedHashMap<>();
-
-        /** Graph health owner. / 图健康所属组件。 */
-        private final JComboBox<String> healthOwner;
-
-        /** Builds a form from the discovered roots. / 从已发现根构建表单。
-         * @param page owner page / 所属页
-         * @param discovered actual components / 实际组件 */
-        private SelectionForm(DeploymentStaticPage page, List<DiscoveredProjectPart> discovered) {
-            this.discovered = List.copyOf(discovered);
-            application = discovered.size() > 1 ? new JTextField("application") : null;
-            if (application != null) {
-                panel.add(new JLabel(page.text("application")));
-                panel.add(application);
-            }
-            for (var component : discovered) {
-                var type = new JComboBox<>(component.types().stream().filter(DeploymentProjectKind::deployable)
-                    .toArray(DeploymentProjectKind[]::new));
-                type.setRenderer((list, value, index, selected, focus) -> {
-                    var label = new JLabel(value == null ? "" : page.text("type." + value.name()));
-                    label.setOpaque(true);
-                    label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
-                    label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
-                    return label;
-                });
-                panel.add(new JLabel(component.id() + " — " + component.relativeRoot()));
-                panel.add(type);
-                types.put(component.id(), type);
-                if (application != null) {
-                    var dependency = new JTextField();
-                    panel.add(new JLabel(page.text("dependencies") + " · " + component.id()));
-                    panel.add(dependency);
-                    dependencies.put(component.id(), dependency);
-                }
-            }
-            healthOwner = application == null
-                ? null
-                : new JComboBox<>(discovered.stream().map(DiscoveredProjectPart::id).toArray(String[]::new));
-            if (healthOwner != null) {
-                panel.add(new JLabel(page.text("healthOwner")));
-                panel.add(healthOwner);
-            }
-            panel.add(error);
-            panel.add(new JLabel());
-        }
-
-        /** Reads the current EDT choices. / 读取当前 EDT 选择。
-         * @return selected graph / 选定图 */
-        private DeploymentStaticWorkflow.Selection selection() {
-            var choices = new LinkedHashMap<String, DeploymentStaticWorkflow.Choice>();
-            for (var component : discovered) {
-                var type = (DeploymentProjectKind) types.get(component.id()).getSelectedItem();
-                if (type == null)
-                    throw new IllegalArgumentException("Component type is required");
-                var edges = dependencies.containsKey(component.id())
-                    ? Set.copyOf(java.util.Arrays
-                    .stream(dependencies.get(component.id()).getText().trim().split("[,;\\s]+"))
-                    .filter(value -> !value.isBlank()).toList())
-                    : Set.<String>of();
-                choices.put(component.id(), new DeploymentStaticWorkflow.Choice(type, edges));
-            }
-            return new DeploymentStaticWorkflow.Selection(
-                application == null ? discovered.getFirst().id() : application.getText().trim(), choices,
-                healthOwner == null ? Optional.empty() : Optional.of((String) healthOwner.getSelectedItem()));
-        }
     }
 
     /** Collects editable runtime and resource values for the source-bound prompts. / 为来源绑定问题收集可编辑运行与资源值。
@@ -494,11 +414,19 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
             try {
                 var answers = page.onEdt(form::answers);
                 for (var prompt : prompts)
-                    page.validateReview(prompt, answers.get(prompt.componentId()));
+                    try {
+                        page.validateReview(prompt, answers.get(prompt.componentId()));
+                    } catch (IllegalArgumentException invalid) {
+                        page.onEdt(() -> {
+                            form.problem(prompt.componentId(), invalid);
+                            return null;
+                        });
+                        throw invalid;
+                    }
                 return success(answers);
             } catch (IllegalArgumentException invalid) {
                 page.onEdt(() -> {
-                    form.error.setText(page.text("invalidForm"));
+                    if (form.error.getText().isBlank()) form.error.setText(page.text("invalidForm"));
                     return null;
                 });
             }
@@ -608,13 +536,19 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         /** Per-component forms. / 逐组件表单。 */
         private final Map<String, PartForm> forms = new LinkedHashMap<>();
 
+        /** Actual component selection used for invalid-field focus. / 无效字段聚焦使用的实际组件选择。 */
+        private final JTabbedPane tabs = new JTabbedPane();
+
+        /** Current owner resources. / 当前所属资源。 */
+        private final DeploymentStaticPage page;
+
         /** Creates source-bound component tabs. / 创建来源绑定的组件页。
          * @param page owner page / 所属页
          * @param sourceSha256 source manifest digest / 来源清单摘要
          * @param prompts actual review prompts / 实际审阅问题 */
         private ReviewForm(DeploymentStaticPage page, String sourceSha256,
                            List<DeploymentStaticWorkflow.Prompt> prompts) {
-            var tabs = new JTabbedPane();
+            this.page = page;
             for (var prompt : prompts) {
                 var form = new PartForm(page, prompt);
                 tabs.addTab(prompt.componentId(), new JScrollPane(form.panel()));
@@ -628,9 +562,31 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         /** Reads all edited component values. / 读取全部已编辑组件值。
          * @return reviewed values by component / 按组件的审阅值 */
         private Map<String, DeploymentStaticWorkflow.Answers> answers() {
+            error.setText("");
             var answers = new LinkedHashMap<String, DeploymentStaticWorkflow.Answers>();
-            forms.forEach((id, form) -> answers.put(id, form.answer()));
+            forms.forEach((id, form) -> {
+                try {
+                    answers.put(id, form.answer());
+                } catch (IllegalArgumentException invalid) {
+                    problem(id, invalid);
+                    throw invalid;
+                }
+            });
             return Map.copyOf(answers);
+        }
+
+        /** Selects the actual invalid component and exact known field without replacing any input. / 选择实际无效组件及精确已知字段，不替换任何输入。
+         * @param component original component / 原组件
+         * @param invalid actual parser rejection / 实际解析拒绝 */
+        private void problem(String component, IllegalArgumentException invalid) {
+            String key = invalid instanceof gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewFieldException field ? field.field() : "";
+            var form = forms.get(component);
+            tabs.setSelectedIndex(new ArrayList<>(forms.keySet()).indexOf(component));
+            var control = form.fields.get(key);
+            if (control == null) control = form.fields.values().stream().findFirst().orElse(null);
+            panel.putClientProperty("deployment.review.focus", control);
+            if (control != null) control.putClientProperty("JComponent.outline", "error");
+            error.setText(page.text("invalidForm") + " " + component + (key.isEmpty() ? "" : " / " + page.text("auto.field." + key)));
         }
     }
 
@@ -802,14 +758,12 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
                     continue;
                 JComponent input = key.equals("secrets")
                     ? new DeploymentSecretRefField(texts, field.value(), choices)
-                    : field.choices().isEmpty()
-                    ? new JTextField(field.value())
-                    : new JComboBox<>(field.choices().toArray(String[]::new));
-                if (input instanceof JComboBox<?> box && !field.value().isBlank())
-                    box.setSelectedItem(field.value());
+                    : DeploymentReviewInputs.create(field);
                 fields.put(key, input);
-                panel.add(new JLabel(texts.apply(key)));
-                panel.add(input);
+                var label = DeploymentReviewInputs.label(field.titleKey(), texts);
+                label.setLabelFor(input);
+                panel.add(label);
+                panel.add(DeploymentReviewInputs.decorated(input, field, texts));
             }
             add("timeoutSeconds", timeout);
             add("maxProcesses", processes);
@@ -851,11 +805,9 @@ final class DeploymentStaticPageReviewer implements DeploymentStaticWorkflow.Rev
         private DeploymentStaticWorkflow.Answers answer() {
             var values = new LinkedHashMap<String, String>();
             fields.forEach((key, control) -> {
-                String value = control instanceof JTextField field
-                    ? field.getText().trim()
-                    : control instanceof DeploymentSecretRefField secret
+                String value = control instanceof DeploymentSecretRefField secret
                     ? secret.value()
-                    : String.valueOf(((JComboBox<?>) control).getSelectedItem());
+                    : DeploymentReviewInputs.value(control);
                 values.put(key, value);
             });
             return new DeploymentStaticWorkflow.Answers(values, files.stream().map(FileRow::binding).toList(),

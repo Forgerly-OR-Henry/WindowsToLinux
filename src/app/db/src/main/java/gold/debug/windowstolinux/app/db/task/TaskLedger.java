@@ -552,27 +552,7 @@ public final class TaskLedger {
                     for (var claim : claims)
                         if (queries.conflicts(c, taskId, claim)) throw new DependencyBusyException();
                     if (!next.equals(original)) {
-                        List<TaskResource> priorClaims;
-                        try (var p = c.prepareStatement("SELECT recovery_json,owner_id,owner_version FROM platform_task WHERE task_id=?")) {
-                            p.setObject(1, taskId);
-                            try (var r = p.executeQuery()) {
-                                if (!r.next()) throw new SQLException("Original task disappeared");
-                                try {
-                                    priorClaims = Arrays.asList(json.treeToValue(queries.admissionDocument(r.getString(1), r.getString(2), r.getString(3)).required("initialClaims"), TaskResource[].class));
-                                } catch (java.io.IOException invalid) {
-                                    throw new SQLException("Original claims are invalid", invalid);
-                                }
-                            }
-                        }
-                        var allClaims = new ArrayList<>(next.claims());
-                        priorClaims.stream().filter(p -> p.kind().equals("SERVER")).forEach(allClaims::add);
-                        String document = encode(Map.of("formatVersion", 3, "initialClaims", orderedClaims(allClaims), "graph", next.encode()));
-                        if (document.length() > 1024 * 1024) throw new SQLException("Original graph is too large");
-                        try (var p = c.prepareStatement("UPDATE platform_task SET recovery_json=? WHERE task_id=?")) {
-                            p.setString(1, document);
-                            p.setObject(2, taskId);
-                            p.executeUpdate();
-                        }
+                        extendOriginalDocument(c, taskId, next);
                         for (var pin : next.claims())
                             if (!existingPins.contains(pin)) insertLease(c, taskId, pin, ResourceRecovery.TASK_END);
                     }
@@ -583,6 +563,40 @@ public final class TaskLedger {
                     throw new SQLException("Original dependency proof is invalid", invalid);
                 }
             });
+        }
+
+        /** Replaces only the admitted graph under the original transaction, retaining server claims and cancellation. / 在原事务中仅替换已准入图，保留服务器占用与取消意图。
+         * @param connection original locked transaction / 原锁定事务
+         * @param taskId exact original task / 精确原任务
+         * @param next already validated actual dependency graph / 已校验实际依赖图
+         * @throws SQLException if original metadata cannot be retained / 原元数据无法保留时 */
+        private void extendOriginalDocument(Connection connection, UUID taskId, TaskRecoveryGraph next) throws SQLException {
+            List<TaskResource> priorClaims;
+            com.fasterxml.jackson.databind.node.ObjectNode originalDocument;
+            try (var query = connection.prepareStatement("SELECT recovery_json,owner_id,owner_version FROM platform_task WHERE task_id=?")) {
+                query.setObject(1, taskId);
+                try (var row = query.executeQuery()) {
+                    if (!row.next()) throw new SQLException("Original task disappeared");
+                    try {
+                        originalDocument = (com.fasterxml.jackson.databind.node.ObjectNode) queries.admissionDocument(row.getString(1), row.getString(2), row.getString(3));
+                        priorClaims = Arrays.asList(json.treeToValue(originalDocument.required("initialClaims"), TaskResource[].class));
+                    } catch (java.io.IOException invalid) {
+                        throw new SQLException("Original claims are invalid", invalid);
+                    }
+                }
+            }
+            var allClaims = new ArrayList<>(next.claims());
+            priorClaims.stream().filter(claim -> claim.kind().equals("SERVER")).forEach(allClaims::add);
+            originalDocument.put("formatVersion", 3);
+            originalDocument.set("initialClaims", json.valueToTree(orderedClaims(allClaims)));
+            originalDocument.set("graph", json.valueToTree(next.encode()));
+            String document = gold.debug.windowstolinux.app.db.task.metadata.TaskCancellationDocument.encode(originalDocument);
+            if (document.length() > 1024 * 1024) throw new SQLException("Original graph is too large");
+            try (var update = connection.prepareStatement("UPDATE platform_task SET recovery_json=? WHERE task_id=?")) {
+                update.setString(1, document);
+                update.setObject(2, taskId);
+                update.executeUpdate();
+            }
         }
 
         /** Releases one original call's complete claims atomically, never another concurrent call. / 原子释放一次原调用的完整申请，不释放另一并发调用。
@@ -904,7 +918,7 @@ public final class TaskLedger {
         Objects.requireNonNull(beforeEnd);
         return locked(() -> {
             try (var c = connections.open();
-                 var p = c.prepareStatement("SELECT state,cancellable FROM platform_task WHERE task_id=?")) {
+                 var p = c.prepareStatement("SELECT state,cancellable,recovery_json,owner_id,owner_version FROM platform_task WHERE task_id=?")) {
                 p.setObject(1, taskId);
                 try (var r = p.executeQuery()) {
                     if (!r.next())
@@ -914,6 +928,13 @@ public final class TaskLedger {
                         return false;
                     if (!r.getBoolean(2))
                         throw new SQLException("Task does not support cancellation");
+                    queries.admissionDocument(r.getString(3), r.getString(4), r.getString(5));
+                    try (var update = c.prepareStatement("UPDATE platform_task SET recovery_json=? WHERE task_id=?")) {
+                        update.setString(1, gold.debug.windowstolinux.app.db.task.metadata.TaskCancellationDocument.request(r.getString(3)));
+                        update.setObject(2, taskId);
+                        if (update.executeUpdate() != 1)
+                            throw new SQLException("Original cancellation task disappeared");
+                    }
                     if (state.equals("QUEUED")) {
                         beforeEnd.run();
                         finalizationSupport.finish(c, taskId, TaskResult.CANCELLED);
@@ -1559,12 +1580,7 @@ public final class TaskLedger {
             try {
                 if (value == null || value.length() > 1024 * 1024)
                     throw new IllegalArgumentException("Invalid task metadata size");
-                var node = json.readTree(value);
-                if (node == null || !node.isObject() || !node.path("formatVersion").isInt()
-                    || !Set.of(1, 2, 3).contains(node.path("formatVersion").intValue())
-                    || !node.path("initialClaims").isArray()
-                    || node.size() != (node.path("formatVersion").intValue() == 1 ? 2 : 3))
-                    throw new IllegalArgumentException("Unsupported task admission document");
+                var node = gold.debug.windowstolinux.app.db.task.metadata.TaskCancellationDocument.parse(value);
                 if (node.path("formatVersion").intValue() != 1) {
                     var graph = TaskRecoveryGraph.decode(node.path("graph"));
                     if (graph.legacy() != (node.path("formatVersion").intValue() == 2))
@@ -1575,6 +1591,22 @@ public final class TaskLedger {
                 return node;
             } catch (java.io.IOException | IllegalArgumentException invalid) {
                 throw new SQLException("Invalid original task admission metadata", invalid);
+            }
+        }
+
+        /** Reads persisted original cancellation independently of UNKNOWN or nonterminal state. / 独立于UNKNOWN或非终态读取持久原取消。
+         * @param taskId exact original task / 精确原任务
+         * @return known original cancellation intent / 已知原取消意图
+         * @throws SQLException if original metadata is missing or invalid / 原元数据缺失或无效时 */
+        public boolean cancellationRequested(UUID taskId) throws SQLException {
+            try (var c = connections.open();
+                 var p = c.prepareStatement("SELECT state,recovery_json,owner_id,owner_version FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, taskId);
+                try (var rows = p.executeQuery()) {
+                    if (!rows.next()) throw new SQLException("Original task does not exist");
+                    var document = admissionDocument(rows.getString(2), rows.getString(3), rows.getString(4));
+                    return rows.getString(1).equals("CANCEL_REQUESTED") || document.path("cancelRequested").asBoolean(false);
+                }
             }
         }
 

@@ -19,9 +19,20 @@ import gold.debug.windowstolinux.appapi.ui.page.ModPage;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.file.git.*;
 import gold.debug.windowstolinux.mod.deployment.service.agent.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService.LocalLocation;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
 
 /** Agent-only owner-bound page for local or pinned Git tasks. / 用于本地或固定 Git 任务的自主专属所属页面。 */
 public final class DeploymentAgentPage implements ModPage {
+    /** Explicit target selection and its related public controls. / 明确目标选择及其关联公开控件。 */
+    private static final class TargetSection {
+        /** Exact configured target choices. / 精确已配置目标选择。 */
+        private final JComboBox<ServerInfo> servers = new JComboBox<>();
+
+        /** Original explicit target and navigation controls. / 原明确目标及导航控件。 */
+        private DeploymentTargetControls controls;
+    }
+
     /** Own page admission and persisted task queries. / 所属页面准入与持久任务查询。 */
     private final DeploymentAgentPageService service;
 
@@ -39,19 +50,13 @@ public final class DeploymentAgentPage implements ModPage {
     private final JPanel root = new JPanel(new BorderLayout(8, 8));
 
     /** Exact configured target choices. / 精确已配置目标选择。 */
-    private final JComboBox<ServerInfo> servers = new JComboBox<>();
-
-    /** Explicit user approval policy. / 明确用户审批策略。 */
-    private final JComboBox<String> mode = new JComboBox<>(new String[]{"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"});
+    private final TargetSection targets = new TargetSection();
 
     /** Actual confirmed preference edits and original write observation. / 实际已确认偏好编辑及原写入观察。 */
     private final DeploymentPreferenceSelection preferences;
 
-    /** Explicit source transport. / 明确来源传输方式。 */
-    private final JComboBox<String> source = new JComboBox<>(new String[]{"LOCAL", "GIT"});
-
-    /** Actual pinned Git input group. / 实际固定Git输入组。 */
-    private final DeploymentAgentGitForm gitForm = new DeploymentAgentGitForm();
+    /** Actual preselected local and Git metadata independent of running tasks. / 独立于运行任务的实际预选本地及Git元数据。 */
+    private DeploymentAgentSourceControls sources;
 
     /** Bounded nonsecret human constraints. / 有界且不含秘密的人工约束。 */
     private final JTextArea requirements = new JTextArea(5, 48);
@@ -86,6 +91,9 @@ public final class DeploymentAgentPage implements ModPage {
     /** Current host lock state. / 当前宿主锁定状态。 */
     private volatile boolean locked;
 
+    /** Current original task feedback independent of the historical recovery view. / 独立于历史恢复视图的当前原任务反馈。 */
+    private gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback feedback;
+
     /** Whether submission is admitted or awaiting completion. / 提交是否已准入或正等待结束。 */
     private volatile boolean busy;
 
@@ -95,22 +103,17 @@ public final class DeploymentAgentPage implements ModPage {
     /** Separate advanced options preserving original fields. / 保留原字段的独立高级选项。 */
     private DeploymentPageStyle.Advanced advanced;
 
-    /** Source-specific advanced fields. / 来源专属高级字段。 */
-    private JPanel gitFields;
-
     /** Creates a fresh lazy view of one original agent service. / 为一项原自主服务创建新的惰性视图。
      * @param service owner-bound page operations / 所属页面操作 */
     public DeploymentAgentPage(DeploymentAgentPageService service) {
         this.service = Objects.requireNonNull(service);
         preferences = new DeploymentPreferenceSelection(actions, service::savePreferences,
-            () -> new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection("AGENT",
-                (String) mode.getSelectedItem()),
-            selection -> mode.setSelectedItem(selection.approval()),
+            () -> "AGENT", selection -> {
+        },
             detail -> status.setText(text("preferenceError") + "\n" + detail), this::availability);
-        mode.addActionListener(ignored -> preferences.changed());
-        mode.setName("deployment.preference.approval");
         evidence = new DeploymentAgentEvidencePanel(service, actions, () -> current == null ? null : current.id());
-        servers.setRenderer((list, value, index, selected, focus) -> {
+        targets.servers.setName("deployment.agent.server");
+        targets.servers.setRenderer((list, value, index, selected, focus) -> {
             var label = new JLabel(value == null ? "" : value.name() + " (" + value.host() + ")");
             label.setOpaque(true);
             label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
@@ -127,14 +130,28 @@ public final class DeploymentAgentPage implements ModPage {
         requireEdt();
         locale(environment);
         locked = environment.locked();
+        feedback = new gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback(service.feedback(),
+            actions, () -> {
+            try {
+                service.openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS);
+            } catch (ApiException refused) {
+                status.setText(text("submitError"));
+            }
+        }, service::delivery);
+        feedback.configure(environment);
         root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
         var sourceFields = DeploymentPageStyle.form();
         var targetFields = DeploymentPageStyle.form();
-        row(targetFields, "server", servers);
-        row(targetFields, "approval", mode);
-        row(sourceFields, "source", source);
-        gitFields = DeploymentPageStyle.form();
-        gitForm.add((key, value) -> row(gitFields, key, value));
+        row(targetFields, "server", targets.servers);
+        targets.controls = new DeploymentTargetControls(this::text, service::openPlatform, targets.servers,
+            this::availability, this::loadServers, status::setText);
+        targetFields.add(targets.controls.panel());
+        targetFields.add(preferences.panel(this::text));
+        sources = new DeploymentAgentSourceControls(service.sources(), this::text, actions, generation::get,
+            view -> !closed && !locked && generation.get() == view, this::availability, status::setText, this::availability);
+        sourceFields.add(sources.component());
+        var gitFields = DeploymentPageStyle.form();
+        sources.git().add((key, value) -> row(gitFields, key, value));
         var advancedFields = DeploymentPageStyle.form();
         advancedFields.add(DeploymentPageStyle.card("style.git", gitFields));
         var requirementsFields = DeploymentPageStyle.form();
@@ -142,8 +159,6 @@ public final class DeploymentAgentPage implements ModPage {
         advancedFields.add(DeploymentPageStyle.card("style.requirements", requirementsFields));
         advanced = new DeploymentPageStyle.Advanced(root, advancedFields);
         requirements.setText("applicationId=example-app\nhealthEndpoint=/health");
-        source.addActionListener(ignored -> sourceChanged(gitFields));
-        sourceChanged(gitFields);
         var buttons = new JPanel();
         start.addActionListener(ignored -> submit());
         refresh.addActionListener(ignored -> refresh());
@@ -156,9 +171,12 @@ public final class DeploymentAgentPage implements ModPage {
         status.setEditable(false);
         root.add(DeploymentPageStyle.selections(DeploymentPageStyle.card("style.source", sourceFields),
             DeploymentPageStyle.card("style.server", targetFields)), BorderLayout.NORTH);
+        var live = new JPanel(new BorderLayout(4, 4));
+        live.add(new JScrollPane(status), BorderLayout.NORTH);
+        live.add(feedback.component(), BorderLayout.CENTER);
         root.add(
             DeploymentPageStyle.card("style.results",
-                new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(status), evidence.component())),
+                new JSplitPane(JSplitPane.VERTICAL_SPLIT, live, evidence.component())),
             BorderLayout.CENTER);
         root.add(buttons, BorderLayout.SOUTH);
         DeploymentPageStyle.scrollPage(root);
@@ -177,13 +195,15 @@ public final class DeploymentAgentPage implements ModPage {
         locale(environment);
         locked = environment.locked();
         localize();
+        if (feedback != null) feedback.configure(environment);
         if (locked) {
             generation.incrementAndGet();
             cancelLookup();
+            if (sources != null) sources.revoke();
         } else {
             if (!preferences.ready())
                 loadPreferences();
-            if (servers.getItemCount() == 0)
+            if (targets.servers.getItemCount() == 0)
                 loadServers();
         }
         availability();
@@ -194,12 +214,14 @@ public final class DeploymentAgentPage implements ModPage {
     public void close() {
         requireEdt();
         closed = true;
+        if (feedback != null) feedback.close();
         if (advanced != null)
             advanced.close();
         preferences.close();
         evidence.configure(messages, true);
         generation.incrementAndGet();
         cancelLookup();
+        if (sources != null) sources.revoke();
         actions.shutdown();
     }
 
@@ -210,7 +232,7 @@ public final class DeploymentAgentPage implements ModPage {
     private void row(JPanel form, String key, JComponent value) {
         if (value.getName() == null)
             value.setName("deployment.agent." + key);
-        if (value instanceof JComboBox<?> choice && value != servers)
+        if (value instanceof JComboBox<?> choice && value != targets.servers)
             choice.setRenderer((list, option, index, selected, focused) -> new DefaultListCellRenderer()
                 .getListCellRendererComponent(list, option == null ? "" : text("choice." + option), index, selected,
                     focused));
@@ -222,7 +244,7 @@ public final class DeploymentAgentPage implements ModPage {
 
     /** Restores the actual approval choice on a worker without overwriting a live draft on locale changes. / 在工作线程恢复实际审批选择，语言变化不覆盖活动草稿。 */
     private void loadPreferences() {
-        mode.setEnabled(false);
+        preferences.editable(false);
         long view = generation.get();
         actions.execute(() -> {
             try {
@@ -230,7 +252,7 @@ public final class DeploymentAgentPage implements ModPage {
                 handle.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                     if (closed || locked || generation.get() != view)
                         return;
-                    if (error != null || result.outcome() != TaskResult.SUCCEEDED) {
+                    if (error != null || result == null || result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()) {
                         status.setText(text("preferenceError"));
                         return;
                     }
@@ -260,12 +282,11 @@ public final class DeploymentAgentPage implements ModPage {
                         lookup = null;
                     if (closed || locked || generation.get() != view)
                         return;
-                    if (error != null || result.outcome() != TaskResult.SUCCEEDED) {
+                    if (error != null || result == null || result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()) {
                         status.setText(text("serverError"));
                         return;
                     }
-                    servers.removeAllItems();
-                    result.value().orElseThrow().forEach(servers::addItem);
+                    targets.controls.replace(result.value().orElseThrow());
                     availability();
                 }));
             } catch (Exception failure) {
@@ -280,7 +301,7 @@ public final class DeploymentAgentPage implements ModPage {
     /** Submits exactly the visible local or Git source and bounded policy. / 精确提交可见本地或 Git 来源与有界策略。 */
     private void submit() {
         requireEdt();
-        if (closed || locked || busy || !preferences.ready() || servers.getSelectedItem() == null)
+        if (closed || locked || busy || sources.busy() || !sources.ready() || !preferences.ready() || targets.servers.getSelectedItem() == null)
             return;
         final Submission input;
         try {
@@ -297,8 +318,11 @@ public final class DeploymentAgentPage implements ModPage {
                 var handle = input.git().isPresent()
                     ? service.submitGit(input.server().ref(), input.request(), input.git().orElseThrow(),
                     input.executable(), input.name())
-                    : service.submitLocal(input.server().ref(), input.request());
+                    : service.submitLocal(input.server().ref(), input.request(), input.local().orElseThrow());
                 current = handle;
+                SwingUtilities.invokeLater(() -> {
+                    if (!closed && current == handle) feedback.watch(handle);
+                });
                 handle.completion().whenComplete((result, failure) -> {
                     busy = false;
                     SwingUtilities.invokeLater(() -> {
@@ -336,23 +360,25 @@ public final class DeploymentAgentPage implements ModPage {
             if (facts.putIfAbsent(line.substring(0, separator).trim(), line.substring(separator + 1).trim()) != null)
                 throw new IllegalArgumentException("Duplicate requirement");
         }
-        var request = new DeploymentAgentWorkflow.Request(facts, (String) mode.getSelectedItem(),
+        var request = new DeploymentAgentWorkflow.Request(facts, preferences.approval(), preferences.authorization(),
             2L * 1024 * 1024 * 1024, 100000, 2L * 1024 * 1024 * 1024);
-        var selected = (ServerInfo) servers.getSelectedItem();
-        if ("LOCAL".equals(source.getSelectedItem()))
-            return new Submission(selected, request, Optional.empty(), null, "");
-        var git = gitForm.capture();
-        return new Submission(selected, request, Optional.of(git.request()), git.executable(), git.name());
+        var selected = (ServerInfo) targets.servers.getSelectedItem();
+        if (!sources.gitSelected())
+            return new Submission(selected, request, sources.localLocation(), Optional.empty(), null, "");
+        var git = sources.captureGit();
+        return new Submission(selected, request, Optional.empty(), Optional.of(git.request()), git.executable(), git.name());
     }
 
     /** Frozen UI admission values. / 冻结的界面准入值。
      * @param server selected server / 所选服务器
      * @param request policy / 策略
+     * @param local previously completed picker position metadata / 此前已完成选择器位置元数据
      * @param git optional Git source / 可选 Git 来源
      * @param executable optional native Git binary / 可选原生 Git 程序
      * @param name reviewed saved name / 经审阅已存名称 */
     private record Submission(ServerInfo server, DeploymentAgentWorkflow.Request request,
-                              Optional<DeploymentGitRequest> git, Path executable, String name) {
+                              Optional<LocalLocation> local, Optional<DeploymentGitRequest> git, Path executable,
+                              String name) {
     }
 
     /** Reads original persisted task snapshots without resetting the engine. / 读取原持久任务快照而不重置引擎。 */
@@ -397,25 +423,18 @@ public final class DeploymentAgentPage implements ModPage {
 
     /** Updates locale-bound visible text and lock availability. / 更新依语言变化的可见文案与锁定可用性。 */
     private void localize() {
+        preferences.localize(this::text);
         labels.forEach(label -> label.setText(text((String) label.getClientProperty("key"))));
         start.setText(text("start"));
         refresh.setText(text("refresh"));
         cancel.setText(text("cancel"));
+        if (targets.controls != null) targets.controls.localize();
         evidence.configure(messages, closed || locked);
-        gitForm.configure("GIT".equals(source.getSelectedItem()), text("allowLocal"));
+        if (sources != null) sources.localize();
         if (advanced != null)
             advanced.environment(messages, locked);
         DeploymentPageStyle.refresh(root, messages);
         availability();
-    }
-
-    /** Shows only controls relevant to the selected source. / 仅显示所选来源相关控件。
-     * @param form original view's source controls / 原视图来源控件 */
-    private void sourceChanged(JPanel form) {
-        boolean git = "GIT".equals(source.getSelectedItem());
-        form.setVisible(git);
-        gitForm.configure(git, text("allowLocal"));
-        form.revalidate();
     }
 
     /** Stores current host locale. / 保存当前宿主语言。
@@ -435,8 +454,12 @@ public final class DeploymentAgentPage implements ModPage {
 
     /** Reflects current target, owner and lock state. / 反映当前目标、所属者和锁定状态。 */
     private void availability() {
-        start.setEnabled(!closed && !locked && !busy && preferences.ready() && servers.getSelectedItem() != null);
-        mode.setEnabled(!closed && !locked && !busy && preferences.ready());
+        boolean sourceBusy = sources != null && sources.busy();
+        boolean enabled = !closed && !locked && !busy && !sourceBusy;
+        start.setEnabled(enabled && sources != null && sources.ready() && preferences.ready() && targets.servers.getSelectedItem() != null);
+        if (targets.controls != null) targets.controls.availability(enabled, enabled);
+        if (sources != null) sources.availability(!closed && !locked && !busy, !closed && !locked && !busy);
+        preferences.editable(enabled && preferences.ready());
         refresh.setEnabled(!closed && !locked);
         cancel.setEnabled(!closed && !locked && current != null);
     }

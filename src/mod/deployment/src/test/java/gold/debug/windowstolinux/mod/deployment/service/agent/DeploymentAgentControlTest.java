@@ -52,7 +52,7 @@ class DeploymentAgentControlTest extends DeploymentRuntimeFixture {
                     .submit(new TaskRequest(type, "Original controlled worker", List.of(), true), task -> {
                         original.set(task.id());
                         journal.create(task, new DeploymentAgentActionLog.Identity("boundary-only", "a".repeat(64),
-                            "a".repeat(64), "MANUAL_REVIEW"));
+                            "a".repeat(64), "MANUAL_REVIEW", "GENERAL"));
                         entered.countDown();
                         settled.await(5, TimeUnit.SECONDS);
                         try {

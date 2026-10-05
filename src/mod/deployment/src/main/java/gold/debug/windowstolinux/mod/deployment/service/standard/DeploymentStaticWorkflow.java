@@ -8,7 +8,6 @@ import java.util.*;
 import java.util.concurrent.CancellationException;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
-import gold.debug.windowstolinux.appapi.secret.model.SecretId;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
@@ -20,11 +19,11 @@ import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentConfigStore;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentProjectRecord;
-import gold.debug.windowstolinux.mod.deployment.db.DeploymentSecretStore;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.file.git.DeploymentGitRequest;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigInput;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.DeploymentAdmissionStatus;
@@ -40,7 +39,6 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.compone
 import gold.debug.windowstolinux.mod.deployment.service.standard.analyze.ecosystem.db.DatabaseProjectChecker;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.*;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedAdvisor;
-import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedScope;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.contract.DeploymentReviewConsent;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentDatabaseSourceInputs;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.database.DeploymentNativeDatabaseReview;
@@ -82,18 +80,64 @@ public final class DeploymentStaticWorkflow {
      * @param logicalRootName reviewed source name / 审阅的来源名称
      * @param sourceBytes frozen source budget / 冻结来源字节预算
      * @param sourceEntries discovery budget / 发现条目预算
-     * @param archiveBytes compressed archive budget / 压缩归档预算 */
-    public record Draft(String logicalRootName, long sourceBytes, int sourceEntries, long archiveBytes) {
+     * @param archiveBytes compressed archive budget / 压缩归档预算
+     * @param sourceOptions captured metadata, project edit and non-secret runtime values / 抓取的元数据、项目编辑及非秘密运行值 */
+    public record Draft(String logicalRootName, long sourceBytes, int sourceEntries, long archiveBytes,
+                        SourceOptions sourceOptions) {
+        /** Retains the original host-picker workflow for direct callers. / 为直接调用方保留原宿主选择器流程。
+         * @param logicalRootName original name / 原名称
+         * @param sourceBytes source budget / 来源预算
+         * @param sourceEntries entry budget / 条目预算
+         * @param archiveBytes archive budget / 归档预算 */
+        public Draft(String logicalRootName, long sourceBytes, int sourceEntries, long archiveBytes) {
+            this(logicalRootName, sourceBytes, sourceEntries, archiveBytes, SourceOptions.empty());
+        }
+
         /** Rejects invalid source limits before admission. / 准入前拒绝无效来源限额。
          * @param logicalRootName original logical name / 原逻辑名称
          * @param sourceBytes source bytes / 来源字节
          * @param sourceEntries source entries / 来源条目
-         * @param archiveBytes archive bytes / 归档字节 */
+         * @param archiveBytes archive bytes / 归档字节
+         * @param sourceOptions captured source and runtime inputs / 抓取的来源及运行输入 */
         public Draft {
             logicalRootName = Objects.requireNonNull(logicalRootName).trim();
+            Objects.requireNonNull(sourceOptions);
             if (sourceBytes < 1 || sourceBytes > 2L * 1024 * 1024 * 1024 || sourceEntries < 1 || sourceEntries > 100_000
                 || archiveBytes < 1 || archiveBytes > 2L * 1024 * 1024 * 1024)
                 throw new IllegalArgumentException("Source budgets differ from the supported bounds");
+        }
+    }
+
+    /** Captured metadata and non-secret prefill, without a retained source grant. / 已抓取元数据及非秘密预填，不含保留来源授权。
+     * @param localLocation explicit local URI metadata / 明确本地 URI 元数据
+     * @param project complete old-row edit / 完整旧行编辑
+     * @param runtimeDraft explicit pre-start runtime values / 明确启动前运行值 */
+    public record SourceOptions(Optional<java.net.URI> localLocation,
+                                Optional<DeploymentStaticSourceService.ProjectEdit> project,
+                                Map<String, String> runtimeDraft) {
+        /** Explicit pre-start runtime keys; resource authorization remains per component. / 明确启动前运行键；资源授权仍限定各组件。 */
+        public static final List<String> RUNTIME_FIELDS = List.of("applicationDeclaration", "executionMode", "exposure", "port", "primary", "secondary",
+            "version", "ports", "healthMode", "healthEndpoint", "expectedStatus", "timeout", "stability", "accessUrl",
+            "configuration", "containerEngine", "volumes", "jvmArguments", "arguments", "jvmTarget");
+
+        /** Captures immutable inputs before task admission. / 任务准入前抓取不可变输入。
+         * @param localLocation local metadata / 本地元数据
+         * @param project complete project edit / 完整项目编辑
+         * @param runtimeDraft non-secret values / 非秘密值 */
+        public SourceOptions {
+            Objects.requireNonNull(localLocation);
+            Objects.requireNonNull(project);
+            runtimeDraft = Map.copyOf(runtimeDraft);
+            localLocation.ifPresent(uri -> new gold.debug.windowstolinux.mod.deployment.service.core.DeploymentSourceSelectionService.LocalLocation(uri, ""));
+            if (!RUNTIME_FIELDS.containsAll(runtimeDraft.keySet()) || runtimeDraft.entrySet().stream().anyMatch(entry -> entry.getKey().isBlank()
+                || entry.getKey().length() > 128 || entry.getValue().length() > 12_000))
+                throw new IllegalArgumentException("Runtime draft exceeds reviewed bounds");
+        }
+
+        /** Returns an unselected original source route. / 返回未预选原来源路径。
+         * @return empty metadata / 空元数据 */
+        public static SourceOptions empty() {
+            return new SourceOptions(Optional.empty(), Optional.empty(), Map.of());
         }
     }
 
@@ -119,14 +163,49 @@ public final class DeploymentStaticWorkflow {
 
     /** Reviewed choice for one discovered root. / 一个已发现根的审阅选择。
      * @param type selected deployable type / 选定可部署类型
-     * @param dependencies predecessor component IDs / 前驱组件标识 */
-    public record Choice(DeploymentProjectKind type, Set<String> dependencies) {
+     * @param dependencies predecessor component IDs / 前驱组件标识
+     * @param inputs explicit manual boundary or original automatic choice / 明确手工边界或原自动选择 */
+    public record Choice(DeploymentProjectKind type, Set<String> dependencies, Optional<ComponentInputs> inputs) {
+        /** Retains strict automatic-discovery choices for existing callers. / 为既有调用方保留严格自动发现选择。
+         * @param type discovered type / 发现类型
+         * @param dependencies explicit edges / 明确边 */
+        public Choice(DeploymentProjectKind type, Set<String> dependencies) {
+            this(type, dependencies, Optional.empty());
+        }
+
         /** Freezes a component choice. / 冻结组件选择。
          * @param type selected type / 选定类型
-         * @param dependencies predecessors / 前驱 */
+         * @param dependencies predecessors / 前驱
+         * @param inputs explicit manual boundary / 明确手工边界 */
         public Choice {
             Objects.requireNonNull(type);
             dependencies = Set.copyOf(dependencies);
+            Objects.requireNonNull(inputs);
+        }
+    }
+
+    /** Explicit manual component boundary, with automatic suggestions represented by absence. / 明确手工组件边界，以空值表示自动建议。
+     * @param relativeRoot source-root-relative path / 相对来源根路径
+     * @param required whole-application requirement / 整体应用必需性
+     * @param artifactPaths explicit artifacts or runtime suggestions / 明确产物或运行建议
+     * @param ports explicit host ports or runtime suggestions / 明确宿主端口或运行建议 */
+    public record ComponentInputs(String relativeRoot, boolean required,
+                                  Optional<List<String>> artifactPaths, Optional<Set<Integer>> ports) {
+        /** Validates path syntax and bounds without reading live source. / 不读取活动来源地校验路径语法及边界。
+         * @param relativeRoot relative path / 相对路径
+         * @param required required component / 必需组件
+         * @param artifactPaths explicit artifacts / 明确产物
+         * @param ports explicit ports / 明确端口 */
+        public ComponentInputs {
+            relativeRoot = Objects.requireNonNull(relativeRoot).trim().replace('\\', '/');
+            if (!(relativeRoot.equals(".") || relativeRoot.matches("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*"))
+                || relativeRoot.contains(".."))
+                throw new IllegalArgumentException("Component root escapes frozen source");
+            artifactPaths = Objects.requireNonNull(artifactPaths).map(List::copyOf);
+            ports = Objects.requireNonNull(ports).map(Set::copyOf);
+            if (artifactPaths.filter(values -> values.size() > 64).isPresent()
+                || ports.filter(values -> values.size() > 64 || values.stream().anyMatch(port -> port < 1 || port > 65535)).isPresent())
+                throw new IllegalArgumentException("Component declarations exceed bounds");
         }
     }
 
@@ -333,20 +412,36 @@ public final class DeploymentStaticWorkflow {
      * @throws ApiException if admission or model configuration rejects / 准入或模型配置拒绝时 */
     public TaskHandle<Void> submit(ServerId server, Draft draft, Optional<GitSource> git, Reviewer reviewer,
                                    boolean assisted, String approvalMode) throws ApiException {
+        return submit(server, draft, git, reviewer, assisted, approvalMode, "GENERAL");
+    }
+
+    /** Freezes both strategies on one original publication, keeping static execution free of AI calls. / 在一项原发布冻结两策略，静态执行保持零AI调用。
+     * @param server exact original target / 精确原目标
+     * @param draft frozen source choices / 冻结来源选择
+     * @param git optional pinned source / 可选固定来源
+     * @param reviewer actual owner reviewer / 实际所属审阅人
+     * @param assisted selected assisted route / 所选辅助路线
+     * @param approvalMode approval strategy / 审批策略
+     * @param authorizationMode authorization repetition / 授权重复规则
+     * @return original publication task / 原发布任务
+     * @throws ApiException if original admission fails / 原准入失败时 */
+    public TaskHandle<Void> submit(ServerId server, Draft draft, Optional<GitSource> git, Reviewer reviewer,
+                                   boolean assisted, String approvalMode, String authorizationMode) throws ApiException {
         Objects.requireNonNull(server);
         Objects.requireNonNull(draft);
         Objects.requireNonNull(git);
         Objects.requireNonNull(reviewer);
-        if (!Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approvalMode))
-            throw new IllegalArgumentException("Invalid assisted approval policy");
+        gold.debug.windowstolinux.mod.deployment.ai.DeploymentAuthorizationPolicy.requireAllowed(approvalMode, authorizationMode);
         if (git.isPresent() && draft.logicalRootName().isBlank())
             throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_NAME_REQUIRED",
                 "Git source requires an explicit project name", Map.of(), Optional.empty()));
+        if (git.isPresent() && draft.sourceOptions().localLocation().isPresent())
+            throw new IllegalArgumentException("Publication captured two source routes");
         return references.submitPrepared(server, task -> {
             try {
                 new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(context.db()).save(task,
                     new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(
-                        assisted ? "ASSISTED" : "STATIC", approvalMode));
+                        assisted ? "ASSISTED" : "STATIC", approvalMode, authorizationMode));
             } catch (SQLException unavailable) {
                 return ioFailure("DEPLOYMENT_PREFERENCE_SAVE_FAILED");
             } catch (ApiException unavailable) {
@@ -357,12 +452,13 @@ public final class DeploymentStaticWorkflow {
                         : code == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                     Optional.empty(), Optional.of(unavailable.problem()));
             }
-            if (!assisted)
-                return prepare(server, draft, git, reviewer, task, false);
             try {
-                var scoped = new DeploymentStaticWorkflow(DeploymentAssistedScope.freeze(context, task, approvalMode),
-                    references);
-                return scoped.prepare(server, draft, git, reviewer, task, true);
+                var guarded = DeploymentPublishPolicyContext.begin(context, task, server, assisted, approvalMode,
+                    authorizationMode, draft + "\ngit=" + git.map(value -> value.request().toString()).orElse(""));
+                return guarded.prepare(original -> new DeploymentStaticWorkflow(guarded, references)
+                    .prepare(server, draft, git, reviewer, original, assisted));
+            } catch (DeploymentAiJson.CapabilityOutcomeException refused) {
+                return new OperationResult<>(refused.outcome(), Optional.empty(), refused.problem());
             } catch (ApiException unavailable) {
                 var code = unavailable.problem().code();
                 return new OperationResult<>(
@@ -386,8 +482,7 @@ public final class DeploymentStaticWorkflow {
     private OperationResult<DeploymentRefFlow.PreparedPublish> prepare(ServerId server, Draft draft,
                                                                        Optional<GitSource> git, Reviewer reviewer, TaskContext task, boolean assisted) throws Exception {
         var marker = DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
-        DeploymentSourceMaterial material = null;
-        DeploymentGitSourceFlow.PublishSource pinned = null;
+        var capture = new DeploymentStaticSourceSetup.Capture();
         var archives = new ArrayList<DeploymentSourceArchive>();
         boolean transferred = false;
         boolean retainMarker = false;
@@ -396,26 +491,16 @@ public final class DeploymentStaticWorkflow {
                 marker.cancelled();
                 return cancelled();
             }
-            String logicalName;
-            if (git.isPresent()) {
-                var source = git.orElseThrow();
-                pinned = new DeploymentGitSourceFlow(context).prepareForPublication(source.request(),
-                    source.executable(), draft.logicalRootName(), draft.sourceBytes(), draft.sourceEntries(), task);
-                material = pinned.material().source();
-                logicalName = draft.logicalRootName();
-            } else {
-                var selection = context.file().sources().selectDirectory("Deployment source", task);
-                if (task.cancelToken().requested()) {
-                    marker.cancelled();
-                    return cancelled();
-                }
-                material = new DeploymentSourceSetup(context.file()).prepare(selection, draft.sourceBytes(),
-                    draft.sourceEntries(), task);
-                logicalName = draft.logicalRootName().isBlank() ? selection.displayName() : draft.logicalRootName();
-            }
+            DeploymentDiagnostics.progress(context, task, "Freezing the selected source / 冻结选定来源");
+            capture.prepare(context, draft, git, task);
+            var material = capture.material();
+            var pinned = capture.pinned();
+            var localProject = capture.localProject();
+            String logicalName = capture.logicalName();
             if (logicalName.isBlank())
                 return rejected("DEPLOYMENT_STATIC_SOURCE_NAME_UNAVAILABLE");
             var discovered = new ProjectPartFinder().discover(material.snapshot().directory());
+            DeploymentDiagnostics.progress(context, task, "Reviewing the component graph / 审阅组件图");
             if (discovered.size() > 16)
                 return rejected("DEPLOYMENT_STATIC_COMPONENT_LIMIT");
             var chosen = reviewer.select(server, material.snapshot().sha256(), discovered, task);
@@ -428,12 +513,16 @@ public final class DeploymentStaticWorkflow {
             var choices = chosen.value().orElseThrow();
             if (!validSelection(discovered, choices))
                 return rejected("DEPLOYMENT_STATIC_SELECTION_INVALID");
-            DeploymentAssistedAdvisor advice = assisted ? new DeploymentAssistedAdvisor(context) : null;
+            discovered = DeploymentComponentSelection.resolve(discovered, choices);
+            DeploymentAssistedAdvisor advice = assisted
+                ? new DeploymentAssistedAdvisor(((DeploymentPublishPolicyContext) context).assistedCapabilities())
+                : null;
             OperationResult<DeploymentRefFlow.PreparedPublish> ready = discovered.size() == 1
+                && choices.choices().get(discovered.getFirst().id()).inputs().isEmpty()
                 ? prepareSingle(server, draft, logicalName, reviewer, task, material, discovered.getFirst(),
-                choices, archives, pinned, advice)
+                choices, archives, pinned, advice, localProject)
                 : prepareGraph(server, draft, logicalName, reviewer, task, material, discovered, choices, archives,
-                pinned, advice);
+                pinned, advice, localProject);
             if (ready.outcome() == TaskResult.CANCELLED)
                 marker.cancelled();
             if (ready.outcome() != TaskResult.SUCCEEDED) {
@@ -442,6 +531,7 @@ public final class DeploymentStaticWorkflow {
             }
             if (pinned != null)
                 pinned.close();
+            DeploymentDiagnostics.progress(context, task, "Closing original preparation resources / 关闭原准备资源");
             marker.close();
             transferred = true;
             return advice == null ? ready : DeploymentStaticAssistance.publication(ready);
@@ -466,7 +556,7 @@ public final class DeploymentStaticWorkflow {
         } finally {
             if (!transferred) {
                 retainMarker |= unresolvedRemotePreparation(task);
-                DeploymentStaticSourceSetup.close(archives, material, pinned, marker, retainMarker);
+                DeploymentStaticSourceSetup.close(archives, capture.material(), capture.pinned(), marker, retainMarker);
             }
         }
     }
@@ -483,12 +573,14 @@ public final class DeploymentStaticWorkflow {
      * @param archives owned archives to release on failure / 失败时释放的所属归档
      * @param pinned optional original Git material / 可选原 Git 素材
      * @param advice optional original bounded assistance / 可选原有界辅助
+     * @param localProject same frozen local project row if explicitly selected / 明确选择时的同一冻结本地项目行
      * @return prepared original publication / 已准备原发布
      * @throws Exception if original review or storage fails / 原审阅或存储失败时 */
     private OperationResult<DeploymentRefFlow.PreparedPublish> prepareSingle(ServerId server, Draft draft,
                                                                              String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
                                                                              DiscoveredProjectPart discovered, Selection selection, List<DeploymentSourceArchive> archives,
-                                                                             DeploymentGitSourceFlow.PublishSource pinned, DeploymentAssistedAdvisor advice) throws Exception {
+                                                                             DeploymentGitSourceFlow.PublishSource pinned, DeploymentAssistedAdvisor advice,
+                                                                             Optional<DeploymentProjectRecord> localProject) throws Exception {
         String id = discovered.id();
         var type = selection.choices().get(id).type();
         var initial = analyzer.analyzeComponent(material, discovered.relativeRoot(), logicalName, type,
@@ -507,6 +599,7 @@ public final class DeploymentStaticWorkflow {
         var prompt = assistance.prompt(server,
             prompt(id, facts, assessed.runtimeSuggestion().orElse(null), databaseLocal.hasBindings()), advice,
             material, task);
+        prompt = DeploymentStaticRuntimeDraft.apply(prompt, draft.sourceOptions().runtimeDraft());
         var reviewed = assistance.review(server, material.snapshot().sha256(), List.of(prompt), reviewer, advice, task);
         if (reviewed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(reviewed);
@@ -537,6 +630,7 @@ public final class DeploymentStaticWorkflow {
             return schemaReviewRequired();
         if (reanalyzed.value().orElseThrow().assessment().admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING)
             return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
+        DeploymentDiagnostics.progress(context, task, "Archiving the reviewed frozen component / 归档已审阅冻结组件");
         var archive = new DeploymentSourceArchiver(context.file()).prepare(material, relative(discovered),
             draft.archiveBytes(), task);
         archives.add(archive);
@@ -553,11 +647,12 @@ public final class DeploymentStaticWorkflow {
             return withoutValue(planned);
         var publication = planned.value().orElseThrow();
         var unit = units.resolve(task, facts.applicationId(), server);
-        var credentials = credentials(task, publication.request().secretReferences());
+        var credentials = units.credentials(task, publication.request().secretReferences());
         var helper = ensureHelper(server, task);
         if (helper.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(helper);
-        Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
+        DeploymentDiagnostics.progress(context, task, "Checking the original source-project revision / 核对原来源项目修订");
+        Optional<DeploymentProjectRecord> project = DeploymentStaticProjectSave.save(context, task, draft, pinned, localProject);
         return single.prepareWithinTask(task, unit, project, credentials,
             original -> new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(publication), Optional.empty()),
             advice == null
@@ -577,19 +672,22 @@ public final class DeploymentStaticWorkflow {
      * @param archives owned archives / 所属归档
      * @param pinned optional original Git material / 可选原 Git 素材
      * @param advice optional original bounded assistance / 可选原有界辅助
+     * @param localProject same frozen local project row if explicitly selected / 明确选择时的同一冻结本地项目行
      * @return prepared original publication / 已准备原发布
      * @throws Exception if review or storage fails / 审阅或存储失败时 */
     private OperationResult<DeploymentRefFlow.PreparedPublish> prepareGraph(ServerId server, Draft draft,
                                                                             String logicalName, Reviewer reviewer, TaskContext task, DeploymentSourceMaterial material,
                                                                             List<DiscoveredProjectPart> discovered, Selection selection, List<DeploymentSourceArchive> archives,
-                                                                            DeploymentGitSourceFlow.PublishSource pinned, DeploymentAssistedAdvisor advice) throws Exception {
+                                                                            DeploymentGitSourceFlow.PublishSource pinned, DeploymentAssistedAdvisor advice,
+                                                                            Optional<DeploymentProjectRecord> localProject) throws Exception {
         var facts = new HashMap<String, DeploymentProjectFacts>();
         var databaseLocal = new HashMap<String, DeploymentDatabaseStages.Local>();
         var collected = graphPrompts(server, material, discovered, selection, reviewer, task, facts, databaseLocal,
             advice);
         if (collected.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(collected);
-        var prompts = collected.value().orElseThrow();
+        var prompts = collected.value().orElseThrow().stream()
+            .map(prompt -> DeploymentStaticRuntimeDraft.apply(prompt, draft.sourceOptions().runtimeDraft())).toList();
         var reviewed = assistance.review(server, material.snapshot().sha256(), List.copyOf(prompts), reviewer, advice,
             task);
         if (reviewed.outcome() != TaskResult.SUCCEEDED)
@@ -621,11 +719,11 @@ public final class DeploymentStaticWorkflow {
             return schemaReviewRequired();
         if (assessment.assessment().admission() != DeploymentAdmissionStatus.READY_FOR_PLANNING)
             return rejected("DEPLOYMENT_STATIC_ANALYSIS_INCOMPLETE");
-        var frozen = DeploymentStaticSourceSetup.archives(material, context.file(), discovered,
-            draft.archiveBytes(), archives, task);
+        DeploymentDiagnostics.progress(context, task, "Archiving the reviewed frozen components / 归档已审阅冻结组件");
+        var frozen = DeploymentStaticSourceSetup.reviewArchives(material, context.file(), discovered,
+            draft.archiveBytes(), archives, task, reviewer, server, supplied, databases, gitReview(pinned));
         var byComponent = frozen.archives();
-        var confirmed = reviewer.confirm(server, material.snapshot().sha256(), frozen.digests(), supplied, databases,
-            gitReview(pinned), task);
+        var confirmed = frozen.consent();
         if (confirmed.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(confirmed);
         if (!confirmed.value().orElse(false))
@@ -638,26 +736,21 @@ public final class DeploymentStaticWorkflow {
         if (planned.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(planned);
         var plans = planned.value().orElseThrow();
-        var owners = new HashMap<String, DeploymentUnitIdentity>();
-        var secrets = new HashSet<DeploymentSecretRef>();
-        for (var entry : plans.components().entrySet()) {
-            owners.put(entry.getKey(), units.resolve(task, entry.getValue().request().facts().applicationId(), server));
-            secrets.addAll(entry.getValue().request().secretReferences());
-        }
-        var credentials = credentials(task, List.copyOf(secrets));
-        var healthId = selection.healthComponent().orElseThrow();
+        var bindings = units.resolveGraph(task, server, plans);
+        var healthId = selection.healthComponent().orElse(discovered.getFirst().id());
         var healthPrompt = prompts.stream().filter(value -> value.componentId().equals(healthId)).findFirst()
             .orElseThrow();
         var helper = ensureHelper(server, task);
         if (helper.outcome() != TaskResult.SUCCEEDED)
             return withoutValue(helper);
-        Optional<DeploymentProjectRecord> project = pinned == null ? Optional.empty() : Optional.of(pinned.save());
+        DeploymentDiagnostics.progress(context, task, "Checking the original source-project revision / 核对原来源项目修订");
+        Optional<DeploymentProjectRecord> project = DeploymentStaticProjectSave.save(context, task, draft, pinned, localProject);
         var corrections = new LinkedHashMap<String, gold.debug.windowstolinux.mod.deployment.service.standard.deploy.assistance.DeploymentAssistedBuildCorrection>();
         if (advice != null)
             for (var prompt : prompts)
                 corrections.put(prompt.componentId(),
                     assistance.correction(prompt, supplied.get(prompt.componentId()), reviewer, advice));
-        return multi.prepareWithinTask(task, server, project, owners, credentials, healthId,
+        return multi.prepareWithinTask(task, server, project, bindings.owners(), bindings.credentials(), healthId,
             runtime.health(completed(healthPrompt, supplied.get(healthId))),
             original -> new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(plans), Optional.empty()),
             Map.copyOf(corrections));
@@ -763,6 +856,17 @@ public final class DeploymentStaticWorkflow {
         try (var session = context.linux().connect(server, task)) {
             var checked = new DeploymentProtocolBootstrap(context.tasks(), task, server, session, context.interaction())
                 .ensure();
+            if (checked.outcome() == TaskResult.FAILED && checked.problem()
+                .filter(problem -> "DEPLOYMENT_LOWER_RISK_REQUIRED".equals(problem.eventCode())).isPresent()) {
+                var original = DeploymentProtocolBootstrapActionLog.find(context.tasks(), task);
+                if (original.isPresent() && "INTENT".equals(original.orElseThrow().facts().phase())) {
+                    var refusal = checked.problem().orElseThrow();
+                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                        refusal.code(), refusal.eventCode(),
+                        "Read-only helper verification failed; no supported lower-risk installer is available, so the refused installer was not sent / 原helper只读核验未通过，当前流程没有可执行的低风险安装替代，已停止且未发送被拒绝的安装器",
+                        refusal.context(), refusal.diagnosticId())));
+                }
+            }
             return new OperationResult<>(checked.outcome(), Optional.empty(), checked.problem());
         }
     }
@@ -866,22 +970,12 @@ public final class DeploymentStaticWorkflow {
      * @param selection reviewed selection / 经审阅选择
      * @return true only for complete bounded choices / 仅完整有界选择为真 */
     public static boolean validSelection(List<DiscoveredProjectPart> discovered, Selection selection) {
-        if (!selection.applicationId().matches("[a-z0-9][a-z0-9-]{0,62}")
-            || !selection.choices().keySet()
-            .equals(discovered.stream().map(DiscoveredProjectPart::id)
-                .collect(java.util.stream.Collectors.toSet()))
-            || discovered.size() == 1 != selection.healthComponent().isEmpty()
-            || selection.healthComponent().isPresent()
-            && !selection.choices().containsKey(selection.healthComponent().orElseThrow()))
+        try {
+            DeploymentComponentSelection.resolve(discovered, selection);
+            return true;
+        } catch (IllegalArgumentException invalid) {
             return false;
-        for (var component : discovered) {
-            var choice = selection.choices().get(component.id());
-            if (choice == null || !component.types().contains(choice.type()) || !choice.type().deployable()
-                || choice.dependencies().contains(component.id())
-                || !selection.choices().keySet().containsAll(choice.dependencies()))
-                return false;
         }
-        return true;
     }
 
     /** Returns the canonical relative root used by both analysis and archive. / 返回分析与归档共用的规范相对根。
@@ -910,7 +1004,11 @@ public final class DeploymentStaticWorkflow {
     public void validateReview(Prompt prompt, Answers answer) {
         var values = completed(prompt, answer);
         runtime.runtime(prompt.projectType(), values);
-        DeploymentConfigInput.parse(values.getOrDefault("configuration", ""));
+        try {
+            DeploymentConfigInput.parse(values.getOrDefault("configuration", ""));
+        } catch (IllegalArgumentException invalid) {
+            throw new DeploymentReviewFieldException("configuration", invalid);
+        }
         DeploymentConfigInput.secrets(values.getOrDefault("secrets", ""));
         var mode = DeploymentDatabaseReviewModeType.valueOf(values.getOrDefault("databaseMode", "UNREVIEWED"));
         DeploymentStaticInputParser.databaseBindings(mode, values.getOrDefault("databaseDetails", ""));
@@ -929,13 +1027,21 @@ public final class DeploymentStaticWorkflow {
         var definition = runtime.runtime(choice.type(), values);
         var configuration = DeploymentConfigInput.parse(values.getOrDefault("configuration", ""));
         var secrets = DeploymentConfigInput.secrets(values.getOrDefault("secrets", ""));
+        var explicit = choice.inputs();
+        var actualArtifacts = runtime.artifacts(component.relativeRoot(), facts, values);
+        var artifacts = explicit.flatMap(ComponentInputs::artifactPaths).orElse(actualArtifacts);
+        var actualPorts = definition.workload().endpoints().stream()
+            .map(endpoint -> endpoint.hostPort()).collect(java.util.stream.Collectors.toSet());
+        definition.healthCheck().portNumber().ifPresent(actualPorts::add);
+        var ports = explicit.flatMap(ComponentInputs::ports).orElse(actualPorts);
+        if (!artifacts.containsAll(actualArtifacts) || !ports.containsAll(actualPorts))
+            throw new IllegalArgumentException("Manual declarations omit the actual reviewed runtime artifact or endpoint");
         return new PartAnalysisRequest(component.id(), relative(component).isEmpty() ? "." : relative(component),
-            choice.type(), Optional.of(definition), runtime.artifacts(component.relativeRoot(), facts, values),
-            definition.workload().endpoints().stream().map(endpoint -> endpoint.hostPort()).collect(
-                java.util.stream.Collectors.toSet()),
+            choice.type(), Optional.of(definition), artifacts, ports,
             configuration.stream().map(value -> value.key()).toList(),
             secrets.stream().map(DeploymentSecretRef::identifier).toList(),
-            answer.files().stream().map(DeploymentFileBinding::dataPath).toList(), choice.dependencies(), true,
+            answer.files().stream().map(DeploymentFileBinding::dataPath).toList(), choice.dependencies(),
+            explicit.map(ComponentInputs::required).orElse(true),
             PartIsolationSpec.managed());
     }
 
@@ -980,29 +1086,6 @@ public final class DeploymentStaticWorkflow {
         long revision = new DeploymentConfigStore(context.db()).nextRevision(task, applicationId);
         return new DeploymentStaticReviewAnswers(answer.values(), answer.files(), revision, answer.limits(), consent,
             answer.containerRisk(), answer.adapterRisk());
-    }
-
-    /** Maps existing immutable revisions to their actual opaque platform credentials. / 将已存不可变修订映射到实际平台不透明凭据。
-     * @param task original task / 原任务
-     * @param references exact reviewed revisions / 精确已审阅修订
-     * @return precise saved credential map / 精确已存凭据映射
-     * @throws SQLException if metadata fails / 元数据失败时
-     * @throws ApiException if original access fails / 原访问失败时 */
-    private Map<DeploymentSecretRef, SecretId> credentials(TaskContext task,
-                                                           List<DeploymentSecretRef> references) throws SQLException, ApiException {
-        var repository = new DeploymentSecretStore(context.db());
-        var result = new HashMap<DeploymentSecretRef, SecretId>();
-        for (var reference : references) {
-            var saved = repository.findRevision(task, reference);
-            if (saved.isEmpty())
-                throw new IllegalArgumentException("Reviewed secret revision does not exist");
-            var purpose = saved.orElseThrow().purpose();
-            if (purpose.isEmpty())
-                throw new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_SECRET_PURPOSE_UNAVAILABLE",
-                    "Original secret purpose is unavailable", Map.of(), Optional.empty()));
-            result.put(reference, new SecretId(saved.orElseThrow().credentialId(), purpose.orElseThrow()));
-        }
-        return Map.copyOf(result);
     }
 
     /** Keeps classified refusal while dropping an unavailable payload. / 保留分类拒绝且丢弃不可用载荷。
