@@ -66,6 +66,7 @@ final class FileCopyPlan {
         if (source.actual().server().equals(target.server()) && (source.actual().equals(target) || isInside(target, source.actual())))
             throw new IOException("A source cannot be copied or moved into itself");
         plan(source, target, choices, decisions, cancel);
+        validateLinkHosts(cancel);
         long bytes = 0;
         for (Step step : steps)
             if (step.source != null && !step.failed && step.source.kind() == FileInfo.Kind.FILE) {
@@ -75,6 +76,21 @@ final class FileCopyPlan {
         total = bytes;
         managed = move ? managedLinks(journal, cancel) : List.of();
         orderLinks();
+    }
+
+    /** Rejects nonexpressible cross-host links before any destination effect. / 在任何目标副作用前拒绝无法表达的跨主机链接。
+     * @param cancel original cooperative cancellation / 原协作取消
+     * @throws IOException if an original link target has no destination-host mapping / 原链接目标没有目标主机映射时 */
+    private void validateLinkHosts(CancelToken cancel) throws IOException {
+        for (Step step : steps) {
+            check(cancel);
+            if (step.failed || step.source == null || step.source.kind() != FileInfo.Kind.LINK) continue;
+            FilePath old = resolveTarget(step.original, step.source.target().orElseThrow());
+            if (source.kind() == FileInfo.Kind.DIRECTORY && (old.equals(source.actual()) || isInside(old, source.actual())))
+                old = mapping.getOrDefault(old, old);
+            if (!old.server().equals(step.target.server()))
+                throw new IOException("A link target cannot be expressed across hosts");
+        }
     }
 
     /** Collects collision choices and actual destination mappings without writing files. / 收集冲突选择及实际目标映射，不写文件。

@@ -1399,6 +1399,39 @@ WindowsToLinux/
    │  │           ├─ task-feedback.properties  # 模块运行资源
    │  │           ├─ task-feedback_en.properties  # 模块运行资源
    │  │           └─ task-feedback_zh.properties  # 模块运行资源
+   │  ├─ files/  # 独立可选文件管理 Mod，无业务 Schema
+   │  │  ├─ pom.xml  # Maven 模块与依赖声明
+   │  │  ├─ Mod.java  # 可选文件工作区及原文件操作核对生命周期
+   │  │  ├─ file/  # 文件观测与工作区意图值
+   │  │  │  └─ model/  # 目录、剪贴与实际结果的不可变值
+   │  │  │     ├─ FilesClipboard.java  # 工作区内部意图及观测；准备不修改文件
+   │  │  │     ├─ FilesDirectory.java  # 一个目录的完整有界观测，不含可复用授权
+   │  │  │     ├─ FilesObservation.java  # 独立于任务最终清理的已返回回调事实
+   │  │  │     └─ FilesOutcome.java  # 实际报告及原任务日志，包含成功链接更新
+   │  │  ├─ mod.json  # 作者身份、依赖与公开入口描述
+   │  │  ├─ service/  # 原任务文件动作、部分结果与安全核对
+   │  │  │  ├─ FilesExecution.java  # 在不确定任务可结束之前保留实际部分结果
+   │  │  │  ├─ FilesMutation.java  # 仅在真实回调执行既有File及Link操作
+   │  │  │  ├─ FilesObservations.java  # 有界启用所属事实；不淘汰未结束任务来暗示成功
+   │  │  │  ├─ FilesPlan.java  # 固定非秘密批次依据，防止部分工作变成整批成功
+   │  │  │  ├─ FilesProblems.java  # 受检诊断及明确汇总结果
+   │  │  │  ├─ FilesRecovery.java  # 核对真实原任务，不重复文件操作
+   │  │  │  └─ FilesService.java  # 原任务文件管理及启用所属实际观测
+   │  │  ├─ ui/  # 按需双栏、共用动作与实际任务反馈
+   │  │  │  ├─ FilesActions.java  # 共享工具栏、菜单及实际键盘动作
+   │  │  │  ├─ FilesCommands.java  # 将共享视图动作转换为原平台服务任务
+   │  │  │  ├─ FilesDialogs.java  # 持有未提交的模态输入，以供锁定及关闭撤销
+   │  │  │  ├─ FilesFeedback.java  # 显示原任务状态、逐项报告及持久链接步骤
+   │  │  │  ├─ FilesMessages.java  # 不重建控件地解析原工作区语言
+   │  │  │  ├─ FilesPane.java  # 持有一个独立定位及多选的栏
+   │  │  │  ├─ FilesTableModel.java  # 显示两列并保留实际不跟随链接观测
+   │  │  │  ├─ FilesTasks.java  # 观察实际任务，不永久等待 UNKNOWN 完成
+   │  │  │  ├─ FilesTransferHandler.java  # 仅接受一个根内的跨栏移动载荷
+   │  │  │  └─ FilesWorkspace.java  # 持有一个按需文件工作区及对称可选第二栏
+   │  │  └─ resources/  # 所属能力分组
+   │  │     └─ ui/  # 文件操作与任务状态的多语言文字
+   │  │        ├─ files.properties  # 模块运行资源
+   │  │        └─ files_zh_CN.properties  # 模块运行资源
    │  └─ git/  # 独立 Git Mod：受管仓库取材与固定提交素材服务
    │     ├─ pom.xml  # Maven 模块与依赖声明
    │     ├─ Mod.java  # 无页面或业务数据库的无状态 Git 来源服务生命周期

@@ -62,17 +62,32 @@ class FileLinkAssociationIntegrationTest {
                 }
             });
             try (var file = runtime.capabilities().source(OWNER, VERSION)) {
-                completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
+                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
                     for (String name : List.of("private-link", "missing-link")) {
                         var path = FilePath.remote(SERVER, "/" + name);
+                        task.progress("Observe original link " + name);
                         assertEquals(FileInfo.Kind.LINK, file.readLink(path, task).kind());
+                        task.progress("Check inaccessible original target " + name);
                         assertThrows(ApiException.class, () -> file.getFile(path, task));
+                        task.progress("Register original unverified link " + name);
                         file.registerLink(path, task);
                     }
                     assertEquals(2, count(runtime.persistence().database(), "SELECT COUNT(*) FROM file_link WHERE last_state='UNVERIFIED' AND target_path IS NULL AND target_identity IS NULL"));
                     assertEquals("private original", Files.readString(inaccessible.resolve("keep")));
                     return success(null);
-                }));
+                });
+                try {
+                    completed(handle);
+                } catch (java.util.concurrent.TimeoutException timeout) {
+                    var evidence = new StringBuilder(handle.snapshot().toString()).append('\n');
+                    Thread.getAllStackTraces().forEach((thread, frames) -> {
+                        evidence.append(thread.getName()).append(' ').append(thread.getState()).append('\n');
+                        for (var frame : frames) evidence.append("  ").append(frame).append('\n');
+                    });
+                    Files.writeString(Path.of("target/file-link-association-timeout.txt"), evidence);
+                    handle.requestCancel();
+                    throw timeout;
+                }
             } finally {
                 Files.deleteIfExists(privateLink);
                 Files.deleteIfExists(missingLink);

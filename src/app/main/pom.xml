@@ -115,6 +115,7 @@
               <includes>
                 <include>gold/debug/windowstolinux/app/main/start/LoopbackSshServer*.class</include>
                 <include>gold/debug/windowstolinux/app/main/start/BackgroundExceptionScope*.class</include>
+                <include>gold/debug/windowstolinux/app/main/start/FilePlatformFixture*.class</include>
               </includes>
             </configuration>
           </execution>

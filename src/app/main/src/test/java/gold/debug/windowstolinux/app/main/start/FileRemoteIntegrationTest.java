@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class FileRemoteIntegrationTest {
     @TempDir
@@ -44,6 +45,48 @@ class FileRemoteIntegrationTest {
     final AtomicReference<Throwable> callbackFailure = new AtomicReference<>();
 
     final AtomicReference<TaskContext> callbackContext = new AtomicReference<>();
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void crossHostDirectoryWithExternalLinkIsRejectedBeforeAnyCopyOrMoveEffect(boolean move) throws Exception {
+        Path source = Files.createDirectory(root.resolve("source"));
+        Path external = Files.createDirectory(root.resolve("external"));
+        Files.writeString(source.resolve("ordinary.txt"), "original source");
+        Files.writeString(external.resolve("keep.txt"), "external target");
+        Path link = source.resolve("external-link");
+        gold.debug.windowstolinux.app.windows.file.WindowsLinks.create(link, external);
+        try (var remote = new Remote(root.resolve("ssh"));
+             var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            runtime.setSourcePicker((title, task, cancel) -> root);
+            var reviews = new Reviews();
+            runtime.setInteractionPresenter(reviews);
+            try (var activation = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
+                 var file = runtime.capabilities().source(OWNER, VERSION, activation)) {
+                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
+                    var from = FilePath.local(source);
+                    var to = FilePath.remote(SERVER, "/must-not-exist");
+                    ApiException failure = assertThrows(ApiException.class, () -> {
+                        if (move) file.moveFile(from, to, task);
+                        else file.copyFile(from, to, task);
+                    });
+                    assertEquals(ProblemCode.IO_FAILURE, failure.problem().code());
+                    assertFalse(Files.exists(remote.files.resolve("must-not-exist")));
+                    assertEquals("original source", Files.readString(source.resolve("ordinary.txt")));
+                    assertEquals("external target", Files.readString(external.resolve("keep.txt")));
+                    assertTrue(gold.debug.windowstolinux.app.windows.file.WindowsLinks.target(link).isPresent());
+                    assertTrue(file.operations(task).isEmpty());
+                    return success(null);
+                });
+                assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS).outcome());
+                assertTrue(reviews.approved.stream().noneMatch(intent -> intent.type().startsWith("file-")));
+            }
+            assertEquals(0, remote.commands.get());
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            Files.deleteIfExists(link);
+        }
+    }
 
     @Test
     void ordinaryNonRecyclableRemoteDeletionOffersOnlyPermanentDeletion() throws Exception {

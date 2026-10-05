@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -378,7 +380,7 @@ class PackageStructureArchitectureTest {
         }
         var modules = MavenModuleGraph.read(root);
         assertEquals(
-            Set.of("appapi", "mod/deployment", "mod/git", "app/config", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
+            Set.of("appapi", "mod/deployment", "mod/git", "mod/files", "app/config", "app/ai", "app/db", "app/linux", "app/main", "app/mod", "app/secret",
                 "app/service", "app/file", "app/ui", "app/windows"),
             modules.stream().filter(module -> !module.aggregate()).map(MavenModuleGraph.Module::path)
                 .collect(java.util.stream.Collectors.toSet()));
@@ -474,9 +476,9 @@ class PackageStructureArchitectureTest {
             assertTrue(periodNames.isEmpty(), () -> "production paths contain period names: " + periodNames);
         }
         String structure = Files.readString(root.resolve("docs/File.md"));
-        assertTrue(structure.contains("14 个 Maven 叶子模块"));
+        assertTrue(structure.contains("15 个 Maven 叶子模块"));
         for (String required : List.of("db/connect", "linux/sftp", "linux/ssh/recover", "service/ai", "appapi",
-            "mod/deployment", "mod/git"))
+            "mod/deployment", "mod/git", "mod/files"))
             assertTrue(structure.contains(required), () -> "File.md is missing the active responsibility: " + required);
         for (String required : List.of("app/main/src/main/java/gold/debug/windowstolinux/app/main/start",
             "app/db/src/main/java/gold/debug/windowstolinux/app/db/schema",
@@ -998,15 +1000,17 @@ class PackageStructureArchitectureTest {
         List<String> problems = new ArrayList<>();
         model.packages.values().forEach(info -> verifyPackageLayout(info.name, info.depth, problems));
         Path projectRootPath = projectRoot();
-        try (Stream<Path> directories = Files.walk(projectRootPath.resolve("src"))) {
-            for (Path directory : directories.filter(Files::isDirectory).toList()) {
+        Files.walkFileTree(projectRootPath.resolve("src"), new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, java.nio.file.attribute.BasicFileAttributes attributes) {
+                if (directory.getFileName().toString().equals("target")) return FileVisitResult.SKIP_SUBTREE;
                 String normalized = projectRootPath.relativize(directory).toString().replace(java.io.File.separatorChar,
                     '/');
-                if (!normalized.contains("/src/main/java/") && !normalized.contains("/src/test/java/"))
-                    continue;
-                verifyMigratedPackagePath(normalized, problems);
+                if (normalized.contains("/src/main/java/") || normalized.contains("/src/test/java/"))
+                    verifyMigratedPackagePath(normalized, problems);
+                return FileVisitResult.CONTINUE;
             }
-        }
+        });
         for (SourceUnit unit : model.units) {
             String fileName = unit.path.getFileName().toString();
             for (Tree type : unit.tree.getTypeDecls())

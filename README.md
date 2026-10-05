@@ -97,7 +97,7 @@ helper v9 曾在 Ubuntu 24 上完成八个多语言原生项目的代表性部�
 
 - [产品说明书](docs/PRODUCT-MANUAL.md)：功能、使用流程和边界。
 - [1.2 期开发文档](docs/development/PHASE-1.2.md)：文件、语音、救援、数据库调整及逐项验收。
-- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0、正式 S0～S3 已完成适用本地验收，独立可选 Git、受管素材交接及部署迁移已有有效证据；S4～S6 继续按阶段推进并本地提交。
+- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0、正式 S0～S4 已完成适用本地验收，独立可选 Git、受管素材交接、部署迁移及独立文件管理已有有效证据；S5～S6 继续按阶段推进并本地提交。
 - [APP 智能助手开发规划](docs/development/APP-ASSISTANT-DEVELOPMENT.md)：全软件操作助手与 APP/Mod 业务操作 API 的独立后期规划；不纳入 1.3，尚未排期或实施。
 - [开发总纲](docs/development/DEVELOPMENT.md)：各期导航、工程演进和通用规则。
 - [File.md](docs/File.md)、[Mod.md](docs/Mod.md)、[APP.md](docs/APP.md)、[Runtime.md](docs/Runtime.md)：结构、作者、交付和运行合同。

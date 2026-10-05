@@ -435,6 +435,8 @@ public final class PlatformFileFlow implements AutoCloseable {
             String summary = "File operation plan: " + type + "\n" + plan.substring(0, Math.min(plan.length(), 4000));
             var intent = FileActions.intent(type, source, "file-v1", exact, summary);
             var decision = interaction.approve(intent, source, false, "", task);
+            if (decision.outcome() == TaskResult.CANCELLED)
+                throw error(ProblemCode.CANCELLED, "FILE_OPERATION_CANCELLED", "File operation was cancelled");
             if (decision.outcome() != TaskResult.SUCCEEDED || decision.value().isEmpty())
                 throw error(ProblemCode.ACCESS_DENIED, "FILE_OPERATION_DECLINED", "File operation was not approved");
             interaction.consume(decision.value().orElseThrow(), intent, task);
