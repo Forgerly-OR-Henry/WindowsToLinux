@@ -8,6 +8,8 @@ import gold.debug.windowstolinux.app.mod.version.*;
 import gold.debug.windowstolinux.app.service.mod.store.ModStorePlan.*;
 import gold.debug.windowstolinux.app.service.mod.store.ModStoreSelection.*;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 
 /** Finite global search rebuilt from the fixed root for every branch. / 每分支从固定主项重建的有限全局搜索。 */
 final class ModStoreResolver {
@@ -137,9 +139,10 @@ final class ModStoreResolver {
             if (failures.isEmpty()) conflict("MOD_STORE_NO_SOLUTION", selection.root().owner(), List.of(),
                 "No complete solution for fixed root " + selection.root());
             return new ModStorePlan(revision, catalog.revision(), selection, List.of(), List.of(), List.copyOf(failures));
-        } catch (Incomplete exhausted) {
+        } catch (ResolutionIncompleteException exhausted) {
+            var problem = exhausted.problem();
             return new ModStorePlan(revision, catalog.revision(), selection, List.of(), List.of(), List.of(
-                new Conflict("MOD_STORE_RESOLUTION_INCOMPLETE", selection.root().owner(), List.of(), "Finite search budget exhausted; no no-solution conclusion")));
+                new Conflict(problem.eventCode(), selection.root().owner(), List.of(), problem.message())));
         }
     }
 
@@ -381,12 +384,22 @@ final class ModStoreResolver {
     /** Stops at the original cancellation, deadline or finite branch limit. / 在原取消、期限或有限分支上限停止。 */
     private void check() {
         ModStoreFacts.cancellation(cancellation);
-        if (++steps > budget || System.nanoTime() >= deadline) throw new Incomplete();
+        if (++steps > budget || System.nanoTime() >= deadline) throw new ResolutionIncompleteException();
     }
 
     /** Explicit incomplete search, never a no-solution proof. / 明确未完成搜索，不是无解证明。 */
-    private static final class Incomplete extends RuntimeException {
+    private static final class ResolutionIncompleteException extends RuntimeException {
         /** Stable serial identity. / 稳定序列身份。 */
         private static final long serialVersionUID = 1L;
+
+        /** Original bounded-search failure used in the returned proposal. / 返回计划使用的原有限搜索失败。 */
+        private final Problem problem = new Problem(ProblemCode.UNAVAILABLE, "MOD_STORE_RESOLUTION_INCOMPLETE",
+            "Finite search budget exhausted; no no-solution conclusion", Map.of(), Optional.empty());
+
+        /** Exposes the actual unresolved search outcome without claiming unsatisfiability. / 暴露实际未完成搜索结果，不声称无解。
+         * @return original structured search failure / 原结构化搜索失败 */
+        public Problem problem() {
+            return problem;
+        }
     }
 }

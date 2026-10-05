@@ -1,6 +1,6 @@
 # WindowsToLinux
 
-WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，以 Windows 桌面 APP 提供通用能力，业务由 Mod 扩展。当前检出已完成 [1.2 期 APP 整体调整](docs/development/PHASE-1.2.md)的源码实施及本机适用验收；阶段状态和验证边界以该文档为准，尚未提供正式安装包。
+WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，以 Windows 桌面 APP 提供通用能力，业务由 Mod 扩展。当前检出已完成 [1.3 期](docs/development/PHASE-1.3.md) S0～S6 的源码实施、本机适用验收及收尾；阶段状态和验证边界以该文档为准，尚未提供正式安装包。
 
 ## 当前平台能力
 
@@ -10,6 +10,8 @@ WindowsToLinux 是面向个人和小型自托管场景的部署管理工具，�
 - 统一 `FileService` 提供本机及受管 SFTP 文件操作，区分文件目标与链接本身。复制、移动、传输、回收及许可都有原任务归属；未知结果先核对，不能通过重放掩盖中断。
 - 中英文界面、主题与输入状态保留，中央任务、进度、日志与人工确认；部署的审批和授权策略由部署工作区独立设置。
 - Mod 发现、已选版本启动、公开 API 与依赖准入、页面发布、Schema 准备及迁移、停止、安装和数据清理。发行安装与普通维护发现不自动启用；明确开启 CLASS 自动加载时，新调试身份按唯一有效构建建立首次启用选择，必要准备和已有用户选择仍受原流程约束。
+- 独立 Git Mod 提供固定版本取材，部署在 Git 缺失时仍可使用本地源码；独立 Files Mod 提供单／双窗格文件工作区，两者各自使用公开平台能力。
+- Mod 商店计算必需与已选可选依赖的完整兼容方案，再经确认下载、校验和安装；按包保存实际结果，安装不自动启用。
 
 官方部署 Mod 的验证只覆盖已记录的本机及受控协议环境。真实 Linux、真实语音提供方与云控制台仍单独待验收；本机 HTTP/WebSocket、SSH/SFTP 夹具通过不等于生产环境全场景通过。商店连同下载及真实客户端接线已通过1.3 S5本机受控HTTP与桌面验收，正式商店服务未验证；备份迁移 Mod、官网投稿/审核/公开发布和正式发行打包仍属后续范围。
 
@@ -22,6 +24,8 @@ WindowsToLinux/
 ├─ src/appapi/         # 公开 Mod API，包括 file、ai、task 等能力
 ├─ src/app/            # config、ai、db、file、linux、main、mod、secret、service、ui、windows
 ├─ src/mod/deployment/ # 官方部署 Mod
+├─ src/mod/files/      # 独立可选文件管理 Mod
+├─ src/mod/git/        # 独立 Git 取材服务，无工作区入口
 ├─ src/moddev/         # 独立 Mod 开发与定向验证，不进入默认根构建/加载
 ├─ docs/               # 产品、架构、开发计划和验收记录
 ├─ test/               # 受控验证夹具
@@ -97,7 +101,7 @@ helper v9 曾在 Ubuntu 24 上完成八个多语言原生项目的代表性部�
 
 - [产品说明书](docs/PRODUCT-MANUAL.md)：功能、使用流程和边界。
 - [1.2 期开发文档](docs/development/PHASE-1.2.md)：文件、语音、救援、数据库调整及逐项验收。
-- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0、正式 S0～S5 已完成适用本地验收，独立可选 Git、受管素材交接、部署迁移及独立文件管理已有有效证据；S6 综合入口与收尾继续推进并本地提交。
+- [1.3 期执行计划](docs/development/PHASE-1.3.md)：窗口与工作区先在 P0 独立处理，再按 S0～S6 承接 ModDev、可选依赖与 Git、部署完整迁移、文件管理、商店连同下载及集成验收；完整本地验收通过即可交付，真机验证独立安排。P0、正式 S0～S6 已完成适用本地验收与收尾，独立可选 Git、受管素材交接、部署迁移、文件管理、商店客户端及真实联合入口已有有效证据；分阶段本地提交，未推送。
 - [APP 智能助手开发规划](docs/development/APP-ASSISTANT-DEVELOPMENT.md)：全软件操作助手与 APP/Mod 业务操作 API 的独立后期规划；不纳入 1.3，尚未排期或实施。
 - [开发总纲](docs/development/DEVELOPMENT.md)：各期导航、工程演进和通用规则。
 - [File.md](docs/File.md)、[Mod.md](docs/Mod.md)、[APP.md](docs/APP.md)、[Runtime.md](docs/Runtime.md)：结构、作者、交付和运行合同。

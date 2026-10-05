@@ -1003,7 +1003,9 @@ class PackageStructureArchitectureTest {
         Files.walkFileTree(projectRootPath.resolve("src"), new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path directory, java.nio.file.attribute.BasicFileAttributes attributes) {
-                if (directory.getFileName().toString().equals("target")) return FileVisitResult.SKIP_SUBTREE;
+                if (directory.getFileName().toString().equals("target")
+                    && Files.isRegularFile(directory.getParent().resolve("pom.xml")))
+                    return FileVisitResult.SKIP_SUBTREE;
                 String normalized = projectRootPath.relativize(directory).toString().replace(java.io.File.separatorChar,
                     '/');
                 if (normalized.contains("/src/main/java/") || normalized.contains("/src/test/java/"))

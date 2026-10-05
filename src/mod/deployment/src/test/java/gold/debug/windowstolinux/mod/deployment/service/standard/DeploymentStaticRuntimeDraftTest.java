@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
 
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectKind;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentReviewFieldException;
 import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.input.DeploymentStaticRuntimeResolver;
@@ -43,5 +45,31 @@ class DeploymentStaticRuntimeDraftTest {
             "healthMode", "TCP", "port", "private-entered-text", "timeout", "30")));
         assertEquals("port", invalid.field());
         assertFalse(invalid.getMessage().contains("private-entered-text"));
+        Problem problem = invalid.problem();
+        assertSame(problem, invalid.problem());
+        assertEquals(ProblemCode.INVALID_INPUT, problem.code());
+        assertEquals("DEPLOYMENT_REVIEW_FIELD_INVALID", problem.eventCode());
+        assertEquals("Original deployment review field requires correction", problem.message());
+        assertEquals(Map.of("field", "port"), problem.context());
+        assertTrue(problem.diagnosticId().isEmpty());
+        assertFalse(problem.toString().contains("private-entered-text"));
+        assertInstanceOf(NumberFormatException.class, invalid.getCause());
+    }
+
+    @Test
+    void structuredFieldRejectionPreservesTheExactBoundedIdentityAndOriginalCause() throws Exception {
+        assertEquals(Problem.class, DeploymentReviewFieldException.class.getMethod("problem").getReturnType());
+        var cause = new IllegalArgumentException("private submitted input");
+        for (String field : List.of("a", "Z" + "9".repeat(127))) {
+            var invalid = new DeploymentReviewFieldException(field, cause);
+            assertEquals(field, invalid.field());
+            assertEquals(Map.of("field", field), invalid.problem().context());
+            assertSame(cause, invalid.getCause());
+            assertEquals("Original deployment review field requires correction", invalid.getMessage());
+            assertFalse(invalid.problem().toString().contains("private submitted input"));
+        }
+        assertThrows(IllegalArgumentException.class, () -> new DeploymentReviewFieldException(null, cause));
+        for (String field : List.of("", "0port", "port/name", "port_name", "a".repeat(129)))
+            assertThrows(IllegalArgumentException.class, () -> new DeploymentReviewFieldException(field, cause));
     }
 }

@@ -333,10 +333,11 @@ final class DeploymentSourceControls {
 
     /** Cooperatively cancels an exact original handle, leaving its recovery to the host. / 协作取消精确原句柄，将恢复留给宿主。
      * @param handle original handle / 原句柄 */
-    private static void cancel(TaskHandle<?> handle) {
+    private void cancel(TaskHandle<?> handle) {
         try {
             handle.requestCancel();
         } catch (gold.debug.windowstolinux.appapi.task.result.ApiException retained) {
+            feedback.accept(page.text("source.unknown") + " " + handle.id() + " / " + retained.problem().eventCode());
         }
     }
 

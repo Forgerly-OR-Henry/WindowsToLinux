@@ -6,7 +6,7 @@
 
 本文是当前源码模块、包、命名、依赖和资源归属的结构规范。APP、appapi 与官方 deployment 的现行结构按实际源码核对，最新已确认规则优先于早期改造模板；历史迁移和验收见开发文档。目录或类型存在、编译及静态检查通过不代表真实 Linux、模型提供方或完整业务验收完成。
 
-- 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 15 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`，独立 Git 取材服务在 `mod/git`，独立可选文件管理在 `mod/files`。S0～S5 已完成本机适用验收；文件管理已完成独立作者验证、整体移入、新位置重建与真实 APP 接入验收。
+- 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 15 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`，独立 Git 取材服务在 `mod/git`，独立可选文件管理在 `mod/files`。S0～S6 已完成本机适用验收与收尾；文件管理已完成独立作者验证、整体移入、新位置重建与真实 APP 接入验收。
 - APP 与平台自有 API 使用本文命名和分包规则；官方 deployment 采用已确认类名词表，第三方 Mod 的内部命名与组织由作者决定。
 - 本文只维护结构；[AllFile.md](AllFile.md)索引实际生产文件，[Mod.md](Mod.md)维护作者与加载合同，[Runtime.md](Runtime.md)维护运行行为、数据与安全，[APP.md](APP.md)维护发布布局和构建交付；[Config.md](Config.md) 是配置字段和填写方式的唯一集中说明。
 - 更新日期：2026-10-05。现行规则与本机交付见 [1.2 开发文档](development/PHASE-1.2.md#app-structure-rules)，开发区调整及本期验收见 [1.3 开发文档](development/PHASE-1.3.md)，历史改造与后置任务见 [1.1 开发文档](development/PHASE-1.1.md)。

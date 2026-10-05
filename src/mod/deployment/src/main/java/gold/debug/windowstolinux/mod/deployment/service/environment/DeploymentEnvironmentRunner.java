@@ -87,11 +87,11 @@ final class DeploymentEnvironmentRunner {
                 java.util.Map.of(), Optional.empty())));
             journal.close();
             return result;
-        } catch (DeploymentEnvironmentPending pending) {
+        } catch (DeploymentEnvironmentPendingException pending) {
             return pending.result();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            return new DeploymentEnvironmentPending("ENVIRONMENT_INTERRUPTED_RETAINED").result();
+            return new DeploymentEnvironmentPendingException("ENVIRONMENT_INTERRUPTED_RETAINED").result();
         } catch (ApiException failure) {
             var state = journal.read();
             if (state.stage().equals("INTENT") || state.stage().equals("OBSERVED")) {
@@ -99,17 +99,17 @@ final class DeploymentEnvironmentRunner {
                 return new OperationResult<>(failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.FAILED,
                     Optional.empty(), Optional.of(failure.problem()));
             }
-            return new DeploymentEnvironmentPending("ENVIRONMENT_ORIGINAL_CONNECTION_UNCONFIRMED").result();
+            return new DeploymentEnvironmentPendingException("ENVIRONMENT_ORIGINAL_CONNECTION_UNCONFIRMED").result();
         } catch (RuntimeException conflict) {
-            return new DeploymentEnvironmentPending("ENVIRONMENT_ORIGINAL_FACTS_CONFLICT").result();
+            return new DeploymentEnvironmentPendingException("ENVIRONMENT_ORIGINAL_FACTS_CONFLICT").result();
         }
     }
 
     /** Reconciles only previously attempted effects after cancellation and sends no subsequent business effect. / 取消后仅核对先前已尝试副作用，不发送后续业务副作用。
      * @return cancellation only when original effects and actual connection closure are known / 仅原副作用与实际连接关闭已知时返回取消
      * @throws ApiException if original authorization, receipt persistence or physical closure fails / 原授权、回执持久化或物理关闭失败时
-     * @throws DeploymentEnvironmentPending if original security or sent effects remain unresolved / 原安全状态或已发送副作用仍未决时 */
-    private OperationResult<Void> finishCancelledRecovery() throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if original security or sent effects remain unresolved / 原安全状态或已发送副作用仍未决时 */
+    private OperationResult<Void> finishCancelledRecovery() throws ApiException, DeploymentEnvironmentPendingException {
         var state = journal.read();
         if (state.stage().equals("INTENT") || state.stage().equals("OBSERVED")) {
             journal.close();
@@ -127,10 +127,10 @@ final class DeploymentEnvironmentRunner {
         }
         var retained = journal.read();
         if (!journal.cancellationSettled())
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_CANCELLED_ORIGINAL_EFFECT_UNRESOLVED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_CANCELLED_ORIGINAL_EFFECT_UNRESOLVED");
         try (var session = context.linux().connect(retained.target(), task)) {
             if (!retained.target().fingerprint().equals(Optional.of(session.facts().fingerprint())))
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_CANCELLED_REAUTH_UNCONFIRMED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_CANCELLED_REAUTH_UNCONFIRMED");
         }
         var result = cancelled(retained);
         journal.closeCancelled();
@@ -140,8 +140,8 @@ final class DeploymentEnvironmentRunner {
     /** Pins the actual initial wire key before any reviewed command. / 任何审核命令前固定实际初始 wire 密钥。
      * @param state original unsent intent / 原未发送意图
      * @throws ApiException if authentication, persistence or close fails / 认证、持久化或关闭失败时
-     * @throws DeploymentEnvironmentPending if original observation is unresolved / 原观测未决时 */
-    private void initialize(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if original observation is unresolved / 原观测未决时 */
+    private void initialize(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         try (var session = context.linux().connect(state.target(), task)) {
             var original = state.target();
             var pinned = new RemoteTarget(original.server(), original.taskId(), original.host(), original.port(), original.username(),
@@ -155,9 +155,9 @@ final class DeploymentEnvironmentRunner {
 
     /** Chooses only the next original phase; sent stages are observation-only. / 仅选择下一原阶段，已发送阶段仅作观察。
      * @throws ApiException if original facts or authentication fail / 原事实或认证失败时
-     * @throws DeploymentEnvironmentPending if original effects remain uncertain / 原副作用仍未知时
+     * @throws DeploymentEnvironmentPendingException if original effects remain uncertain / 原副作用仍未知时
      * @throws InterruptedException if reboot waiting is interrupted / 重启等待中断时 */
-    private void step() throws ApiException, DeploymentEnvironmentPending, InterruptedException {
+    private void step() throws ApiException, DeploymentEnvironmentPendingException, InterruptedException {
         var state = journal.read();
         gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(
             context, task, "Environment / 环境: " + state.stage());
@@ -184,20 +184,20 @@ final class DeploymentEnvironmentRunner {
     /** Starts only explicitly reviewed changes from the original observation. / 仅从原观测开始明确审阅的变更。
      * @param state original observed state / 原观测状态
      * @throws ApiException if approval fails / 审批失败时
-     * @throws DeploymentEnvironmentPending if security is unsupported / 安全姿态不受支持时 */
-    private void beginChanges(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if security is unsupported / 安全姿态不受支持时 */
+    private void beginChanges(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         var observed = state.observation().orElseThrow();
         if (observed.packagePhase().equals("ABSENT") && (observed.selinuxPhase().equals("NOT_APPLICABLE")
             || observed.selinuxPhase().equals("COMPLETE"))) {
             if (!observed.profile().startsWith("ubuntu-") && !observed.profile().startsWith("debian-")
                 && !observed.security().equals("Enforcing"))
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_ENFORCING_REQUIRED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_ENFORCING_REQUIRED");
             confirm(state, "packages");
             dispatch(state, "packages", "PACKAGES_DISPATCHED");
         } else if (observed.selinuxPhase().equals("UNPREPARED") && observed.packagePhase().equals("ABSENT")) {
             confirm(state, "prepare");
             dispatch(state, "prepare", "PREPARE_DISPATCHED");
-        } else throw new DeploymentEnvironmentPending("ENVIRONMENT_FOREIGN_OR_UNEXPECTED_STATE");
+        } else throw new DeploymentEnvironmentPendingException("ENVIRONMENT_FOREIGN_OR_UNEXPECTED_STATE");
     }
 
     /** Records exact dispatch before sending once; approval denial before dispatch remains unsent. / 发送一次前记录精确发送，发送前审核拒绝仍为未发送。
@@ -205,9 +205,9 @@ final class DeploymentEnvironmentRunner {
      * @param stage fixed command / 固定命令
      * @param dispatched retained dispatch stage / 保留发送阶段
      * @throws ApiException if original CAS, approval or connection fails / 原 CAS、审批或连接失败时
-     * @throws DeploymentEnvironmentPending if a sent result is uncertain / 已发送结果未知时 */
+     * @throws DeploymentEnvironmentPendingException if a sent result is uncertain / 已发送结果未知时 */
     private void dispatch(DeploymentEnvironmentState state, String stage, String dispatched)
-        throws ApiException, DeploymentEnvironmentPending {
+        throws ApiException, DeploymentEnvironmentPendingException {
         checkCancellation();
         try (var session = context.linux().connect(state.target(), task); var request = DeploymentEnvironmentScripts.request(state, stage)) {
             var approval = review.approve(state.target(), revision(state), request, task);
@@ -216,14 +216,14 @@ final class DeploymentEnvironmentRunner {
                     journal.close();
                     throw cancelledFailure();
                 }
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_REVIEW_CANCELLED_AFTER_CHANGE");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_REVIEW_CANCELLED_AFTER_CHANGE");
             }
             var sent = state.next(dispatched, DeploymentEnvironmentScripts.requestDigest(state, stage), state.observation().orElseThrow());
             journal.advance(state, sent);
             var result = session.execute(request, approval.value().orElseThrow());
             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
                 || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated())
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_DISPATCH_UNCONFIRMED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_DISPATCH_UNCONFIRMED");
             var observed = DeploymentEnvironmentObservation.parse(result.value().orElseThrow().stdout(), sent);
             settleObserved(sent, stage, observed);
         }
@@ -234,16 +234,16 @@ final class DeploymentEnvironmentRunner {
      * @param stage original command / 原命令
      * @param next expected next stage / 预期后续阶段
      * @throws ApiException if original connection fails / 原连接失败时
-     * @throws DeploymentEnvironmentPending if original receipt is unresolved / 原回执未决时 */
+     * @throws DeploymentEnvironmentPendingException if original receipt is unresolved / 原回执未决时 */
     private void settleSecurity(DeploymentEnvironmentState state, String stage, String next)
-        throws ApiException, DeploymentEnvironmentPending {
+        throws ApiException, DeploymentEnvironmentPendingException {
         var observed = observe(state, "probe");
         requireReceipt(state, stage, observed);
         requireChange(stage, observed);
         if (stage.equals("prepare") && !List.of("REBOOT_PENDING", "READY_TO_ENFORCE").contains(observed.selinuxPhase())
             || stage.equals("enforce") && !observed.selinuxPhase().equals("ENFORCEMENT_PENDING")
             || stage.equals("commit") && !observed.selinuxPhase().equals("COMPLETE"))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_SECURITY_RECEIPT_CONFLICT");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_SECURITY_RECEIPT_CONFLICT");
         journal.advance(state, state.next(next, state.requestSha(), observed));
     }
 
@@ -252,9 +252,9 @@ final class DeploymentEnvironmentRunner {
      * @param stage fixed command / 固定命令
      * @param observed original response / 原响应
      * @throws ApiException if original CAS fails / 原 CAS 失败时
-     * @throws DeploymentEnvironmentPending if receipt differs / 回执不符时 */
+     * @throws DeploymentEnvironmentPendingException if receipt differs / 回执不符时 */
     private void settleObserved(DeploymentEnvironmentState state, String stage, DeploymentEnvironmentObservation observed)
-        throws ApiException, DeploymentEnvironmentPending {
+        throws ApiException, DeploymentEnvironmentPendingException {
         requireReceipt(state, stage, observed);
         requireChange(stage, observed);
         String next = switch (stage) {
@@ -265,17 +265,17 @@ final class DeploymentEnvironmentRunner {
             default -> throw new IllegalArgumentException("Unknown original dispatch");
         };
         if (stage.equals("packages") && !observed.packagePhase().equals("SUCCEEDED"))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_PACKAGES_UNCONFIRMED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_PACKAGES_UNCONFIRMED");
         journal.advance(state, state.next(next, state.requestSha(), observed));
     }
 
     /** Polls through fresh original-target authentications without repeating reboot. / 经原目标新认证轮询，不重复重启。
      * @param state original reboot evidence / 原重启依据
      * @throws ApiException if key, credentials or target changed / 密钥、凭据或目标改变时
-     * @throws DeploymentEnvironmentPending if the bounded observation cannot prove reboot / 有界观测无法证明重启时
+     * @throws DeploymentEnvironmentPendingException if the bounded observation cannot prove reboot / 有界观测无法证明重启时
      * @throws InterruptedException if waiting is interrupted / 等待中断时 */
     private void afterReboot(DeploymentEnvironmentState state)
-        throws ApiException, DeploymentEnvironmentPending, InterruptedException {
+        throws ApiException, DeploymentEnvironmentPendingException, InterruptedException {
         long deadline = System.nanoTime() + rebootBudget.toNanos();
         while (true) {
             checkCancellation();
@@ -290,13 +290,13 @@ final class DeploymentEnvironmentRunner {
                     return;
                 }
                 if (!observed.selinuxPhase().equals("REBOOT_PENDING"))
-                    throw new DeploymentEnvironmentPending("ENVIRONMENT_REBOOT_STATE_CONFLICT");
+                    throw new DeploymentEnvironmentPendingException("ENVIRONMENT_REBOOT_STATE_CONFLICT");
             } catch (ApiException failure) {
                 if (!failure.problem().eventCode().equals("SSH_CONNECTION_FAILED")
                     && !failure.problem().eventCode().equals("SSH_CONNECT_TIMEOUT")) throw failure;
             }
             if (System.nanoTime() >= deadline)
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_REBOOT_NOT_OBSERVED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_REBOOT_NOT_OBSERVED");
             Thread.sleep(pollInterval.toMillis());
         }
     }
@@ -304,12 +304,12 @@ final class DeploymentEnvironmentRunner {
     /** Requires a fresh authenticated enforcing observation before persistent commit. / 持久提交前要求一次新认证的强制态观测。
      * @param state original enforcing stage / 原强制态阶段
      * @throws ApiException if original authorization fails / 原授权失败时
-     * @throws DeploymentEnvironmentPending if fresh login or posture is unproved / 新登录或姿态未证时 */
-    private void commit(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if fresh login or posture is unproved / 新登录或姿态未证时 */
+    private void commit(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         var observed = observe(state, "probe");
         requireReceipt(state, "enforce", observed);
         if (!observed.security().equals("Enforcing") || !observed.selinuxPhase().equals("ENFORCEMENT_PENDING"))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_ENFORCEMENT_REAUTH_UNCONFIRMED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_ENFORCEMENT_REAUTH_UNCONFIRMED");
         var verified = state.next("ENFORCEMENT_PENDING", state.requestSha(), observed);
         journal.advance(state, verified);
         confirm(verified, "commit");
@@ -319,12 +319,12 @@ final class DeploymentEnvironmentRunner {
     /** Reconciles only the original package receipt, never a second installation. / 仅核对原安装回执，绝不进行第二次安装。
      * @param state original package dispatch / 原安装发送
      * @throws ApiException if original CAS or connection fails / 原 CAS 或连接失败时
-     * @throws DeploymentEnvironmentPending if receipt is absent or started / 回执不存在或仅开始时 */
-    private void settlePackages(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if receipt is absent or started / 回执不存在或仅开始时 */
+    private void settlePackages(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         var observed = observe(state, "probe");
         requireReceipt(state, "packages", observed);
         if (!List.of("SUCCEEDED", "FAILED").contains(observed.packagePhase()))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_PACKAGES_RECEIPT_UNCONFIRMED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_PACKAGES_RECEIPT_UNCONFIRMED");
         journal.advance(state, state.next(observed.packagePhase().equals("SUCCEEDED") ? "PACKAGES_INSTALLED" : "FAILED",
             state.requestSha(), observed));
     }
@@ -332,26 +332,26 @@ final class DeploymentEnvironmentRunner {
     /** Proves installed capabilities after the installation session physically exited. / 安装会话物理退出后证明已安装能力。
      * @param state original installed receipt / 原已安装回执
      * @throws ApiException if original authentication or cleanup fails / 原认证或清理失败时
-     * @throws DeploymentEnvironmentPending if final original facts are unproved / 最终原事实未证时 */
-    private void verify(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if final original facts are unproved / 最终原事实未证时 */
+    private void verify(DeploymentEnvironmentState state) throws ApiException, DeploymentEnvironmentPendingException {
         var observed = observe(state, "verify");
         if (!observed.packageRequest().equals(state.observation().orElseThrow().packageRequest()))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_ORIGINAL_PACKAGE_RECEIPT_CONFLICT");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_ORIGINAL_PACKAGE_RECEIPT_CONFLICT");
         if (!observed.packagePhase().equals("SUCCEEDED") || !observed.boot().equals(state.observation().orElseThrow().boot())
             || !observed.security().equals(state.observation().orElseThrow().security()))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_FINAL_REAUTH_UNCONFIRMED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_FINAL_REAUTH_UNCONFIRMED");
         journal.advance(state, state.next("VERIFIED", state.requestSha(), observed));
     }
 
     /** Verifies the actual security transition before advancing its original receipt. / 推进原回执前核实实际安全转移。
      * @param stage original command / 原命令
      * @param observed returned original facts / 已返回原事实
-     * @throws DeploymentEnvironmentPending if an expected security transition is absent / 缺少预期安全转移时 */
-    private static void requireChange(String stage, DeploymentEnvironmentObservation observed) throws DeploymentEnvironmentPending {
+     * @throws DeploymentEnvironmentPendingException if an expected security transition is absent / 缺少预期安全转移时 */
+    private static void requireChange(String stage, DeploymentEnvironmentObservation observed) throws DeploymentEnvironmentPendingException {
         if (stage.equals("prepare") && !List.of("REBOOT_PENDING", "READY_TO_ENFORCE").contains(observed.selinuxPhase())
             || stage.equals("enforce") && (!observed.selinuxPhase().equals("ENFORCEMENT_PENDING") || !observed.security().equals("Enforcing"))
             || stage.equals("commit") && (!observed.selinuxPhase().equals("COMPLETE") || !observed.security().equals("Enforcing")))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_SECURITY_TRANSITION_UNCONFIRMED");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_SECURITY_TRANSITION_UNCONFIRMED");
     }
 
     /** Opens and actually closes an independent authenticated observation session. / 打开并实际关闭一个独立认证观察会话。
@@ -359,9 +359,9 @@ final class DeploymentEnvironmentRunner {
      * @param stage fixed read-only command / 固定只读命令
      * @return exact observation / 精确观测
      * @throws ApiException if original authentication or cleanup fails / 原认证或清理失败时
-     * @throws DeploymentEnvironmentPending if command result is unknown / 命令结果未知时 */
+     * @throws DeploymentEnvironmentPendingException if command result is unknown / 命令结果未知时 */
     private DeploymentEnvironmentObservation observe(DeploymentEnvironmentState state, String stage)
-        throws ApiException, DeploymentEnvironmentPending {
+        throws ApiException, DeploymentEnvironmentPendingException {
         checkCancellation();
         try (var session = context.linux().connect(state.target(), task)) {
             return execute(session, state, stage);
@@ -374,9 +374,9 @@ final class DeploymentEnvironmentRunner {
      * @param stage fixed command / 固定命令
      * @return exact observation / 精确观测
      * @throws ApiException if original approval fails / 原审核失败时
-     * @throws DeploymentEnvironmentPending if the command lacks verified facts / 命令缺少已核事实时 */
+     * @throws DeploymentEnvironmentPendingException if the command lacks verified facts / 命令缺少已核事实时 */
     private DeploymentEnvironmentObservation execute(RemoteSession session, DeploymentEnvironmentState state, String stage)
-        throws ApiException, DeploymentEnvironmentPending {
+        throws ApiException, DeploymentEnvironmentPendingException {
         try (var request = DeploymentEnvironmentScripts.request(state, stage)) {
             var approval = review.approve(state.target(), revision(state), request, task);
             if (approval.outcome() != TaskResult.SUCCEEDED) throw cancelledFailure();
@@ -388,7 +388,7 @@ final class DeploymentEnvironmentRunner {
                     java.util.Map.of(), Optional.empty()));
             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
                 || !result.value().orElseThrow().exitCode().equals(Optional.of(0)) || result.value().orElseThrow().truncated())
-                throw new DeploymentEnvironmentPending("ENVIRONMENT_OBSERVATION_UNCONFIRMED");
+                throw new DeploymentEnvironmentPendingException("ENVIRONMENT_OBSERVATION_UNCONFIRMED");
             return DeploymentEnvironmentObservation.parse(result.value().orElseThrow().stdout(), state);
         }
     }
@@ -413,9 +413,9 @@ final class DeploymentEnvironmentRunner {
      * @param state original dispatch facts / 原发送事实
      * @param stage original command / 原命令
      * @param observed original remote receipts / 原远端回执
-     * @throws DeploymentEnvironmentPending if exact original digest is absent / 精确原摘要缺失时 */
+     * @throws DeploymentEnvironmentPendingException if exact original digest is absent / 精确原摘要缺失时 */
     private static void requireReceipt(DeploymentEnvironmentState state, String stage, DeploymentEnvironmentObservation observed)
-        throws DeploymentEnvironmentPending {
+        throws DeploymentEnvironmentPendingException {
         String actual = switch (stage) {
             case "prepare" -> observed.prepareRequest();
             case "enforce" -> observed.enforceRequest();
@@ -424,7 +424,7 @@ final class DeploymentEnvironmentRunner {
             default -> throw new IllegalArgumentException("Unknown original receipt");
         };
         if (!state.requestSha().equals(actual))
-            throw new DeploymentEnvironmentPending("ENVIRONMENT_ORIGINAL_RECEIPT_CONFLICT");
+            throw new DeploymentEnvironmentPendingException("ENVIRONMENT_ORIGINAL_RECEIPT_CONFLICT");
     }
 
     /** Binds every approval to unchanged resources and latest exact facts. / 将每项审批绑定到未改变资源及最近精确事实。

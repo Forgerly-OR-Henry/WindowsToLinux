@@ -138,5 +138,8 @@ class ModStoreResolverTest {
         var incomplete = new ModStoreResolver(sources, selection, API, 21, () -> false, 1).resolve(2);
         assertFalse(incomplete.valid());
         assertEquals("MOD_STORE_RESOLUTION_INCOMPLETE", incomplete.conflicts().getFirst().code());
+        assertEquals("Finite search budget exhausted; no no-solution conclusion", incomplete.conflicts().getFirst().detail());
+        assertTrue(incomplete.items().isEmpty());
+        assertTrue(incomplete.relations().isEmpty());
     }
 }

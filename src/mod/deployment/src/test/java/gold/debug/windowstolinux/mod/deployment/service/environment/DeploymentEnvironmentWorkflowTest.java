@@ -222,6 +222,23 @@ class DeploymentEnvironmentWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     @Test
+    void pendingExceptionExposesTheOriginalSdkProblemAndRetainsUnknown() throws Exception {
+        var pending = new DeploymentEnvironmentPendingException("ENVIRONMENT_ORIGINAL_RECEIPT_UNCONFIRMED");
+        Problem original = pending.problem();
+        assertEquals(Problem.class, DeploymentEnvironmentPendingException.class.getMethod("problem").getReturnType());
+        assertSame(original, pending.problem());
+        assertEquals(ProblemCode.UNKNOWN, original.code());
+        assertEquals("ENVIRONMENT_ORIGINAL_RECEIPT_UNCONFIRMED", original.eventCode());
+        assertEquals("Original environment preparation needs exact reconciliation; remote changes were not rolled back", original.message());
+        assertEquals(Map.of(), original.context());
+        assertEquals(Optional.empty(), original.diagnosticId());
+        var result = pending.result();
+        assertEquals(TaskResult.UNKNOWN, result.outcome());
+        assertTrue(result.value().isEmpty());
+        assertSame(original, result.problem().orElseThrow());
+    }
+
+    @Test
     void initialDefaultRefusalDoesNotConnect() throws Exception {
         enable();
         policy = ignored -> false;

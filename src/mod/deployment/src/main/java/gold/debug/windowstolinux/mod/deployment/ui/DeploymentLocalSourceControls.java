@@ -227,10 +227,11 @@ final class DeploymentLocalSourceControls {
 
     /** Sends a cooperative original cancel without claiming cleanup. / 发送协作原取消，不声称已清理。
      * @param handle actual original handle / 实际原句柄 */
-    private static void cancel(TaskHandle<?> handle) {
+    private void cancel(TaskHandle<?> handle) {
         try {
             handle.requestCancel();
         } catch (ApiException retained) {
+            feedback.accept(text.apply("source.unknown") + " " + handle.id() + " / " + retained.problem().eventCode());
         }
     }
 

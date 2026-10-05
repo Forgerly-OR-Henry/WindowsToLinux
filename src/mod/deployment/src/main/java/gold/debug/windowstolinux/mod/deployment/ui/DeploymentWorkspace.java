@@ -46,8 +46,8 @@ public final class DeploymentWorkspace implements ModPage {
     /** Only the production preference observation uses this view worker. / 仅生产偏好观察使用本视图工作线程。 */
     private final ExecutorService worker;
 
-    /** The original query retained through its actual completion. / 保留至实际完成的原查询。 */
-    private volatile TaskHandle<DeploymentPreferences.Selection> preferenceHandle;
+    /** Monitor-protected original query retained through actual completion. / 由本实例监视器保护并保留至实际完成的原查询。 */
+    private TaskHandle<DeploymentPreferences.Selection> preferenceHandle;
 
     /** Explicit host navigation takes precedence over the saved initial mode. / 宿主明确导航优先于保存的初始模式。 */
     private boolean restored, preferenceReady, preferencePending, preferenceFailed;
@@ -68,7 +68,10 @@ public final class DeploymentWorkspace implements ModPage {
     private ResourceBundle messages;
 
     /** EDT-confined creation and release state. / 限定 EDT 的创建及释放状态。 */
-    private boolean opening, closed;
+    private boolean opening;
+
+    /** Publishes close to the original preference worker before late admission. / 在迟到准入前将关闭状态发布给原偏好工作线程。 */
+    private volatile boolean closed;
 
     /** Captures factories without creating any internal view. / 捕获工厂，不创建内部视图。
      * @param standard standard and assisted view / 标准及辅助视图
@@ -202,11 +205,16 @@ public final class DeploymentWorkspace implements ModPage {
         worker.execute(() -> {
             try {
                 var handle = preferenceTask.call();
-                preferenceHandle = handle;
-                if (closed) cancelPreference();
+                synchronized (this) {
+                    preferenceHandle = handle;
+                }
                 handle.completion().whenComplete((result, failure) -> SwingUtilities.invokeLater(() -> {
                     preferencePending = false;
-                    preferenceHandle = null;
+                    synchronized (this) {
+                        if (preferenceHandle == handle) {
+                            preferenceHandle = null;
+                        }
+                    }
                     if (closed || restored) return;
                     if (failure != null || result == null || result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()) {
                         preferenceFailure();
@@ -226,6 +234,7 @@ public final class DeploymentWorkspace implements ModPage {
                     }
                     localize();
                 }));
+                if (closed) cancelPreference();
             } catch (Exception failure) {
                 SwingUtilities.invokeLater(this::preferenceFailure);
             }
@@ -241,13 +250,14 @@ public final class DeploymentWorkspace implements ModPage {
         localize();
     }
 
-    /** Cancels only this original short query; its durable cleanup remains with the host. / 仅取消本原短查询；持久清理仍由宿主负责。 */
-    private void cancelPreference() {
-        var handle = preferenceHandle;
-        if (handle != null) try {
-            handle.requestCancel();
-        } catch (gold.debug.windowstolinux.appapi.task.result.ApiException retained) {
+    /** Cancels only this original short query; its durable cleanup remains with the host. / 仅取消本原短查询；持久清理仍由宿主负责。
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if original cancellation cannot be confirmed / 原取消无法确认时 */
+    private void cancelPreference() throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+        final TaskHandle<DeploymentPreferences.Selection> handle;
+        synchronized (this) {
+            handle = preferenceHandle;
         }
+        if (handle != null) handle.requestCancel();
     }
 
     /** Creates only a new selected view, retaining failed partial instances until cleanup. / 仅创建新的所选视图，失败的部分实例保留至清理。
@@ -312,9 +322,13 @@ public final class DeploymentWorkspace implements ModPage {
     public void close() throws Exception {
         requireEdt();
         closed = true;
-        cancelPreference();
-        if (worker != null) worker.shutdown();
         Exception failure = null;
+        try {
+            cancelPreference();
+        } catch (gold.debug.windowstolinux.appapi.task.result.ApiException retained) {
+            failure = retained;
+        }
+        if (worker != null) worker.shutdown();
         for (int index = 0; index < instances.length; index++)
             if (instances[index] != null) try {
                 instances[index].close();
