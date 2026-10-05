@@ -2,9 +2,9 @@
   "formatVersion": 1,
   "id": "gold.debug.windowstolinux.mod.deployment",
   "name": "部署",
-  "version": "1.1.0-dev.2",
+  "version": "1.1.0-dev.3",
   "description": "官方部署业务；当前源码阶段已接数据初始化，部署流程迁移进行中。",
-  "platformApiRange": "[1.0.0-dev.3,1.0.0)",
+  "platformApiRange": "[1.0.0-dev.4,1.0.0)",
   "minJavaVersion": 21,
   "mainJar": "main/deployment.jar",
   "entryClass": "gold.debug.windowstolinux.mod.deployment.Mod",
@@ -15,19 +15,7 @@
       "optional": true
     }
   ],
-  "schemaVersion": "3",
-  "migrations": [
-    {
-      "from": "1",
-      "to": "2",
-      "class": "gold.debug.windowstolinux.mod.deployment.db.DeploymentSchemaMigration12"
-    },
-    {
-      "from": "2",
-      "to": "3",
-      "class": "gold.debug.windowstolinux.mod.deployment.db.DeploymentSchemaMigration23"
-    }
-  ],
+  "schemaVersion": "1",
   "exports": [
     "gold.debug.windowstolinux.mod.deployment.api"
   ]

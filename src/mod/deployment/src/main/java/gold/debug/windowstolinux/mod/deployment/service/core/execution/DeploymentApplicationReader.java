@@ -8,11 +8,15 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.UUID;
 
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
@@ -21,6 +25,7 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.*;
+import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 
 /** Reads complete published applications in one owned snapshot, excluding drafts and unconfirmed releases. / 在一份所属快照中读取完整已发布应用，排除草稿及未确认发布。 */
@@ -104,6 +109,143 @@ public final class DeploymentApplicationReader {
         }
     }
 
+    /** Reads only the exact successful original task's still-active complete publication. / 仅读取精确成功原任务仍活动的完整发布。
+     * @param originalTask exact completed platform task UUID / 精确已完成平台任务UUID
+     * @param task currently admitted read task, never the ended context / 当前准入读取任务，绝非已结束上下文
+     * @return eligible original publication or absence / 符合条件的原发布或无值
+     * @throws ApiException if stored original evidence is inconsistent / 存储原依据不一致时 */
+    public Optional<ApplicationFacts> findForCompletedTask(UUID originalTask, TaskContext task) throws ApiException {
+        java.util.Objects.requireNonNull(originalTask);
+        try (var connection = open(task);
+             var query = connection.prepareStatement("SELECT e.execution_id,e.application_id,e.server_profile_id,r.release_sha256,r.release_id FROM deployment_execution e JOIN deployment_release r ON r.execution_id=e.execution_id AND r.application_id=e.application_id WHERE e.platform_task_id=? AND r.state='ACTIVE'")) {
+            query.setObject(1, originalTask);
+            try (var rows = query.executeQuery()) {
+                if (!rows.next())
+                    return Optional.empty();
+                UUID executionId = rows.getObject(1, UUID.class);
+                String application = rows.getString(2), server = rows.getString(3), revision = rows.getString(4);
+                UUID releaseId = rows.getObject(5, UUID.class);
+                if (rows.next())
+                    throw new SQLException("Original task publication is not unique");
+                var executions = new DeploymentExecutionStore(database);
+                var execution = executions.find(task, executionId).orElseThrow();
+                if (!execution.identity().taskId().equals(originalTask)
+                    || !execution.identity().applicationId().equals(application)
+                    || !execution.identity().server().id().equals(server)
+                    || execution.outcome().orElse(null) != gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED
+                    || !execution.businessCommitted() || !execution.cleanupComplete())
+                    return Optional.empty();
+                if (!executions.releaseIdentity(execution).equals(Optional.of(new DeploymentReleaseIdentity(releaseId, revision))))
+                    throw new SQLException("Original formal release result differs from its active publication");
+                var data = read(connection, application, task);
+                if (!data.snapshot().revisionSha256().equals(revision)
+                    || !data.snapshot().application().server().id().equals(server))
+                    throw new SQLException("Original task active publication changed");
+                connection.rollback();
+                return Optional.of(data);
+            }
+        } catch (SQLException | IOException | java.util.NoSuchElementException failure) {
+            throw problem("DEPLOYMENT_DELIVERY_ORIGINAL_TASK_UNVERIFIED");
+        }
+    }
+
+    /** Projects one reviewed exact active snapshot using the currently authorized host. / 使用当前授权主机投影一个已审阅精确活动快照。
+     * @param selected original selected complete snapshot / 原所选完整快照
+     * @param host current caller-bound nonsecret server host / 当前绑定调用方的非秘密服务器主机
+     * @param task currently authenticated read task / 当前认证读取任务
+     * @return copied public usage / 复制的公开用法
+     * @throws ApiException if the selected publication changed / 所选发布改变时 */
+    public DeploymentApplicationUsage usage(DeploymentApplicationSnapshot selected, String host, TaskContext task)
+        throws ApiException {
+        var data = find(selected.application(), task);
+        if (!data.snapshot().revisionSha256().equals(selected.revisionSha256())
+            || !data.snapshot().ownershipSha256().equals(selected.ownershipSha256()))
+            throw problem("DEPLOYMENT_USAGE_REVISION_CHANGED");
+        return projectUsage(data, host);
+    }
+
+    /** Copies component-qualified fixed commands and validated endpoints from the complete graph. / 从完整图复制带组件身份的固定命令与已校验端点。
+     * @param data complete validated active publication / 完整已校验活动发布
+     * @param host current caller-bound public host / 当前绑定调用方的公开主机
+     * @return immutable nonsecret usage / 不可变无秘密用法 */
+    static DeploymentApplicationUsage projectUsage(ApplicationFacts data, String host) {
+        var components = new ArrayList<DeploymentApplicationUsage.Component>();
+        for (var component : data.graph().components()) {
+            var workload = component.runtime().workload();
+            var observed = data.observations().get(component.unit().id());
+            boolean reviewed = workload.reviewed() && workload.equals(component.reviewedRuntime().workload());
+            var mode = reviewed ? DeploymentApplicationUsage.Mode.valueOf(workload.mode().name())
+                : DeploymentApplicationUsage.Mode.UNVERIFIED;
+            var endpoints = new ArrayList<DeploymentApplicationUsage.Endpoint>();
+            if (reviewed)
+                for (var endpoint : workload.endpoints())
+                    if (endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL)
+                        endpoint(endpoint, host).ifPresent(endpoints::add);
+            var binding = data.release().bindings().stream().filter(value -> value.unitId().equals(component.unit().id()))
+                .findFirst().orElseThrow();
+            components.add(new DeploymentApplicationUsage.Component(component.componentId(), component.unit().id(), mode,
+                observed.state(), observed.autostart(), reviewed ? Optional.of(command(component, binding))
+                : Optional.empty(), endpoints,
+                reviewed ? workload.workers().stream().map(DeploymentWorker::id).toList() : List.of()));
+        }
+        boolean reviewed = components.stream().noneMatch(value -> value.mode() == DeploymentApplicationUsage.Mode.UNVERIFIED);
+        boolean daemon = components.stream().anyMatch(value -> value.mode() == DeploymentApplicationUsage.Mode.DAEMON);
+        var snapshot = data.snapshot();
+        return new DeploymentApplicationUsage(snapshot.application(), snapshot.revisionSha256(), snapshot.ownershipSha256(),
+            snapshot.state(), snapshot.autostart(), components,
+            reviewed && daemon ? java.util.Set.of(DeploymentLifecycleAction.values()) : java.util.Set.of());
+    }
+
+    /** Builds only the real helper's fixed managed command, without startup arguments. / 仅构造真实helper的固定受管命令，不含启动参数。
+     * @param component original reviewed component / 原已审阅组件
+     * @param binding exact current component release / 精确当前组件发布
+     * @return target-machine managed command / 目标机受管命令 */
+    private static String command(DeploymentApplicationGraph.Part component, DeploymentReleaseSnapshot.Binding binding) {
+        var workload = component.runtime().workload();
+        var unit = component.unit();
+        String helper = "sudo " + DeploymentManagedHelperBundle.PATH + " ";
+        if (workload.mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND || workload.client().isPresent())
+            return helper + (workload.mode() == DeploymentWorkload.ExecutionMode.ON_DEMAND ? "app-run " : "app-client ")
+                + unit.id() + " " + unit.ownershipManifestSha256() + " --";
+        return helper + (component.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container
+            ? "lifecycle-container " : "lifecycle-deployment ") + unit.id() + " start "
+            + unit.ownershipManifestSha256() + " " + binding.releaseSha256();
+    }
+
+    /** Validates a public endpoint and strictly brackets literal IPv6 without DNS lookups. / 校验公开端点并严格括起字面IPv6，不查询DNS。
+     * @param endpoint original reviewed endpoint / 原已审阅端点
+     * @param host current authorized host / 当前授权主机
+     * @return legal endpoint or explicit absence / 合法端点或明确无值 */
+    private static Optional<DeploymentApplicationUsage.Endpoint> endpoint(DeploymentEndpoint endpoint, String host) {
+        try {
+            String protocol = endpoint.protocol().name().toLowerCase(java.util.Locale.ROOT);
+            String value = endpoint.accessUrl();
+            if (value.isEmpty()) {
+                if (host.contains(":")) {
+                    if (!host.matches("[0-9a-fA-F:.]{2,64}"))
+                        return Optional.empty();
+                    java.net.InetAddress.getByName(host);
+                    host = "[" + host + "]";
+                } else if (!host.matches("[A-Za-z0-9][A-Za-z0-9.-]{0,252}"))
+                    return Optional.empty();
+                value = protocol + "://" + host + ":" + endpoint.hostPort();
+            }
+            URI target = URI.create(value);
+            if (target.getHost() == null || target.getUserInfo() != null || target.getFragment() != null)
+                return Optional.empty();
+            Optional<URI> browser = Optional.empty();
+            if (endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTP || endpoint.protocol() == DeploymentEndpoint.ProtocolType.HTTPS) {
+                URI uri = DeploymentEndpoint.requireAccessUrl(URI.create(value));
+                if (uri.getPort() == 0 || uri.getPort() > 65535 || value.length() > 4096)
+                    return Optional.empty();
+                browser = Optional.of(uri);
+            }
+            return Optional.of(new DeploymentApplicationUsage.Endpoint(endpoint.id(), protocol, value, browser));
+        } catch (IllegalArgumentException | java.net.UnknownHostException invalid) {
+            return Optional.empty();
+        }
+    }
+
     /** Opens a transaction snapshot bound to this Mod generation. / 打开绑定此Mod代次的事务快照。
      * @param task authenticated original task / 已认证原任务
      * @return original owned snapshot connection / 原所属快照连接
@@ -147,11 +289,11 @@ public final class DeploymentApplicationReader {
             throw new SQLException("Release application differs");
         var server = graph.components().getFirst().unit().server();
         String display = id;
-        ApplicationRunState state = null;
+        var observations = new HashMap<String, Observation>();
         Instant observed = record.createdAt();
         for (var component : graph.components()) {
             try (var query = connection.prepareStatement(
-                "SELECT current_release_sha256,runtime_state,is_ownership_verified,display_name,observed_at FROM deployment_unit WHERE deployment_unit_id=?")) {
+                "SELECT current_release_sha256,runtime_state,is_ownership_verified,display_name,observed_at,ownership_manifest_sha256,server_profile_id,systemd_unit_name,release_root_path,runtime_payload,autostart_state FROM deployment_unit WHERE deployment_unit_id=?")) {
                 query.setString(1, component.unit().id());
                 try (var rows = query.executeQuery()) {
                     if (!rows.next())
@@ -160,10 +302,15 @@ public final class DeploymentApplicationReader {
                         .filter(value -> value.unitId().equals(component.unit().id())).findFirst().orElseThrow();
                     if (!binding.releaseSha256().equals(rows.getString(1)))
                         throw new SQLException("Current unit differs from release");
+                    var unit = component.unit();
+                    if (!unit.ownershipManifestSha256().equals(rows.getString(6))
+                        || !unit.server().id().equals(rows.getString(7))
+                        || !unit.systemdUnit().equals(rows.getString(8)) || !unit.releaseRoot().equals(rows.getString(9))
+                        || !component.runtime().equals(new DeploymentUnitRuntimeCodec().read(bounded(rows, "runtime_payload", 16 * 1_048_576))))
+                        throw new SQLException("Current component identity differs from release");
                     String runtimeState = rows.getString(2);
                     boolean owned = rows.getObject(3) != null && rows.getInt(3) == 1;
-                    var part = state(runtimeState, owned);
-                    state = combine(state, part);
+                    observations.put(unit.id(), new Observation(state(runtimeState, owned), autostart(rows.getString(11), owned)));
                     String name = rows.getString(4);
                     if (name != null && component.componentId().equals(graph.healthComponentId()))
                         display = name;
@@ -177,9 +324,10 @@ public final class DeploymentApplicationReader {
         }
         var bindings = bindings(graph);
         var snapshot = new DeploymentApplicationSnapshot(new DeploymentApplicationId(id, server), display,
-            record.identity().sha256(), ownership(graph), state, observed, archived(release, record, task),
-            bindings, sha256(new DeploymentHealthCodec().write(graph.healthCheck())));
-        return new ApplicationFacts(snapshot, graph, release);
+            record.identity().sha256(), ownership(graph), overall(observations), observed, archived(release, record, task),
+            bindings, sha256(new DeploymentHealthCodec().write(graph.healthCheck())),
+            ApplicationAutostartState.combine(observations.values().stream().map(Observation::autostart).toList()));
+        return new ApplicationFacts(snapshot, graph, release, Map.copyOf(observations));
     }
 
     /** Captures every original typed configuration and nonsecret credential purpose. / 捕获每份原类型化配置与非秘密凭据用途。
@@ -262,24 +410,39 @@ public final class DeploymentApplicationReader {
             return ApplicationRunState.UNKNOWN;
         return switch (runtime) {
             case "RUNNING" -> ApplicationRunState.RUNNING;
-            case "STOPPED", "INSTALLED" -> ApplicationRunState.STOPPED;
+            case "STOPPED" -> ApplicationRunState.STOPPED;
+            case "INSTALLED" -> ApplicationRunState.INSTALLED;
             case "ERROR", "DEGRADED" -> ApplicationRunState.DEGRADED;
             default -> ApplicationRunState.UNKNOWN;
         };
     }
 
-    /** Combines components without treating partial operation as success. / 合并组件，不将部分操作视为成功。
-     * @param previous prior aggregate or absence / 先前汇总或无
-     * @param next next complete component state / 下一完整组件状态
+    /** Combines daemon state while retaining installed on-demand availability. / 合并守护进程状态并保留已安装按需可用性。
+     * @param observations exact complete component facts / 精确完整组件事实
      * @return conservative aggregate / 保守汇总 */
-    private static ApplicationRunState combine(ApplicationRunState previous, ApplicationRunState next) {
-        if (previous == null)
-            return next;
-        if (previous == ApplicationRunState.UNKNOWN || next == ApplicationRunState.UNKNOWN)
+    static ApplicationRunState overall(Map<String, Observation> observations) {
+        var states = observations.values().stream().map(Observation::state).toList();
+        if (states.contains(ApplicationRunState.UNKNOWN))
             return ApplicationRunState.UNKNOWN;
-        if (previous == ApplicationRunState.DEGRADED || next == ApplicationRunState.DEGRADED || previous != next)
+        if (states.contains(ApplicationRunState.DEGRADED)
+            || states.contains(ApplicationRunState.RUNNING) && states.contains(ApplicationRunState.STOPPED))
             return ApplicationRunState.DEGRADED;
-        return previous;
+        return states.contains(ApplicationRunState.RUNNING) ? ApplicationRunState.RUNNING
+            : states.contains(ApplicationRunState.STOPPED) ? ApplicationRunState.STOPPED : ApplicationRunState.INSTALLED;
+    }
+
+    /** Keeps missing saved automatic-startup evidence unknown. / 将缺失的已保存自动启动依据保持为未知。
+     * @param value saved observed value / 保存的观测值
+     * @param owned verified original ownership / 已核实原归属
+     * @return exact supported observation or unknown / 精确支持的观察或未知 */
+    private static ApplicationAutostartState autostart(String value, boolean owned) {
+        if (!owned || value == null)
+            return ApplicationAutostartState.UNKNOWN;
+        try {
+            return ApplicationAutostartState.valueOf(value);
+        } catch (IllegalArgumentException unsupported) {
+            return ApplicationAutostartState.UNKNOWN;
+        }
     }
 
     /** Copies reviewed file and database bindings from the full release graph. / 从完整发布图复制已审阅文件和数据库绑定。
@@ -361,8 +524,24 @@ public final class DeploymentApplicationReader {
     /** Full original facts retained only inside deployment service. / 仅在部署服务内部保留的完整原事实。
      * @param snapshot public copy / 公开副本
      * @param graph original graph / 原图
-     * @param release original active release / 原活动发布 */
+     * @param release original active release / 原活动发布
+     * @param observations exact saved component observations / 精确保存组件观察 */
     public record ApplicationFacts(DeploymentApplicationSnapshot snapshot, DeploymentApplicationGraph graph,
-                                   DeploymentReleaseSnapshot release) {
+                                   DeploymentReleaseSnapshot release, Map<String, Observation> observations) {
+        /** Keeps restoration archives without asserting missing current observations. / 保留恢复归档而不宣称缺失的当前观察。
+         * @param snapshot original archived public facts / 原归档公开事实
+         * @param graph original complete graph / 原完整图
+         * @param release original complete release / 原完整发布 */
+        public ApplicationFacts(DeploymentApplicationSnapshot snapshot, DeploymentApplicationGraph graph,
+                                DeploymentReleaseSnapshot release) {
+            this(snapshot, graph, release, graph.components().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+                value -> value.unit().id(), value -> new Observation(ApplicationRunState.UNKNOWN, ApplicationAutostartState.UNKNOWN))));
+        }
+    }
+
+    /** One exact component observation without inferred enablement. / 一项不推断启用状态的精确组件观察。
+     * @param state observed runtime state / 观测运行状态
+     * @param autostart observed automatic startup / 观测自动启动 */
+    public record Observation(ApplicationRunState state, ApplicationAutostartState autostart) {
     }
 }

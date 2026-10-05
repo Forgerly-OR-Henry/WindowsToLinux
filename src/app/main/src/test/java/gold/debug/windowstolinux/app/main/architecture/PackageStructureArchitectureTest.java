@@ -167,11 +167,7 @@ class PackageStructureArchitectureTest {
     private static final Set<String> VERSIONED_SCHEMA_RESOURCES = Set.of(
         "src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql",
         "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql",
-        "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v2.sql",
-        "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v3.sql",
-        "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql",
-        "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v2.sql",
-        "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v3.sql");
+        "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql");
 
     private static final Set<String> DISTRO_CLASSIFICATION_PACKAGES = Set.of("apt", "contract", "dnf", "extension",
         "generation");
@@ -949,9 +945,11 @@ class PackageStructureArchitectureTest {
         assertTrue(VERSIONED_SCHEMA_RESOURCES
             .contains("src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql"));
         assertTrue(VERSIONED_SCHEMA_RESOURCES.contains(
-            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v3.sql"));
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/validation-v1.sql"));
         assertFalse(VERSIONED_SCHEMA_RESOURCES
             .contains("src/app/ui/src/main/resources/gold/debug/windowstolinux/app/ui/schema-v1.sql"));
+        assertFalse(VERSIONED_SCHEMA_RESOURCES.contains(
+            "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v3.sql"));
         assertFalse(VERSIONED_SCHEMA_RESOURCES.contains(
             "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/db/schema-v4.sql"));
     }

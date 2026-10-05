@@ -40,6 +40,62 @@ class FileRecycleIntegrationTest {
     final AtomicReference<TaskContext> callbackContext = new AtomicReference<>();
 
     @Test
+    void ordinaryPermanentChoiceDeletesRecyclableFilesDirectoriesAndLinksWithoutRecycleReceipts() throws Exception {
+        var confirmations = new AtomicInteger();
+        Path outside = Files.createDirectory(root.resolve("outside"));
+        Files.writeString(outside.resolve("keep"), "outside");
+        try (var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            runtime.fileSettings().save(false);
+            runtime.setSourcePicker((a, b, c) -> root);
+            runtime.setInteractionPresenter(new PlatformInteractionTest.Prompts() {
+                @Override
+                public DeleteEffect delete(Map<DeleteEffect, ActionIntent> choices, String explanation, TaskSnapshot task, CancelToken cancel) {
+                    assertEquals(Set.of(DeleteEffect.RECYCLE, DeleteEffect.PERMANENT), choices.keySet());
+                    assertTrue(choices.get(DeleteEffect.PERMANENT).exactAction().startsWith("delete "));
+                    assertTrue(choices.get(DeleteEffect.PERMANENT).exactAction().split("\n")[0].endsWith(" PERMANENT"));
+                    confirmations.incrementAndGet();
+                    return DeleteEffect.PERMANENT;
+                }
+            });
+            try (var file = runtime.capabilities().source(OWNER, VERSION)) {
+                finish(runtime, runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                    callbackContext.set(task);
+                    try {
+                        Path ordinary = Files.writeString(root.resolve("file"), "owned file");
+                        Path directory = Files.createDirectory(root.resolve("directory"));
+                        Files.writeString(directory.resolve("child"), "owned directory");
+                        WindowsLinks.create(directory.resolve("outside-link"), outside);
+                        Path link = root.resolve("link");
+                        WindowsLinks.create(link, outside);
+                        for (Path source : List.of(ordinary, directory, link)) {
+                            FilePath path = FilePath.local(source);
+                            var report = source.equals(link) ? file.deleteLink(path, task) : file.deleteFile(path, task);
+                            assertEquals(TaskResult.SUCCEEDED, report.outcome(), report.toString());
+                            assertFalse(Files.exists(source, LinkOption.NOFOLLOW_LINKS));
+                            var operation = file.operations(task).stream().filter(item -> item.id().equals(report.operationId())).findFirst().orElseThrow();
+                            assertEquals("COMPLETE", operation.phase());
+                            assertTrue(operation.steps().stream().anyMatch(step -> step.phase().equals("BEFORE_DELETE") && step.detail().equals("PERMANENT")));
+                            assertFalse(operation.steps().stream().anyMatch(step -> step.phase().startsWith("RECYCLE")));
+                            assertEquals(TaskResult.SUCCEEDED, file.checkOperation(operation.id(), task).outcome());
+                        }
+                        assertEquals(3, confirmations.get());
+                        assertEquals("outside", Files.readString(outside.resolve("keep")));
+                        return success(null);
+                    } catch (Throwable failure) {
+                        callbackFailure.set(failure);
+                        throw failure;
+                    }
+                }));
+            }
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        } finally {
+            Files.deleteIfExists(root.resolve("link"));
+            Files.deleteIfExists(root.resolve("directory/outside-link"));
+        }
+    }
+
+    @Test
     void genuineHighPrivilegeBrokenLinkPermitRecyclesOnlyTheLinkAndIsConsumedOnce() throws Exception {
         Path missing = Files.createDirectory(root.resolve("missing-target"));
         Path link = root.resolve("broken-link");

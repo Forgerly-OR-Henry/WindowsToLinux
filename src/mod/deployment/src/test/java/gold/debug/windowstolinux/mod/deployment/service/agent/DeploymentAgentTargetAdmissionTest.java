@@ -120,7 +120,7 @@ class DeploymentAgentTargetAdmissionTest extends DeploymentRuntimeFixture {
     }
 
     private static DeploymentAgentActionLog.Identity identity(String profile) {
-        return new DeploymentAgentActionLog.Identity(profile, "a".repeat(64), "b".repeat(64), "MANUAL_REVIEW");
+        return new DeploymentAgentActionLog.Identity(profile, "a".repeat(64), "b".repeat(64), "MANUAL_REVIEW", "GENERAL");
     }
 
     private static OperationResult<Void> success() {

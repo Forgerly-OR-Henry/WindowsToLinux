@@ -329,6 +329,13 @@ public final class PlatformFileFlow implements AutoCloseable {
                         continue;
                     }
                     grant = decision.value().orElseThrow();
+                    ActionIntent selected = interaction.reviewed(grant, task);
+                    if (selected.equals(FileActions.delete(info, link, DeleteEffect.PERMANENT)))
+                        effect = DeleteEffect.PERMANENT;
+                    else if (observation.recyclable && selected.equals(FileActions.delete(info, link, DeleteEffect.RECYCLE)))
+                        effect = DeleteEffect.RECYCLE;
+                    else
+                        throw error(ProblemCode.ACCESS_DENIED, "FILE_DELETE_CHOICE", "Confirmed deletion effect does not match the offered object or choices");
                 }
                 DeleteEffect chosen = effect;
                 Optional<ActionSemantics> chosenSemantics = semantics;

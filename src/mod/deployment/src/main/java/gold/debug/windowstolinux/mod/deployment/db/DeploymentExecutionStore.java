@@ -126,6 +126,14 @@ public final class DeploymentExecutionStore {
         return DeploymentExecutionCodec.publicationTemplate(Objects.requireNonNull(record));
     }
 
+    /** Reads only a supported original execution's formal immutable release identity. / 仅读取受支持原执行的正式不可变发布身份。
+     * @param record actual retained original execution / 实际留存原执行
+     * @return original committed release identity or absence / 原已提交发布身份或无值
+     * @throws SQLException if the original format or result is unsupported or malformed / 原格式或结果不支持或畸形时 */
+    public Optional<DeploymentReleaseIdentity> releaseIdentity(DeploymentExecutionRecord record) throws SQLException {
+        return DeploymentExecutionCodec.release(Objects.requireNonNull(record));
+    }
+
     /** Persists the exact non-secret business proposal before any publish dispatch. / 在任何发布发送前持久化精确非秘密业务提案。
      * @param task original admitted task / 原准入任务
      * @param executionId original execution / 原执行

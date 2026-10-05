@@ -34,7 +34,7 @@ public final class GitRuntimeTestBridge {
             org.junit.jupiter.api.Assertions.assertEquals("gold.debug.windowstolinux.mod.git", identity.provider());
             org.junit.jupiter.api.Assertions.assertEquals("1.0.0-dev.1", identity.version());
             org.junit.jupiter.api.Assertions.assertEquals("gold.debug.windowstolinux.mod.deployment", identity.caller());
-            org.junit.jupiter.api.Assertions.assertEquals("1.1.0-dev.2", identity.callerVersion());
+            org.junit.jupiter.api.Assertions.assertEquals("1.1.0-dev.3", identity.callerVersion());
         }
         return calls;
     }

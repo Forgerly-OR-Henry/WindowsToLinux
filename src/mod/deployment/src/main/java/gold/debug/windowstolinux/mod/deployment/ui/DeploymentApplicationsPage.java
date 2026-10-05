@@ -19,11 +19,16 @@ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.db.DeploymentReleaseRecord;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+import gold.debug.windowstolinux.mod.deployment.ui.delivery.DeploymentDeliveryPanel;
 
 /** Displays saved applications and admits exact owned management actions. / 展示已保存应用并接纳精确所属管理动作。 */
 public final class DeploymentApplicationsPage implements ModPage {
     /** Original generation task admission and recovery. / 原代次任务准入及恢复。 */
     private final DeploymentApplicationsService service;
+
+    /** Verified public usage and concrete desktop actions for the current selection. / 当前选择的已核实公开用法与具体桌面动作。 */
+    private final DeploymentDeliveryPanel delivery;
 
     /** EDT-owned page container. / EDT所属页面容器。 */
     private final JPanel root = new JPanel(new BorderLayout(8, 8));
@@ -93,7 +98,15 @@ public final class DeploymentApplicationsPage implements ModPage {
     /** Creates one lazy applications view. / 创建一个惰性应用视图。
      * @param service original generation service / 原代次服务 */
     public DeploymentApplicationsPage(DeploymentApplicationsService service) {
+        this(service, new DeploymentDeliveryPanel());
+    }
+
+    /** Binds an owned concrete delivery view for actual interaction verification. / 绑定所属具体交付视图以验证实际交互。
+     * @param service original generation service / 原代次服务
+     * @param delivery actual verified delivery view / 实际已核实交付视图 */
+    public DeploymentApplicationsPage(DeploymentApplicationsService service, DeploymentDeliveryPanel delivery) {
         this.service = Objects.requireNonNull(service);
+        this.delivery = Objects.requireNonNull(delivery);
     }
 
     /** Creates the real page on the EDT and loads original saved lists. / 在EDT创建真实页面并加载原保存清单。
@@ -109,6 +122,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         categories.setName("applications.category");
         serverFilter.setName("applications.serverFilter");
         servers.setName("applications.scanServer");
+        discovered.setName("applications.discovered");
         details.setName("applications.details");
         var filters = new JPanel();
         filters.add(categories);
@@ -121,10 +135,12 @@ public final class DeploymentApplicationsPage implements ModPage {
         button(row, "inspect", this::inspect);
         for (var action : DeploymentLifecycleAction.values())
             button(row, action.name().toLowerCase(Locale.ROOT), () -> lifecycle(action));
-        button(row, "edit", this::edit);
-        button(row, "history", this::history);
-        button(row, "reattach", this::reattach);
         top.add(row);
+        var metadata = new JPanel();
+        button(metadata, "edit", this::edit);
+        button(metadata, "history", this::history);
+        button(metadata, "reattach", this::reattach);
+        top.add(metadata);
         var scan = new JPanel();
         scan.add(servers);
         scan.add(discovered);
@@ -147,7 +163,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         root.add(top, BorderLayout.NORTH);
         var applicationViews = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT,
             DeploymentPageStyle.card("style.applications", new JScrollPane(applications)),
-            DeploymentPageStyle.card("style.details", new JScrollPane(details)));
+            DeploymentPageStyle.card("style.details", new JSplitPane(JSplitPane.VERTICAL_SPLIT, new JScrollPane(details), delivery)));
         applicationViews.setResizeWeight(0.4);
         applicationViews.setPreferredSize(new java.awt.Dimension(600, 260));
         applicationViews.setMinimumSize(new java.awt.Dimension(0, 160));
@@ -238,6 +254,8 @@ public final class DeploymentApplicationsPage implements ModPage {
         generation.incrementAndGet();
         if (reattachmentConfirmation != null)
             reattachmentConfirmation.dispose();
+        delivery.clear();
+        delivery.enabled(false);
         actions.shutdown();
     }
 
@@ -305,7 +323,7 @@ public final class DeploymentApplicationsPage implements ModPage {
                 details.append("\n" + value.before() + " → " + value.after());
                 refresh();
             });
-        else
+        else if (!action.autostart())
             run(() -> service.externalAction(selected.external().orElseThrow(), action.name()), value -> refresh());
     }
 
@@ -460,6 +478,7 @@ public final class DeploymentApplicationsPage implements ModPage {
             details.setText("");
             details.putClientProperty("inventory.body", null);
             details.putClientProperty("inventory.key", null);
+            delivery.clear();
             availability();
             return;
         }
@@ -473,14 +492,18 @@ public final class DeploymentApplicationsPage implements ModPage {
             selected.adoptedAt().map(Object::toString).orElse(text("absent")));
         if (selected.managed().isPresent()) {
             var managed = selected.managed().orElseThrow();
-            body += "\n" + managed.state() + "\n" + managed.revisionSha256() + "\n"
+            body += "\n" + (managed.state() == ApplicationRunState.INSTALLED ? text("installedAvailable") : managed.state())
+                + "\n" + text("autostartObservation") + managed.autostart() + "\n" + managed.revisionSha256() + "\n"
                 + managed.bindings().stream()
                 .map(value -> value.componentId() + " · " + value.kind() + " · " + value.path())
                 .collect(java.util.stream.Collectors.joining("\n"));
+            selected.usage().ifPresent(delivery::show);
         } else {
+            delivery.clear();
             var external = selected.external().orElseThrow();
             body += "\n" + external.target().kind() + "\n" + external.target().identity() + "\n"
-                + external.target().fingerprint() + "\n" + external.target().state();
+                + external.target().fingerprint() + "\n" + external.target().state()
+                + "\n" + text("externalCapabilities") + external.target().canStart() + " / " + external.target().canStop();
         }
         details.putClientProperty("inventory.body", body);
         details.putClientProperty("inventory.key", selected.key());
@@ -591,6 +614,7 @@ public final class DeploymentApplicationsPage implements ModPage {
         locked = environment.locked();
         messages = ResourceBundle.getBundle("gold.debug.windowstolinux.mod.deployment.ui.deployment-applications-page",
             environment.locale());
+        delivery.environment(environment);
     }
 
     /** Applies the current locale to every original action. / 将当前语言应用到每个原动作。 */
@@ -620,7 +644,19 @@ public final class DeploymentApplicationsPage implements ModPage {
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.managed().isPresent());
             if (key.equals("reattach"))
                 button.setEnabled(!closed && !locked && !busy && selected != null && selected.external().isPresent());
+            for (var action : DeploymentLifecycleAction.values())
+                if (key.equals(action.name().toLowerCase(Locale.ROOT))) {
+                    boolean supported = selected != null && (selected.usage().map(value -> value.actions().contains(action)).orElse(false)
+                        || selected.external().map(value -> switch (action) {
+                        case START -> value.target().canStart();
+                        case STOP -> value.target().canStop();
+                        case RESTART -> value.target().canStart() && value.target().canStop();
+                        case ENABLE_AUTOSTART, DISABLE_AUTOSTART -> false;
+                    }).orElse(false));
+                    button.setEnabled(!closed && !locked && !busy && supported);
+                }
         });
+        delivery.enabled(!closed && !locked && !busy);
         applications.setEnabled(!closed && !locked && !busy);
         servers.setEnabled(!closed && !locked && !busy);
         discovered.setEnabled(!closed && !locked && !busy);

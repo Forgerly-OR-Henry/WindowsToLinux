@@ -17,12 +17,15 @@ import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
 import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
@@ -110,6 +113,36 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                     return peer.session(task);
                 }
 
+                public RemoteSession connect(RemoteTarget expected, TaskContext task) throws ApiException {
+                    assertEquals(new ServerId("server"), expected.server());
+                    assertEquals(task.id(), expected.taskId());
+                    assertEquals("127.0.0.1", expected.host());
+                    assertEquals(22, expected.port());
+                    assertEquals("root", expected.username());
+                    var server = original.servers().get(expected.server(), task);
+                    assertEquals(server.ref(), expected.server());
+                    assertEquals(server.host(), expected.host());
+                    assertEquals(server.port(), expected.port());
+                    assertEquals(server.username(), expected.username());
+                    var session = peer.session(task);
+                    try {
+                        if (expected.fingerprint().isPresent()
+                            && !expected.fingerprint().orElseThrow().equals(session.facts().fingerprint()))
+                            throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
+                                "DEPLOYMENT_TEST_WIRE_CHANGED",
+                                "The controlled transport rejects a different actual wire before any command",
+                                Map.of(), Optional.of(task.id())));
+                        return session;
+                    } catch (ApiException | RuntimeException | Error failure) {
+                        try {
+                            session.close();
+                        } catch (ApiException closeFailure) {
+                            failure.addSuppressed(closeFailure);
+                        }
+                        throw failure;
+                    }
+                }
+
                 public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
                     return List.of();
                 }
@@ -137,7 +170,9 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                 while (handle.snapshot().state() != TaskState.UNKNOWN && handle.snapshot().state() != TaskState.ENDED
                     && System.nanoTime() < until)
                     Thread.sleep(20);
-                assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state(),
+                    () -> handle.snapshot() + " result=" + handle.completion().toCompletableFuture().getNow(null)
+                        + "; remote commands=" + peer.builds.commands);
                 assertTrue(peer.builds.healthChecks > 0);
                 assertFalse(peer.builds.present.isEmpty());
                 assertFalse(peer.maintenance.isEmpty());

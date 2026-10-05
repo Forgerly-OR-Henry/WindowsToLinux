@@ -54,7 +54,11 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
 
     private final Set<String> reviewedOperations = ConcurrentHashMap.newKeySet();
 
+    private final DeploymentAssistedWorkflowTest.FixedReviewFixture fixedReviews = new DeploymentAssistedWorkflowTest.FixedReviewFixture();
+
     private final List<ActionIntent> hostApprovals = new CopyOnWriteArrayList<>();
+
+    private final AtomicReference<String> modelRoute = new AtomicReference<>("a".repeat(64));
 
     private boolean returnToOriginal;
 
@@ -89,6 +93,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
             }
 
             public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
+                fixedReviews.beforeHost(intent, task.id());
                 hostApprovals.add(intent);
                 reviewFault.accept(intent);
                 return true;
@@ -126,6 +131,17 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
         unknown(count, "BUILD");
     }
 
+    @org.junit.jupiter.api.Test
+    void originalUnknownRecoveryKeepsManualApprovalAfterPreferencesChangeToFullControl() throws Exception {
+        unknown(1, "BUILD", true);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"ENDPOINT", "WIRE", "MODEL", "MISSING_POLICY", "MISSING_WIRE", "OWNER_VERSION", "MODE"})
+    void originalRecoveryBlocksChangedOrMissingBindingsBeforeAnyCommandReviewOrReplay(String changedFact) throws Exception {
+        unknown(1, "BUILD", false, changedFact);
+    }
+
     @ParameterizedTest
     @CsvSource({"1,FORMAL", "1,CHILD", "2,ROOT"})
     void pendingFormalChildOrRootReviewCannotSendAnotherBuild(int count, String boundary) throws Exception {
@@ -133,6 +149,14 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
     }
 
     private void unknown(int count, String boundary) throws Exception {
+        unknown(count, boundary, false);
+    }
+
+    private void unknown(int count, String boundary, boolean changePreferences) throws Exception {
+        unknown(count, boundary, changePreferences, "NONE");
+    }
+
+    private void unknown(int count, String boundary, boolean changePreferences, String changedFact) throws Exception {
         source(count);
         enable();
         var runtime = open();
@@ -163,8 +187,12 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 };
             var ai = models(false);
             LinuxService linux = new LinuxService() {
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                    return fixedReviews.connect(expected, task, actual, this);
+                }
+
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
-                    return peer.session(task);
+                    return fixedReviews.session(peer.session(task), task);
                 }
 
                 public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
@@ -199,15 +227,57 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(1, peer.builds.values().stream().mapToInt(Integer::intValue).sum());
                 assertEquals(1, peer.creates.size());
                 assertEquals(1, peer.uploads.size());
+                if (changePreferences) {
+                    var selection = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection("ASSISTED", "FULL_CONTROL", "FULL");
+                    var changed = tasks.submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest("deployment-test-preference", "Change later deployment preferences", List.of(), true), task -> {
+                        var preferences = new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences(actual.db());
+                        preferences.save(task, selection);
+                        assertEquals(selection, preferences.read(task));
+                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                    }).completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
+                    assertEquals(TaskResult.SUCCEEDED, changed.outcome(), changed.toString());
+                }
                 int calls = language.get();
+                int approvalCalls = independent.get();
+                int originalCommands = peer.commands.size();
                 var created = Map.copyOf(peer.creates);
                 var uploaded = Map.copyOf(peer.uploads);
                 var builds = Map.copyOf(peer.builds);
                 assertTrue(scalar(runtime,
                     "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='FILE' AND released_at IS NULL") > 0);
+                if (!changedFact.equals("NONE")) {
+                    int connections = peer.sessionsOpened;
+                    PolicyRow originalPolicy = null;
+                    PolicyRow changedPolicy = null;
+                    if (changedFact.equals("ENDPOINT")) {
+                        assertThrows(java.sql.SQLException.class, () -> runtime.servers().saveServerProfile(
+                            ServerProfile.fromStored(new StoredServerProfile("server", "127.0.0.2", 22, "root", "fixture-password")), "fixture-password".toCharArray()));
+                        changeEndpoint(runtime, "127.0.0.2");
+                    } else if (changedFact.equals("WIRE")) peer.fingerprint = "SHA256:" + "C".repeat(43);
+                    else if (changedFact.equals("MODEL")) modelRoute.set("b".repeat(64));
+                    else {
+                        originalPolicy = retainedPolicy(runtime, handle.id());
+                        changedPolicy = changedPolicy(originalPolicy, changedFact);
+                        overwritePolicy(runtime, handle.id(), originalPolicy.resourceId(), changedPolicy);
+                    }
+                    var blocked = DeploymentPublishAcceptanceFixture.reconcileReady(runtime, handle);
+                    assertEquals(TaskState.UNKNOWN, blocked.state());
+                    assertEquals(originalCommands, peer.commands.size(), "A changed original target or model cannot admit a remote command");
+                    assertEquals(approvalCalls, independent.get(), "Failure at the original binding precedes independent command dispatch");
+                    assertEquals(calls, language.get());
+                    assertEquals(changedFact.equals("WIRE") ? connections + 1 : connections, peer.sessionsOpened, "Only wire verification needs the controlled transport; endpoint and model drift fail before connection");
+                    assertEquals(peer.sessionsOpened, peer.sessionsClosed, "The rejected connection and its fresh workflow scope are actually closed");
+                    if (changedFact.equals("ENDPOINT")) changeEndpoint(runtime, "127.0.0.1");
+                    if (originalPolicy != null)
+                        overwritePolicy(runtime, handle.id(), changedPolicy.resourceId(), originalPolicy);
+                    peer.fingerprint = "SHA256:" + "B".repeat(43);
+                    modelRoute.set("a".repeat(64));
+                }
                 if (boundary.equals("BUILD")) {
                     var unknown = DeploymentPublishAcceptanceFixture.reconcileReady(runtime, handle);
                     assertEquals(TaskState.UNKNOWN, unknown.state());
+                    assertTrue(peer.commands.size() > originalCommands, "The active original build needs a fresh real query");
+                    assertRecoveryReviews(peer, originalCommands, approvalCalls, handle.id());
                 } else {
                     assertTrue(faultInstalled.get());
                     assertReviewBoundary(runtime, boundary);
@@ -217,6 +287,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                         assertEquals(TaskState.UNKNOWN, unknown.state());
                         assertEquals(commands, peer.commands.size(),
                             "An unconfirmed formal checkpoint cannot admit remote observation or cleanup");
+                        assertEquals(approvalCalls, independent.get(), "A blocked checkpoint cannot ask AI to authorize remote work");
                     }
                     removeReviewFault(runtime, boundary);
                 }
@@ -235,6 +306,9 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 assertEquals(uploaded, peer.uploads);
                 assertTrue(peer.present.isEmpty());
                 assertTrue(peer.publications.isEmpty());
+                assertRecoveryReviews(peer, originalCommands, approvalCalls, handle.id());
+                assertTrue(reviewedOperations.containsAll(Set.of("deployment.publication.original-status.v1",
+                    "deployment.publication.candidate-cleanup.v1")));
                 assertEquals(Set.of(handle.id()), peer.tasks);
                 try (var access = scope(runtime, true);
                      var connection = access.openConnection();
@@ -258,6 +332,61 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 } catch (Exception | AssertionError cleanup) {
                     first.addSuppressed(cleanup);
                 }
+        }
+    }
+
+    private record PolicyRow(String resourceId, String recovery) {
+    }
+
+    private static void changeEndpoint(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, String host) throws Exception {
+        try (var connection = runtime.persistence().database().openConnection();
+             var change = connection.prepareStatement("UPDATE server_profile SET host=? WHERE server_profile_id=?")) {
+            change.setString(1, host);
+            change.setString(2, "server");
+            assertEquals(1, change.executeUpdate());
+        }
+    }
+
+    private static PolicyRow retainedPolicy(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, UUID task) throws Exception {
+        String key = OWNER + "/checkpoint/" + gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyFacts.KEY;
+        try (var connection = runtime.persistence().database().openConnection();
+             var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE task_id=? AND resource_id=? AND released_at IS NULL")) {
+            query.setObject(1, task);
+            query.setString(2, key);
+            try (var rows = query.executeQuery()) {
+                assertTrue(rows.next(), "The actual original policy exists before the fixture fault");
+                var original = new PolicyRow(key, rows.getString(1));
+                assertFalse(rows.next());
+                return original;
+            }
+        }
+    }
+
+    private static PolicyRow changedPolicy(PolicyRow original, String fault) throws Exception {
+        if (fault.equals("MISSING_POLICY"))
+            return new PolicyRow(original.resourceId() + "/hidden", original.recovery());
+        var json = new ObjectMapper();
+        var envelope = json.readTree(original.recovery());
+        var fields = (com.fasterxml.jackson.databind.node.ObjectNode) envelope.path("fields");
+        var facts = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(fields.path("payload").textValue());
+        switch (fault) {
+            case "MISSING_WIRE" -> facts.putNull("actualFingerprint");
+            case "OWNER_VERSION" -> facts.put("ownerVersion", "1.1.0-dev.99");
+            case "MODE" -> facts.put("executionMode", "STATIC").put("modelRevision", "");
+            default -> throw new AssertionError("Unregistered original policy fault");
+        }
+        fields.put("payload", facts.toString());
+        return new PolicyRow(original.resourceId(), envelope.toString());
+    }
+
+    private static void overwritePolicy(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime, UUID task, String currentKey, PolicyRow replacement) throws Exception {
+        try (var connection = runtime.persistence().database().openConnection();
+             var change = connection.prepareStatement("UPDATE platform_task_resource SET resource_id=?,recovery_json=? WHERE task_id=? AND resource_id=? AND released_at IS NULL")) {
+            change.setString(1, replacement.resourceId());
+            change.setString(2, replacement.recovery());
+            change.setObject(3, task);
+            change.setString(4, currentKey);
+            assertEquals(1, change.executeUpdate());
         }
     }
 
@@ -285,6 +414,16 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                     "ALTER TABLE platform_task_resource ADD CONSTRAINT assisted_checkpoint_fault CHECK(resource_id<>'"
                         + OWNER + "/checkpoint/" + key + "' OR recovery_json NOT LIKE '%CONFIRMED%')");
             }
+    }
+
+    private void assertRecoveryReviews(DeploymentAssistedBuildPeer peer, int commandsBefore, int approvalsBefore,
+                                       UUID originalTask) {
+        assertEquals(peer.commands.size() - commandsBefore, independent.get() - approvalsBefore,
+            "Every recovery query and cleanup requires one fresh independent APPROVAL and no planning");
+        assertEquals(peer.commands.size(), fixedReviews.sends.get());
+        for (String command : peer.commands.subList(commandsBefore, peer.commands.size()))
+            if (command.contains("publication-original-status") || command.contains("candidate-cleanup-task"))
+                assertTrue(command.contains("'" + originalTask + "'"), "Recovery keeps the authentic original task target");
     }
 
     private void assertReviewBoundary(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime,
@@ -353,6 +492,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
 
     private void run(int count, String policy, boolean changed, boolean stop, boolean preCandidate, boolean repeated)
         throws Exception {
+        fixedReviews.policy(policy);
         source(count);
         enable();
         if (preCandidate)
@@ -370,8 +510,12 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
             var peer = new DeploymentAssistedBuildPeer(repeated);
             var ai = models(stop);
             LinuxService linux = new LinuxService() {
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                    return fixedReviews.connect(expected, task, original, this);
+                }
+
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
-                    return peer.session(task);
+                    return fixedReviews.session(peer.session(task), task);
                 }
 
                 public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
@@ -437,14 +581,14 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
             if (preCandidate)
                 assertEquals(List.of("1.24", "1.25", "1.24", "1.25", "1.24"), peer.toolBranches,
                     "The third component may observe its first known failure but must not send a third fallback");
-            if (policy.equals("MANUAL_REVIEW"))
-                assertEquals(0, independent.get());
-            else {
-                assertTrue(independent.get() > language.get());
-                assertTrue(reviewedOperations.containsAll(Set.of("deployment.toolchain.prepare.v1",
-                    "deployment.toolchain.bind.v1", "deployment.build.run.v1", "deployment.publication.publish.v1",
+            assertTrue(independent.get() >= fixedReviews.sends.get());
+            assertEquals(peer.commands.size(), fixedReviews.sends.get());
+            assertTrue(reviewedOperations.contains("deployment.toolchain.prepare.v1"));
+            if (!preCandidate)
+                assertTrue(reviewedOperations.containsAll(Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1")));
+            if (success)
+                assertTrue(reviewedOperations.containsAll(Set.of("deployment.publication.publish.v1",
                     "deployment.assisted.environment-recovery", "deployment.assisted.build-review")));
-            }
             assertEquals(repeated ? 2 : success ? count : 0, hostApprovals.stream()
                 .filter(intent -> intent.type().equals("deployment.assisted.environment-recovery")).count());
             try (var access = scope(runtime, true);
@@ -596,16 +740,17 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
 
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
                 assertTrue(Set.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL).contains(purpose));
-                return "a".repeat(64);
+                fixedReviews.sameTask(task);
+                return modelRoute.get();
             }
 
             public OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException {
-                return call(request, "a".repeat(64), task);
+                return call(request, modelRoute.get(), task);
             }
 
             public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task)
                 throws ApiException {
-                assertEquals("a".repeat(64), expected);
+                assertEquals(modelRoute.get(), expected);
                 JsonNode facts;
                 try {
                     facts = new ObjectMapper().readTree(request.messages().getLast().text());
@@ -614,11 +759,13 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                 }
                 String response;
                 if (request.purpose() == AiPurpose.APPROVAL) {
+                    fixedReviews.review(request, facts, task);
                     independent.incrementAndGet();
                     reviewedOperations.add(facts.path("operation").asText());
                     response = "{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact registered fixed action\"}";
                 } else {
                     assertEquals(AiPurpose.LANGUAGE, request.purpose());
+                    fixedReviews.sameTask(task);
                     language.incrementAndGet();
                     if (facts.path("phase").asText().equals("BUILD")) {
                         recoveries.incrementAndGet();

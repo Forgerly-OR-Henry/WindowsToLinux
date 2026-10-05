@@ -25,6 +25,7 @@ import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.mod.deployment.api.ApplicationAutostartState;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentHealthCheck;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentResourceBindings;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentRuntimeDefinition;
@@ -394,7 +395,7 @@ public final class DeploymentPublishChannel {
     /** Changes one confirmed owned daemon and verifies its resulting state. / 改变一个已确认归属的守护进程并核实结果状态。
      * @param unit exact managed unit / 精确受管单元
      * @param runtime saved runtime definition / 已保存运行定义
-     * @param action start, stop or restart / 启动、停止或重启
+     * @param action start, stop, restart, enable or disable / 启动、停止、重启、启用或禁用自启
      * @param expectedReleaseSha256 exact reviewed current unit release / 精确已审阅当前单元发布
      * @return confirmed lifecycle result or retained uncertainty / 已确认生命周期结果或保留未知
      * @throws ApiException if host admission fails / 宿主准入失败时 */
@@ -404,8 +405,8 @@ public final class DeploymentPublishChannel {
         if (expectedReleaseSha256 == null || !expectedReleaseSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Exact reviewed current release required");
         Objects.requireNonNull(runtime);
-        if (!Set.of("start", "stop", "restart").contains(action)
-            || runtime.workload().mode() != gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentWorkload.ExecutionMode.DAEMON)
+        if (!Set.of("start", "stop", "restart", "enable", "disable").contains(action)
+            || !runtime.workload().supportsLifecycle())
             throw new IllegalArgumentException("Only a reviewed daemon lifecycle action is supported");
         var before = observe(unit, runtime);
         if (before.outcome() != TaskResult.SUCCEEDED || before.value().isEmpty())
@@ -421,6 +422,14 @@ public final class DeploymentPublishChannel {
         var after = observe(unit, runtime);
         if (after.outcome() != TaskResult.SUCCEEDED || after.value().isEmpty())
             return unknown("DEPLOYMENT_LIFECYCLE_STATE_UNCONFIRMED");
+        if (action.equals("enable") || action.equals("disable")) {
+            var expectedAutostart = action.equals("enable") ? ApplicationAutostartState.ENABLED
+                : ApplicationAutostartState.DISABLED;
+            return after.value().orElseThrow().autostart() == expectedAutostart
+                && before.value().orElseThrow().state() == after.value().orElseThrow().state()
+                ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())
+                : unknown("DEPLOYMENT_AUTOSTART_STATE_UNCONFIRMED");
+        }
         var expected = "stop".equals(action) ? DeploymentRemoteRuntimeObservation.StateType.STOPPED
             : DeploymentRemoteRuntimeObservation.StateType.RUNNING;
         return after.value().orElseThrow().state() == expected
@@ -504,6 +513,12 @@ public final class DeploymentPublishChannel {
             || !values.keySet().containsAll(Set.of("RUNNING", "ENABLED", "ActiveState", "SubState", "Result",
             "ExecMainCode", "ExecMainStatus", "MainPID")))
             return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
+        var autostart = switch (values.get("ENABLED")) {
+            case "enabled" -> ApplicationAutostartState.ENABLED;
+            case "disabled", "static", "indirect", "masked", "masked-runtime", "enabled-runtime", "generated",
+                 "transient" -> ApplicationAutostartState.DISABLED;
+            default -> ApplicationAutostartState.UNKNOWN;
+        };
         for (String key : List.of("ActiveState", "SubState", "Result", "ExecMainCode", "ExecMainStatus", "MainPID"))
             if (!values.get(key).matches("[A-Za-z0-9_-]{1,64}"))
                 return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
@@ -512,16 +527,17 @@ public final class DeploymentPublishChannel {
                 return unknown("DEPLOYMENT_RUNTIME_OBSERVATION_INVALID");
         if ("failed".equals(values.get("ActiveState")) || "activating".equals(values.get("ActiveState"))
             && "auto-restart".equals(values.get("SubState")) && !"success".equals(values.get("Result")))
-            return success(new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.ERROR));
+            return success(new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.ERROR,
+                autostart));
         if ("1".equals(values.get("RUNNING")) && "active".equals(values.get("ActiveState"))
             && "running".equals(values.get("SubState")) && "success".equals(values.get("Result"))
             && values.get("MainPID").matches("[0-9]{1,10}") && !"0".equals(values.get("MainPID")))
             return success(
-                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.RUNNING));
+                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.RUNNING, autostart));
         if ("0".equals(values.get("RUNNING")) && "inactive".equals(values.get("ActiveState"))
             && "dead".equals(values.get("SubState")) && "0".equals(values.get("MainPID")))
             return success(
-                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED));
+                new DeploymentRemoteRuntimeObservation(DeploymentRemoteRuntimeObservation.StateType.STOPPED, autostart));
         return unknown("DEPLOYMENT_RUNTIME_STATE_UNCONFIRMED");
     }
 
@@ -538,6 +554,9 @@ public final class DeploymentPublishChannel {
         String autostart = engine.equals("docker")
             ? "docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' " + name + " 2>/dev/null || true"
             : "if test -f "
+            + DeploymentBuildCommandChannel.shellQuote("/etc/containers/systemd/windowstolinux-" + unit.id()
+            + ".container.d/10-windowstolinux-autostart.conf")
+            + " && test ! -L "
             + DeploymentBuildCommandChannel.shellQuote("/etc/containers/systemd/windowstolinux-" + unit.id()
             + ".container.d/10-windowstolinux-autostart.conf")
             + "; then printf enabled; else printf no; fi";
@@ -564,9 +583,14 @@ public final class DeploymentPublishChannel {
         if (!"1".equals(values.get("OWNER")) || values.get("RUNNING") == null
             || !Set.of("true", "false").contains(values.get("RUNNING")) || !values.containsKey("ENABLED"))
             return unknown("DEPLOYMENT_CONTAINER_OBSERVATION_INVALID");
+        var observedAutostart = switch (values.get("ENABLED")) {
+            case "enabled", "always", "unless-stopped" -> ApplicationAutostartState.ENABLED;
+            case "no", "on-failure" -> ApplicationAutostartState.DISABLED;
+            default -> ApplicationAutostartState.UNKNOWN;
+        };
         return success(new DeploymentRemoteRuntimeObservation("true".equals(values.get("RUNNING"))
             ? DeploymentRemoteRuntimeObservation.StateType.RUNNING
-            : DeploymentRemoteRuntimeObservation.StateType.STOPPED));
+            : DeploymentRemoteRuntimeObservation.StateType.STOPPED, observedAutostart));
     }
 
     /** Rolls back only a known failed original release and requires a complete helper receipt. / 仅回滚已知失败的原发布并要求完整helper回执。
@@ -710,7 +734,7 @@ public final class DeploymentPublishChannel {
         try (request) {
             var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
                 operation, Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
-            var grant = interaction.approve(intent, task);
+            var grant = DeploymentCommandReviews.approve(interaction, intent, request, task);
             if (grant.outcome() != TaskResult.SUCCEEDED)
                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
             beforeSend.verify();

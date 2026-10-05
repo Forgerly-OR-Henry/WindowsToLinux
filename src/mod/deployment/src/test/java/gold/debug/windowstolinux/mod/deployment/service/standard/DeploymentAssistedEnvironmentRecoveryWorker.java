@@ -66,7 +66,11 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
     private final ObjectMapper json = new ObjectMapper();
 
     private final AtomicInteger aiCalls = new AtomicInteger(), failures = new AtomicInteger(),
-        lost = new AtomicInteger();
+        lost = new AtomicInteger(), independent = new AtomicInteger();
+
+    private final DeploymentAssistedWorkflowTest.FixedReviewFixture fixedReviews = new DeploymentAssistedWorkflowTest.FixedReviewFixture();
+
+    private final AtomicReference<String> modelRevision = new AtomicReference<>();
 
     private DeploymentAssistedEnvironmentRecoveryRestartTest.BoundaryType boundary;
 
@@ -124,6 +128,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
             }
 
             public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
+                fixedReviews.beforeHost(intent, task.id());
                 return true;
             }
         };
@@ -149,15 +154,19 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         var tasks = runtime.tasks().bind(OWNER, VERSION, false);
         var peer = new DeploymentAssistedBuildPeer(false);
         var linux = new LinuxService() {
+            public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                return fixedReviews.connect(expected, task, actual, this);
+            }
+
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
-                return interrupted(peer.session(task));
+                return interrupted(fixedReviews.session(peer.session(task), task));
             }
 
             public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
                 return List.of();
             }
         };
-        var models = models();
+        var models = models(actual.ai());
         var bound = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
             new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
                 if (method.getName().equals("tasks"))
@@ -186,6 +195,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         assertEquals(1, lost.get());
         assertEquals(1, failures.get());
         assertEquals(2, aiCalls.get());
+        assertEquals(peer.commands.size(), fixedReviews.sends.get());
+        assertTrue(independent.get() >= fixedReviews.sends.get());
         assertEquals(1, peer.creates.size());
         assertEquals(List.of(1), List.copyOf(peer.creates.values()));
         assertEquals(1, peer.uploads.size());
@@ -196,7 +207,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         assertEquals(1, peer.present.size());
         assertEquals(Set.of(handle.id()), peer.tasks);
         var retained = snapshot(runtime, handle.id());
-        retained.put("originalTask", handle.id().toString()).put("aiCalls", aiCalls.get()).put("builds", 1)
+        retained.put("originalTask", handle.id().toString()).put("aiCalls", aiCalls.get()).put("independentReviews", independent.get()).put("builds", 1)
             .put("uploads", 1).put("lost", lost.get());
         retained.put("candidate", peer.present.iterator().next());
         Files.writeString(record("before"), retained.toString());
@@ -241,7 +252,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
             .anyMatch(tool -> tool.version().text().equals("1.25.1") && tool.sha256().equals("d".repeat(64)));
     }
 
-    private AiService models() {
+    private AiService models(AiService original) {
         return new AiService() {
             @Override
             public gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.voice.VoiceResponse> call(
@@ -263,21 +274,33 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 throw new AssertionError("Voice is outside this fixture");
             }
 
-            public String configurationRevision(AiPurpose purpose, TaskContext task) {
-                assertEquals(AiPurpose.LANGUAGE, purpose);
-                return "a".repeat(64);
+            public String configurationRevision(AiPurpose purpose, TaskContext task) throws ApiException {
+                assertTrue(Set.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL).contains(purpose));
+                fixedReviews.sameTask(task);
+                String revision = original.configurationRevision(purpose, task);
+                assertTrue(revision.matches("[a-f0-9]{64}"));
+                modelRevision.compareAndSet(null, revision);
+                assertEquals(modelRevision.get(), revision, "Both original roles bind the actual complete configured route");
+                return revision;
             }
 
             public OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException {
-                return call(request, "a".repeat(64), task);
+                return call(request, configurationRevision(request.purpose(), task), task);
             }
 
             public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task) {
-                assertEquals("a".repeat(64), expected);
-                assertEquals(AiPurpose.LANGUAGE, request.purpose());
-                aiCalls.incrementAndGet();
+                assertEquals(modelRevision.get(), expected);
                 try {
                     var facts = json.readTree(request.messages().getLast().text());
+                    fixedReviews.sameTask(task);
+                    if (request.purpose() == AiPurpose.APPROVAL) {
+                        fixedReviews.review(request, facts, task);
+                        independent.incrementAndGet();
+                        return success(new AiResponse("{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact controlled original action\"}",
+                            "controlled-approval", "stop", new AiUsage(Optional.empty(), Optional.empty())));
+                    }
+                    assertEquals(AiPurpose.LANGUAGE, request.purpose());
+                    aiCalls.incrementAndGet();
                     String response;
                     if (facts.path("phase").asText().equals("BUILD")) {
                         failures.incrementAndGet();
@@ -348,12 +371,16 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         recovering = true;
         var before = json.readTree(Files.readString(record("before")));
         UUID id = UUID.fromString(before.path("originalTask").textValue());
+        modelRevision.set(before.path("execution").path("request").path("buildIntent").path("modelRevision").textValue());
+        assertTrue(modelRevision.get().matches("[a-f0-9]{64}"));
         var runtime = open();
         var report = runtime.startDevelopmentMods(workspace(), pages());
         assertTrue(report.running().isEmpty());
         assertEquals(List.of("MOD_RECOVERY_READY"), report.problems().stream().map(Problem::eventCode).toList());
         assertEquals(List.of(id), new TaskLedger(runtime.persistence().database()).queries().unfinished());
         var original = snapshot(runtime, id);
+        assertEquals(before.path("modelRoutes"), original.path("modelRoutes"),
+            "Every actual routing-revision field and both usable original roles survive the restart");
         for (int attempt = 0; attempt < 2; attempt++) {
             var result = runtime.tasks().reconcile(id).toCompletableFuture().get(25, TimeUnit.SECONDS);
             assertEquals(id, result.id());
@@ -372,6 +399,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
 
     private ObjectNode snapshot(PlatformRuntime runtime, UUID task) throws Exception {
         var result = json.createObjectNode();
+        result.set("modelRoutes", modelRoutes(runtime));
         try (var access = scope(runtime, true);
              var connection = access.openConnection();
              var statement = connection.prepareStatement(
@@ -401,7 +429,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 assertEquals(1, json.readTree(intent.path("failureEvidence").textValue()).path("exit").intValue());
                 assertEquals("1.24.1", DeploymentToolchainBindingCodec.decode(intent.path("previousTools").textValue())
                     .selections().getFirst().version().text());
-                assertEquals("a".repeat(64), intent.path("modelRevision").textValue());
+                assertEquals(modelRevision.get(), intent.path("modelRevision").textValue());
             }
         }
         var references = result.putArray("references");
@@ -466,6 +494,30 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
         return result;
     }
 
+    private ObjectNode modelRoutes(PlatformRuntime runtime) throws Exception {
+        var state = runtime.persistence().aiProfiles().routingState();
+        assertFalse(state.routes().get(AiPurposeType.DEPLOYMENT).isEmpty());
+        assertFalse(state.routes().get(AiPurposeType.APPROVAL).isEmpty());
+        var result = json.createObjectNode().put("actualRevision", modelRevision.get());
+        for (var purpose : AiPurposeType.values()) {
+            var members = result.putArray(purpose.name());
+            for (var member : state.members().get(purpose)) {
+                var configured = member.configuration();
+                var profile = configured.profile();
+                var value = members.addObject().put("enabled", member.enabled()).put("id", profile.id())
+                    .put("endpoint", profile.endpoint()).put("fileEndpoint", profile.fileEndpoint())
+                    .put("realtimeEndpoint", profile.realtimeEndpoint()).put("model", profile.model())
+                    .put("credentialKey", profile.credentialKey()).put("revision", configured.revision())
+                    .put("outputLimit", state.outputLimits().get(profile.id()));
+                for (var capability : AiCapabilityType.values())
+                    value.put(capability.name(), configured.verified(capability));
+            }
+        }
+        // Compare the same serialized representation used by the original cross-process evidence.
+        // 与原跨进程依据使用相同序列化表示，避免整数节点宽度造成伪漂移。
+        return (ObjectNode) json.readTree(json.writeValueAsBytes(result));
+    }
+
     private ArrayNode row(ResultSet rows, int columns) throws SQLException {
         var values = json.createArrayNode();
         for (int i = 1; i <= columns; i++)
@@ -488,6 +540,8 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 "fixture/environment", credential),
             "Environment recovery sentinel", java.time.Instant.now(), AiCapabilityType.TEXT);
         runtime.persistence().aiProfiles().purposes().save(AiPurposeType.DEPLOYMENT,
+            List.of(new AiPurposeAssignment("environment-sentinel", true)));
+        runtime.persistence().aiProfiles().purposes().save(AiPurposeType.APPROVAL,
             List.of(new AiPurposeAssignment("environment-sentinel", true)));
     }
 

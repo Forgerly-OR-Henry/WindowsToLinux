@@ -67,12 +67,15 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
     protected void enable() throws Exception {
         crossWorkspace = DeploymentApiCallerFixture.prepareWorkspace(workspace(), root.resolve("crossmod-workspace"));
         try (var runtime = open()) {
+            var catalog = new gold.debug.windowstolinux.app.service.mod.PlatformModCatalog(runtime.persistence().database());
+            assertTrue(catalog.refresh(crossWorkspace).rejections().isEmpty());
             start(runtime, false);
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM mod_schema"));
             assertEquals(2, scalar(runtime, "SELECT COUNT(*) FROM mod_version WHERE origin_kind='CLASS'"));
             var intents = runtime.modIntents();
             for (String owner : List.of(OWNER, DeploymentApiCallerFixture.CALLER))
-                intents.apply(intents.review(owner, new PlatformModIntents.Choice(true, Optional.of(VERSION)),
+                intents.apply(intents.review(owner, new PlatformModIntents.Choice(true,
+                        Optional.of(owner.equals(OWNER) ? VERSION : DeploymentApiCallerFixture.CALLER_VERSION)),
                     Optional.empty()), false);
             assertEquals(2, scalar(runtime,
                 "SELECT COUNT(*) FROM mod_operation WHERE state='WAITING' AND phase='WAIT_RESTART'"));
@@ -91,8 +94,9 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
             assertNotEquals(preparationBoot, runtime.persistence().database().bootId());
             assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM mod_operation"),
                 "Actual coordinator must archive both original enable applications");
-            assertEquals(2, scalar(runtime, "SELECT COUNT(*) FROM mod_registry WHERE actual_version='" + VERSION
-                + "' AND last_runtime_state='RUNNING'"));
+            assertEquals(2, scalar(runtime, "SELECT COUNT(*) FROM mod_registry WHERE last_runtime_state='RUNNING' AND ((mod_id='"
+                + OWNER + "' AND actual_version='" + VERSION + "') OR (mod_id='" + DeploymentApiCallerFixture.CALLER
+                + "' AND actual_version='" + DeploymentApiCallerFixture.CALLER_VERSION + "'))"));
         }
     }
 
@@ -866,6 +870,23 @@ class DeploymentApiCrossModTest extends DeploymentGraphFixture {
         archive.put("archiveSha",
             HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray())));
         return Map.copyOf(archive);
+    }
+
+    /** Uses a newly reviewed publication for positive collection and restoration contracts. / 为正向采集及恢复契约使用新审阅发布。 */
+    @Override
+    DeploymentApplicationGraph graph(String id) {
+        var original = super.graph(id);
+        var parts = original.components().stream().map(part -> {
+            var old = part.runtime().workload();
+            var workload = new DeploymentWorkload(old.mode(), true, old.command(), old.workingDirectory(), old.endpoints(),
+                old.verification(), old.expectedOutput(), old.client(), old.inputs(), old.companions(), old.buildDirectory(), old.workers());
+            var definition = part.reviewedRuntime().withWorkload(workload);
+            var runtime = new DeploymentUnitRuntimeConfig(part.runtime().healthCheck(), part.runtime().userAccessUrl(),
+                part.runtime().identityPolicy(), workload);
+            return new DeploymentApplicationGraph.Part(part.componentId(), part.unit(), runtime, part.dependencies(),
+                definition, part.dataPaths(), part.resources());
+        }).toList();
+        return new DeploymentApplicationGraph(original.applicationId(), original.healthComponentId(), original.healthCheck(), parts);
     }
 
     private String publishFixture(gold.debug.windowstolinux.app.main.start.PlatformRuntime runtime) throws Exception {

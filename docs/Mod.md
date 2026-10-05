@@ -116,19 +116,7 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
         }
     ],
     "exports": ["gold.debug.windowstolinux.mod.backup.api"],
-    "schemaVersion": "3",
-    "migrations": [
-        {
-            "from": "1",
-            "to": "2",
-            "class": "gold.debug.windowstolinux.mod.backup.db.Migrate1To2"
-        },
-        {
-            "from": "2",
-            "to": "3",
-            "class": "gold.debug.windowstolinux.mod.backup.db.Migrate2To3"
-        }
-    ]
+    "schemaVersion": "1"
 }
 ```
 
@@ -154,7 +142,7 @@ Mod 发布版本采用语义化版本的 `主版本.次版本.修订号`：兼�
 
 `dependencies` 缺项或 `[]` 表示无依赖，默认每项必需；`optional: true` 声明可选提供方，空值、错误类型、重复身份、自依赖与未知字段拒绝。必需提供方缺失、禁用、不兼容或启动失败会阻止依赖者；对应可选提供方只使相关功能不可用。平台不替用户切换版本，商店获取与运行可用性分别判断。范围语法与预发布规则见[身份与版本](#mod-identity-version)，S2 实施和验收状态见 [1.3 期合同](development/PHASE-1.3.md#git-mod)。
 
-`migrations` 每项包含三个必填字符串字段：`from` 为来源 Schema 版本，`to` 为目标 Schema 版本，均采用与 `schemaVersion` 相同的正整数字符串；`class` 为作者 Java 迁移实现的完整类名，不填写 SQL 正文。示例声明从 `"1"` 经 `"2"` 到 `"3"` 的迁移链。新安装直接初始化当前结构；扫描、下载或解压包不执行迁移。来源确认、路径选择、失败和重试只遵循[数据库迁移规则](#schema-upgrade)。
+`migrations` 每项包含三个必填字符串字段：`from` 为来源 Schema 版本，`to` 为目标 Schema 版本，均采用与 `schemaVersion` 相同的正整数字符串；`class` 为作者 Java 迁移实现的完整类名，不填写 SQL 正文。当前开发阶段统一使用 Schema `"1"`，不声明迭代迁移链；发布后需要升级已有结构时再声明迁移边。新安装直接初始化当前结构；扫描、下载或解压包不执行迁移。来源确认、路径选择、失败和重试只遵循[数据库迁移规则](#schema-upgrade)。
 
 格式版本、Mod 发布版本、平台 API 兼容范围、Schema 版本和最低 Java 版本分别描述不同对象，不互相推导。`README.md` 和 `LICENSE` 使用固定包内位置，不再声明重复路径；官网投稿邮箱不写入公开清单。
 
@@ -517,7 +505,7 @@ Mod 程序安装位置另见[加载来源](#loading-modes)及 [APP.md](APP.md)�
 
 #### 清单声明与版本含义
 
-使用平台数据库的 Mod 在根目录 `mod.json` 中声明独立的 `schemaVersion`。采用递增正整数的字符串，例如 `"1"`、`"2"`、`"3"`；它表示该 Mod 的数据结构及数据含义版本，不是 H2 引擎版本、Mod 发布版本或平台 API 版本。
+使用平台数据库的 Mod 在根目录 `mod.json` 中声明独立的 `schemaVersion`。当前未发布开发阶段统一保持 `"1"`，直接维护完整建库基准，不随开发阶段增加 V2、V3 或迁移链。正式发布后需要转换已有数据时，才使用递增正整数字符串；它表示该 Mod 的数据结构及数据含义版本，不是 H2 引擎版本、Mod 发布版本或平台 API 版本。以下多版本示例说明发布后的通用合同。
 
 ```json
 {
@@ -813,7 +801,7 @@ JAR/APP 已下载页的“删除整个 Mod”与“删除所选版本”分开�
 | 秘密引用及加密存储                                                     | APP 保护；所属插件标识其用途和归属 | 插件业务数据不得内嵌明文 API key、SSH 私钥或主密码；归档密码与 APP 主密码保持独立语义。                      |
 | 官网投稿包与投稿邮箱                                                   | 网站收集端                         | 与 APP 本地服务器/AI 数据分开；邮箱可见性、保存期限及审核上架规则见 [官网服务规范](APP.md#website-service)。 |
 
-个性化设置按所属功能保存：平台 `desktop_preference` 保留平台通用设置，包括平台授权模式、连接超时和传输无进展阈值；各 Mod 的业务偏好移入所属 Mod 的 Schema，由该 Mod 管理。例如部署模式、AI 审批偏好归部署 Mod。平台授权模式与 AI 审批使用独立键，不相互覆盖。即使设置入口由平台统一展示，也不改变数据归属；各 Mod 的具体偏好表名与字段由其数据设计定义。
+个性化设置按所属功能保存：平台 `desktop_preference` 保留连接超时和传输无进展阈值等平台通用设置；各 Mod 的业务偏好移入所属 Mod 的 Schema，由该 Mod 管理。部署模式、AI 审批和授权重复策略均归部署 Mod，分别保存而不相互覆盖；APP 不提供统一的部署授权偏好，未来不同 Agent 也须独立持有两策略。即使设置入口由平台统一展示，也不改变数据归属；各 Mod 的具体偏好表名与字段由其数据设计定义。
 
 历史 [SQLite 建表脚本](../history-src/src/app/db/src/main/resources/schema/desktop.sql)中的 19 张表曾按下列归属适配；当前平台直接使用 H2 建库基准，不迁移旧 SQLite 数据：
 
@@ -1167,6 +1155,8 @@ package gold.debug.windowstolinux.appapi.task.log;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -1178,11 +1168,17 @@ public record LogEvent(LogLevel level, String eventCode, String message, Optiona
 public enum LogStorage { DATABASE, EMERGENCY_FILE, NOT_SAVED }
 public record LogWriteResult(UUID logId, LogStorage storage, boolean truncated,
     Optional<Problem> problem) {}
+public record LogReadResult(List<Record> records, Optional<Problem> problem) {
+    public record Record(UUID id, Instant recordedAt, LogEvent event, boolean truncated) {}
+}
 public interface LogService {
     LogTarget register(LogCategory category) throws ApiException;
     LogWriteResult write(LogTarget target, LogEvent event);
+    LogReadResult read(LogTarget target, Optional<UUID> taskId, int limit) throws ApiException;
 }
 ```
+
+`read` 必须在工作线程、当前解锁且所属启用仍有效时使用原 `LogTarget` 对象，复制 UUID 不能借用授权。仅返回当前生产版本、原类别和原 Schema 的脱敏记录，合并数据库与该类别应急文件，按原记录身份去重；可选原 Task UUID 仅作关联筛选，不授予任务操作权。读取最近保留的 100 条窗口，`limit` 必须为 1～100；部分存储不可读以 `problem` 明确返回，不把它当空列表，也不开放应急文件路径。跨旧版本的记录不由此接口借读。
 
 `task.process`：
 
@@ -1239,33 +1235,39 @@ public interface ProcessService {
 
 审批采用原始宿主对象身份并且只消费一次；同一 UUID 的新记录、其他任务或其他 Mod 版本均无权使用。拒绝和取消不会签发授权。审核与输入的实际窗口也属于任务资源，窗口尚未返回时不能结束任务；持久释放失败保留占用供宿主重试。桌面锁定后等待解锁，跨锁定代次的回应作废；任务取消可以结束等待并关闭所属提示。秘密字符缓冲区在丢弃或交付后清零，公开接口返回的 String 不写入平台任务结果摘要。
 
-#### 平台授权与 AI 审批的独立边界
+#### 部署审批与授权及宿主边界
 
-2026-09-26 用户补充的以下规则为当前目标，替换早期“每次操作都人工确认”的中间实现。每次执行的 `ApprovalGrant` 仍绑定精确内容并只消费一次；是否需要人工确认由本次部署的平台授权模式决定，不能把令牌只消费一次解释为每次都弹窗。
+2026-10-05 用户明确两策略的先后关系与归属：审批策略决定哪些实际动作需要人工授权，授权策略决定同类型、同已核实范围的问题是否再次询问。部署模式、审批和授权重复策略由 Deployment Mod 独立保存，不在 APP 保存全局业务偏好；未来其他 Agent 同样独立。持久偏好不等于具体操作权限，旧平台偏好行不再参与决定，也不改写用户旧数据。
 
-| 平台模式         | 当前部署内的确认规则                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------ |
-| 一次授权         | 每次操作均确认；同一应用重启三次，确认三次。                                                                 |
-| 通用授权（默认） | 相同操作含义及实际目标首次确认，本次部署内复用；同一应用重启三次，确认一次。更换服务器、应用等目标不能复用。 |
-| 完全授权         | 用户主动启动一键部署后，对本次部署范围内的操作自动授予软件平台权限；同一应用重启三次，不另弹平台授权框。     |
+三种审批策略均先静态检查，再逐条独立 AI 审核实际远端命令、完整可执行输入及源码补丁。静态拒绝根目录、系统关键目录本身或其整体清空；具体普通目录删除进入 AI 判断。固定工具同样适用，阶段同意不能替代实际命令审核。静态部署保持零 AI。
 
-作用域仅覆盖当前部署流程。平台按真实部署实例保存临时操作授权，流程结束即失效，不跨部署任务复用。操作含义与服务器/应用等实际目标必须明确绑定；不能仅凭“重启”名称扩大到其他应用，也不能以字符串相似或相同按钮推断授权。普通任务不因保存了完全授权偏好就自动取得部署范围权限；用户启动的部署范围须经宿主与所属 Mod 的真实任务链路绑定。
+| 审批策略 | 可选授权策略 | 人工问题规则 |
+| --- | --- | --- |
+| 人工审核 | 逐条、通用 | 每个实际动作要求人工授权；逐条每次询问，通用同类同范围首次询问后复用，不增加整流程交权提示 |
+| 自动审批 | 逐条、通用、完全授权 | 普通动作执行；逐条/通用仅高危需人工，拒绝且未取消原任务时尝试不同低风险方案；完全授权遇高危不执行、不询问，直接尝试低风险方案 |
+| 完全控制 | 通用、完全授权 | 静态及 AI 通过后执行；通用在开始时询问一次完整流程交权，完全授权省略该提示 |
 
-模式偏好沿用已有 AI 审批控件的样式及保存、恢复、保存失败回滚交互，软件和 Mod 重启后恢复上次模式。持久化的是模式偏好，具体操作授权只活在当前部署内。完全授权不意味着全程使用 Windows 管理员或 Linux root，也不代替文件同名冲突等业务选择。
+自动审批的逐条/通用在开始时也只询问一次完整流程交权，这个问题与后续高危问题分别计数。七种合法组合在部署 UI 与持久读取共同验证；不合法选项灰显且拒绝鼠标、键盘和程序选择。切档使未保存草稿无效时选择通用，已存非法值拒绝读取而不自动修复。保存失败恢复原三值。
 
-AI 审批继续决定 AI 提议的动作是否获准，平台授权决定获准动作是否可在平台执行。平台完全授权不能绕过 AI 审批；静态部署使用平台授权，不引入 AI 审批。两层都需要人工确认时可合并为一次交互，但必须清楚展示 AI 动作审核和平台操作授权两层含义。
+通用授权只缓存原流程内明确的人工作答，不缓存 AI 审批；同一已核实候选内同级普通目录删除可复用人工问题，每个精确请求仍独立 AI。模糊、复合或动态目标无法证明同范围时保留精确绑定，不以标签或字符串相似扩大授权。被拒高危命令不重发或重复索求，低风险替代重新审查；无可行替代时明确停止。已知未发送拒绝与实际 UNKNOWN 分开，后者仍只核对原效果，不自动重放。
 
-当前平台基础实现已接通 `AuthorizationMode`、`ActionTarget`、`ActionSemantics` 与真实任务/SSH 审核。宿主 `WorkflowLaunchButton` 在用户点击时捕获表单解析出的完整目标，内部 `PlatformAuthorizationService.Launcher` 读取并冻结当前偏好，再通过中央任务准入建立本次回调的临时作用域；该启动授权不暴露在普通作者 `TaskService` 中。ActionTarget 保存与 ServerId.id 相同的精确 String serverId，task 契约仅依赖 JDK；目标的服务器集合必须等于任务准入集合。通用授权按平台操作类别、业务操作含义、完整实际目标集合精确复用；拒绝不缓存，并发同义操作串行核对首次批准。流程回调退出即销毁缓存和令牌寿命，原任务后续显式恢复也不能复活旧流程授权。
+`InteractionService.delegateWorkflow(intent, mode, task)` 从业务捕获的明确授权策略建立宿主所属的原根流程作用域；`reviewedWorkflow` 仅为人工模式建立问题重复作用域，只许 ONCE/GENERAL 且没有交权提示。宿主验证实际原 TaskContext、根所有者/版本及完整原服务器准入，保存真实 CUSTOM 显式租约；不接受复制 UUID、公开 AiResponse 或作者布尔值充当权限。`WorkflowGrant` 是不透明的仅关闭对象，关闭先撤权再释放真实占用，未确认释放保留 UNKNOWN。原 scope 和具体许可不跨任务、版本、启动或流程结束复用。
 
-作者在 `RemoteActions` 生成的精确意图上调用 `withSemantics`，提供从已校验业务操作与目标派生的含义。业务 Mod 负责证明其请求与该含义相符，不能用自由文本标签替代业务校验；平台不解析任意 Bash 来证明业务语义，也不把可信本地 Mod 当作恶意代码沙箱。宿主只保留已审核的语义元数据，仍从实际命令/传输请求重建并逐字段核对精确副作用，然后单次消费原对象令牌。未分类操作逐次人工确认；首次主机信任、同名冲突和停滞选择独立处理。
+中断核对使用独立 `recoverWorkflow` 接口，仅在宿主实际执行原任务的核对回调时接纳；先精确清理原过期租约，再依据原业务记录的审批与授权策略建立新的作用域，必要时重新询问交权。独立 `closeWorkflowResources` 只允许真实原根核对回调撤权并清理原租约，不建立权限；因此业务日志尚未创建时仍能清理占用，但缺失业务依据仍保留 UNKNOWN。旧权限、旧人工回答和旧许可不会恢复，原 UNKNOWN 命令也不能重发。Agent 在原准入事务的 `AUTHORIZATION_POLICY` 事件中保存授权策略，读取时严格要求唯一且有效；此记录沿现有 V1 事件表保存，不新增数据库迁移代次。
 
-默认桌面的“平台授权”页沿用手掌/盾牌/警示盾牌的三项选择器，默认通用授权，后台保存 `platform_authorization_mode`，失败恢复上次确认显示，可重新读取。缺失键才默认，损坏已存值报错。模式仅影响随后启动的流程，独立于 `deploy_approval` 等 AI 偏好；当前具体授权不写入偏好或任务恢复数据。平台基础链路已本机验证；官方部署 Mod 的启动控件、业务语义派生及独立 AI 审批组合仍随 S3/S5 迁移，不能将此基础验证视为完整部署验收。
+`approveRequired` 对审批策略要求的问题应用本作用域授权重复规则，普通 `approve` 对合法委托的已分类普通动作取得真实单次许可。未分类动作仍要求明确人工，普通无作用域任务不自动取得委托权限。每个 `ApprovalGrant` 继续绑定精确实际请求与原任务，真实宿主对象身份只消费一次；目标、输入、修订或命令变化后重新签发。
+
+内部宿主 `WorkflowLaunchButton` 仍在用户点击时捕获实际表单与完整目标；`PlatformAuthorizationService.Launch` 显式接收本流程的授权模式，不读取全局偏好。作者在 `RemoteActions` 产生的精确意图上附加经业务校验的 `ActionSemantics/ActionTarget`，证明实际请求及范围；宿主按原服务器准入核验并重建精确请求绑定。该通用机制不保存部署策略，也不代替首次主机信任、秘密输入、文件冲突或其他业务选择。文件普通删除的独立明确确认合同保持。
+
+上述新接线及七组合本机反例已完成 S3 适用本地验收；具体原任务、独立 AI、固定工具、低风险替代和恢复证据见 [1.3 历史对照及验收](development/PHASE-1.3.md#deployment-migration)。真实 Linux 和外部模型验证另行安排。
 
 平台在接纳任务时捕获独立凭据作用域，排队期间和执行回调共用原授权；锁定阻止新任务及人工核对准入，已接纳工作仍可使用原作用域。`FINISHING`、`UNKNOWN` 和重启遗留的未结束任务均阻止主密码或凭据加密设置变更。业务结果已知、显式资源清理完成后，平台先释放任务凭据，再提交终态；若后续终态持久化失败，仍保留原任务阻断，解锁后的显式核对重新取得当前作用域。重启不恢复旧密钥句柄，也不重放原业务回调。
 
 Mod 新任务准入在同一平台事务内核对本次启动的运行版本、启用及选择意图、READY 数据代次和完整服务器集合，再写入任务。服务器连接配置变更与该准入共用平台状态锁；只要相关任务尚未结束，包括尚未取得运行资源的 `QUEUED` 和待核对的 `UNKNOWN`，便拒绝修改主机、端口、账户或凭据引用。显示名称可以单独修改；首次认证后的端点绑定信任仍可按原规则保存。此门禁不代替长期业务引用保护，也不把锁定桌面解释为取消已接纳任务。
 
-新接纳的 Mod 任务还在同一事务内保存完整原运行图：原所有者及全部传递声明提供方的精确版本、登记完整代码摘要和可选 Schema 代次，发生在任务行提交及作者回调之前。原图存入既有 `platform_task.recovery_json` 的格式 2，不改变初始资源申请或把声明依赖伪装成实际服务调用；排队及跨启动读取不重新查询当前单选。缺少提供方就绪数据或代码摘要时拒绝准入。格式 1 的宿主及较早任务明确没有完整原 Mod 图，不从当前配置补造；损坏、重复键、尾随内容、身份错配或超过 1,048,576 字符的准入记录不进入任务执行。原图自动加载及 RECOVERY 会话收尾仍待接线。
+新接纳的 Mod 任务在同一事务内保存原运行图：原所有者及必需闭包的精确版本、登记代码摘要和可选 Schema 代次，发生在任务行提交及作者回调之前。既有 `platform_task.recovery_json` 格式 3 同时记录 REQUIRED/OPTIONAL_USED 边；首次调用可选提供方前才原子固定其必需闭包和实际使用边，不把声明伪装成实际调用。排队及跨启动读取不重新查询当前单选。缺少提供方就绪数据或代码摘要时拒绝准入。格式 2 按原完整必需图解释，格式 1 的宿主及较早任务明确没有完整原 Mod 图，不从当前配置补造；损坏、重复键、尾随内容、身份错配或超过 1,048,576 字符的准入记录不进入任务执行。原图自动加载及 RECOVERY 会话先核对作者业务和物理资源，再由宿主收尾原调用组，详见 [Runtime 原恢复合同](Runtime.md)。
+
+上述三种原元数据格式均可带宿主所属的可选布尔 `cancelRequested`。原任务取消与原事务一起持久化，不改变图和占用；重启后的恢复上下文保留已知取消意图。UNKNOWN 仍需原操作核对，取消请求不能直接把它改成 CANCELLED。可选图扩展保留该字段，其他未知字段、错误类型及不合法 JSON 仍拒绝。
 
 平台自身任务使用不属于合法 Mod ID 的保留身份 `@platform`，版本取实际 Maven 应用构建元数据；不为此伪造 Mod 登记或业务 Schema。常驻服务器页的 `platform.ssh.check.v1` 只验证 SSH 认证，使用相同中央任务、凭据、审批及服务器占用；保存配置不自动连接。显式恢复只清理该协议的实际连接/提示窗口并记录中断，不重连。前次独占启动的检查仅可释放已核实属于该协议的进程内连接和提示占用；其他类型、归属或不明资源保持阻塞，业务 Mod 仍由其原版本自行核对。
 
@@ -1280,14 +1282,19 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
 import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 public interface UiService {
     PageRegistration register(PageSpec spec, PageFactory factory) throws ApiException;
+    PageRegistration registerPreview(PageSpec spec, PageFactory factory) throws ApiException;
     void open(String localPageId) throws ApiException;
+    void openPlatform(PlatformPageKind target) throws ApiException;
     UiEnvironment environment();
 }
 ```
+
+`openPlatform` 在实际 UI 装配中打开已有服务器、AI 模型或任务与恢复页面，返回时仍可复用原 Mod 工作区草稿。只能由已发布、解锁且未停止的普通所属启用调用；RECOVERY、预览、未发布及关闭范围拒绝。导航不授予目标页的数据或操作权限，也不代表自动选中某个任务；原任务身份仍由页面明确展示。
 
 `ui.page`：
 
@@ -1298,6 +1305,7 @@ import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import java.util.Locale;
 import javax.swing.JComponent;
 
+public enum PlatformPageKind { SERVERS, AI_MODELS, TASKS }
 public record UiEnvironment(Locale locale, String themeId, boolean locked) {}
 public record PageSpec(String id, String titleKey, String defaultTitle, boolean settingsPage) {}
 public interface ModPage extends AutoCloseable {
@@ -1316,7 +1324,7 @@ public interface PageRegistration extends AutoCloseable {
 
 作者控制根 `JComponent` 内的布局、组件、绘制、表格、表单及内部页面切换。`UiService.register(PageSpec, PageFactory)` 中 `settingsPage=false` 表示所属 Mod 唯一根工作区，第二个普通根登记明确拒绝；撤销原根登记后可登记新的根。`settingsPage=true` 挂载到 APP 设置中的该 Mod 分区，不生成普通主导航入口，也不授予平台设置权限。`registerPreview` 保留 CLASS 隔离预览，既不占根登记，也不出现在普通导航。
 
-当前 API 开发版为 `1.0.0-dev.3`，增加可选服务观察、实际原任务依赖图和受管素材合同；作者父工程与宿主依赖同步，官方部署及独立 Git 最低 API 范围为 `[1.0.0-dev.3,1.0.0)`。阶段验收状态见 1.3 执行计划，正式 SDK 发行仍后置。部署 Schema 3 与 helper 保持原合同，软件、Schema 和 helper 版本不根据文档期数修改。CLASS 源码允许原版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
+当前 API 开发版为 `1.0.0-dev.4`，在可选服务、实际原任务依赖图和受管素材合同上增加有限平台界面导航、所属日志有界读取和恢复时原服务器端点绑定；作者父工程与宿主依赖同步。官方部署开发版 `1.1.0-dev.3` 的最低 API 范围为 `[1.0.0-dev.4,1.0.0)`；独立 Git 开发版 `1.0.0-dev.1` 仍使用 `[1.0.0-dev.3,1.0.0)`，可用于当前 API。阶段验收状态见 1.3 执行计划，正式 SDK 发行仍后置。开发阶段的部署 Schema 统一为 1；helper 保持原协议，软件、Schema 和 helper 版本不根据文档期数修改。CLASS 源码允许原版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
 
 登记与成功发布只提供元数据，不创建视图；Mod 成功启用并发布根后，APP 自动生成其唯一入口，无界面服务 Mod 没有空入口。根 ID 在所属 Mod 内唯一，宿主键为 Mod ID＋根 ID。首次进入在 EDT 创建并缓存实例，切换只隐藏，返回复用输入、选择和浏览状态；明确关闭后释放视图，重开才创建新实例。撤销、停用及正常退出按原作用域释放，清理失败保留原实例和占用供重试。主题、语言和锁定通知覆盖所有保留实例，作者向内部页转发环境并负责其资源。
 
@@ -1388,7 +1396,7 @@ public interface ModDatabase {
 
 迁移图要求所选来源到目标存在唯一完整路径，多条路径拒绝歧义；不自动选择最短路径。多步迁移在操作专属临时 Schema 中逐步输出，第一步读保留源，后一步读前一步输出，最后一步写正式目标；中间 Schema 不登记成用户可选版本。先由首条迁移建立其中间结构，目标结构由最后一条迁移建立；空安装调用当前 `initialize`。每步关闭连接后记录结果，全部完成后用当前 `validate` 验证正式目标；目标达到 READY 前不运行业务。临时身份、授权及中间 Schema 在明确完成或已核实失败后清理，未知时保留定位依据。DDL 自提交的结果通过实际结构、平台记录和作者验证共同核对。[H2 命令](https://h2database.com/html/commands.html)、[JDBC Connection](https://docs.oracle.com/en/java/javase/21/docs/api/java.sql/java/sql/Connection.html)
 
-官方 deployment 当前源码清单使用 Schema 3；新增管理操作账本，已有业务表沿用结构2。`DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。Schema 1 固定资源保持冻结；显式 `DeploymentSchemaMigration12` 和 `DeploymentSchemaMigration23` 分别按冻结的1→2、2→3资源，以受限来源读者和独立新目标写者复制，不改源结构或臆造旧秘密用途，并保留原事件身份下一值；新管理账本初始为空。2→3 迁移已通过本机真实受限来源账户和独立目标代次验证：原行、源摘要及事件下一值保留，管理账本初始为空；异常来源列在目标写入前拒绝。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。
+官方 deployment 当前源码清单使用 Schema 1，开发阶段只维护 `schema-v1.sql` 和 `validation-v1.sql`，将当前完整业务结构、管理账本及自启动作直接纳入 V1，不保留迭代迁移类或清单迁移边。`DeploymentSchema` 除表列及发布摘要关系外，还按原配置值规则重建每个配置快照并复核其规范 SHA-256。既有开发数据不自动迁移、覆盖或重置；验证使用隔离新库，旧数据目录及冻结历史保留。平台通用迁移接口仍为正式发布后的结构升级保留。配置仓库只经原任务打开所属 ModDatabase；同一修订和同一发布绑定不可覆盖，存储时间保持 UTC 毫秒。事务提交确认、回滚或提交后连接释放不确定时报告公开 UNKNOWN，后续业务恢复须读取原修订/发布绑定，不能据异常直接重放写入。
 
 ### 8.5 server 与 secret：共享配置引用
 
@@ -1546,6 +1554,7 @@ public record SecretRef(UUID id, SecretId secret, String businessKey, ResourceRe
 package gold.debug.windowstolinux.appapi.linux;
 
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -1554,9 +1563,12 @@ import java.util.List;
 
 public interface LinuxService {
     RemoteSession connect(ServerId server, TaskContext task) throws ApiException;
+    RemoteSession connect(RemoteTarget target, TaskContext task) throws ApiException;
     List<TransferCheckpoint> pendingTransfers(TaskContext task) throws ApiException;
 }
 ```
+
+固定目标重连使用 `RemoteTarget` 的原 ServerId、原 Task UUID、主机、端口、账户及可选原指纹。平台在发送认证凭据前核对原任务授权、保存端点和 wire 密钥；任一不符即拒绝，不能按当前保存配置改投其他端点。该预期不含凭据，复制记录不增加权限；默认不支持此重载的适配器明确返回 UNAVAILABLE，不回退到普通连接。原版本恢复重新认证仍需原任务上下文，不能复用旧会话对象。
 
 `linux.session`：
 
@@ -1571,8 +1583,13 @@ import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import java.util.Optional;
+import java.util.UUID;
 
 public record RemoteFacts(String operatingSystem, String architecture, String fingerprint) {}
+public record RemoteTarget(ServerId server, UUID taskId, String host, int port,
+    String username, Optional<String> fingerprint) {}
 public interface RemoteSession extends AutoCloseable {
     RemoteFacts facts();
     OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant)
@@ -2095,7 +2112,7 @@ public interface FileWorkspaceService {
 
 通用 `list(FilePath,...)` 列举一层直接子项，先按 1～100,000 的容量核实完整观察，再应用类型和名称筛选，超限失败而不截断。`readFile` 的完整内容上限可设为 1 字节～64 MiB，`writeFile` 至多 64 MiB；复制计划至多 100,000 项、4 GiB，不能把部分截取当作完整交付。
 
-普通 `deleteFile/deleteLink` 无论平台授权档位均新做删除确认。系统回收条件可证明时转入回收位置，否则明确提示永久删除；不提供回收站浏览或恢复 API。默认开启的可选 AI 说明只发送目标元数据，不读取正文；仅使用 LANGUAGE 用途第一个已启用成员，失败或不可用时显示基础说明而不接替其他模型。关闭设置不取消确认或业务工作流的独立审批。拒绝后原任务进入 `WAITING`，不保留本项活动文件或连接；“继续”重新核对目标并再次确认，“请求取消”终止原任务。重启不会恢复旧调用栈或旧许可，仍走原工作流核对。
+普通 `deleteFile/deleteLink` 无论平台授权档位均新做删除确认。系统回收条件可证明时，让用户选择“移入回收站”或“永久删除”；不可回收时确认是否永久删除，并明确无法通过回收站还原。默认“暂不处理”，许可绑定用户实际选择的效果，不提供回收站浏览或恢复 API。默认开启的可选 AI 说明只发送目标元数据，不读取正文；仅使用 LANGUAGE 用途第一个已启用成员，失败或不可用时显示基础说明而不接替其他模型。关闭设置不取消确认或业务工作流的独立审批。拒绝后原任务进入 `WAITING`，不保留本项活动文件或连接；“继续”重新核对目标并再次确认，“请求取消”终止原任务。重启不会恢复旧调用栈或旧许可，仍走原工作流核对。
 
 带许可的删除只接受原任务通过 `InteractionService.approve(FileActions.delete(...), task)` 获得的真实原对象；宿主独立 AI 审核精确目标及回收/永久效果，再绑定当前工作流权限。可回收对象只能取得回收许可；无法回收时才可取得精确永久删除许可。回收失败或结果未知不会转为永久删除。许可只能消费一次，绑定对象/解析链/身份和独立模型配置修订；伪造、复用、配置漂移、目标变化或普通人工确认许可均拒绝，不自动退回人工删除。`FileActions.stamp` 与 `intent` 辅助构造 canonical 意图，不能由调用方布尔值宣称已经完成独立审核。
 
@@ -2145,7 +2162,7 @@ Windows 文件身份由 `app/windows` 使用既有 JNA 读取卷号与原生文�
 
 `DeploymentStandardCandidateRunner` 是目前可调用的单组件已审阅素材与计划至候选构建入口，借用原 `TaskContext`、仍开放的源码/归档句柄与调用方负责关闭的 `RemoteSession`。它核对原计划、源码清单 SHA 与 tar.gz 实际字节 SHA，先独立执行已安装 helper 的严格 probe，再采集真实远端主机与生态事实，沿原发行版、CPU、安全及运行能力矩阵完成上传前准入。空间需求取压缩归档三倍与最大工作区限制的较大值，容量在首次部署已存在的 `/var/lib` 文件系统上只读探测，不提前创建业务根。固定隔离预检和精确工具准备在上传前完成；工具准备后再次采集同一会话的主机事实并核对运行能力，不重选工具。随后以原任务 UUID 创建候选任务，要求完整已知成功和原任务候选查询确认，再用公开上传接口交付原归档；必须逐一核对 `TransferResult` 的实际本地及远端路径、SHA-256 和字节数，远端再核对非链接普通文件的归属、摘要、长度及候选状态。候选路径值自身不证明上传，内部 `DeploymentStandardBuildRunner` 仅在上述确认后消费同一准备对象，并在首条构建前重验原素材与计划。
 
-构建只从已审阅配置快照的 `BUILD` 项派生非秘密环境值；`RUNTIME` 值不进入脚本。按同一目录最多准备两个兼容候选，核验实际版本、分支和绑定摘要；仅已确认成功返回原归档与真实工具身份，不使用 `legacy` 工具占位。固定候选、预检、工具与构建命令绑定原任务、精确目标、审阅摘要和宿主授权。除独立 30 秒 helper probe 外，候选与构建命令共享累计远端执行预算，人工审批等待不计入执行耗时；SFTP 使用平台无进展期限，不占构建预算，也不被强加同一总期限。已知发送前拒绝或取消保留原结果；候选创建、上传或核对结果未知、版本/绑定/回执冲突、截断或缺退出均不自动重发、覆盖或清理可能已有的远端候选。已知编译失败公开固定大小、已遮蔽的头尾诊断，确认兼容失败才尝试第二候选，耗尽后报告不兼容。受管 helper 的远端原输出上限仍可达已审阅的 128 MiB，`linux` 固定 Python 流式适配器扫描全流，向平台只返回小于 8 MiB 的短回执，不更改 helper 包 SHA 或新增远端日志文件。本机真实 CLASS/H2/Source/Interaction 与受控会话测试只证明调用、授权及协议边界；实际目标机执行、发布及原候选/构建任务的持久恢复尚未验收。
+构建只从已审阅配置快照的 `BUILD` 项派生非秘密环境值；`RUNTIME` 值不进入脚本。按同一目录最多准备两个兼容候选，核验实际版本、分支和绑定摘要；仅已确认成功返回原归档与真实工具身份，不使用 `legacy` 工具占位。固定候选、预检、工具与构建命令绑定原任务、精确目标、审阅摘要和宿主授权。除独立 30 秒 helper probe 外，候选与构建命令共享累计远端执行预算，人工审批等待不计入执行耗时；SFTP 使用平台无进展期限，不占构建预算，也不被强加同一总期限。已知发送前拒绝或取消保留原结果；候选创建、上传或核对结果未知、版本/绑定/回执冲突、截断或缺退出均不自动重发、覆盖或清理可能已有的远端候选。已知编译失败公开固定大小、已遮蔽的头尾诊断，确认兼容失败才尝试第二候选，耗尽后报告不兼容。受管 helper 的远端原输出上限仍可达已审阅的 128 MiB，`linux` 固定 Python 流式适配器扫描全流，向平台只返回小于 8 MiB 的短回执，不更改 helper 包 SHA 或新增远端日志文件。本机真实 CLASS/H2/Source/Interaction、受控会话及原候选/构建任务持久恢复的适用证据已在 S3 验收；当前 helper 行为也由真实 Bash 与明确的本机 OS/API 适配验证。实际 Linux 的权限、包安装、容器引擎和系统服务行为仍须独立验证，详见 [1.3 本地验收](development/PHASE-1.3.md#local-acceptance)。
 
 `DeploymentStandardPublishRunner` 与 `DeploymentMultiPartPublishRunner` 各自在一个 `deployment-publication` 原任务中准备已审阅素材、归档和计划，后者对全部组件先完成候选预检及总容量判定，再借同一会话构建全部候选、封存配置与秘密、保存全部旧版快照、逆序停止旧运行、拓扑发布和逐项健康、整图复查及独立整应用健康。远端发布内容身份采用原 `reviewed-release-v5` 算法，并以 `reviewed-release-tools-v1` 绑定本次真实安装工具；重审时间或快照 UUID 不改变相同内容的远端版本。整图根检查点索引唯一原组件，一组件一短检查点保存候选、旧版 token/先前运行身份及阶段；执行版本11中的当前模板格式2保存完整非秘密整图。已知失败才用原 token 逆序回滚；远端副作用未知不自动重放。恢复由用户显式对原任务发起，经当前协议 14 只读观察原 owner、root、task、candidate、current、old digest、maintenance 和运行设施；只有全图完整吻合才推进原业务提交及清理；无法完整证明的状态保持 UNKNOWN。半图仅核对原已发送组件，确知后回滚与清理为失败，不补发布未发送组件。原远端授权仍须精确审批，旧 SSH 连接由宿主在恢复回调前释放，本机 Source 仅以原任务清理能力释放，不从路径重建授权。秘密明文仅在 `SecretService.use` 回调内短暂使用，自有副本结束时清零。本机 CLASS/H2 跨 JVM 和受控 loopback SSH 验证原任务边界，不等于断电时刻或真实目标机验收。默认页面和 S5 本机适用合同已按有效实际结果合集验证；真实远端与正式发行仍暂缓。
 
@@ -2309,6 +2326,7 @@ import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.ui.page.ModPage;
 import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 public final class Mod implements ModEntrypoint {

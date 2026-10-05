@@ -10,6 +10,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
 import gold.debug.windowstolinux.appapi.file.action.FileChoice;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
 import gold.debug.windowstolinux.appapi.file.model.FileInfo;
 import gold.debug.windowstolinux.appapi.file.model.FilePath;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
@@ -23,6 +24,8 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class FileOperationsIntegrationTest {
     @TempDir
@@ -35,6 +38,42 @@ class FileOperationsIntegrationTest {
 
     FilePath path(String name) {
         return FilePath.local(root.resolve(name));
+    }
+
+    @ParameterizedTest
+    @EnumSource(DeleteEffect.class)
+    void ordinaryChoiceCannotDeleteAnObjectChangedAfterTheDialog(DeleteEffect effect) throws Exception {
+        Path kept = Files.writeString(root.resolve("kept.txt"), "keep");
+        var confirmations = new AtomicInteger();
+        try (var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            runtime.fileSettings().save(false);
+            presenters(runtime, new PlatformInteractionTest.Prompts() {
+                @Override
+                public DeleteEffect delete(Map<DeleteEffect, ActionIntent> choices, String explanation, TaskSnapshot task, CancelToken cancel) {
+                    assertTrue(choices.containsKey(effect));
+                    confirmations.incrementAndGet();
+                    try {
+                        Files.delete(kept);
+                        Files.writeString(kept, "replacement must survive");
+                    } catch (java.io.IOException failure) {
+                        throw new AssertionError(failure);
+                    }
+                    return effect;
+                }
+            });
+            try (var file = runtime.capabilities().source(OWNER, VERSION)) {
+                completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                    assertEquals("FILE_DELETE_CHANGED", assertThrows(ApiException.class,
+                        () -> file.deleteFile(FilePath.local(kept), task)).problem().eventCode());
+                    assertEquals("replacement must survive", Files.readString(kept));
+                    assertTrue(file.operations(task).isEmpty());
+                    assertEquals(1, confirmations.get());
+                    return success(null);
+                }));
+            }
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
     }
 
     @Test

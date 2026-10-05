@@ -152,7 +152,7 @@ public interface FileActionService {
      */
     FileReport renameLink(FilePath from, String name, TaskContext task) throws ApiException;
 
-    /** Always confirms ordinary deletion; refusal waits for explicit continuation. / 常规删除始终确认，拒绝后等待明确继续。
+    /** Offers recycling or permanent deletion when recoverable, otherwise confirms permanent deletion; refusal waits. / 可回收时选择回收或永久删除，否则确认永久删除；拒绝后等待。
      * @param path exact host-qualified position / 精确带主机位置
      * @param task authentic original executing task / 真实原执行任务
      * @return actual recycle or permanent-deletion results for the resolved object / 已解析对象的真实回收或永久删除结果
@@ -169,7 +169,7 @@ public interface FileActionService {
      */
     FileReport deleteFile(FilePath path, TaskContext task, gold.debug.windowstolinux.appapi.task.action.ApprovalGrant permit) throws ApiException;
 
-    /** Confirms deletion of the Link itself. / 确认删除 Link 自身。
+    /** Offers recycling or permanent deletion of the Link itself when recoverable, otherwise confirms permanent deletion. / 链接可回收时选择回收或永久删除，否则确认永久删除。
      * @param path exact host-qualified position / 精确带主机位置
      * @param task authentic original executing task / 真实原执行任务
      * @return actual recycle or permanent-deletion results for the link itself / 链接自身的真实回收或永久删除结果

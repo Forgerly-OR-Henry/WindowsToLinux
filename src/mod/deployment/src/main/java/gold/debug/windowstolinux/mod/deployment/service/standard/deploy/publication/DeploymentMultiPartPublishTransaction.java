@@ -109,6 +109,8 @@ final class DeploymentMultiPartPublishTransaction {
             if (cancelled(task) || !journals.get(id).publishing(release))
                 return unknown("DEPLOYMENT_GRAPH_PUBLISH_BOUNDARY_UNCONFIRMED");
             affected.add(id);
+            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+                "Publishing a verified original graph component / 发布已核实原图组件");
             var published = channels.get(id).publish(units.get(id), request.facts(), request.runtime(),
                 request.resources(), request.configuration().sha256(), secrets.get(id), build.candidateId(),
                 release, build.toolchainBindingSha256(), !build.toolchains().selections().isEmpty());
@@ -136,6 +138,38 @@ final class DeploymentMultiPartPublishTransaction {
                     DeploymentStandardPublishTransaction.healthFailure(repeated, units.get(id).id()).problem()
                         .orElseGet(() -> problem(ProblemCode.INCOMPATIBLE, "DEPLOYMENT_GRAPH_RECHECK_FAILED")));
         }
+        return completeWholeGraph(ordering, units, plans, builds, snapshots, channels, journals, root, affected,
+            healthComponent, health, task, publication);
+    }
+
+    /** Completes the whole-application health gate before retaining success and cleaning original candidates. / 保留成功与清理原候选前完成整应用健康门槛。
+     * @param ordering original dependency ordering / 原依赖顺序
+     * @param units original exact owners / 原精确归属
+     * @param plans original reviewed plans / 原已审阅计划
+     * @param builds verified original candidates / 已核实原候选
+     * @param snapshots original rollback snapshots / 原回滚快照
+     * @param channels borrowed original channels / 借用原通道
+     * @param journals indexed original checkpoints / 索引原检查点
+     * @param root original whole-graph checkpoint / 原整图检查点
+     * @param affected actually affected original components / 实际受影响原组件
+     * @param healthComponent original health owner / 原健康归属
+     * @param health reviewed whole-graph gate / 已审阅整图门槛
+     * @param task original admitted task / 原已准入任务
+     * @param publication original complete proposal / 原完整提案
+     * @return verified publication or original rollback outcome / 已核实发布或原回滚结果
+     * @throws ApiException if original admission is rejected / 原准入被拒绝时 */
+    private OperationResult<DeploymentPublish> completeWholeGraph(MultiPartDeploymentPlan ordering,
+                                                                  Map<String, DeploymentUnitIdentity> units,
+                                                                  Map<String, ReviewedDeploymentPlan> plans,
+                                                                  Map<String, DeploymentVerifiedBuildResult> builds,
+                                                                  Map<String, DeploymentRemoteReleaseSnapshot> snapshots,
+                                                                  Map<String, DeploymentPublishChannel> channels,
+                                                                  Map<String, DeploymentPublishCleanupActionLog> journals,
+                                                                  DeploymentGraphPublishActionLog root, java.util.Set<String> affected,
+                                                                  String healthComponent, DeploymentHealthCheck health,
+                                                                  TaskContext task, DeploymentPublish publication) throws ApiException {
+        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.progress(context, task,
+            "Verifying the original whole-application health gate / 核验原整应用健康门槛");
         var whole = channels.get(healthComponent).healthCheck(units.get(healthComponent), health);
         if (whole.outcome() == TaskResult.UNKNOWN || whole.outcome() == TaskResult.CANCELLED)
             return unknown("DEPLOYMENT_GRAPH_HEALTH_GATE_UNCONFIRMED");

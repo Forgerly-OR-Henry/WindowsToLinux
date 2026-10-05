@@ -7,7 +7,6 @@ import java.util.function.Supplier;
 
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
-import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
@@ -74,6 +73,9 @@ public final class DeploymentAgentSession {
     /** Consecutive rejected proposals without validated progress. / 无已校验进展时连续被拒提案数。 */
     private int stalled;
 
+    /** Rejected script identities cannot shop for another authorization within this original task. / 被拒脚本身份不能在本原任务再次索求授权。 */
+    private final Set<String> refusedScripts = new HashSet<>();
+
     /** Binds real task capabilities without starting work. / 绑定真实任务能力而不启动工作。
      * @param context active Mod / 活动 Mod
      * @param task original task / 原任务
@@ -83,13 +85,14 @@ public final class DeploymentAgentSession {
      * @param tools real scoped delivery tools / 真实限定交付工具
      * @param journal dedicated durable ledger / 专有持久账本
      * @param approvalMode selected task review policy / 任务所选审核策略
+     * @param authorizationMode selected authorization repetition / 所选授权重复规则
      * @param configurationRevision exact frozen model configuration / 精确冻结模型配置
      * @param currentConfigurationRevision live task-authorized revision / 实时任务授权修订 */
     public DeploymentAgentSession(ModContext context, TaskContext task, ServerId server,
                                   Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
-                                  DeploymentAgentActionLog journal, String approvalMode, String configurationRevision,
+                                  DeploymentAgentActionLog journal, String approvalMode, String authorizationMode, String configurationRevision,
                                   Supplier<String> currentConfigurationRevision) {
-        this(context, task, server, requirements, source, tools, journal, approvalMode, configurationRevision,
+        this(context, task, server, requirements, source, tools, journal, approvalMode, authorizationMode, configurationRevision,
             currentConfigurationRevision, new DeploymentAgentControl());
     }
 
@@ -102,12 +105,13 @@ public final class DeploymentAgentSession {
      * @param tools actual scoped tools / 实际限定工具
      * @param journal original evidence / 原依据
      * @param approvalMode immutable policy / 不可变策略
+     * @param authorizationMode immutable authorization repetition / 不可变授权重复规则
      * @param configurationRevision initial frozen route / 初始冻结路由
      * @param currentConfigurationRevision live route observer / 实时路由观察器
      * @param control original worker control / 原工作线程控制 */
     public DeploymentAgentSession(ModContext context, TaskContext task, ServerId server,
                                   Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
-                                  DeploymentAgentActionLog journal, String approvalMode, String configurationRevision,
+                                  DeploymentAgentActionLog journal, String approvalMode, String authorizationMode, String configurationRevision,
                                   Supplier<String> currentConfigurationRevision, DeploymentAgentControl control) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
@@ -120,7 +124,7 @@ public final class DeploymentAgentSession {
             .anyMatch(k -> k.matches("(?i).*(password|secret|credential|token|key).*")))
             throw new IllegalArgumentException("Agent requirements exceed nonsecret budget");
         this.requirements = Map.copyOf(requirements);
-        this.models = new DeploymentAgentModels(context, task, server, approvalMode, configurationRevision,
+        this.models = new DeploymentAgentModels(context, task, server, approvalMode, authorizationMode, configurationRevision,
             currentConfigurationRevision, journal, tools);
     }
 
@@ -141,6 +145,16 @@ public final class DeploymentAgentSession {
                     return result;
             } catch (ProposalInvalidatedException changed) {
                 observe("MODEL_REFRESH", models.revision());
+            } catch (DeploymentLowRiskRequiredException refused) {
+                if (!DeploymentAgentActionLog.effectsSettled(journal.events(task)))
+                    throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_LOW_RISK_PATH_REQUIRES_RECOVERY",
+                        "The refused HIGH request was not sent; earlier original work still requires reconciliation",
+                        Map.of("task", task.id().toString()), Optional.of(task.id())));
+                observe("LOWER_RISK_REQUIRED", refused.problem().message() + "; the refused action was not sent. Propose a different independently reviewed action or report unable.");
+                if (++stalled >= 2)
+                    throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_LOW_RISK_PATH_UNAVAILABLE",
+                        "No feasible lower-risk deployment action was found; the refused HIGH action was not sent",
+                        Map.of("task", task.id().toString()), Optional.of(task.id())));
             } catch (IllegalArgumentException rejected) {
                 observe("PROPOSAL_REJECTED", rejected.getMessage());
                 if (++stalled >= 2)
@@ -240,18 +254,25 @@ public final class DeploymentAgentSession {
      * @param proposal exact command / 精确命令
      * @throws Exception on denied or unknown work / 工作被拒绝或未知时 */
     private void command(DeploymentAgentProposal.Command proposal) throws Exception {
-        if (proposal.script().isBlank() || proposal.script().length() > 24000 || proposal.script().indexOf('\0') >= 0)
-            throw new IllegalArgumentException("Invalid agent command");
+        gold.debug.windowstolinux.mod.deployment.ai.DeploymentCommandStaticGate.requireAllowed(proposal.script());
+        String proposalBinding = digest(proposal.component() + ":" + proposal.script());
+        if (refusedScripts.contains(proposalBinding))
+            throw new DeploymentLowRiskRequiredException(task, "The same refused script cannot be submitted again");
         var component = component(proposal.component());
         if (!artifacts.keySet().containsAll(component.dependencies()))
             throw new IllegalArgumentException("Build dependencies first");
+        try {
+            models.reviewer().command(component.id(), revisions.getOrDefault(component.id(), source.revision()), proposal.script());
+        } catch (DeploymentLowRiskRequiredException refused) {
+            refusedScripts.add(proposalBinding);
+            throw refused;
+        }
         var candidate = prepare(component.id());
         if (artifacts.containsKey(component.id()))
             journal.event(task, "ARTIFACT_INVALIDATED", component.id(), "command");
         artifacts.remove(component.id());
         String binding = digest(component.id() + ":" + revisions.get(component.id()) + ":" + proposal.script());
         requireConfiguration();
-        models.reviewer().command(component.id(), revisions.get(component.id()), proposal.script());
         checkpoint();
         requireConfiguration();
         source.verify();
@@ -260,6 +281,10 @@ public final class DeploymentAgentSession {
         try {
             result = tools.command(task, candidate, revisions.get(component.id()), proposal.script(),
                 Duration.ofSeconds(proposal.seconds()));
+        } catch (DeploymentLowRiskRequiredException refused) {
+            refusedScripts.add(proposalBinding);
+            journal.event(task, "COMMAND_NOT_SENT", binding, "LOWER_RISK_REQUIRED");
+            throw refused;
         } catch (Exception unknown) {
             journal.state(task, "UNKNOWN");
             throw unknown;
@@ -290,6 +315,10 @@ public final class DeploymentAgentSession {
         DeploymentAgentDeliveryPort.Prepared candidate;
         try {
             candidate = tools.prepare(plan.applicationId(), component);
+        } catch (DeploymentLowRiskRequiredException refused) {
+            if (refused.preparationUnsent()) journal.event(task, "PREPARE_NOT_SENT", binding, "LOWER_RISK_REQUIRED");
+            else journal.state(task, "UNKNOWN");
+            throw refused;
         } catch (Exception unknown) {
             journal.state(task, "UNKNOWN");
             throw unknown;
@@ -339,6 +368,7 @@ public final class DeploymentAgentSession {
         while (history.size() > 12 || history.stream().mapToInt(item -> item.get("output").length()).sum() > 42000)
             history.removeFirst();
         journal.event(task, "AGENT_OBSERVATION", tool, digest(safe));
+        gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentObservation(context, task, tool);
         task.progress(tool + ": " + safe.substring(0, Math.min(safe.length(), 160)), Optional.empty());
     }
 
@@ -396,19 +426,15 @@ public final class DeploymentAgentSession {
         String binding = digest(old + ":" + patch);
         models.reviewer().patch(patch);
         requireConfiguration();
-        var intent = new ActionIntent("deployment.agent.patch", List.of(server.id()), patch.path(),
-            models.revision(), "source=" + old + "\nbefore=" + patch.beforeDigest() + "\npatch=" + patch,
-            "Apply the exact reviewed diff only to the task-owned source candidate");
-        var approval = context.interaction().approve(intent, task);
-        if (approval.outcome() != TaskResult.SUCCEEDED)
-            throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(
-                approval.outcome(), approval.problem());
         checkpoint();
         requireConfiguration();
         journal.event(task, "PATCH_EXECUTING", binding, old + ":" + patch.beforeDigest());
         String revised;
         try {
             revised = tools.patch(task, candidate, old, patch);
+        } catch (DeploymentLowRiskRequiredException refused) {
+            journal.event(task, "PATCH_NOT_SENT", binding, "LOWER_RISK_REQUIRED");
+            throw refused;
         } catch (Exception uncertain) {
             journal.state(task, "UNKNOWN");
             throw uncertain;

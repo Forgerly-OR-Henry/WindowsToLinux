@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.*;
 
 import javax.swing.*;
+import javax.swing.text.JTextComponent;
 
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
@@ -120,7 +121,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                     current.fields().forEach(
                         field -> values.put(field.id().substring(field.id().indexOf('/') + 1), field.value()));
                     values.putAll(Map.of("primary", "app", "secondary", "main.go", "version", "1.24", "port", "8080",
-                        "healthMode", "TCP", "exposure", "INTERNAL", "configuration", "SENTINEL=retained"));
+                        "healthMode", "TCP", "exposure", "INTERNAL", "configuration", "SENTINEL=retained;\nSECOND_LINE=kept"));
                     workflow.validateReview(current,
                         new DeploymentStaticWorkflow.Answers(values, List.of(), limits(), false, true));
                     expected.set(Map.copyOf(values));
@@ -156,6 +157,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 form.set(current);
                 var inputs = runtimeFields(current, prompt.get());
                 fields.set(inputs);
+                assertInstanceOf(JTextArea.class, inputs.get("configuration"));
                 expected.get().forEach((key, value) -> {
                     if (inputs.containsKey(key) && Set
                         .of("primary", "secondary", "version", "port", "healthMode", "exposure", "configuration")
@@ -167,7 +169,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 timeout.set((JTextField) current.getComponent(limitOffset + 1));
                 timeout.get().setText(invalid.equals("malformed-configuration") ? "600" : invalid);
                 if (invalid.equals("malformed-configuration"))
-                    set(inputs.get("configuration"), "missing-equals");
+                    set(inputs.get("configuration"), "SENTINEL=retained;\nmissing-equals");
                 var risks = Arrays.stream(current.getComponents()).filter(JCheckBox.class::isInstance)
                     .map(JCheckBox.class::cast).toList();
                 assertEquals(2, risks.size());
@@ -181,15 +183,23 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
                 assertEquals(invalid.equals("malformed-configuration") ? "600" : invalid, timeout.get().getText());
                 for (String key : List.of("primary", "secondary", "version", "port", "configuration"))
                     assertEquals(key.equals("configuration") && invalid.equals("malformed-configuration")
-                        ? "missing-equals"
+                        ? "SENTINEL=retained;\nmissing-equals"
                         : expected.get().get(key), value(fields.get().get(key)));
+                String error = page.get().text("invalidForm") + " " + prompt.get().componentId()
+                    + (invalid.equals("malformed-configuration") ? " / " + page.get().text("auto.field.configuration") : "");
                 assertTrue(descendants(repeated).stream().filter(JLabel.class::isInstance).map(JLabel.class::cast)
-                    .anyMatch(label -> page.get().text("invalidForm").equals(label.getText())));
+                    .anyMatch(label -> error.equals(label.getText())));
+                if (invalid.equals("malformed-configuration")) {
+                    var configuration = fields.get().get("configuration");
+                    assertEquals("error", configuration.getClientProperty("JComponent.outline"));
+                    assertTrue(descendants(repeated).stream().filter(JComponent.class::isInstance)
+                        .map(JComponent.class::cast).anyMatch(control -> control.getClientProperty("deployment.review.focus") == configuration));
+                }
                 assertEquals(0, connections.get());
                 assertEquals(handle.id(), originalTask.get().id());
                 assertFalse(handle.completion().toCompletableFuture().isDone());
                 if (invalid.equals("malformed-configuration"))
-                    set(fields.get().get("configuration"), "SENTINEL=retained");
+                    set(fields.get().get("configuration"), expected.get().get("configuration"));
                 else
                     timeout.get().setText("600");
                 decide(repeated, JOptionPane.OK_OPTION);
@@ -245,14 +255,19 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
         var fields = new LinkedHashMap<String, JComponent>();
         for (var field : prompt.fields()) {
             String key = field.id().substring(field.id().indexOf('/') + 1);
-            if (!fields.containsKey(key))
-                fields.put(key, (JComponent) panel.getComponent(3 + 2 * fields.size()));
+            if (!fields.containsKey(key)) {
+                var label = (JLabel) panel.getComponent(2 + 2 * fields.size());
+                var input = (JComponent) label.getLabelFor();
+                assertNotNull(input, "Actual field label must target the editable control: " + key);
+                assertEquals("deployment.runtime." + field.id(), input.getName());
+                fields.put(key, input);
+            }
         }
         return fields;
     }
 
     private static void set(JComponent control, String value) {
-        if (control instanceof JTextField field)
+        if (control instanceof JTextComponent field)
             field.setText(value);
         else if (control instanceof JComboBox<?> box)
             box.setSelectedItem(value);
@@ -261,7 +276,7 @@ class DeploymentOrdinaryRuntimeFormTest extends DeploymentRuntimeFixture {
     }
 
     private static String value(JComponent control) {
-        return control instanceof JTextField field
+        return control instanceof JTextComponent field
             ? field.getText()
             : String.valueOf(((JComboBox<?>) control).getSelectedItem());
     }

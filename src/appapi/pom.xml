@@ -8,7 +8,7 @@
     <relativePath>../../pom.xml</relativePath>
   </parent>
   <artifactId>windowstolinux-appapi</artifactId>
-  <version>1.0.0-dev.3</version>
+  <version>1.0.0-dev.4</version>
   <description>JDK-only public contracts for WindowsToLinux Mod authors</description>
   <dependencies>
     <dependency>

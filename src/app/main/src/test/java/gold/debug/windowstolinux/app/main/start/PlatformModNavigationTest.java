@@ -189,6 +189,43 @@ class PlatformModNavigationTest {
     }
 
     @Test
+    void publishedModOpensActualPlatformDestinationsAndReturnsToItsOriginalDraft() throws Exception {
+        var models = runtime.models();
+        onEdt(() -> {
+            frame.installServers(runtime.servers());
+            frame.installModels(models);
+            frame.installLogs(runtime.logs());
+            frame.installTasks(new gold.debug.windowstolinux.app.service.task.PlatformTaskManagement(
+                runtime.tasks(), runtime.security(), id -> runtime.recovery().reconcile(id, true), runtime.modRecovery()::release));
+            return null;
+        });
+        idle();
+        clickRoot(P);
+        var ui = (gold.debug.windowstolinux.appapi.ui.UiService) System.getProperties().get(P + ".ui");
+        var field = onEdt(() -> (JTextField) named(frame, P + ".main"));
+        onEdt(() -> {
+            field.setText("retained deployment draft");
+            return null;
+        });
+        var destinations = Map.of(
+            gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.SERVERS, "platform.servers",
+            gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.AI_MODELS, "platform.models",
+            gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS, "tasks.title");
+        for (var destination : destinations.entrySet()) {
+            ui.openPlatform(destination.getKey());
+            assertEquals(destination.getValue(), onEdt(frame::currentPage).platformId());
+            clickRoot(P);
+            assertSame(field, onEdt(() -> named(frame, P + ".main")));
+            assertEquals("retained deployment draft", onEdt(field::getText));
+        }
+        runtime.security().lock();
+        await(() -> ui.environment().locked());
+        assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,
+            () -> ui.openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.SERVERS));
+        assertEquals("retained deployment draft", onEdt(field::getText));
+    }
+
+    @Test
     void rootOrderMergesOldPagesPreservesUnpublishedOwnersAndRejectsStaleWrites() throws Exception {
         var service = runtime.modIntents();
         var first = new PagePin(P, "main");

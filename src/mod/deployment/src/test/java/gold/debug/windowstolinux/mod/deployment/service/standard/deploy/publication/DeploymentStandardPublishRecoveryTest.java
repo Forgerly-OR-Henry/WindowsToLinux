@@ -13,10 +13,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import gold.debug.windowstolinux.app.db.server.StoredServerProfile;
 import gold.debug.windowstolinux.app.main.start.PlatformRuntime;
+import gold.debug.windowstolinux.app.main.start.LoopbackSshServer;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.task.PlatformInteractionService;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
@@ -30,6 +33,11 @@ import gold.debug.windowstolinux.appapi.task.ref.ResourceRefResult;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
+import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.TaskService;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
@@ -73,7 +81,7 @@ class DeploymentStandardPublishRecoveryTest extends DeploymentRuntimeFixture {
 
             public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation) {
                 assertEquals(List.of(SERVER.id()), intent.serverIds());
-                if (intent.semantics().orElseThrow().operation().equals("deployment.publication.candidate-cleanup.v1"))
+                if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.candidate-cleanup.v1")).isPresent())
                     return cleanupReviews.incrementAndGet() != 1;
                 return true;
             }
@@ -94,13 +102,21 @@ class DeploymentStandardPublishRecoveryTest extends DeploymentRuntimeFixture {
     @Test
     void preDispatchRefusalCanBeReviewedAgainWithoutReplayingAnUnknownEffect() throws Exception {
         enable();
-        try (var runtime = open()) {
+        try (var ssh = new LoopbackSshServer(java.nio.file.Files.createDirectory(root.resolve("publication-ssh")), ignored -> {
+        });
+             var runtime = open()) {
             start(runtime, true);
             runtime.servers().saveServerProfile(
                 ServerProfile.fromStored(
-                    new StoredServerProfile(SERVER.id(), "127.0.0.1", 22, "root", "fixture-password")),
+                    new StoredServerProfile(SERVER.id(), "127.0.0.1", ssh.server().getPort(), "root", "fixture-password")),
                 "fixture-password".toCharArray());
             var real = runtime.modContexts().get(OWNER).context();
+            runtime.tasks().revokeOwnerServices(OWNER, VERSION);
+            var tasks = runtime.tasks().bind(OWNER, VERSION, false);
+            var wire = new AtomicReference<RemoteFacts>();
+            var fixedTarget = new AtomicReference<RemoteTarget>();
+            var referenceId = new AtomicReference<UUID>();
+            var recoveryCalls = new AtomicInteger();
             var candidate = new AtomicBoolean(true);
             var sent = new AtomicInteger();
             var observed = new AtomicReference<Throwable>();
@@ -108,6 +124,7 @@ class DeploymentStandardPublishRecoveryTest extends DeploymentRuntimeFixture {
                 new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                     if (method.getName().equals("close"))
                         return null;
+                    if (method.getName().equals("facts")) return Objects.requireNonNull(wire.get());
                     assertEquals("execute", method.getName());
                     String script = ((CommandRequest) args[0]).script();
                     sent.incrementAndGet();
@@ -117,85 +134,146 @@ class DeploymentStandardPublishRecoveryTest extends DeploymentRuntimeFixture {
                     candidate.set(false);
                     return reply("CANDIDATE_CLEANED=1\n");
                 });
-            var bound = withRemote(real, remote);
-            var handle = real.tasks().submit(new TaskRequest("publication-recovery-probe", "Recover original candidate",
-                List.of(SERVER.id()), true), task -> {
-                try {
-                    var identity = new DeploymentExecutionIdentity(UUID.randomUUID(), task.id(),
-                        Optional.empty(), "demo", SERVER,
-                        DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "f".repeat(64));
-                    var repository = new DeploymentExecutionStore(real.db());
-                    var intent = DeploymentRefIntent.server(SERVER, "application:demo");
-                    repository.begin(task, identity, "deployment-publication", List.of(intent),
-                        Optional.empty(), Instant.parse("2026-01-01T00:00:00Z"));
-                    var reference = real.servers().reserve(SERVER, intent.businessKey(), task);
-                    repository.recordReference(task, identity.executionId(), intent, reference.id(),
-                        Instant.parse("2026-01-01T00:00:00.500Z"));
-                    repository.startEffects(task, identity.executionId(),
-                        Instant.parse("2026-01-01T00:00:01Z"));
-                    var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64));
-                    DeploymentPublishCleanupActionLog.begin(real, task, unit, "a".repeat(64), "f".repeat(64),
-                        new DeploymentRuntimeDefinition.GoService("1.24", "demo", "main.go",
-                            new DeploymentHealthCheck.Tcp(8080, 10, 2)));
-                    var recovery = new DeploymentStandardPublishRecovery(bound);
-                    var record = repository.findForTask(task).orElseThrow();
-                    var finalResult = recovery.reconcile(task, record).orElseThrow();
-                    assertEquals(TaskResult.FAILED, finalResult.outcome());
+            var bound = withRemote(real, remote, tasks, wire, fixedTarget);
+            var capture = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("tasks")) return tasks;
+                    try {
+                        return method.invoke(real, arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+            var repository = new DeploymentExecutionStore(real.db());
+            var recovery = new DeploymentStandardPublishRecovery(bound);
+            try (var registration = tasks.registerRecovery("publication-recovery-probe", (previous, task) -> {
+                assertEquals(previous.id(), task.id());
+                var record = repository.findForTask(task).orElseThrow();
+                var result = recovery.reconcile(task, record).orElseThrow();
+                assertEquals(TaskResult.FAILED, result.outcome(), result.toString());
+                if (recoveryCalls.incrementAndGet() == 1) {
                     assertEquals(1, cleanupReviews.get());
                     assertEquals(1, sent.get(), "Only read-only status was dispatched before review refusal");
                     assertEquals("MAINTENANCE_ENDED", new com.fasterxml.jackson.databind.ObjectMapper()
-                        .readTree(real.tasks().findCheckpoint(task, DeploymentPublishCleanupActionLog.KEY)
-                            .orElseThrow().snapshot().payload())
+                        .readTree(tasks.findCheckpoint(task, DeploymentPublishCleanupActionLog.KEY).orElseThrow().snapshot().payload())
                         .path("phase").asText());
                     assertTrue(candidate.get());
-                    assertEquals(TaskResult.FAILED, recovery.reconcile(task, record).orElseThrow().outcome());
+                    assertFalse(tasks.resourcesReleased(task), "Unfinished cleanup retains the genuine original resources");
+                } else {
+                    assertEquals(2, recoveryCalls.get());
                     assertEquals(2, cleanupReviews.get());
-                    assertEquals(4, sent.get(), "Two status reads and one cleanup use the original task");
+                    assertEquals(4, sent.get(), "Three status reads and one cleanup use the original task");
                     assertFalse(candidate.get());
-                    assertTrue(real.tasks().findCheckpoint(task, DeploymentPublishCleanupActionLog.KEY)
-                        .orElseThrow().snapshot().released());
-                    repository.recordUncommittedOutcome(task, identity.executionId(), TaskResult.FAILED,
-                        finalResult.problem().orElseThrow(), Instant.parse("2026-01-01T00:00:02Z"));
-                    real.servers().resolve(reference.id(), ResourceRefResult.NOT_REFERENCED, task);
-                    repository.finishCleanup(task, identity.executionId(),
-                        Instant.parse("2026-01-01T00:00:03Z"));
-                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
-                } catch (Throwable failure) {
-                    observed.set(failure);
-                    throw failure;
+                    assertTrue(tasks.findCheckpoint(task, DeploymentPublishCleanupActionLog.KEY).orElseThrow().snapshot().released());
+                    repository.recordUncommittedOutcome(task, record.identity().executionId(), TaskResult.FAILED,
+                        result.problem().orElseThrow(), Instant.parse("2026-01-01T00:00:02Z"));
+                    real.servers().resolve(referenceId.get(), ResourceRefResult.NOT_REFERENCED, task);
+                    assertTrue(tasks.resourcesReleased(task));
+                    repository.finishCleanup(task, record.identity().executionId(), Instant.parse("2026-01-01T00:00:03Z"));
                 }
-            });
-            OperationResult<Void> result;
-            try {
-                result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
-            } catch (java.util.concurrent.TimeoutException unfinished) {
-                throw new AssertionError("Recovery probe unfinished: " + handle.snapshot(),
-                    observed.get() == null ? unfinished : observed.get());
+                return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
+            })) {
+                var handle = tasks.submit(new TaskRequest("publication-recovery-probe", "Recover original candidate",
+                    List.of(SERVER.id()), true), task -> {
+                    try {
+                        var preferences = new DeploymentPreferences(real.db());
+                        preferences.save(task, new DeploymentPreferences.Selection("STATIC", "MANUAL_REVIEW", "ONCE"));
+                        var policy = preferences.read(task);
+                        assertEquals("STATIC", policy.mode());
+                        var guarded = DeploymentPublishPolicyContext.begin(capture, task, SERVER, false,
+                            policy.approval(), policy.authorization(), "Original candidate cleanup fixture");
+                        try {
+                            try (var actual = guarded.linux().connect(SERVER, task)) {
+                                wire.set(actual.facts());
+                            }
+                            fixedTarget.set(DeploymentPublishPolicyFacts.find(capture, task).orElseThrow().facts().fixedTarget());
+                        } finally {
+                            guarded.finish(TaskResult.UNKNOWN);
+                        }
+                        var identity = new DeploymentExecutionIdentity(UUID.randomUUID(), task.id(),
+                            Optional.empty(), "demo", SERVER,
+                            DeploymentExecutionIdentity.DeploymentExecutionMode.STATIC, "f".repeat(64));
+                        var intent = DeploymentRefIntent.server(SERVER, "application:demo");
+                        repository.begin(task, identity, "deployment-publication", List.of(intent),
+                            Optional.empty(), Instant.parse("2026-01-01T00:00:00Z"));
+                        var reference = real.servers().reserve(SERVER, intent.businessKey(), task);
+                        referenceId.set(reference.id());
+                        repository.recordReference(task, identity.executionId(), intent, reference.id(),
+                            Instant.parse("2026-01-01T00:00:00.500Z"));
+                        repository.startEffects(task, identity.executionId(),
+                            Instant.parse("2026-01-01T00:00:01Z"));
+                        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64));
+                        DeploymentPublishCleanupActionLog.begin(bound, task, unit, "a".repeat(64), "f".repeat(64),
+                            new DeploymentRuntimeDefinition.GoService("1.24", "demo", "main.go",
+                                new DeploymentHealthCheck.Tcp(8080, 10, 2)));
+                        return new OperationResult<Void>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
+                            ProblemCode.UNKNOWN, "TEST_CANDIDATE_CLEANUP_INTERRUPTED", "Original candidate awaits explicit reconciliation",
+                            Map.of(), Optional.empty())));
+                    } catch (Throwable failure) {
+                        observed.set(failure);
+                        throw failure;
+                    }
+                });
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                while (handle.snapshot().state() != TaskState.UNKNOWN && System.nanoTime() < until)
+                    Thread.sleep(20);
+                assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+                assertNull(observed.get(), () -> String.valueOf(observed.get()));
+                var refused = reconcileReady(runtime, handle);
+                assertEquals(handle.id(), refused.id());
+                // The FAILED result is known while the original resources still await cleanup.
+                assertEquals(TaskState.FINISHING, refused.state(), refused.toString());
+                assertFalse(handle.completion().toCompletableFuture().isDone());
+                var reconciled = reconcileReady(runtime, handle);
+                assertEquals(handle.id(), reconciled.id());
+                assertEquals(TaskState.ENDED, reconciled.state(), reconciled.toString());
+                assertEquals(Optional.of(TaskResult.FAILED), reconciled.outcome());
+                OperationResult<Void> result;
+                try {
+                    result = handle.completion().toCompletableFuture().get(20, TimeUnit.SECONDS);
+                } catch (java.util.concurrent.TimeoutException unfinished) {
+                    throw new AssertionError("Recovery probe unfinished: " + handle.snapshot(),
+                        observed.get() == null ? unfinished : observed.get());
+                }
+                assertEquals(TaskResult.FAILED, result.outcome());
+                assertNull(observed.get(), () -> String.valueOf(observed.get()));
+                assertEquals(0, scalar(runtime,
+                    "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + handle.id() + "' AND released_at IS NULL"));
             }
-            assertEquals(TaskResult.SUCCEEDED, result.outcome());
-            assertNull(observed.get(), () -> String.valueOf(observed.get()));
-            assertEquals(0, scalar(runtime,
-                "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL AND resource_kind='CUSTOM'"));
         }
     }
 
     /** Replaces only the borrowed remote peer, preserving real task, H2, source and review capabilities. / 仅替换借用远端对等端，保留真实任务、H2、来源和审核能力。
      * @param real original activation / 原启用
      * @param remote controlled peer / 受控对等端
+     * @param tasks authentic replacement owner service / 真实替换所属服务
+     * @param wire actual original authenticated session facts / 实际原认证会话事实
+     * @param fixedTarget previously captured original endpoint / 此前捕获的原端点
      * @return delegated activation / 委托启用 */
-    private static ModContext withRemote(ModContext real, RemoteSession remote) {
+    private static ModContext withRemote(ModContext real, RemoteSession remote, TaskService tasks,
+                                         AtomicReference<RemoteFacts> wire, AtomicReference<RemoteTarget> fixedTarget) {
         LinuxService linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
             new Class<?>[]{LinuxService.class}, (proxy, method, args) -> {
                 if (method.getName().equals("pendingTransfers"))
-                    return List.of();
+                    return real.linux().pendingTransfers((TaskContext) args[0]);
                 assertEquals("connect", method.getName());
-                assertEquals(SERVER, args[0]);
+                var task = (TaskContext) args[1];
+                var expected = Objects.requireNonNull(fixedTarget.get(), "Actual original policy and authenticated wire must precede recovery");
+                assertEquals(expected.taskId(), task.id());
+                if (args[0] instanceof RemoteTarget target) assertEquals(expected, target);
+                else assertEquals(SERVER, args[0]);
+                var current = real.servers().get(SERVER, task);
+                assertEquals(expected.host(), current.host());
+                assertEquals(expected.port(), current.port());
+                assertEquals(expected.username(), current.username());
+                assertEquals(Optional.of(wire.get().fingerprint()), expected.fingerprint());
                 return remote;
             });
         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("linux"))
                     return linux;
+                if (method.getName().equals("tasks")) return tasks;
                 try {
                     return method.invoke(real, args);
                 } catch (InvocationTargetException failure) {

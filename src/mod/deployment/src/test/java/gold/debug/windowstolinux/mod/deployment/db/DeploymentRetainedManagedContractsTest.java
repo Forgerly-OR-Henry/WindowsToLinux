@@ -191,8 +191,18 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
     void reopenedPlatformRestartsOriginalNativeGraphUsingItsPersistedComponentAndWholeHealth() throws Exception {
         enable();
         var initial = graph("legacy-demo");
+        var reviewed = initial.components().stream().map(part -> {
+            var old = part.runtime().workload();
+            var workload = new DeploymentWorkload(old.mode(), true, old.command(), old.workingDirectory(), old.endpoints(),
+                old.verification(), old.expectedOutput(), old.client(), old.inputs(), old.companions(), old.buildDirectory(), old.workers());
+            var definition = part.reviewedRuntime().withWorkload(workload);
+            var runtime = new DeploymentUnitRuntimeConfig(part.runtime().healthCheck(), part.runtime().userAccessUrl(),
+                part.runtime().identityPolicy(), workload);
+            return new DeploymentApplicationGraph.Part(part.componentId(), part.unit(), runtime, part.dependencies(),
+                definition, part.dataPaths(), part.resources());
+        }).toList();
         var graph = new DeploymentApplicationGraph(initial.applicationId(), initial.healthComponentId(),
-            new DeploymentHealthCheck.Process(37, 4), initial.components());
+            new DeploymentHealthCheck.Process(37, 4), reviewed);
         var persisted = new AtomicReference<DeploymentApplicationReader.ApplicationFacts>();
         try (var runtime = open()) {
             start(runtime, true);
@@ -231,7 +241,7 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                     while (rows.next()) {
                         count++;
                         assertEquals("RUNNING", rows.getString(1));
-                        assertEquals("UNKNOWN", rows.getString(2));
+                        assertEquals("ENABLED", rows.getString(2));
                         assertEquals(1, rows.getInt(3));
                         assertEquals("deployment-helper-observation-v1", rows.getString(4));
                     }
@@ -314,6 +324,15 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                     return List.of();
                 }
 
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                    assertEquals(task.id(), expected.taskId());
+                    assertEquals("127.0.0.1", expected.host());
+                    assertEquals(22, expected.port());
+                    assertEquals("tester", expected.username());
+                    expected.fingerprint().ifPresent(value -> assertEquals("SHA256:" + "A".repeat(43), value));
+                    return connect(expected.server(), task);
+                }
+
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                     assertEquals(new ServerId("server"), server);
                     var lease = task.retain("controlled_ssh", "legacy-health-" + UUID.randomUUID(),
@@ -322,7 +341,7 @@ class DeploymentRetainedManagedContractsTest extends DeploymentManagedApplicatio
                     return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                         new Class<?>[]{RemoteSession.class}, (proxy, method, arguments) -> {
                             if (method.getName().equals("facts"))
-                                return new RemoteFacts("linux", "x86_64", "SHA256:legacy-health");
+                                return new RemoteFacts("linux", "x86_64", "SHA256:" + "A".repeat(43));
                             if (method.getName().equals("close")) {
                                 lease.close();
                                 sessions.decrementAndGet();

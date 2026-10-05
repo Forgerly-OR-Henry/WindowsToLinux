@@ -198,6 +198,8 @@ public final class DeploymentRefFlow implements TaskRecovery {
             OperationResult<DeploymentPublish> result;
             try {
                 result = Objects.requireNonNull(author.run(task));
+                new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context)
+                    .effectResult(task.id(), result);
             } catch (Exception | LinkageError | AssertionError uncertain) {
                 recordUnknown(task, identity.executionId());
                 return unknown();

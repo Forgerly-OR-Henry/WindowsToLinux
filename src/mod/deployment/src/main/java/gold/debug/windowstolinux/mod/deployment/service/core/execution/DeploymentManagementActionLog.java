@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -188,6 +189,38 @@ public final class DeploymentManagementActionLog {
      * @return mutable copy / 可变副本 */
     public static ObjectNode copy(Entry entry) {
         return entry.facts().deepCopy();
+    }
+
+    /** Records the actual authenticated original target without credentials. / 不含凭据地记录实际已认证原目标。
+     * @param facts original mutable before facts / 原可变前态事实
+     * @param target actual original task-bound endpoint and wire fingerprint / 实际原任务绑定端点与wire指纹 */
+    public static void target(ObjectNode facts, RemoteTarget target) {
+        var value = facts.putObject("target");
+        value.put("server", target.server().id()).put("taskId", target.taskId().toString())
+            .put("host", target.host()).put("port", target.port()).put("username", target.username())
+            .put("fingerprint", target.fingerprint().orElseThrow());
+    }
+
+    /** Reads only a complete original connection expectation; old missing facts remain unknown. / 仅读取完整原连接预期；旧缺失事实保持未知。
+     * @param entry original authenticated operation / 原已认证操作
+     * @param task authentic original task or recovery / 真实原任务或恢复
+     * @return fixed original endpoint and authenticated wire key / 固定原端点与已认证wire密钥
+     * @throws ApiException if original facts or identity cannot be confirmed / 原事实或身份无法确认时 */
+    public static RemoteTarget target(Entry entry, TaskContext task) throws ApiException {
+        var value = entry.facts().path("target");
+        try {
+            for (String key : java.util.List.of("server", "taskId", "host", "username", "fingerprint"))
+                if (!value.path(key).isTextual())
+                    throw new IllegalArgumentException("Original target fields unavailable");
+            if (!entry.taskId().equals(task.id()) || !value.isObject() || !value.path("port").isInt()
+                || !entry.server().id().equals(value.path("server").asText())
+                || !task.id().toString().equals(value.path("taskId").asText()))
+                throw new IllegalArgumentException("Original target identity unavailable");
+            return new RemoteTarget(entry.server(), task.id(), value.path("host").asText(), value.path("port").intValue(),
+                value.path("username").asText(), Optional.of(value.path("fingerprint").asText()));
+        } catch (IllegalArgumentException invalid) {
+            throw unknown("DEPLOYMENT_LIFECYCLE_ORIGINAL_TARGET_UNCONFIRMED");
+        }
     }
 
     /** Serializes exact bounded JSON. / 序列化精确有界JSON。

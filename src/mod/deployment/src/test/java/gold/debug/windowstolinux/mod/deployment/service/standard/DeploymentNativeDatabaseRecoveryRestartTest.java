@@ -26,16 +26,19 @@ import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferStall;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
+import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
@@ -45,6 +48,7 @@ import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBun
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentSecretRef;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyFacts;
 import org.apache.sshd.server.channel.ChannelSession;
 import org.apache.sshd.server.command.Command;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -280,6 +284,19 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         }
     }
 
+    /** Captures the selected original policy and its first actual loopback wire before any controlled effect. / 任意受控效果前捕获所选原策略及首次实际回环 wire。
+     * @param context actual original owner / 实际原所有者
+     * @param server original admitted endpoint / 原准入端点
+     * @param task authentic original executing task / 真实原执行任务
+     * @throws ApiException if original capture, actual authentication or close fails / 原捕获、实际认证或关闭失败时 */
+    private static void captureOriginalPolicy(ModContext context, ServerId server, TaskContext task) throws ApiException {
+        var policy = DeploymentPublishPolicyFacts.begin(context, task, server,
+            "STATIC", "MANUAL_REVIEW", "GENERAL", "");
+        try (var actual = context.linux().connect(policy.facts().fixedTarget(), task)) {
+            policy.authenticated(actual.facts().fingerprint());
+        }
+    }
+
     private void originalBootstrap(int port) throws Exception {
         enable();
         var runtime = open();
@@ -304,6 +321,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             });
         var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original helper installation", List.of(server.id()), true), task -> {
+            captureOriginalPolicy(context, server, task);
             DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
             var outcome = new DeploymentProtocolBootstrap(context.tasks(), task, server, session,
                 context.interaction()).ensure();
@@ -346,6 +364,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
             });
         var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original native DB operation", List.of(server.id()), true), task -> {
+            captureOriginalPolicy(context, server, task);
             DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
             return new DeploymentNativeDatabaseChannel(session, context.interaction(), server, task)
                 .start(context.tasks(), "POSTGRESQL", "postgresql.service", "a".repeat(64));
@@ -386,6 +405,7 @@ class DeploymentNativeDatabaseRecoveryRestartTest extends DeploymentRuntimeFixtu
         var entry = new DeploymentDatabasePlanActionLog.Entry("service", "main");
         var handle = context.tasks().submit(new TaskRequest(DeploymentRefFlow.TASK_TYPE,
             "Original indexed native database", List.of(server.id()), true), task -> {
+            captureOriginalPolicy(context, server, task);
             DeploymentStaticSetupActionLog.begin(context.tasks(), task, server);
             var plan = DeploymentDatabasePlanActionLog.begin(context.tasks(), task, server, "a".repeat(64),
                 List.of(entry));

@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.mod.deployment.service.standard;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.reflect.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -18,7 +19,10 @@ import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
 import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
 import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
 import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
+import gold.debug.windowstolinux.appapi.ai.model.AiRole;
 import gold.debug.windowstolinux.appapi.linux.*;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
@@ -56,6 +60,8 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
 
     private final AtomicInteger reviews = new AtomicInteger();
 
+    private final FixedReviewFixture fixedReviews = new FixedReviewFixture();
+
     private final List<String> approvals = new CopyOnWriteArrayList<>();
 
     private final AtomicReference<String> revision = new AtomicReference<>("a".repeat(64));
@@ -87,6 +93,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             }
 
             public boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken token) {
+                fixedReviews.beforeHost(intent, task.id());
                 approvals.add(intent.type());
                 return true;
             }
@@ -126,12 +133,16 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             var peer = new DeploymentAssistedTestPeer();
             var connections = new AtomicInteger();
             LinuxService linux = new LinuxService() {
+                public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                    return fixedReviews.connect(expected, task, actual, this);
+                }
+
                 public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                     connections.incrementAndGet();
-                    return peer.session(task, () -> {
+                    return fixedReviews.session(peer.session(task, () -> {
                         if (scenario == ScenarioType.CONNECT_DRIFT)
                             revision.set("b".repeat(64));
-                    });
+                    }), task);
                 }
 
                 public List<TransferCheckpoint> pendingTransfers(TaskContext task) {
@@ -210,7 +221,9 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             assertEquals(1, approvals.stream().filter("deployment.assisted.retry"::equals).count());
             if (scenario == ScenarioType.REFUSAL) {
                 assertEquals(0, connections.get());
+                assertEquals(0, fixedReviews.sends.get());
             } else {
+                assertTrue(fixedReviews.sends.get() > 0);
                 try (var access = scope(runtime, true);
                      var connection = access.openConnection();
                      var statement = connection.createStatement();
@@ -256,7 +269,8 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
             }
 
             public String configurationRevision(AiPurpose purpose, TaskContext task) {
-                assertEquals(AiPurpose.LANGUAGE, purpose);
+                assertTrue(Set.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL).contains(purpose));
+                fixedReviews.sameTask(task);
                 return revision.get();
             }
 
@@ -272,6 +286,13 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 } catch (Exception failure) {
                     throw new AssertionError(failure);
                 }
+                fixedReviews.sameTask(task);
+                if (request.purpose() == AiPurpose.APPROVAL) {
+                    fixedReviews.review(request, facts, task);
+                    return success(new AiResponse("{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact controlled original action\"}",
+                        "controlled-approval", "stop", new AiUsage(Optional.empty(), Optional.empty())));
+                }
+                assertEquals(AiPurpose.LANGUAGE, request.purpose());
                 int turn = calls.getAndIncrement();
                 String output;
                 if (turn == 2) {
@@ -301,5 +322,142 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
 
     private static <T> OperationResult<T> success(T value) {
         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
+    }
+
+    /** Captures finite actual reviews and checks them before real host questions and controlled sends. / 捕获有限实际审核，在真实宿主问题和受控发送前校验。 */
+    static final class FixedReviewFixture {
+        private static final Set<String> OPERATIONS = Set.of("deployment.helper.probe.v1",
+            "deployment.candidate.host-probe.v1", "deployment.candidate.capacity.v1", "deployment.candidate.create.v1",
+            "deployment.candidate.query.v1", "deployment.candidate.upload.v1", "deployment.candidate.verify.v1",
+            "deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1", "deployment.build.preflight.v1",
+            "deployment.build.run.v1", "deployment.publication.snapshot.v1", "deployment.publication.original-status.v1",
+            "deployment.publication.snapshot-discard.v1", "deployment.publication.config.v1", "deployment.publication.publish.v1",
+            "deployment.publication.health.v1", "deployment.publication.inspect.v1", "deployment.publication.observe.v1",
+            "deployment.publication.observe-restored.v1", "deployment.publication.rollback.v1", "deployment.publication.retain.v1",
+            "deployment.publication.maintenance-end.v1", "deployment.publication.candidate-cleanup.v1",
+            "deployment.assisted.retry", "deployment.assisted.environment-recovery", "deployment.assisted.build-review");
+
+        private final AtomicReference<UUID> original = new AtomicReference<>();
+
+        private final AtomicReference<String> policy = new AtomicReference<>("MANUAL_REVIEW");
+
+        private final Map<String, Queue<JsonNode>> pending = new ConcurrentHashMap<>();
+
+        final AtomicInteger sends = new AtomicInteger();
+
+        void policy(String selected) {
+            assertTrue(Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(selected));
+            policy.set(selected);
+        }
+
+        void sameTask(TaskContext task) {
+            original.compareAndSet(null, task.id());
+            assertEquals(original.get(), task.id(), "Every review retains the original platform task");
+        }
+
+        RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected,
+                              TaskContext task, ModContext actual, LinuxService controlled) throws ApiException {
+            sameTask(task);
+            assertEquals(task.id(), expected.taskId());
+            var server = actual.servers().get(expected.server(), task);
+            assertEquals(new ServerId("server"), expected.server());
+            assertEquals(server.ref(), expected.server());
+            assertEquals(server.host(), expected.host(), "A saved endpoint change must fail before the controlled connection");
+            assertEquals(server.port(), expected.port());
+            assertEquals(server.username(), expected.username());
+            var session = controlled.connect(expected.server(), task);
+            try {
+                if (expected.fingerprint().isPresent() && !expected.fingerprint().orElseThrow().equals(session.facts().fingerprint()))
+                    throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+                        gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED, "DEPLOYMENT_TEST_WIRE_CHANGED",
+                        "The controlled transport rejects a different actual wire before any command", Map.of(), Optional.of(task.id())));
+                return session;
+            } catch (ApiException failure) {
+                try {
+                    session.close();
+                } catch (ApiException closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+                throw failure;
+            } catch (RuntimeException | Error failure) {
+                try {
+                    session.close();
+                } catch (ApiException closeFailure) {
+                    failure.addSuppressed(closeFailure);
+                }
+                throw failure;
+            }
+        }
+
+        void review(AiRequest request, JsonNode facts, TaskContext task) {
+            sameTask(task);
+            assertEquals(AiPurpose.APPROVAL, request.purpose());
+            assertEquals(List.of(AiRole.SYSTEM, AiRole.USER), request.messages().stream().map(message -> message.role()).toList());
+            assertTrue(OPERATIONS.contains(facts.path("operation").asText()), facts.toString());
+            assertTrue(facts.path("targets").isArray());
+            assertEquals(1, facts.path("targets").size());
+            assertEquals("server", facts.path("targets").get(0).textValue());
+            assertEquals(policy.get(), facts.path("policy").asText(), "Independent review preserves the original approval policy");
+            assertFalse(facts.path("businessRevision").asText().isBlank());
+            String exact = facts.path("exactAction").asText();
+            assertFalse(exact.isBlank());
+            assertFalse(facts.has("installedHelperScript"), "Executable stdin must appear once in its original representation");
+            var keys = new HashSet<String>();
+            facts.fieldNames().forEachRemaining(keys::add);
+            var expected = new HashSet<>(Set.of("policy", "operation", "targets", "businessRevision", "exactAction"));
+            if (exact.startsWith("WTL-SSH-COMMAND-1\n")) {
+                expected.add("inputKind");
+                if (facts.path("operation").asText().equals("deployment.build.run.v1")) {
+                    expected.add("completeExecutableInput");
+                    assertEquals("EXECUTABLE_SCRIPT", facts.path("inputKind").asText());
+                    assertFalse(facts.path("completeExecutableInput").asText().isBlank());
+                } else {
+                    assertTrue(Set.of("EMPTY", "OPAQUE_BOUND_DATA").contains(facts.path("inputKind").asText()));
+                }
+            }
+            assertEquals(expected, keys, "Review facts must follow the exact original protocol");
+            pending.computeIfAbsent(exact, ignored -> new ConcurrentLinkedQueue<>()).add(facts.deepCopy());
+        }
+
+        void beforeHost(ActionIntent intent, UUID task) {
+            if (!intent.type().equals("platform.ssh.execute")) return;
+            assertEquals(original.get(), task);
+            var reviewed = pending.get(intent.exactAction());
+            assertNotNull(reviewed, "Independent AI must finish before the real host question");
+            assertFalse(reviewed.isEmpty());
+            assertEquals(intent.revision(), reviewed.element().path("businessRevision").asText());
+            assertEquals(intent.semantics().orElseThrow().operation(), reviewed.element().path("operation").asText());
+        }
+
+        RemoteSession session(RemoteSession originalSession, TaskContext task) {
+            return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
+                new Class<?>[]{RemoteSession.class}, (proxy, method, arguments) -> {
+                    if (method.getName().equals("execute")) beforeSend((CommandRequest) arguments[0], task);
+                    try {
+                        return method.invoke(originalSession, arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+        }
+
+        private void beforeSend(CommandRequest request, TaskContext task) {
+            sameTask(task);
+            String exact = RemoteActions.command(new ServerId("server"), "fixture-binding", request).exactAction();
+            var reviews = pending.get(exact);
+            assertNotNull(reviews, "Every actual command needs an independent complete prior review");
+            var facts = reviews.poll();
+            assertNotNull(facts, "Each actual send consumes its own independent review");
+            byte[] input = request.stdin();
+            try {
+                if (facts.has("completeExecutableInput"))
+                    assertArrayEquals(input, facts.path("completeExecutableInput").asText().getBytes(StandardCharsets.UTF_8));
+                else
+                    assertEquals(input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA", facts.path("inputKind").asText());
+            } finally {
+                Arrays.fill(input, (byte) 0);
+            }
+            sends.incrementAndGet();
+        }
     }
 }

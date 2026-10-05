@@ -36,7 +36,8 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
             true), LANGUAGE_MISSING_FULL("FULL_CONTROL", false, true), APPROVAL_MISSING_AUTOMATIC("AUTOMATIC", true,
             null), APPROVAL_MISSING_FULL("FULL_CONTROL", true, null), APPROVAL_DISABLED_AUTOMATIC(
             "AUTOMATIC", true, false), APPROVAL_DISABLED_FULL("FULL_CONTROL", true,
-            false), MANUAL_LANGUAGE_ONLY("MANUAL_REVIEW", true, null);
+            false), MANUAL_LANGUAGE_ONLY("MANUAL_REVIEW", true, null), APPROVAL_DISABLED_MANUAL(
+            "MANUAL_REVIEW", true, false), MANUAL_BOTH_PURPOSES("MANUAL_REVIEW", true, true);
 
         final String policy;
 
@@ -61,7 +62,7 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
 
     @ParameterizedTest(name = "original policy configuration {0}")
     @EnumSource(ConfigType.class)
-    void requiredPurposesRejectBeforeSourceCaptureArchiveSshOrSendWhileManualNeedsOnlyLanguage(
+    void allPoliciesRequireBothPurposesBeforeSourceCaptureArchiveSshOrSend(
         ConfigType selected) throws Exception {
         enable();
         var httpCalls = new AtomicInteger();
@@ -118,7 +119,11 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
                     default -> {
                     }
                 }
-                return invoke(actual.file(), method, arguments);
+                try {
+                    return gold.debug.windowstolinux.mod.deployment.file.DeploymentFileServiceFixture.invoke(method, actual.file(), arguments);
+                } catch (InvocationTargetException wrapped) {
+                    throw wrapped.getCause();
+                }
             });
             var linux = (LinuxService) Proxy.newProxyInstance(LinuxService.class.getClassLoader(),
                 new Class<?>[]{LinuxService.class}, (proxy, method, arguments) -> {
@@ -144,18 +149,18 @@ class DeploymentRetainedAgentContractsTest extends DeploymentRuntimeFixture {
                     };
                 });
             var request = new DeploymentAgentWorkflow.Request(Map.of("goal", "Actual original task"), selected.policy,
-                65536, 100, 65536);
+                "GENERAL", 65536, 100, 65536);
             var handle = new DeploymentAgentWorkflow(bound)
                 .submitLocal(new gold.debug.windowstolinux.appapi.server.model.ServerId("server"), request);
             var result = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
             assertEquals(TaskState.ENDED, handle.snapshot().state(), handle.snapshot().toString());
             assertEquals(OWNER, handle.snapshot().ownerId());
             assertEquals(VERSION, handle.snapshot().ownerVersion());
-            if (selected == ConfigType.MANUAL_LANGUAGE_ONLY) {
+            if (selected == ConfigType.MANUAL_BOTH_PURPOSES) {
                 assertEquals(TaskResult.CANCELLED, result.outcome(), result.toString());
                 assertEquals(1, selections.get());
                 assertEquals(1, pickerCalls.get());
-                assertEquals(List.of("LANGUAGE"), purposes, "Manual mode never requires the approval purpose");
+                assertEquals(List.of("LANGUAGE", "APPROVAL"), purposes, "Manual admission requires the independent approval route before the authentic picker");
             } else {
                 assertEquals(TaskResult.FAILED, result.outcome(), result.toString());
                 assertEquals(ProblemCode.UNAVAILABLE, result.problem().orElseThrow().code());

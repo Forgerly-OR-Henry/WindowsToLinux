@@ -259,6 +259,31 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
      */
     @Override
     public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
+        return connect(server, task, null);
+    }
+
+    /** Connects using the immutable original task and target expectation. / 使用不可变原任务及目标预期连接。
+     * @param expected original fixed expectation / 原固定预期
+     * @param task authentic original task / 真实原任务
+     * @return fresh original-target connection / 原目标新连接
+     * @throws ApiException if admission, target, trust or cleanup fails / 准入、目标、信任或清理失败时 */
+    @Override
+    public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected,
+                                 TaskContext task) throws ApiException {
+        Objects.requireNonNull(expected);
+        if (!expected.taskId().equals(task.id()))
+            throw error(ProblemCode.ACCESS_DENIED, "SSH_ORIGINAL_TASK_CHANGED", "Connection expectation belongs to another task");
+        return connect(expected.server(), task, expected);
+    }
+
+    /** Retains the physical connection before authentication under a fixed optional expectation. / 在固定可选预期下认证前保留物理连接。
+     * @param server admitted saved server / 已准入保存服务器
+     * @param task authentic task / 真实任务
+     * @param expected fixed expectation or ordinary saved-server access / 固定预期或普通保存服务器访问
+     * @return owned connection / 所属连接
+     * @throws ApiException if admission, authentication or cleanup fails / 准入、认证或清理失败时 */
+    private RemoteSession connect(ServerId server, TaskContext task,
+                                  gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected) throws ApiException {
         worker();
         tasks.requireServer(task, owner, version, Objects.requireNonNull(server).id());
         var thresholds = thresholds(task);
@@ -267,7 +292,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             if (closed)
                 throw error(ProblemCode.UNAVAILABLE, "LINUX_SERVICE_CLOSED", "The owning Linux capability has closed");
             var lease = tasks.retainSshConnection(task, owner, version, server.id());
-            session = new Session(server, task, lease);
+            session = new Session(server, task, lease, expected);
             retained.add(session);
         }
         try {
@@ -322,6 +347,7 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
                 () -> error(ProblemCode.NOT_FOUND, "SERVER_MISSING", "The saved server is unavailable"));
             var expected = servers.findServer(server.id());
             var endpoint = new SshEndpoint(server.id(), profile.host(), profile.sshPort(), profile.username());
+            requireTarget(session.expected, endpoint, expected);
             password = tasks.callbacks().authorized(task, owner, version, () -> {
                 try (var credentials = security.openCredentials()) {
                     return credentials.read(profile.credentialKey()).orElseThrow(() -> error(ProblemCode.NOT_FOUND,
@@ -330,6 +356,8 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             });
             var trust = tasks.callbacks().<SshEndpoint, String, Boolean>hostCallback(task, owner, version,
                 (target, fingerprint) -> {
+                    if (session.expected != null && session.expected.fingerprint().isPresent())
+                        return session.expected.fingerprint().orElseThrow().equals(fingerprint);
                     if (expected.isPresent()) {
                         var trusted = expected.orElseThrow();
                         return trusted.host().equals(target.host()) && trusted.sshPort() == target.port()
@@ -359,6 +387,24 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
             if (password != null)
                 Arrays.fill(password, '\0');
         }
+    }
+
+    /** Rejects changed connection facts before reading any credential or sending authentication. / 读取任何凭据或发送认证前拒绝改变的连接事实。
+     * @param fixed original expectation or ordinary connection / 原预期或普通连接
+     * @param endpoint saved profile captured for this physical connection / 本物理连接捕获的保存配置
+     * @param trust current saved trusted identity / 当前保存受信身份
+     * @throws ApiException if endpoint, account or saved trust changed / 端点、账户或保存信任改变时 */
+    private static void requireTarget(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget fixed,
+                                      SshEndpoint endpoint, Optional<StoredServerIdentity> trust) throws ApiException {
+        if (fixed == null) return;
+        if (!fixed.host().equals(endpoint.host()) || fixed.port() != endpoint.port()
+            || !fixed.username().equals(endpoint.username()))
+            throw error(ProblemCode.ACCESS_DENIED, "SSH_ORIGINAL_TARGET_CHANGED", "Original connection target changed");
+        if (fixed.fingerprint().isPresent() && (trust.isEmpty()
+            || !fixed.host().equals(trust.orElseThrow().host()) || fixed.port() != trust.orElseThrow().sshPort()
+            || !fixed.fingerprint().orElseThrow().equals(trust.orElseThrow().hostKeySha256()))
+            || fixed.fingerprint().isEmpty() && trust.isPresent())
+            throw error(ProblemCode.ACCESS_DENIED, "SSH_ORIGINAL_TRUST_CHANGED", "Original saved host trust changed");
     }
 
     /** Lists only the original caller's outstanding transfer descriptions. / 仅列出原调用方未完成的传输描述。
@@ -478,6 +524,9 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
         /** Original accepted task object. / 原始已接纳任务对象。 */
         private final TaskContext task;
 
+        /** Fixed expectation reused by any reconnect of this logical session. / 此逻辑会话任何重连共用的固定预期。 */
+        private final gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected;
+
         /** Persisted connection occupancy retained until physical close. / 持久连接占用，保留至物理关闭。 */
         private final ResourceLease lease;
 
@@ -510,11 +559,14 @@ public final class PlatformLinuxService implements LinuxService, AutoCloseable {
          * @param server exact saved server / 精确已保存服务器
          * @param task original task / 原始任务
          * @param lease durable resource claim / 持久资源申请
+         * @param expected original target expectation or ordinary access / 原目标预期或普通访问
          */
-        private Session(ServerId server, TaskContext task, ResourceLease lease) {
+        private Session(ServerId server, TaskContext task, ResourceLease lease,
+                        gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected) {
             this.server = server;
             this.task = task;
             this.lease = lease;
+            this.expected = expected;
         }
 
         /** Returns only observed facts; unknown OS and architecture remain empty. / 仅返回已观察事实，未知系统及架构保持为空。

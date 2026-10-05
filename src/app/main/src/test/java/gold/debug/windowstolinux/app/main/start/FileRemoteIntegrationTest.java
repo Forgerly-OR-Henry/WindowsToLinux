@@ -21,6 +21,7 @@ import gold.debug.windowstolinux.appapi.file.action.FileChoice;
 import gold.debug.windowstolinux.appapi.file.model.FilePath;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferStallChoice;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
@@ -44,6 +45,48 @@ class FileRemoteIntegrationTest {
 
     final AtomicReference<TaskContext> callbackContext = new AtomicReference<>();
 
+    @Test
+    void ordinaryNonRecyclableRemoteDeletionOffersOnlyPermanentDeletion() throws Exception {
+        try (var remote = new Remote(root.resolve("ssh"));
+             var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+            remote.configure(runtime);
+            runtime.fileSettings().save(false);
+            runtime.setSourcePicker((a, b, c) -> root);
+            var confirmations = new AtomicInteger();
+            runtime.setInteractionPresenter(new PlatformInteractionTest.Prompts() {
+                @Override
+                public DeleteEffect delete(Map<DeleteEffect, ActionIntent> choices, String explanation,
+                                           gold.debug.windowstolinux.appapi.task.model.TaskSnapshot task,
+                                           gold.debug.windowstolinux.appapi.task.run.CancelToken cancel) {
+                    assertEquals(Set.of(DeleteEffect.PERMANENT), choices.keySet());
+                    confirmations.incrementAndGet();
+                    return DeleteEffect.PERMANENT;
+                }
+            });
+            Path owned = Files.writeString(remote.files.resolve("owned"), "owned fixture");
+            try (var activation = runtime.capabilities().remoteCapabilities(OWNER, VERSION);
+                 var file = runtime.capabilities().source(OWNER, VERSION, activation)) {
+                finish(runtime, runtime.tasks().bind(OWNER, VERSION, false).submit(request("server"), task -> {
+                    callbackContext.set(task);
+                    try {
+                        var report = file.deleteFile(FilePath.remote(SERVER, "/owned"), task);
+                        assertEquals(TaskResult.SUCCEEDED, report.outcome());
+                        assertFalse(Files.exists(owned));
+                        assertEquals(1, confirmations.get());
+                        var operation = file.operations(task).getFirst();
+                        assertTrue(operation.steps().stream().anyMatch(step -> step.phase().equals("BEFORE_DELETE") && step.detail().equals("PERMANENT")));
+                        assertFalse(operation.steps().stream().anyMatch(step -> step.phase().startsWith("RECYCLE")));
+                        return success(null);
+                    } catch (Throwable failure) {
+                        callbackFailure.set(failure);
+                        throw failure;
+                    }
+                }));
+            }
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+    }
+
     @ParameterizedTest
     @EnumSource(AuthorizationMode.class)
     void independentHttpDeletionPermitPreservesBusinessSemanticsAndConsumesOnceInEachWorkflowMode(AuthorizationMode mode) throws Exception {
@@ -56,11 +99,10 @@ class FileRemoteIntegrationTest {
             PlatformAiServiceTest.model(runtime, fixture, "approval", "/approval", AiCapabilityType.TEXT, 512);
             PlatformAiServiceTest.route(runtime, AiPurposeType.APPROVAL, "approval");
             fixture.handler.set(exchange -> PlatformAiServiceTest.Fixture.reply(exchange, 200, FileApprovalIntegrationTest.response("{\"approved\":true}")));
-            runtime.authorization().saveMode(mode);
             Path owned = Files.writeString(remote.files.resolve("owned"), "owned fixture");
             var target = new ActionTarget(SERVER.id(), "file", "/owned");
             try (var activation = runtime.capabilities().remoteCapabilities(OWNER, VERSION); var file = runtime.capabilities().source(OWNER, VERSION, activation)) {
-                var handle = activation.launcher().submit(new Launch<>(request("server"), Set.of(target), task -> {
+                var handle = activation.launcher().submit(new Launch<>(request("server"), Set.of(target), mode, task -> {
                     callbackContext.set(task);
                     try {
                         var path = FilePath.remote(SERVER, "/owned");

@@ -21,6 +21,18 @@ public interface LinuxService {
      */
     RemoteSession connect(ServerId server, TaskContext task) throws ApiException;
 
+    /** Authenticates a fresh connection only after checking original task, endpoint, account and wire trust. / 核对原任务、端点、账户及 wire 信任后才认证一个新连接。
+     * @param expected fixed original non-secret target, with absent key only on initial first trust / 固定原非秘密目标，仅首次信任可缺密钥
+     * @param task authentic original task, including explicit original recovery / 真实原任务，包括明确原恢复
+     * @return independently owned fresh authenticated session / 独立所属的新认证会话
+     * @throws ApiException if the fixed target differs or this implementation cannot enforce it / 固定目标不符或实现无法强制此合同 */
+    default RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected,
+                                  TaskContext task) throws ApiException {
+        throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
+            gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE, "SSH_FIXED_TARGET_UNAVAILABLE",
+            "This Linux capability cannot enforce original target expectations", java.util.Map.of(), java.util.Optional.empty()));
+    }
+
     /** Lists outstanding transfers owned by the original executing or recovering task. / 列出原执行或恢复任务所属的未完成传输。
      * @param task authentic original task / 真实原任务
      * @return immutable original transfer descriptions / 不可变原传输描述

@@ -69,6 +69,7 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │  │  ├─ setting/                  # [包]       平台界面、安装及 Mod 导航偏好存取
    │  │  ├─ sshrecover/               # [包]       SSH 救援会话和原任务恢复依据
    │  │  └─ task/                     # [包]       任务账本、资源依赖、归档及清理状态
+   │  │     └─ metadata/              # [包]       原任务元数据的严格取消意图编解码
    │  ├─ file/                        # [模块]     平台文件引擎、传输计划与本机后端
    │  │  ├─ pom.xml                   # [构建文件] Maven 模块与依赖声明
    │  │  ├─ model/                    # [包]       文件后端、操作日志、链接维护及回收回执的内部合同
@@ -128,7 +129,7 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │  │  ├─ language/                 # [包]       界面文案目录与语言选择
    │  │  ├─ mod/                      # [包]       Mod 管理、页面挂载和页面生命周期
    │  │  ├─ server/                   # [包]       服务器配置、选择、编辑与 SSH 救援界面
-   │  │  ├─ setting/                  # [包]       平台文件等设置界面
+   │  │  ├─ setting/                  # [包]       平台文件、传输、日志和外观设置界面
    │  │  ├─ task/                     # [包]       通用任务启动、授权、后台执行和恢复界面
    │  │  └─ window/                   # [包]       主窗口、导航、标题和设置分类
    │  └─ windows/                     # [模块]     Windows 原生文件、安全、窗口与安装维护
@@ -223,6 +224,8 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │     │  │     ├─ server/          # [包]       目标服务器与主机能力数据
    │     │  │     │  └─ security/     # [包]       服务器安全机制与受限能力信息
    │     │  │     └─ toolchain/       # [包]       工具链版本、绑定与准备数据
+   │     │  ├─ environment/           # [包]       原端点工具链准备、分离审阅及中断核对
+   │     │  ├─ feedback/              # [包]       原任务阶段与有界脱敏事件读取
    │     │  └─ standard/              # [包]       确定性分析、辅助建议与标准部署流程
    │     │     ├─ analyze/            # [包]       不执行构建的源码和项目分析
    │     │     │  ├─ component/       # [包]       多组件发现、归属与依赖检查
@@ -301,6 +304,12 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
    │     │        │  └─ runtime/      # [包]       匹配运行时需求与已采集主机能力
    │     │        └─ toolchain/       # [包]       已审阅工具链的准备与精确绑定
    │     └─ ui/                       # [包]       部署审阅、自主模式、任务与应用管理界面
+   │        ├─ component/             # [包]       手工多组件编辑及原组件输入保留
+   │        ├─ delivery/              # [包]       已核实公开端点与固定命令的桌面动作
+   │        ├─ environment/           # [包]       环境目标显式选择、审阅与原任务反馈
+   │        ├─ feedback/              # [包]       原句柄持续观察及成功后精确交付查询
+   │        ├─ runtime/               # [包]       运行预填、原字段校验与键盘帮助
+   │        └─ style/                 # [包]       复用主题值的所属表单与高级窗口排版
    └─ moddev/                         # [聚合]     独立开发区，不进入默认根聚合或运行发现
       └─ pom.xml                      # [构建文件] 独立开发聚合入口
 ```
@@ -654,7 +663,7 @@ UPPER_SNAKE_CASE
 
 `task` 同时提供任务执行与核对的基础合同。`task/ref` 保存服务器和秘密业务提交与核对共用的引用状态与结果，不保存具体资源存取或释放逻辑；`server/ref` 依赖 `server/model` 与 `task/ref`，秘密引用依赖 `secret/model` 与 `task/ref`。持久业务引用仍归服务器和秘密能力管理，任务结束不代表引用自动释放。`task/query` 的 `PageSlice` 是可供任务、服务器等能力复用的通用分页结果，仅依赖 JDK，不反向依赖任务模型或服务入口。`db/schema` 保存 Schema 生命周期合同，`SchemaAccess` 的操作作用域与 `ModDatabase` 的任务作用域保持分离。
 
-`ai/model` 保存通用模型用途、消息、请求、响应与用量，`ai/vision` 仅保存图像输入，视觉仍复用通用消息调用链；`ai/voice` 保存音频输入和实时会话合同。`linux/session` 保存会话与主机观测，`linux/action` 保存精确审批意图。Mod 身份归 `mod/model`，启动模式、停止上下文与原因归 `mod/lifecycle`，跨 Mod 服务归 `mod/service`。`ui/page` 成组保存页面创建、登记、描述与环境合同；秘密标识、业务引用和短期读取回调分别归 `secret/model`、`secret/ref`、`secret/access`。二级合同不反向依赖所属能力的根包入口，按第 5.2 节的实际依赖维护包图。
+`ai/model` 保存通用模型用途、消息、请求、响应与用量，`ai/vision` 仅保存图像输入，视觉仍复用通用消息调用链；`ai/voice` 保存音频输入和实时会话合同。`linux/session` 保存会话与主机观测，`linux/action` 保存精确审批意图。Mod 身份归 `mod/model`，启动模式、停止上下文与原因归 `mod/lifecycle`，跨 Mod 服务归 `mod/service`。`ui/page` 成组保存页面创建、登记、描述、环境合同及固定平台目的地类型 `PlatformPageKind`；秘密标识、业务引用和短期读取回调分别归 `secret/model`、`secret/ref`、`secret/access`。二级合同不反向依赖所属能力的根包入口，按第 5.2 节的实际依赖维护包图。
 
 ### 3.2 APP 平台模块与装配
 
@@ -679,7 +688,7 @@ H2 引擎、连接与事务由 `app/db/connect/PlatformDatabase` 持有；根包
 
 完整平台救援由 `app/linux/ssh/recover/SshRecovery` 核对原任务、服务器选择和会话状态；启动层通过 `RecoveryHost` 接入平台授权与持久凭据，Linux 不反向引用 Service 或 DB。临时状态与固定宿主恢复记录归 `db/sshrecover`，`BrowserRecoveryArchival` 在原中央任务事务内归档摘要和清理事件；不新增作者 API 或 Maven 模块。
 
-`app/ui/window/PlatformNavigationShell` 管导航、标题和设置分类，保留已挂载页面；`DesktopHomePane` 展示首页封面，Logo 导航返回首页。窗口锁定通过透明输入门禁保留导航与页面标签，仅禁用内容交互。`control/icons` 的 SVG 按 `lock`、`navigation`、`server`、`ai`、`mod`、`security`、`file`、`action` 分类，`control/brand` 保存独立项目图标和 16:9 封面副本；`control` 管卡片、主题控件及操作区布局，`display` 持有全局圆形开关绘制和动画时钟，`control` 单向使用 `display`；`mod/ModPageRegistry` 只管 Mod 页面生命周期，由 window 注入挂载界面，不反向依赖 window。导航偏好由 `app/db/setting/ModNavigationPreferences` 持久化，导航和删除事务共用同一实现；`service/setting/StartupPageService` 经原桌面偏好存储读写非秘密页面身份，独立 `StartupPageLocation` 为 UI 提供纯值，主窗口捕获正常关闭位置，启动装配在 Mod 发布完成后恢复。官方部署的 `ui/DeploymentWorkspace` 持有内部三个按需创建的实际页面，负责环境转发及清理重试；`ui/DeploymentPageStyle` 只使用 Swing 主题值，不依赖宿主 UI 类。
+`app/ui/window/PlatformNavigationShell` 管导航、标题和设置分类，保留已挂载页面；`DesktopHomePane` 展示首页封面，Logo 导航返回首页。窗口锁定通过透明输入门禁保留导航与页面标签，仅禁用内容交互。`control/icons` 的 SVG 按 `lock`、`navigation`、`server`、`ai`、`mod`、`security`、`file`、`action` 分类，`control/brand` 保存独立项目图标和 16:9 封面副本；`control` 管卡片、主题控件及操作区布局，`display` 持有全局圆形开关绘制和动画时钟，`control` 单向使用 `display`；`mod/ModPageRegistry` 只管 Mod 页面生命周期，由 window 注入挂载界面，不反向依赖 window。导航偏好由 `app/db/setting/ModNavigationPreferences` 持久化，导航和删除事务共用同一实现；`service/setting/StartupPageService` 经原桌面偏好存储读写非秘密页面身份，独立 `StartupPageLocation` 为 UI 提供纯值，主窗口捕获正常关闭位置，启动装配在 Mod 发布完成后恢复。官方部署的 `ui/DeploymentWorkspace` 按原后台模式偏好选择标准/辅助或自主页面，持有标准、自主、应用管理和环境准备四个按需创建的实际页面，负责环境转发及清理重试；`ui/style/DeploymentPageStyle` 只使用 Swing 主题值，不依赖宿主 UI 类。
 
 CLASS 调试预览经 `appapi.ui.UiService.registerPreview` 独立登记，受原作者提交、锁定与关闭约束；不进入普通导航，JAR/APP 未装预览宿主。平台预览只持显示控件，Mod 预览只捕获不可变示例，不持任务、数据库、SSH 或模型能力。
 
@@ -692,16 +701,21 @@ CLASS 调试预览经 `appapi.ui.UiService.registerPreview` 独立登记，受�
 | `ai` | 严格模型协议、提案值及可执行动作格式校验。 |
 | `file`、`file/git` | 本地筛选、固定 Git 取材、清单及归档；平台持目录、快照和临时空间寿命。 |
 | `service/core/model`、`config` | 共用纯值、配置和不可变修订；config 可依赖 model，model 不反向依赖 config。 |
-| `service/core` | 共用业务接线；`DeploymentProjectSourceRecorder` 接通取材和 `db/DeploymentProjectStore`，纯值与仓库不依赖取材实现。 |
+| `service/core` | 共用业务接线；`DeploymentSourceSelectionService` 在原短任务关闭后返回位置元数据，标准和自主引擎各自在正式任务重新准入并冻结；`DeploymentProjectSourceRecorder` 接通取材和 `db/DeploymentProjectStore`，纯值与仓库不依赖取材实现。 |
 | `service/core/execution` | 受管应用管理、原任务执行和恢复流程。 |
 | `service/core/delivery` | 已审阅内容的整应用交付和原任务正式提交，通过窄端口装配存储、远端与恢复能力。 |
 | `service/standard/analyze` | 确定性源码事实、语言和构建识别，不执行构建。 |
 | `service/standard/deploy` | 运行输入、计划、候选构建、发布；assistance 承担只读建议与修订门禁。 |
 | `service/agent` | 自主提案、任务、工具及恢复编排，不调用标准引擎算法。 |
+| `service/environment` | 原服务器端点及指纹绑定的准备、独立系统审阅、固定工具链/OpenSSH 与原操作核对。 |
+| `service/feedback` | 原任务阶段事件、有界所属日志读取；不从作者业务结果推断宿主收尾。 |
 | `db` | 私有 Schema、业务事务、不可变发布历史与原操作账本；只访问本 Mod 的表。 |
 | `secret` | 精确用途、不可变秘密修订、业务引用及发布绑定。 |
 | `linux` | 固定 helper 和回执协议，通过公开受管会话执行，不持原始 SSHD 对象。 |
 | `ui` | 本 Mod 用例和公开 UI 合同；不直达 db、模型执行或远端能力。 |
+| `ui/component`、`ui/runtime` | 手工组件和运行输入、原字段错误定位及键盘帮助；编辑值逐次回交业务校验。 |
+| `ui/feedback`、`ui/delivery` | 观察实际原句柄，宿主终态成功后查询原发布交付；清空锁定/关闭值，仅撤销视图短读。 |
+| `ui/environment`、`ui/style` | 环境准备的显式目标和原任务反馈，复用所属主题表单与高级窗口。 |
 
 `DeploymentReleaseSnapshot`、`DeploymentReleaseRecord`、`DeploymentReleaseIdentity` 保留完整运行图及配置/秘密引用；`DeploymentReleaseCodec` 管版本和内容摘要，Store 管历史与复用，Checker 只读核验跨记录一致性。`DeploymentJsonDocument` 共用严格 JSON 原语；`DeploymentUnitCommit` 仅为 db 写入输入，不使 model 依赖 config。
 
@@ -712,7 +726,7 @@ CLASS 调试预览经 `appapi.ui.UiService.registerPreview` 独立登记，受�
 1. APP 固定启动配置保存于 `app/config` 的 `src/main/resources/gold/debug/windowstolinux/app/config/config.yaml`，随 Config JAR 发布，由加载器通过 classpath 读取；main 加载一次并注入不可变快照。Config 不依赖其他项目模块，消费者单向依赖。字段与允许值仅维护于 [Config.md](Config.md)。APP 用户设置、模型目录和运行状态由平台 H2 仓库保存；deployment 的配置实例、不可变修订、运行事实和发布账本由其自有 Schema 保存。平台不按表名读取 Mod 私有业务。
 2. Mod 可按需建立对应 APP 的第一层 `config` 职责包，在入口加载自身 YAML 与不可变配置，不依赖 APP Config 实现，也不访问其他 Mod 私有配置；默认 YAML 随所属 JAR 资源发布。现有 deployment 业务配置快照及载荷编码继续归 `service/core/config`，来源绑定运行默认值归 `service/standard/deploy/input`；这些纯规则不读写平台数据库，不暴露原始远程能力。
 3. 普通配置只保存精确不可变秘密 ID/修订引用。APP 的秘密能力负责保护与权限，Mod 只保存所属业务引用；明文值、可清零缓冲和调用方借用数组按真实所有权处理，不用显示文本表达秘密身份。
-4. APP 的 CLASS/JAR 根解析归 `app/main/runtime`，装配归 `app/main/start`。平台 UI 使用所属功能中的服务接口、只读值与明确门面，Mod UI 使用自己的用例和原公开 TaskContext，不绕过授权访问内部仓库。
+4. APP 的 CLASS/JAR 根解析归 `app/main/runtime`，装配归 `app/main/start`。平台 UI 使用所属功能中的服务接口、只读值与明确门面，Mod UI 使用自己的用例和原公开 TaskContext，不绕过授权访问内部仓库。部署审批与授权策略选择归 `mod/deployment/ui/DeploymentPreferenceSelection` 和所属 `db/DeploymentPreferences`，由实际部署任务捕获；APP 不保留独立 `AuthorizationSettingsPane`、挂载入口或全局策略选择控件。
 
 服务器和秘密的精确原资源/业务键找回由 appapi 声明、service 校验原任务与代次、db 查询自身登记；不新增预留或秘密。Mod 保存原恢复事实与自己的业务结果，平台不读取 Mod 私有表。
 
@@ -899,7 +913,7 @@ mod/deployment ──→ appapi, mod/git
 | `linux` | `linux.session`、`linux.transfer`、`server.model`、`task.result`、`task.run` |
 | `linux.action` | `linux.command`、`linux.transfer`、`server.model`、`task.action` |
 | `linux.command` | 无，仅使用 JDK。 |
-| `linux.session` | `linux.command`、`linux.transfer`、`task.action`、`task.result` |
+| `linux.session` | `linux.command`、`linux.transfer`、`server.model`、`task.action`、`task.result` |
 | `linux.transfer` | `server.model` |
 | `mod` | `ai`、`db`、`file`、`linux`、`mod.lifecycle`、`mod.model`、`mod.service`、`secret`、`server`、`task`、`task.action`、`task.log`、`task.process`、`ui` |
 | `mod.lifecycle` | 无，仅使用 JDK。 |

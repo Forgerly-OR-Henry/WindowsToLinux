@@ -217,7 +217,6 @@ public final class ApplicationLauncher {
         window.installRecovery(recovery);
         window.installModels(models);
         window.installTransfers(runtime.transfers());
-        window.installAuthorization(runtime.authorization());
         window.installFileSettings(runtime.fileSettings());
         window.installAppearance(appearance, requested -> {
             try (var authorized = runtime.security().beginTask()) {

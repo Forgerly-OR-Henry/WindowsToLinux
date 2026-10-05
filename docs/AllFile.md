@@ -110,7 +110,10 @@ WindowsToLinux/
    │  │  │  ├─ TaskLedger.java  # 独立于业务 SQL 持久化原子准入及实际资源释放
    │  │  │  ├─ TaskRecoveryGraph.java  # 任务准入前捕获的精确代码及数据身份
    │  │  │  ├─ TaskResource.java  # 由平台适配器确定归属的内部资源申请
-   │  │  │  └─ TaskResourceObservation.java  # 对任务收尾所用相同显式资源判据进行只读观察
+   │  │  │  ├─ TaskResourceObservation.java  # 对任务收尾所用相同显式资源判据进行只读观察
+   │  │  │  ├─ WorkflowRecoveryStore.java  # 仅释放前次启动宿主流程占用，不授予权限
+   │  │  │  └─ metadata/  # 原任务元数据的严格取消意图编解码
+   │  │  │     └─ TaskCancellationDocument.java  # 既有宿主任务元数据内严格的正交取消意图
    │  │  └─ resources/  # 随附运行资源
    │  │     └─ schema/  # Schema 准备与管理
    │  │        └─ platform-v1.sql  # 当前模块的数据库结构与权限脚本
@@ -325,6 +328,7 @@ WindowsToLinux/
    │  │     ├─ PlatformTaskAdmission.java  # 根据当前启动的权威平台登记解析任务归属
    │  │     ├─ PlatformTaskManagement.java  # 将明确桌面操作路由到原任务及宿主救援确认边界
    │  │     ├─ PlatformTaskRuntime.java  # 在持久化准入后运行绑定调用方的作者工作，并保留未完成归属
+   │  │     ├─ PlatformWorkflowAdmission.java  # 读取宿主委托所需的完整原根服务器准入
    │  │     ├─ TaskCapabilityScope.java  # 跟踪同步平台能力操作，直至物理和持久释放完成
    │  │     └─ TaskManagement.java  # 宿主任务清单及明确原任务操作
    │  ├─ ui/  # 平台 Swing 界面与公共控件
@@ -374,7 +378,6 @@ WindowsToLinux/
    │  │  │  ├─ ServerProfileDialog.java  # 独立服务器配置编辑窗口，连接检查是单独动作
    │  │  │  └─ SshRecoveryDialog.java  # 非模态人工登录交接及精确命令批准
    │  │  ├─ setting/  # 平台文件等设置界面
-   │  │  │  ├─ AuthorizationSettingsPane.java  # 独立于 AI 审批，仅编辑持久平台策略
    │  │  │  ├─ FileSettingsPane.java  # 仅编辑可选说明偏好，保留持久确认及隐私门禁
    │  │  │  ├─ LogSettingsPane.java  # 仅宿主的诊断清单、有界记录视图及明确历史清理
    │  │  │  ├─ NavigationOrderPane.java  # 外观内的平台和固定 Mod 入口排序
@@ -567,7 +570,8 @@ WindowsToLinux/
    │  │  │  └─ CommandResult.java  # 不推断未观察退出状态的远端输出
    │  │  ├─ session/  # 受管 SSH 会话及已认证主机观测
    │  │  │  ├─ RemoteFacts.java  # 已观察的远端平台与认证主机指纹
-   │  │  │  └─ RemoteSession.java  # 产生副作用时需要已审核授权的受管 SSH 会话
+   │  │  │  ├─ RemoteSession.java  # 产生副作用时需要已审核授权的受管 SSH 会话
+   │  │  │  └─ RemoteTarget.java  # 不含秘密的固定连接预期，复制它不授予任务权限
    │  │  └─ transfer/  # 传输请求、进度、冲突、停滞与恢复依据
    │  │     ├─ TransferCheckpoint.java  # 持久原传输描述；恢复前由宿主重新加载其事实
    │  │     ├─ TransferConflict.java  # 解决冲突前展示的精确文件端点及实测大小
@@ -616,11 +620,13 @@ WindowsToLinux/
    │  │  │  ├─ ActionTarget.java  # 准入服务器上已解析的业务目标，不是本地化标签或按钮名称
    │  │  │  ├─ ApprovalGrant.java  # 授权效力由宿主核实的不透明审批标识
    │  │  │  ├─ AuthorizationMode.java  # 为一个用户启动流程捕获的平台权限策略，独立于 AI 审批
-   │  │  │  └─ InteractionService.java  # 绑定已接纳任务的宿主审核及输入交互
+   │  │  │  ├─ InteractionService.java  # 绑定已接纳任务的宿主审核及输入交互
+   │  │  │  └─ WorkflowGrant.java  # 仅覆盖原任务回调的宿主签发委托
    │  │  ├─ log/  # 所属日志登记、事件及实际写入结果
    │  │  │  ├─ LogCategory.java  # 包含可选作者日志表的所属诊断类别
    │  │  │  ├─ LogEvent.java  # 不得包含凭据材料的诊断事件
    │  │  │  ├─ LogLevel.java  # 独立于业务操作状态的诊断级别
+   │  │  │  ├─ LogReadResult.java  # 一个原所属目标的有界脱敏诊断
    │  │  │  ├─ LogService.java  # 明确返回存储结果的所属结构化诊断服务
    │  │  │  ├─ LogStorage.java  # 不猜测持久化成功的实际诊断存储结果
    │  │  │  ├─ LogTarget.java  # 当前日志所有者的不透明已登记目的地
@@ -662,6 +668,7 @@ WindowsToLinux/
    │  │     ├─ PageFactory.java  # 页面重新打开时创建新视图的惰性工厂
    │  │     ├─ PageRegistration.java  # 关闭时释放已打开视图的所属页面注册
    │  │     ├─ PageSpec.java  # 唯一根工作区身份或主导航之外的设置/预览扩展
+   │  │     ├─ PlatformPageKind.java  # 不含私有控件或配置权限的固定平台目的地
    │  │     └─ UiEnvironment.java  # 当前宿主语言、主题及锁定状态
    │  └─ resources/  # 随公开 API 发布的版本资源
    │     └─ build.properties  # 由当前构建生成 API 版本
@@ -676,13 +683,22 @@ WindowsToLinux/
    │  │  │  ├─ DeploymentAgentPlanProtocol.java  # 将严格自主图转换为既有类型化部署值
    │  │  │  ├─ DeploymentAgentProposal.java  # 一项严格串行的自主工具请求
    │  │  │  ├─ DeploymentAgentProtocol.java  # 不具执行权限的严格自主动作模式
-   │  │  │  └─ DeploymentAiJson.java  # 通过真实平台 AI 能力发送有界的部署专用 JSON 请求
+   │  │  │  ├─ DeploymentAiJson.java  # 通过真实平台 AI 能力发送有界的部署专用 JSON 请求
+   │  │  │  ├─ DeploymentAuthorizationPolicy.java  # 将独立审核风险与已抓取人工授权重复策略分开
+   │  │  │  ├─ DeploymentCommandEvidence.java  # 增补完整可执行输入，受保护数据载荷继续保持不透明
+   │  │  │  ├─ DeploymentCommandReviewScope.java  # 增补原任务命令审核，原样借用所有真实所有者能力
+   │  │  │  ├─ DeploymentCommandStaticGate.java  # 在模型审核或候选准备前拒绝明确的灾难性目标
+   │  │  │  ├─ DeploymentFixedCommandApproval.java  # 获取精确原宿主许可前审核实际固定命令
+   │  │  │  ├─ DeploymentLowRiskRequiredException.java  # 要求不同且独立审核的低风险动作的已知未发送拒绝
+   │  │  │  └─ DeploymentWorkflowAuthorization.java  # 仅按已抓取部署策略开启真实宿主所属原流程作用域
    │  │  ├─ api/  # 向其他 Mod 公开的应用与部署管理合同
+   │  │  │  ├─ ApplicationAutostartState.java  # 实际自动启动观察，包括混合组件事实
    │  │  │  ├─ ApplicationRunState.java  # 已验证的应用运行状态或明确未知
    │  │  │  ├─ DeploymentActivation.java  # 已验证目标激活与清理结果
    │  │  │  ├─ DeploymentApi.java  # 公开部署快照、生命周期与备份交接服务
    │  │  │  ├─ DeploymentApplicationId.java  # 稳定部署应用与精确服务器身份
    │  │  │  ├─ DeploymentApplicationSnapshot.java  # 应用事实副本；只有检查会刷新远端状态
+   │  │  │  ├─ DeploymentApplicationUsage.java  # 仅从精确完整活动发布复制的无秘密用法
    │  │  │  ├─ DeploymentArtifact.java  # 一次采集所属的已验证远端产物
    │  │  │  ├─ DeploymentBinding.java  # 不含部署私有模型类型的已审阅数据绑定
    │  │  │  ├─ DeploymentCollection.java  # 采集进度与精确结果产物
@@ -733,9 +749,6 @@ WindowsToLinux/
    │  │  │  ├─ DeploymentReviewedPlanDigest.java  # 稳定的执行前审阅身份，区别于最终发布清单身份
    │  │  │  ├─ DeploymentRuntimeCodec.java  # 单个已审阅非秘密运行时定义的严格版本化存储编解码器
    │  │  │  ├─ DeploymentSchema.java  # 通过公开受管 JDBC 初始化并读取固定官方部署结构
-   │  │  │  ├─ DeploymentSchemaMigration.java  # 将两个作者定义的部署迁移边复制到独立受保护代次
-   │  │  │  ├─ DeploymentSchemaMigration12.java  # 将精确结构1复制到独立结构2代次，不改变来源
-   │  │  │  ├─ DeploymentSchemaMigration23.java  # 将精确结构2复制到独立结构3代次，不改变来源
    │  │  │  ├─ DeploymentSecretStore.java  # 持久化不可变秘密元数据和精确发布关联，不读取明文
    │  │  │  ├─ DeploymentStoragePathCodec.java  # 经审阅非秘密组件数据路径的严格版本化存储编解码器
    │  │  │  ├─ DeploymentStorageTransaction.java  # 提交所属业务事务，不将不确定的确认误记为已失败
@@ -763,6 +776,8 @@ WindowsToLinux/
    │  │  │  ├─ DeploymentBuildCommandChannel.java  # 仅通过借用且经宿主审核的会话发送固定 helper 构建动作
    │  │  │  ├─ DeploymentBuildOutputProtocol.java  # 将不超过已审阅构建输出限制的流转换成固定短回执
    │  │  │  ├─ DeploymentCandidateChannel.java  # 发送固定上传前探测、任务所属候选创建及一次精确归档传输
+   │  │  │  ├─ DeploymentCommandReview.java  # 模式所属审核在真实宿主许可前接收完整不可变请求
+   │  │  │  ├─ DeploymentCommandReviews.java  # 按所属模式路由固定命令，不替换宿主权限
    │  │  │  ├─ DeploymentContainerArguments.java  # 将受约束的容器运行模型转换为确定性的辅助程序参数
    │  │  │  ├─ DeploymentEcosystemCapabilityProbe.java  # 渲染只读语言与构建工具能力探测
    │  │  │  ├─ DeploymentHelperInstallerScript.java  # 共用 helper 及隔离安装，不选择项目语言
@@ -797,6 +812,7 @@ WindowsToLinux/
    │  │  │  │  ├─ DeploymentAgentModels.java  # 将部署、审批及发送绑定到一份明确采用的模型修订
    │  │  │  │  ├─ DeploymentAgentPageService.java  # 提供自主专用页面查询与原任务接纳
    │  │  │  │  ├─ DeploymentAgentProjectChannel.java  # 仅经任务所属已审核 SSH 会话发送旧受保护 agent helper 动作
+   │  │  │  │  ├─ DeploymentAgentQuestionScope.java  # 仅解析明确的任务所属问题范围，复合Shell动作保留精确绑定
    │  │  │  │  ├─ DeploymentAgentRecovery.java  # 仅核对自主任务留存的原提案与远端影响
    │  │  │  │  ├─ DeploymentAgentRemoteTools.java  # 将原认证任务适配至受保护自主工具与共用发布
    │  │  │  │  ├─ DeploymentAgentReview.java  # 具精确策略及人工升级的独立动作审核者
@@ -805,11 +821,13 @@ WindowsToLinux/
    │  │  │  ├─ core/  # 各部署模式共用的流程和纯值
    │  │  │  │  ├─ DeploymentGitSourceActionLog.java  # 在宿主所属作者检查点上原子推进的有界原任务 Git 依据
    │  │  │  │  ├─ DeploymentGitSourceFlow.java  # 执行一次已审阅 Git 项目任务，并仅核对其原持久依据
+   │  │  │  │  ├─ DeploymentProjectSaveActionLog.java  # 写入前记录一次完整本地项目 CAS，不保留来源授权
    │  │  │  │  ├─ DeploymentProjectSourceRecorder.java  # 准备本机授权来源，并保存实际位置与冻结摘要；Git使用原记账Flow
    │  │  │  │  ├─ DeploymentPublish.java  # 可供一次本机原子发布的作者已核实结果
    │  │  │  │  ├─ DeploymentPublishPlan.java  # 平台预留前已具备的不可变审阅发布事实
    │  │  │  │  ├─ DeploymentRefFlow.java  # 提交真实发布任务，并在不重放副作用的条件下核对原引用
    │  │  │  │  ├─ DeploymentRemoteRecovery.java  # 由Mod装配的窄原任务发布恢复边界
+   │  │  │  │  ├─ DeploymentSourceSelectionService.java  # 仅在原选择器授权关闭后返回本地位置元数据
    │  │  │  │  ├─ config/  # 部署配置值、作用范围与不可变配置快照
    │  │  │  │  │  ├─ DeploymentConfigEntry.java  # 不可变配置快照中的一个经过类型检查的非秘密值
    │  │  │  │  │  ├─ DeploymentConfigInput.java  # 解析桌面端有界构建/运行配置记法
@@ -822,6 +840,7 @@ WindowsToLinux/
    │  │  │  │  │  └─ DeploymentOriginalPublishCommit.java  # 在已接纳原任务内以精确引用保护提交经核实图
    │  │  │  │  ├─ execution/  # 原任务来源采集、管理操作与恢复流程
    │  │  │  │  │  ├─ DeploymentApiProvider.java  # 部署所属同步API，每次调用均留在已认证根任务下
+   │  │  │  │  │  ├─ DeploymentApplicationHosts.java  # 仅为本地用法投影读取绑定调用方的非秘密已配置主机
    │  │  │  │  │  ├─ DeploymentApplicationList.java  # 合并已存正式发布与接管运行记录，不观察远端服务器
    │  │  │  │  │  ├─ DeploymentApplicationPresentation.java  # 仅编辑本地展示信息，保留已审阅运行与发布身份
    │  │  │  │  │  ├─ DeploymentApplicationReader.java  # 在一份所属快照中读取完整已发布应用，排除草稿及未确认发布
@@ -934,7 +953,21 @@ WindowsToLinux/
    │  │  │  │        ├─ DeploymentToolchainCatalog.java  # 唯一可注入构建分支目录，补丁由官方发布发现提供
    │  │  │  │        ├─ DeploymentToolchainSelectionPolicy.java  # 准备与有界构建重试共用的纯选择规则
    │  │  │  │        └─ ToolchainRequirement.java  # 即使没有构建候选也保留源码声明
+   │  │  │  ├─ environment/  # 原端点环境准备、独立审阅及中断核对
+   │  │  │  │  ├─ DeploymentEnvironmentCommandReview.java  # 模块运行资源
+   │  │  │  │  ├─ DeploymentEnvironmentHelper.java  # 使用原环境操作保存 helper 回执，包括不创建另一检查点的恢复
+   │  │  │  │  ├─ DeploymentEnvironmentJournal.java  # 严格原任务 CAS 依据，恢复不能重新创建已发送副作用
+   │  │  │  │  ├─ DeploymentEnvironmentObservation.java  # 精确有界的原主机观测及回执
+   │  │  │  │  ├─ DeploymentEnvironmentPending.java  # 停止后续发送并保留精确原操作依据
+   │  │  │  │  ├─ DeploymentEnvironmentProfiles.java  # 原实现自有软件包配置，调用者不能选择任意软件包
+   │  │  │  │  ├─ DeploymentEnvironmentRunner.java  # 推进一项原环境操作，后续认证前关闭每个物理会话
+   │  │  │  │  ├─ DeploymentEnvironmentScripts.java  # 固定完整审核资源，不含调用方提供的 Shell 或软件包
+   │  │  │  │  ├─ DeploymentEnvironmentState.java  # 由宿主检查点保留的小型非秘密原操作依据
+   │  │  │  │  └─ DeploymentEnvironmentWorkflow.java  # 原服务器独占环境业务任务及明确恢复
+   │  │  │  ├─ feedback/  # 原任务阶段与有界脱敏日志读取
+   │  │  │  │  └─ DeploymentDiagnostics.java  # 使用既有所属诊断类别记录实际任务阶段及结果
    │  │  │  └─ standard/  # 确定性分析、辅助建议与标准部署流程
+   │  │  │     ├─ DeploymentComponentSelection.java  # 校验审阅图，并从明确输入派生根，不要求属于发现全集
    │  │  │     ├─ DeploymentDatabasePlanActionLog.java  # 每项计划数据库子操作的有界原任务索引
    │  │  │     ├─ DeploymentDatabaseStages.java  # 将整份源码数据库校验与原任务原生效果分开
    │  │  │     ├─ DeploymentNativeDatabaseActionLog.java  # 一项串行原生数据库操作的原任务非秘密身份
@@ -944,7 +977,10 @@ WindowsToLinux/
    │  │  │     ├─ DeploymentProtocolBootstrapActionLog.java  # 共用 helper 首次安装的原任务身份与效果阶段
    │  │  │     ├─ DeploymentStaticAssistance.java  # 在确定性流程内组织来源建议、人工审阅及辅助发布身份
    │  │  │     ├─ DeploymentStaticPageService.java  # 绑定页面只读服务器查询及原发布任务，但不持有 Swing 视图
+   │  │  │     ├─ DeploymentStaticProjectSave.java  # 在原任务中仅保存一次已审阅发布来源
+   │  │  │     ├─ DeploymentStaticRuntimeDraft.java  # 在来源建议之后应用明确非秘密运行预填，保留组件资源范围
    │  │  │     ├─ DeploymentStaticSetupActionLog.java  # 有界原静态准备身份；原生数据库效果另须原操作回执核对
+   │  │  │     ├─ DeploymentStaticSourceService.java  # 执行来源预选及完整项目保存，不跨任务分享活动授权
    │  │  │     ├─ DeploymentStaticSourceSetup.java  # 冻结图来源归档，仅释放原已确认准备资源
    │  │  │     ├─ DeploymentStaticTaskRecovery.java  # 本机清理前核对原发布前素材及原生数据库回执；正式执行仍由原恢复处理
    │  │  │     ├─ DeploymentStaticUnitResolver.java  # 解析原受管所有者，首次发布则生成尚未持久化的随机所有者
@@ -1170,6 +1206,7 @@ WindowsToLinux/
    │  │  │        │  ├─ ApplicationSpec.java  # 两端共用的有界应用声明与补填值
    │  │  │        │  ├─ DeploymentDatabaseReviewModeType.java  # 区分尚未审阅、已审阅且为空及一种已审阅数据库族
    │  │  │        │  ├─ DeploymentReviewField.java  # 向审阅人请求的一项不含秘密的运行输入
+   │  │  │        │  ├─ DeploymentReviewFieldException.java  # 标识实际无效输入，不在界面诊断暴露输入值
    │  │  │        │  ├─ DeploymentStaticInputParser.java  # 解析桌面端有界运行时、数据库、秘密引用与 Git 引用记法
    │  │  │        │  ├─ DeploymentStaticRuntimeResolver.java  # 解析有源码依据的运行时默认值，并校验与手动部署相同的领域对象
    │  │  │        │  └─ DeploymentStoragePlan.java  # 解析已审阅存储并拒绝原有重叠和保留路径
@@ -1192,6 +1229,8 @@ WindowsToLinux/
    │  │  │        │  ├─ DeploymentPublishCleanupActionLog.java  # 保留原远端候选和清理依据，直至所有实际清理均已确认
    │  │  │        │  ├─ DeploymentPublishCleanupAttempt.java  # 持久化一项原清理尝试，同时区分宿主拒绝与发送未确认
    │  │  │        │  ├─ DeploymentPublishOperationBinding.java  # 要求实际后续候选匹配真实正式已消费当前操作
+   │  │  │        │  ├─ DeploymentPublishPolicyContext.java  # 在准备、每次连接及明确恢复间共用一份原发布策略
+   │  │  │        │  ├─ DeploymentPublishPolicyFacts.java  # 保留原发布策略及认证 wire，不读取后续偏好
    │  │  │        │  ├─ DeploymentPublishRecoveryFacts.java  # 已校验原非秘密事实，绝不由路径或当前远端状态推断
    │  │  │        │  ├─ DeploymentPublishRestorationProof.java  # 另一独立操作可审阅前读取每个已恢复原单元
    │  │  │        │  ├─ DeploymentPublishStaging.java  # 封存单组件已审阅非秘密配置及瞬时秘密值
@@ -1221,25 +1260,38 @@ WindowsToLinux/
    │  │  │  ├─ DeploymentAgentEvidencePanel.java  # 展示原依据及明确安全边界控件，不持有任务能力
    │  │  │  ├─ DeploymentAgentGitForm.java  # 持有实际不含凭据的固定Git输入控件
    │  │  │  ├─ DeploymentAgentPage.java  # 用于本地或固定 Git 任务的自主专属所属页面
+   │  │  │  ├─ DeploymentAgentSourceControls.java  # 在任务准入前抓取一个自主本地位置或不含凭据的Git远端
    │  │  │  ├─ DeploymentApplicationsPage.java  # 展示已保存应用并接纳精确所属管理动作
    │  │  │  ├─ DeploymentGitSourceForm.java  # 持有仅 Git 可见输入并构建一项不含凭据的经审阅请求
-   │  │  │  ├─ DeploymentPageStyle.java  # 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现
+   │  │  │  ├─ DeploymentLocalSourceControls.java  # 共用本地元数据选择，保留每个原短任务至宿主完成
    │  │  │  ├─ DeploymentPreferenceSelection.java  # 持久化明确视图编辑，不写初始化或语言变化
    │  │  │  ├─ DeploymentRuntimePreview.java  # 以固定值复用普通运行控件，不持有任务、数据库、SSH或模型能力
    │  │  │  ├─ DeploymentSecretRefField.java  # 将既有精确业务修订添加到高级无秘密引用字段
+   │  │  │  ├─ DeploymentSourceControls.java  # 持有所选来源元数据及完整项目草稿，不持有活动文件授权
    │  │  │  ├─ DeploymentStaticPage.java  # 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务
    │  │  │  ├─ DeploymentStaticPageReviewer.java  # 将当前所属视图的一次决定转换为类型化静态审阅值
    │  │  │  ├─ DeploymentStaticPasswordInput.java  # 不保留迟到 EDT 字符地获取一次性所属 UTF-8 密码
    │  │  │  ├─ DeploymentStaticSecretControls.java  # 管理单页发布前秘密创建及不含明文的修订选项
-   │  │  │  └─ DeploymentWorkspace.java  # 在唯一已发布根内持有按需创建的部署视图
+   │  │  │  ├─ DeploymentTargetControls.java  # 保持明确目标身份，仅导航到固定公开宿主目标
+   │  │  │  ├─ DeploymentWorkspace.java  # 在唯一已发布根内持有按需创建的部署视图
+   │  │  │  ├─ component/  # 手工多组件编辑及原输入保留
+   │  │  │  │  └─ DeploymentComponentEditor.java  # 源码分析前编辑实际图，保留全部明确组件边界
+   │  │  │  ├─ delivery/  # 已核实公开端点与固定命令的桌面动作
+   │  │  │  │  └─ DeploymentDeliveryPanel.java  # 复用已核实且带组件身份的交付，不解码不透明运行数据
+   │  │  │  ├─ environment/  # 显式目标环境准备及原任务反馈
+   │  │  │  │  └─ DeploymentEnvironmentPage.java  # 经真实可恢复环境流程准备明确选定的原服务器
+   │  │  │  ├─ feedback/  # 原句柄持续观察与成功后精确交付查询
+   │  │  │  │  ├─ DeploymentTaskDelivery.java  # 仅在原宿主完成后读取精确交付
+   │  │  │  │  └─ DeploymentTaskFeedback.java  # 持续观察一个原句柄，不提交轮询任务
+   │  │  │  ├─ runtime/  # 运行预填、原字段校验与键盘帮助
+   │  │  │  │  ├─ DeploymentReviewInputs.java  # 创建带可访问字段帮助及有界多行声明的真实编辑输入
+   │  │  │  │  └─ DeploymentRuntimeDraftForm.java  # 保留明确非秘密启动前输入，来源建议仅补未编辑值
+   │  │  │  └─ style/  # 复用主题值的所属表单与高级窗口排版
+   │  │  │     └─ DeploymentPageStyle.java  # 仅使用 Swing 主题值的 Mod 本地展示，不访问宿主实现
    │  │  └─ resources/  # 随附运行资源
    │  │     ├─ db/  # 数据库实现
    │  │     │  ├─ schema-v1.sql  # 当前模块的数据库结构与权限脚本
-   │  │     │  ├─ schema-v2.sql  # 当前模块的数据库结构与权限脚本
-   │  │     │  ├─ schema-v3.sql  # 当前模块的数据库结构与权限脚本
-   │  │     │  ├─ validation-v1.sql  # 当前模块的数据库结构与权限脚本
-   │  │     │  ├─ validation-v2.sql  # 当前模块的数据库结构与权限脚本
-   │  │     │  └─ validation-v3.sql  # 当前模块的数据库结构与权限脚本
+   │  │     │  └─ validation-v1.sql  # 当前模块的数据库结构与权限脚本
    │  │     ├─ linux/  # Linux 与受管远程能力
    │  │     │  ├─ distro/  # 发行版识别
    │  │     │  │  └─ dnf/  # DNF软件源
@@ -1321,17 +1373,32 @@ WindowsToLinux/
    │  │     │  └─ workspace/  # 受管工作区
    │  │     │     └─ source-operations.py  # 模块资源与配置
    │  │     ├─ service/  # 平台业务服务
-   │  │     │  └─ core/  # 公共业务事实
-   │  │     │     └─ execution/  # 执行协议
-   │  │     │        └─ external-applications.py  # 按已认证会话执行固定外部应用扫描与身份复核
+   │  │     │  ├─ core/  # 公共业务事实
+   │  │     │  │  └─ execution/  # 执行协议
+   │  │     │  │     └─ external-applications.py  # 按已认证会话执行固定外部应用扫描与身份复核
+   │  │     │  └─ environment/  # 固定工具链与原操作安全准备协议
+   │  │     │     ├─ environment.sh  # 模块运行资源
+   │  │     │     └─ selinux.sh  # 模块运行资源
    │  │     └─ ui/  # Swing 界面
+   │  │        ├─ delivery/  # 公开交付动作与状态的多语言文字
+   │  │        │  ├─ delivery.properties  # 模块运行资源
+   │  │        │  ├─ delivery_en.properties  # 模块运行资源
+   │  │        │  └─ delivery_zh.properties  # 模块运行资源
    │  │        ├─ deployment-agent-page_en.properties  # 当前模块的固定配置或语言资源
    │  │        ├─ deployment-agent-page_zh.properties  # 当前模块的固定配置或语言资源
    │  │        ├─ deployment-applications-page.properties  # 当前模块的固定配置或语言资源
    │  │        ├─ deployment-applications-page_en.properties  # 当前模块的固定配置或语言资源
    │  │        ├─ deployment-applications-page_zh.properties  # 当前模块的固定配置或语言资源
    │  │        ├─ deployment-page.properties  # 当前模块的固定配置或语言资源
-   │  │        └─ deployment-page_zh.properties  # 当前模块的固定配置或语言资源
+   │  │        ├─ deployment-page_zh.properties  # 当前模块的固定配置或语言资源
+   │  │        ├─ environment/  # 环境选择、审批与状态的多语言文字
+   │  │        │  ├─ environment-page.properties  # 模块运行资源
+   │  │        │  ├─ environment-page_en.properties  # 模块运行资源
+   │  │        │  └─ environment-page_zh.properties  # 模块运行资源
+   │  │        └─ feedback/  # 原任务动态反馈的多语言文字
+   │  │           ├─ task-feedback.properties  # 模块运行资源
+   │  │           ├─ task-feedback_en.properties  # 模块运行资源
+   │  │           └─ task-feedback_zh.properties  # 模块运行资源
    │  └─ git/  # 独立 Git Mod：受管仓库取材与固定提交素材服务
    │     ├─ pom.xml  # Maven 模块与依赖声明
    │     ├─ Mod.java  # 无页面或业务数据库的无状态 Git 来源服务生命周期

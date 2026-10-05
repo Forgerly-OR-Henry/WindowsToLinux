@@ -42,6 +42,12 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     /** Actual original-task static workflow. / 实际原任务静态流程。 */
     private final DeploymentStaticWorkflow workflow;
 
+    /** Original short source and project tasks. / 原短来源及项目任务。 */
+    private final DeploymentStaticSourceService sources;
+
+    /** Original task progress and bounded owned log reader. / 原任务进度及有界所属日志读取器。 */
+    private final gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics feedback;
+
     /** Existing original-task secret creation. / 既有原任务秘密创建。 */
     private final DeploymentSecretProvisionFlow secrets;
 
@@ -57,8 +63,39 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     public DeploymentStaticPageService(ModContext context, DeploymentStaticWorkflow workflow) {
         this.context = Objects.requireNonNull(context);
         this.workflow = Objects.requireNonNull(workflow);
+        this.sources = new DeploymentStaticSourceService(context);
+        this.feedback = new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context);
         this.secrets = new DeploymentSecretProvisionFlow(context);
         this.revisions = new DeploymentSecretStore(context.db());
+    }
+
+    /** Returns the same activation's original source task service for page use and recovery registration. / 返回同一启用的原来源任务服务，用于页面及恢复登记。
+     * @return original private source service / 原私有来源服务 */
+    public DeploymentStaticSourceService sources() {
+        return sources;
+    }
+
+    /** Returns only this activation's bounded original-task feedback. / 仅返回本次启用的有界原任务反馈。
+     * @return original feedback service / 原反馈服务 */
+    public gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics feedback() {
+        return feedback;
+    }
+
+    /** Reads delivery only for the exact successful original publication identity. / 仅为精确成功原发布身份读取交付。
+     * @param originalTaskUUID actual completed platform task UUID / 实际已完成平台任务 UUID
+     * @return original owned usage query without another deployment / 不另部署的原所属用法查询
+     * @throws ApiException if current original query admission is refused / 当前原查询准入被拒绝时 */
+    public TaskHandle<Optional<gold.debug.windowstolinux.mod.deployment.api.DeploymentApplicationUsage>> delivery(
+        java.util.UUID originalTaskUUID) throws ApiException {
+        return new gold.debug.windowstolinux.mod.deployment.service.core.execution.DeploymentApplicationsService(context)
+            .usageForCompletedTask(originalTaskUUID);
+    }
+
+    /** Opens a fixed host destination through the public owner UI boundary. / 经公开所属 UI 边界打开固定宿主目标。
+     * @param target explicit platform destination / 明确平台目标
+     * @throws ApiException if current owner UI access is refused / 当前所属 UI 访问被拒绝时 */
+    public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) throws ApiException {
+        context.ui().openPlatform(target);
     }
 
     /** Loads the owned page selection off the EDT, filling only missing defaults. / 在EDT外加载所属页面选择，仅补缺失默认值。
@@ -266,10 +303,26 @@ public final class DeploymentStaticPageService implements TaskRecovery {
     public synchronized TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
                                                 Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer,
                                                 boolean assisted, String approvalMode) throws ApiException {
+        return submit(server, draft, git, reviewer, assisted, approvalMode, "GENERAL");
+    }
+
+    /** Captures both deployment policies before admitting the actual original root. / 准入实际原根前抓取部署两项策略。
+     * @param server selected original target / 所选原目标
+     * @param draft frozen source choices / 冻结来源选择
+     * @param git optional pinned source / 可选固定来源
+     * @param reviewer actual original reviewer / 实际原审阅人
+     * @param assisted selected assisted execution / 所选辅助执行
+     * @param approvalMode frozen approval strategy / 冻结审批策略
+     * @param authorizationMode frozen authorization repetition / 冻结授权重复规则
+     * @return actual original handle / 实际原句柄
+     * @throws ApiException if original admission fails / 原准入失败时 */
+    public synchronized TaskHandle<Void> submit(ServerId server, DeploymentStaticWorkflow.Draft draft,
+                                                Optional<DeploymentStaticWorkflow.GitSource> git, DeploymentStaticWorkflow.Reviewer reviewer,
+                                                boolean assisted, String approvalMode, String authorizationMode) throws ApiException {
         if (active != null && active.snapshot().state() != TaskState.ENDED)
             throw new ApiException(new Problem(ProblemCode.BUSY, "DEPLOYMENT_STATIC_TASK_ACTIVE",
                 "An original deployment task is already active", Map.of(), Optional.empty()));
-        var handle = workflow.submit(server, draft, git, reviewer, assisted, approvalMode);
+        var handle = workflow.submit(server, draft, git, reviewer, assisted, approvalMode, authorizationMode);
         active = handle;
         handle.completion().whenComplete((ignored, failure) -> {
             synchronized (DeploymentStaticPageService.this) {

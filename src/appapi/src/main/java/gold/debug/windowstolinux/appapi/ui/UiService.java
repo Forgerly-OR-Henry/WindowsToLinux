@@ -3,6 +3,7 @@ package gold.debug.windowstolinux.appapi.ui;
 import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
 import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -34,6 +35,11 @@ public interface UiService {
      * @throws ApiException if validation, execution or actual cleanup fails / 校验、执行或实际清理失败时
      */
     void open(String localPageId) throws ApiException;
+
+    /** Opens an existing fixed platform destination under this published normal owner; navigation grants no data or action authority. / 在所属已发布普通所有者下打开已有固定平台目的地；导航不授予数据或动作权限。
+     * @param target fixed host destination / 固定宿主目的地
+     * @throws ApiException if unpublished, locked, stopping or not composed / 未发布、锁定、停止或未装配时 */
+    void openPlatform(PlatformPageKind target) throws ApiException;
 
     /**
      * Returns the current language, theme and lock state. / 返回当前语言、主题和锁定状态。

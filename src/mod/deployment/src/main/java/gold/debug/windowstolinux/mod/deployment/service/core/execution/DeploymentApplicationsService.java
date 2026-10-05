@@ -74,6 +74,38 @@ public final class DeploymentApplicationsService implements TaskRecovery {
             task -> success(new DeploymentApplicationList(context).list(task)));
     }
 
+    /** Reads selected exact active usage inside a fresh authorized short query. / 在新授权短查询内读取所选精确活动用法。
+     * @param selected original selected snapshot / 原所选快照
+     * @return actual owned usage query / 实际所属用法查询
+     * @throws ApiException if task admission fails / 任务准入失败时 */
+    public TaskHandle<DeploymentApplicationUsage> usage(DeploymentApplicationSnapshot selected) throws ApiException {
+        return query(List.of(selected.application().server().id()), "Application usage", task -> {
+            var server = context.servers().get(selected.application().server(), task);
+            return success(new DeploymentApplicationReader(context.db()).usage(selected, server.host(), task));
+        });
+    }
+
+    /** Resolves exact business delivery after the caller observed the original host handle ENDED and SUCCEEDED.
+     * This read verifies execution, formal release identity and the complete active graph; it cannot infer a removed host result.
+     * / 调用方已观察原宿主句柄ENDED且SUCCEEDED后解析精确业务交付；此读取核执行、正式发布身份及完整活动图，不推断已移除的宿主结果。
+     * @param originalTaskUUID actual original UUID whose host completion the caller already verified / 调用方已核实宿主完成的实际原UUID
+     * @return short query returning eligible original usage or absence / 返回符合条件原用法或无值的短查询
+     * @throws ApiException if current caller-bound admission fails / 当前绑定调用方的准入失败时 */
+    public TaskHandle<Optional<DeploymentApplicationUsage>> usageForCompletedTask(UUID originalTaskUUID) throws ApiException {
+        Objects.requireNonNull(originalTaskUUID);
+        return query(List.of(), "Original task delivery", task -> {
+            var data = new DeploymentApplicationReader(context.db()).findForCompletedTask(originalTaskUUID, task);
+            if (data.isEmpty())
+                return success(Optional.empty());
+            var original = data.orElseThrow();
+            var host = DeploymentApplicationHosts.require(DeploymentApplicationHosts.read(context, task),
+                original.snapshot().application().server());
+            var usage = DeploymentApplicationReader.projectUsage(original, host);
+            return success(usage.components().stream().anyMatch(value -> value.mode() == DeploymentApplicationUsage.Mode.UNVERIFIED)
+                ? Optional.empty() : Optional.of(usage));
+        });
+    }
+
     /** Loads configured scan targets. / 加载已配置扫描目标。
      * @return target query / 目标查询
      * @throws ApiException if admission fails / 准入失败时 */

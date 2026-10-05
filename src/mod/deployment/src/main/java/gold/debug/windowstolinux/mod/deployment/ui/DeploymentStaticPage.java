@@ -1,5 +1,10 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+
+import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentRuntimeDraftForm;
+import gold.debug.windowstolinux.mod.deployment.ui.runtime.DeploymentReviewInputs;
+
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
@@ -28,6 +33,37 @@ import gold.debug.windowstolinux.mod.deployment.service.standard.DeploymentStati
 
 /** Owner-bound static deployment page; task callbacks remain with their original task after a confirmed view closes. / 绑定所属者的静态部署页面；确认后视图关闭，任务回调仍留在原任务。 */
 public final class DeploymentStaticPage implements ModPage {
+    /** Holds actual source and non-secret runtime input surfaces until this page closes. / 持有真实来源及非秘密运行输入表面至本页关闭。 */
+    private static final class SourceForm {
+        /** Captured user name. / 抓取的用户名称。 */
+        private final JTextField name = new JTextField(24);
+
+        /** Explicit original source route. / 明确原来源路径。 */
+        private final JComboBox<SourceMode> mode = new JComboBox<>(SourceMode.values());
+
+        /** Localized name label. / 本地化名称标签。 */
+        private final JLabel label = new JLabel();
+
+        /** Actual Git fields, created after locale setup. / 语言设置后创建的实际 Git 字段。 */
+        private DeploymentGitSourceForm git;
+
+        /** Actual metadata and complete project edit controls. / 实际元数据及完整项目编辑控件。 */
+        private DeploymentSourceControls sources;
+
+        /** Actual editable runtime draft. / 实际可编辑运行草稿。 */
+        private DeploymentRuntimeDraftForm runtime;
+
+        /** Creates only inert controls. / 仅创建无副作用控件。 */
+        private SourceForm() {
+        }
+    }
+
+    /** Original source controls sharing one page lifetime. / 共用一次页面寿命的原来源控件。 */
+    private final SourceForm draft = new SourceForm();
+
+    /** Explicit target metadata and fixed destinations. / 明确目标元数据及固定目的页。 */
+    private DeploymentTargetControls targetControls;
+
     /** Related source-mode controls sharing one view lifetime. / 共用视图寿命的相关来源模式控件。 */
     private static final class ModeControls {
         /** Owned advanced window retaining original fields. / 保留原字段的所属高级窗口。 */
@@ -39,13 +75,6 @@ public final class DeploymentStaticPage implements ModPage {
 
         /** Explicit bounded-assistance opt-in. / 明确有界辅助选择。 */
         private final JCheckBox assisted = new JCheckBox();
-
-        /** Captured actual approval policy. / 已抓取实际审批策略。 */
-        private final JComboBox<String> approval = new JComboBox<>(
-            new String[]{"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"});
-
-        /** Locale-bound policy label. / 依语言变化的策略标签。 */
-        private final JLabel approvalLabel = new JLabel();
 
         /** Confirmed preference editing and original write observation. / 已确认偏好编辑及原写入观察。 */
         private DeploymentPreferenceSelection preferences;
@@ -81,17 +110,11 @@ public final class DeploymentStaticPage implements ModPage {
     /** Actual platform server choices. / 实际平台服务器选择。 */
     private final JComboBox<ServerInfo> servers = new JComboBox<>();
 
-    /** Reviewed logical source name. / 经审阅逻辑来源名。 */
-    private final JTextField sourceName = new JTextField(24);
-
-    /** Explicit source mode and Git inputs. / 明确来源模式及 Git 输入。 */
-    private final JComboBox<SourceMode> sourceMode = new JComboBox<>(SourceMode.values());
-
     /** Source-mode label and explicit assistance choice. / 来源模式标签与明确辅助选择。 */
     private final ModeControls modeControls = new ModeControls();
 
-    /** Git-only input component created after the locale is known. / 语言确定后创建的仅 Git 输入组件。 */
-    private DeploymentGitSourceForm gitForm;
+    /** Observes the original accepted task without changing its consent or lifecycle. / 观察原已接纳任务，不改变其同意或寿命。 */
+    private gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback feedback;
 
     /** Pre-publication secret choices and one-shot creation controls. / 发布前秘密选项及一次性创建控件。 */
     private DeploymentStaticSecretControls secretControls;
@@ -103,7 +126,7 @@ public final class DeploymentStaticPage implements ModPage {
     private final JButton start = new JButton();
 
     /** Current server label and source label. / 当前服务器与来源标签。 */
-    private final JLabel serverLabel = new JLabel(), sourceLabel = new JLabel();
+    private final JLabel serverLabel = new JLabel();
 
     /** Reload action. / 重新读取操作。 */
     private final JButton refreshButton = new JButton();
@@ -143,19 +166,13 @@ public final class DeploymentStaticPage implements ModPage {
     public DeploymentStaticPage(DeploymentStaticPageService service) {
         this.service = java.util.Objects.requireNonNull(service);
         modeControls.preferences = new DeploymentPreferenceSelection(actions, service::savePreferences,
-            () -> new gold.debug.windowstolinux.mod.deployment.db.DeploymentPreferences.Selection(
-                modeControls.assisted.isSelected() ? "ASSISTED" : "STATIC",
-                (String) modeControls.approval.getSelectedItem()),
-            selection -> {
-                modeControls.assisted.setSelected(selection.mode().equals("ASSISTED"));
-                modeControls.approval.setSelectedItem(selection.approval());
-            }, detail -> status.setText(text("preferenceError") + "\n" + detail), this::policyAvailability);
+            () -> modeControls.assisted.isSelected() ? "ASSISTED" : "STATIC",
+            selection -> modeControls.assisted.setSelected(selection.mode().equals("ASSISTED")),
+            detail -> status.setText(text("preferenceError") + "\n" + detail), this::policyAvailability);
         modeControls.assisted.setName("deployment.preference.assisted");
-        modeControls.approval.setName("deployment.preference.approval");
         modeControls.assisted.addActionListener(ignored -> modeControls.preferences.changed());
-        modeControls.approval.addActionListener(ignored -> modeControls.preferences.changed());
         servers.setRenderer((list, value, index, selected, focus) -> {
-            var label = new JLabel(value == null ? "" : value.name() + " (" + value.host() + ")");
+            var label = new JLabel(value == null ? text("target.select") : value.name() + " (" + value.host() + ")");
             label.setOpaque(true);
             label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
             label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
@@ -175,34 +192,45 @@ public final class DeploymentStaticPage implements ModPage {
         locked = environment.locked();
         root.setBorder(BorderFactory.createEmptyBorder(18, 20, 18, 20));
         servers.setName("deployment.server");
-        sourceName.setName("deployment.sourceName");
-        sourceMode.setName("deployment.sourceMode");
+        draft.name.setName("deployment.sourceName");
+        draft.mode.setName("deployment.sourceMode");
         status.setName("deployment.status");
         var controls = DeploymentPageStyle.form();
         serverLabel.setText(text("server"));
 
-        sourceLabel.setText(text("sourceName"));
-        DeploymentPageStyle.field(controls, sourceLabel, sourceName);
+        draft.label.setText(text("sourceName"));
+        DeploymentPageStyle.field(controls, draft.label, draft.name);
         modeControls.label.setText(text("sourceMode"));
-        DeploymentPageStyle.field(controls, modeControls.label, sourceMode);
-        gitForm = new DeploymentGitSourceForm(this);
-        sourceMode.setRenderer((list, value, index, selected, focus) -> {
+        DeploymentPageStyle.field(controls, modeControls.label, draft.mode);
+        draft.git = new DeploymentGitSourceForm(this);
+        draft.sources = new DeploymentSourceControls(this, service.sources(), draft.git,
+            () -> draft.mode.getSelectedItem() == SourceMode.GIT, draft.name,
+            selected -> draft.mode.setSelectedItem(selected ? SourceMode.GIT : SourceMode.LOCAL),
+            () -> {
+                revoke();
+                policyAvailability();
+            }, status::setText, this::policyAvailability,
+            handle -> SwingUtilities.invokeLater(() -> feedback.watch(handle)));
+        controls.add(draft.sources.panel());
+        draft.mode.setRenderer((list, value, index, selected, focus) -> {
             var label = new JLabel(value == null ? "" : text("sourceMode." + value.name()));
             label.setOpaque(true);
             label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
             label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
             return label;
         });
-        sourceMode.addActionListener(ignored -> updateSourceMode());
+        draft.mode.addActionListener(ignored -> updateSourceMode());
         updateSourceMode();
         composePage(controls);
         DeploymentPageStyle.scrollPage(root);
         modeControls.advanced.environment(messages, locked);
+        feedback.configure(environment);
         DeploymentPageStyle.refresh(root, messages);
         start.setEnabled(false);
         loadPreferences();
         loadServers();
         secretControls.refresh(generation.get());
+        draft.sources.refresh();
         refresh();
         return root;
     }
@@ -219,21 +247,20 @@ public final class DeploymentStaticPage implements ModPage {
         buttons.add(refreshButton);
         var targetControls = DeploymentPageStyle.form();
         DeploymentPageStyle.field(targetControls, serverLabel, servers);
-        var policyControls = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEADING, 10, 4));
+        this.targetControls = new DeploymentTargetControls(this::text, service::openPlatform, servers,
+            () -> {
+                revoke();
+                policyAvailability();
+            }, this::loadServers, status::setText);
+        targetControls.add(this.targetControls.panel());
+        var policyControls = new JPanel(new BorderLayout(0, 6));
         modeControls.assisted.setText(text("assisted"));
-        modeControls.approvalLabel.setText(text("approval"));
-        modeControls.approval.setRenderer((list, value, index, selected, focus) -> {
-            var label = new JLabel(value == null ? "" : text("approval." + value));
-            label.setOpaque(true);
-            label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
-            label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
-            return label;
-        });
-        policyControls.add(modeControls.approvalLabel);
-        policyControls.add(modeControls.approval);
-        policyControls.add(modeControls.assisted, 0);
+        policyControls.add(modeControls.assisted, BorderLayout.NORTH);
+        policyControls.add(modeControls.preferences.panel(this::text), BorderLayout.CENTER);
         var advancedContent = DeploymentPageStyle.form();
-        advancedContent.add(DeploymentPageStyle.card("style.git", gitForm.panel()));
+        advancedContent.add(DeploymentPageStyle.card("style.git", draft.git.panel()));
+        draft.runtime = new DeploymentRuntimeDraftForm(this::text);
+        advancedContent.add(DeploymentPageStyle.card("runtimeDraft.title", draft.runtime.panel()));
         secretControls = new DeploymentStaticSecretControls(this, service);
         advancedContent.add(DeploymentPageStyle.card(null, secretControls.panel()));
         modeControls.advanced = new DeploymentPageStyle.Advanced(root, advancedContent);
@@ -247,7 +274,17 @@ public final class DeploymentStaticPage implements ModPage {
         status.setEditable(false);
         status.setLineWrap(true);
         status.setWrapStyleWord(true);
-        root.add(DeploymentPageStyle.card("style.results", new JScrollPane(status)), BorderLayout.CENTER);
+        feedback = new gold.debug.windowstolinux.mod.deployment.ui.feedback.DeploymentTaskFeedback(service.feedback(), actions, () -> {
+            try {
+                service.openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind.TASKS);
+            } catch (ApiException unavailable) {
+                status.setText(text("target.unavailable") + " " + unavailable.problem().eventCode());
+            }
+        }, service::delivery);
+        var observations = new JPanel(new BorderLayout());
+        observations.add(new JScrollPane(status), BorderLayout.NORTH);
+        observations.add(feedback.component(), BorderLayout.CENTER);
+        root.add(DeploymentPageStyle.card("style.results", observations), BorderLayout.CENTER);
         root.add(buttons, BorderLayout.SOUTH);
     }
 
@@ -261,15 +298,19 @@ public final class DeploymentStaticPage implements ModPage {
             environment.locale(),
             ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_DEFAULT));
         serverLabel.setText(text("server"));
-        sourceLabel.setText(text(sourceMode.getSelectedItem() == SourceMode.GIT ? "sourceNameGit" : "sourceName"));
+        draft.label.setText(text(draft.mode.getSelectedItem() == SourceMode.GIT ? "sourceNameGit" : "sourceName"));
         modeControls.label.setText(text("sourceMode"));
         modeControls.assisted.setText(text("assisted"));
-        modeControls.approvalLabel.setText(text("approval"));
-        modeControls.approval.repaint();
-        gitForm.localize();
+        modeControls.preferences.localize(this::text);
+        draft.git.localize();
+        draft.sources.localize();
+        targetControls.localize();
+        draft.runtime.localize();
+        if (dialog != null) DeploymentReviewInputs.refresh(dialog.getRootPane(), this::text);
+        feedback.configure(environment);
         secretControls.localize();
         secretControls.updateAvailability();
-        sourceMode.repaint();
+        draft.mode.repaint();
         refreshButton.setText(text("refresh"));
         start.setText(text("start"));
         start.setEnabled(modeControls.preferences.ready() && !closed && !locked && !pendingReview && !secretBusy
@@ -299,6 +340,7 @@ public final class DeploymentStaticPage implements ModPage {
         modeControls.preferences.close();
         revoke();
         secretControls.close();
+        if (feedback != null) feedback.close();
         actions.shutdown();
     }
 
@@ -312,13 +354,12 @@ public final class DeploymentStaticPage implements ModPage {
                 handle.completion().whenComplete((result, error) -> SwingUtilities.invokeLater(() -> {
                     if (closed || locked || generation.get() != view)
                         return;
-                    if (error != null || result.outcome() != TaskResult.SUCCEEDED) {
+                    if (error != null || result == null || result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()) {
                         status.setText(text("preferenceError"));
                         return;
                     }
                     modeControls.preferences.load(result.value().orElseThrow());
                     policyAvailability();
-                    start.setEnabled(!pendingReview && !secretBusy && servers.getItemCount() > 0);
                 }));
             } catch (Exception failure) {
                 SwingUtilities.invokeLater(() -> {
@@ -333,8 +374,16 @@ public final class DeploymentStaticPage implements ModPage {
     private void policyAvailability() {
         boolean enabled = modeControls.preferences.ready() && !closed && !locked && !pendingReview && !secretBusy;
         modeControls.assisted.setEnabled(enabled);
-        modeControls.approval.setEnabled(enabled);
-        start.setEnabled(enabled && servers.getSelectedItem() != null);
+        modeControls.preferences.editable(enabled);
+        start.setEnabled(enabled && servers.getSelectedItem() != null && (draft.sources == null || !draft.sources.busy()));
+        boolean clearAllowed = !closed && !locked && !secretBusy && (!pendingReview || !confirmed);
+        if (draft.sources != null) draft.sources.availability(enabled, clearAllowed);
+        if (targetControls != null) targetControls.availability(enabled && !draft.sources.busy(), clearAllowed);
+        draft.mode.setEnabled(enabled && (draft.sources == null || !draft.sources.busy()));
+        draft.name.setEnabled(enabled && (draft.sources == null || !draft.sources.busy()));
+        if (draft.git != null) draft.git.enabled(enabled && !draft.sources.busy());
+        if (draft.runtime != null) draft.runtime.enabled(enabled);
+        if (secretControls != null) secretControls.updateAvailability();
     }
 
     /** Lists server records in a separate short task off the EDT. / 在 EDT 外的独立短任务中列出服务器记录。 */
@@ -354,14 +403,12 @@ public final class DeploymentStaticPage implements ModPage {
                             serverLookup = null;
                         if (closed || locked || generation.get() != view)
                             return;
-                        if (failure != null || result.outcome() != TaskResult.SUCCEEDED) {
+                        if (failure != null || result == null || result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()) {
                             status.setText(text("serverError"));
                             return;
                         }
-                        servers.removeAllItems();
-                        result.value().orElseThrow().forEach(servers::addItem);
-                        start.setEnabled(modeControls.preferences.ready() && !pendingReview && !secretBusy
-                            && servers.getItemCount() > 0);
+                        targetControls.replace(result.value().orElseThrow());
+                        policyAvailability();
                         secretControls.updateAvailability();
                     }));
                 } catch (Exception failure) {
@@ -378,33 +425,40 @@ public final class DeploymentStaticPage implements ModPage {
 
     /** Keeps Git inputs visible only for the selected source mode. / 仅在选定 Git 来源模式显示可用 Git 输入。 */
     private void updateSourceMode() {
-        boolean git = sourceMode.getSelectedItem() == SourceMode.GIT;
-        sourceLabel.setText(text(git ? "sourceNameGit" : "sourceName"));
-        if (gitForm != null)
-            gitForm.visible(git);
+        boolean git = draft.mode.getSelectedItem() == SourceMode.GIT;
+        draft.label.setText(text(git ? "sourceNameGit" : "sourceName"));
+        if (draft.git != null)
+            draft.git.visible(git);
+        if (draft.sources != null) {
+            draft.sources.revoke();
+            policyAvailability();
+        }
         root.revalidate();
     }
 
     /** Submits the selected server and source name through one original publication task. / 将选定服务器及来源名提交为一项原发布任务。 */
     private void submit() {
         requireEdt();
-        if (closed || locked || pendingReview || secretBusy || !modeControls.preferences.ready()
+        if (closed || locked || pendingReview || secretBusy || draft.sources.busy() || !modeControls.preferences.ready()
             || servers.getSelectedItem() == null)
             return;
         var server = ((ServerInfo) servers.getSelectedItem()).ref();
-        var name = sourceName.getText().trim();
-        var mode = (SourceMode) sourceMode.getSelectedItem();
+        var name = draft.name.getText().trim();
+        var mode = (SourceMode) draft.mode.getSelectedItem();
         Optional<DeploymentStaticWorkflow.GitSource> git;
+        DeploymentStaticWorkflow.SourceOptions sourceOptions;
         try {
             if (mode == SourceMode.GIT && name.isBlank())
                 throw new IllegalArgumentException("Git project name is required");
-            git = mode == SourceMode.GIT ? Optional.of(gitForm.source()) : Optional.empty();
+            git = mode == SourceMode.GIT ? Optional.of(draft.git.source()) : Optional.empty();
+            sourceOptions = draft.sources.capture(draft.runtime.values());
         } catch (IllegalArgumentException invalid) {
-            status.setText(text("invalidGitInput"));
+            status.setText(text(mode == SourceMode.GIT ? "invalidGitInput" : "source.invalid"));
             return;
         }
         boolean assisted = modeControls.assisted.isSelected();
-        String approvalMode = (String) modeControls.approval.getSelectedItem();
+        String approvalMode = modeControls.preferences.approval();
+        String authorizationMode = modeControls.preferences.authorization();
         long view = generation.get();
         pendingReview = true;
         policyAvailability();
@@ -422,10 +476,11 @@ public final class DeploymentStaticPage implements ModPage {
                 try {
                     var handle = service.submit(server,
                         new DeploymentStaticWorkflow.Draft(name, 2L * 1024 * 1024 * 1024, 100_000,
-                            2L * 1024 * 1024 * 1024),
-                        git, new DeploymentStaticPageReviewer(this, view), assisted, approvalMode);
+                            2L * 1024 * 1024 * 1024, sourceOptions),
+                        git, new DeploymentStaticPageReviewer(this, view), assisted, approvalMode, authorizationMode);
                     admitted = true;
                     currentTask = handle;
+                    SwingUtilities.invokeLater(() -> feedback.watch(handle));
                     if (closed || locked || generation.get() != view)
                         cancelUnconfirmed(handle);
                     handle.completion().whenComplete((result, failure) -> {
@@ -439,8 +494,7 @@ public final class DeploymentStaticPage implements ModPage {
                         if (active(view) && failure == null && result != null)
                             recentProblem = result.problem().orElse(null);
                         refresh();
-                        SwingUtilities.invokeLater(() -> start.setEnabled(modeControls.preferences.ready() && !closed
-                            && !locked && !secretBusy && servers.getItemCount() > 0));
+                        SwingUtilities.invokeLater(this::policyAvailability);
                     });
                     refresh();
                 } catch (Exception failure) {
@@ -457,8 +511,7 @@ public final class DeploymentStaticPage implements ModPage {
                             secretControls.updateAvailability();
                             policyAvailability();
                         });
-                        SwingUtilities.invokeLater(() -> start.setEnabled(modeControls.preferences.ready() && !closed
-                            && !locked && !secretBusy && servers.getItemCount() > 0));
+                        SwingUtilities.invokeLater(this::policyAvailability);
                     }
                 }
             });
@@ -524,6 +577,7 @@ public final class DeploymentStaticPage implements ModPage {
         }
         if (secretControls != null)
             secretControls.revoke();
+        if (draft.sources != null) draft.sources.revoke();
     }
 
     /** Cancels only a view-owned read-only query. / 仅取消视图所属只读查询。
@@ -610,6 +664,11 @@ public final class DeploymentStaticPage implements ModPage {
                 var pane = new JOptionPane(scroll, JOptionPane.QUESTION_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
                 owned = pane.createDialog(root, title);
                 dialog = owned;
+                if (panel.getClientProperty("deployment.review.focus") instanceof JComponent focus)
+                    SwingUtilities.invokeLater(() -> {
+                        focus.scrollRectToVisible(new java.awt.Rectangle(0, 0, focus.getWidth(), focus.getHeight()));
+                        focus.requestFocusInWindow();
+                    });
                 owned.setVisible(true);
                 boolean accepted = !closed && !locked && generation.get() == view
                     && Integer.valueOf(JOptionPane.OK_OPTION).equals(pane.getValue());
@@ -718,15 +777,14 @@ public final class DeploymentStaticPage implements ModPage {
     /** Checks whether a separate secret task can be admitted before publication. / 检查独立秘密任务可否在发布前准入。
      * @return true only for a current unlocked idle view / 仅当前未锁空闲视图为真 */
     boolean canCreateSecret() {
-        return !closed && !locked && !pendingReview && !secretBusy && selectedServer().isPresent();
+        return !closed && !locked && !pendingReview && !secretBusy && !draft.sources.busy() && selectedServer().isPresent();
     }
 
     /** Blocks publication while one pre-publication secret task is in progress. / 发布前秘密任务进行时阻止发布。
      * @param busy whether a task is active / 是否有活动任务 */
     void secretBusy(boolean busy) {
         secretBusy = busy;
-        SwingUtilities.invokeLater(() -> start
-            .setEnabled(!closed && !locked && !pendingReview && !secretBusy && servers.getSelectedItem() != null));
+        SwingUtilities.invokeLater(this::policyAvailability);
         SwingUtilities.invokeLater(secretControls::updateAvailability);
     }
 

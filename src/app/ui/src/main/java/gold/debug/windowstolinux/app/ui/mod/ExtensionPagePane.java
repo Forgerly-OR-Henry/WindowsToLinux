@@ -11,6 +11,7 @@ import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry;
 import gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.*;
 import gold.debug.windowstolinux.appapi.ui.*;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 /** Mounts opened Mod views and owner-grouped settings without adding navigation pins. / 挂载保留的 Mod 根卡片及按所有者分组的设置。 */
@@ -33,6 +34,9 @@ public final class ExtensionPagePane extends JPanel implements PageHost {
     /** Host selection observer. / 宿主选择观察器。 */
     private Consumer<PageKey> selection = ignored -> {
     };
+
+    /** Composed host navigation, absent until the actual shell is bound. / 已装配宿主导航，实际外壳绑定前缺省。 */
+    private Predicate<PlatformPageKind> platformNavigation;
 
     /** Settings groups keyed by the owning Mod. / 按所属 Mod 分组的设置。 */
     private final JTabbedPane settingGroups = new JTabbedPane();
@@ -97,6 +101,27 @@ public final class ExtensionPagePane extends JPanel implements PageHost {
     public void onSelection(Consumer<PageKey> listener) {
         requireEdt();
         selection = Objects.requireNonNull(listener);
+    }
+
+    /** Binds only the actual shell's fixed destination selection. / 仅绑定实际外壳的固定目的地选择。
+     * @param selector true only when the destination was actually selected / 仅实际选择目的地时返回true */
+    public void platformNavigation(Predicate<PlatformPageKind> selector) {
+        requireEdt();
+        if (platformNavigation != null) throw new IllegalStateException("Platform navigation is already composed");
+        platformNavigation = Objects.requireNonNull(selector);
+    }
+
+    /** Opens the host destination while retaining all mounted owner views. / 打开宿主目的地并保留所有已挂载所属视图。
+     * @param target fixed platform destination / 固定平台目的地
+     * @throws gold.debug.windowstolinux.appapi.task.result.ApiException if not actually composed or selectable / 未实际装配或不可选择时 */
+    @Override
+    public void openPlatform(PlatformPageKind target) throws gold.debug.windowstolinux.appapi.task.result.ApiException {
+        requireEdt();
+        if (platformNavigation == null || !platformNavigation.test(Objects.requireNonNull(target)))
+            throw new gold.debug.windowstolinux.appapi.task.result.ApiException(
+                new gold.debug.windowstolinux.appapi.task.result.Problem(
+                    gold.debug.windowstolinux.appapi.task.result.ProblemCode.UNAVAILABLE,
+                    "PLATFORM_PAGE_UNAVAILABLE", "The platform destination is not available", Map.of(), Optional.empty()));
     }
 
     /** Updates platform-owned action copy on the existing surface. / 更新已有界面的平台动作文字。

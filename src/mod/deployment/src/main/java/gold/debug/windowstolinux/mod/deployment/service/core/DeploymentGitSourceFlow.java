@@ -93,12 +93,14 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
             var source = new DeploymentProjectSource(DeploymentProjectSource.KindType.GIT, material.remote().location(),
                 Optional.of(DeploymentGitSourceFlow.reference(facts.request().reference())),
                 Optional.of(material.commit()), material.source().snapshot().sha256());
-            var row = new DeploymentProjectRecord(facts.project(), facts.displayName(), source, facts.observedAt(),
+            var row = new DeploymentProjectRecord(facts.project(), facts.displayName(), source,
+                facts.expected().map(DeploymentProjectRecord::createdAt).orElse(facts.observedAt()),
                 facts.observedAt());
             journal.propose(row);
             journal.writeStarted();
             try {
-                owner.projects.create(task, row);
+                if (facts.expected().isPresent()) owner.projects.update(task, facts.expected().orElseThrow(), row);
+                else owner.projects.create(task, row);
             } catch (SQLException knownRollback) {
                 journal.knownFailure(problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PROJECT_SAVE_FAILED"));
                 throw knownRollback;
@@ -138,20 +140,37 @@ public final class DeploymentGitSourceFlow implements TaskRecovery {
      * @throws ApiException if input, physical work or cleanup cannot be confirmed / 输入、物理工作或清理未确认时 */
     public PublishSource prepareForPublication(DeploymentGitRequest request, Path executable, String name,
                                                long maximumBytes, int maximumEntries, TaskContext task) throws ApiException {
+        return prepareForPublication(request, executable, name, maximumBytes, maximumEntries, task, UUID.randomUUID(),
+            Optional.empty(), Instant.now().truncatedTo(ChronoUnit.MILLIS));
+    }
+
+    /** Pins a reviewed revision of the original source project on the same publication task. / 在同一发布任务固定原来源项目的已审阅修订。
+     * @param request reviewed Git input / 已审阅 Git 输入
+     * @param executable explicit Git executable / 明确 Git 可执行文件
+     * @param name edited project name / 已编辑项目名
+     * @param maximumBytes source budget / 来源预算
+     * @param maximumEntries entry budget / 条目预算
+     * @param task original publication task / 原发布任务
+     * @param project selected stable project ID / 所选稳定项目 ID
+     * @param expected complete reviewed old row / 完整已审阅旧行
+     * @param when actual millisecond observation / 实际毫秒观测
+     * @return original pinned source / 原固定来源
+     * @throws ApiException if source work or original evidence fails / 来源工作或原依据失败时 */
+    public PublishSource prepareForPublication(DeploymentGitRequest request, Path executable, String name,
+                                               long maximumBytes, int maximumEntries, TaskContext task, UUID project,
+                                               Optional<DeploymentProjectRecord> expected, Instant when) throws ApiException {
         Objects.requireNonNull(request);
         Objects.requireNonNull(executable);
         if (!executable.isAbsolute() || !java.nio.file.Files.isRegularFile(executable) || name == null
             || name.isBlank())
             throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
-        var when = Instant.now().truncatedTo(ChronoUnit.MILLIS);
-        var project = UUID.randomUUID();
         try {
-            DeploymentGitSourceActionLog.validateInput(project, name, Optional.empty(), when, request, maximumBytes,
+            DeploymentGitSourceActionLog.validateInput(project, name, expected, when, request, maximumBytes,
                 maximumEntries);
         } catch (IllegalArgumentException invalid) {
             throw new ApiException(problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_GIT_INPUT"));
         }
-        var journal = DeploymentGitSourceActionLog.begin(context.tasks(), task, project, name, Optional.empty(), when,
+        var journal = DeploymentGitSourceActionLog.begin(context.tasks(), task, project, name, expected, when,
             request, maximumBytes, maximumEntries);
         var preparer = new DeploymentGitSetup(context, executable);
         try {

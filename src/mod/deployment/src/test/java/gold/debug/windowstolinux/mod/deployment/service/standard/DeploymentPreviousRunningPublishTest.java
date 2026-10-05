@@ -14,11 +14,14 @@ import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.linux.*;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferCheckpoint;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
@@ -42,8 +45,8 @@ class DeploymentPreviousRunningPublishTest extends DeploymentPublishAcceptanceFi
             var original = runtime.modContexts().get(OWNER).context();
             var first = new DeploymentPublishStatePeer();
             var initial = submit(original, first, count);
-            assertEquals(TaskResult.SUCCEEDED,
-                initial.completion().toCompletableFuture().get(60, TimeUnit.SECONDS).outcome());
+            var initialResult = initial.completion().toCompletableFuture().get(60, TimeUnit.SECONDS);
+            assertEquals(TaskResult.SUCCEEDED, initialResult.outcome(), initialResult.toString());
             assertEquals(TaskState.ENDED, initial.snapshot().state());
             var oldRemote = Map.copyOf(first.builds.current);
             assertEquals(count, oldRemote.size());
@@ -62,7 +65,8 @@ class DeploymentPreviousRunningPublishTest extends DeploymentPublishAcceptanceFi
             next.running.addAll(first.running);
             next.builds.healthFailuresRemaining = 1;
             var failed = submit(original, next, count);
-            assertEquals(TaskResult.FAILED, failed.completion().toCompletableFuture().get(60, TimeUnit.SECONDS).outcome());
+            var failedResult = failed.completion().toCompletableFuture().get(60, TimeUnit.SECONDS);
+            assertEquals(TaskResult.FAILED, failedResult.outcome(), failedResult.toString());
             assertEquals(TaskState.ENDED, failed.snapshot().state());
             assertNotEquals(initial.id(), failed.id());
             assertEquals(oldRemote, next.builds.current);
@@ -99,6 +103,36 @@ class DeploymentPreviousRunningPublishTest extends DeploymentPublishAcceptanceFi
         LinuxService linux = new LinuxService() {
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
                 return peer.session(task);
+            }
+
+            public RemoteSession connect(RemoteTarget expected, TaskContext task) throws ApiException {
+                assertEquals(new ServerId("server"), expected.server());
+                assertEquals(task.id(), expected.taskId());
+                assertEquals("127.0.0.1", expected.host());
+                assertEquals(22, expected.port());
+                assertEquals("root", expected.username());
+                var server = original.servers().get(expected.server(), task);
+                assertEquals(server.ref(), expected.server());
+                assertEquals(server.host(), expected.host());
+                assertEquals(server.port(), expected.port());
+                assertEquals(server.username(), expected.username());
+                var session = peer.session(task);
+                try {
+                    if (expected.fingerprint().isPresent()
+                        && !expected.fingerprint().orElseThrow().equals(session.facts().fingerprint()))
+                        throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED,
+                            "DEPLOYMENT_TEST_WIRE_CHANGED",
+                            "The controlled transport rejects a different actual wire before any command",
+                            Map.of(), Optional.of(task.id())));
+                    return session;
+                } catch (ApiException | RuntimeException | Error failure) {
+                    try {
+                        session.close();
+                    } catch (ApiException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    }
+                    throw failure;
+                }
             }
 
             public List<TransferCheckpoint> pendingTransfers(TaskContext task) {

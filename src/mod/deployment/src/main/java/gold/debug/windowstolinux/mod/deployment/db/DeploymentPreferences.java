@@ -22,20 +22,36 @@ public final class DeploymentPreferences {
 
     /** One atomic, validated nonsecret selection. / 一项原子且已校验的不含秘密选择。
      * @param mode actual static, assisted or agent page / 实际静态、辅助或自主页面
-     * @param approval actual manual, automatic or full-control policy / 实际人工、自动或全控策略 */
-    public record Selection(String mode, String approval) {
+     * @param approval actual manual, automatic or full-control policy / 实际人工、自动或全控策略
+     * @param authorization deployment-only authority policy / 仅部署所属授权策略 */
+    public record Selection(String mode, String approval, String authorization) {
         /** Rejects an invalid selection without repairing or hiding stored values. / 拒绝非法选择，不修复或隐藏存储值。
          * @param mode actual selected page mode / 实际所选页面模式
          * @param approval selected approval policy / 所选审批策略
-         * @throws IllegalArgumentException if either value is unsupported / 任一值不受支持时 */
+         * @param authorization selected authorization policy / 所选授权策略
+         * @throws IllegalArgumentException if any value or combination is unsupported / 任一值或组合不受支持时 */
         public Selection {
             if (!Set.of("STATIC", "ASSISTED", "AGENT").contains(mode)
-                || !Set.of("MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL").contains(approval))
+                || !authorizationAllowed(approval, authorization))
                 throw new IllegalArgumentException("Invalid deployment preference selection");
+        }
+
+        /** Validates the seven explicitly supported deployment policy combinations. / 校验七种明确支持的部署策略组合。
+         * @param approval actual approval strategy / 实际审批策略
+         * @param authorization actual authority strategy / 实际授权策略
+         * @return whether this exact pair is supported / 此精确配对是否受支持 */
+        public static boolean authorizationAllowed(String approval, String authorization) {
+            if (approval == null || authorization == null) return false;
+            return switch (approval) {
+                case "MANUAL_REVIEW" -> Set.of("ONCE", "GENERAL").contains(authorization);
+                case "AUTOMATIC" -> Set.of("ONCE", "GENERAL", "FULL").contains(authorization);
+                case "FULL_CONTROL" -> Set.of("GENERAL", "FULL").contains(authorization);
+                default -> false;
+            };
         }
     }
 
-    /** Reads the stored pair, filling only absent values with ASSISTED/AUTOMATIC. / 读取存储配对，仅为缺失值补ASSISTED/AUTOMATIC。
+    /** Reads the stored triple, filling only absent values with ASSISTED/AUTOMATIC/GENERAL. / 读取存储三值，仅为缺失值补ASSISTED/AUTOMATIC/GENERAL。
      * @param task actual original query task / 实际原查询任务
      * @return validated stored selection / 已校验存储选择
      * @throws SQLException if original SQL facts cannot be read / 无法读取原SQL事实时
@@ -49,12 +65,14 @@ public final class DeploymentPreferences {
             lock(connection);
             missing(connection, "deploy_mode", "ASSISTED");
             missing(connection, "deploy_approval", "AUTOMATIC");
-            result[0] = new Selection(value(connection, "deploy_mode"), value(connection, "deploy_approval"));
+            missing(connection, "deploy_authorization", "GENERAL");
+            result[0] = new Selection(value(connection, "deploy_mode"), value(connection, "deploy_approval"),
+                value(connection, "deploy_authorization"));
         });
         return result[0];
     }
 
-    /** Saves the user's actual page and approval choice together on the original task. / 在原任务一并保存用户实际页面与审批选择。
+    /** Saves the user's actual page and two policies together on the original task. / 在原任务一并保存用户实际页面与两项策略。
      * @param task original accepted publication task / 原已接纳发布任务
      * @param selection captured actual user selection / 已抓取实际用户选择
      * @throws SQLException if writes fail with confirmed rollback / 写入失败且已确认回滚时
@@ -67,12 +85,13 @@ public final class DeploymentPreferences {
             lock(connection);
             put(connection, "deploy_mode", selection.mode());
             put(connection, "deploy_approval", selection.approval());
+            put(connection, "deploy_authorization", selection.authorization());
         });
     }
 
-    /** Serializes this pair using one private stable row, independent of agent-target gates. / 用一项私有稳定行串行化此配对，独立于自主目标门禁。
+    /** Serializes this triple using one private stable row, independent of agent-target gates. / 用一项私有稳定行串行化此三值，独立于自主目标门禁。
      * @param connection original transaction / 原事务
-     * @throws SQLException if the pair lock is unavailable / 配对锁不可用时 */
+     * @throws SQLException if the selection lock is unavailable / 选择锁不可用时 */
     private static void lock(Connection connection) throws SQLException {
         put(connection, "deployment_preferences_guard", "1");
         try (var statement = connection.prepareStatement(
@@ -115,7 +134,7 @@ public final class DeploymentPreferences {
         }
     }
 
-    /** Writes one exact value inside the already owned pair transaction. / 在已持有的配对事务内写入一项精确值。
+    /** Writes one exact value inside the already owned selection transaction. / 在已持有的选择事务内写入一项精确值。
      * @param connection original transaction / 原事务
      * @param key exact owned preference key / 精确所属偏好键
      * @param value captured value / 已抓取值

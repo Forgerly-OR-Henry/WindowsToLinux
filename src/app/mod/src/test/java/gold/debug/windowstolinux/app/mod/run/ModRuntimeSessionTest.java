@@ -110,6 +110,10 @@ class ModRuntimeSessionTest {
                 throw new AssertionError("Lifecycle must not open business pages");
             }
 
+            public void openPlatform(gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind target) {
+                throw new AssertionError("Lifecycle must not open platform pages");
+            }
+
             public UiEnvironment environment() {
                 return new UiEnvironment(Locale.ENGLISH, "light", false);
             }

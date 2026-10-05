@@ -222,7 +222,7 @@ public final class PlatformRuntime implements AutoCloseable {
         tasks = new PlatformTaskRuntime(persistence.database(),
             new PlatformTaskAdmission(persistence.database(), version), security, callbackReports::recordDiagnostic);
 
-        authorization = new PlatformAuthorizationService(persistence, security, tasks);
+        authorization = new PlatformAuthorizationService(persistence, tasks);
     }
 
     /**
@@ -1062,6 +1062,8 @@ public final class PlatformRuntime implements AutoCloseable {
                 throws gold.debug.windowstolinux.appapi.task.result.ApiException {
                 linux.closeTaskResources(task);
                 interaction.retryFinishedReleases();
+                if (tasks.reconciling(task))
+                    interaction.closeWorkflowResources(task);
             }
 
             /**

@@ -43,11 +43,12 @@ final class DeploymentAssistedApproval {
      * @param task authentic original task / 真实原任务
      * @param revision frozen complete model revision / 冻结完整模型修订
      * @param policy selected original policy / 所选原策略
+     * @param authorization selected original question repetition / 所选原问题重复规则
      * @return original host grant or retained refusal / 原宿主授权或保留拒绝
      * @throws ApiException if the fixed action or independent review is unavailable, denied or unknown / 固定动作或独立审阅不可用、拒绝或未知时 */
-    static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent, TaskContext task, String revision, String policy) throws ApiException {
+    static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent, TaskContext task, String revision, String policy, String authorization) throws ApiException {
         context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
-        if (policy.equals("MANUAL_REVIEW") || HUMAN.contains(intent.type())) return host.approve(intent, task);
+        if (HUMAN.contains(intent.type())) return host.approve(intent, task);
         if (!Set.of("deployment.assisted.retry", "deployment.assisted.build-review", "deployment.assisted.environment-recovery").contains(intent.type())
             && (intent.semantics().isEmpty() || !OPERATIONS.contains(intent.semantics().orElseThrow().operation())))
             throw denied(task, "DEPLOYMENT_ASSISTED_ACTION_UNREGISTERED");
@@ -70,12 +71,8 @@ final class DeploymentAssistedApproval {
                 throw new IOException("Invalid independent fixed review decision");
             if (!decision.equals("APPROVE")) throw denied(task, "DEPLOYMENT_ASSISTED_REVIEW_DENIED");
             context.ai().configurationRevision(AiPurpose.APPROVAL, task);
-            if (risk.equals("HIGH") && policy.equals("AUTOMATIC")) {
-                var high = host.approve(new ActionIntent("deployment.assisted.high-risk", intent.serverIds(), intent.target(), intent.revision(), intent.exactAction(),
-                    "Review the independently identified high risk before the exact fixed deployment effect"), task);
-                if (high.outcome() != TaskResult.SUCCEEDED) return high;
-            }
-            var actual = host.approve(intent, task);
+            var actual = gold.debug.windowstolinux.mod.deployment.ai.DeploymentAuthorizationPolicy.authorize(host,
+                intent, task, policy, authorization, risk.equals("HIGH"));
             context.ai().configurationRevision(AiPurpose.APPROVAL, task);
             return actual;
         } catch (DeploymentAiJson.CapabilityOutcomeException outcome) {

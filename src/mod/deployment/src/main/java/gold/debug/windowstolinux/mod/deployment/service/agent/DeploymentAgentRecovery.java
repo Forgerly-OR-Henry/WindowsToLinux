@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.*;
 
@@ -63,14 +64,20 @@ public final class DeploymentAgentRecovery {
         if (candidates.isEmpty())
             return unknown("DEPLOYMENT_AGENT_CANDIDATE_EVIDENCE_MISSING");
         var server = record.identity().server();
-        try (RemoteSession session = context.linux().connect(server, task)) {
+        var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.DeploymentCommandReviewScope(context,
+            context.interaction(), task, saved.identity().approvalMode(), saved.identity().authorizationMode(), () -> saved.identity().configurationDigest());
+        requireOriginalProfile(server, events, task);
+        try (var permission = gold.debug.windowstolinux.mod.deployment.ai.DeploymentWorkflowAuthorization.recover(
+            context, task, server, saved.identity().configurationDigest(), saved.identity().approvalMode(), saved.identity().authorizationMode(),
+            "original=" + task.id() + "\nexecution=" + record.identity().executionId());
+             RemoteSession session = context.linux().connect(server, task)) {
             if (!saved.identity().targetDigest().equals(DeploymentAgentWorkflow.targetDigest(server, session)))
                 return unknown("DEPLOYMENT_AGENT_TARGET_CHANGED");
             if (new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
-                context.interaction(), server, task, saved.identity().configurationDigest()).probe()
+                reviewed.interaction(), server, task, saved.identity().configurationDigest()).probe()
                 .outcome() != TaskResult.SUCCEEDED)
                 return unknown("DEPLOYMENT_AGENT_HELPER_CHANGED");
-            var publisher = new DeploymentGraphPublisher(context, session, server, task,
+            var publisher = new DeploymentGraphPublisher(reviewed, session, server, task,
                 (type, action, detail) -> journal.event(task, type, action, detail));
             var observed = publisher.observeOriginal(proposal, candidates.orElseThrow());
             if (observed.outcome() != TaskResult.SUCCEEDED)
@@ -117,14 +124,20 @@ public final class DeploymentAgentRecovery {
             return unknown("DEPLOYMENT_AGENT_PREFORMAL_IDENTITY_MISSING");
         if (!workspaces.orElseThrow().isEmpty()) {
             var server = new ServerId(saved.identity().server());
-            try (RemoteSession session = context.linux().connect(server, task)) {
+            var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.DeploymentCommandReviewScope(context,
+                context.interaction(), task, saved.identity().approvalMode(), saved.identity().authorizationMode(), () -> saved.identity().configurationDigest());
+            requireOriginalProfile(server, events, task);
+            try (var permission = gold.debug.windowstolinux.mod.deployment.ai.DeploymentWorkflowAuthorization.recover(
+                context, task, server, saved.identity().configurationDigest(), saved.identity().approvalMode(), saved.identity().authorizationMode(),
+                "original=" + task.id() + "\nworkspaces=" + workspaces.orElseThrow());
+                 RemoteSession session = context.linux().connect(server, task)) {
                 if (!saved.identity().targetDigest().equals(DeploymentAgentWorkflow.targetDigest(server, session)))
                     return unknown("DEPLOYMENT_AGENT_TARGET_CHANGED");
                 if (new gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelper(session,
-                    context.interaction(), server, task, saved.identity().configurationDigest()).probe()
+                    reviewed.interaction(), server, task, saved.identity().configurationDigest()).probe()
                     .outcome() != TaskResult.SUCCEEDED)
                     return unknown("DEPLOYMENT_AGENT_HELPER_CHANGED");
-                var channel = new DeploymentAgentProjectChannel(session, context.interaction(), server, task,
+                var channel = new DeploymentAgentProjectChannel(session, reviewed.interaction(), server, task,
                     saved.identity().configurationDigest(), () -> {
                     try {
                         return context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
@@ -154,6 +167,17 @@ public final class DeploymentAgentRecovery {
         return new OperationResult<>(outcome, Optional.empty(),
             Optional.of(problem(outcome == TaskResult.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
                 "DEPLOYMENT_AGENT_PREFORMAL_RECONCILED")));
+    }
+
+    /** Verifies the original endpoint before handoff, authentication or any remote observation. / 在交权、认证或任何远端观察前核对原端点。
+     * @param server original server / 原服务器
+     * @param events original event stream / 原事件流
+     * @param task authentic original recovery / 真实原恢复
+     * @throws Exception if original endpoint evidence is absent or changed / 原端点依据缺失或变化时 */
+    private void requireOriginalProfile(ServerId server, List<DeploymentAgentActionLog.Event> events, TaskContext task) throws Exception {
+        var values = events.stream().filter(event -> event.type().equals("TARGET_PROFILE")).map(DeploymentAgentActionLog.Event::detail).distinct().toList();
+        if (values.size() != 1 || !values.getFirst().equals(DeploymentAgentWorkflow.targetProfile(context.servers().get(server, task))))
+            throw new SQLException("Original recovery endpoint is unconfirmed");
     }
 
     /** Reconstructs only task-bound candidate identities from original archived bytes and plan evidence. / 仅从原归档字节与计划依据重建任务绑定候选身份。

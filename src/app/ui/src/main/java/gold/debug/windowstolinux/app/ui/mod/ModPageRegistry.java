@@ -13,6 +13,7 @@ import gold.debug.windowstolinux.appapi.ui.page.ModPage;
 import gold.debug.windowstolinux.appapi.ui.page.PageFactory;
 import gold.debug.windowstolinux.appapi.ui.page.PageRegistration;
 import gold.debug.windowstolinux.appapi.ui.page.PageSpec;
+import gold.debug.windowstolinux.appapi.ui.page.PlatformPageKind;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 
 /** Owns staged page contributions and EDT-confined author view lifetimes. / 持有暂存页面扩展及限定在 EDT 的作者视图生命周期。 */
@@ -364,6 +365,13 @@ public final class ModPageRegistry {
          */
         void focus(PageKey key);
 
+        /** Selects an already composed platform surface; mount-only hosts report unavailable. / 选择已装配平台界面；仅提供挂载的宿主报告不可用。
+         * @param target fixed platform destination / 固定平台目的地
+         * @throws ApiException if the actual platform destination is unavailable / 实际平台目的地不可用时 */
+        default void openPlatform(PlatformPageKind target) throws ApiException {
+            throw failure(ProblemCode.UNAVAILABLE, "PLATFORM_PAGE_UNAVAILABLE", "The platform destination is not composed");
+        }
+
         /**
          * Removes an already closed author view; repeated removal must be safe. / 移除作者已关闭的视图；重复移除必须安全。
          * @param key exact global page identity / 精确全局页面身份
@@ -484,6 +492,22 @@ public final class ModPageRegistry {
         @Override
         public void open(String localPageId) throws ApiException {
             open(localPageId, false);
+        }
+
+        /** Navigates only after normal publication and original scope/lock checks. / 仅在普通发布及原作用域、锁定核验后导航。
+         * @param target fixed host destination / 固定宿主目的地
+         * @throws ApiException if original scope or host destination is unavailable / 原作用域或宿主目的地不可用时 */
+        @Override
+        public void openPlatform(PlatformPageKind target) throws ApiException {
+            Objects.requireNonNull(target);
+            onEdt(() -> {
+                if (!visible())
+                    throw failure(ProblemCode.UNAVAILABLE, "PAGE_NOT_PUBLISHED", "Page scope is not available to business UI");
+                if (environment.locked())
+                    throw failure(ProblemCode.ACCESS_DENIED, "PAGE_LOCKED", "Unlock the application before opening this page");
+                host.openPlatform(target);
+                return null;
+            });
         }
 
         /** Checks the exact category before creating an owned view. / 创建所属视图前核对精确分类。

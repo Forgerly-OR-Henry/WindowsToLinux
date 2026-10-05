@@ -16,6 +16,7 @@ import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
 import gold.debug.windowstolinux.appapi.task.log.LogCategory;
 import gold.debug.windowstolinux.appapi.task.log.LogEvent;
 import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+import gold.debug.windowstolinux.appapi.task.log.LogReadResult;
 import gold.debug.windowstolinux.appapi.task.log.LogService;
 import gold.debug.windowstolinux.appapi.task.log.LogStorage;
 import gold.debug.windowstolinux.appapi.task.log.LogTarget;
@@ -656,6 +657,53 @@ public final class PlatformLogService implements AutoCloseable {
         @Override
         public LogWriteResult write(LogTarget handle, LogEvent event) {
             return writeExcerpt(handle, event, false);
+        }
+
+        /** Reads only this binding's original target and exact producer version while unlocked. / 解锁时仅读取本绑定原目标及精确生产版本。
+         * @param handle original opaque target / 原不透明目标
+         * @param taskId optional original diagnostic association / 可选原诊断关联
+         * @param limit bounded requested window / 有界请求窗口
+         * @return redacted original records and any unavailable storage / 脱敏原记录及任一不可用存储
+         * @throws ApiException if original access is refused / 原访问被拒绝时 */
+        @Override
+        public LogReadResult read(LogTarget handle, Optional<UUID> taskId, int limit) throws ApiException {
+            if (taskId == null || limit < 1 || limit > 100)
+                throw new ApiException(problem(ProblemCode.INVALID_INPUT, "LOG_READ_WINDOW", "Invalid diagnostic window"));
+            enter();
+            try (var operation = security.enterOperation()) {
+                LogStore.Target target;
+                synchronized (targets) {
+                    target = targets.get(handle);
+                }
+                if (target == null)
+                    throw new ApiException(problem(ProblemCode.CONTRACT_VIOLATION, "LOG_READ_TARGET", "Original owned diagnostic target required"));
+                try (var access = lock(target)) {
+                    var records = new ArrayList<LogRecordCodec.Record>();
+                    Problem issue = null;
+                    try {
+                        records.addAll(repository.read(target));
+                    } catch (SQLException unavailable) {
+                        issue = problem(ProblemCode.IO_FAILURE, "LOG_READ_DATABASE", "Database diagnostics could not be verified");
+                    }
+                    try {
+                        records.addAll(emergency.read(target));
+                    } catch (Exception unavailable) {
+                        issue = problem(ProblemCode.IO_FAILURE, "LOG_READ_EMERGENCY", "Emergency diagnostics could not be verified");
+                    }
+                    var selected = EmergencyLogs.merge(records, 100).stream()
+                        .filter(record -> version.equals(record.version()))
+                        .filter(record -> taskId.isEmpty() || taskId.orElseThrow().equals(record.taskId()))
+                        .limit(limit).map(record -> new LogReadResult.Record(record.id(), java.time.Instant.ofEpochMilli(record.recordedAt()),
+                            recordInfo(record).event(), record.truncated())).toList();
+                    return new LogReadResult(selected, Optional.ofNullable(issue));
+                }
+            } catch (ApiException refused) {
+                throw refused;
+            } catch (Exception unavailable) {
+                throw new ApiException(problem(ProblemCode.UNAVAILABLE, "LOG_READ_ACCESS", "Diagnostic access is unavailable"));
+            } finally {
+                leave();
+            }
         }
 
         /** Preserves upstream truncation when a host stream has already discarded excess bytes. / 宿主流已丢弃超量字节时保留上游截断标记。

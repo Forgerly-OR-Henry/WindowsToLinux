@@ -118,6 +118,7 @@ CREATE TABLE secret_revision
     secret_revision INTEGER           NOT NULL CHECK (secret_revision > 0),
     credential_id   CHARACTER VARYING NOT NULL,
     created_at      BIGINT            NOT NULL,
+    purpose         CHARACTER VARYING CHECK (purpose IS NULL OR LENGTH(purpose) BETWEEN 1 AND 128),
     PRIMARY KEY (secret_id, secret_revision)
 );
 CREATE TABLE deployment_unit_release_secret_reference
@@ -254,3 +255,25 @@ CREATE TABLE deployment_log
     CHECK (OCTET_LENGTH(message) <= 2048)
 );
 CREATE INDEX deployment_log_order ON deployment_log (owner_id, category, recorded_at DESC, log_id DESC);
+CREATE TABLE deployment_management_operation
+(
+    operation_id      UUID PRIMARY KEY,
+    platform_task_id  UUID              NOT NULL UNIQUE,
+    owner_mod_id      VARCHAR(512)      NOT NULL,
+    owner_mod_version VARCHAR(512)      NOT NULL,
+    application_id    CHARACTER VARYING NOT NULL,
+    server_profile_id CHARACTER VARYING NOT NULL,
+    action            VARCHAR(40)       NOT NULL CHECK (action IN
+        ('LIFECYCLE_START','LIFECYCLE_STOP','LIFECYCLE_RESTART','LIFECYCLE_ENABLE_AUTOSTART',
+        'LIFECYCLE_DISABLE_AUTOSTART','EXTERNAL_ADOPT',
+        'EXTERNAL_START','EXTERNAL_STOP','EXTERNAL_RESTART','HISTORY_SWITCH')
+) ,
+ current_release_sha256 CHAR(64) NOT NULL CHECK(REGEXP_LIKE(current_release_sha256,'^[0-9a-f]{64}$')),
+ target_release_sha256 CHAR(64) CHECK(target_release_sha256 IS NULL OR REGEXP_LIKE(target_release_sha256,'^[0-9a-f]{64}$')),
+ phase VARCHAR(24) NOT NULL CHECK(phase IN
+  ('REVIEWED','RESERVED','INSERTING','REGISTERED','SNAPSHOTTING','ACTIVATING',
+   'EFFECTING','COMPENSATING','FINISHED','UNKNOWN')),
+ component_state BINARY LARGE OBJECT NOT NULL,
+ updated_at BIGINT NOT NULL
+);
+CREATE INDEX deployment_management_application ON deployment_management_operation (application_id, updated_at DESC);

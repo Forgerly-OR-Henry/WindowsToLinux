@@ -111,6 +111,9 @@ final class DeploymentCollectionWork {
             String state = observed.value().orElseThrow().state().name();
             if (quiescence && state.equals("ERROR"))
                 return failed("DEPLOYMENT_COLLECTION_FAILED_COMPONENT_CANNOT_QUIESCE");
+            if (quiescence && state.equals("RUNNING") && (!component.runtime().workload().supportsLifecycle()
+                || !component.runtime().workload().equals(component.reviewedRuntime().workload())))
+                return failed("DEPLOYMENT_COLLECTION_LIFECYCLE_DECLARATION_UNREVIEWED");
             units.putObject(component.componentId()).put("before", state).put("maintenanceAttempted", false)
                 .put("maintenanceAcquired", false).put("stopAttempted", false).put("stopped", false)
                 .put("startAttempted", false).put("restored", false);
@@ -275,6 +278,9 @@ final class DeploymentCollectionWork {
                 continue;
             if (!saved.path("before").asText().equals("RUNNING") || !now.equals("STOPPED"))
                 throw fail("DEPLOYMENT_COLLECTION_RESTORE_STATE_UNKNOWN");
+            if (!component.runtime().workload().supportsLifecycle()
+                || !component.runtime().workload().equals(component.reviewedRuntime().workload()))
+                throw fail("DEPLOYMENT_COLLECTION_RESTORE_DECLARATION_UNREVIEWED");
             if (saved.path("startAttempted").asBoolean(false))
                 throw fail("DEPLOYMENT_COLLECTION_START_ATTEMPT_UNKNOWN");
             var held = marker(channel, component, operation);

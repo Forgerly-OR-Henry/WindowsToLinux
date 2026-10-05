@@ -20,10 +20,48 @@ import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
-    @Test
-    void validIndependentDenialStopsWithoutAnotherReviewOrHumanOverride() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"})
+    void catastrophicStaticDenialNeverRequestsAiHumanOrRemoteCapabilities(String policy) throws Exception {
+        var external = new AtomicInteger();
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            var actual = runtime.modContexts().get(OWNER).context();
+            var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),
+                new Class<?>[]{ModContext.class}, (proxy, method, arguments) -> {
+                    if (java.util.Set.of("ai", "interaction", "linux").contains(method.getName())) {
+                        external.incrementAndGet();
+                        throw new AssertionError("Static denial must precede all review and remote capability calls");
+                    }
+                    return method.invoke(actual, arguments);
+                });
+            var handle = actual.tasks().submit(new TaskRequest("static_denial", "Static command denial", java.util.List.of(), false), task -> {
+                var reviewer = new DeploymentAgentReview(context, new ServerId("server"), task, policy, "GENERAL",
+                    "a".repeat(64), () -> "a".repeat(64), new DeploymentAgentActionLog(actual.db()));
+                for (String script : java.util.List.of("rm -rf /", "/usr/bin/rm -r -f -- /*",
+                    "r'm' --recursive --force /etc", "rm -r -- /usr/bin", "rm -rf /tmp/..", "rm -rf //./",
+                    "rm -rf /usr/../var/*", "cd / && rm -rf *", "cd /etc; rm -rf .", "cd /tmp; rm -rf ..",
+                    "rm -rf /usr/local", "rm -rf /var/lib/*", "mkfs.ext4 /dev/sda", "dd if=/dev/zero of=/dev/sda",
+                    ":(){ :|:& };:", "printf overwrite > /dev/nvme0n1")) {
+                    var denied = assertThrows(SecurityException.class, () -> reviewer.command("service", "b".repeat(64), script));
+                    assertEquals("DEPLOYMENT_COMMAND_STATIC_DENIED", denied.getMessage());
+                }
+                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+            });
+            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
+            assertEquals(TaskState.ENDED, handle.snapshot().state());
+            assertEquals(0, external.get());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MANUAL_REVIEW", "AUTOMATIC", "FULL_CONTROL"})
+    void validIndependentDenialStopsWithoutAnotherReviewOrHumanOverride(String policy) throws Exception {
         var approvals = new AtomicInteger();
         var effects = new AtomicInteger();
         enable();
@@ -55,10 +93,10 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
                 });
             var handle = actual.tasks().submit(
                 new TaskRequest("independent_denial", "Independent denial", java.util.List.of(), false), task -> {
-                    var reviewer = new DeploymentAgentReview(context, new ServerId("server"), task, "FULL_CONTROL",
+                    var reviewer = new DeploymentAgentReview(context, new ServerId("server"), task, policy, "GENERAL",
                         "a".repeat(64), () -> "a".repeat(64), new DeploymentAgentActionLog(actual.db()));
                     var denied = assertThrows(SecurityException.class,
-                        () -> reviewer.command("service", "b".repeat(64), "printf approved"));
+                        () -> reviewer.command("service", "b".repeat(64), "rm -rf -- ./build"));
                     assertEquals("Independent deployment review denied action", denied.getMessage());
                     return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
                 });

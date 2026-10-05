@@ -36,6 +36,7 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.api.*;
 import gold.debug.windowstolinux.mod.deployment.linux.DeploymentManagedHelperBundle;
 import gold.debug.windowstolinux.mod.deployment.service.core.execution.*;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -99,7 +100,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         try {
             start(runtime, true);
             server(runtime);
-            var graph = graph("application");
+            var graph = reviewedGraph();
             run(runtime, task -> {
                 publishManaged(runtime, task, graph, 1);
                 return success();
@@ -229,7 +230,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             while (rows.next()) {
                 count++;
                 assertNotNull(rows.getString(1));
-                assertEquals("UNKNOWN", rows.getString(2));
+                assertEquals(rows.getString(1).equals("UNKNOWN") ? "UNKNOWN" : "ENABLED", rows.getString(2));
                 assertNotNull(rows.getObject(3));
                 assertEquals("deployment-helper-observation-v1", rows.getString(4));
                 assertNotNull(rows.getObject(5));
@@ -238,9 +239,34 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
         }
     }
 
+    private DeploymentApplicationGraph reviewedGraph() {
+        var original = graph("application");
+        var parts = original.components().stream().map(value -> {
+            var old = value.runtime().workload();
+            var workload = new DeploymentWorkload(old.mode(), true, old.command(), old.workingDirectory(), old.endpoints(),
+                old.verification(), old.expectedOutput(), old.client(), old.inputs(), old.companions(), old.buildDirectory(), old.workers());
+            var definition = value.reviewedRuntime().withWorkload(workload);
+            var runtime = new DeploymentUnitRuntimeConfig(value.runtime().healthCheck(), value.runtime().userAccessUrl(),
+                value.runtime().identityPolicy(), workload);
+            return new DeploymentApplicationGraph.Part(value.componentId(), value.unit(), runtime, value.dependencies(),
+                definition, value.dataPaths(), value.resources());
+        }).toList();
+        return new DeploymentApplicationGraph(original.applicationId(), original.healthComponentId(), original.healthCheck(), parts);
+    }
+
     private ModContext bind(ModContext actual, Peer peer) {
         LinuxService linux = new LinuxService() {
             public RemoteSession connect(ServerId server, TaskContext task) throws ApiException {
+                return peer.session(task);
+            }
+
+            public RemoteSession connect(gold.debug.windowstolinux.appapi.linux.session.RemoteTarget expected, TaskContext task) throws ApiException {
+                var current = actual.servers().get(expected.server(), task);
+                assertEquals(task.id(), expected.taskId());
+                assertEquals(current.host(), expected.host());
+                assertEquals(current.port(), expected.port());
+                assertEquals(current.username(), expected.username());
+                expected.fingerprint().ifPresent(value -> assertEquals("SHA256:" + "A".repeat(43), value));
                 return peer.session(task);
             }
 
@@ -290,7 +316,7 @@ class DeploymentApplicationLifecycleTest extends DeploymentManagedApplicationFix
             return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(),
                 new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
                     if (method.getName().equals("facts"))
-                        return new RemoteFacts("linux", "x86_64", "SHA256:management-fixture");
+                        return new RemoteFacts("linux", "x86_64", "SHA256:" + "A".repeat(43));
                     if (method.getName().equals("close")) {
                         lease.close();
                         sessions.decrementAndGet();

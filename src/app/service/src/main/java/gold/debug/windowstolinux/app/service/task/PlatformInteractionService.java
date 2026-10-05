@@ -5,6 +5,9 @@ import java.util.*;
 import javax.swing.SwingUtilities;
 
 import gold.debug.windowstolinux.app.service.security.DesktopSecurityService;
+import gold.debug.windowstolinux.appapi.file.action.DeleteEffect;
+import gold.debug.windowstolinux.appapi.file.action.FileActions;
+import gold.debug.windowstolinux.appapi.file.model.FileInfo;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflict;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
 import gold.debug.windowstolinux.appapi.linux.transfer.TransferProgress;
@@ -14,6 +17,8 @@ import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.action.AuthorizationMode;
+import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
 import gold.debug.windowstolinux.appapi.task.model.TaskState;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -109,31 +114,129 @@ public final class PlatformInteractionService implements InteractionService, Aut
      */
     @Override
     public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task) throws ApiException {
-        return approve(intent, task, false, "");
+        return approve(intent, task, Map.of(), "");
     }
 
-    /** Confirms every ordinary deletion, independently of optional explanation. / 独立于可选说明地确认每次普通删除。
-     * @param intent exact deletion / 精确删除
+    /** Delegates the complete original root workflow under its business-frozen mode. / 按业务冻结模式委托完整原根流程。
+     * @param frozenWorkflowIntent exact original handoff / 精确原交接
+     * @param authorizationMode business-frozen mode / 业务冻结模式
+     * @param task authentic ordinary root / 真实普通根
+     * @return host delegation or explicit cancellation / 宿主委托或明确取消
+     * @throws ApiException if root admission, handoff or release cannot be verified / 无法核验根准入、交接或释放时 */
+    @Override
+    public OperationResult<WorkflowGrant> delegateWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, TaskContext task) throws ApiException {
+        worker();
+        validate(frozenWorkflowIntent, task);
+        try {
+            var cancellation = cancelToken(task);
+            var grant = authorization.delegate(owner, version, frozenWorkflowIntent, authorizationMode, task, false,
+                () -> security.human(() -> prompts.approve(frozenWorkflowIntent, tasks.requireExecuting(task, owner, version), cancellation), cancellation));
+            return grant.isPresent() ? new OperationResult<>(TaskResult.SUCCEEDED, grant, Optional.empty()) : cancelled();
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            return cancelled();
+        } catch (RuntimeException failure) {
+            throw error(ProblemCode.UNAVAILABLE, "WORKFLOW_HANDOFF_UNAVAILABLE", "Workflow handoff did not complete");
+        }
+    }
+
+    /** Opens only original question repetition without asking for workflow handoff. / 仅开启原问题重复规则，不询问流程交接。
+     * @param frozenWorkflowIntent complete original workflow / 完整原流程
+     * @param authorizationMode frozen ONCE or GENERAL mode / 冻结的 ONCE 或 GENERAL 模式
+     * @param task authentic ordinary root / 真实普通根
+     * @return real close-only question scope / 真实仅关闭的问题作用域
+     * @throws ApiException if admission or policy is invalid / 准入或策略无效时 */
+    @Override
+    public OperationResult<WorkflowGrant> reviewedWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, TaskContext task) throws ApiException {
+        worker();
+        validate(frozenWorkflowIntent, task);
+        var grant = authorization.delegate(owner, version, frozenWorkflowIntent, authorizationMode, task, true, () -> false);
+        return new OperationResult<>(TaskResult.SUCCEEDED, grant, Optional.empty());
+    }
+
+    /** Opens new original-root recovery authority after expired occupancy cleanup, without reviving old grants. / 过期占用清理后开启新原根恢复权限，不复活旧许可。
+     * @param frozenWorkflowIntent exact original workflow / 精确原流程
+     * @param authorizationMode frozen business mode / 冻结业务模式
+     * @param reviewOnly whether only questions are scoped / 是否仅为问题建立作用域
+     * @param task authentic original reconciliation / 真实原核对
+     * @return fresh opaque scope or explicit refusal / 新不透明作用域或明确拒绝
+     * @throws ApiException if original recovery, handoff or cleanup fails / 原恢复、交接或清理失败时 */
+    @Override
+    public OperationResult<WorkflowGrant> recoverWorkflow(ActionIntent frozenWorkflowIntent, AuthorizationMode authorizationMode, boolean reviewOnly, TaskContext task) throws ApiException {
+        worker();
+        validate(frozenWorkflowIntent, task);
+        try {
+            var cancellation = cancelToken(task);
+            var grant = authorization.recover(owner, version, frozenWorkflowIntent, authorizationMode, task, reviewOnly,
+                () -> security.human(() -> prompts.approve(frozenWorkflowIntent, tasks.requireExecuting(task, owner, version), cancellation), cancellation));
+            return grant.isPresent() ? new OperationResult<>(TaskResult.SUCCEEDED, grant, Optional.empty()) : cancelled();
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            return cancelled();
+        } catch (RuntimeException failure) {
+            throw error(ProblemCode.UNAVAILABLE, "WORKFLOW_RECOVERY_HANDOFF", "Fresh recovery handoff did not complete");
+        }
+    }
+
+    /** Releases expired workflow occupancy only for original root recovery, without rebuilding permission. / 仅为原根恢复释放过期流程占用，不重建权限。
+     * @param task authentic original recovery context / 真实原恢复上下文
+     * @throws ApiException if original cleanup remains unconfirmed / 原清理仍未确认时 */
+    @Override
+    public void closeWorkflowResources(TaskContext task) throws ApiException {
+        authorization.cleanupDelegation(task, owner, version);
+    }
+
+    /** Applies captured authorization repetition to the business-required question. / 对业务要求的问题应用捕获的授权重复规则。
+     * @param intent exact actual effect and question meaning / 精确实际副作用及问题含义
+     * @param task authentic original task / 真实原任务
+     * @return real single-use grant or refusal / 真实单次许可或拒绝
+     * @throws ApiException if validation, question or cleanup fails / 校验、问题或清理失败时 */
+    @Override
+    public OperationResult<ApprovalGrant> approveRequired(ActionIntent intent, TaskContext task) throws ApiException {
+        return approve(intent, task, Map.of(), "", true);
+    }
+
+    /** Confirms the selected ordinary deletion effect, independently of optional explanation. / 独立于可选说明地确认用户选择的普通删除效果。
+     * @param intent canonical default deletion effect / 规范默认删除效果
+     * @param object exact observed object / 精确观测对象
      * @param explanation optional purpose information / 可选用途信息
      * @param task authentic task / 真实任务
      * @return exact ordinary grant or decline / 精确普通许可或拒绝
      * @throws ApiException if review fails / 审核失败时 */
-    public OperationResult<ApprovalGrant> confirmDeletion(ActionIntent intent, String explanation, TaskContext task) throws ApiException {
-        if (!"file-delete".equals(intent.type()))
-            throw error(ProblemCode.INVALID_INPUT, "FILE_DELETE_ACTION", "Deletion confirmation requires a deletion intent");
-        return approve(intent, task, true, Objects.requireNonNull(explanation));
+    public OperationResult<ApprovalGrant> confirmDeletion(ActionIntent intent, FileInfo object, String explanation, TaskContext task) throws ApiException {
+        boolean link = object.kind() == FileInfo.Kind.LINK;
+        var permanent = FileActions.delete(object, link, DeleteEffect.PERMANENT);
+        var recycle = FileActions.delete(object, link, DeleteEffect.RECYCLE);
+        var choices = new EnumMap<DeleteEffect, ActionIntent>(DeleteEffect.class);
+        choices.put(DeleteEffect.PERMANENT, permanent);
+        if (intent.equals(recycle)) choices.put(DeleteEffect.RECYCLE, recycle);
+        else if (!intent.equals(permanent))
+            throw error(ProblemCode.INVALID_INPUT, "FILE_DELETE_ACTION", "Deletion confirmation requires the exact observed deletion intent");
+        return approve(intent, task, Map.copyOf(choices), Objects.requireNonNull(explanation));
     }
 
     /** Issues grants after the applicable independent and human decisions. / 满足适用独立及人工决定后签发许可。
      * @param intent exact action / 精确动作
      * @param task original task / 原任务
-     * @param ordinaryDelete unconditional ordinary confirmation / 无条件普通确认
+     * @param deletionChoices exact effects offered for ordinary deletion, empty for other approval / 普通删除可选的精确效果，其他审批为空
      * @param explanation optional presentation only / 仅呈现用可选说明
      * @return original grant / 原许可
      * @throws ApiException if authorization fails / 授权失败时 */
-    private OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task, boolean ordinaryDelete, String explanation) throws ApiException {
+    private OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task, Map<DeleteEffect, ActionIntent> deletionChoices, String explanation) throws ApiException {
+        return approve(intent, task, deletionChoices, explanation, false);
+    }
+
+    /** Issues an exact grant after ordinary or delegated-required decisions. / 普通或委托必需确认后签发精确许可。
+     * @param intent actual intent / 实际意图
+     * @param task original task / 原任务
+     * @param deletionChoices ordinary deletion alternatives / 普通删除选项
+     * @param explanation ordinary deletion explanation / 普通删除说明
+     * @param required business requires this question / 业务要求此问题
+     * @return original single-use grant / 原单次许可
+     * @throws ApiException if authority or cleanup fails / 权限或清理失败时 */
+    private OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext task, Map<DeleteEffect, ActionIntent> deletionChoices, String explanation, boolean required) throws ApiException {
         worker();
         validate(intent, task);
+        boolean ordinaryDelete = !deletionChoices.isEmpty();
+        var selected = new ActionIntent[]{intent};
         boolean independent = "file-delete".equals(intent.type()) && !ordinaryDelete;
         String independentRevision = null;
         if (independent) {
@@ -149,17 +252,22 @@ public final class PlatformInteractionService implements InteractionService, Aut
             final PlatformAuthorizationService.Permit permit;
             try {
                 var cancellation = cancelToken(task);
-                var display = explanation.isBlank() ? intent : new ActionIntent(intent.type(), intent.serverIds(),
-                    intent.target(), intent.revision(), intent.exactAction(), intent.effectSummary() + "\n\n" + explanation, intent.semantics());
-                permit = authorization.review(owner, version, intent, task, () -> security.human(
-                    () -> prompts.approve(display, tasks.requireExecuting(task, owner, version), cancellation),
-                    cancellation), ordinaryDelete);
+                permit = authorization.review(owner, version, intent, task, () -> security.human(() -> {
+                    var snapshot = tasks.requireExecuting(task, owner, version);
+                    if (!ordinaryDelete) return prompts.approve(intent, snapshot, cancellation);
+                    DeleteEffect effect = prompts.delete(deletionChoices, explanation, snapshot, cancellation);
+                    if (effect == null) return false;
+                    var choice = deletionChoices.get(effect);
+                    if (choice == null) throw new IllegalArgumentException("Deletion effect was not offered");
+                    selected[0] = choice;
+                    return true;
+                }, cancellation), ordinaryDelete, required);
             } catch (java.util.concurrent.CancellationException cancelled) {
                 return cancelled();
             } catch (RuntimeException failure) {
                 throw error(ProblemCode.UNAVAILABLE, "APPROVAL_UNAVAILABLE", "Human review did not complete");
             }
-            validate(intent, task);
+            validate(selected[0], task);
             if (!permit.approved())
                 return cancelled();
             authorization.validate(permit, task);
@@ -170,7 +278,7 @@ public final class PlatformInteractionService implements InteractionService, Aut
                     .map(TaskSnapshot::id).collect(java.util.stream.Collectors.toSet());
                 grants.entrySet().removeIf(entry -> !activeTasks.contains(entry.getValue().task().id()));
                 var grant = new ApprovalGrant(UUID.randomUUID());
-                grants.put(grant, new Reviewed(task, intent, permit, Optional.ofNullable(independentRevision)));
+                grants.put(grant, new Reviewed(task, selected[0], permit, Optional.ofNullable(independentRevision)));
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.empty());
             }
         } finally {
@@ -539,6 +647,20 @@ public final class PlatformInteractionService implements InteractionService, Aut
          * @return explicit approval / 明确同意
          */
         boolean approve(ActionIntent intent, TaskSnapshot task, CancelToken cancellation);
+
+        /** Confirms an offered deletion effect; basic presenters review the recoverable default when available. / 确认可选删除效果，基础呈现器在可回收时审核回收默认项。
+         * @param choices immutable offered effects for the exact same object / 同一精确对象的不可变可选效果
+         * @param explanation optional metadata-only purpose information / 可选仅元数据用途说明
+         * @param task original task identity / 原任务身份
+         * @param cancellation cooperative prompt cancellation / 协作提示取消
+         * @return selected effect, or null for refusal or dismissal / 选定效果，拒绝或关闭时为 null */
+        default DeleteEffect delete(Map<DeleteEffect, ActionIntent> choices, String explanation, TaskSnapshot task, CancelToken cancellation) {
+            DeleteEffect effect = choices.containsKey(DeleteEffect.RECYCLE) ? DeleteEffect.RECYCLE : DeleteEffect.PERMANENT;
+            ActionIntent intent = choices.get(effect);
+            var display = explanation.isBlank() ? intent : new ActionIntent(intent.type(), intent.serverIds(),
+                intent.target(), intent.revision(), intent.exactAction(), intent.effectSummary() + "\n\n" + explanation, intent.semantics());
+            return approve(display, task, cancellation) ? effect : null;
+        }
 
         /**
          * Returns a disposable character buffer, or null for cancellation. / 返回可清除的字符缓冲区，取消时返回 null。

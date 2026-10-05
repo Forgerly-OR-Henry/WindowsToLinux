@@ -1,5 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.ui;
 
+import gold.debug.windowstolinux.mod.deployment.ui.style.DeploymentPageStyle;
+
 import java.nio.file.Path;
 import java.util.Set;
 
@@ -35,6 +37,9 @@ final class DeploymentGitSourceForm {
     /** Owner page used only for current messages. / 仅用于当前消息的所属页。 */
     private final DeploymentStaticPage page;
 
+    /** Captured draft stays frozen while an original task still owns its decisions. / 原任务持有决定期间抓取的草稿保持冻结。 */
+    private boolean enabled = true;
+
     /** Builds hidden Git-only controls; no process starts here. / 构建默认隐藏的仅 Git 控件；此处不启动进程。
      * @param page original owner page / 原所属页 */
     DeploymentGitSourceForm(DeploymentStaticPage page) {
@@ -54,7 +59,7 @@ final class DeploymentGitSourceForm {
             label.setForeground(selected ? list.getSelectionForeground() : list.getForeground());
             return label;
         });
-        kind.addActionListener(ignored -> ref.setEnabled(!"DEFAULT".equals(kind.getSelectedItem())));
+        kind.addActionListener(ignored -> ref.setEnabled(enabled && !"DEFAULT".equals(kind.getSelectedItem())));
         ref.setEnabled(false);
         localize();
         panel.setVisible(false);
@@ -72,6 +77,17 @@ final class DeploymentGitSourceForm {
         panel.setVisible(visible);
     }
 
+    /** Freezes the existing controls without discarding their values. / 冻结既有控件，不丢弃其值。
+     * @param enabled actual draft edit admission / 实际草稿编辑准入 */
+    void enabled(boolean enabled) {
+        this.enabled = enabled;
+        url.setEnabled(enabled);
+        kind.setEnabled(enabled);
+        executable.setEnabled(enabled);
+        permitLocal.setEnabled(enabled);
+        ref.setEnabled(enabled && !"DEFAULT".equals(kind.getSelectedItem()));
+    }
+
     /** Refreshes only labels when the host locale changes. / 宿主语言改变时仅刷新标签。 */
     void localize() {
         urlLabel.setText(page.text("gitUrl"));
@@ -80,6 +96,18 @@ final class DeploymentGitSourceForm {
         executableLabel.setText(page.text("gitExecutable"));
         permitLocal.setText(page.text("allowLocalGit"));
         kind.repaint();
+    }
+
+    /** Loads only saved credential-free source metadata; execution is reauthorized by a later task. / 仅加载已保存无凭据来源元数据，由后续任务重新授权执行。
+     * @param source complete original source row / 完整原来源行 */
+    void load(gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentProjectSource source) {
+        url.setText(source.location().toString());
+        String selected = source.gitRef().orElseThrow();
+        int separator = selected.indexOf(':');
+        if (separator < 1) throw new IllegalArgumentException("Saved Git reference is invalid");
+        kind.setSelectedItem(selected.substring(0, separator));
+        ref.setText(selected.substring(separator + 1));
+        permitLocal.setSelected(source.location().getScheme().equals("file"));
     }
 
     /** Reads a typed input before task admission, retaining no credential in the request. / 任务准入前读取类型化输入，请求不保留凭据。

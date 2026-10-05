@@ -19,6 +19,8 @@ import gold.debug.windowstolinux.mod.deployment.db.DeploymentExecutionStore;
 import gold.debug.windowstolinux.mod.deployment.secret.DeploymentSecretProvisionFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentGitSourceFlow;
 import gold.debug.windowstolinux.mod.deployment.service.core.DeploymentRefFlow;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentPublishPolicyContext;
+import gold.debug.windowstolinux.mod.deployment.service.standard.deploy.publication.DeploymentStandardPublishRecovery;
 
 /** Reconciles original prepublication material and native DB receipts before local cleanup; formal executions retain their original recovery. / 本机清理前核对原发布前素材及原生数据库回执；正式执行仍由原恢复处理。 */
 public final class DeploymentStaticTaskRecovery implements TaskRecovery {
@@ -47,6 +49,30 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
      * @throws Exception if original evidence cannot be read or released / 原依据无法读取或释放时 */
     @Override
     public OperationResult<Void> reconcile(TaskSnapshot previous, TaskContext task) throws Exception {
+        if (!DeploymentRefFlow.TASK_TYPE.equals(previous.type()) || !previous.id().equals(task.id())
+            || !context.identity().id().equals(previous.ownerId()) || !context.identity().version().equals(previous.ownerVersion()))
+            return unknown();
+        final DeploymentPublishPolicyContext guarded;
+        try {
+            guarded = DeploymentPublishPolicyContext.recover(context, task);
+        } catch (ApiException | IllegalArgumentException unavailable) {
+            return unknown();
+        }
+        var recovery = new DeploymentStaticTaskRecovery(guarded,
+            new DeploymentRefFlow(guarded, new DeploymentStandardPublishRecovery(guarded)));
+        try {
+            return recovery.reconcileOriginal(previous, task);
+        } finally {
+            guarded.finish(TaskResult.UNKNOWN);
+        }
+    }
+
+    /** Shares the same guarded policy for preparation receipts and formal publication recovery. / 为准备回执及正式发布恢复共用同份受控策略。
+     * @param previous retained original task / 留存原任务
+     * @param task authentic original recovery / 真实原恢复
+     * @return known original outcome or uncertainty / 原已知结果或未知
+     * @throws Exception if original recovery or cleanup fails / 原恢复或清理失败时 */
+    private OperationResult<Void> reconcileOriginal(TaskSnapshot previous, TaskContext task) throws Exception {
         if (!DeploymentRefFlow.TASK_TYPE.equals(previous.type()) || !previous.id().equals(task.id()))
             return unknown();
         Optional<DeploymentProtocolBootstrapActionLog> bootstrap;
@@ -59,13 +85,21 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
         } catch (IllegalArgumentException damaged) {
             return unknown();
         }
-        if (executions.findForTask(task).isPresent()) {
+        var sourceSave = gold.debug.windowstolinux.mod.deployment.service.core.DeploymentProjectSaveActionLog.reconcile(context, task);
+        if (sourceSave.filter(TaskResult.UNKNOWN::equals).isPresent()) return unknown();
+        var execution = executions.findForTask(task);
+        if (execution.isPresent()) {
             if (bootstrap.isPresent() && !settleBootstrap(task, bootstrap.orElseThrow()))
                 return unknown();
             if (database.isPresent() && !settleDatabase(task, database.orElseThrow()))
                 return unknown();
             if (databasePlan.isPresent() && !settleDatabasePlan(task, databasePlan.orElseThrow()))
                 return unknown();
+            if ((execution.orElseThrow().phase().equals("PREPARED")
+                || execution.orElseThrow().outcome().filter(value -> value != TaskResult.UNKNOWN).isPresent())
+                && DeploymentPublishPolicyContext.releaseKnown(context, task)) {
+                context.file().closeTaskResources(task);
+            }
             return references.reconcile(previous, task);
         }
         Optional<DeploymentStaticSetupActionLog> marker;
@@ -103,6 +137,7 @@ public final class DeploymentStaticTaskRecovery implements TaskRecovery {
             return unknown();
         var original = marker.orElseThrow();
         boolean cancelled = original.wasCancelled() || gitOutcome.filter(TaskResult.CANCELLED::equals).isPresent();
+        DeploymentPublishPolicyContext.releaseKnown(context, task);
         context.file().closeTaskResources(task);
         original.close();
         var code = cancelled ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE;
