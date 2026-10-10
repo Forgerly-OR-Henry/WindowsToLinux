@@ -16,6 +16,7 @@ import urllib.parse
 OS_PROFILE = None
 HOOK_OWNERS = frozenset(('apt', 'dpkg', 'debconf', 'needrestart', 'ubuntu-release-upgrader-core',
                         'packagekit', 'appstream', 'apt-listchanges', 'man-db', 'update-notifier-common'))
+UBUNTU_PRO_HOOK_OWNERS = frozenset(('ubuntu-pro-client', 'ubuntu-advantage-tools'))
 
 
 class DependencyFailure(Exception):
@@ -57,7 +58,7 @@ def dependency_diagnostic_line(error, args):
     allowed = value['allowedOwners']
     if not isinstance(allowed, list) or not 1 <= len(allowed) <= 16 or any(not isinstance(name, str) or not re.fullmatch('[a-z0-9+.-]{1,96}', name) for name in allowed) or allowed != sorted(set(allowed)):
         return None
-    known = HOOK_OWNERS | {'ubuntu-keyring', 'debian-archive-keyring'}
+    known = HOOK_OWNERS | UBUNTU_PRO_HOOK_OWNERS | {'ubuntu-keyring', 'debian-archive-keyring'}
     if not set(allowed) <= known:
         return None
     projection = {'operation': args[1], 'phase': 'OS_CONFIGURATION_OWNER', **value}
@@ -258,6 +259,12 @@ def dependency_key(value, manager):
             dependency_reject('MODIFIED_OS_KEY')
 
 
+def dependency_apt_hook_owners(path):
+    if OS_PROFILE is not None and OS_PROFILE['id'] == 'ubuntu' and OS_PROFILE['manager'] == 'APT' and str(path) == '/etc/apt/apt.conf.d/20apt-esm-hook.conf':
+        return HOOK_OWNERS | UBUNTU_PRO_HOOK_OWNERS
+    return HOOK_OWNERS
+
+
 def dependency_apt_options(value, path=None, effective=False):
     # Includes effective apt-config output. Reject source-dir/key hook overrides and auth relaxation.
     compact = re.sub(r'["\s;]', '', value).lower()
@@ -272,7 +279,7 @@ def dependency_apt_options(value, path=None, effective=False):
     if hooks and not effective:
         if path is None:
             dependency_reject('UNREGISTERED_APT_HOOK')
-        dependency_registered(path, HOOK_OWNERS, value.encode('utf-8'))
+        dependency_registered(path, dependency_apt_hook_owners(path), value.encode('utf-8'))
     expected = {'sourcelist': 'sources.list', 'sourceparts': 'sources.list.d',
                 'trusted': 'trusted.gpg', 'trustedparts': 'trusted.gpg.d',
                 'main': 'apt.conf', 'parts': 'apt.conf.d', 'netrc': 'auth.conf',
