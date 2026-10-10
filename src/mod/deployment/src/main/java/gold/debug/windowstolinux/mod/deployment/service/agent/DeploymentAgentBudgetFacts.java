@@ -10,12 +10,13 @@ final class DeploymentAgentBudgetFacts {
     }
 
     static Map<String, Object> observe(int remainingResponses, int mainAttempts) {
-        int mainRemaining = Math.max(0, 80 - mainAttempts);
+        int maximumAttempts = DeploymentToolBudget.maximum();
+        int mainRemaining = Math.max(0, maximumAttempts - mainAttempts);
         int sharedRemaining = DeploymentToolBudget.remaining();
-        return Map.of("maximumModelResponses", 80, "remainingModelResponsesAfterThisRequest", remainingResponses,
-            "maximumSharedToolAttempts", 80, "mainToolAttempts", mainAttempts,
-            "remainingMainToolAttempts", mainRemaining, "remainingSharedToolAttempts", sharedRemaining,
-            "remainingExecutableToolAttempts", Math.min(mainRemaining, sharedRemaining),
-            "maximumCallsPerResponse", 4, "rejectedCallsConsumeAttempts", true, "publicationUsesSharedAttempts", true);
+        return Map.ofEntries(Map.entry("maximumModelResponses", 80), Map.entry("remainingModelResponsesAfterThisRequest", remainingResponses),
+            Map.entry("maximumMainToolAttempts", maximumAttempts), Map.entry("maximumSharedToolAttempts", maximumAttempts),
+            Map.entry("mainToolAttempts", mainAttempts), Map.entry("remainingMainToolAttempts", mainRemaining),
+            Map.entry("remainingSharedToolAttempts", sharedRemaining), Map.entry("remainingExecutableToolAttempts", Math.min(mainRemaining, sharedRemaining)),
+            Map.entry("maximumCallsPerResponse", 4), Map.entry("rejectedCallsConsumeAttempts", true), Map.entry("publicationUsesSharedAttempts", true));
     }
 }

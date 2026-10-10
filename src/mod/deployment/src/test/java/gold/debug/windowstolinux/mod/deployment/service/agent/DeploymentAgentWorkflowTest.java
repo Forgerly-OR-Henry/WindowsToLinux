@@ -666,7 +666,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                     assertEquals(decisions, calls.get());
                     peer.active = false;
                     peer.recoveryKnown = true;
-                    revision.set("a".repeat(64));
+                    revision.set((selected == ScenarioType.APPROVAL_DRIFT || selected == ScenarioType.AI_APPROVAL_DRIFT ? "b" : "a").repeat(64));
                     var recovered = reconcileReady(runtime, handle);
                     assertEquals(TaskState.ENDED, recovered.state());
                     assertEquals(
