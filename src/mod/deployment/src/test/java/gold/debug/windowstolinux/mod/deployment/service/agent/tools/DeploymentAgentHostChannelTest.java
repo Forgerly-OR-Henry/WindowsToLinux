@@ -52,9 +52,12 @@ class DeploymentAgentHostChannelTest {
         assertTrue(script.contains("case \"$key\" in ID | VARIANT_ID | VERSION_ID)"));
         for (String key : List.of("ID", "VARIANT_ID", "VERSION_ID"))
             assertTrue(script.contains(key + "=\"$(os_release_value " + key + " \"$os_release\")\" || exit 64"));
-        assertTrue(script.contains("uname -m || exit 64"));
-        assertTrue(script.contains("dpkg --print-architecture || exit 64"));
-        assertTrue(script.contains("rpm --eval '%{_arch}' || exit 64"));
+        assertTrue(script.contains("agent_uname_command=\"$(probe_command uname)\" || exit 64"));
+        assertTrue(script.contains("\"$agent_uname_command\" -m || exit 64"));
+        assertTrue(script.contains("if agent_dpkg_command=\"$(probe_command dpkg)\"; then"));
+        assertTrue(script.contains("\"$agent_dpkg_command\" --print-architecture || exit 64"));
+        assertTrue(script.contains("elif agent_rpm_command=\"$(probe_command rpm)\"; then"));
+        assertTrue(script.contains("\"$agent_rpm_command\" --eval '%{_arch}' || exit 64"));
         assertTrue(script.contains("if probe_command systemctl"));
         for (String excluded : List.of("compgen", "python", "venv", "node", "java", "npm", "mvn", "dotnet", "composer", "ruby", "--version", "--help", "ld-linux", "/proc/cpuinfo", "firewall", "nft", "ufw", "getenforce", "docker", "podman"))
             assertFalse(script.contains(excluded), excluded);

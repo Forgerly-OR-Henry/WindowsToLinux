@@ -21,14 +21,16 @@ public final class DeploymentAgentHostProbe {
             VARIANT_ID="$(os_release_value VARIANT_ID "$os_release")" || exit 64
             VERSION_ID="$(os_release_value VERSION_ID "$os_release")" || exit 64
             printf 'FORMAT=WTL_AGENT_BASELINE_1\\nDISTRO_ID=%s\\nDISTRO_VARIANT=%s\\nVERSION=%s\\n' "${ID:-unknown}" "${VARIANT_ID:-}" "${VERSION_ID:-unknown}"
-            probe_command uname >/dev/null || exit 64
-            printf 'ARCH='; uname -m || exit 64
+            # probe_command returns an absolute executable only after protected file and parent checks.
+            agent_uname_command="$(probe_command uname)" || exit 64
+            printf 'ARCH='; "$agent_uname_command" -m || exit 64
             if probe_command apt-get >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=apt\\n';
             elif probe_command dnf >/dev/null 2>&1; then printf 'PACKAGE_MANAGER=dnf\\n';
             else printf 'PACKAGE_MANAGER=unknown\\n'; fi
-            if probe_command dpkg >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; dpkg --print-architecture || exit 64
-            elif probe_command rpm >/dev/null 2>&1; then printf 'PACKAGE_ARCH='; rpm --eval '%{_arch}' || exit 64
+            if agent_dpkg_command="$(probe_command dpkg)"; then printf 'PACKAGE_ARCH='; "$agent_dpkg_command" --print-architecture || exit 64
+            elif agent_rpm_command="$(probe_command rpm)"; then printf 'PACKAGE_ARCH='; "$agent_rpm_command" --eval '%{_arch}' || exit 64
             else printf 'PACKAGE_ARCH=unknown\\n'; fi
+            # SYSTEMD describes protected command availability; no daemon or runtime admission is inferred.
             if probe_command systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
             """);
     }
