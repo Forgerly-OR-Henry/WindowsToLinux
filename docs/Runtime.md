@@ -220,6 +220,6 @@ APP 打开的独立救援浏览器随锁定隐藏并禁用原生窗口，自动�
 
 完整 SSH 救援闭环归 `app/linux/ssh/recover`：`SshRecovery` 持有原中央任务准入、会话、预算、动作确认、模型建议、固定 SSH 复核、原任务核对和资源收尾。`SshRecoverySession`、`BrowserRecoverySnapshot` 与 `TerminalTarget` 是唯一受控交互及纯值边界，不再保留 Service 的救援包或重复 UI 快照。`app/main/start/PlatformRecoveryHost` 仅接入既有任务、安全、模型及 DB 接口，保存配置变化核对、原身份与原清理凭据；Linux 不引用 Service、DB、UI 或冻结 shared 类型。UI 只能访问受控救援入口、会话及纯值，不能取得 SSH 连接、浏览器、模型调用或宿主注入对象。DB 继续保存救援元数据和归档事务。
 
-救援固定提示、建议影响分类和严格 JSON 解析归 `app/linux/ssh/recover` 的 `RecoveryProtocol` 与 `RecoveryAction`；`app/ai` 仅提供通用模型用途、能力和调用协议。Linux 救援包的 `PlatformRecoveryModels` 经启动层注入的原平台任务及实际 AiService 分别调用视觉/语言用途，不使用审批模型生成建议；宿主输出上限为 2048 Token，并按各候选模型已配置上限取较小值，每次调用期限为 60 秒。普通 Mod 显式 AiRequest 的超限拒绝规则不变。完整响应结构不合格不另换模型；发送后结果未知保留原任务，不请求下一条建议。该模型适配已接默认救援入口。模型仅生成观察和建议，不执行命令；历史 shared 源码保留于 `history-src`，不进入活动构建。
+救援固定提示、建议影响分类和严格 JSON 解析归 `app/linux/ssh/recover` 的 `RecoveryProtocol` 与 `RecoveryAction`；`app/ai` 仅提供通用模型用途、能力和调用协议。Linux 救援包的 `PlatformRecoveryModels` 经启动层注入的原平台任务及实际 AiService 分别调用视觉/语言用途，不使用审批模型生成建议；救援、删除审核和文件判断均省略请求输出额度，统一使用 APP 推荐值，不受 Mod 覆写开关影响；三者仅保留独立调用超时，默认分别为 60、30、20 秒，不再按逐模型旧额度裁剪。完整响应结构不合格不另换模型；发送后结果未知保留原任务，不请求下一条建议。该模型适配已接默认救援入口。模型仅生成观察和建议，不执行命令；历史 shared 源码保留于 `history-src`，不进入活动构建。
 
 公开 `AiPurpose` 区分 LANGUAGE、APPROVAL、VISION 和 VOICE；内部配置 `AiPurposeType.DEPLOYMENT` 对应公开 LANGUAGE，其余用途同名。`AiCapabilityType` 分别记录 TEXT、VISION、VOICE_FILE、VOICE_REALTIME 的验证。显示排序与用途调用顺序分离，任务持有精确配置快照。视觉识别只返回受控观察，语言和审批保持独立上下文。当前 H2 的模型、用途及能力记录保存独立顺序和配置修订，任务及事件表保存非秘密历史。三模式自动部署不接入浏览器救援，独立救援继续要求用户逐项授权。

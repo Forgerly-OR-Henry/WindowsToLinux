@@ -18,15 +18,15 @@ common:
       probe-timeout-seconds: 15
   ai:
     connect-seconds: 10
+    recommended-max-output-tokens: 32768
+    allow-output-token-override: true
+    verification-max-output-tokens: 8192
     recovery:
       timeout-seconds: 60
-      max-tokens: 2048
     deletion:
       timeout-seconds: 30
-      max-tokens: 512
     file:
       timeout-seconds: 20
-      max-tokens: 256
   logs:
     emergency-records: 100
   mod:

@@ -27,8 +27,9 @@ public final class ConfigLoader {
         "ui.advanced-expanded", "defaults.locale", "defaults.theme", "defaults.connect-seconds", "defaults.idle-seconds",
         "defaults.delete-ai-explanation", "ssh.heartbeat-seconds", "ssh.recovery.observation-seconds",
         "ssh.recovery.probe-interval-seconds", "ssh.recovery.probe-timeout-seconds", "ai.connect-seconds",
-        "ai.recovery.timeout-seconds", "ai.recovery.max-tokens", "ai.deletion.timeout-seconds", "ai.deletion.max-tokens",
-        "ai.file.timeout-seconds", "ai.file.max-tokens", "logs.emergency-records", "mod.auto-load", "mod.store.base-url");
+        "ai.recommended-max-output-tokens", "ai.allow-output-token-override", "ai.verification-max-output-tokens",
+        "ai.recovery.timeout-seconds", "ai.deletion.timeout-seconds", "ai.file.timeout-seconds",
+        "logs.emergency-records", "mod.auto-load", "mod.store.base-url");
 
     /** Prevents instances of the static YAML loader. / 禁止创建静态 YAML 加载器实例。 */
     private ConfigLoader() {
@@ -98,7 +99,10 @@ public final class ConfigLoader {
                 new AppConfig.Defaults(locale, theme, number(values, "defaults.connect-seconds", 86400), number(values, "defaults.idle-seconds", 86400), bool(values, "defaults.delete-ai-explanation")),
                 new AppConfig.Ssh(number(values, "ssh.heartbeat-seconds", 86400), number(values, "ssh.recovery.observation-seconds", 86400),
                     number(values, "ssh.recovery.probe-interval-seconds", 86400), number(values, "ssh.recovery.probe-timeout-seconds", 86400)),
-                new AppConfig.Ai(number(values, "ai.connect-seconds", 86400), budget(values, "recovery"), budget(values, "deletion"), budget(values, "file")),
+                new AppConfig.Ai(number(values, "ai.connect-seconds", 86400),
+                    number(values, "ai.recommended-max-output-tokens", Integer.MAX_VALUE), bool(values, "ai.allow-output-token-override"),
+                    number(values, "ai.verification-max-output-tokens", Integer.MAX_VALUE),
+                    budget(values, "recovery"), budget(values, "deletion"), budget(values, "file")),
                 number(values, "logs.emergency-records", 100), !mode.equals("class") || bool(values, "mod.auto-load"), store);
         } catch (IllegalArgumentException invalid) {
             throw new IOException("Invalid configuration value: " + invalid.getMessage(), invalid);
@@ -193,12 +197,12 @@ public final class ConfigLoader {
         return value;
     }
 
-    /** Reads the timeout and token bounds for one model purpose. / 读取一个模型用途的超时及 token 界限。
+    /** Reads the independent timeout for one internal model purpose. / 读取一个内部模型用途的独立超时。
      * @param values merged effective fields / 合并后生效字段
      * @param name recovery, deletion or file purpose / 救援、删除或文件用途
      * @return immutable request budget / 不可变请求预算
-     * @throws IOException if either bound is invalid / 任一界限无效时 */
+     * @throws IOException if the timeout is invalid / 超时无效时 */
     private static AppConfig.Budget budget(Map<String, JsonNode> values, String name) throws IOException {
-        return new AppConfig.Budget(number(values, "ai." + name + ".timeout-seconds", 86400), number(values, "ai." + name + ".max-tokens", Integer.MAX_VALUE));
+        return new AppConfig.Budget(number(values, "ai." + name + ".timeout-seconds", 86400));
     }
 }

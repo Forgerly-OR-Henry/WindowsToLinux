@@ -22,7 +22,7 @@ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 
 /** Uses the original platform task and configured model budgets for rescue advice. / 使用原平台任务及已配置模型预算提供救援建议。 */
 public final class PlatformRecoveryModels implements RecoveryModels {
-    /** Frozen timeout and token limits for rescue requests. / 救援请求的冻结超时及 token 上限。 */
+    /** Frozen timeout for rescue requests. / 救援请求的冻结超时。 */
     private final gold.debug.windowstolinux.app.config.AppConfig.Budget budget;
 
     /** Task-bound call supplied by the composition root. / 由装配根提供的任务绑定调用。 */
@@ -95,7 +95,7 @@ public final class PlatformRecoveryModels implements RecoveryModels {
      * @throws ApiException if the original task cannot safely continue / 原任务不能安全继续时 */
     private Result call(AiPurpose purpose, String instruction, AiMessage evidence) throws ApiException {
         var request = new AiRequest(purpose, List.of(new AiMessage(AiRole.SYSTEM, instruction, List.of()), evidence),
-            budget.maxTokens(), Duration.ofSeconds(budget.timeoutSeconds()), true);
+            Duration.ofSeconds(budget.timeoutSeconds()), true);
         OperationResult<AiResponse> result;
         try {
             result = ai.call(request, task);

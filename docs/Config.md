@@ -59,12 +59,16 @@ YAML 的资源位置不改变数据目录的相对路径基准：
 | 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
 |---|---|---|---|---|---|---|
 | `ai.connect-seconds` | 文字、视觉、文件语音 HTTP 及实时语音 WebSocket 连接时限上限；同时受请求总超时限制 | 整数 / 秒 | 10 | 1～86400 | `10` | CLASS / JAR / APP |
+| `ai.recommended-max-output-tokens` | 普通模型调用未指定额度时的推荐最大输出 Token；关闭覆写时强制使用 | 整数 / Token | 32768 | 1～2147483647 | `32768` | CLASS / JAR / APP |
+| `ai.allow-output-token-override` | 允许调用方为本次普通模型调用覆写推荐额度 | 布尔 | true | true / false | `false` | CLASS / JAR / APP |
+| `ai.verification-max-output-tokens` | 文字、视觉及原生工具能力验证的独立输出额度 | 整数 / Token | 8192 | 1～2147483647 | `8192` | CLASS / JAR / APP |
 | `ai.recovery.timeout-seconds` | 救援模型请求总超时 | 整数 / 秒 | 60 | 1～86400 | `60` | CLASS / JAR / APP |
-| `ai.recovery.max-tokens` | 救援模型最大输出 Token | 整数 / Token | 2048 | 1～2147483647 | `2048` | CLASS / JAR / APP |
-| `ai.deletion.timeout-seconds` | 删除说明请求总超时 | 整数 / 秒 | 30 | 1～86400 | `30` | CLASS / JAR / APP |
-| `ai.deletion.max-tokens` | 删除说明最大输出 Token | 整数 / Token | 512 | 1～2147483647 | `512` | CLASS / JAR / APP |
+| `ai.deletion.timeout-seconds` | 删除审核请求总超时 | 整数 / 秒 | 30 | 1～86400 | `30` | CLASS / JAR / APP |
 | `ai.file.timeout-seconds` | 文件判断请求总超时 | 整数 / 秒 | 20 | 1～86400 | `20` | CLASS / JAR / APP |
-| `ai.file.max-tokens` | 文件判断最大输出 Token | 整数 / Token | 256 | 1～2147483647 | `256` | CLASS / JAR / APP |
+
+普通模型调用统一由 APP 服务解析额度。允许覆写时，Mod 省略请求额度使用推荐值，传入正整数则原样使用；关闭覆写时始终使用推荐值，但非法请求值仍拒绝。APP 内部的 SSH 救援、删除审核和文件判断均省略请求额度，统一使用推荐值，不受覆写开关影响；三者仅分别配置请求超时，不再提供 `max-tokens` 字段。能力验证始终使用独立验证额度，不受开关影响；语音转写不发送输出 Token 参数。推荐额度不表示模型能力上限，平台不按旧模型字段裁剪，也不推测提供方上限；提供方拒绝沿用原错误处理。
+
+模型编辑器中的旧输出额度字段及其 DB 存取暂留，页面本次不调整。该字段不再参与调用、能力验证或冻结路由；仅修改它不使验证失效。推荐值和覆写开关纳入冻结调用修订，启动快照改变后原任务仍须通过续接检查。
 
 ### 日志参数
 
@@ -114,15 +118,15 @@ common:
       probe-timeout-seconds: 15
   ai:
     connect-seconds: 10
+    recommended-max-output-tokens: 32768
+    allow-output-token-override: true
+    verification-max-output-tokens: 8192
     recovery:
       timeout-seconds: 60
-      max-tokens: 2048
     deletion:
       timeout-seconds: 30
-      max-tokens: 512
     file:
       timeout-seconds: 20
-      max-tokens: 256
   logs:
     emergency-records: 100
   mod:

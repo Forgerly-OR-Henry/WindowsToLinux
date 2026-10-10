@@ -38,7 +38,7 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
      * @return baseline configuration / 默认配置 */
     public static AppConfig defaultsConfig() {
         return new AppConfig("data", new Ui(false, false), new Defaults("system", "SYSTEM", 30, 300, true),
-            new Ssh(30, 2, 10, 15), new Ai(10, new Budget(60, 2048), new Budget(30, 512), new Budget(20, 256)),
+            new Ssh(30, 2, 10, 15), new Ai(10, 32768, true, 8192, new Budget(60), new Budget(30), new Budget(20)),
             100, true, Optional.empty());
     }
 
@@ -66,17 +66,27 @@ public record AppConfig(String dataDirectory, Ui ui, Defaults defaults, Ssh ssh,
     public record Ssh(int heartbeatSeconds, int observationSeconds, int probeIntervalSeconds, int probeTimeoutSeconds) {
     }
 
-    /** Positive model budget. / 正模型预算。
-     * @param timeoutSeconds request timeout / 请求超时
-     * @param maxTokens output token limit / 输出Token上限 */
-    public record Budget(int timeoutSeconds, int maxTokens) {
+    /** Model request time budget; output uses the APP recommendation. / 模型请求时间预算，输出使用 APP 推荐额度。
+     * @param timeoutSeconds request timeout / 请求超时 */
+    public record Budget(int timeoutSeconds) {
     }
 
     /** Independent transport and operation budgets. / 独立传输与用途预算。
      * @param connectSeconds HTTP connect cap / HTTP连接上限
-     * @param recovery SSH recovery budget / SSH救援预算
-     * @param deletion deletion explanation budget / 删除说明预算
-     * @param file file judgement budget / 文件判断预算 */
-    public record Ai(int connectSeconds, Budget recovery, Budget deletion, Budget file) {
+     * @param recommendedMaxOutputTokens default output budget / 默认推荐输出额度
+     * @param allowOutputTokenOverride whether ordinary callers may override the recommendation / 是否允许普通调用方覆写推荐额度
+     * @param verificationMaxOutputTokens independent capability verification budget / 独立能力验证额度
+     * @param recovery SSH recovery timeout / SSH救援超时
+     * @param deletion deletion review timeout / 删除审核超时
+     * @param file file judgement timeout / 文件判断超时 */
+    public record Ai(int connectSeconds, int recommendedMaxOutputTokens, boolean allowOutputTokenOverride,
+                     int verificationMaxOutputTokens, Budget recovery, Budget deletion, Budget file) {
+        public Ai {
+            if (connectSeconds < 1 || recommendedMaxOutputTokens < 1 || verificationMaxOutputTokens < 1)
+                throw new IllegalArgumentException("AI transport and output budgets must be positive");
+            Objects.requireNonNull(recovery);
+            Objects.requireNonNull(deletion);
+            Objects.requireNonNull(file);
+        }
     }
 }

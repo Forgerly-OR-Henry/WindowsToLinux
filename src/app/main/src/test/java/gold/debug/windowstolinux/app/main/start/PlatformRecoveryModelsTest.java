@@ -6,6 +6,7 @@ import static gold.debug.windowstolinux.app.main.start.PlatformTaskAdmissionInte
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -23,6 +24,8 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PlatformRecoveryModelsTest {
     @TempDir
@@ -36,9 +39,10 @@ class PlatformRecoveryModelsTest {
                 "usage", Map.of("prompt_tokens", 3, "completion_tokens", 4)));
     }
 
-    @Test
-    void actualTaskSeparatesVisionAndLanguageWithOriginalCredentialsAndBudgets() throws Exception {
-        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void actualTaskSeparatesVisionAndLanguageWithOriginalCredentialsAndBudgets(boolean allow) throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root, allow)) {
             initialize(runtime, false);
             model(runtime, fixture, "vision", "/vision", AiCapabilityType.VISION, 64);
             model(runtime, fixture, "language", "/language", AiCapabilityType.TEXT, 128);
@@ -51,7 +55,11 @@ class PlatformRecoveryModelsTest {
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             var escaped = new AtomicReference<PlatformRecoveryModels>();
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                var models = new PlatformRecoveryModels(ai::callWithinModelLimit, task);
+                var models = new PlatformRecoveryModels((call, context) -> {
+                    assertTrue(call.maxOutputTokens().isEmpty());
+                    assertEquals(Duration.ofSeconds(60), call.timeout());
+                    return ai.call(call, context);
+                }, task, runtime.startup().config().ai().recovery());
                 escaped.set(models);
                 assertEquals("local terminal",
                     models.observe(new TerminalObservation("local terminal", new byte[0], 1)).content());
@@ -69,11 +77,11 @@ class PlatformRecoveryModelsTest {
             assertNotNull(image);
             assertNotNull(text);
             assertEquals("Bearer fixture-key-vision", image.authorization());
-            assertEquals(64, image.body().path("max_tokens").intValue());
+            assertEquals(32768, image.body().path("max_tokens").intValue());
             assertTrue(image.body().path("messages").get(1).path("content").get(1).path("image_url").path("url")
                 .asText().startsWith("data:image/png;base64,"));
             assertEquals("Bearer fixture-key-language", text.authorization());
-            assertEquals(128, text.body().path("max_tokens").intValue());
+            assertEquals(32768, text.body().path("max_tokens").intValue());
             assertEquals("json_object", text.body().path("response_format").path("type").asText());
             assertTrue(text.body().path("messages").get(0).path("content").asText().contains("human approval"));
             assertEquals(ProblemCode.ACCESS_DENIED,
@@ -96,7 +104,7 @@ class PlatformRecoveryModelsTest {
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, malformed));
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
-                task -> success(new PlatformRecoveryModels(ai::callWithinModelLimit, task).decide("fixture"))));
+                task -> success(new PlatformRecoveryModels(ai::call, task).decide("fixture"))));
             assertEquals("modelInvalid", result.code());
             assertEquals("", result.content());
             assertEquals(Map.of("first", "INVALID"), result.attempts());
@@ -122,7 +130,7 @@ class PlatformRecoveryModelsTest {
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 original.set(task);
                 try {
-                    new PlatformRecoveryModels(ai::callWithinModelLimit, task).decide("fixture");
+                    new PlatformRecoveryModels(ai::call, task).decide("fixture");
                     fail("unconfirmed request returned advice");
                 } catch (ApiException failure) {
                     rejected.set(failure.problem());
@@ -156,7 +164,7 @@ class PlatformRecoveryModelsTest {
             });
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
-                task -> success(new PlatformRecoveryModels(ai::callWithinModelLimit, task).decide("fixture"))));
+                task -> success(new PlatformRecoveryModels(ai::call, task).decide("fixture"))));
             assertEquals("ok", result.code());
             assertEquals(Map.of("second", "VALID"), result.attempts());
             assertEquals(2, fixture.calls.get());
@@ -176,7 +184,7 @@ class PlatformRecoveryModelsTest {
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, valid));
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(),
-                task -> success(new PlatformRecoveryModels(ai::callWithinModelLimit, task).decide("Original local terminal facts")));
+                task -> success(new PlatformRecoveryModels(ai::call, task).decide("Original local terminal facts")));
             var result = completed(handle);
             assertEquals("modelUnavailable", result.code());
             assertEquals("", result.content());
@@ -204,7 +212,7 @@ class PlatformRecoveryModelsTest {
             fixture.handler.set(exchange -> Fixture.reply(exchange, 200, valid));
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
-                var models = new PlatformRecoveryModels(ai::callWithinModelLimit, task);
+                var models = new PlatformRecoveryModels(ai::call, task);
                 for (String text : List.of("", " \n\t")) {
                     var observed = models.observe(new TerminalObservation(text, new byte[0], 1));
                     assertEquals("visionUnsupported", observed.code());
