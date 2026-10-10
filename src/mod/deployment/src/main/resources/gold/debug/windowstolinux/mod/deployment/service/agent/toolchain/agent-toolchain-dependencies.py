@@ -61,6 +61,14 @@ def dependency_diagnostic_line(error, args):
     if error.unknown or len(args) != 2 or not isinstance(args[1], str) or not re.fullmatch('[a-f0-9]{32}', args[1]):
         return None
     value = error.diagnostic
+    if error.detail == 'UNSUPPORTED_DPKG_CONFIGURATION':
+        if not isinstance(value, dict) or set(value) != {'kind', 'line', 'valueBytes', 'valueSha256'}:
+            return None
+        if not isinstance(value['kind'], str) or value['kind'] not in ('MAIN', 'PART') or type(value['line']) is not int or not 1 <= value['line'] <= 1024 * 1024:
+            return None
+        if type(value['valueBytes']) is not int or not 1 <= value['valueBytes'] <= 1024 * 1024 or not isinstance(value['valueSha256'], str) or not re.fullmatch('[a-f0-9]{64}', value['valueSha256']):
+            return None
+        return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps({'operation': args[1], 'phase': error.detail, **value}, sort_keys=True, separators=(',', ':'))
     if error.detail == 'UNSUPPORTED_APT_BINARY':
         if not isinstance(value, dict) or set(value) != {'reason', 'field', 'valueBytes', 'valueSha256'}:
             return None
@@ -394,12 +402,14 @@ def dependency_validate_dpkg():
             dependency_reject('OS_CONFIGURATION_LIMIT')
         for item in files:
             value = dependency_text(item)
-            active = [line.strip() for line in value.splitlines() if line.strip() and not line.lstrip().startswith('#')]
-            if any(re.match(r'(?:--)?(?:pre-invoke|post-invoke)\b', line) for line in active):
+            active = [(position, line.strip()) for position, line in enumerate(value.splitlines(), 1) if line.strip() and not line.lstrip().startswith('#')]
+            if any(re.match(r'(?:--)?(?:pre-invoke|post-invoke)\b', line) for _, line in active):
                 dependency_registered(item, HOOK_OWNERS, value.encode())
-            for line in active:
+            for position, line in active:
                 if not re.fullmatch(r'(?:--)?(?:no-debsig|log\s+/var/log/dpkg\.log|abort-after\s+[0-9]+|(?:pre-invoke|post-invoke)\s+.+)', line):
-                    dependency_reject('UNSUPPORTED_DPKG_CONFIGURATION')
+                    encoded = line.encode('utf-8')
+                    dependency_reject('UNSUPPORTED_DPKG_CONFIGURATION', diagnostic={'kind': 'PART' if path.is_dir() else 'MAIN',
+                        'line': position, 'valueBytes': len(encoded), 'valueSha256': hashlib.sha256(encoded).hexdigest()})
 
 
 def dependency_apt_source_authentication(fields):

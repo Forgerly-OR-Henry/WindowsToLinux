@@ -96,6 +96,30 @@ public final class DeploymentAgentToolchainFailureEvidence {
                     return Optional.empty();
                 return Optional.of(value);
             }
+            if (code.equals("AGENT_TOOLCHAIN_STATE_UNCONFIRMED")) {
+                if (!value.path("function").isTextual() || !Set.of("agent_main", "agent_prepare", "agent_create", "agent_prepare_selected",
+                    "agent_execute", "agent_bind", "agent_setup", "agent_worker", "agent_freeze", "agent_release_source", "agent_probe_records",
+                    "agent_promote", "agent_detach", "agent_cleanup_before_start", "agent_cleanup_placeholder", "agent_os", "agent_tool",
+                    "agent_regular", "agent_write", "agent_record", "agent_identity", "agent_scan", "agent_copy_tree", "entry").contains(value.path("function").asText())
+                    || !value.path("exception").isTextual() || !Set.of("OSError", "ValueError", "KeyError", "StopIteration", "TimeoutExpired").contains(value.path("exception").asText())
+                    || !(value.path("errno").isNull() || value.path("errno").isIntegralNumber() && value.path("errno").canConvertToInt()
+                    && value.path("errno").intValue() >= 1 && value.path("errno").intValue() <= 4095)
+                    || !value.path("line").isIntegralNumber() || !value.path("line").canConvertToInt()
+                    || value.path("line").intValue() < 0 || value.path("line").intValue() > 16384
+                    || value.path("function").asText().equals("entry") != (value.path("line").intValue() == 0))
+                    return Optional.empty();
+                return Optional.of(value);
+            }
+            if (code.equals("UNSUPPORTED_DPKG_CONFIGURATION")) {
+                if (!value.path("kind").isTextual() || !Set.of("MAIN", "PART").contains(value.path("kind").asText())
+                    || !value.path("line").isIntegralNumber() || !value.path("line").canConvertToInt()
+                    || value.path("line").intValue() < 1 || value.path("line").intValue() > 1024 * 1024
+                    || !value.path("valueBytes").isIntegralNumber() || !value.path("valueBytes").canConvertToInt()
+                    || value.path("valueBytes").intValue() < 1 || value.path("valueBytes").intValue() > 1024 * 1024
+                    || !value.path("valueSha256").isTextual() || !value.path("valueSha256").asText().matches("[a-f0-9]{64}"))
+                    return Optional.empty();
+                return Optional.of(value);
+            }
             if (!value.path("phase").asText().equals("OS_CONFIGURATION_OWNER")
                 || !Set.of("RESPONSE_STRUCTURE", "PATH_MISMATCH", "MULTIPLE_OWNERS", "OWNER_SYNTAX", "OWNER_ABSENT", "OWNER_NOT_ALLOWED", "OUTPUT_LIMIT").contains(value.path("reason").asText())
                 || !value.path("path").isTextual() || !value.path("path").asText().matches("/[!-~]{1,511}")

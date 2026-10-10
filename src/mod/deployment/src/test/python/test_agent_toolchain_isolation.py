@@ -56,6 +56,48 @@ class AgentToolchainIsolationTest(unittest.TestCase):
     def setUp(self):
         self.c = controller()
 
+    def test_controller_exception_diagnostic_keeps_unknown_without_paths_or_exception_text(self):
+        args = ['prepare', 'RUST', '1.95', '-', '600', '-', OPERATION, 'descriptor']
+        private = '/private/path-do-not-copy'
+        stream = io.StringIO()
+        with mock.patch.object(self.c, 'agent_main', side_effect=FileNotFoundError(2, private)), contextlib.redirect_stdout(stream):
+            self.assertEqual(70, self.c.agent_cli(args))
+        lines = stream.getvalue().splitlines()
+        self.assertEqual('TOOLCHAIN_FAILURE=unknown:AGENT_TOOLCHAIN_STATE_UNCONFIRMED', lines[0])
+        diagnostic = json.loads(lines[1].removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+        self.assertEqual({'operation': OPERATION, 'phase': 'AGENT_TOOLCHAIN_STATE_UNCONFIRMED',
+            'function': 'entry', 'line': 0, 'exception': 'OSError', 'errno': 2}, diagnostic)
+        self.assertNotIn(private, stream.getvalue())
+        self.assertLess(len(lines[1]), 512)
+
+    def test_controller_diagnostic_selects_actual_assembled_frame_and_never_an_exception_chain(self):
+        args = ['prepare', 'RUST', '1.95', '-', 'bad-private-number', '-', OPERATION, 'descriptor']
+        stream = io.StringIO()
+        def invoke(_):
+            try:
+                raise FileNotFoundError(2, 'prior-private-cause')
+            except OSError:
+                self.c.agent_prepare(args[1:])
+        with mock.patch.object(self.c, 'agent_main', side_effect=invoke), contextlib.redirect_stdout(stream):
+            self.assertEqual(70, self.c.agent_cli(args))
+        diagnostic = json.loads(stream.getvalue().splitlines()[1].removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+        self.assertEqual('agent_prepare', diagnostic['function'])
+        self.assertEqual('ValueError', diagnostic['exception'])
+        self.assertIsNone(diagnostic['errno'])
+        self.assertGreater(diagnostic['line'], self.c.agent_prepare.__code__.co_firstlineno)
+        self.assertLess(diagnostic['line'], self.c.agent_prepare.__code__.co_firstlineno + 10)
+        self.assertNotIn('bad-private-number', stream.getvalue())
+        self.assertNotIn('prior-private-cause', stream.getvalue())
+
+    def test_controller_diagnostic_invalid_operations_and_known_rejections_keep_original_exit_protocol(self):
+        error = OSError(2, 'private-body')
+        for args in (['prepare', 'RUST', '1.95', '-', '600', '-', '../invalid', 'descriptor'], ['unknown', OPERATION]):
+            self.assertIsNone(self.c.agent_exception_diagnostic(error, args))
+        stream = io.StringIO()
+        with mock.patch.object(self.c, 'agent_main', side_effect=self.c.PreparationFailure('ownership', 'PROTECTED_FILE')), contextlib.redirect_stdout(stream):
+            self.assertEqual(65, self.c.agent_cli(['bind', OPERATION, '60', 'descriptor']))
+        self.assertEqual('TOOLCHAIN_FAILURE=ownership:PROTECTED_FILE\n', stream.getvalue())
+
     def rejected(self, tag, call):
         with self.assertRaises(self.c.PreparationFailure) as failure:
             call()
@@ -444,6 +486,26 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
     def rejected(self, call):
         with self.assertRaises(self.d.DependencyFailure):
             call()
+
+    def test_dpkg_rejection_diagnostic_keeps_the_guard_and_only_hashes_the_unknown_line(self):
+        private = 'unsupported-private-body'
+        content = '# default comment\nno-debsig\n' + private + '\n'
+        with mock.patch.object(self.d.pathlib.Path, 'exists', lambda path: path.as_posix() == '/etc/dpkg/dpkg.cfg'), \
+             mock.patch.object(self.d.pathlib.Path, 'is_dir', return_value=False), \
+             mock.patch.object(self.d, 'dependency_protected'), mock.patch.object(self.d, 'dependency_text', return_value=content):
+            with self.assertRaises(self.d.DependencyFailure) as rejected:
+                self.d.dependency_validate_dpkg()
+        self.assertEqual('UNSUPPORTED_DPKG_CONFIGURATION', rejected.exception.detail)
+        line = self.d.dependency_diagnostic_line(rejected.exception, ['NATIVE_BUILD', OPERATION])
+        value = json.loads(line.removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+        self.assertEqual({'operation': OPERATION, 'phase': 'UNSUPPORTED_DPKG_CONFIGURATION', 'kind': 'MAIN', 'line': 3,
+            'valueBytes': len(private), 'valueSha256': hashlib.sha256(private.encode()).hexdigest()}, value)
+        self.assertNotIn(private, line)
+        for field, invalid in (('kind', ['MAIN']), ('kind', 'private-body'), ('line', 0), ('line', True),
+                ('valueBytes', 0), ('valueBytes', 1048577), ('valueSha256', 'private-body')):
+            data = dict(rejected.exception.diagnostic)
+            data[field] = invalid
+            self.assertIsNone(self.d.dependency_diagnostic_line(self.d.DependencyFailure('UNSUPPORTED_DPKG_CONFIGURATION', diagnostic=data), ['NATIVE_BUILD', OPERATION]))
 
     @contextlib.contextmanager
     def apt_paths(self, missing=(), unsafe=(), links=None, non_executable=()):

@@ -25,6 +25,11 @@ AGENT_BOOTSTRAP = (
     "exec(compile(code,p,'exec'),{'__name__':'__main__','__file__':p,'PROGRAM_SOURCE':code})"
 )
 DEADLINE = None
+AGENT_DIAGNOSTIC_FUNCTIONS = frozenset(('agent_main', 'agent_prepare', 'agent_create', 'agent_prepare_selected',
+    'agent_execute', 'agent_bind', 'agent_setup', 'agent_worker', 'agent_freeze', 'agent_release_source',
+    'agent_probe_records', 'agent_promote', 'agent_detach', 'agent_cleanup_before_start',
+    'agent_cleanup_placeholder', 'agent_os', 'agent_tool', 'agent_regular', 'agent_write',
+    'agent_record', 'agent_identity', 'agent_scan', 'agent_copy_tree', 'entry'))
 
 
 def remaining():
@@ -1074,16 +1079,50 @@ def agent_main(args):
         os.close(fd)
 
 
-if __name__ == '__main__':
+def agent_exception_diagnostic(error, args):
+    if len(args) == 8 and args[0] == 'prepare':
+        operation = args[6]
+    elif len(args) == 4 and args[0] == 'bind' or len(args) == 2 and args[0] in ('setup', 'freeze', 'worker'):
+        operation = args[1]
+    else:
+        return None
+    if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation):
+        return None
+    families = ((OSError, 'OSError'), (ValueError, 'ValueError'), (KeyError, 'KeyError'),
+                (StopIteration, 'StopIteration'), (subprocess.TimeoutExpired, 'TimeoutExpired'))
+    family = next((name for kind, name in families if isinstance(error, kind)), None)
+    if family is None:
+        return None
+    function, line = 'entry', 0
+    frame = error.__traceback__
+    while frame is not None:
+        name = frame.tb_frame.f_code.co_name
+        if frame.tb_frame.f_globals is globals() and name in AGENT_DIAGNOSTIC_FUNCTIONS and 1 <= frame.tb_lineno <= 16384:
+            function, line = name, frame.tb_lineno
+        frame = frame.tb_next
+    number = error.errno if isinstance(error, OSError) and type(error.errno) is int and 1 <= error.errno <= 4095 else None
+    return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps({'operation': operation, 'phase': 'AGENT_TOOLCHAIN_STATE_UNCONFIRMED',
+        'function': function, 'exception': family, 'errno': number, 'line': line}, sort_keys=True, separators=(',', ':'))
+
+
+def agent_cli(args):
     try:
-        signal.signal(signal.SIGTERM, lambda *_: agent_reject('CANCELLED', 'unknown'))
-        signal.signal(signal.SIGHUP, lambda *_: agent_reject('SESSION_ENDED', 'unknown'))
-        agent_main(sys.argv[1:])
+        agent_main(args)
+        return 0
     except PreparationFailure as error:
         category = error.category if error.category in ('isolation', 'integrity', 'ownership', 'metadata', 'network', 'archive', 'installation', 'probe', 'timeout', 'unknown') else 'isolation'
         detail = error.detail if re.fullmatch('[A-Z_]{1,96}', error.detail) else 'AGENT_TOOLCHAIN_REJECTED'
         print('TOOLCHAIN_FAILURE=' + category + ':' + detail)
-        sys.exit(70 if category == 'unknown' else 65)
-    except (OSError, ValueError, KeyError, StopIteration, subprocess.TimeoutExpired):
+        return 70 if category == 'unknown' else 65
+    except (OSError, ValueError, KeyError, StopIteration, subprocess.TimeoutExpired) as error:
         print('TOOLCHAIN_FAILURE=unknown:AGENT_TOOLCHAIN_STATE_UNCONFIRMED')
-        sys.exit(70)
+        diagnostic = agent_exception_diagnostic(error, args)
+        if diagnostic is not None:
+            print(diagnostic)
+        return 70
+
+
+if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, lambda *_: agent_reject('CANCELLED', 'unknown'))
+    signal.signal(signal.SIGHUP, lambda *_: agent_reject('SESSION_ENDED', 'unknown'))
+    sys.exit(agent_cli(sys.argv[1:]))
