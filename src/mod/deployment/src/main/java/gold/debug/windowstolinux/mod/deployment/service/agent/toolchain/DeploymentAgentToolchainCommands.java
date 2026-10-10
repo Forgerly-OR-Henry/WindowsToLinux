@@ -154,9 +154,12 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
 
     static Set<ActionTarget> dependencyTargets(ServerId server, String profile) {
         Set<ActionTarget> targets = new LinkedHashSet<>();
-        for (String manager : List.of("APT", "DNF"))
+        for (String manager : List.of("APT", "DNF")) {
+            targets.add(target(server, "system-package-index", manager + ":configured-authenticated-sources"));
             for (String name : DeploymentAgentToolchainPrograms.packages(manager, profile))
                 targets.add(target(server, "system-package", name));
+        }
+        targets.add(target(server, "system-repository", "DNF:centos:crb:transaction-only"));
         return Set.copyOf(targets);
     }
 

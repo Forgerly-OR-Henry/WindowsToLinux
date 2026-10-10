@@ -96,6 +96,21 @@ class DeploymentAgentToolchainInputEvidenceTest {
         var scope = current("dependencies");
         scope.set("resourceTargets", JSON.valueToTree(DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION)));
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(scope));
+        for (String phase : List.of("dependencies", "native")) {
+            for (String missing : List.of("APT:configured-authenticated-sources", "DNF:configured-authenticated-sources", "DNF:centos:crb:transaction-only")) {
+                var incomplete = current(phase);
+                var targets = incomplete.withArray("resourceTargets");
+                for (int index = 0; index < targets.size(); index++)
+                    if (targets.get(index).path("id").asText().equals(missing)) {
+                        targets.remove(index);
+                        break;
+                    }
+                assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(incomplete));
+            }
+            var extra = current(phase);
+            extra.withArray("resourceTargets").add(JSON.valueToTree(new ActionTarget(SERVER.id(), "system-repository", "DNF:third-party")));
+            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(extra));
+        }
     }
 
     @Test

@@ -155,9 +155,12 @@ class DeploymentAgentToolchainConversationTest {
     private static ActionIntent intent(String phase, CommandRequest command) {
         var targets = new HashSet<ActionTarget>();
         if (phase.equals("dependencies")) {
-            for (String manager : List.of("APT", "DNF"))
+            for (String manager : List.of("APT", "DNF")) {
+                targets.add(new ActionTarget(SERVER.id(), "system-package-index", manager + ":configured-authenticated-sources"));
                 for (String name : DeploymentAgentToolchainPrograms.packages(manager, "NATIVE_BUILD"))
                     targets.add(new ActionTarget(SERVER.id(), "system-package", name));
+            }
+            targets.add(new ActionTarget(SERVER.id(), "system-repository", "DNF:centos:crb:transaction-only"));
         } else if (phase.equals("resolve")) {
             targets.add(new ActionTarget(SERVER.id(), "deployment-host", SERVER.id()));
             targets.add(new ActionTarget(SERVER.id(), "toolchain-source", "RUST:1.95:1.95.0"));

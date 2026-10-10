@@ -143,6 +143,12 @@ class DeploymentAgentToolchainCommandsTest {
         assertEquals(DeploymentAgentToolchainPrograms.dependencies(), new String(fixture.requests.getFirst().stdin(), StandardCharsets.UTF_8));
         assertEquals(DeploymentAgentToolchainCommands.dependencyTargets(SERVER, "NATIVE_BUILD"),
             fixture.intents.getFirst().semantics().orElseThrow().targets());
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "system-package-index", "APT:configured-authenticated-sources"),
+            new ActionTarget(SERVER.id(), "system-package-index", "DNF:configured-authenticated-sources"),
+            new ActionTarget(SERVER.id(), "system-repository", "DNF:centos:crb:transaction-only"),
+            new ActionTarget(SERVER.id(), "system-package", "cmake"), new ActionTarget(SERVER.id(), "system-package", "ninja-build"),
+            new ActionTarget(SERVER.id(), "system-package", "gcc"), new ActionTarget(SERVER.id(), "system-package", "g++"),
+            new ActionTarget(SERVER.id(), "system-package", "gcc-c++")), fixture.intents.getFirst().semantics().orElseThrow().targets());
         assertTrue(fixture.requests.stream().noneMatch(request -> request.script().contains("'prepare'")));
     }
 
