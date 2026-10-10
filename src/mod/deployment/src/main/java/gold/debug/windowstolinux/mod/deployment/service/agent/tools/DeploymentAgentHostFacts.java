@@ -18,8 +18,8 @@ public record DeploymentAgentHostFacts(Map<String, String> baseline, Optional<Ma
         result.put("baseline", new TreeMap<>(baseline));
         result.put("coverage", Map.of("baseline", "OBSERVED", "tools", "UNKNOWN", "cpu", "UNKNOWN",
             "security", "UNKNOWN", "capacity", "UNKNOWN", "container", selectedContainer.isPresent() ? "SELECTED_ENGINE_OBSERVED" : "UNKNOWN"));
-        result.put("platformAssessment", "UNASSESSED");
-        result.put("runtimeBoundaryAssessment", "UNASSESSED");
+        result.put("assessmentCoverage", Map.of("platform", "NOT_PERFORMED_BY_THIS_OBSERVATION",
+            "runtimeBoundary", "NOT_PERFORMED_BY_THIS_OBSERVATION"));
         selectedContainer.ifPresent(value -> result.put("selectedContainer", new TreeMap<>(value)));
         return java.util.Collections.unmodifiableMap(result);
     }

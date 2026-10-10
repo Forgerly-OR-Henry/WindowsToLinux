@@ -75,8 +75,11 @@ class DeploymentAgentHostChannelTest {
         assertEquals(Set.of("DISTRO_ID", "DISTRO_VARIANT", "VERSION", "ARCH", "PACKAGE_MANAGER", "PACKAGE_ARCH", "SYSTEMD"), observed.baseline().keySet());
         assertEquals("", observed.baseline().get("DISTRO_VARIANT"));
         var facts = observed.facts();
-        assertEquals("UNASSESSED", facts.get("platformAssessment"));
-        assertEquals("UNASSESSED", facts.get("runtimeBoundaryAssessment"));
+        var assessmentCoverage = (Map<?, ?>) facts.get("assessmentCoverage");
+        assertEquals("NOT_PERFORMED_BY_THIS_OBSERVATION", assessmentCoverage.get("platform"));
+        assertEquals("NOT_PERFORMED_BY_THIS_OBSERVATION", assessmentCoverage.get("runtimeBoundary"));
+        assertFalse(facts.containsKey("platformAssessment"));
+        assertFalse(facts.containsKey("runtimeBoundaryAssessment"));
         var coverage = (Map<?, ?>) facts.get("coverage");
         for (String key : List.of("tools", "cpu", "security", "capacity", "container"))
             assertEquals("UNKNOWN", coverage.get(key));
