@@ -77,4 +77,24 @@ class ModelHttpCallTest {
         }
         assertEquals(Map.of("transportFailureType", "OTHER"), ModelHttpCall.transportDetails(new PrivateFailure()));
     }
+
+    @Test
+    void transportDiagnosticsClassifyStandardHttpBoundariesAndKeepNestedCausesBodyFree() {
+        var nested = new IOException("HTTP/1.1 header parser received no bytes",
+            new java.io.EOFException("private-provider-body/password=fixture"));
+        var details = ModelHttpCall.transportDetails(new ExecutionException(nested));
+        assertEquals("HTTP_HEADERS_EMPTY", details.get("transportFailureKind"));
+        assertEquals("java.io.IOException>java.io.EOFException", details.get("transportCauseTypes"));
+        assertFalse(details.toString().contains("private-provider-body"));
+        assertFalse(details.toString().contains("password"));
+        assertEquals("HTTP_BODY_INCOMPLETE", ModelHttpCall.transportDetails(
+            new IOException("fixed content-length: 125, bytes received: 17")).get("transportFailureKind"));
+        assertEquals("HTTP_CHUNK_INCOMPLETE", ModelHttpCall.transportDetails(
+            new IOException("chunked transfer encoding, state: READING_LENGTH")).get("transportFailureKind"));
+        assertEquals("RESPONSE_BYTE_LIMIT", ModelHttpCall.transportDetails(
+            new IOException("AI response exceeded the configured transport limit")).get("transportFailureKind"));
+        var privateFailure = new IOException("HTTP/1.1 header parser received no bytes") {
+        };
+        assertEquals(Map.of("transportFailureType", "OTHER"), ModelHttpCall.transportDetails(privateFailure));
+    }
 }

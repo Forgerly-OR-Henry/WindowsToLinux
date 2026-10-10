@@ -185,7 +185,7 @@ public final class ModelHttpCall implements AutoCloseable {
         }
     }
 
-    /** Keeps only standard exception identities and fixed timeout phases. / 仅保留标准异常类型及固定超时阶段。
+    /** Keeps only bounded standard cause identities and fixed transport categories. / 仅保留有界标准异常链与固定传输类别。
      * @param failure transport failure without exposing its message / 不披露消息的传输异常
      * @return bounded diagnostic metadata / 有界诊断元数据 */
     static Map<String, String> transportDetails(Throwable failure) {
@@ -195,6 +195,24 @@ public final class ModelHttpCall implements AutoCloseable {
         details.put("transportFailureType", type.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}") ? type : "OTHER");
         if (cause instanceof HttpConnectTimeoutException) details.put("timeoutPhase", "HTTP_CONNECT");
         else if (cause instanceof HttpTimeoutException) details.put("timeoutPhase", "HTTP_REQUEST");
+        var chain = new ArrayList<String>();
+        var visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
+        for (Throwable current = cause; current != null && chain.size() < 8 && visited.add(current); current = current.getCause()) {
+            String name = current.getClass().getName();
+            boolean standard = name.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}");
+            chain.add(standard ? name : "OTHER");
+            String message = standard ? current.getMessage() : null;
+            if (message == null || details.containsKey("transportFailureKind")) continue;
+            if (message.equals("HTTP/1.1 header parser received no bytes"))
+                details.put("transportFailureKind", "HTTP_HEADERS_EMPTY");
+            else if (message.matches("fixed content-length: [0-9]+, bytes received: [0-9]+"))
+                details.put("transportFailureKind", "HTTP_BODY_INCOMPLETE");
+            else if (message.matches("chunked transfer encoding, state: [A-Z_]+"))
+                details.put("transportFailureKind", "HTTP_CHUNK_INCOMPLETE");
+            else if (message.equals("AI response exceeded the configured transport limit"))
+                details.put("transportFailureKind", "RESPONSE_BYTE_LIMIT");
+        }
+        if (chain.size() > 1) details.put("transportCauseTypes", String.join(">", chain));
         return Map.copyOf(details);
     }
 
