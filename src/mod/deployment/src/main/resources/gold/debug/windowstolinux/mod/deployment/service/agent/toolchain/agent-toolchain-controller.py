@@ -10,6 +10,7 @@ import selectors
 import stat
 
 AGENT_VOLUME_BYTES = 8 * 1024 * 1024 * 1024
+AGENT_HOST_RESERVE_BYTES = 1024 * 1024 * 1024
 AGENT_MAX_MEMBERS = 200000
 AGENT_MAX_PROGRAM = 1024 * 1024
 AGENT_ALIAS = pathlib.Path('/run/wtl-agent-toolchain')
@@ -29,7 +30,7 @@ AGENT_DIAGNOSTIC_FUNCTIONS = frozenset(('agent_main', 'agent_prepare', 'agent_cr
     'agent_execute', 'agent_bind', 'agent_setup', 'agent_worker', 'agent_freeze', 'agent_release_source',
     'agent_probe_records', 'agent_promote', 'agent_detach', 'agent_cleanup_before_start',
     'agent_cleanup_placeholder', 'agent_os', 'agent_tool', 'agent_regular', 'agent_write',
-    'agent_record', 'agent_identity', 'agent_scan', 'agent_copy_tree', 'entry'))
+    'agent_record', 'agent_identity', 'agent_scan', 'agent_copy_tree', 'agent_require_space', 'entry'))
 
 
 def remaining():
@@ -546,6 +547,28 @@ def agent_installation_key(ecosystem, version, digest):
     return hashlib.sha256((ecosystem + '\n' + version + '\n' + digest + suffix).encode()).hexdigest()
 
 
+def agent_require_space(path, operation, stage, entries=None):
+    owned_directory(path)
+    filesystem = os.statvfs(str(path))
+    block = filesystem.f_frsize
+    available = filesystem.f_bavail * block
+    if type(block) is not int or not 1 <= block <= 1024 * 1024 or type(available) is not int or not 0 <= available <= 2 ** 63 - 1:
+        agent_reject('FILESYSTEM_SPACE_UNCONFIRMED', 'unknown')
+    if stage == 'VOLUME' and entries is None:
+        requested = AGENT_VOLUME_BYTES
+    elif stage == 'PROMOTION' and isinstance(entries, dict):
+        requested = sum(((info.st_size + block - 1) // block) * block for info, _ in entries.values() if stat.S_ISREG(info.st_mode))
+        requested += len(entries) * block
+    else:
+        agent_reject('FILESYSTEM_SPACE_UNCONFIRMED', 'unknown')
+    required = requested + AGENT_HOST_RESERVE_BYTES
+    if available < required:
+        error = PreparationFailure('isolation', 'HOST_SPACE_REQUIRED')
+        error.diagnostic = {'operation': operation, 'phase': 'HOST_SPACE_REQUIRED', 'stage': stage,
+            'availableBytes': available, 'requiredBytes': required, 'reserveBytes': AGENT_HOST_RESERVE_BYTES}
+        raise error
+
+
 def agent_create(operation, seconds):
     import pwd
     if os.geteuid() != 0:
@@ -571,6 +594,7 @@ def agent_create(operation, seconds):
     controllers = pathlib.Path('/sys/fs/cgroup/cgroup.controllers').read_text().split()
     if not {'memory', 'pids'} <= set(controllers):
         agent_reject('CGROUP_V2_REQUIRED')
+    agent_require_space(base.parent, operation, 'VOLUME')
     base.mkdir(mode=0o755)
     agent_write(base / 'controller.py', source)
     agent_write(base / 'identity.json', agent_encode({'operation': operation, 'uid': 0, 'gid': 0, 'programSha256': hashlib.sha256(source).hexdigest()}))
@@ -740,6 +764,7 @@ def agent_promote(manifest, destination, original, record):
     try:
         entries = agent_scan(source_fd)
         agent_validate_tree(entries)
+        agent_require_space(temporary, manifest['operation'], 'PROMOTION', entries)
         record['tree_sha256'] = agent_copy_tree(source_fd, target_fd, entries)
         record['agent_program_sha256'] = manifest['programSha256']
         # Only the root controller creates this marker after stopped/frozen output has been copied.
@@ -1105,6 +1130,29 @@ def agent_exception_diagnostic(error, args):
         'function': function, 'exception': family, 'errno': number, 'line': line}, sort_keys=True, separators=(',', ':'))
 
 
+def agent_space_diagnostic(error, args):
+    if len(args) == 8 and args[0] == 'prepare':
+        operation = args[6]
+    elif len(args) == 4 and args[0] == 'bind':
+        operation = args[3]
+    else:
+        return None
+    value = getattr(error, 'diagnostic', None)
+    if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation) or not isinstance(value, dict):
+        return None
+    if set(value) != {'operation', 'phase', 'stage', 'availableBytes', 'requiredBytes', 'reserveBytes'}:
+        return None
+    if value['operation'] != operation or value['phase'] != 'HOST_SPACE_REQUIRED' or value['stage'] not in ('VOLUME', 'PROMOTION'):
+        return None
+    if any(type(value[name]) is not int for name in ('availableBytes', 'requiredBytes', 'reserveBytes')):
+        return None
+    if value['reserveBytes'] != AGENT_HOST_RESERVE_BYTES or not 0 <= value['availableBytes'] < value['requiredBytes'] <= 1024 ** 4:
+        return None
+    if value['stage'] == 'VOLUME' and value['requiredBytes'] != AGENT_VOLUME_BYTES + AGENT_HOST_RESERVE_BYTES or value['requiredBytes'] < AGENT_HOST_RESERVE_BYTES:
+        return None
+    return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps(value, sort_keys=True, separators=(',', ':'))
+
+
 def agent_cli(args):
     try:
         agent_main(args)
@@ -1113,6 +1161,10 @@ def agent_cli(args):
         category = error.category if error.category in ('isolation', 'integrity', 'ownership', 'metadata', 'network', 'archive', 'installation', 'probe', 'timeout', 'unknown') else 'isolation'
         detail = error.detail if re.fullmatch('[A-Z_]{1,96}', error.detail) else 'AGENT_TOOLCHAIN_REJECTED'
         print('TOOLCHAIN_FAILURE=' + category + ':' + detail)
+        if detail == 'HOST_SPACE_REQUIRED':
+            diagnostic = agent_space_diagnostic(error, args)
+            if diagnostic is not None:
+                print(diagnostic)
         return 70 if category == 'unknown' else 65
     except (OSError, ValueError, KeyError, StopIteration, subprocess.TimeoutExpired) as error:
         print('TOOLCHAIN_FAILURE=unknown:AGENT_TOOLCHAIN_STATE_UNCONFIRMED')

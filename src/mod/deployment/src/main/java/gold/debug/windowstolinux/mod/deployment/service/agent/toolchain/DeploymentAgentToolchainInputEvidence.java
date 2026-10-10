@@ -31,7 +31,7 @@ public final class DeploymentAgentToolchainInputEvidence {
     private static final Pattern ACTION = Pattern.compile("\\AWTL-SSH-COMMAND-1\\ntimeout=([^\\n]+)\\noutputLimitBytes=([0-9]+)\\nstdinBytes=([0-9]+)\\nstdinSha256=([0-9a-f]{64})\\nscript:\\n([\\s\\S]+)\\z");
 
     private static final List<String> CONTROLLER_LOCATIONS = List.of("resolution_validate", "resolution_decode", "official_url", "download", "extract",
-        "agent_regular", "agent_tool", "agent_os", "agent_create", "agent_release_source", "agent_sandbox_properties", "agent_setup",
+        "agent_regular", "agent_tool", "agent_os", "agent_require_space", "agent_create", "agent_release_source", "agent_sandbox_properties", "agent_setup",
         "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
         "agent_detach", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 

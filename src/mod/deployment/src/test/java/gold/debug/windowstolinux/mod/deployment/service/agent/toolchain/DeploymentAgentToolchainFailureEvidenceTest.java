@@ -16,6 +16,49 @@ class DeploymentAgentToolchainFailureEvidenceTest {
     private static final ServerId SERVER = new ServerId("original-server");
 
     @Test
+    void currentSpaceDiagnosticRetainsOnlyActualNumericShortfallWithoutPermission() throws Exception {
+        long gib = 1024L * 1024 * 1024;
+        for (String stage : List.of("VOLUME", "PROMOTION")) {
+            var fields = Map.of("operation", OPERATION, "phase", "HOST_SPACE_REQUIRED", "stage", stage,
+                "availableBytes", 2 * gib, "requiredBytes", stage.equals("VOLUME") ? 9 * gib : 3 * gib, "reserveBytes", gib);
+            String diagnostic = new ObjectMapper().writeValueAsString(fields);
+            var actual = new OperationResult<>(TaskResult.FAILED,
+                Optional.of(new CommandResult(Optional.of(65), "TOOLCHAIN_FAILURE=isolation:HOST_SPACE_REQUIRED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", "", false)),
+                Optional.of(new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO", "Current failed operation", Map.of(), Optional.empty())));
+            var result = DeploymentAgentToolchainFailureEvidence.retain(actual, "prepare", SERVER, OPERATION);
+            assertEquals(TaskResult.FAILED, result.outcome());
+            String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertTrue(observation.contains("reportedDiagnostic"));
+            assertTrue(observation.contains("HOST_SPACE_REQUIRED"));
+            assertFalse(observation.contains("approved"));
+            assertFalse(observation.contains("retrySafe"));
+        }
+    }
+
+    @Test
+    void spaceDiagnosticRejectsForeignIdentityTextAndFalseShortfallWithoutChangingUnknown() throws Exception {
+        long gib = 1024L * 1024 * 1024;
+        var fields = Map.<String, Object>of("operation", OPERATION, "phase", "HOST_SPACE_REQUIRED", "stage", "VOLUME",
+            "availableBytes", 0L, "requiredBytes", 9 * gib, "reserveBytes", gib);
+        for (var change : List.of(Map.<String, Object>entry("operation", "b".repeat(32)), Map.<String, Object>entry("stage", "private-body"),
+            Map.<String, Object>entry("availableBytes", true), Map.<String, Object>entry("availableBytes", -1L),
+            Map.<String, Object>entry("availableBytes", 9 * gib), Map.<String, Object>entry("requiredBytes", 8 * gib),
+            Map.<String, Object>entry("reserveBytes", 0L), Map.<String, Object>entry("path", "/private/body"))) {
+            var invalid = new LinkedHashMap<>(fields);
+            invalid.put(change.getKey(), change.getValue());
+            String diagnostic = new ObjectMapper().writeValueAsString(invalid);
+            var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=isolation:HOST_SPACE_REQUIRED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+            String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertFalse(observation.contains("reportedDiagnostic"));
+            assertFalse(observation.contains("private-body"));
+            assertFalse(observation.contains("/private/body"));
+            assertEquals(TaskResult.FAILED, result.outcome());
+        }
+        String diagnostic = new ObjectMapper().writeValueAsString(fields);
+        assertEquals(TaskResult.UNKNOWN, retain(TaskResult.UNKNOWN, 70, "TOOLCHAIN_FAILURE=unknown:HOST_SPACE_REQUIRED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false).outcome());
+    }
+
+    @Test
     void actualKnownFailureSurvivesSetupStyleValueRemovalAsBoundedObservation() throws Exception {
         String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "OS_CONFIGURATION_OWNER",
             "reason", "OWNER_NOT_ALLOWED", "path", "/etc/apt/apt.conf.d/20baseline", "owner", "actual-os-package", "allowedOwners", List.of("apt")));

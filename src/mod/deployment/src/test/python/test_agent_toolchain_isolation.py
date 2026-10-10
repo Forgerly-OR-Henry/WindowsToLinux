@@ -198,6 +198,97 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         self.assertEqual('windowstolinux-toolchain-' + OPERATION + '.service', self.c.agent_unit(OPERATION))
         self.assertTrue(any('-/run/dbus' in v and '-/var/opt/windowstolinux/apps' in v for v in properties))
 
+    def test_volume_space_check_stops_before_operation_files_or_allocation(self):
+        created = []
+        class Path(pathlib.PurePosixPath):
+            def exists(self): return not self.name.startswith('agent-')
+            def is_symlink(self): return False
+            def mkdir(self, **_): created.append(str(self))
+            def read_text(self): return 'memory pids\n'
+        filesystem = types.SimpleNamespace(f_frsize=4096, f_bavail=635972, f_bfree=20 * 1024 * 1024)
+        with mock.patch.object(self.c, 'ROOT', Path('/root/toolchains')), \
+             mock.patch.object(self.c.pathlib, 'Path', Path), mock.patch.object(self.c, 'owned_directory'), \
+             mock.patch.dict('sys.modules', {'pwd': types.SimpleNamespace(getpwnam=mock.Mock(side_effect=KeyError))}), \
+             mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True), \
+             mock.patch.object(self.c.os, 'statvfs', return_value=filesystem, create=True), \
+             mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+             mock.patch.object(self.c, 'agent_os', return_value=(0, b'not-found\n')) as commands, \
+             mock.patch.object(self.c, 'agent_write') as writes:
+            with self.assertRaises(self.c.PreparationFailure) as rejected:
+                self.c.agent_create(OPERATION, 60)
+        self.assertEqual('HOST_SPACE_REQUIRED', rejected.exception.detail)
+        self.assertEqual(635972 * 4096, rejected.exception.diagnostic['availableBytes'])
+        self.assertEqual(self.c.AGENT_VOLUME_BYTES + self.c.AGENT_HOST_RESERVE_BYTES, rejected.exception.diagnostic['requiredBytes'])
+        self.assertFalse(any('/agent-' in path for path in created))
+        writes.assert_not_called()
+        self.assertEqual(1, commands.call_count)
+        self.assertEqual('/usr/bin/systemctl', commands.call_args.args[0][0])
+
+    def test_space_threshold_uses_available_blocks_and_preserves_host_reserve(self):
+        minimum = self.c.AGENT_VOLUME_BYTES + self.c.AGENT_HOST_RESERVE_BYTES
+        for available, accepted in ((minimum - 4096, False), (minimum, True), (minimum + 4096, True)):
+            filesystem = types.SimpleNamespace(f_frsize=4096, f_bavail=available // 4096, f_bfree=2 ** 40)
+            with self.subTest(available=available), mock.patch.object(self.c, 'owned_directory'), \
+                 mock.patch.object(self.c.os, 'statvfs', return_value=filesystem, create=True):
+                if accepted:
+                    self.c.agent_require_space('/root/work', OPERATION, 'VOLUME')
+                else:
+                    self.rejected('HOST_SPACE_REQUIRED', lambda: self.c.agent_require_space('/root/work', OPERATION, 'VOLUME'))
+        with mock.patch.object(self.c, 'owned_directory'), \
+             mock.patch.object(self.c.os, 'statvfs', return_value=types.SimpleNamespace(f_frsize=0, f_bavail=100), create=True):
+            self.rejected('FILESYSTEM_SPACE_UNCONFIRMED', lambda: self.c.agent_require_space('/root/work', OPERATION, 'VOLUME'))
+
+    def test_promotion_space_counts_independent_hardlink_copies_and_block_overhead(self):
+        entries = {'a': (info(size=5, links=2), None), 'b': (info(size=5, links=2), None),
+                   'directory': (info(mode=stat.S_IFDIR | 0o755), None)}
+        self.c.agent_validate_tree(entries)
+        filesystem = types.SimpleNamespace(f_frsize=4096, f_bavail=0)
+        with mock.patch.object(self.c, 'owned_directory'), \
+             mock.patch.object(self.c.os, 'statvfs', return_value=filesystem, create=True):
+            with self.assertRaises(self.c.PreparationFailure) as rejected:
+                self.c.agent_require_space('/root/versions/stage', OPERATION, 'PROMOTION', entries)
+        self.assertEqual('HOST_SPACE_REQUIRED', rejected.exception.detail)
+        self.assertEqual(self.c.AGENT_HOST_RESERVE_BYTES + 2 * 4096 + 3 * 4096, rejected.exception.diagnostic['requiredBytes'])
+
+    def test_low_promotion_space_never_copies_or_detaches_frozen_output(self):
+        manifest = self.manifest()
+        class Path(pathlib.PurePosixPath):
+            def exists(self): return False
+            def is_symlink(self): return False
+            def mkdir(self, **_): pass
+            def iterdir(self): return iter(())
+        with mock.patch.object(self.c, 'ROOT', Path('/root')), mock.patch.object(self.c, 'agent_stopped'), \
+             mock.patch.object(self.c, 'agent_identity', return_value=[5, 1]), mock.patch.object(self.c, 'owned_directory'), \
+             mock.patch.object(self.c.os, 'O_DIRECTORY', 0x10000, create=True), \
+             mock.patch.object(self.c.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(self.c.os, 'open', return_value=99), mock.patch.object(self.c.os, 'close'), \
+             mock.patch.object(self.c.os, 'statvfs', return_value=types.SimpleNamespace(f_frsize=4096, f_bavail=0), create=True), \
+             mock.patch.object(self.c, 'agent_scan', return_value={'x': (info(), None)}), \
+             mock.patch.object(self.c, 'agent_copy_tree') as copying, mock.patch.object(self.c, 'agent_detach') as detach:
+            self.rejected('HOST_SPACE_REQUIRED', lambda: self.c.agent_promote(manifest, Path('/root/versions/final'), [5, 1], {}))
+        copying.assert_not_called()
+        detach.assert_not_called()
+
+    def test_space_diagnostic_is_current_numeric_data_without_paths_or_arbitrary_text(self):
+        values = {'operation': OPERATION, 'phase': 'HOST_SPACE_REQUIRED', 'stage': 'VOLUME', 'availableBytes': 0,
+                  'requiredBytes': self.c.AGENT_VOLUME_BYTES + self.c.AGENT_HOST_RESERVE_BYTES,
+                  'reserveBytes': self.c.AGENT_HOST_RESERVE_BYTES}
+        args = ['prepare', 'RUST', '1.95', '1.95.0', '60', '-', OPERATION, 'fixture-release']
+        error = self.c.PreparationFailure('isolation', 'HOST_SPACE_REQUIRED')
+        error.diagnostic = values
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), mock.patch.object(self.c, 'agent_main', side_effect=error):
+            self.assertEqual(65, self.c.agent_cli(args))
+        lines = output.getvalue().splitlines()
+        self.assertEqual('TOOLCHAIN_FAILURE=isolation:HOST_SPACE_REQUIRED', lines[0])
+        self.assertEqual(values, json.loads(lines[1].removeprefix('TOOLCHAIN_DIAGNOSTIC=')))
+        for field, invalid in (('operation', 'f' * 32), ('phase', 'private-body'), ('stage', 'private-body'),
+                ('availableBytes', True), ('availableBytes', values['requiredBytes']), ('requiredBytes', 0),
+                ('reserveBytes', 0), ('path', '/private/body')):
+            error.diagnostic = {**values, field: invalid}
+            self.assertIsNone(self.c.agent_space_diagnostic(error, args))
+        self.assertIsNone(self.c.agent_space_diagnostic(error, ['worker', OPERATION]))
+
     def test_output_links_cannot_escape_through_chain_or_absolute_target(self):
         names = {'bin', 'bin/tool', 'lib', 'lib/version'}
         self.assertEqual('lib/version', self.c.agent_resolve_link('bin/tool', '../lib/version', {}, names))
@@ -402,6 +493,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
               mock.patch.object(self.c.os, 'open', return_value=99),
               mock.patch.object(self.c.os, 'fchmod', create=True), mock.patch.object(self.c.os, 'fsync'),
               mock.patch.object(self.c.os, 'close'), mock.patch.object(self.c, 'agent_scan', return_value={'x': (info(), None)}),
+              mock.patch.object(self.c, 'agent_require_space'),
               mock.patch.object(self.c, 'agent_copy_tree', return_value='a' * 64),
               mock.patch.object(self.c, 'agent_write', side_effect=lambda path, _: writes.append(str(path))),
               mock.patch.object(self.c, 'agent_detach', side_effect=self.c.PreparationFailure('unknown', 'VOLUME_STILL_ATTACHED')),
