@@ -110,7 +110,7 @@ class PublicValueContractTest {
         assertThrows(IllegalArgumentException.class, () -> new CommandRequest("", new byte[0], Duration.ZERO, 10));
         assertThrows(IllegalArgumentException.class,
             () -> new CommandRequest("", new byte[0], Duration.ofSeconds(1), -1));
-        assertThrows(IllegalArgumentException.class, () -> new AiUsage(Optional.of(-1L), Optional.empty()));
+        assertThrows(IllegalArgumentException.class, () -> new AiUsage(Optional.of(-1L), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
         assertThrows(IllegalArgumentException.class, () -> new SchemaIdentity("mod", "01", UUID.randomUUID()));
         assertDoesNotThrow(() -> new SchemaIdentity("mod", "9".repeat(64), UUID.randomUUID()));
         assertThrows(IllegalArgumentException.class,

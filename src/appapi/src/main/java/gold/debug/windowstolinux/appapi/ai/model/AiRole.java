@@ -15,5 +15,6 @@ public enum AiRole {
     /**
      * A preceding model response in the conversation. / 对话中的先前模型响应。
      */
-    ASSISTANT
+    ASSISTANT,
+    TOOL
 }

@@ -290,7 +290,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                 if (request.purpose() == AiPurpose.APPROVAL) {
                     fixedReviews.review(request, facts, task);
                     return success(new AiResponse("{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact controlled original action\"}",
-                        "controlled-approval", "stop", new AiUsage(Optional.empty(), Optional.empty())));
+                        "controlled-approval", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
                 }
                 assertEquals(AiPurpose.LANGUAGE, request.purpose());
                 int turn = calls.getAndIncrement();
@@ -315,7 +315,7 @@ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
                         + "}";
                 }
                 return success(
-                    new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty())));
+                    new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
             }
         };
     }

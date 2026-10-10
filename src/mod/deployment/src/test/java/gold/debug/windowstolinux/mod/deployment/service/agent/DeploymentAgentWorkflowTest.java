@@ -1068,7 +1068,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
                     default -> proposal(turn, data);
                 };
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(
-                    new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
+                    new AiResponse(output, "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))),
                     Optional.empty());
             }
         };
@@ -1156,7 +1156,7 @@ class DeploymentAgentWorkflowTest extends DeploymentRuntimeFixture {
     private static OperationResult<AiResponse> approved(String reason, boolean high) {
         return new OperationResult<>(TaskResult.SUCCEEDED,
             Optional.of(new AiResponse("{\"decision\":\"APPROVE\",\"risk\":\"" + (high ? "HIGH" : "NORMAL") + "\",\"reason\":\"" + reason + "\"}",
-                "independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))), Optional.empty());
+                "independent", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty());
     }
 
     private static Set<String> keys(JsonNode value) {

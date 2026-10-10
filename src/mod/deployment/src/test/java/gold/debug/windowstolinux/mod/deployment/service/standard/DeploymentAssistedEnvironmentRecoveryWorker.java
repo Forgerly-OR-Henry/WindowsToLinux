@@ -297,7 +297,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                         fixedReviews.review(request, facts, task);
                         independent.incrementAndGet();
                         return success(new AiResponse("{\"decision\":\"APPROVE\",\"risk\":\"NORMAL\",\"reason\":\"Exact controlled original action\"}",
-                            "controlled-approval", "stop", new AiUsage(Optional.empty(), Optional.empty())));
+                            "controlled-approval", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
                     }
                     assertEquals(AiPurpose.LANGUAGE, request.purpose());
                     aiCalls.incrementAndGet();
@@ -310,7 +310,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                             + facts.path("sourceRevision").asText()
                             + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep human review\",\"unresolved\":[]}}";
                     return success(new AiResponse(response, "controlled-purpose", "stop",
-                        new AiUsage(Optional.empty(), Optional.empty())));
+                        new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
                 } catch (Exception invalid) {
                     throw new AssertionError(invalid);
                 }
@@ -507,8 +507,7 @@ public final class DeploymentAssistedEnvironmentRecoveryWorker extends Deploymen
                 var value = members.addObject().put("enabled", member.enabled()).put("id", profile.id())
                     .put("endpoint", profile.endpoint()).put("fileEndpoint", profile.fileEndpoint())
                     .put("realtimeEndpoint", profile.realtimeEndpoint()).put("model", profile.model())
-                    .put("credentialKey", profile.credentialKey()).put("revision", configured.revision())
-                    .put("outputLimit", state.outputLimits().get(profile.id()));
+                    .put("credentialKey", profile.credentialKey()).put("revision", configured.revision());
                 for (var capability : AiCapabilityType.values())
                     value.put(capability.name(), configured.verified(capability));
             }

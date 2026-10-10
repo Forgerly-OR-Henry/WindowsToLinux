@@ -179,7 +179,7 @@ final class PlatformRecoveryHost implements RecoveryHost {
      * @throws ApiException if authority or cleanup fails / 授权或清理失败时 */
     @Override
     public OperationResult<AiResponse> call(AiRequest request, TaskContext task) throws ApiException {
-        return ai.callWithinModelLimit(request, task);
+        return ai.call(request, task);
     }
 
     /** Closes original transport, interaction and model resources. / 关闭原传输、交互及模型资源。

@@ -13,6 +13,8 @@ import gold.debug.windowstolinux.app.ai.model.AiCapabilityType;
 import gold.debug.windowstolinux.app.ai.model.AiPurposeType;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityCheck;
 import gold.debug.windowstolinux.app.ai.model.AiCapabilityStatus;
+import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
+import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 
 /** Stores model connection, capability and routing state in one row. / 在一行中保存模型连接、能力及路由状态。 */
 public final class AiModelStore {
@@ -76,6 +78,8 @@ public final class AiModelStore {
                         update.executeUpdate();
                     }
                 }
+                new DesktopPreferenceStore(connections).save(reasoningEffortKey(profile.id()), profile.reasoningEffort().name());
+                new DesktopPreferenceStore(connections).save(protocolKey(profile.id()), profile.protocol().name());
                 for (var capability : AiCapabilityType.values())
                     writeVerification(c, profile.id(), capability, checks.get(capability));
             }
@@ -91,7 +95,9 @@ public final class AiModelStore {
                                       AiCapabilityType capability) {
         if (!old.model().equals(current.model()) || !old.credentialKey().equals(current.credentialKey())) return false;
         return switch (capability) {
-            case TEXT, VISION -> old.endpoint().equals(current.endpoint());
+            case TEXT, VISION, TOOL_CALLING ->
+                old.endpoint().equals(current.endpoint()) && old.reasoningEffort() == current.reasoningEffort()
+                    && old.protocol() == current.protocol();
             case VOICE_FILE -> old.fileEndpoint().equals(current.fileEndpoint());
             case VOICE_REALTIME -> old.realtimeEndpoint().equals(current.realtimeEndpoint());
         };
@@ -165,6 +171,8 @@ public final class AiModelStore {
     static String capabilityPrefix(AiCapabilityType capability) {
         return switch (Objects.requireNonNull(capability)) {
             case TEXT -> "text";
+            case TOOL_CALLING ->
+                throw new IllegalArgumentException("Native tool evidence uses revision-bound preferences");
             case VISION -> "vision";
             case VOICE_FILE -> "voice_file";
             case VOICE_REALTIME -> "voice_realtime";
@@ -179,6 +187,22 @@ public final class AiModelStore {
      * @throws SQLException if storage fails / 保存失败时 */
     private static void writeVerification(Connection c, String id, AiCapabilityType capability, AiCapabilityCheck check)
         throws SQLException {
+        if (capability == AiCapabilityType.TOOL_CALLING) {
+            long revision;
+            try (var q = c.prepareStatement("SELECT configuration_revision FROM ai_model WHERE model_id=?")) {
+                q.setString(1, id);
+                try (var r = q.executeQuery()) {
+                    if (!r.next()) throw new SQLException("Model no longer exists");
+                    revision = r.getLong(1);
+                }
+            }
+            try (var q = c.prepareStatement("MERGE INTO desktop_preference(preference_key,preference_value) KEY(preference_key) VALUES(?,?)")) {
+                q.setString(1, toolCheckKey(id));
+                q.setString(2, revision + "," + check.state() + "," + check.checkedAt().map(Instant::toEpochMilli).orElse(-1L) + "," + check.reason());
+                q.executeUpdate();
+            }
+            return;
+        }
         String prefix = capabilityPrefix(capability);
         String revision = check.checkedAt().isPresent() ? "configuration_revision" : "NULL";
         try (var statement = c.prepareStatement("UPDATE ai_model SET " + prefix + "_verified_revision=" + revision
@@ -242,7 +266,7 @@ public final class AiModelStore {
         return Map.copyOf(result);
     }
 
-    /** Captures all enabled routes and their output limits under one platform configuration lock. / 在同一平台配置锁下捕获所有启用路由及输出上限。
+    /** Captures all routes under one platform configuration lock. / 在同一平台配置锁下捕获全部路由。
      * @return one immutable routing state / 一份不可变路由状态
      * @throws SQLException if the state cannot be read / 状态无法读取时 */
     public RoutingState routingState() throws SQLException {
@@ -255,7 +279,6 @@ public final class AiModelStore {
                 for (var configuration : listConfigured())
                     inventory.put(configuration.profile().id(), configuration);
                 var members = new EnumMap<AiPurposeType, List<RoutingMember>>(AiPurposeType.class);
-                var limits = new HashMap<String, Integer>();
                 for (var purpose : AiPurposeType.values()) {
                     var selected = new ArrayList<RoutingMember>();
                     for (var assignment : purposes().list(purpose)) {
@@ -263,12 +286,10 @@ public final class AiModelStore {
                         if (configuration == null)
                             throw new SQLException("Purpose route names a missing model");
                         selected.add(new RoutingMember(configuration, assignment.enabled()));
-                        limits.putIfAbsent(configuration.profile().id(),
-                            outputLimit(configuration.profile().id()).orElse(-1));
                     }
                     members.put(purpose, List.copyOf(selected));
                 }
-                result[0] = new RoutingState(routes, Map.copyOf(members), Map.copyOf(limits));
+                result[0] = new RoutingState(routes, Map.copyOf(members));
             }
         });
         return result[0];
@@ -283,9 +304,9 @@ public final class AiModelStore {
     /** One transaction-consistent AI routing view. / 一份事务一致的 AI 路由视图。
      * @param routes purpose-ordered model chains / 按用途排序的模型链
      * @param members all ordered assignments including disabled members / 全部有序分配，包括已禁用成员
-     * @param outputLimits exact per-model token limits, or -1 when absent / 精确模型 Token 上限，缺失时为 -1 */
+     */
     public record RoutingState(Map<AiPurposeType, List<StoredAiModelInfo>> routes,
-                               Map<AiPurposeType, List<RoutingMember>> members, Map<String, Integer> outputLimits) {
+                               Map<AiPurposeType, List<RoutingMember>> members) {
     }
 
     /** Returns the repository for independent purpose routing settings. / 返回独立用途路由设置仓库。
@@ -296,9 +317,9 @@ public final class AiModelStore {
     }
 
     /**
-     * Saves an explicit model output budget using existing platform settings. / 使用已有平台设置保存明确模型输出预算。
+     * Retains the legacy editor value without changing invocation or verification. / 保留旧编辑器值，不改变调用或能力验证。
      * @param id existing model identity / 已有模型身份
-     * @param tokens positive output token ceiling / 正的输出 Token 上限
+     * @param tokens positive legacy editor value / 正的旧编辑器值
      * @throws SQLException if the model or transaction is unavailable / 模型或事务不可用时
      */
     public void saveOutputLimit(String id, int tokens) throws SQLException {
@@ -316,28 +337,14 @@ public final class AiModelStore {
                             throw new SQLException("Model is absent", "02000");
                     }
                 }
-                var previous = outputLimit(id);
-                var before = listConfigured().stream().filter(v -> v.profile().id().equals(id)).findFirst().orElseThrow();
-                if (previous.isPresent() && previous.getAsInt() != tokens) {
-                    try (var update = connection.prepareStatement(
-                        "UPDATE ai_model SET configuration_revision=configuration_revision+1 WHERE model_id=?")) {
-                        update.setString(1, id);
-                        update.executeUpdate();
-                    }
-                    for (var capability : AiCapabilityType.values()) {
-                        AiCapabilityCheck check = capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION
-                            ? AiCapabilityCheck.unverified() : before.checks().get(capability);
-                        writeVerification(connection, id, capability, check);
-                    }
-                }
                 new DesktopPreferenceStore(connections).save(key, Integer.toString(tokens));
             }
         });
     }
 
-    /** Reads a configured ceiling without inventing a provider capability. / 读取已配置上限，不虚构提供者能力。
+    /** Reads the retained legacy editor value, independent of invocation policy. / 读取保留的旧编辑器值，与调用策略独立。
      * @param id existing model identity / 已有模型身份
-     * @return explicit limit or absent / 明确上限或缺失
+     * @return retained value or absent / 保留值或缺失
      * @throws SQLException if configuration is unreadable or malformed / 配置不可读或格式无效时 */
     public OptionalInt outputLimit(String id) throws SQLException {
         var saved = new DesktopPreferenceStore(connections).find(outputLimitKey(id));
@@ -384,6 +391,24 @@ public final class AiModelStore {
         if (id == null || !id.matches("[a-z][a-z0-9-]{0,63}"))
             throw new IllegalArgumentException("Invalid model identity");
         return "ai_model_output_limit_" + id.replace('-', '_');
+    }
+
+    /** Maps reasoning configuration to the existing non-secret preference store. / 将推理配置映射到已有非秘密偏好仓库。
+     * @param id exact model identity / 精确模型身份
+     * @return preference key / 偏好键 */
+    private static String reasoningEffortKey(String id) {
+        outputLimitKey(id);
+        return "ai_model_reasoning_effort_" + id.replace('-', '_');
+    }
+
+    private static String protocolKey(String id) {
+        outputLimitKey(id);
+        return "ai_model_protocol_" + id.replace('-', '_');
+    }
+
+    private static String toolCheckKey(String id) {
+        outputLimitKey(id);
+        return "ai_model_tool_check_" + id.replace('-', '_');
     }
 
     /** Reorders inventory through nonconflicting temporary positions in one transaction. / 在同一事务借助无冲突临时位置调整库存顺序。
@@ -447,10 +472,42 @@ public final class AiModelStore {
      * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
      */
-    private static StoredAiModelProfile provider(ResultSet rows) throws SQLException {
+    private StoredAiModelProfile provider(ResultSet rows) throws SQLException {
+        ModelReasoningLevel effort;
+        try {
+            effort = ModelReasoningLevel.valueOf(new DesktopPreferenceStore(connections)
+                .find(reasoningEffortKey(rows.getString("model_id"))).orElse("DEFAULT"));
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Invalid stored model reasoning effort", "55000");
+        }
         return new StoredAiModelProfile(rows.getString("model_id"), rows.getString("endpoint_url"),
             rows.getString("model_name"), rows.getString("credential_id"), rows.getString("file_endpoint_url"),
-            rows.getString("realtime_endpoint_url"));
+            rows.getString("realtime_endpoint_url"), effort, storedProtocol(rows.getString("model_id")));
+    }
+
+    private ModelProtocol storedProtocol(String id) throws SQLException {
+        try {
+            return ModelProtocol.valueOf(new DesktopPreferenceStore(connections).find(protocolKey(id))
+                .orElseThrow(() -> new SQLException("Explicit model protocol is absent", "55000")));
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Invalid explicit model protocol", "55000");
+        }
+    }
+
+    private AiCapabilityCheck toolCheck(ResultSet rows) throws SQLException {
+        var saved = new DesktopPreferenceStore(connections).find(toolCheckKey(rows.getString("model_id")));
+        if (saved.isEmpty()) return AiCapabilityCheck.unverified();
+        try {
+            var fields = saved.orElseThrow().split(",", -1);
+            if (fields.length != 4) throw new IllegalArgumentException();
+            if (Long.parseLong(fields[0]) != rows.getLong("configuration_revision"))
+                return AiCapabilityCheck.unverified();
+            var state = AiCapabilityStatus.valueOf(fields[1]);
+            long time = Long.parseLong(fields[2]);
+            return new AiCapabilityCheck(state, fields[3], time < 0 ? Optional.empty() : Optional.of(Instant.ofEpochMilli(time)));
+        } catch (IllegalArgumentException invalid) {
+            throw new SQLException("Invalid native tool verification", "55000");
+        }
     }
 
     /** Decodes model settings and only revision-valid capability evidence. / 解码模型设置及修订有效的能力证据。
@@ -458,9 +515,13 @@ public final class AiModelStore {
      * @return the validated result or retained scoped handle / 已验证结果或保留的限定句柄
      * @throws SQLException if validation or the scoped operation fails / 校验或限定操作失败时
      */
-    private static StoredAiModelInfo configuration(ResultSet rows) throws SQLException {
+    private StoredAiModelInfo configuration(ResultSet rows) throws SQLException {
         var checks = new EnumMap<AiCapabilityType, AiCapabilityCheck>(AiCapabilityType.class);
         for (var capability : AiCapabilityType.values()) {
+            if (capability == AiCapabilityType.TOOL_CALLING) {
+                checks.put(capability, toolCheck(rows));
+                continue;
+            }
             String prefix = capabilityPrefix(capability);
             var checkedAt = verifiedAt(rows, prefix);
             checks.put(capability, checkedAt.isEmpty() ? AiCapabilityCheck.unverified()

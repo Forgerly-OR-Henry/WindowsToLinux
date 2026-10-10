@@ -1344,7 +1344,7 @@ public interface PageRegistration extends AutoCloseable {
 
 作者控制根 `JComponent` 内的布局、组件、绘制、表格、表单及内部页面切换。`UiService.register(PageSpec, PageFactory)` 中 `settingsPage=false` 表示所属 Mod 唯一根工作区，第二个普通根登记明确拒绝；撤销原根登记后可登记新的根。`settingsPage=true` 挂载到 APP 设置中的该 Mod 分区，不生成普通主导航入口，也不授予平台设置权限。`registerPreview` 保留 CLASS 隔离预览，既不占根登记，也不出现在普通导航。
 
-当前 API 开发版为 `1.0.0-dev.4`，在可选服务、实际原任务依赖图和受管素材合同上增加有限平台界面导航、所属日志有界读取和恢复时原服务器端点绑定；作者父工程与宿主依赖同步。官方部署开发版 `1.1.0-dev.3` 的最低 API 范围为 `[1.0.0-dev.4,1.0.0)`；独立 Git 开发版 `1.0.0-dev.1` 仍使用 `[1.0.0-dev.3,1.0.0)`，可用于当前 API。阶段验收状态见 1.3 执行计划，正式 SDK 发行仍后置。开发阶段的部署 Schema 统一为 1；helper 保持原协议，软件、Schema 和 helper 版本不根据文档期数修改。CLASS 源码允许原版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
+当前未公开发布阶段的 API、APP、官方 Mod 和作者父工程统一使用 `1.0.0`，官方 Mod 的 `platformApiRange` 明确声明为 `1.0.0`。阶段验收状态见 1.3 执行计划，正式 SDK 发行仍后置。开发阶段的部署 Schema 统一为 1；helper 保持原协议，软件、Schema 和 helper 版本不根据文档期数修改。CLASS 源码允许原版本下重新编译调试，发行包仍遵守同版本内容不可变规则。
 
 登记与成功发布只提供元数据，不创建视图；Mod 成功启用并发布根后，APP 自动生成其唯一入口，无界面服务 Mod 没有空入口。根 ID 在所属 Mod 内唯一，宿主键为 Mod ID＋根 ID。首次进入在 EDT 创建并缓存实例，切换只隐藏，返回复用输入、选择和浏览状态；明确关闭后释放视图，重开才创建新实例。撤销、停用及正常退出按原作用域释放，清理失败保留原实例和占用供重试。主题、语言和锁定通知覆盖所有保留实例，作者向内部页转发环境并负责其资源。
 
@@ -1771,12 +1771,22 @@ import java.util.List;
 import java.util.Optional;
 
 public enum AiPurpose { LANGUAGE, APPROVAL, VISION, VOICE }
-public enum AiRole { SYSTEM, USER, ASSISTANT }
-public record AiMessage(AiRole role, String text, List<AiImage> images) {}
-public record AiRequest(AiPurpose purpose, List<AiMessage> messages, int maxOutputTokens,
-    Duration timeout, boolean jsonObjectResponse) {}
-public record AiUsage(Optional<Long> inputTokens, Optional<Long> outputTokens) {}
-public record AiResponse(String text, String modelId, String finishReason, AiUsage usage) {}
+public enum AiRole { SYSTEM, USER, ASSISTANT, TOOL }
+public record AiMessage(AiRole role, String text, List<AiImage> images,
+    List<AiToolCall> toolCalls, Optional<AiToolResult> toolResult,
+    Optional<AiContinuation> continuation) {}
+public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens,
+    Duration timeout, boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes) {}
+public record AiUsage(Optional<Long> inputTokens, Optional<Long> outputTokens,
+                      Optional<Long> cachedInputTokens, Optional<Long> cacheMissInputTokens,
+                      Optional<Long> reasoningOutputTokens) {}
+public record AiResponse(String text, String modelId, String finishReason, AiUsage usage,
+    List<AiToolCall> toolCalls, Optional<AiContinuation> continuation, Optional<Integer> encodedRequestBytes,
+    Optional<Integer> effectiveMaxOutputTokens) {}
+public record AiToolDefinition(String name, String description, String inputSchema) {}
+public record AiToolCall(String id, String name, String arguments) {}
+public record AiToolResult(String callId, String text, boolean error) {}
+public record AiContinuation(java.util.UUID id, int payloadBytes) {}
 ```
 
 `ai.vision`：
@@ -1813,17 +1823,40 @@ public interface VoiceSession extends AutoCloseable {
 }
 ```
 
-模型选择、验证和用途分组沿用平台配置；输入图片仅限 VISION，支持 PNG/JPEG，单张最多 10 MiB、单次最多 4 张；文本 UTF-8 合计最多 1 MiB，最大输出 token 不超过所选模型已配置上限。预算或能力不满足在发送前拒绝，不自行放宽限制。`jsonObjectResponse` 是输出格式请求，业务字段和语义仍由作者校验。用量缺失为 Optional.empty，不伪造为零。文字和视觉公开调用一次返回完整结果；Provider 内部文本流式接收不作为业务自动执行指令。调用取消及超时不证明服务商没有处理请求，不自动重发来掩盖未知结果。
+模型选择、验证和用途分组沿用平台配置；输入图片仅限 VISION，支持 PNG/JPEG，单张最多 10 MiB、单次最多 4 张；文本 UTF-8 合计最多 1 MiB。`maxOutputTokens` 为空时申请使用 APP 推荐额度；非空值必须是正整数。APP 允许覆写时使用申请值，关闭覆写时统一使用推荐值，非法申请值始终拒绝。平台集中解析后发送三种协议各自的输出参数，不受旧逐模型额度限制；Anthropic 的必填 `max_tokens` 始终存在。文字、视觉、原生工具能力验证使用独立配置额度，语音接口不增加此参数。输入预算或能力不满足在发送前拒绝。`jsonObjectResponse` 是输出格式请求，业务字段和语义仍由作者校验。用量缺失为 Optional.empty，不伪造为零。文字和视觉公开调用一次返回完整结果；Provider 内部文本流式接收不作为业务自动执行指令。调用取消及超时不证明服务商没有处理请求，不自动重发来掩盖未知结果。
 
-可恢复的模型决策可先调用 `configurationRevision` 冻结不透明修订，再使用带 `expectedRevision` 的 `call`。宿主在同一平台事务捕获所有用途的全部已配置成员、顺序、启用/禁用状态、模型修订、精确凭据引用和输出上限；原捕获的路由与限额用于实际候选发送。每个候选发送前重新核对完整冻结修订，配置漂移返回 `AI_CONFIGURATION_CHANGED` 并拒绝本次后续发送，不在网络调用期间持有平台事务锁。既有不带修订的调用仍保留开始时的成员快照。当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。文字/视觉调用只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。文件语音与实时语音按各自能力选定首个匹配成员，调用过程中不换模型。所有文字/视觉候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
+可恢复的模型决策可先调用 `configurationRevision` 冻结不透明修订，再使用带 `expectedRevision` 的 `call`。宿主捕获所有用途的全部已配置成员、顺序、启用/禁用状态、模型修订、精确凭据引用，并将启动快照的推荐额度及覆写开关纳入修订；旧模型编辑器额度不参与摘要，也不改变验证修订。每个候选发送前重新核对完整冻结修订，配置漂移返回 `AI_CONFIGURATION_CHANGED` 并拒绝本次后续发送，不在网络调用期间持有平台事务锁。既有不带修订的调用仍保留开始时的成员快照。当前宿主适配按一次调用开始时取得的用途成员顺序执行，在取用凭据时重新核验模型修订、能力及用途启用状态。文字/视觉调用只在收到明确非成功 HTTP 响应后尝试下一成员；成功响应格式不合法直接报告失败，发送后的取消、超时、断连或正文超限保持 UNKNOWN，不继续尝试其他模型。文件语音与实时语音按各自能力选定首个匹配成员，调用过程中不换模型。所有文字/视觉候选共用请求总时限，实际客户端终止后才释放连接占用；释放登记失败由原任务显式核对。
 
-单次消息数量为 1～1024，完整响应正文最多 8 MiB；图片检查声明的 MIME、签名和字节容量，不在平台中解码像素。模型输出上限必须明确配置，缺失时拒绝调用，不推测提供者能力。公开用量来自响应中的 prompt_tokens/completion_tokens，缺失字段保留为空。平台不记录 API Key、请求消息或提供者原始错误正文；JDK HTTP 请求头会持有凭据 String，临时 char[] 和所属请求/响应 byte[] 按实际使用寿命清理，不承诺清除 JDK 内部副本。
+单次消息数量为 1～1024，完整响应正文最多 8 MiB；图片检查声明的 MIME、签名和字节容量，不在平台中解码像素。APP 推荐额度是请求预算，不表示模型真实能力上限；提供方拒绝时沿用既有错误处理，不自动降额重试。`AiResponse.effectiveMaxOutputTokens` 回传宿主实际发送的正数额度，未测量夹具可为空；失败诊断的 `effectiveMaxOutputTokens` 携带已解析额度。日志应区分申请值与实际值，无法取得实际值时记为未知。公开用量来自提供方报告，缺失字段保留为空。平台不记录 API Key、请求消息或提供者原始错误正文；JDK HTTP 请求头会持有凭据 String，临时 char[] 和所属请求/响应 byte[] 按实际使用寿命清理，不承诺清除 JDK 内部副本。
+
+作者可省略额度或明确申请本次覆写，不读取 APP 配置模块：
+
+```java
+var recommended = new AiRequest(AiPurpose.LANGUAGE, messages, Duration.ofSeconds(60), false);
+var requested = new AiRequest(AiPurpose.LANGUAGE, messages, 65536, Duration.ofSeconds(60), false);
+var result = context.ai().call(requested, task);
+var actualBudget = result.value().flatMap(AiResponse::effectiveMaxOutputTokens);
+```
 
 语音共用模型清单和 `VOICE` 用途，有独立的文件转写 HTTP 地址及实时转写 WebSocket 地址。保存配置与能力验证分开；纯语音模型不需要聊天地址或文字探测，界面允许留空文字 Token 上限。宿主保存接口仍接受正的统一上限值；纯语音表单沿用原保存值，新记录内部填入 128，音频协议和语音预算不使用此值。配置聊天地址后须明确填写正的文字上限。文字、视觉、文件语音、实时语音四种验证分别绑定相关地址、模型及凭据修订；显示名或无关协议地址的变化不使其他有效验证失效。真实提供方验证状态按实际调用记录，本机协议模拟不能代替真实提供方验收。
 
 `VoiceRequest` 校验并复制完整 RIFF/WAVE 输入：小端 PCM16、24 kHz、单声道、至少 100 ms，最多 25,000,000 字节，文件名为安全 `.wav` 名称。实时会话接收同格式原始 PCM，单块最多 65,536 字节并保持样本对齐；队列由 `maxBufferedBytes` 限在 64 KiB～1 MiB，满时 `BUSY` 表示未接收，不丢音频。请求/会话总时限为正且最多 30 分钟。平台不录音、不转码；调用方负责准备符合格式的音频。
 
 `openVoice` 在开始时冻结原任务、模型、地址、凭据及配置修订，后续不切换模型。`commit` 提交至少 100 ms 的一轮输入，`finish` 封闭输入、提交剩余有效音频并等全部片段定稿及物理清理，`close`/`cancel` 不提交剩余音频。事件按投递序号串行回调，增量追加，最终事件替换同一片段的增量；结果按输入提交顺序及片段索引排列，不按最终响应到达顺序拼接。回调须及时返回；回调内取消后应先返回，不在同一回调等待会话完成。原任务返回之前须观察 `completion` 的实际终态。取消停止后续普通回调，超时、断连及格式不明保留已确认片段并如实报告不确定结果，不重放音频。连接登记保持到实际套接字和缓冲清理完成。
+
+<a id="native-ai-contract"></a>
+
+#### 原生工具值与续接
+
+上述声明展示主要字段，完整构造校验和辅助方法以当前 appapi 源码为准。`AiMessage.assistant(response)` 保存完整助手调用批次及不透明续接；`AiMessage.result(result)` 创建绑定原调用 ID 的 TOOL 消息。旧普通消息、请求和响应构造形式仍用于无工具调用，其原生字段为空；业务代码调整输出预算或复制请求时必须保留全部原生字段。
+
+`AiToolDefinition` 描述函数与参数 JSON Schema，不授予执行权限；`AiToolCall.arguments` 仍是不可信输入，由所属工具校验。工具参数拒绝或执行失败也通过原 `callId` 返回结果，不替换调用。助手批次及全部对应结果成组保留，续接字段不能由作者推测、解析或跨会话复用。
+
+`AiContinuation` 公开宿主签发的 UUID 和实际 UTF-8 载荷字节数 `payloadBytes`；复用时宿主核验身份及大小，作者不能伪造较小元数据绕过限制。宿主保存 Responses 输出项、Anthropic 签名块及 Chat 推理字段，并绑定原任务、用途、模型、协议和配置修订；这些内部状态不进入公开日志。首次成功的原生会话固定模型，失败、UNKNOWN 或配置漂移后停止，不换模型重放。首次发送前仍按已明确配置的用途顺序选择。文字验证和无副作用工具往返验证独立，工具调用须满足当前修订的工具能力。
+
+`maxRequestBytes` 限定完整协议编码后的请求体积，普通文字/审批范围为 1 字节至 1 MiB，省略时使用 1 MiB。VISION 的编码上限及默认值为 64 MiB，以容纳原有四张10 MiB图片的 Base64 表示，原图片数量及单张限制仍执行。平台在取得网络资源、发送 API 之前核验，不截断消息或审批证据。返回的 `encodedRequestBytes` 是宿主测量值，未测量时为空；它不等于 Token 数。复制请求时必须同时保留该上限和原生字段。
+
+协议、鉴权、结束状态及实际用量按显式选择的接口解释；当前工具调用一次返回完整响应。原任务超时、协作取消和实际资源释放合同继续生效，取消不证明服务商未处理请求。详细调度、预算与执行门禁见 [Runtime](Runtime.md#agent-tools)。
 
 ### 8.8 file：通用文件、来源选择与快照
 

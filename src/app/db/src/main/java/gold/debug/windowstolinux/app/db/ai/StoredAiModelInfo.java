@@ -39,7 +39,7 @@ public record StoredAiModelInfo(StoredAiModelProfile profile, String name, int p
             AiCapabilityType.VOICE_FILE, fileVoiceVerifiedAt, AiCapabilityType.VOICE_REALTIME, realtimeVoiceVerifiedAt);
         var evidence = new EnumMap<AiCapabilityType, AiCapabilityCheck>(AiCapabilityType.class);
         for (var capability : AiCapabilityType.values()) {
-            Optional<Instant> time = times.get(capability);
+            Optional<Instant> time = times.getOrDefault(capability, Optional.empty());
             evidence.put(capability, Objects.requireNonNull(checks).getOrDefault(capability,
                 time.map(t -> new AiCapabilityCheck(AiCapabilityStatus.AVAILABLE, "", Optional.of(t)))
                     .orElseGet(AiCapabilityCheck::unverified)));

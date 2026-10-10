@@ -870,7 +870,7 @@ public final class PlatformRuntime implements AutoCloseable {
                 if (closed || stopping)
                     throw new IllegalStateException("Platform model capabilities are closing");
                 var ai = new gold.debug.windowstolinux.app.service.ai.PlatformAiService(persistence.database(), tasks,
-                    security, persistence.aiProfiles(), owner, version, startup.config().ai().connectSeconds());
+                    security, persistence.aiProfiles(), owner, version, startup.config().ai());
                 aiServices.add(ai);
                 return ai;
 

@@ -118,9 +118,9 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
             .toList();
     }
 
-    /** Reads the exact configured output ceiling. / 读取精确已配置输出上限。
+    /** Reads the retained legacy editor value. / 读取保留的旧编辑器值。
      * @param id model identity / 模型身份
-     * @return configured ceiling or absent / 已配置上限或缺失
+     * @return retained value or absent / 保留值或缺失
      * @throws SQLException if storage is unavailable / 存储不可用时 */
     public OptionalInt outputLimit(String id) throws SQLException {
         settings();
@@ -164,7 +164,7 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
      * @param profile reviewed protocol settings / 已审阅协议设置
      * @param name display label / 显示名称
      * @param suppliedKey replacement key or empty to retain, always cleared / 替换密钥或空以保留，始终清零
-     * @param outputLimit positive text output ceiling / 正的文字输出上限
+     * @param outputLimit positive legacy editor value, unrelated to actual output policy / 正的旧编辑器值，与实际输出策略无关
      * @throws Exception if validation or atomic protected storage fails / 校验或受保护原子存储失败时 */
     public void save(AiModelProfile profile, String name, char[] suppliedKey, int outputLimit) throws Exception {
         Objects.requireNonNull(suppliedKey);
@@ -183,7 +183,7 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
                         .orElseGet(() -> "ai/provider/" + profile.id() + "/api-key/" + UUID.randomUUID());
                     if (suppliedKey.length != 0) store.save(credential, suppliedKey);
                     var candidate = new AiModelProfile(profile.id(), profile.chatCompletionsEndpoint(), profile.model(),
-                        credential, profile.fileTranscriptionEndpoint(), profile.realtimeTranscriptionEndpoint());
+                        credential, profile.fileTranscriptionEndpoint(), profile.realtimeTranscriptionEndpoint(), profile.reasoningEffort(), profile.protocol());
                     persistence.aiProfiles().saveConfiguration(candidate.stored(), name);
                     persistence.aiProfiles().saveOutputLimit(profile.id(), outputLimit);
                 });
@@ -210,12 +210,12 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
             throw new IllegalArgumentException("Voice verification requires audio and expected text");
         var profile = observed.profile();
         String endpoint = switch (capability) {
-            case TEXT, VISION -> profile.endpoint();
+            case TEXT, VISION, TOOL_CALLING -> profile.endpoint();
             case VOICE_FILE -> profile.fileEndpoint();
             case VOICE_REALTIME -> profile.realtimeEndpoint();
         };
         if (endpoint.isEmpty()) throw new IllegalArgumentException("This protocol address is not configured");
-        int ceiling = persistence.aiProfiles().outputLimit(id).orElseThrow();
+        int ceiling = ai.verificationMaxOutputTokens();
         char[] key;
         try (var operation = security.enterOperation(); var store = security.openCredentials()) {
             key = store.read(profile.credentialKey())
@@ -259,13 +259,14 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
      * @param capability selected protocol / 所选协议
      * @param audio reviewed WAV input / 已审阅WAV输入
      * @param expected expected transcript / 预期文字
-     * @param ceiling text output bound / 文字输出上限
+     * @param ceiling independent verification output budget / 独立验证输出额度
      * @param key captured protected key / 已捕获受保护密钥
      * @param task original executing task / 原执行任务
      * @return actual classified outcome / 实际分类结果 */
     private OperationResult<Void> probe(StoredAiModelInfo observed, AiCapabilityType capability,
                                         VoiceRequest audio, String expected, int ceiling, char[] key, TaskContext task) {
         try {
+            if (capability == AiCapabilityType.TOOL_CALLING) return probeTools(observed, ceiling, key, task);
             if (capability == AiCapabilityType.TEXT || capability == AiCapabilityType.VISION) {
                 ModelCapabilityProbe challenge;
                 if (capability == AiCapabilityType.VISION) {
@@ -305,6 +306,54 @@ public final class PlatformModelService implements AiModelListAccess, AutoClosea
         } catch (java.io.IOException failure) {
             return failed(ProblemCode.IO_FAILURE, "MODEL_PROBE_INPUT", "The local capability challenge could not be generated");
         }
+    }
+
+    private OperationResult<Void> probeTools(StoredAiModelInfo observed, int ceiling, char[] key, TaskContext task) throws ApiException {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper()
+            .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        String challenge = UUID.randomUUID().toString();
+        var tool = new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("roundtrip_probe",
+            "Return the supplied challenge. After receiving the tool result, reply with exactly its text.",
+            "{\"type\":\"object\",\"properties\":{\"challenge\":{\"type\":\"string\"}},\"required\":[\"challenge\"],\"additionalProperties\":false}");
+        var messages = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiMessage>();
+        messages.add(new gold.debug.windowstolinux.appapi.ai.model.AiMessage(
+            gold.debug.windowstolinux.appapi.ai.model.AiRole.USER,
+            "Call roundtrip_probe with challenge " + challenge + ". Then reply with exactly the text returned by the tool.", List.of()));
+        long started = System.nanoTime();
+        var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(
+            gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, messages, ceiling,
+            java.time.Duration.ofSeconds(30), false, List.of(tool));
+        var first = ai.probe(observed.profile(), key, request, task);
+        if (first.outcome() != TaskResult.SUCCEEDED)
+            return new OperationResult<>(first.outcome(), Optional.empty(), first.problem());
+        var response = first.value().orElseThrow();
+        if (!response.finishReason().equals("tool_calls") || response.toolCalls().size() != 1)
+            return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_CALL", "No complete native tool call was returned");
+        var call = response.toolCalls().getFirst();
+        try {
+            var args = json.readTree(call.arguments());
+            if (!call.name().equals(tool.name()) || args == null || !args.isObject() || args.size() != 1
+                || !args.path("challenge").isTextual() || !args.path("challenge").asText().equals(challenge))
+                return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_ARGUMENTS", "Native tool challenge is incorrect");
+        } catch (java.io.IOException invalid) {
+            return failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_ARGUMENTS", "Native tool challenge is invalid");
+        }
+        String returned = UUID.randomUUID().toString();
+        messages.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.assistant(response));
+        messages.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.result(
+            new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), returned, false)));
+        long remaining = java.time.Duration.ofSeconds(30).toNanos() - (System.nanoTime() - started);
+        if (remaining <= 0)
+            return failed(ProblemCode.TIMEOUT, "MODEL_TOOL_PROBE_TIMEOUT", "Native probe budget expired");
+        var second = ai.probe(observed.profile(), key, new gold.debug.windowstolinux.appapi.ai.model.AiRequest(
+            request.purpose(), messages, request.maxOutputTokens(), java.time.Duration.ofNanos(remaining), false, List.of(tool)), task);
+        if (second.outcome() != TaskResult.SUCCEEDED)
+            return new OperationResult<>(second.outcome(), Optional.empty(), second.problem());
+        var finalResponse = second.value().orElseThrow();
+        return finalResponse.finishReason().equals("stop") && finalResponse.toolCalls().isEmpty()
+            && returned.equals(finalResponse.text().strip()) ? new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty())
+            : failed(ProblemCode.CONTRACT_VIOLATION, "MODEL_TOOL_PROBE_RESULT", "Native tool result was not consumed correctly");
     }
 
     /** Normalizes harmless transcript whitespace. / 规范化无害的转写空白。

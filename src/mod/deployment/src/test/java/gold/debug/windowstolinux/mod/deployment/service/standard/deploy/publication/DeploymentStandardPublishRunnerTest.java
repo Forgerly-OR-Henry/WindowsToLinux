@@ -1574,7 +1574,7 @@ class DeploymentStandardPublishRunnerTest extends DeploymentRuntimeFixture {
                         : "{\"action\":\"ADVISE\",\"sourceRevision\":\"" + facts.path("sourceRevision").textValue()
                         + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep deterministic inputs\",\"unresolved\":[]}}";
                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(output,
-                        "controlled-independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
+                        "controlled-independent", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))),
                         Optional.empty());
                 } catch (Exception invalid) {
                     throw new AssertionError(invalid);

@@ -6,6 +6,8 @@ import java.util.Objects;
 import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
 import gold.debug.windowstolinux.app.ai.http.HttpUrlChecker;
 import gold.debug.windowstolinux.app.ai.voice.VoiceProtocol;
+import gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel;
+import gold.debug.windowstolinux.app.ai.model.ModelProtocol;
 
 /** One model with explicitly configured protocol endpoints. / 同一模型及明确配置的分协议端点。
  * @param id stable identity / 稳定身份
@@ -13,20 +15,32 @@ import gold.debug.windowstolinux.app.ai.voice.VoiceProtocol;
  * @param model provider model / 提供方模型
  * @param credentialKey opaque protected reference / 不透明受保护引用
  * @param fileTranscriptionEndpoint optional complete audio endpoint / 可选完整音频端点
- * @param realtimeTranscriptionEndpoint optional realtime endpoint / 可选实时端点 */
+ * @param realtimeTranscriptionEndpoint optional realtime endpoint / 可选实时端点
+ * @param reasoningEffort optional text generation setting / 可选文字生成设置 */
 public record AiModelProfile(String id, URI chatCompletionsEndpoint, String model, String credentialKey,
-                             URI fileTranscriptionEndpoint, URI realtimeTranscriptionEndpoint) {
+                             URI fileTranscriptionEndpoint, URI realtimeTranscriptionEndpoint,
+                             ModelReasoningLevel reasoningEffort, ModelProtocol protocol) {
+    public AiModelProfile(String id, URI chatCompletionsEndpoint, String model, String credentialKey,
+                          URI fileTranscriptionEndpoint, URI realtimeTranscriptionEndpoint,
+                          ModelReasoningLevel reasoningEffort) {
+        this(id, chatCompletionsEndpoint, model, credentialKey, fileTranscriptionEndpoint,
+            realtimeTranscriptionEndpoint, reasoningEffort, ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+    }
+
     /** Checks configured protocols without assuming capability support. / 检查已配置协议，不推定能力支持。
      * @param id identity / 身份
      * @param chatCompletionsEndpoint chat address or null / 文字地址或空
      * @param model model name / 模型名
      * @param credentialKey protected reference / 受保护引用
      * @param fileTranscriptionEndpoint file address or null / 文件地址或空
-     * @param realtimeTranscriptionEndpoint realtime address or null / 实时地址或空 */
+     * @param realtimeTranscriptionEndpoint realtime address or null / 实时地址或空
+     * @param reasoningEffort optional text generation setting / 可选文字生成设置 */
     public AiModelProfile {
         id = Objects.requireNonNull(id).strip();
         model = Objects.requireNonNull(model).strip();
         credentialKey = Objects.requireNonNull(credentialKey).strip();
+        Objects.requireNonNull(reasoningEffort);
+        Objects.requireNonNull(protocol);
         if (!id.matches("[a-z][a-z0-9-]{0,63}") || !model.matches("[A-Za-z0-9._:/-]{1,128}")
             || !credentialKey.matches("ai/[a-z0-9/_-]{1,127}")
             || chatCompletionsEndpoint == null && fileTranscriptionEndpoint == null && realtimeTranscriptionEndpoint == null)
@@ -45,11 +59,24 @@ public record AiModelProfile(String id, URI chatCompletionsEndpoint, String mode
         this(id, chatCompletionsEndpoint, model, credentialKey, null, null);
     }
 
+    /** Preserves provider defaults for existing protocol configurations. / 为已有协议配置保留提供者默认值。
+     * @param id identity / 身份
+     * @param chatCompletionsEndpoint chat address / 文字地址
+     * @param model provider model / 提供者模型
+     * @param credentialKey protected reference / 受保护引用
+     * @param fileTranscriptionEndpoint file address / 文件地址
+     * @param realtimeTranscriptionEndpoint realtime address / 实时地址 */
+    public AiModelProfile(String id, URI chatCompletionsEndpoint, String model, String credentialKey,
+                          URI fileTranscriptionEndpoint, URI realtimeTranscriptionEndpoint) {
+        this(id, chatCompletionsEndpoint, model, credentialKey, fileTranscriptionEndpoint,
+            realtimeTranscriptionEndpoint, ModelReasoningLevel.DEFAULT);
+    }
+
     /** Converts optional addresses to their storage representation. / 将可选地址转成存储表达。
      * @return non-secret metadata / 非秘密元数据 */
     public StoredAiModelProfile stored() {
         return new StoredAiModelProfile(id, address(chatCompletionsEndpoint), model, credentialKey,
-            address(fileTranscriptionEndpoint), address(realtimeTranscriptionEndpoint));
+            address(fileTranscriptionEndpoint), address(realtimeTranscriptionEndpoint), reasoningEffort, protocol);
     }
 
     /** Restores explicit saved protocol addresses. / 恢复明确保存的协议地址。
@@ -57,7 +84,7 @@ public record AiModelProfile(String id, URI chatCompletionsEndpoint, String mode
      * @return validated settings / 已校验设置 */
     public static AiModelProfile fromStored(StoredAiModelProfile profile) {
         return new AiModelProfile(profile.id(), uri(profile.endpoint()), profile.model(), profile.credentialKey(),
-            uri(profile.fileEndpoint()), uri(profile.realtimeEndpoint()));
+            uri(profile.fileEndpoint()), uri(profile.realtimeEndpoint()), profile.reasoningEffort(), profile.protocol());
     }
 
     /** Encodes an optional URI without guessing a path. / 编码可选URI，不猜测路径。

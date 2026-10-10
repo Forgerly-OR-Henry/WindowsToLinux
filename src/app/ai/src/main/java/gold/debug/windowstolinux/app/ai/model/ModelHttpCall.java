@@ -34,6 +34,14 @@ public final class ModelHttpCall implements AutoCloseable {
     /** Requested response object format. / 请求的响应对象格式。 */
     private final boolean jsonObject;
 
+    private final ModelProtocol protocol;
+
+    private String continuation;
+
+    public String continuation() {
+        return continuation;
+    }
+
     /** Overall transport time allowance. / 整体传输时限。 */
     private final long timeoutNanos;
 
@@ -60,7 +68,8 @@ public final class ModelHttpCall implements AutoCloseable {
      */
     public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
                          boolean jsonObject) {
-        this(endpoint, apiKey, body, timeout, modelId, jsonObject, 10);
+        this(endpoint, apiKey, body, timeout, modelId, jsonObject,
+            gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().connectSeconds());
     }
 
     /** Captures the startup configuration. / 捕获启动配置。
@@ -74,6 +83,11 @@ public final class ModelHttpCall implements AutoCloseable {
      */
     public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
                          boolean jsonObject, int connectSeconds) {
+        this(endpoint, apiKey, body, timeout, modelId, jsonObject, connectSeconds, ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+    }
+
+    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
+                         boolean jsonObject, int connectSeconds, ModelProtocol protocol) {
         if (connectSeconds < 1) throw new IllegalArgumentException("Connect timeout must be positive");
         HttpUrlChecker.validate(endpoint);
         if (apiKey == null || apiKey.length == 0)
@@ -81,12 +95,15 @@ public final class ModelHttpCall implements AutoCloseable {
         this.body = Objects.requireNonNull(body);
         this.modelId = Objects.requireNonNull(modelId);
         this.jsonObject = jsonObject;
+        this.protocol = Objects.requireNonNull(protocol);
         timeoutNanos = timeout.toNanos();
         if (timeoutNanos <= 0)
             throw new IllegalArgumentException("Model timeout must be positive");
-        request = HttpRequest.newBuilder(endpoint).timeout(timeout).header("Content-Type", "application/json")
-            .header("Authorization", "Bearer " + new String(apiKey))
-            .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+        var builder = HttpRequest.newBuilder(endpoint).timeout(timeout).header("Content-Type", "application/json");
+        if (protocol == ModelProtocol.ANTHROPIC_MESSAGES)
+            builder.header("x-api-key", new String(apiKey)).header("anthropic-version", "2023-06-01");
+        else builder.header("Authorization", "Bearer " + new String(apiKey));
+        request = builder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
         client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(timeout.compareTo(Duration.ofSeconds(connectSeconds)) < 0 ? timeout : Duration.ofSeconds(connectSeconds))
             .build();
@@ -122,7 +139,7 @@ public final class ModelHttpCall implements AutoCloseable {
                 if (remaining <= 0) {
                     response.cancel(true);
                     return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "AI_TIMEOUT",
-                        "The provider outcome is unknown after the deadline", Map.of());
+                        "The provider outcome is unknown after the deadline", Map.of("timeoutPhase", "REQUEST_BUDGET"));
                 }
                 try {
                     var result = response.get(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(25)),
@@ -134,12 +151,14 @@ public final class ModelHttpCall implements AutoCloseable {
                                 "The selected provider rejected the request",
                                 Map.of("httpStatus", Integer.toString(result.statusCode())));
                         try {
+                            var decoded = ModelProtocolCodec.forProtocol(protocol).decode(bytes, modelId, jsonObject);
+                            continuation = decoded.continuation();
                             return new OperationResult<>(TaskResult.SUCCEEDED,
-                                Optional.of(ModelMessageCodec.decode(bytes, modelId, jsonObject)),
+                                Optional.of(decoded.response()),
                                 Optional.empty());
                         } catch (IOException invalid) {
                             return failure(TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID",
-                                "The provider response does not satisfy the requested format", Map.of());
+                                "The provider response does not satisfy the requested format", ModelProtocolDiagnostics.shape(protocol, bytes));
                         }
                     } finally {
                         Arrays.fill(bytes, (byte) 0);
@@ -155,15 +174,39 @@ public final class ModelHttpCall implements AutoCloseable {
             return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "AI_INTERRUPTED",
                 "The interrupted provider outcome is unknown", Map.of());
         } catch (ExecutionException failure) {
-            if (failure.getCause() instanceof HttpTimeoutException)
+            if (transportCause(failure) instanceof HttpTimeoutException)
                 return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "AI_TIMEOUT",
-                    "The provider outcome is unknown after the deadline", Map.of());
+                    "The provider outcome is unknown after the deadline", transportDetails(failure));
             return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
-                "The provider outcome could not be established", Map.of());
+                "The provider outcome could not be established", transportDetails(failure));
         } catch (RuntimeException failure) {
             return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
-                "The provider outcome could not be established", Map.of());
+                "The provider outcome could not be established", transportDetails(failure));
         }
+    }
+
+    /** Keeps only standard exception identities and fixed timeout phases. / 仅保留标准异常类型及固定超时阶段。
+     * @param failure transport failure without exposing its message / 不披露消息的传输异常
+     * @return bounded diagnostic metadata / 有界诊断元数据 */
+    static Map<String, String> transportDetails(Throwable failure) {
+        Throwable cause = transportCause(failure);
+        String type = cause.getClass().getName();
+        var details = new HashMap<String, String>();
+        details.put("transportFailureType", type.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}") ? type : "OTHER");
+        if (cause instanceof HttpConnectTimeoutException) details.put("timeoutPhase", "HTTP_CONNECT");
+        else if (cause instanceof HttpTimeoutException) details.put("timeoutPhase", "HTTP_REQUEST");
+        return Map.copyOf(details);
+    }
+
+    /** Unwraps only bounded asynchronous transport wrappers. / 仅有界展开异步传输包装。
+     * @param failure original failure / 原异常
+     * @return concrete transport cause or the remaining wrapper / 具体传输原因或剩余包装 */
+    private static Throwable transportCause(Throwable failure) {
+        Throwable cause = failure;
+        for (int depth = 0; depth < 8 && (cause instanceof ExecutionException || cause instanceof CompletionException)
+            && cause.getCause() != null && cause.getCause() != cause; depth++)
+            cause = cause.getCause();
+        return cause;
     }
 
     /**
@@ -184,6 +227,7 @@ public final class ModelHttpCall implements AutoCloseable {
             if (!client.awaitTermination(Duration.ofSeconds(2)))
                 throw new IOException("Model HTTP client is still terminating");
             Arrays.fill(body, (byte) 0);
+            continuation = null;
         } catch (InterruptedException waiting) {
             interrupted = true;
             throw new IOException("Model client termination was interrupted");

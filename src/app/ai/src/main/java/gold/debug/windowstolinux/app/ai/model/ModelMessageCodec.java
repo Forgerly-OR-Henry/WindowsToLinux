@@ -33,51 +33,22 @@ public final class ModelMessageCodec {
      * Encodes one validated request with explicit model and output budget. / 使用明确模型及输出预算编码一个已校验请求。
      * @param model configured provider model name / 已配置提供者模型名
      * @param request author-supplied immutable messages and budgets / 作者提供的不可变消息和预算
-     * @param configuredTokens selected model's configured maximum / 所选模型的已配置最大值
+     * @param effectiveMaxOutputTokens host-resolved positive output budget / 宿主解析后的正数输出额度
      * @return exact UTF-8 request bytes / 精确 UTF-8 请求字节
      * @throws IllegalArgumentException if input violates a capability or budget / 输入违反能力或预算时
      */
-    public static byte[] encode(String model, AiRequest request, int configuredTokens) {
-        Objects.requireNonNull(request);
-        if (model == null || !model.matches("[A-Za-z0-9._:/-]{1,128}"))
-            throw new IllegalArgumentException("Invalid configured model name");
-        if (configuredTokens < 1 || request.maxOutputTokens() > configuredTokens)
-            throw new IllegalArgumentException("Output token budget exceeds model configuration");
-        try {
-            request.timeout().toNanos();
-        } catch (ArithmeticException invalid) {
-            throw new IllegalArgumentException("Model timeout is too large");
-        }
-        if (request.messages().isEmpty() || request.messages().size() > 1024)
-            throw new IllegalArgumentException("A request requires one to 1024 messages");
-        int textBytes = 0, imageCount = 0;
-        var messages = JSON.createArrayNode();
-        for (var message : request.messages()) {
-            if (message.text().length() > 1024 * 1024)
-                throw new IllegalArgumentException("Model text is too large");
-            try {
-                textBytes += StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(message.text())).remaining();
-            } catch (CharacterCodingException invalid) {
-                throw new IllegalArgumentException("Model text is not valid Unicode");
-            }
-            if (textBytes > 1024 * 1024)
-                throw new IllegalArgumentException("Model text exceeds one MiB");
-            var item = messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT));
-            if (message.images().isEmpty())
-                item.put("content", message.text());
-            else
-                imageCount = VisionMessageCodec.encode(item, message, request.purpose(), imageCount);
-        }
-        var body = JSON.createObjectNode().put("model", model).put("max_tokens", request.maxOutputTokens())
-            .put("stream", false);
-        body.set("messages", messages);
-        if (request.jsonObjectResponse())
-            body.putObject("response_format").put("type", "json_object");
-        try {
-            return JSON.writeValueAsBytes(body);
-        } catch (IOException invalid) {
-            throw new IllegalArgumentException("Model request cannot be encoded");
-        }
+    public static byte[] encode(String model, AiRequest request, int effectiveMaxOutputTokens) {
+        return encode(model, request, effectiveMaxOutputTokens, ModelReasoningLevel.DEFAULT);
+    }
+
+    /** Encodes an optional, explicitly selected reasoning effort without identifying the vendor. / 编码明确选择的可选推理强度，不识别厂商。
+     * @param model configured model name / 已配置模型名
+     * @param request original immutable request / 原不可变请求
+     * @param effectiveMaxOutputTokens host-resolved positive output budget / 宿主解析后的正数输出额度
+     * @param effort optional configured effort / 可选已配置强度
+     * @return exact request bytes / 精确请求字节 */
+    public static byte[] encode(String model, AiRequest request, int effectiveMaxOutputTokens, ModelReasoningLevel effort) {
+        return new ChatCompletionsCodec().encode(model, request, effectiveMaxOutputTokens, effort, Map.of());
     }
 
     /**
@@ -89,32 +60,96 @@ public final class ModelMessageCodec {
      * @throws IOException if the response violates the wire contract / 响应违反传输契约时
      */
     public static AiResponse decode(byte[] bytes, String modelId, boolean jsonObject) throws IOException {
-        if (bytes.length > MAX_RESPONSE_BYTES)
-            throw new IOException("Model response exceeds its byte limit");
-        var root = JSON.readTree(bytes);
-        if (root == null || !root.isObject() || !root.path("choices").isArray() || root.path("choices").isEmpty())
-            throw new IOException("Model response has no complete choice");
-        var choice = root.path("choices").get(0);
-        var content = choice.path("message").path("content");
-        var finish = choice.path("finish_reason");
-        if (!content.isTextual() || !finish.isTextual() || finish.textValue().isBlank()
-            || finish.textValue().length() > 128)
-            throw new IOException("Model response choice is incomplete");
-        if (jsonObject) {
-            var value = JSON.readTree(content.textValue());
-            if (value == null || !value.isObject())
-                throw new IOException("Model response is not a JSON object");
+        return new ChatCompletionsCodec().decode(bytes, modelId, jsonObject).response();
+    }
+
+    /** Reports only response shape after a rejected envelope, without model text or reasoning. / 信封被拒后仅报告响应形状，不暴露模型正文或思考文本。
+     * @param bytes bounded provider envelope / 有界提供方信封
+     * @return non-secret validation metadata / 非秘密校验元数据 */
+    public static Map<String, String> responseShape(byte[] bytes) {
+        try {
+            var root = JSON.readTree(bytes);
+            if (root == null || !root.isObject()) return Map.of("responseEnvelope", "INVALID");
+            var choice = root.path("choices").path(0);
+            var message = choice.path("message");
+            var facts = new LinkedHashMap<String, String>();
+            String finish = choice.path("finish_reason").asText("");
+            facts.put("finishReason", Set.of("stop", "length", "content_filter", "tool_calls", "insufficient_system_resource")
+                .contains(finish) ? finish : "OTHER");
+            facts.put("contentCharacters", Integer.toString(message.path("content").isTextual() ? message.path("content").textValue().length() : 0));
+            long auxiliaryCharacters = 0;
+            var messageFields = message.fields();
+            while (messageFields.hasNext()) {
+                var field = messageFields.next();
+                if (!Set.of("content", "role").contains(field.getKey()) && field.getValue().isTextual())
+                    auxiliaryCharacters += field.getValue().textValue().length();
+            }
+            facts.put("auxiliaryTextCharacters", Long.toString(auxiliaryCharacters));
+            if (message.path("content").isTextual()) {
+                String content = message.path("content").textValue().strip();
+                facts.put("contentForm", content.startsWith("{") ? "OBJECT_PREFIX" : content.startsWith("```") ? "CODE_FENCE" : "OTHER");
+                try {
+                    var object = JSON.readTree(content);
+                    facts.put("jsonObject", object != null && object.isObject() ? "VALID" : "INVALID");
+                    if (object == null || !object.isObject()) facts.put("jsonFailureKind", "NON_OBJECT");
+                } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
+                    facts.put("jsonObject", "INVALID");
+                    facts.put("jsonFailureKind", jsonFailureKind(content));
+                    if (invalid.getLocation() != null) {
+                        facts.put("jsonErrorLine", Integer.toString(invalid.getLocation().getLineNr()));
+                        facts.put("jsonErrorColumn", Integer.toString(invalid.getLocation().getColumnNr()));
+                    }
+                }
+            }
+            var usage = usage(root);
+            usage.inputTokens().ifPresent(value -> facts.put("inputTokens", Long.toString(value)));
+            usage.outputTokens().ifPresent(value -> facts.put("outputTokens", Long.toString(value)));
+            usage.cachedInputTokens().ifPresent(value -> facts.put("cachedInputTokens", Long.toString(value)));
+            usage.cacheMissInputTokens().ifPresent(value -> facts.put("cacheMissInputTokens", Long.toString(value)));
+            usage.reasoningOutputTokens().ifPresent(value -> facts.put("reasoningOutputTokens", Long.toString(value)));
+            return Map.copyOf(facts);
+        } catch (IOException invalid) {
+            return Map.of("responseEnvelope", "INVALID");
         }
-        return new AiResponse(content.textValue(), modelId, finish.textValue(),
-            new AiUsage(tokens(root.path("usage").path("prompt_tokens")),
-                tokens(root.path("usage").path("completion_tokens"))));
+    }
+
+    /** Normalizes reported usage fields without model-name routing or inferred missing counts. / 不按模型名称分流、不推断缺失计数，规范化报告用量。
+     * @param root complete provider response / 完整提供方响应
+     * @return validated optional usage / 已校验可选用量
+     * @throws IOException if reported counts conflict or are invalid / 报告计数冲突或无效时 */
+    static AiUsage usage(JsonNode root) throws IOException {
+        var usage = root.path("usage");
+        var cached = tokens(usage.path("prompt_tokens_details").path("cached_tokens"));
+        var alternate = tokens(usage.path("prompt_cache_hit_tokens"));
+        if (cached.isPresent() && alternate.isPresent() && !cached.equals(alternate))
+            throw new IOException("Model cache usage aliases conflict");
+        try {
+            return new AiUsage(tokens(usage.path("prompt_tokens")), tokens(usage.path("completion_tokens")),
+                cached.isPresent() ? cached : alternate, tokens(usage.path("prompt_cache_miss_tokens")),
+                tokens(usage.path("completion_tokens_details").path("reasoning_tokens")));
+        } catch (IllegalArgumentException invalid) {
+            throw new IOException("Model usage is inconsistent", invalid);
+        }
+    }
+
+    /** Classifies rejected JSON without exposing or selecting any response value. / 对被拒JSON分类，不暴露或选择任何响应值。
+     * @param content original rejected text / 原被拒文本
+     * @return fixed nonsecret shape classification / 固定非秘密形状分类 */
+    private static String jsonFailureKind(String content) {
+        try (var parser = JSON.getFactory().createParser(content)) {
+            if (parser.nextToken() == null) return "MALFORMED_JSON";
+            parser.skipChildren();
+            return parser.nextToken() == null ? "MALFORMED_JSON" : "TRAILING_JSON_VALUE";
+        } catch (IOException rejected) {
+            return "MALFORMED_JSON";
+        }
     }
 
     /** Reads an optional exact nonnegative token count. / 读取可选的精确非负 Token 数。
      * @param node provider usage field / 提供者用量字段
      * @return reported count or absent / 已报告数量或缺失
      * @throws IOException if a reported value is invalid / 已报告值无效时 */
-    private static Optional<Long> tokens(JsonNode node) throws IOException {
+    static Optional<Long> tokens(JsonNode node) throws IOException {
         if (node.isMissingNode() || node.isNull())
             return Optional.empty();
         if (!node.isIntegralNumber() || !node.canConvertToLong() || node.longValue() < 0)
