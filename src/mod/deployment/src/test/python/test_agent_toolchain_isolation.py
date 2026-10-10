@@ -487,6 +487,52 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
         with self.assertRaises(self.d.DependencyFailure):
             call()
 
+    @contextlib.contextmanager
+    def dpkg_configuration(self, content, registration_error=None):
+        with mock.patch.object(self.d.pathlib.Path, 'exists', lambda path: path.as_posix() == '/etc/dpkg/dpkg.cfg'), \
+             mock.patch.object(self.d.pathlib.Path, 'is_dir', return_value=False), \
+             mock.patch.object(self.d, 'dependency_protected'), \
+             mock.patch.object(self.d, 'dependency_text', return_value=content), \
+             mock.patch.object(self.d, 'dependency_registered', side_effect=registration_error) as registered:
+            yield registered
+
+    def test_dpkg_official_status_logger_requires_whole_file_registration(self):
+        logger = 'status-logger=(test -x /usr/lib/needrestart/dpkg-status && /usr/lib/needrestart/dpkg-status || cat > /dev/null)'
+        self.assertEqual(111, len(logger.encode('utf-8')))
+        self.assertEqual('a17b93b68537e5f00016564b13815997c4de79ecad49064dba92d432c8950f76', hashlib.sha256(logger.encode()).hexdigest())
+        content = '# needrestart - Restart daemons after library updates.\n#\n# Scan for (successfully) installed packages,\n# triggers needrestart in apt\'s Dpkg::Post-Invoke\n# hook.\n\n' + logger + '\n'
+        with self.dpkg_configuration(content) as registered:
+            self.d.dependency_validate_dpkg()
+        registered.assert_called_once_with(pathlib.Path('/etc/dpkg/dpkg.cfg'), self.d.HOOK_OWNERS, content.encode('utf-8'))
+
+    def test_dpkg_executable_options_keep_registration_rejections_for_each_syntax(self):
+        for option in ('pre-invoke', 'post-invoke', 'status-logger'):
+            for separator in ('=', ' '):
+                content = option + separator + '/usr/lib/registered-native-hook\n'
+                with self.subTest(option=option, separator=separator), self.dpkg_configuration(content) as registered:
+                    self.d.dependency_validate_dpkg()
+                    registered.assert_called_once_with(pathlib.Path('/etc/dpkg/dpkg.cfg'), self.d.HOOK_OWNERS, content.encode('utf-8'))
+                for code in ('OS_CONFIGURATION_OWNER', 'MODIFIED_OS_CONFIGURATION', 'UNREGISTERED_OS_CONFIGURATION'):
+                    with self.subTest(option=option, separator=separator, code=code), \
+                         self.dpkg_configuration(content, self.d.DependencyFailure(code)) as registered:
+                        with self.assertRaises(self.d.DependencyFailure) as rejected:
+                            self.d.dependency_validate_dpkg()
+                        self.assertEqual(code, rejected.exception.detail)
+                        registered.assert_called_once()
+
+    def test_dpkg_option_grammar_keeps_empty_unknown_and_redirected_values_rejected(self):
+        for content in ('status-logger=', 'status-logger ', 'pre-invoke=', 'post-invoke=',
+                'status-logger-extra=/project/hook', 'status-fd=4', 'force-bad-verify',
+                'log=/project/private.log', 'abort-after=not-a-number'):
+            with self.subTest(content=content), self.dpkg_configuration(content):
+                with self.assertRaises(self.d.DependencyFailure) as rejected:
+                    self.d.dependency_validate_dpkg()
+                self.assertEqual('UNSUPPORTED_DPKG_CONFIGURATION', rejected.exception.detail)
+        for content in ('no-debsig\nlog /var/log/dpkg.log\nabort-after 50\n', 'log=/var/log/dpkg.log\nabort-after=50\n'):
+            with self.subTest(content=content), self.dpkg_configuration(content) as registered:
+                self.d.dependency_validate_dpkg()
+                registered.assert_not_called()
+
     def test_dpkg_rejection_diagnostic_keeps_the_guard_and_only_hashes_the_unknown_line(self):
         private = 'unsupported-private-body'
         content = '# default comment\nno-debsig\n' + private + '\n'

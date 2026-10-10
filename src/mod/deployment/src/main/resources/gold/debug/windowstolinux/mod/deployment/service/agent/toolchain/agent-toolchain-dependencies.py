@@ -403,10 +403,10 @@ def dependency_validate_dpkg():
         for item in files:
             value = dependency_text(item)
             active = [(position, line.strip()) for position, line in enumerate(value.splitlines(), 1) if line.strip() and not line.lstrip().startswith('#')]
-            if any(re.match(r'(?:--)?(?:pre-invoke|post-invoke)\b', line) for _, line in active):
+            if any(re.match(r'(?:--)?(?:pre-invoke|post-invoke|status-logger)\b', line) for _, line in active):
                 dependency_registered(item, HOOK_OWNERS, value.encode())
             for position, line in active:
-                if not re.fullmatch(r'(?:--)?(?:no-debsig|log\s+/var/log/dpkg\.log|abort-after\s+[0-9]+|(?:pre-invoke|post-invoke)\s+.+)', line):
+                if not re.fullmatch(r'(?:--)?(?:no-debsig|log(?:\s+|=)/var/log/dpkg\.log|abort-after(?:\s+|=)[0-9]+|(?:pre-invoke|post-invoke|status-logger)(?:\s+|=).+)', line):
                     encoded = line.encode('utf-8')
                     dependency_reject('UNSUPPORTED_DPKG_CONFIGURATION', diagnostic={'kind': 'PART' if path.is_dir() else 'MAIN',
                         'line': position, 'valueBytes': len(encoded), 'valueSha256': hashlib.sha256(encoded).hexdigest()})

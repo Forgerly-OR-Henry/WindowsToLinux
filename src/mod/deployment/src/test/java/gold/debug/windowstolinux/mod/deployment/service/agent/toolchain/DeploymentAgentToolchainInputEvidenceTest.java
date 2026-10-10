@@ -46,6 +46,40 @@ class DeploymentAgentToolchainInputEvidenceTest {
     }
 
     @Test
+    void controllerNavigationPointsIntoTheCompleteCurrentSourceWithoutAddingPermission() {
+        var prepare = current("prepare");
+        var binding = current("bind");
+        var source = prepare.path("completeExecutableInput").asText();
+        var prepared = DeploymentAgentToolchainInputEvidence.select(prepare).orElseThrow().facts();
+        var bound = DeploymentAgentToolchainInputEvidence.select(binding).orElseThrow().facts();
+        assertEquals(prepared.get("locations"), bound.get("locations"));
+        assertEquals(prepared.get("bundledSourceSha256"), bound.get("bundledSourceSha256"));
+        assertEquals(Math.toIntExact(source.lines().count()), prepared.get("lineCount"));
+        var locations = JSON.valueToTree(prepared.get("locations"));
+        var lines = source.lines().toList();
+        var names = new java.util.HashSet<String>();
+        for (var location : locations) {
+            assertEquals(Set.of("function", "sourcePointer", "startLine", "endLine"),
+                new java.util.HashSet<>(JSON.convertValue(location, java.util.Map.class).keySet()));
+            String name = location.path("function").asText();
+            int first = location.path("startLine").asInt();
+            int last = location.path("endLine").asInt();
+            assertTrue(names.add(name));
+            assertEquals("/completeExecutableInput", location.path("sourcePointer").asText());
+            assertTrue(first >= 1 && last >= first && last <= lines.size());
+            assertTrue(lines.get(first - 1).startsWith("def " + name + "("));
+            assertFalse(String.join("\n", lines.subList(first, last)).contains("\ndef "));
+        }
+        assertTrue(names.containsAll(Set.of("resolution_validate", "download", "extract", "agent_sandbox_properties", "agent_worker",
+            "agent_vendor", "agent_execute", "agent_freeze", "agent_stopped", "agent_promote", "agent_cli")));
+        for (String phase : List.of("resolve", "dependencies"))
+            assertFalse(DeploymentAgentToolchainInputEvidence.select(current(phase)).orElseThrow().facts().containsKey("locations"));
+        assertFalse(prepared.containsKey("approved"));
+        assertFalse(prepared.containsKey("safe"));
+        assertFalse(prepared.containsKey("liveIsolationVerified"));
+    }
+
+    @Test
     void currentBodyAndMeasuredHeaderCannotBorrowAProductName() {
         var changed = current("prepare");
         changed.put("completeExecutableInput", changed.path("completeExecutableInput").asText() + "\n#changed");

@@ -2,10 +2,12 @@ package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -27,6 +29,11 @@ public final class DeploymentAgentToolchainInputEvidence {
     private static final Set<String> OPERATIONS = Set.of(PREFIX + "dependencies.v1", PREFIX + "resolve.v1", PREFIX + "prepare.v1", PREFIX + "bind.v1");
 
     private static final Pattern ACTION = Pattern.compile("\\AWTL-SSH-COMMAND-1\\ntimeout=([^\\n]+)\\noutputLimitBytes=([0-9]+)\\nstdinBytes=([0-9]+)\\nstdinSha256=([0-9a-f]{64})\\nscript:\\n([\\s\\S]+)\\z");
+
+    private static final List<String> CONTROLLER_LOCATIONS = List.of("resolution_validate", "resolution_decode", "official_url", "download", "extract",
+        "agent_regular", "agent_tool", "agent_os", "agent_create", "agent_release_source", "agent_sandbox_properties", "agent_setup",
+        "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
+        "agent_detach", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 
     private DeploymentAgentToolchainInputEvidence() {
     }
@@ -130,6 +137,9 @@ public final class DeploymentAgentToolchainInputEvidence {
             facts.put("launcherAndArgumentsMatch", true);
             facts.put("targetsMatchTypedArguments", true);
             facts.put("utf8Bytes", bytes.length);
+            facts.put("lineCount", Math.toIntExact(body.lines().count()));
+            if (phase.equals("prepare") || phase.equals("bind"))
+                facts.put("locations", controllerLocations(body));
             facts.put("bundledSourceSha256", digest);
             facts.put("stdinSha256", digest);
             facts.put("exactActionSha256", sha256(exact.getBytes(StandardCharsets.UTF_8)));
@@ -140,6 +150,30 @@ public final class DeploymentAgentToolchainInputEvidence {
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
+    }
+
+    private static List<Map<String, Object>> controllerLocations(String body) {
+        var definitions = Pattern.compile("(?m)^def ([A-Za-z_][A-Za-z0-9_]*)\\(").matcher(body);
+        var offsets = new ArrayList<Integer>();
+        var names = new ArrayList<String>();
+        while (definitions.find()) {
+            offsets.add(definitions.start());
+            names.add(definitions.group(1));
+        }
+        var locations = new ArrayList<Map<String, Object>>();
+        for (String name : CONTROLLER_LOCATIONS) {
+            int position = names.indexOf(name);
+            if (position < 0 || position != names.lastIndexOf(name))
+                throw new IllegalArgumentException("Bundled Agent source location is missing or ambiguous: " + name);
+            int start = offsets.get(position);
+            int end = position + 1 < offsets.size() ? offsets.get(position + 1) : body.length();
+            int entry = body.indexOf("\nif __name__ == '__main__':", start);
+            if (entry >= 0 && entry < end) end = entry + 1;
+            int first = Math.toIntExact(1 + body.substring(0, start).chars().filter(value -> value == '\n').count());
+            int last = Math.toIntExact(first + body.substring(start, end).stripTrailing().chars().filter(value -> value == '\n').count());
+            locations.add(Map.of("function", name, "sourcePointer", "/completeExecutableInput", "startLine", first, "endLine", last));
+        }
+        return List.copyOf(locations);
     }
 
     private static Set<ActionTarget> targets(JsonNode values) {
