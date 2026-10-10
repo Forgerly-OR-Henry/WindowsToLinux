@@ -117,8 +117,70 @@ class ConfigLoaderTest {
     }
 
     @Test
+    void outputPolicyDefaultsModeOverridesAndStrictTypes() throws Exception {
+        String yaml = sample();
+        var defaults = load(yaml, "app").ai();
+        assertEquals(32768, defaults.recommendedMaxOutputTokens());
+        assertTrue(defaults.allowOutputTokenOverride());
+        assertEquals(8192, defaults.verificationMaxOutputTokens());
+        String override = yaml.replace("jar: {}", "jar:\n  ai:\n    recommended-max-output-tokens: 65536\n    allow-output-token-override: false\n    verification-max-output-tokens: 4096");
+        var jar = load(override, "jar").ai();
+        assertEquals(65536, jar.recommendedMaxOutputTokens());
+        assertFalse(jar.allowOutputTokenOverride());
+        assertEquals(4096, jar.verificationMaxOutputTokens());
+        assertEquals(defaults, load(override, "app").ai());
+        assertEquals(32768, defaults.recommendedMaxOutputTokens());
+        for (String key : new String[]{"recommended-max-output-tokens", "verification-max-output-tokens"}) {
+            String value = key.equals("recommended-max-output-tokens") ? "32768" : "8192";
+            assertThrows(IOException.class, () -> load(yaml.replace("    " + key + ": " + value + "\n", ""), "app"));
+            assertThrows(IOException.class, () -> load(yaml.replace(key + ": " + value, key + ": " + value + "\n    " + key + ": 1"), "app"));
+            for (String invalid : new String[]{"0", "-1", "2147483648", "1.5", "\"8192\"", "true", "null"})
+                assertThrows(IOException.class, () -> load(yaml.replace(key + ": " + value, key + ": " + invalid), "app"), key + ": " + invalid);
+            load(yaml.replace(key + ": " + value, key + ": 2147483647"), "app");
+        }
+        for (String invalid : new String[]{"\"true\"", "1", "null"})
+            assertThrows(IOException.class, () -> load(yaml.replace("allow-output-token-override: true", "allow-output-token-override: " + invalid), "app"));
+        assertThrows(IOException.class, () -> load(yaml.replace("    allow-output-token-override: true\n", ""), "app"));
+        assertThrows(IOException.class, () -> load(yaml.replace("allow-output-token-override: true", "allow-output-token-override: true\n    allow-output-token-override: false"), "app"));
+    }
+
+    @Test
+    void internalAiTimeoutsRemainIndependentAndRejectRemovedTokenFields() throws Exception {
+        String yaml = sample();
+        var defaults = load(yaml, "app").ai();
+        assertEquals(AppConfig.defaultsConfig().ai(), defaults);
+        assertEquals(60, defaults.recovery().timeoutSeconds());
+        assertEquals(30, defaults.deletion().timeoutSeconds());
+        assertEquals(20, defaults.file().timeoutSeconds());
+        String override = yaml.replace("jar: {}", "jar:\n  ai:\n    recovery:\n      timeout-seconds: 75\n    deletion:\n      timeout-seconds: 45\n    file:\n      timeout-seconds: 25");
+        var jar = load(override, "jar").ai();
+        assertEquals(75, jar.recovery().timeoutSeconds());
+        assertEquals(45, jar.deletion().timeoutSeconds());
+        assertEquals(25, jar.file().timeoutSeconds());
+        assertEquals(defaults, load(override, "app").ai());
+        for (String purpose : new String[]{"recovery", "deletion", "file"}) {
+            for (String mode : new String[]{"common", "jar"}) {
+                String invalid = mode.equals("common")
+                    ? yaml.replace("    " + purpose + ":\n      timeout-seconds:", "    " + purpose + ":\n      max-tokens: 1\n      timeout-seconds:")
+                    : yaml.replace("jar: {}", "jar:\n  ai:\n    " + purpose + ":\n      max-tokens: 1");
+                var rejected = assertThrows(IOException.class, () -> load(invalid, "app"));
+                assertTrue(rejected.getMessage().contains("Unknown configuration field: ai." + purpose + ".max-tokens"));
+            }
+            String original = "    " + purpose + ":\n      timeout-seconds: " + switch (purpose) {
+                case "recovery" -> 60;
+                case "deletion" -> 30;
+                default -> 20;
+            };
+            assertThrows(IOException.class, () -> load(yaml.replace(original + "\n", ""), "app"));
+            for (String invalid : new String[]{"0", "86401", "\"20\"", "null"})
+                assertThrows(IOException.class, () -> load(yaml.replace(original, "    " + purpose + ":\n      timeout-seconds: " + invalid), "app"));
+        }
+    }
+
+    @Test
     void guideTableCoversAllKeysAndExampleIsActuallyLoadable() throws Exception {
         String guide = Files.readString(root().resolve("docs/Config.md")).replace("\r\n", "\n");
+        guide = guide.split("## 部署 Mod 固定参数", 2)[0];
         var matcher = Pattern.compile("(?m)^\\| `([^`]+)` \\|").matcher(guide);
         var keys = new HashSet<String>();
         while (matcher.find()) assertTrue(keys.add(matcher.group(1)));

@@ -106,11 +106,12 @@ class FileApprovalIntegrationTest {
             + JSON.writeValueAsString(content) + "},\"finish_reason\":\"stop\"}]}";
     }
 
-    @Test
-    void genuineHttpReviewBindsSharedActivationPermitToTheExactObservedObject() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void genuineHttpReviewBindsSharedActivationPermitToTheExactObservedObject(boolean allow) throws Exception {
         Path input = Files.writeString(root.resolve("owned-permanent-fixture"), "owned only");
         var humans = new AtomicInteger();
-        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+        try (var fixture = new Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root.resolve("db"), allow)) {
             initialize(runtime, false);
             presenters(runtime, humans, true);
             approvalModel(runtime, fixture);
@@ -132,6 +133,7 @@ class FileApprovalIntegrationTest {
                 }));
                 var sent = fixture.requests.remove();
                 assertEquals("/approval", sent.path());
+                assertEquals(32768, sent.body().path("max_tokens").intValue());
                 assertTrue(sent.body().path("messages").get(1).path("content").textValue().contains("RECYCLE"));
                 assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM file_operation WHERE operation_type='DELETE_FILE'"));
             }
@@ -294,9 +296,10 @@ class FileApprovalIntegrationTest {
         }
     }
 
-    @Test
-    void firstLanguageFailureDoesNotFallBackOrBlockOrdinaryHumanDecision() throws Exception {
-        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root.resolve("db"), PlatformStartupTest.PROTECTION)) {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void firstLanguageFailureDoesNotFallBackOrBlockOrdinaryHumanDecision(boolean allow) throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root.resolve("db"), allow)) {
             initialize(runtime, false);
             var humans = new AtomicInteger();
             presenters(runtime, humans, false);
@@ -306,6 +309,7 @@ class FileApprovalIntegrationTest {
             fixture.handler.set(exchange -> Fixture.reply(exchange, 503, "{\"error\":{\"message\":\"fixture unavailable\"}}"));
             waitAndCancel(runtime, humans);
             assertTrue(fixture.calls.get() >= 1);
+            assertTrue(fixture.requests.stream().allMatch(sent -> sent.body().path("max_tokens").intValue() == 32768));
             assertTrue(fixture.requests.stream().allMatch(sent -> sent.path().equals("/first")));
             assertTrue(fixture.requests.stream().noneMatch(sent -> sent.body().toString().contains("metadata only: secret content")));
         }
