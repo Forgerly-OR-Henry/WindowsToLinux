@@ -325,6 +325,14 @@ def dependency_validate_dpkg():
                     dependency_reject('UNSUPPORTED_DPKG_CONFIGURATION')
 
 
+def dependency_apt_source_authentication(fields):
+    safe = {'trusted': frozenset(('no', 'false', 'without', 'off', 'disable', '0')),
+            'check-valid-until': frozenset(('yes', 'true', 'with', 'on', 'enable', '1'))}
+    for key, values in safe.items():
+        if key in fields and fields[key].lower() not in values:
+            dependency_reject('UNAUTHENTICATED_APT_CONFIGURATION')
+
+
 def dependency_apt_sources(value):
     dependency_apt_options(value)
     count = 0
@@ -344,6 +352,7 @@ def dependency_apt_sources(value):
                        'trusted', 'check-valid-until', 'by-hash'}
             if not {'types', 'uris', 'suites'} <= fields.keys() or not fields.keys() <= allowed or any(v not in ('deb', 'deb-src') for v in fields['types'].split()):
                 dependency_reject('APT_SOURCE_SCHEMA')
+            dependency_apt_source_authentication(fields)
             for uri in fields['uris'].split():
                 dependency_url(uri, 'APT')
                 count += 1
@@ -358,12 +367,15 @@ def dependency_apt_sources(value):
             if not match:
                 dependency_reject('APT_SOURCE_SCHEMA')
             if match[1]:
+                fields = {}
                 for token in match[1].split():
                     key, separator, option = token.partition('=')
-                    if not separator or key not in ('arch', 'signed-by', 'trusted', 'check-valid-until', 'by-hash'):
+                    if not separator or key not in ('arch', 'signed-by', 'trusted', 'check-valid-until', 'by-hash') or key in fields:
                         dependency_reject('APT_SOURCE_OPTION')
+                    fields[key] = option
                     if key == 'signed-by':
                         dependency_key(option, 'APT')
+                dependency_apt_source_authentication(fields)
             dependency_url(match[2], 'APT')
             count += 1
     return count
@@ -427,7 +439,8 @@ def dependency_dnf_config(value, repository=False):
         for key in ('gpgcheck', 'localpkg_gpgcheck', 'repo_gpgcheck', 'sslverify'):
             if key in fields and fields[key].lower() not in ('1', 'true', 'yes'):
                 dependency_reject('UNAUTHENTICATED_DNF_CONFIGURATION')
-        if not repository or fields.get('enabled', '1').lower() in ('0', 'false', 'no'):
+        forced = OS_PROFILE is not None and OS_PROFILE['id'] == 'centos' and OS_PROFILE['manager'] == 'DNF' and section == 'crb'
+        if not repository or not forced and fields.get('enabled', '1').lower() in ('0', 'false', 'no'):
             continue
         if fields.get('gpgcheck', '').lower() not in ('1', 'true', 'yes') or not fields.get('gpgkey'):
             dependency_reject('AUTHENTICATED_DNF_REPOSITORY_REQUIRED')

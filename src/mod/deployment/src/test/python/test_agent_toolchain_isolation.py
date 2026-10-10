@@ -467,6 +467,36 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
                     base.replace('mirror.stream.centos.org', 'attacker.example'), base + 'reposdir=/project\n'):
                 self.rejected(lambda: self.d.dependency_dnf_config(value, True))
 
+    def test_apt_source_authentication_requires_explicit_safe_values_in_both_formats(self):
+        def sources(key, value):
+            return ('deb [' + key + '=' + value + '] https://archive.ubuntu.com/ubuntu noble main',
+                'Types: deb\nURIs: https://archive.ubuntu.com/ubuntu\nSuites: noble\n' + key + ': ' + value + '\n')
+        for key, safe, unsafe in (
+            ('trusted', ('no', 'false', 'without', 'off', 'disable', '0'), ('yes', 'true', 'with', 'on', 'enable', '1', '01', '0x1', '+1', 'unknown', '')),
+            ('check-valid-until', ('yes', 'true', 'with', 'on', 'enable', '1'), ('no', 'false', 'without', 'off', 'disable', '0', 'unknown', ''))):
+            for value in safe:
+                for source in sources(key, value):
+                    with self.subTest(key=key, value=value, format=source[:3]):
+                        self.assertEqual(1, self.d.dependency_apt_sources(source))
+            for value in unsafe:
+                for source in sources(key, value):
+                    with self.subTest(key=key, value=value, format=source[:3]):
+                        self.rejected(lambda: self.d.dependency_apt_sources(source))
+        self.rejected(lambda: self.d.dependency_apt_sources('deb [trusted=no trusted=on] https://archive.ubuntu.com/ubuntu noble main'))
+
+    def test_disabled_crb_is_authenticated_before_the_transaction_enables_it(self):
+        self.d.OS_PROFILE = {'id': 'centos', 'version': '9', 'manager': 'DNF'}
+        key = 'file:///etc/pki/rpm-gpg/RPM-GPG-KEY-centosofficial'
+        value = '[crb]\nenabled=0\nbaseurl=https://mirror.stream.centos.org/$stream/CRB/$basearch/os/\ngpgcheck=1\ngpgkey=' + key + '\n'
+        with mock.patch.object(self.d, 'dependency_key') as checked:
+            self.assertEqual(1, self.d.dependency_dnf_config(value, True))
+            checked.assert_called_once_with(key, 'DNF')
+        for changed in (value.replace('gpgcheck=1', 'gpgcheck=0'),
+            value.replace('mirror.stream.centos.org', 'attacker.example'),
+            value.replace(key, 'https://attacker.example/key'), value.replace('gpgkey=' + key + '\n', '')):
+            self.rejected(lambda: self.d.dependency_dnf_config(changed, True))
+        self.assertEqual(0, self.d.dependency_dnf_config(value.replace('[crb]', '[unused]'), True))
+
     def test_package_versions_are_complete_exact_unique_and_bounded(self):
         packages = self.d.dependency_packages('APT', 'RUBY')
         output = ''.join(package + '\t1:2.3-4ubuntu5\n' for package in packages)
