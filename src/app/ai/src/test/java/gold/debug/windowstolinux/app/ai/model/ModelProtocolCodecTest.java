@@ -57,6 +57,56 @@ class ModelProtocolCodecTest {
     }
 
     @Test
+    void requiredNativeToolChangesOnlyTheChoiceAndPreservesAutomaticDefaults() throws Exception {
+        var messages = List.of(new AiMessage(AiRole.SYSTEM, "Review the current evidence", List.of()),
+            new AiMessage(AiRole.USER, "完整证据", List.of()));
+        var submit = new AiToolDefinition("submit_result", "Submit the complete result", "{\"type\":\"object\"}");
+        var original = new AiRequest(AiPurpose.APPROVAL, messages, 128, Duration.ofSeconds(17), false, List.of(tool, submit));
+        var required = original.withRequiredTool("submit_result");
+        var noTools = new AiRequest(AiPurpose.APPROVAL, messages, 128, Duration.ofSeconds(17), false);
+        for (var protocol : ModelProtocol.values()) {
+            var codec = ModelProtocolCodec.forProtocol(protocol);
+            assertFalse(json.readTree(codec.encode("model", noTools, 64, ModelReasoningLevel.DEFAULT, Map.of())).has("tool_choice"));
+            for (var effort : List.of(ModelReasoningLevel.DEFAULT, ModelReasoningLevel.HIGH)) {
+                var baseline = json.readTree(codec.encode("model", original, 64, effort, Map.of()));
+                var named = json.readTree(codec.encode("model", required, 64, effort, Map.of()));
+                String expected = switch (protocol) {
+                    case OPENAI_CHAT_COMPLETIONS -> "{\"type\":\"function\",\"function\":{\"name\":\"submit_result\"}}";
+                    case OPENAI_RESPONSES -> "{\"type\":\"function\",\"name\":\"submit_result\"}";
+                    case ANTHROPIC_MESSAGES -> "{\"type\":\"tool\",\"name\":\"submit_result\"}";
+                };
+                assertEquals(json.readTree(expected), named.path("tool_choice"));
+                assertEquals(protocol == ModelProtocol.ANTHROPIC_MESSAGES ? json.readTree("{\"type\":\"auto\"}")
+                    : json.getNodeFactory().textNode("auto"), baseline.path("tool_choice"));
+                assertEquals(64, named.path(protocol == ModelProtocol.OPENAI_RESPONSES ? "max_output_tokens" : "max_tokens").intValue());
+                assertEquals(2, named.path("tools").size());
+                ((com.fasterxml.jackson.databind.node.ObjectNode) named).remove("tool_choice");
+                ((com.fasterxml.jackson.databind.node.ObjectNode) baseline).remove("tool_choice");
+                assertEquals(baseline, named, "Named tool selection must preserve complete messages, reasoning settings and host budgets");
+            }
+        }
+        assertArrayEquals(ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_CHAT_COMPLETIONS)
+            .encode("model", required, 64, ModelReasoningLevel.DEFAULT, Map.of()), ModelMessageCodec.encode("model", required, 64));
+    }
+
+    @Test
+    void requiredToolChoiceRemainsInsideEachProtocolsExactEncodedBodyLimit() throws Exception {
+        var original = request(List.of(new AiMessage(AiRole.USER, "完整证据", List.of()))).withRequiredTool("echo");
+        for (var protocol : ModelProtocol.values()) {
+            var codec = ModelProtocolCodec.forProtocol(protocol);
+            byte[] encoded = codec.encode("model", original, 64, ModelReasoningLevel.DEFAULT, Map.of());
+            var exact = new AiRequest(original.purpose(), original.messages(), original.maxOutputTokens(), original.timeout(),
+                original.jsonObjectResponse(), original.tools(), encoded.length, original.requiredToolName());
+            assertArrayEquals(encoded, codec.encode("model", exact, 64, ModelReasoningLevel.DEFAULT, Map.of()));
+            var tooSmall = new AiRequest(original.purpose(), original.messages(), original.maxOutputTokens(), original.timeout(),
+                original.jsonObjectResponse(), original.tools(), encoded.length - 1, original.requiredToolName());
+            var rejected = assertThrows(ModelRequestBudgetException.class,
+                () -> codec.encode("model", tooSmall, 64, ModelReasoningLevel.DEFAULT, Map.of()));
+            assertEquals(encoded.length, rejected.encodedBytes());
+        }
+    }
+
+    @Test
     void allProtocolsEncodeTheHostBudgetRatherThanTheRequestedBudget() throws Exception {
         var messages = List.of(new AiMessage(AiRole.USER, "hello", List.of()));
         for (var protocol : ModelProtocol.values()) {

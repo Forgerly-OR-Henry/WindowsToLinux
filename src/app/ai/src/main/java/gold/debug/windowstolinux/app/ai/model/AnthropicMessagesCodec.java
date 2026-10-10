@@ -61,7 +61,10 @@ final class AnthropicMessagesCodec extends NativeModelCodec {
             for (var tool : request.tools())
                 tools.addObject().put("name", tool.name()).put("description", tool.description())
                     .set("input_schema", node(tool.inputSchema()));
-            body.putObject("tool_choice").put("type", "auto");
+            var choice = body.putObject("tool_choice");
+            if (request.requiredToolName().isPresent())
+                choice.put("type", "tool").put("name", request.requiredToolName().orElseThrow());
+            else choice.put("type", "auto");
         }
         return body;
     }

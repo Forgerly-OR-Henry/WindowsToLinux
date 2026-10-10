@@ -36,7 +36,10 @@ final class ChatCompletionsCodec extends NativeModelCodec {
                     .put("name", tool.name()).put("description", tool.description()).put("strict", false);
                 definition.set("parameters", node(tool.inputSchema()));
             }
-            body.put("tool_choice", "auto");
+            if (request.requiredToolName().isPresent())
+                body.putObject("tool_choice").put("type", "function").putObject("function")
+                    .put("name", request.requiredToolName().orElseThrow());
+            else body.put("tool_choice", "auto");
         }
         return body;
     }
