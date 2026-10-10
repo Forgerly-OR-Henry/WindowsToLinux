@@ -30,7 +30,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixture {
-    enum Scenario {WRONG_REPLAN, COMMAND, BUILD, REPLAN, PATCH, SOURCE, DENY, UNKNOWN, NOT_APPLICABLE, LONG_LITERAL}
+    enum Scenario {WRONG_REPLAN, COMMAND, BUILD, REPLAN, PATCH, SOURCE, DENY, UNKNOWN, NOT_APPLICABLE, LONG_LITERAL, SEAL_PREFLIGHT, FAILED_RUN_REPLAN}
 
     private static final String REVISION = "a".repeat(64);
 
@@ -73,6 +73,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                         var commands = new AtomicInteger();
                         var seals = new AtomicInteger();
                         var deliveries = new AtomicInteger();
+                        var lastRun = new AtomicReference<DeploymentAgentDeliveryPort.CommandFeedback>();
                         var tail = switch (scenario) {
                             case WRONG_REPLAN ->
                                 List.of("command", "seal", "validate_runtime", "seal", "plan", "validate_runtime", "seal", "deliver");
@@ -83,7 +84,10 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             case SOURCE -> List.of("validate_runtime", "plan_state", "seal");
                             case DENY -> List.of("validate_runtime", "seal", "validate_runtime");
                             case UNKNOWN -> List.of("validate_runtime");
-                            case NOT_APPLICABLE, LONG_LITERAL -> List.of("validate_runtime", "seal", "deliver");
+                            case NOT_APPLICABLE, LONG_LITERAL ->
+                                List.of("validate_runtime", "command", "seal", "deliver");
+                            case SEAL_PREFLIGHT -> List.of("validate_runtime", "seal");
+                            case FAILED_RUN_REPLAN -> List.of("command", "plan", "seal");
                         };
                         var scriptCalls = new ArrayList<String>();
                         var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
@@ -101,7 +105,13 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             if (turn >= 3 + tail.size()) {
                                 assertEquals(0, seals.get());
                                 assertEquals(0, deliveries.get());
-                                assertFalse(state.path("components").get(0).path("capabilities").path("runtimeValidation").path("current").asBoolean());
+                                assertEquals(scenario == Scenario.SEAL_PREFLIGHT,
+                                    state.path("components").get(0).path("capabilities").path("runtimeValidation").path("current").asBoolean());
+                                if (scenario == Scenario.SEAL_PREFLIGHT || scenario == Scenario.FAILED_RUN_REPLAN) {
+                                    assertTrue(state.path("recentRejections").toString().contains("SEAL_PRECONDITION"));
+                                    assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("SEAL_EXECUTING")));
+                                    assertNotEquals("UNKNOWN", journal.find(task).orElseThrow().state());
+                                }
                                 assertFalse(state.path("recentRejections").isEmpty());
                                 return reply(List.of());
                             }
@@ -124,7 +134,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                                     var declaration = DeploymentAgentRuntimeValidationTest.declaration("tool",
                                         scenario == Scenario.LONG_LITERAL ? List.of("'".repeat(4000), "'".repeat(4000))
                                             : List.of("--type", scenario == Scenario.WRONG_REPLAN && turn == 2 ? "text" : "event"), "", "records=5");
-                                    if (scenario == Scenario.NOT_APPLICABLE) {
+                                    if (scenario == Scenario.NOT_APPLICABLE || scenario == Scenario.FAILED_RUN_REPLAN) {
                                         var component = (ObjectNode) declaration.path("components").get(0);
                                         component.put("mode", "DAEMON").putObject("health").put("type", "PROCESS").put("timeout", 30).put("stability", 1);
                                         ((ObjectNode) declaration.path("applicationHealth")).set("health", component.path("health").deepCopy());
@@ -191,6 +201,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
 
                             public String capability(DeploymentAgentProposal.Capability request, DeploymentAgentPlan.Part part, Prepared candidate, String revision, String binding, String app) {
                                 assertEquals("build", request.name());
+                                lastRun.set(new CommandFeedback(true, true, 0, "Controlled complete build result"));
                                 return "Actual controlled build changed candidate output";
                             }
 
@@ -198,18 +209,30 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                                 assertSame(task, original);
                                 commands.incrementAndGet();
                                 scriptCalls.add(script);
+                                if (scenario == Scenario.FAILED_RUN_REPLAN) {
+                                    var result = new CommandFeedback(true, false, 2, "One passing case followed by a documented nonzero error case");
+                                    lastRun.set(result);
+                                    return result;
+                                }
                                 if (scenario == Scenario.DENY)
                                     throw new DeploymentAlternativeRequiredException(task, "Controlled valid DENY; zero transport");
                                 if (scenario == Scenario.UNKNOWN)
                                     return new CommandFeedback(false, false, -1, "Unknown actual result");
+                                CommandFeedback result;
                                 if (script.equals("printf records=5"))
-                                    return new CommandFeedback(true, true, 0, "records=5");
-                                assertEquals(Duration.ofSeconds(30), timeout);
-                                if (script.contains("'--type' 'text'"))
-                                    return new CommandFeedback(true, false, 2, "invalid selected type");
-                                assertTrue(script.contains("'--type' 'event'"));
-                                assertTrue(script.contains("case \"$agent_runtime_observed\" in *'records=5'*)"));
-                                return new CommandFeedback(true, true, 0, "records=5");
+                                    result = new CommandFeedback(true, true, 0, "records=5");
+                                else {
+                                    assertEquals(Duration.ofSeconds(30), timeout);
+                                    if (script.contains("'--type' 'text'"))
+                                        result = new CommandFeedback(true, false, 2, "invalid selected type");
+                                    else {
+                                        assertTrue(script.contains("'--type' 'event'"));
+                                        assertTrue(script.contains("case \"$agent_runtime_observed\" in *'records=5'*)"));
+                                        result = new CommandFeedback(true, true, 0, "records=5");
+                                    }
+                                }
+                                lastRun.set(result);
+                                return result;
                             }
 
                             public String read(TaskContext original, Prepared candidate, String revision, String path, int offset, int limit) {
@@ -222,6 +245,18 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             public String patch(TaskContext original, Prepared candidate, String revision, DeploymentAgentPatch patch) {
                                 current.set(revisedBrowser);
                                 return revisedBrowser.revision();
+                            }
+
+                            public void validateSeal(TaskContext original, Prepared candidate, String revision) {
+                                assertSame(task, original);
+                                if (scenario == Scenario.FAILED_RUN_REPLAN) {
+                                    assertEquals(2, lastRun.get().exitStatus(), "Replan cannot erase the latest actual failed run");
+                                    throw new IllegalArgumentException("SEAL_PRECONDITION: lastKnownExit=2; no seal was sent");
+                                }
+                                if (scenario == Scenario.SEAL_PREFLIGHT)
+                                    throw new IllegalArgumentException("SEAL_PRECONDITION: current successful-run evidence unavailable; no seal was sent");
+                                assertNotNull(lastRun.get());
+                                assertTrue(lastRun.get().known() && lastRun.get().succeeded() && lastRun.get().exitStatus() == 0);
                             }
 
                             public String seal(TaskContext original, Prepared candidate, String revision) {
@@ -243,7 +278,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                         if (scenario == Scenario.WRONG_REPLAN || scenario == Scenario.NOT_APPLICABLE || scenario == Scenario.LONG_LITERAL) {
                             assertEquals(TaskResult.SUCCEEDED, session.run().outcome());
                             assertEquals(1, deliveries.get());
-                            assertEquals(scenario == Scenario.WRONG_REPLAN ? 3 : 0, commands.get());
+                            assertEquals(scenario == Scenario.WRONG_REPLAN ? 3 : 1, commands.get());
                         } else {
                             var stopped = assertThrows(IllegalStateException.class, session::run);
                             assertEquals(scenario == Scenario.UNKNOWN ? "Unknown agent command must not be replayed"
@@ -256,7 +291,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             if (scenario == Scenario.UNKNOWN)
                                 assertEquals("UNKNOWN", journal.find(task).orElseThrow().state());
                         }
-                        assertEquals(scenario == Scenario.WRONG_REPLAN ? 2 : scenario == Scenario.NOT_APPLICABLE || scenario == Scenario.LONG_LITERAL ? 1 : scenario == Scenario.UNKNOWN || scenario == Scenario.DENY ? 0 : 1,
+                        assertEquals(scenario == Scenario.WRONG_REPLAN ? 2 : scenario == Scenario.NOT_APPLICABLE || scenario == Scenario.LONG_LITERAL ? 1 : scenario == Scenario.UNKNOWN || scenario == Scenario.DENY || scenario == Scenario.FAILED_RUN_REPLAN ? 0 : 1,
                             journal.events(task).stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("TOOL_validate_runtime")).count());
                         if (scenario == Scenario.DENY) {
                             assertEquals(1, scriptCalls.size(), "Same denied generated bytes cannot seek a second review or dispatch");
