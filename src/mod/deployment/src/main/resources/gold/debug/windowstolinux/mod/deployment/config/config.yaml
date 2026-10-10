@@ -1,0 +1,22 @@
+ai:
+  deployment-max-output-tokens: 8192
+  extended-deployment-max-output-tokens: 65536
+  approval-max-output-tokens: 8192
+source:
+  bytes: 2147483648
+  entries: 100000
+  archive-bytes: 2147483648
+build:
+  timeout-seconds: 1800
+  processes: 1024
+  memory-mib: 4096
+  output-bytes: 4194304
+  workspace-bytes: 4294967296
+environment:
+  install-seconds: 900
+  check-seconds: 30
+  reboot-seconds: 900
+  poll-seconds: 5
+view:
+  refresh-ms: 750
+  page-size: 200

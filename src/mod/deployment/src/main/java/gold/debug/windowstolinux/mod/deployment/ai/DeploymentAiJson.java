@@ -5,6 +5,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -31,11 +33,17 @@ public final class DeploymentAiJson {
 
     /** Bound platform capabilities. / 已绑定的平台能力。 */
     private final ModContext context;
+    private final DeploymentConfig.Ai output;
 
     /** Binds the original Mod activation. / 绑定原 Mod 启用。
      * @param context platform capability / 平台能力 */
     public DeploymentAiJson(ModContext context) {
+        this(context, DeploymentConfigLoader.current().ai());
+    }
+
+    DeploymentAiJson(ModContext context, DeploymentConfig.Ai output) {
         this.context = Objects.requireNonNull(context);
+        this.output = Objects.requireNonNull(output);
     }
 
     /** Carries the original platform outcome without inferring it from a problem code. / 保留平台原结果，不从问题代码反推。 */
@@ -132,8 +140,10 @@ public final class DeploymentAiJson {
             || data.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
             + instruction.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1048576)
             throw new IllegalArgumentException("AI evidence exceeds deployment budget");
+        int tokens = purpose == AiPurpose.APPROVAL ? output.approvalMaxOutputTokens()
+            : maximumCharacters > 48000 ? output.extendedDeploymentMaxOutputTokens() : output.deploymentMaxOutputTokens();
         var request = new AiRequest(purpose, List.of(new AiMessage(AiRole.SYSTEM, instruction, List.of()),
-            new AiMessage(AiRole.USER, data, List.of())), 1200, Duration.ofSeconds(60), true);
+            new AiMessage(AiRole.USER, data, List.of())), tokens, Duration.ofSeconds(60), true);
         OperationResult<AiResponse> result = context.ai().call(request, expectedRevision, task);
         if (result.outcome() != TaskResult.SUCCEEDED)
             throw new CapabilityOutcomeException(result.outcome(), result.problem());

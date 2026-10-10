@@ -1,6 +1,6 @@
-# 启动配置填写说明
+# 固定配置填写说明
 
-本文件是 APP 配置字段的唯一集中说明。`app/config` 不依赖其他项目模块；main 在存储、服务和窗口创建前读取 Config 模块的 YAML 资源，合并为一次不可变 `AppConfig` 快照并注入消费者。配置不承载密码、私钥、API Key 或运行状态。
+本文件集中说明 APP 固定配置和部署 Mod 的输出额度配置。两者读取各自所属模块的随包 YAML。`app/config` 不依赖其他项目模块；main 在存储、服务和窗口创建前读取 Config 模块的 YAML 资源，合并为一次不可变 `AppConfig` 快照并注入消费者。配置不承载密码、私钥、API Key 或运行状态。
 
 ## 文件位置与模式覆盖
 
@@ -142,3 +142,15 @@ app: {}
 ```
 
 结构与依赖见 [File.md](File.md#module-dependencies)，运行路径见 [Runtime.md](Runtime.md#desktop-data)，发行携带规则见 [APP.md](APP.md)，Mod 作者的独立配置职责见 [Mod.md](Mod.md)。
+
+## 部署 Mod AI 输出额度
+
+源文件位于 [部署 Mod 配置资源](../src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml)。随包 YAML 经 Mod 自己的严格加载器读取，按类加载器保存一份不可变配置；不读取 APP Config 实现或外置同名文件。修改后重新构建、加载 Mod 生效。资源文件中的其他必需字段须保留；字段缺失、未知、重复、null、非整数或越界均拒绝加载。
+
+| 字段 | 默认值 | 约束 |
+|---|---|---|
+| `ai.deployment-max-output-tokens` | 8192 | 正整数，不超过2147483647 |
+| `ai.extended-deployment-max-output-tokens` | 65536 | 不小于普通部署额度，不超过2147483647 |
+| `ai.approval-max-output-tokens` | 8192 | 正整数，不高于普通部署额度 |
+
+这些值通过 `AiRequest.maxOutputTokens` 申请本次输出额度。APP 开启 `allow-output-token-override` 时采用申请值；关闭时采用 APP 推荐值。实际额度以 `AiResponse.effectiveMaxOutputTokens` 或错误元数据为准，Mod 配置不能越过 APP 策略。独立审批方式、完整证据和累计用量监督继续由原部署流程负责。
