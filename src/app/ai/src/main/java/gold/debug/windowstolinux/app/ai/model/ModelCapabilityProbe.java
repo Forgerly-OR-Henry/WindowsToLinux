@@ -15,7 +15,7 @@ import gold.debug.windowstolinux.appapi.ai.model.AiRole;
  * @param expected exact platform-owned answer / 平台持有的精确答案 */
 public record ModelCapabilityProbe(AiRequest request, String expected) {
     /** Builds a fresh default text capability challenge. / 构造全新的默认文字能力挑战。
-     * @param outputLimit configured positive output ceiling / 已配置的正输出上限
+     * @param outputLimit independent positive verification budget / 独立正数验证额度
      * @return generated challenge / 生成的挑战 */
     public static ModelCapabilityProbe create(int outputLimit) {
         if (outputLimit < 1)
@@ -24,7 +24,7 @@ public record ModelCapabilityProbe(AiRequest request, String expected) {
         var message = new AiMessage(AiRole.USER, "Reply with exactly this code and nothing else: " + expected,
             List.of());
         return new ModelCapabilityProbe(new AiRequest(AiPurpose.LANGUAGE, List.of(message),
-            Math.min(64, outputLimit), Duration.ofSeconds(30), false), expected);
+            outputLimit, Duration.ofSeconds(30), false), expected);
     }
 
     /** Checks the actual answer instead of accepting only an HTTP success. / 核验实际答案，而非只接受 HTTP 成功。

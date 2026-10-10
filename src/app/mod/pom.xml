@@ -4,7 +4,7 @@
   <parent>
     <groupId>gold.debug.windowstolinux</groupId>
     <artifactId>windowstolinux-app</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>windowstolinux-app-mod</artifactId>
@@ -28,7 +28,7 @@
     <dependency>
       <groupId>gold.debug.windowstolinux</groupId>
       <artifactId>windowstolinux-appapi</artifactId>
-      <version>1.0.0-dev.4</version>
+      <version>1.0.0</version>
     </dependency>
     <dependency>
       <groupId>org.pf4j</groupId>

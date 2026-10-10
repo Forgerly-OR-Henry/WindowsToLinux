@@ -78,7 +78,7 @@ class DeploymentAgentReviewTest extends DeploymentRuntimeFixture {
                     return new OperationResult<>(TaskResult.SUCCEEDED,
                         Optional.of(new AiResponse(
                             "{\"decision\":\"DENY\",\"risk\":\"HIGH\",\"reason\":\"Denied exact action\"}",
-                            "independent", "stop", new AiUsage(Optional.empty(), Optional.empty()))),
+                            "independent", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))),
                         Optional.empty());
                 });
             var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(),

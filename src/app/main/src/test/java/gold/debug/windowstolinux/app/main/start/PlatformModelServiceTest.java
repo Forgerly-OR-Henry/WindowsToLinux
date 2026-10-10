@@ -30,6 +30,8 @@ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskHandle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PlatformModelServiceTest {
     @TempDir
@@ -46,8 +48,17 @@ class PlatformModelServiceTest {
     }
 
     static void answer(PlatformAiServiceTest.Fixture fixture) {
+        answer(fixture, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT);
+    }
+
+    static void answer(PlatformAiServiceTest.Fixture fixture,
+                       gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel effort) {
         fixture.handler.set(exchange -> {
             var wire = fixture.requests.remove().body();
+            assertEquals(8192, wire.path("max_tokens").intValue());
+            if (effort == gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT)
+                assertFalse(wire.has("reasoning_effort"));
+            else assertEquals(effort.protocolValue(), wire.path("reasoning_effort").textValue());
             var content = wire.path("messages").get(0).path("content");
             String answer;
             if (content.isTextual()) {
@@ -77,6 +88,22 @@ class PlatformModelServiceTest {
 
     static OperationResult<Void> done(TaskHandle<Void> handle) throws Exception {
         return handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void textAndVisionVerificationAlwaysUseIndependentBudgetWithoutLegacyLimit(boolean allow) throws Exception {
+        try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root, allow)) {
+            var service = setup(runtime);
+            var profile = profile(fixture);
+            service.save(profile, "sample", "fixture-key".toCharArray(), 1);
+            sql(runtime.persistence().database(), "DELETE FROM desktop_preference WHERE preference_key=?", "ai_model_output_limit_sample");
+            answer(fixture);
+            for (var capability : List.of(AiCapabilityType.TEXT, AiCapabilityType.VISION))
+                assertEquals(TaskResult.SUCCEEDED, done(service.verify("sample", capability, null, "")).outcome());
+            assertTrue(service.outputLimit("sample").isEmpty());
+            assertEquals(2, fixture.calls.get());
+        }
     }
 
     static TaskHandle<Void> saveAndVerify(PlatformModelService service, AiModelProfile profile, String name,

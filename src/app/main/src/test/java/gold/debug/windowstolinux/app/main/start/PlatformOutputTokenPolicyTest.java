@@ -35,7 +35,7 @@ class PlatformOutputTokenPolicyTest {
     static PlatformRuntime open(Path root, boolean allow) throws Exception {
         var base = AppConfig.defaultsConfig();
         var config = new AppConfig(base.dataDirectory(), base.ui(), base.defaults(), base.ssh(), policy(32768, allow, 8192),
-            base.emergencyRecords(), false, base.storeUrl());
+            base.emergencyRecords(), base.modLoad(), base.storeUrl());
         return PlatformRuntime.open(new RunModeResolver.RuntimeLayout(RunModeResolver.RunMode.RUN_CLASS, root, root.resolve("data")),
             PlatformStartupTest.PROTECTION, config);
     }

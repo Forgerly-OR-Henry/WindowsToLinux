@@ -288,7 +288,7 @@ final class PlatformModelDialog extends JDialog {
         try {
             clean = stored != null && stored.equals(draft()) && fields.key.getDocument().getLength() == 0
                 && switch ((AiCapabilityType) capability.getSelectedItem()) {
-                case TEXT, VISION -> stored.profile().chatCompletionsEndpoint() != null;
+                case TEXT, VISION, TOOL_CALLING -> stored.profile().chatCompletionsEndpoint() != null;
                 case VOICE_FILE -> stored.profile().fileTranscriptionEndpoint() != null;
                 case VOICE_REALTIME -> stored.profile().realtimeTranscriptionEndpoint() != null;
             };

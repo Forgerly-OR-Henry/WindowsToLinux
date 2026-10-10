@@ -113,6 +113,7 @@ class PlatformAiServiceTest {
                 assertEquals("你好", response.text());
                 assertEquals("text", response.modelId());
                 assertEquals("stop", response.finishReason());
+                assertEquals(Optional.of(32), response.effectiveMaxOutputTokens());
                 assertEquals(Optional.of(3L), response.usage().inputTokens());
                 assertEquals(Optional.of(4L), response.usage().outputTokens());
                 var sent = fixture.requests.poll(5, TimeUnit.SECONDS);
@@ -120,6 +121,7 @@ class PlatformAiServiceTest {
                 assertEquals("Bearer fixture-key-text", sent.authorization());
                 assertEquals("fixture/text", sent.body().path("model").textValue());
                 assertEquals(32, sent.body().path("max_tokens").intValue());
+                assertFalse(sent.body().has("reasoning_effort"));
                 assertFalse(sent.body().path("stream").booleanValue());
                 assertEquals("system", sent.body().path("messages").get(0).path("role").textValue());
                 assertEquals("你好", sent.body().path("messages").get(1).path("content").textValue());
@@ -159,16 +161,17 @@ class PlatformAiServiceTest {
                 runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(vision, task)));
             assertTrue(response.usage().inputTokens().isEmpty());
             assertTrue(response.usage().outputTokens().isEmpty());
+            assertTrue(response.encodedRequestBytes().orElseThrow() > 16);
             var wire = fixture.requests.poll(5, TimeUnit.SECONDS).body();
             assertEquals("json_object", wire.path("response_format").path("type").textValue());
             assertTrue(wire.path("messages").get(0).path("content").get(1).path("image_url").path("url").textValue()
                 .startsWith("data:image/png;base64,"));
             var invalid = List.of(
+                new AiRequest(AiPurpose.LANGUAGE, message(AiPurpose.LANGUAGE).messages(), 16,
+                    Duration.ofSeconds(6), false, List.of(), 16),
                 new AiRequest(AiPurpose.LANGUAGE, vision.messages(), 16, Duration.ofSeconds(6), false),
                 new AiRequest(AiPurpose.LANGUAGE,
                     List.of(new AiMessage(AiRole.USER, "中".repeat(350_000), List.of())), 16,
-                    Duration.ofSeconds(6), false),
-                new AiRequest(AiPurpose.LANGUAGE, message(AiPurpose.LANGUAGE).messages(), 129,
                     Duration.ofSeconds(6), false),
                 new AiRequest(AiPurpose.VISION,
                     List.of(new AiMessage(AiRole.USER, "images", Collections.nCopies(5, image))), 16,
@@ -239,7 +242,7 @@ class PlatformAiServiceTest {
     }
 
     @Test
-    void frozenRouteRejectsOutputLimitChangeBeforeHttpFallback() throws Exception {
+    void frozenRouteIgnoresLegacyOutputLimitChangeBeforeHttpFallback() throws Exception {
         try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             model(runtime, fixture, "first", "/reject", AiCapabilityType.TEXT, 128);
@@ -251,19 +254,49 @@ class PlatformAiServiceTest {
                 } catch (java.sql.SQLException failure) {
                     throw new IOException(failure);
                 }
-                Fixture.reply(exchange, 429, RESPONSE);
+                Fixture.reply(exchange, exchange.getRequestURI().getPath().equals("/reject") ? 429 : 200, RESPONSE);
             });
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
                 String frozen = ai.configurationRevision(AiPurpose.LANGUAGE, task);
+                assertEquals("second", ai.call(message(AiPurpose.LANGUAGE), frozen, task).value().orElseThrow().modelId());
+                assertEquals(frozen, ai.configurationRevision(AiPurpose.LANGUAGE, task));
+                return success(null);
+            }));
+            assertEquals(2, fixture.calls.get());
+            assertEquals("/reject", fixture.requests.take().path());
+            assertEquals("/chat", fixture.requests.take().path());
+        }
+    }
+
+    @Test
+    void actualWireUsesOptionalReasoningAndFrozenRouteRejectsLaterChange() throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
+            var repo = runtime.persistence().aiProfiles();
+            var original = repo.findNamed("text").orElseThrow();
+            var low = new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(),
+                original.fileEndpoint(), original.realtimeEndpoint(), gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW);
+            repo.saveVerified(low, "text", Instant.now());
+            route(runtime, AiPurposeType.DEPLOYMENT, "text");
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                String frozen = ai.configurationRevision(AiPurpose.LANGUAGE, task);
+                assertEquals(TaskResult.SUCCEEDED, ai.call(message(AiPurpose.LANGUAGE), frozen, task).outcome());
+                repo.saveVerified(original, "text", Instant.now());
+                assertNotEquals(frozen, ai.configurationRevision(AiPurpose.LANGUAGE, task));
                 assertEquals("AI_CONFIGURATION_CHANGED",
                     assertThrows(ApiException.class, () -> ai.call(message(AiPurpose.LANGUAGE), frozen, task))
                         .problem().eventCode());
-                assertNotEquals(frozen, ai.configurationRevision(AiPurpose.LANGUAGE, task));
                 return success(null);
             }));
             assertEquals(1, fixture.calls.get());
-            assertEquals("/reject", fixture.requests.take().path());
+            var sent = fixture.requests.take();
+            assertEquals("low", sent.body().path("reasoning_effort").textValue());
+            assertEquals("fixture/text", sent.body().path("model").textValue());
+            assertEquals(32, sent.body().path("max_tokens").intValue());
+            assertEquals("你好", sent.body().path("messages").get(1).path("content").textValue());
         }
     }
 
@@ -309,19 +342,14 @@ class PlatformAiServiceTest {
     }
 
     @Test
-    void missingLimitAndChangedCredentialVerificationNeverReachTheProvider() throws Exception {
+    void missingLegacyLimitAllowsCallingWhileChangedCredentialsStillRequireVerification() throws Exception {
         try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
             initialize(runtime, false);
             model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, null);
             route(runtime, AiPurposeType.DEPLOYMENT, "text");
             var ai = runtime.capabilities().ai(OWNER, VERSION);
             var binding = runtime.tasks().bind(OWNER, VERSION, false);
-            completed(binding.submit(request(), task -> {
-                assertEquals(ProblemCode.UNAVAILABLE,
-                    assertThrows(ApiException.class, () -> ai.call(message(AiPurpose.LANGUAGE), task)).problem()
-                        .code());
-                return success(null);
-            }));
+            assertEquals("text", completed(binding.submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE), task))).modelId());
             runtime.persistence().aiProfiles().saveOutputLimit("text", 128);
             try (var operation = runtime.security().enterOperation();
                  var store = runtime.security().openCredentials()) {
@@ -338,7 +366,7 @@ class PlatformAiServiceTest {
                         .code());
                 return success(null);
             }));
-            assertEquals(0, fixture.calls.get());
+            assertEquals(1, fixture.calls.get());
         }
     }
 
@@ -411,6 +439,13 @@ class PlatformAiServiceTest {
             state(handle, TaskState.UNKNOWN);
             callbackReturned(runtime, original.get());
             assertEquals("AI_TRANSPORT_UNKNOWN", observed.get().problem().orElseThrow().eventCode());
+            boolean diagnosed = false;
+            for (var category : runtime.logs().inventory(false).categories())
+                diagnosed |= runtime.logs().inspect(category.target().key()).records().stream()
+                    .anyMatch(record -> record.event().eventCode().equals("AI_OPERATION_UNCERTAIN")
+                        && record.event().details().filter(details -> details.contains("context.taskId=" + handle.id())
+                        && details.contains("problem[0].code=AI_TRANSPORT_UNKNOWN")).isPresent());
+            assertTrue(diagnosed);
             assertEquals(1, fixture.calls.get());
             recover(runtime, ai, handle, original.get());
             assertEquals(0, count(runtime.persistence().database(),

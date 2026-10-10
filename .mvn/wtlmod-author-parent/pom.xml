@@ -3,13 +3,13 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>gold.debug.windowstolinux</groupId>
   <artifactId>wtlmod-author-parent</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <packaging>pom</packaging>
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <wtl.workspace>${maven.multiModuleProjectDirectory}</wtl.workspace>
-    <wtl.tool.version>0.1.0-SNAPSHOT</wtl.tool.version>
+    <wtl.tool.version>1.0.0</wtl.tool.version>
     <wtl.authorArtifacts/>
     <wtl.buildInputs/>
   </properties>
@@ -18,7 +18,7 @@
       <dependency>
         <groupId>gold.debug.windowstolinux</groupId>
         <artifactId>windowstolinux-appapi</artifactId>
-        <version>1.0.0-dev.4</version>
+        <version>1.0.0</version>
         <scope>provided</scope>
       </dependency>
       <dependency>

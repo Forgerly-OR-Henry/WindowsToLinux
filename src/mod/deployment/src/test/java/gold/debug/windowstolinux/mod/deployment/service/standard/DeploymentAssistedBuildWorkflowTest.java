@@ -779,7 +779,7 @@ class DeploymentAssistedBuildWorkflowTest extends DeploymentRuntimeFixture {
                             + "\",\"arguments\":{\"suggestions\":[],\"summary\":\"Keep explicit human review\",\"unresolved\":[]}}";
                 }
                 return success(new AiResponse(response, "controlled-purpose", "stop",
-                    new AiUsage(Optional.empty(), Optional.empty())));
+                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
             }
         };
     }

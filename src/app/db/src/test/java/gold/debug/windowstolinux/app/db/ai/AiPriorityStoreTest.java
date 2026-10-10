@@ -20,6 +20,53 @@ class AiPriorityStoreTest {
     @TempDir
     Path directory;
 
+    @Test
+    void reasoningEffortPersistsInvalidatesTextAndRejectsStaleVerification() throws Exception {
+        var original = new StoredAiModelProfile("a", profile("a").endpoint(), "model", "ai/a",
+            "https://example.test/audio/transcriptions", "");
+        var low = new StoredAiModelProfile(original.id(), original.endpoint(), original.model(), original.credentialKey(),
+            original.fileEndpoint(), original.realtimeEndpoint(), gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW);
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            PlatformStoreTestFixture.credential(db, "ai/a");
+            var repo = db.aiProfiles();
+            repo.saveVerified(original, "A", Instant.now());
+            repo.recordVerification(original, 1, AiCapabilityType.VISION, Instant.now());
+            repo.recordVerification(original, 1, AiCapabilityType.VOICE_FILE, Instant.now());
+            repo.saveConfiguration(low, "A");
+            var changed = repo.listConfigured().getFirst();
+            assertEquals(2, changed.revision());
+            assertEquals(low, changed.profile());
+            assertFalse(changed.verified(AiCapabilityType.TEXT));
+            assertFalse(changed.verified(AiCapabilityType.VISION));
+            assertTrue(changed.verified(AiCapabilityType.VOICE_FILE));
+            assertThrows(SQLException.class,
+                () -> repo.recordVerification(original, 1, AiCapabilityType.TEXT, Instant.now()));
+            repo.saveConfiguration(low, "Renamed");
+            assertEquals(2, repo.listConfigured().getFirst().revision());
+        }
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            PlatformStoreTestFixture.credential(db, "ai/a");
+            var repo = db.aiProfiles();
+            assertEquals(low, repo.findNamed("a").orElseThrow());
+            repo.recordVerification(low, 2, AiCapabilityType.TEXT, Instant.now());
+            repo.saveConfiguration(original, "A");
+            assertEquals(original, repo.findNamed("a").orElseThrow());
+            assertEquals(3, repo.listConfigured().getFirst().revision());
+            assertFalse(repo.listConfigured().getFirst().verified(AiCapabilityType.TEXT));
+            assertTrue(repo.listConfigured().getFirst().verified(AiCapabilityType.VOICE_FILE));
+        }
+    }
+
+    @Test
+    void malformedStoredReasoningEffortCannotSilentlyBecomeProviderDefault() throws Exception {
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            PlatformStoreTestFixture.credential(db, "ai/a");
+            db.aiProfiles().saveNamed(profile("a"));
+            db.preferences().save("ai_model_reasoning_effort_a", "unsupported-value");
+            assertEquals("55000", assertThrows(SQLException.class, () -> db.aiProfiles().listConfigured()).getSQLState());
+        }
+    }
+
     private StoredAiModelProfile profile(String id) {
         return new StoredAiModelProfile(id, "https://example.test/v1/chat/completions", "model", "ai/" + id);
     }

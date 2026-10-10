@@ -4,6 +4,7 @@ package gold.debug.windowstolinux.app.ai.model;
 public enum AiCapabilityType {
     /** Structured text responses. / 结构化文本响应。 */
     TEXT,
+    TOOL_CALLING,
     /** Image understanding. / 图像理解。 */
     VISION,
     /** Complete audio file transcription. / 完整音频文件转写。 */

@@ -105,7 +105,7 @@ class DeploymentUnknownHealthPublishTest extends DeploymentPublishAcceptanceFixt
                         }
                     }
                     return success(new AiResponse(response, "controlled-purpose", "stop",
-                        new AiUsage(Optional.empty(), Optional.empty())));
+                        new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
                 }
             };
             LinuxService linux = new LinuxService() {
