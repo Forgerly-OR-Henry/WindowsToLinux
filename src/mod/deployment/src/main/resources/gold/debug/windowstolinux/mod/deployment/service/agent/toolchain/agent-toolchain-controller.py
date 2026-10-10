@@ -21,7 +21,7 @@ AGENT_BINARIES = {
     'RUBY': ('ruby', 'gem', 'bundle'),
 }
 AGENT_BOOTSTRAP = (
-    "import sys; p=sys.argv.pop(1); code=open(p,'rb').read(); "
+    "import sys; sys.dont_write_bytecode=True; p=sys.argv.pop(1); code=open(p,'rb').read(); "
     "exec(compile(code,p,'exec'),{'__name__':'__main__','__file__':p,'PROGRAM_SOURCE':code})"
 )
 DEADLINE = None
@@ -925,7 +925,7 @@ def agent_cleanup_placeholder(manifest):
 
 
 def agent_prepare(args):
-    ecosystem, branch, exact, seconds, java_home, operation = args
+    ecosystem, branch, exact, seconds, java_home, operation, encoded_release = args
     seconds = int(seconds)
     if ecosystem not in AGENT_ECOSYSTEMS or not re.fullmatch(r'\d{1,3}(?:\.\d{1,3})?', branch) or branch not in SHIPPED_CATALOG.get(ecosystem, []) or not 30 <= seconds <= 7200 or not agent_java_home(java_home):
         agent_reject('PREPARE_ARGUMENTS')
@@ -933,7 +933,8 @@ def agent_prepare(args):
         agent_reject('EXACT_VERSION')
     if java_home != '-' and agent_record(pathlib.Path(java_home))['ecosystem'] != 'JAVA':
         agent_reject('JAVA_HOME_RECORD')
-    version, url, algorithm, expected, layout = release(ecosystem, branch, '' if exact == '-' else exact)
+    selected = resolution_decode(encoded_release, ecosystem, branch, exact, operation, EXPECTED_RESOLVER_SOURCE_SHA256)
+    version, url, algorithm, expected, layout = (selected[key] for key in ('version', 'url', 'algorithm', 'digest', 'layout'))
     manifest = agent_create(operation, seconds)
     try:
         agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expected, layout, java_home)
@@ -1039,8 +1040,9 @@ def agent_main(args):
         return
     if os.geteuid() != 0:
         agent_reject('CONTROLLER_REQUIRES_ROOT')
-    if len(args) == 7 and args[0] == 'prepare':
+    if len(args) == 8 and args[0] == 'prepare':
         seconds = int(args[4])
+        resolution_decode(args[7], args[1], args[2], args[3], args[6], EXPECTED_RESOLVER_SOURCE_SHA256)
     elif len(args) == 4 and args[0] == 'bind':
         seconds = int(args[2])
     else:

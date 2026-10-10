@@ -67,27 +67,36 @@ class DeploymentAgentToolchainCommandsTest {
     @Test
     void authenticatedDependenciesAndControllerHaveSeparateOriginalGrants() throws Exception {
         var count = new AtomicInteger();
-        var fixture = new Fixture(true, request -> reply(count.getAndIncrement() == 0 ? dependencyReceipt() : "prepared\n"));
+        var fixture = new Fixture(true, request -> reply(switch (count.getAndIncrement()) {
+            case 0 -> dependencyReceipt();
+            case 1 ->
+                "TOOLCHAIN_RELEASE=" + DeploymentAgentToolchainReleaseTest.encoded("PYTHON", "3.14", "3.14.0", OPERATION) + "\n";
+            default -> "prepared\n";
+        }));
         assertEquals(TaskResult.SUCCEEDED, fixture.agent.prepare(DeploymentToolchainType.PYTHON, "3.14", "3.14.0", 100, "-").outcome());
-        assertEquals(2, fixture.requests.size());
-        assertEquals(2, fixture.grants.size());
+        assertEquals(3, fixture.requests.size());
+        assertEquals(3, fixture.grants.size());
         assertNotEquals(fixture.grants.get(0), fixture.grants.get(1));
         assertEquals("deployment.agent.toolchain.dependencies.v1", fixture.intents.get(0).semantics().orElseThrow().operation());
-        assertEquals("deployment.agent.toolchain.prepare.v1", fixture.intents.get(1).semantics().orElseThrow().operation());
+        assertEquals("deployment.agent.toolchain.resolve.v1", fixture.intents.get(1).semantics().orElseThrow().operation());
+        assertEquals("deployment.agent.toolchain.prepare.v1", fixture.intents.get(2).semantics().orElseThrow().operation());
+        assertNotEquals(fixture.grants.get(1), fixture.grants.get(2));
         var packageTargets = fixture.intents.get(0).semantics().orElseThrow().targets();
         assertTrue(packageTargets.contains(new ActionTarget(SERVER.id(), "system-package", "build-essential")));
         assertTrue(packageTargets.contains(new ActionTarget(SERVER.id(), "system-package", "gcc")));
-        assertController(fixture.requests.get(1));
+        assertController(fixture.requests.get(2));
     }
 
     @Test
     void archivePreparationDoesNotPerformPlatformDependencyTransaction() throws Exception {
-        var fixture = new Fixture(true, request -> reply("prepared\n"));
+        String encoded = DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION);
+        var fixture = new Fixture(true, request -> reply(request.script().contains("'resolve'") ? "TOOLCHAIN_RELEASE=" + encoded + "\n" : "prepared\n"));
         fixture.agent.prepare(DeploymentToolchainType.RUST, "1.95", "1.95.0", 100, "-");
-        assertEquals(1, fixture.requests.size());
-        assertController(fixture.requests.getFirst());
-        assertTrue(fixture.requests.getFirst().script().endsWith("'prepare' 'RUST' '1.95' '1.95.0' '100' '-' '" + OPERATION + "'"));
-        assertTrue(fixture.intents.getFirst().semantics().orElseThrow().targets().contains(new ActionTarget(SERVER.id(),
+        assertEquals(2, fixture.requests.size());
+        assertEquals(DeploymentAgentToolchainPrograms.resolver(), new String(fixture.requests.getFirst().stdin(), StandardCharsets.UTF_8));
+        assertController(fixture.requests.getLast());
+        assertTrue(fixture.requests.getLast().script().endsWith("'prepare' 'RUST' '1.95' '1.95.0' '100' '-' '" + OPERATION + "' '" + encoded + "'"));
+        assertTrue(fixture.intents.getLast().semantics().orElseThrow().targets().contains(new ActionTarget(SERVER.id(),
             "systemd-unit", "windowstolinux-toolchain-" + OPERATION + ".service")));
     }
 

@@ -1,0 +1,81 @@
+package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.*;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.result.*;
+import org.junit.jupiter.api.Test;
+
+class DeploymentAgentToolchainFailureEvidenceTest {
+    private static final String OPERATION = "a".repeat(32);
+
+    private static final ServerId SERVER = new ServerId("original-server");
+
+    @Test
+    void actualKnownFailureSurvivesSetupStyleValueRemovalAsBoundedObservation() throws Exception {
+        String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "OS_CONFIGURATION_OWNER",
+            "reason", "OWNER_NOT_ALLOWED", "path", "/etc/apt/apt.conf.d/20baseline", "owner", "actual-os-package", "allowedOwners", List.of("apt")));
+        var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+        assertEquals(TaskResult.FAILED, result.outcome());
+        assertTrue(result.value().isEmpty());
+        String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+        assertTrue(observation.contains("OS_CONFIGURATION_OWNER"));
+        assertTrue(observation.contains("OWNER_NOT_ALLOWED"));
+        assertTrue(observation.contains("actual-os-package"));
+        assertTrue(observation.contains("\"actualExit\":65"));
+        assertTrue(observation.contains("\"transportOutcome\":\"FAILED\""));
+    }
+
+    @Test
+    void unknownProtocolAndTruncatedResultCannotBecomeRetryableKnownFailure() {
+        var unknown = retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:DEPENDENCY_STATE_UNCONFIRMED\n", false);
+        assertEquals(TaskResult.UNKNOWN, unknown.outcome());
+        assertTrue(DeploymentAgentToolchainFailureEvidence.observation(unknown.problem()).contains("\"productOutcome\":\"UNKNOWN\""));
+        assertEquals(TaskResult.UNKNOWN, retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER\n", true).outcome());
+        assertEquals(TaskResult.CANCELLED, retain(TaskResult.CANCELLED, 70, "TOOLCHAIN_FAILURE=unknown:DEPENDENCY_STATE_UNCONFIRMED\n", false).outcome());
+    }
+
+    @Test
+    void missingResultOrApprovalDenialCannotBorrowAFormerExecutionReceipt() {
+        retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER\n", false);
+        OperationResult<CommandResult> denied = new OperationResult<>(TaskResult.FAILED, Optional.empty(),
+            Optional.of(new Problem(ProblemCode.ACCESS_DENIED, "REVIEW_DENIED", "Denied before execution", Map.of(), Optional.empty())));
+        assertSame(denied, DeploymentAgentToolchainFailureEvidence.retain(denied, "dependencies", SERVER, OPERATION));
+        assertEquals("", DeploymentAgentToolchainFailureEvidence.observation(denied.problem()));
+    }
+
+    @Test
+    void foreignDiagnosticAndArbitraryOutputAreNotCopiedIntoTheObservation() {
+        String foreign = "TOOLCHAIN_DIAGNOSTIC={\"operation\":\"" + "b".repeat(32) + "\",\"password\":\"never copy arbitrary body\"}";
+        var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER\n" + foreign + "\n", false);
+        String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+        assertFalse(observation.contains("password"));
+        assertFalse(observation.contains("never copy"));
+        assertFalse(observation.contains("reportedDiagnostic"));
+    }
+
+    @Test
+    void nativeUndispatchedFailureRemainsKnownOnlyWithTheCompleteTransportFacts() {
+        var context = Map.of("commandOpenRequested", "false", "channelOpenConfirmed", "false", "exitObserved", "false", "outputObserved", "false");
+        var problem = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NOT_SENT", "Command could not be dispatched", context, Optional.empty());
+        var notSent = new OperationResult<>(TaskResult.FAILED, Optional.of(new CommandResult(Optional.empty(), "", "", false)), Optional.of(problem));
+        assertSame(notSent, DeploymentAgentToolchainFailureEvidence.retain(notSent, "resolve", SERVER, OPERATION));
+        assertEquals("", DeploymentAgentToolchainFailureEvidence.observation(notSent.problem()));
+        for (var changed : List.of(
+            new OperationResult<>(TaskResult.FAILED, Optional.of(new CommandResult(Optional.empty(), "", "", false)), Optional.of(new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NOT_SENT", "Unconfirmed", Map.of(), Optional.empty()))),
+            new OperationResult<>(TaskResult.FAILED, Optional.of(new CommandResult(Optional.empty(), "actual output", "", false)), Optional.of(problem)),
+            new OperationResult<>(TaskResult.UNKNOWN, Optional.of(new CommandResult(Optional.empty(), "", "", false)), Optional.of(problem)),
+            new OperationResult<>(TaskResult.FAILED, Optional.of(new CommandResult(Optional.empty(), "", "", true)), Optional.of(problem))))
+            assertEquals(TaskResult.UNKNOWN, DeploymentAgentToolchainFailureEvidence.retain(changed, "resolve", SERVER, OPERATION).outcome());
+    }
+
+    private static OperationResult<CommandResult> retain(TaskResult outcome, int exit, String output, boolean truncated) {
+        return DeploymentAgentToolchainFailureEvidence.retain(new OperationResult<>(outcome,
+            Optional.of(new CommandResult(Optional.of(exit), output, "", truncated)),
+            Optional.of(new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO", "Actual transport nonzero", Map.of(), Optional.empty()))), "dependencies", SERVER, OPERATION);
+    }
+}

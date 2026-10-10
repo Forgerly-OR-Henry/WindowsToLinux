@@ -19,12 +19,50 @@ HOOK_OWNERS = frozenset(('apt', 'dpkg', 'debconf', 'needrestart', 'ubuntu-releas
 
 
 class DependencyFailure(Exception):
-    def __init__(self, detail, unknown=False):
+    def __init__(self, detail, unknown=False, diagnostic=None):
         self.detail, self.unknown = detail, unknown
+        self.diagnostic = diagnostic
 
 
-def dependency_reject(detail, unknown=False):
-    raise DependencyFailure(detail, unknown)
+def dependency_reject(detail, unknown=False, diagnostic=None):
+    raise DependencyFailure(detail, unknown, diagnostic)
+
+
+OWNER_DIAGNOSTIC_REASONS = frozenset(('RESPONSE_STRUCTURE', 'PATH_MISMATCH', 'MULTIPLE_OWNERS',
+                                    'OWNER_SYNTAX', 'OWNER_ABSENT', 'OWNER_NOT_ALLOWED', 'OUTPUT_LIMIT'))
+
+
+def dependency_owner_diagnostic(reason, path, owner, owners):
+    value = {'reason': reason, 'path': str(path), 'owner': owner,
+             'allowedOwners': sorted(owners)}
+    if not isinstance(owner, str) or not re.fullmatch('[a-z0-9][a-z0-9+.-]{0,95}(?::[a-z0-9]{1,24})?', owner):
+        value['owner'] = None
+    dependency_reject('OS_CONFIGURATION_OWNER', diagnostic=value)
+
+
+def dependency_diagnostic_line(error, args):
+    if error.detail != 'OS_CONFIGURATION_OWNER' or error.unknown or len(args) != 2 or not isinstance(args[1], str) or not re.fullmatch('[a-f0-9]{32}', args[1]):
+        return None
+    value = error.diagnostic
+    if not isinstance(value, dict) or set(value) != {'reason', 'path', 'owner', 'allowedOwners'}:
+        return None
+    if not isinstance(value['reason'], str) or value['reason'] not in OWNER_DIAGNOSTIC_REASONS:
+        return None
+    path = value['path']
+    if not isinstance(path, str) or not re.fullmatch('/[A-Za-z0-9._+/-]{1,511}', path) or any(p in ('.', '..', '') for p in path.split('/')[1:]):
+        return None
+    owner = value['owner']
+    if owner is not None and (not isinstance(owner, str) or not re.fullmatch('[a-z0-9][a-z0-9+.-]{0,95}(?::[a-z0-9]{1,24})?', owner)):
+        return None
+    allowed = value['allowedOwners']
+    if not isinstance(allowed, list) or not 1 <= len(allowed) <= 16 or any(not isinstance(name, str) or not re.fullmatch('[a-z0-9+.-]{1,96}', name) for name in allowed) or allowed != sorted(set(allowed)):
+        return None
+    known = HOOK_OWNERS | {'ubuntu-keyring', 'debian-archive-keyring'}
+    if not set(allowed) <= known:
+        return None
+    projection = {'operation': args[1], 'phase': 'OS_CONFIGURATION_OWNER', **value}
+    line = 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps(projection, sort_keys=True, separators=(',', ':'))
+    return line if len(line.encode('ascii')) <= 2048 else None
 
 
 def dependency_protected(path):
@@ -90,14 +128,24 @@ def dependency_registered(path, owners, content=None):
     if not status.is_file() or status.stat().st_size > 256 * 1024 * 1024:
         dependency_reject('OS_PACKAGE_DATABASE')
     output = dependency_run([dependency_tool('dpkg-query'), '-S', str(path)])
+    if len(output) > 8192:
+        dependency_owner_diagnostic('OUTPUT_LIMIT', path, None, owners)
     owner = None
     for line in output.splitlines():
         package, separator, registered = line.partition(': ')
-        if not separator or registered != str(path) or owner is not None or not re.fullmatch('[a-z0-9+.-]+(?::[a-z0-9]+)?', package):
-            dependency_reject('OS_CONFIGURATION_OWNER')
+        if not separator:
+            dependency_owner_diagnostic('RESPONSE_STRUCTURE', path, package, owners)
+        if registered != str(path):
+            dependency_owner_diagnostic('PATH_MISMATCH', path, package, owners)
+        if owner is not None:
+            dependency_owner_diagnostic('MULTIPLE_OWNERS', path, package, owners)
+        if not re.fullmatch('[a-z0-9+.-]+(?::[a-z0-9]+)?', package):
+            dependency_owner_diagnostic('OWNER_SYNTAX', path, package, owners)
         owner = package
-    if owner is None or owner.split(':')[0] not in owners:
-        dependency_reject('OS_CONFIGURATION_OWNER')
+    if owner is None:
+        dependency_owner_diagnostic('OWNER_ABSENT', path, None, owners)
+    if owner.split(':')[0] not in owners:
+        dependency_owner_diagnostic('OWNER_NOT_ALLOWED', path, owner, owners)
     digest = hashlib.md5(content).hexdigest()
     conffiles = dependency_run([dependency_tool('dpkg-query'), '-W', '-f=' + '$' + '{Conffiles}\\n', owner])
     for line in conffiles.splitlines():
@@ -443,12 +491,20 @@ def dependency_main(args):
           'manager': manager, 'packages': versions}, sort_keys=True, separators=(',', ':')))
 
 
-if __name__ == '__main__':
+def dependency_cli(args):
     try:
-        dependency_main(sys.argv[1:])
+        dependency_main(args)
+        return 0
     except DependencyFailure as error:
         print('TOOLCHAIN_FAILURE=' + ('unknown' if error.unknown else 'dependencies') + ':' + error.detail)
-        sys.exit(70 if error.unknown else 65)
+        diagnostic = dependency_diagnostic_line(error, args)
+        if diagnostic is not None:
+            print(diagnostic)
+        return 70 if error.unknown else 65
     except (OSError, ValueError, subprocess.TimeoutExpired):
         print('TOOLCHAIN_FAILURE=unknown:DEPENDENCY_STATE_UNCONFIRMED')
-        sys.exit(70)
+        return 70
+
+
+if __name__ == '__main__':
+    sys.exit(dependency_cli(sys.argv[1:]))

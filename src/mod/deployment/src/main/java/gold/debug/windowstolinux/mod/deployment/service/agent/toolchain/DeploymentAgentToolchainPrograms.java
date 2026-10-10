@@ -23,7 +23,7 @@ public final class DeploymentAgentToolchainPrograms {
     private static final JsonNode PACKAGES = packages();
 
     /** Reads the original bytes once and gives the fixed controller its own source identity. / 仅读取一次原字节，并向固定控制器提供其自身来源身份。 */
-    public static final String BOOTSTRAP = "import sys;code=sys.stdin.buffer.read();exec(compile(code,'<wtl-agent-toolchain>','exec'),{'__name__':'__main__','PROGRAM_SOURCE':code})";
+    public static final String BOOTSTRAP = "import sys;sys.dont_write_bytecode=True;code=sys.stdin.buffer.read();exec(compile(code,'<wtl-agent-toolchain>','exec'),{'__name__':'__main__','PROGRAM_SOURCE':code})";
 
     private static final String COMMAND_PREFIX = "/usr/bin/python3 -I -S -c " + quote(BOOTSTRAP) + " ";
 
@@ -32,8 +32,25 @@ public final class DeploymentAgentToolchainPrograms {
 
     /** Includes every current executable controller byte. / 包含当前控制器的全部可执行字节。 */
     public static String controller() {
-        return DeploymentToolchainSources.metadata() + DeploymentToolchainSources.archives() + "\n"
+        return DeploymentToolchainSources.metadata() + resource("agent-toolchain-resolution.py") + "\n"
+            + "EXPECTED_RESOLVER_SOURCE_SHA256 = '" + sha256(resolver()) + "'\n"
+            + DeploymentToolchainSources.archives() + "\n"
             + resource("agent-toolchain-controller.py");
+    }
+
+    /** Resolves official metadata without entering the installation controller. / 仅解析官方元数据，不进入安装控制器。 */
+    public static String resolver() {
+        return DeploymentToolchainSources.metadata() + resource("agent-toolchain-resolution.py")
+            + "\nif __name__ == '__main__':\n    resolution_cli()\n";
+    }
+
+    static String sha256(String source) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(source.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 unavailable", unavailable);
+        }
     }
 
     /** Includes the exact dependency data and fixed authenticated package-manager implementation. / 包含精确依赖数据及固定认证包管理器实现。 */

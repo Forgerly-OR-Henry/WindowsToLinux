@@ -64,13 +64,31 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             if (!complete(dependencies))
                 return dependencies;
         }
+        if (commands.remainingSeconds() < 45)
+            return budgetExhausted();
+        String operation = operation();
+        long lookupSeconds = Math.min(180, commands.remainingSeconds() - 15);
+        var resolved = send("deployment.agent.toolchain.resolve.v1", resolverTargets(server, ecosystem, branch, exact),
+            DeploymentAgentToolchainPrograms.resolver(), List.of("resolve", ecosystem.name(), branch, exact,
+                Long.toString(lookupSeconds), operation), lookupSeconds + 15);
+        if (!complete(resolved))
+            return resolved;
+        String encoded;
+        try {
+            String receipt = resolved.value().orElseThrow().stdout();
+            if (!receipt.startsWith("TOOLCHAIN_RELEASE=") || !receipt.endsWith("\n") || receipt.indexOf('\n') != receipt.length() - 1)
+                return unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_RELEASE_UNCONFIRMED");
+            encoded = receipt.substring("TOOLCHAIN_RELEASE=".length(), receipt.length() - 1);
+            DeploymentAgentToolchainRelease.decode(encoded, ecosystem, branch, exact, operation);
+        } catch (IllegalArgumentException malformed) {
+            return unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_RELEASE_UNCONFIRMED");
+        }
         seconds = (int) Math.min(seconds, commands.remainingSeconds() - 15);
         if (seconds < 30)
             return budgetExhausted();
-        String operation = operation();
         return send("deployment.agent.toolchain.prepare.v1", controllerTargets(server, operation),
             DeploymentAgentToolchainPrograms.controller(), List.of("prepare", ecosystem.name(), branch, exact,
-                Integer.toString(seconds), javaHome, operation), seconds + 15L);
+                Integer.toString(seconds), javaHome, operation, encoded), seconds + 15L);
     }
 
     @Override
@@ -109,7 +127,15 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             if (bytes.length == 0 || bytes.length > 1048576)
                 throw new IllegalArgumentException("Agent toolchain source exceeds executable wire limit");
             String script = DeploymentAgentToolchainPrograms.command(arguments);
-            return commands.send(meaning, targets, script, bytes, Duration.ofSeconds(seconds), 65536);
+            var result = commands.send(meaning, targets, script, bytes, Duration.ofSeconds(seconds), 65536);
+            String phase = meaning.substring("deployment.agent.toolchain.".length(), meaning.length() - 3);
+            int identityIndex = switch (phase) {
+                case "dependencies" -> 1;
+                case "resolve" -> 5;
+                case "prepare" -> 6;
+                default -> 3;
+            };
+            return DeploymentAgentToolchainFailureEvidence.retain(result, phase, server, arguments.get(identityIndex));
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
@@ -119,6 +145,11 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         return Set.of(target(server, "deployment-build", ROOT), target(server, "deployment-build", ROOT + "/versions"), target(server, "deployment-build", ROOT + "/bindings"),
             target(server, "deployment-build", ROOT + "/work/agent-" + operation), target(server, "deployment-build", ROOT + "/.prepare.lock"),
             target(server, "systemd-unit", "windowstolinux-toolchain-" + operation + ".service"));
+    }
+
+    static Set<ActionTarget> resolverTargets(ServerId server, DeploymentToolchainType ecosystem, String branch, String exact) {
+        return Set.of(target(server, "deployment-host", server.id()),
+            target(server, "toolchain-source", ecosystem.name() + ":" + branch + ":" + exact));
     }
 
     static Set<ActionTarget> dependencyTargets(ServerId server, String profile) {

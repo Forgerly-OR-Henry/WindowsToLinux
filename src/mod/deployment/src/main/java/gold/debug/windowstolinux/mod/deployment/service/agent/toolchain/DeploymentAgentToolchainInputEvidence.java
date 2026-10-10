@@ -24,7 +24,7 @@ public final class DeploymentAgentToolchainInputEvidence {
 
     private static final String PREFIX = "deployment.agent.toolchain.";
 
-    private static final Set<String> OPERATIONS = Set.of(PREFIX + "dependencies.v1", PREFIX + "prepare.v1", PREFIX + "bind.v1");
+    private static final Set<String> OPERATIONS = Set.of(PREFIX + "dependencies.v1", PREFIX + "resolve.v1", PREFIX + "prepare.v1", PREFIX + "bind.v1");
 
     private static final Pattern ACTION = Pattern.compile("\\AWTL-SSH-COMMAND-1\\ntimeout=([^\\n]+)\\noutputLimitBytes=([0-9]+)\\nstdinBytes=([0-9]+)\\nstdinSha256=([0-9a-f]{64})\\nscript:\\n([\\s\\S]+)\\z");
 
@@ -54,7 +54,8 @@ public final class DeploymentAgentToolchainInputEvidence {
         if (!revision.matches("[0-9a-f]{64}") || !"EXECUTABLE_SCRIPT".equals(text(current, "inputKind")))
             throw new IllegalArgumentException("Agent inline revision or input kind changed");
         String body = text(current, "completeExecutableInput");
-        String expected = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller();
+        String expected = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies()
+            : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller();
         if (!body.equals(expected))
             throw new IllegalArgumentException("Current input differs from the bundled Agent program");
         String exact = text(current, "exactAction");
@@ -69,19 +70,29 @@ public final class DeploymentAgentToolchainInputEvidence {
         String identity;
         String profile;
         Set<ActionTarget> targets;
+        Map<String, String> resolvedRelease = Map.of();
         if (phase.equals("dependencies")) {
             if (arguments.size() != 2)
                 throw new IllegalArgumentException("Dependency frame changed");
             profile = arguments.get(0);
             identity = identity(arguments.get(1));
             targets = DeploymentAgentToolchainCommands.dependencyTargets(server, profile);
+        } else if (phase.equals("resolve")) {
+            if (arguments.size() != 6 || !arguments.get(0).equals("resolve"))
+                throw new IllegalArgumentException("Read-only release frame changed");
+            var ecosystem = DeploymentToolchainType.valueOf(arguments.get(1));
+            DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 180), "-");
+            profile = ecosystem.name();
+            identity = identity(arguments.get(5));
+            targets = DeploymentAgentToolchainCommands.resolverTargets(server, ecosystem, arguments.get(2), arguments.get(3));
         } else if (phase.equals("prepare")) {
-            if (arguments.size() != 7 || !arguments.get(0).equals("prepare"))
+            if (arguments.size() != 8 || !arguments.get(0).equals("prepare"))
                 throw new IllegalArgumentException("Preparation frame changed");
             var ecosystem = DeploymentToolchainType.valueOf(arguments.get(1));
             DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 7200), arguments.get(5));
             profile = ecosystem.name();
             identity = identity(arguments.get(6));
+            resolvedRelease = DeploymentAgentToolchainRelease.decode(arguments.get(7), ecosystem, arguments.get(2), arguments.get(3), identity);
             targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity);
         } else {
             if (arguments.size() != 4 || !arguments.get(0).equals("bind"))
@@ -108,6 +119,10 @@ public final class DeploymentAgentToolchainInputEvidence {
             facts.put("sourceKind", "COMPLETE_BUNDLED_INLINE_PYTHON");
             facts.put("phase", phase);
             facts.put("profile", profile);
+            if (!resolvedRelease.isEmpty()) {
+                facts.put("resolvedRelease", resolvedRelease);
+                facts.put("releaseBindingMeaning", "Current successful canonical resolver receipt is bound into this exact preparation argv; download must match this fixed official digest. No new metadata lookup or silent substitution is permitted. This is asset consistency evidence, not signature or safety proof.");
+            }
             facts.put("operationId", identity);
             facts.put("server", server.id());
             facts.put("businessRevision", revision);

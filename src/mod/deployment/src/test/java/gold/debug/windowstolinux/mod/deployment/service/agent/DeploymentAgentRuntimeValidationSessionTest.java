@@ -30,7 +30,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixture {
-    enum Scenario {WRONG_REPLAN, COMMAND, BUILD, REPLAN, PATCH, SOURCE, DENY, UNKNOWN, NOT_APPLICABLE, LONG_LITERAL, SEAL_PREFLIGHT, FAILED_RUN_REPLAN}
+    enum Scenario {WRONG_REPLAN, COMMAND, BUILD, REPLAN, PATCH, SOURCE, DENY, UNKNOWN, NOT_APPLICABLE, LONG_LITERAL, SEAL_PREFLIGHT, FAILED_RUN_REPLAN, FAILED_TOOLCHAIN, UNKNOWN_TOOLCHAIN}
 
     private static final String REVISION = "a".repeat(64);
 
@@ -45,6 +45,16 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
     @Test
     void deniedExactInvocationCannotBeReapprovedOrSeal() throws Exception {
         runScenario(Scenario.DENY);
+    }
+
+    @Test
+    void toolchainFailureReachesCurrentNativeHistoryWithoutInventingSuccessfulExecution() throws Exception {
+        runScenario(Scenario.FAILED_TOOLCHAIN);
+    }
+
+    @Test
+    void unknownToolchainEvidenceStopsWithoutInventingCapabilitySettlement() throws Exception {
+        runScenario(Scenario.UNKNOWN_TOOLCHAIN);
     }
 
     private void runScenario(Scenario scenario) throws Exception {
@@ -78,12 +88,13 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             case WRONG_REPLAN ->
                                 List.of("command", "seal", "validate_runtime", "seal", "plan", "validate_runtime", "seal", "deliver");
                             case COMMAND -> List.of("validate_runtime", "command", "seal");
-                            case BUILD -> List.of("validate_runtime", "build", "seal");
+                            case BUILD, FAILED_TOOLCHAIN -> List.of("validate_runtime", "build", "seal");
                             case REPLAN -> List.of("validate_runtime", "plan", "seal");
                             case PATCH -> List.of("validate_runtime", "patch", "seal");
                             case SOURCE -> List.of("validate_runtime", "plan_state", "seal");
                             case DENY -> List.of("validate_runtime", "seal", "validate_runtime");
                             case UNKNOWN -> List.of("validate_runtime");
+                            case UNKNOWN_TOOLCHAIN -> List.of("build");
                             case NOT_APPLICABLE, LONG_LITERAL ->
                                 List.of("validate_runtime", "command", "seal", "deliver");
                             case SEAL_PREFLIGHT -> List.of("validate_runtime", "seal");
@@ -102,6 +113,11 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             assertEquals(AiPurpose.LANGUAGE, request.purpose());
                             var state = json.readTree(request.messages().getLast().text()).path("state");
                             int turn = calls.getAndIncrement();
+                            if (scenario == Scenario.FAILED_TOOLCHAIN && turn >= 5) {
+                                assertTrue(request.messages().toString().contains("OS_CONFIGURATION_OWNER"), "Actual current failed capability detail reaches the next native request");
+                                assertTrue(request.messages().toString().contains("currentToolchainFailure"));
+                                assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals("CAPABILITY_RESULT")).count());
+                            }
                             if (turn >= 3 + tail.size()) {
                                 assertEquals(0, seals.get());
                                 assertEquals(0, deliveries.get());
@@ -199,8 +215,16 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                                 assertEquals("build", request.name());
                             }
 
-                            public String capability(DeploymentAgentProposal.Capability request, DeploymentAgentPlan.Part part, Prepared candidate, String revision, String binding, String app) {
+                            public String capability(DeploymentAgentProposal.Capability request, DeploymentAgentPlan.Part part, Prepared candidate, String revision, String binding, String app) throws Exception {
                                 assertEquals("build", request.name());
+                                if (scenario == Scenario.FAILED_TOOLCHAIN)
+                                    throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(TaskResult.FAILED,
+                                        Optional.of(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_AGENT_TOOLCHAIN_EXECUTION_FAILED", "Actual controlled failure",
+                                            Map.of("agentToolchainFailure", "{\"phase\":\"dependencies\",\"actualExit\":65,\"reportedCode\":\"OS_CONFIGURATION_OWNER\"}"), Optional.empty())));
+                                if (scenario == Scenario.UNKNOWN_TOOLCHAIN)
+                                    throw new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException(TaskResult.UNKNOWN,
+                                        Optional.of(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_TOOLCHAIN_EXECUTION_FAILED", "Actual unconfirmed failure",
+                                            Map.of("agentToolchainFailure", "{\"phase\":\"dependencies\",\"actualExit\":70,\"reportedCode\":\"DEPENDENCY_STATE_UNCONFIRMED\"}"), Optional.empty())));
                                 lastRun.set(new CommandFeedback(true, true, 0, "Controlled complete build result"));
                                 return "Actual controlled build changed candidate output";
                             }
@@ -279,6 +303,15 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             assertEquals(TaskResult.SUCCEEDED, session.run().outcome());
                             assertEquals(1, deliveries.get());
                             assertEquals(scenario == Scenario.WRONG_REPLAN ? 3 : 1, commands.get());
+                        } else if (scenario == Scenario.UNKNOWN_TOOLCHAIN) {
+                            assertThrows(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException.class, session::run);
+                            assertEquals(0, seals.get());
+                            assertEquals(0, deliveries.get());
+                            assertEquals(0, commands.get());
+                            assertEquals(4, calls.get(), "Unconfirmed preparation cannot seek another model action");
+                            assertFalse(DeploymentAgentActionLog.effectsSettled(journal.events(task)));
+                            assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("CAPABILITY_RESULT")));
+                            assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("TOOL_build")).count());
                         } else {
                             var stopped = assertThrows(IllegalStateException.class, session::run);
                             assertEquals(scenario == Scenario.UNKNOWN ? "Unknown agent command must not be replayed"
@@ -291,7 +324,7 @@ class DeploymentAgentRuntimeValidationSessionTest extends DeploymentRuntimeFixtu
                             if (scenario == Scenario.UNKNOWN)
                                 assertEquals("UNKNOWN", journal.find(task).orElseThrow().state());
                         }
-                        assertEquals(scenario == Scenario.WRONG_REPLAN ? 2 : scenario == Scenario.NOT_APPLICABLE || scenario == Scenario.LONG_LITERAL ? 1 : scenario == Scenario.UNKNOWN || scenario == Scenario.DENY || scenario == Scenario.FAILED_RUN_REPLAN ? 0 : 1,
+                        assertEquals(scenario == Scenario.WRONG_REPLAN ? 2 : scenario == Scenario.NOT_APPLICABLE || scenario == Scenario.LONG_LITERAL ? 1 : scenario == Scenario.UNKNOWN || scenario == Scenario.UNKNOWN_TOOLCHAIN || scenario == Scenario.DENY || scenario == Scenario.FAILED_RUN_REPLAN ? 0 : 1,
                             journal.events(task).stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("TOOL_validate_runtime")).count());
                         if (scenario == Scenario.DENY) {
                             assertEquals(1, scriptCalls.size(), "Same denied generated bytes cannot seek a second review or dispatch");

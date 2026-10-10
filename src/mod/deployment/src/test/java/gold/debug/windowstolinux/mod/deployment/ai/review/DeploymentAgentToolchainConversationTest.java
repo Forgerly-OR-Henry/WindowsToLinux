@@ -62,17 +62,18 @@ class DeploymentAgentToolchainConversationTest {
         var review = conversation(context, fixture);
         var ai = new DeploymentAiJson(context, review);
         String prefix = null;
-        for (boolean dependencies : List.of(false, true)) {
-            fixture.nativeReply(new AiToolCall("deny-" + dependencies, "submit_result",
+        for (String phase : List.of("prepare", "dependencies", "resolve")) {
+            boolean dependencies = phase.equals("dependencies");
+            fixture.nativeReply(new AiToolCall("deny-" + phase, "submit_result",
                 "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Current enforced boundary is insufficient\"}"));
-            try (var command = command(dependencies)) {
-                var intent = intent(dependencies, command);
+            try (var command = command(phase)) {
+                var intent = intent(phase, command);
                 var denied = assertThrows(ApiException.class, () -> DeploymentFixedCommandApproval.approve(context,
                     host, intent, command, fixture.task, "fixture-route", "AUTOMATIC", false, ai));
                 assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
                 var request = fixture.requests.getLast();
                 var current = JSON.readTree(request.messages().getLast().text());
-                assertEquals(dependencies ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller(),
+                assertEquals(dependencies ? DeploymentAgentToolchainPrograms.dependencies() : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller(),
                     current.path("completeExecutableInput").asText());
                 assertEquals(intent.exactAction(), current.path("exactAction").asText());
                 assertEquals(REVISION, current.path("businessRevision").asText());
@@ -89,7 +90,7 @@ class DeploymentAgentToolchainConversationTest {
                 assertTrue(prefix.contains("Every stage still needs a fresh independent verdict"));
             }
         }
-        assertEquals(2, fixture.requests.size(), "Each valid DENY consumes exactly one fresh review");
+        assertEquals(3, fixture.requests.size(), "Each valid DENY consumes exactly one fresh review");
         assertEquals(0, accesses.get());
         assertTrue(fixture.replies.isEmpty());
     }
@@ -134,18 +135,32 @@ class DeploymentAgentToolchainConversationTest {
     }
 
     private static CommandRequest command(boolean dependencies) {
-        var arguments = dependencies ? List.of("NATIVE_BUILD", OPERATION)
-            : List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION);
-        String source = dependencies ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller();
+        return command(dependencies ? "dependencies" : "prepare");
+    }
+
+    private static CommandRequest command(String phase) {
+        var arguments = phase.equals("dependencies") ? List.of("NATIVE_BUILD", OPERATION)
+            : phase.equals("resolve") ? List.of("resolve", "RUST", "1.95", "1.95.0", "60", OPERATION)
+            : List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION,
+            gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION));
+        String source = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies()
+            : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller();
         return new CommandRequest(DeploymentAgentToolchainPrograms.command(arguments), source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(75), 65536);
     }
 
     private static ActionIntent intent(boolean dependencies, CommandRequest command) {
+        return intent(dependencies ? "dependencies" : "prepare", command);
+    }
+
+    private static ActionIntent intent(String phase, CommandRequest command) {
         var targets = new HashSet<ActionTarget>();
-        if (dependencies) {
+        if (phase.equals("dependencies")) {
             for (String manager : List.of("APT", "DNF"))
                 for (String name : DeploymentAgentToolchainPrograms.packages(manager, "NATIVE_BUILD"))
                     targets.add(new ActionTarget(SERVER.id(), "system-package", name));
+        } else if (phase.equals("resolve")) {
+            targets.add(new ActionTarget(SERVER.id(), "deployment-host", SERVER.id()));
+            targets.add(new ActionTarget(SERVER.id(), "toolchain-source", "RUST:1.95:1.95.0"));
         } else {
             String root = "/usr/local/lib/windowstolinux/toolchains";
             for (String path : List.of(root, root + "/versions", root + "/bindings", root + "/work/agent-" + OPERATION, root + "/.prepare.lock"))
@@ -153,6 +168,6 @@ class DeploymentAgentToolchainConversationTest {
             targets.add(new ActionTarget(SERVER.id(), "systemd-unit", "windowstolinux-toolchain-" + OPERATION + ".service"));
         }
         return RemoteActions.command(SERVER, REVISION, command).withSemantics(new ActionSemantics(
-            "deployment.agent.toolchain." + (dependencies ? "dependencies" : "prepare") + ".v1", Set.copyOf(targets)));
+            "deployment.agent.toolchain." + phase + ".v1", Set.copyOf(targets)));
     }
 }

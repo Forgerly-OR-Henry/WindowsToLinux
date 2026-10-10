@@ -26,7 +26,10 @@ def resource(path):
 
 
 def controller():
-    source = resource(SHARED / '10-release-metadata.py') + '\n' + resource(SHARED / 'archive-boundaries.py') + '\n' + resource(AGENT / 'agent-toolchain-controller.py')
+    metadata = resource(SHARED / '10-release-metadata.py') + '\n'
+    resolution = resource(AGENT / 'agent-toolchain-resolution.py')
+    resolver = metadata + resolution + "\nif __name__ == '__main__':\n    resolution_cli()\n"
+    source = metadata + resolution + '\nEXPECTED_RESOLVER_SOURCE_SHA256 = ' + repr(hashlib.sha256(resolver.encode()).hexdigest()) + '\n' + resource(SHARED / 'archive-boundaries.py') + '\n' + resource(AGENT / 'agent-toolchain-controller.py')
     namespace = types.ModuleType('agent_contract')
     namespace.PROGRAM_SOURCE = source.encode()
     exec(compile(source, '<actual-agent-resources>', 'exec'), namespace.__dict__)
@@ -644,6 +647,133 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
             run.assert_not_called()
         receipt = json.loads(stream.getvalue().removeprefix('TOOLCHAIN_DEPENDENCIES='))
         self.assertEqual({'operation': OPERATION, 'ecosystem': 'RUST', 'manager': 'NONE', 'packages': {}}, receipt)
+
+    def test_owner_failure_diagnostic_distinguishes_each_original_rejection(self):
+        path = '/etc/apt/apt.conf.d/20owner'
+        status = types.SimpleNamespace(is_file=lambda: True, stat=lambda: types.SimpleNamespace(st_size=100))
+        cases = [
+            ('malformed PRIVATE_CONFIGURATION', 'RESPONSE_STRUCTURE', None),
+            ('debconf: /different-path\n', 'PATH_MISMATCH', 'debconf'),
+            ('debconf: ' + path + '\napt: ' + path + '\n', 'MULTIPLE_OWNERS', 'apt'),
+            ('debconf, appstream: ' + path + '\n', 'OWNER_SYNTAX', None),
+            ('', 'OWNER_ABSENT', None),
+            ('unknown-owner: ' + path + '\n', 'OWNER_NOT_ALLOWED', 'unknown-owner'),
+            ('X' * 8193, 'OUTPUT_LIMIT', None),
+        ]
+        for output, reason, owner in cases:
+            with (self.subTest(reason=reason),
+                  mock.patch.object(self.d, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)),
+                  mock.patch.object(self.d, 'dependency_protected', return_value=status),
+                  mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
+                  mock.patch.object(self.d, 'dependency_run', return_value=output),
+                  self.assertRaises(self.d.DependencyFailure) as failure):
+                self.d.dependency_registered(path, {'apt', 'debconf'}, b'PRIVATE_CONFIGURATION')
+            self.assertEqual('OS_CONFIGURATION_OWNER', failure.exception.detail)
+            self.assertFalse(failure.exception.unknown)
+            self.assertEqual({'reason': reason, 'path': path, 'owner': owner,
+                'allowedOwners': ['apt', 'debconf']}, failure.exception.diagnostic)
+
+    def test_owner_diagnostic_cli_binds_current_operation_and_preserves_failure_exit(self):
+        path = '/etc/apt/apt.conf.d/20owner'
+        status = types.SimpleNamespace(is_file=lambda: True, stat=lambda: types.SimpleNamespace(st_size=100))
+        stream = io.StringIO()
+        def main(args):
+            self.d.dependency_registered(path, self.d.HOOK_OWNERS, b'PRIVATE_CONFIG_KEY_BODY')
+        with (mock.patch.object(self.d, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)),
+              mock.patch.object(self.d, 'dependency_protected', return_value=status),
+              mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
+              mock.patch.object(self.d, 'dependency_run', return_value='unknown-owner: ' + path + '\n'),
+              mock.patch.object(self.d, 'dependency_main', main),
+              contextlib.redirect_stdout(stream)):
+            code = self.d.dependency_cli(['NATIVE_BUILD', OPERATION])
+        self.assertEqual(65, code)
+        lines = stream.getvalue().splitlines()
+        self.assertEqual(2, len(lines))
+        self.assertEqual('TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER', lines[0])
+        value = json.loads(lines[1].removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+        self.assertEqual({'operation', 'phase', 'reason', 'path', 'owner', 'allowedOwners'}, set(value))
+        self.assertEqual(OPERATION, value['operation'])
+        self.assertEqual('OS_CONFIGURATION_OWNER', value['phase'])
+        self.assertEqual('OWNER_NOT_ALLOWED', value['reason'])
+        self.assertEqual(path, value['path'])
+        self.assertEqual('unknown-owner', value['owner'])
+        self.assertEqual(sorted(self.d.HOOK_OWNERS), value['allowedOwners'])
+        self.assertLessEqual(len(lines[1].encode()), 2048)
+        self.assertNotIn('PRIVATE_CONFIG_KEY_BODY', stream.getvalue())
+        self.assertNotIn('TOOLCHAIN_DEPENDENCIES=', stream.getvalue())
+
+    def test_owner_diagnostic_suppresses_unknown_malicious_and_excess_metadata(self):
+        good = {'reason': 'OWNER_NOT_ALLOWED', 'path': '/etc/apt/apt.conf.d/20owner',
+                'owner': 'unknown-owner', 'allowedOwners': ['apt', 'debconf']}
+        bad = [
+            dict(good, reason='PRIVATE_REASON'),
+            dict(good, path='/etc/apt/../../private'),
+            dict(good, path='/etc/apt/key\nPRIVATE_KEY'),
+            dict(good, path='relative-path'),
+            dict(good, path='/' + 'a' * 512),
+            dict(good, owner='owner\nPRIVATE_OUTPUT'),
+            dict(good, owner='-not-a-package'),
+            dict(good, owner='a' * 129),
+            dict(good, allowedOwners=['model-package']),
+            dict(good, allowedOwners=['apt', 'apt']),
+            dict(good, stdout='PRIVATE_STDOUT'),
+        ]
+        for diagnostic in bad:
+            with self.subTest(diagnostic=diagnostic):
+                error = self.d.DependencyFailure('OS_CONFIGURATION_OWNER', diagnostic=diagnostic)
+                self.assertIsNone(self.d.dependency_diagnostic_line(error, ['NATIVE_BUILD', OPERATION]))
+        error = self.d.DependencyFailure('OS_CONFIGURATION_OWNER', diagnostic=good)
+        for operation in ('../operation', 'A' * 32, OPERATION + '\nPRIVATE'):
+            self.assertIsNone(self.d.dependency_diagnostic_line(error, ['NATIVE_BUILD', operation]))
+        stream = io.StringIO()
+        with mock.patch.object(self.d, 'dependency_main', side_effect=error), contextlib.redirect_stdout(stream):
+            self.assertEqual(65, self.d.dependency_cli(['NATIVE_BUILD', '../operation']))
+        self.assertEqual('TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER\n', stream.getvalue())
+
+    def test_owner_diagnostic_does_not_leak_malformed_output_or_reuse_previous_operation(self):
+        path = '/etc/apt/apt.conf.d/20owner'
+        status = types.SimpleNamespace(is_file=lambda: True, stat=lambda: types.SimpleNamespace(st_size=100))
+        first, second = io.StringIO(), io.StringIO()
+        def main(args):
+            self.d.dependency_registered(path, {'apt'}, b'PRIVATE_CONFIGURATION')
+        with (mock.patch.object(self.d, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)),
+              mock.patch.object(self.d, 'dependency_protected', return_value=status),
+              mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
+              mock.patch.object(self.d, 'dependency_run', return_value='PRIVATE_KEY=SECRET no delimiter\n'),
+              mock.patch.object(self.d, 'dependency_main', main),
+              contextlib.redirect_stdout(first)):
+            self.assertEqual(65, self.d.dependency_cli(['PHP', OPERATION]))
+        value = json.loads(first.getvalue().splitlines()[1].removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+        self.assertIsNone(value['owner'])
+        self.assertNotIn('PRIVATE_KEY', first.getvalue())
+        self.assertNotIn('SECRET', first.getvalue())
+        diagnostic = {'reason': 'OWNER_ABSENT', 'path': path, 'owner': None, 'allowedOwners': ['apt']}
+        error = self.d.DependencyFailure('OS_CONFIGURATION_OWNER', True, diagnostic)
+        with mock.patch.object(self.d, 'dependency_main', side_effect=error), contextlib.redirect_stdout(second):
+            self.assertEqual(70, self.d.dependency_cli(['PHP', 'f' * 32]))
+        self.assertEqual('TOOLCHAIN_FAILURE=unknown:OS_CONFIGURATION_OWNER\n', second.getvalue())
+        self.assertNotIn(OPERATION, second.getvalue())
+
+    def test_owner_diagnostic_does_not_change_allowed_checksum_or_other_failure_paths(self):
+        path = '/etc/apt/apt.conf.d/20owner'
+        content = b'original baseline config'
+        status = types.SimpleNamespace(is_file=lambda: True, stat=lambda: types.SimpleNamespace(st_size=100))
+        def run(command):
+            return 'debconf: ' + path + '\n' if '-S' in command else (
+                ' ' + path + ' ' + hashlib.md5(content).hexdigest() + '\n')
+        with (mock.patch.object(self.d, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)),
+              mock.patch.object(self.d, 'dependency_protected', return_value=status),
+              mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
+              mock.patch.object(self.d, 'dependency_run', run)):
+            self.assertIsNone(self.d.dependency_registered(path, {'debconf'}, content))
+        for error, code, line in (
+                (self.d.DependencyFailure('UNAUTHENTICATED_APT_CONFIGURATION'), 65,
+                 'TOOLCHAIN_FAILURE=dependencies:UNAUTHENTICATED_APT_CONFIGURATION\n'),
+                (OSError('PRIVATE_ERROR'), 70, 'TOOLCHAIN_FAILURE=unknown:DEPENDENCY_STATE_UNCONFIRMED\n')):
+            stream = io.StringIO()
+            with mock.patch.object(self.d, 'dependency_main', side_effect=error), contextlib.redirect_stdout(stream):
+                self.assertEqual(code, self.d.dependency_cli(['NATIVE_BUILD', OPERATION]))
+            self.assertEqual(line, stream.getvalue())
 
 
 if __name__ == '__main__':

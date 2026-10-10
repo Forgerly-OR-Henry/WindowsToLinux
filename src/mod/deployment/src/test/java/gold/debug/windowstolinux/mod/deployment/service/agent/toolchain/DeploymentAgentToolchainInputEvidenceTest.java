@@ -28,7 +28,7 @@ class DeploymentAgentToolchainInputEvidenceTest {
     private static final String OPERATION = "a".repeat(32);
 
     @ParameterizedTest
-    @ValueSource(strings = {"prepare", "bind", "dependencies", "native"})
+    @ValueSource(strings = {"prepare", "bind", "dependencies", "native", "resolve"})
     void everyProgramRequiresCurrentRendererFrameAndCompleteTargets(String phase) {
         var current = current(phase);
         var facts = DeploymentAgentToolchainInputEvidence.select(current).orElseThrow().facts();
@@ -83,7 +83,7 @@ class DeploymentAgentToolchainInputEvidenceTest {
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(duplicate));
         var changedOperation = current("prepare");
         var args = new ArrayList<>(arguments("prepare"));
-        args.set(args.size() - 1, "b".repeat(32));
+        args.set(6, "b".repeat(32));
         rebind(changedOperation, DeploymentAgentToolchainPrograms.command(args), Duration.ofSeconds(60));
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(changedOperation));
     }
@@ -123,9 +123,11 @@ class DeploymentAgentToolchainInputEvidenceTest {
         boolean dependencies = actualPhase.equals("dependencies");
         var current = JSON.createObjectNode().put("operation", "deployment.agent.toolchain." + actualPhase + ".v1")
             .put("businessRevision", REVISION).put("inputKind", "EXECUTABLE_SCRIPT")
-            .put("completeExecutableInput", dependencies ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller());
+            .put("completeExecutableInput", dependencies ? DeploymentAgentToolchainPrograms.dependencies()
+                : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller());
         current.set("serverTargets", JSON.valueToTree(List.of(SERVER.id())));
         Set<ActionTarget> targets = dependencies ? DeploymentAgentToolchainCommands.dependencyTargets(SERVER, profile)
+            : phase.equals("resolve") ? DeploymentAgentToolchainCommands.resolverTargets(SERVER, gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.RUST, "1.95", "1.95.0")
             : DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION);
         current.set("resourceTargets", JSON.valueToTree(targets));
         rebind(current, DeploymentAgentToolchainPrograms.command(arguments(phase)), Duration.ofSeconds(60));
@@ -134,7 +136,9 @@ class DeploymentAgentToolchainInputEvidenceTest {
 
     private static List<String> arguments(String phase) {
         return switch (phase) {
-            case "prepare" -> List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION);
+            case "prepare" -> List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION,
+                DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION));
+            case "resolve" -> List.of("resolve", "RUST", "1.95", "1.95.0", "60", OPERATION);
             case "bind" -> List.of("bind", DeploymentAgentToolchainCommandsTest.binding(), "60", OPERATION);
             case "dependencies" -> List.of("PYTHON", OPERATION);
             case "native" -> List.of("NATIVE_BUILD", OPERATION);
