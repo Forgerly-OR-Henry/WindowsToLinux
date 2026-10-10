@@ -1,0 +1,84 @@
+{
+  "APT": {
+    "PYTHON": [
+      "build-essential",
+      "pkg-config",
+      "libssl-dev",
+      "zlib1g-dev",
+      "libffi-dev",
+      "libbz2-dev",
+      "libreadline-dev",
+      "libsqlite3-dev",
+      "liblzma-dev",
+      "libncurses-dev",
+      "libgdbm-dev"
+    ],
+    "PHP": [
+      "build-essential",
+      "pkg-config",
+      "libssl-dev",
+      "zlib1g-dev",
+      "libffi-dev",
+      "libonig-dev",
+      "libcurl4-openssl-dev",
+      "libxml2-dev",
+      "libsqlite3-dev",
+      "libpq-dev",
+      "libzip-dev"
+    ],
+    "RUBY": [
+      "build-essential",
+      "pkg-config",
+      "libssl-dev",
+      "zlib1g-dev",
+      "libffi-dev",
+      "libyaml-dev",
+      "libreadline-dev",
+      "libgdbm-dev"
+    ]
+  },
+  "DNF": {
+    "PYTHON": [
+      "gcc",
+      "gcc-c++",
+      "make",
+      "pkgconf-pkg-config",
+      "openssl-devel",
+      "zlib-devel",
+      "libffi-devel",
+      "bzip2-devel",
+      "readline-devel",
+      "sqlite-devel",
+      "xz-devel",
+      "ncurses-devel",
+      "gdbm-devel"
+    ],
+    "PHP": [
+      "gcc",
+      "gcc-c++",
+      "make",
+      "pkgconf-pkg-config",
+      "openssl-devel",
+      "zlib-devel",
+      "libffi-devel",
+      "oniguruma-devel",
+      "libcurl-devel",
+      "libxml2-devel",
+      "sqlite-devel",
+      "libpq-devel",
+      "libzip-devel"
+    ],
+    "RUBY": [
+      "gcc",
+      "gcc-c++",
+      "make",
+      "pkgconf-pkg-config",
+      "openssl-devel",
+      "zlib-devel",
+      "libffi-devel",
+      "libyaml-devel",
+      "readline-devel",
+      "gdbm-devel"
+    ]
+  }
+}
