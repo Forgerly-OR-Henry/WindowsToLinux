@@ -97,7 +97,9 @@ class DeploymentAgentToolchainInputEvidenceTest {
         scope.set("resourceTargets", JSON.valueToTree(DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION)));
         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(scope));
         for (String phase : List.of("dependencies", "native")) {
-            for (String missing : List.of("APT:configured-authenticated-sources", "DNF:configured-authenticated-sources", "DNF:centos:crb:transaction-only")) {
+            String profile = phase.equals("native") ? "NATIVE_BUILD" : "PYTHON";
+            for (String missing : List.of("APT:configured-authenticated-sources", "DNF:configured-authenticated-sources", "DNF:centos:crb:transaction-only",
+                "APT:authenticated-dependency-closure:" + profile, "DNF:authenticated-dependency-closure:" + profile)) {
                 var incomplete = current(phase);
                 var targets = incomplete.withArray("resourceTargets");
                 for (int index = 0; index < targets.size(); index++)
@@ -110,6 +112,9 @@ class DeploymentAgentToolchainInputEvidenceTest {
             var extra = current(phase);
             extra.withArray("resourceTargets").add(JSON.valueToTree(new ActionTarget(SERVER.id(), "system-repository", "DNF:third-party")));
             assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(extra));
+            var wrongProfile = current(phase);
+            wrongProfile.withArray("resourceTargets").add(JSON.valueToTree(new ActionTarget(SERVER.id(), "system-package-transaction", "APT:authenticated-dependency-closure:RUBY")));
+            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainInputEvidence.select(wrongProfile));
         }
     }
 

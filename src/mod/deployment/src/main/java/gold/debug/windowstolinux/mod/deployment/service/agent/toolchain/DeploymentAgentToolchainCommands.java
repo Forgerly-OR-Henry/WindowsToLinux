@@ -156,6 +156,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         Set<ActionTarget> targets = new LinkedHashSet<>();
         for (String manager : List.of("APT", "DNF")) {
             targets.add(target(server, "system-package-index", manager + ":configured-authenticated-sources"));
+            targets.add(target(server, "system-package-transaction", manager + ":authenticated-dependency-closure:" + profile));
             for (String name : DeploymentAgentToolchainPrograms.packages(manager, profile))
                 targets.add(target(server, "system-package", name));
         }

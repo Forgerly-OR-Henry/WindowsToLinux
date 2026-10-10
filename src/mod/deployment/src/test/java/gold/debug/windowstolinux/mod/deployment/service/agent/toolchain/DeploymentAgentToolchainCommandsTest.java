@@ -145,11 +145,25 @@ class DeploymentAgentToolchainCommandsTest {
             fixture.intents.getFirst().semantics().orElseThrow().targets());
         assertEquals(Set.of(new ActionTarget(SERVER.id(), "system-package-index", "APT:configured-authenticated-sources"),
             new ActionTarget(SERVER.id(), "system-package-index", "DNF:configured-authenticated-sources"),
+            new ActionTarget(SERVER.id(), "system-package-transaction", "APT:authenticated-dependency-closure:NATIVE_BUILD"),
+            new ActionTarget(SERVER.id(), "system-package-transaction", "DNF:authenticated-dependency-closure:NATIVE_BUILD"),
             new ActionTarget(SERVER.id(), "system-repository", "DNF:centos:crb:transaction-only"),
             new ActionTarget(SERVER.id(), "system-package", "cmake"), new ActionTarget(SERVER.id(), "system-package", "ninja-build"),
             new ActionTarget(SERVER.id(), "system-package", "gcc"), new ActionTarget(SERVER.id(), "system-package", "g++"),
             new ActionTarget(SERVER.id(), "system-package", "gcc-c++")), fixture.intents.getFirst().semantics().orElseThrow().targets());
         assertTrue(fixture.requests.stream().noneMatch(request -> request.script().contains("'prepare'")));
+    }
+
+    @Test
+    void onlyPackagedDependencyProfilesExposeExactNativeTransactionScope() {
+        for (String profile : List.of("NATIVE_BUILD", "PYTHON", "PHP", "RUBY")) {
+            var transactions = DeploymentAgentToolchainCommands.dependencyTargets(SERVER, profile).stream()
+                .filter(target -> target.kind().equals("system-package-transaction")).collect(java.util.stream.Collectors.toSet());
+            assertEquals(Set.of(new ActionTarget(SERVER.id(), "system-package-transaction", "APT:authenticated-dependency-closure:" + profile),
+                new ActionTarget(SERVER.id(), "system-package-transaction", "DNF:authenticated-dependency-closure:" + profile)), transactions);
+        }
+        for (String profile : List.of("NONE", "RUST", "NATIVE_BUILD;apt", ""))
+            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentToolchainCommands.dependencyTargets(SERVER, profile));
     }
 
     @Test

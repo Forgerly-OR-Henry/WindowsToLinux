@@ -87,6 +87,11 @@ class DeploymentAgentToolchainConversationTest {
                 else
                     assertEquals(prefix, request.messages().getFirst().text(), "Stable Agent policy does not change with the operation");
                 assertTrue(prefix.contains("OS package maintenance effects are root effects"));
+                assertTrue(prefix.contains("native resolver's authenticated dependency closure"));
+                assertTrue(prefix.contains("not the non-root vendor worker requirement"));
+                assertTrue(prefix.contains("The transaction target grants no permission by itself"));
+                assertEquals(dependencies ? 2 : 0, intent.semantics().orElseThrow().targets().stream()
+                    .filter(target -> target.kind().equals("system-package-transaction")).count());
                 assertTrue(prefix.contains("Every stage still needs a fresh independent verdict"));
             }
         }
@@ -157,6 +162,7 @@ class DeploymentAgentToolchainConversationTest {
         if (phase.equals("dependencies")) {
             for (String manager : List.of("APT", "DNF")) {
                 targets.add(new ActionTarget(SERVER.id(), "system-package-index", manager + ":configured-authenticated-sources"));
+                targets.add(new ActionTarget(SERVER.id(), "system-package-transaction", manager + ":authenticated-dependency-closure:NATIVE_BUILD"));
                 for (String name : DeploymentAgentToolchainPrograms.packages(manager, "NATIVE_BUILD"))
                     targets.add(new ActionTarget(SERVER.id(), "system-package", name));
             }
