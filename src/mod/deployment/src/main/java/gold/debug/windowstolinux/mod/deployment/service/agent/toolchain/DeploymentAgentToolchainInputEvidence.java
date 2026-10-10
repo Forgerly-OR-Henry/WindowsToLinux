@@ -1,0 +1,173 @@
+package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
+
+/** Proves current bundled input consistency, without claiming safety, installation or permission. / 证明当前随产品输入的一致性，不宣称安全、安装成功或许可。 */
+public final class DeploymentAgentToolchainInputEvidence {
+    public static final String FIELD = "agentToolchainInlineInputBinding";
+
+    private static final String PREFIX = "deployment.agent.toolchain.";
+
+    private static final Set<String> OPERATIONS = Set.of(PREFIX + "dependencies.v1", PREFIX + "prepare.v1", PREFIX + "bind.v1");
+
+    private static final Pattern ACTION = Pattern.compile("\\AWTL-SSH-COMMAND-1\\ntimeout=([^\\n]+)\\noutputLimitBytes=([0-9]+)\\nstdinBytes=([0-9]+)\\nstdinSha256=([0-9a-f]{64})\\nscript:\\n([\\s\\S]+)\\z");
+
+    private DeploymentAgentToolchainInputEvidence() {
+    }
+
+    /** Derived metadata only; complete executable bytes remain in the current request. / 仅派生元数据，完整可执行字节保留在当前请求中。 */
+    public record Evidence(Map<String, Object> facts) {
+        public Evidence {
+            facts = Map.copyOf(facts);
+        }
+    }
+
+    public static Optional<Evidence> select(JsonNode current) {
+        String operation = current.path("operation").asText();
+        if (!OPERATIONS.contains(operation)) {
+            if (current.has(FIELD))
+                throw new IllegalArgumentException("Inline binding has no matching Agent entrypoint");
+            return Optional.empty();
+        }
+        String phase = operation.substring(PREFIX.length(), operation.length() - 3);
+        var servers = current.path("serverTargets");
+        if (!servers.isArray() || servers.size() != 1 || !servers.get(0).isTextual())
+            throw new IllegalArgumentException("One original Agent server is required");
+        var server = new ServerId(servers.get(0).textValue());
+        String revision = text(current, "businessRevision");
+        if (!revision.matches("[0-9a-f]{64}") || !"EXECUTABLE_SCRIPT".equals(text(current, "inputKind")))
+            throw new IllegalArgumentException("Agent inline revision or input kind changed");
+        String body = text(current, "completeExecutableInput");
+        String expected = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller();
+        if (!body.equals(expected))
+            throw new IllegalArgumentException("Current input differs from the bundled Agent program");
+        String exact = text(current, "exactAction");
+        var match = ACTION.matcher(exact);
+        if (!match.matches())
+            throw new IllegalArgumentException("Agent inline exact action is incomplete");
+        Duration timeout = Duration.parse(match.group(1));
+        long outputLimit = Long.parseLong(match.group(2));
+        if (timeout.getSeconds() < 1 || timeout.getSeconds() > 7200 || timeout.getNano() != 0 || outputLimit != 65536)
+            throw new IllegalArgumentException("Agent inline receipt bounds changed");
+        var arguments = DeploymentAgentToolchainPrograms.arguments(match.group(5));
+        String identity;
+        String profile;
+        Set<ActionTarget> targets;
+        if (phase.equals("dependencies")) {
+            if (arguments.size() != 2)
+                throw new IllegalArgumentException("Dependency frame changed");
+            profile = arguments.get(0);
+            identity = identity(arguments.get(1));
+            targets = DeploymentAgentToolchainCommands.dependencyTargets(server, profile);
+        } else if (phase.equals("prepare")) {
+            if (arguments.size() != 7 || !arguments.get(0).equals("prepare"))
+                throw new IllegalArgumentException("Preparation frame changed");
+            var ecosystem = DeploymentToolchainType.valueOf(arguments.get(1));
+            DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 7200), arguments.get(5));
+            profile = ecosystem.name();
+            identity = identity(arguments.get(6));
+            targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity);
+        } else {
+            if (arguments.size() != 4 || !arguments.get(0).equals("bind"))
+                throw new IllegalArgumentException("Binding frame changed");
+            DeploymentAgentToolchainCommands.requireBinding(arguments.get(1));
+            seconds(arguments.get(2), 180);
+            profile = "EXACT_TOOLCHAIN_BINDING";
+            identity = identity(arguments.get(3));
+            targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity);
+        }
+        if (!targets.equals(targets(current.path("resourceTargets"))))
+            throw new IllegalArgumentException("Agent inline effect targets changed");
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        try {
+            String digest = sha256(bytes);
+            if (!match.group(3).equals(Integer.toString(bytes.length)) || !digest.equals(match.group(4)))
+                throw new IllegalArgumentException("Agent input differs from exact action stdin");
+            try (var request = new CommandRequest(match.group(5), bytes, timeout, outputLimit)) {
+                if (!RemoteActions.command(server, revision, request).exactAction().equals(exact))
+                    throw new IllegalArgumentException("Agent exact action is not canonical");
+            }
+            var facts = new LinkedHashMap<String, Object>();
+            facts.put("sourcePointer", "/completeExecutableInput");
+            facts.put("sourceKind", "COMPLETE_BUNDLED_INLINE_PYTHON");
+            facts.put("phase", phase);
+            facts.put("profile", profile);
+            facts.put("operationId", identity);
+            facts.put("server", server.id());
+            facts.put("businessRevision", revision);
+            facts.put("inputMatchesRenderer", true);
+            facts.put("launcherAndArgumentsMatch", true);
+            facts.put("targetsMatchTypedArguments", true);
+            facts.put("utf8Bytes", bytes.length);
+            facts.put("bundledSourceSha256", digest);
+            facts.put("stdinSha256", digest);
+            facts.put("exactActionSha256", sha256(exact.getBytes(StandardCharsets.UTF_8)));
+            facts.put("timeout", timeout.toString());
+            facts.put("outputLimitBytes", Math.toIntExact(outputLimit));
+            facts.put("meaning", "Product-derived current byte/frame/target consistency only; no safety verdict, installation result or execution permission. Review the entire current source and every reachable effect independently.");
+            return Optional.of(new Evidence(facts));
+        } finally {
+            Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
+    private static Set<ActionTarget> targets(JsonNode values) {
+        if (!values.isArray())
+            throw new IllegalArgumentException("Current targets must be an array");
+        var result = new HashSet<ActionTarget>();
+        for (var value : values) {
+            if (!value.isObject() || value.size() != 3)
+                throw new IllegalArgumentException("Current target shape changed");
+            var target = new ActionTarget(text(value, "serverId"), text(value, "kind"), text(value, "id"));
+            if (!result.add(target))
+                throw new IllegalArgumentException("Duplicate current target");
+        }
+        return Set.copyOf(result);
+    }
+
+    private static String identity(String identity) {
+        if (!identity.matches("[0-9a-f]{32}"))
+            throw new IllegalArgumentException("Original operation identity required");
+        return identity;
+    }
+
+    private static int seconds(String value, int maximum) {
+        if (!value.matches("[1-9][0-9]{0,3}"))
+            throw new IllegalArgumentException("Noncanonical program deadline");
+        int seconds = Integer.parseInt(value);
+        if (seconds < 30 || seconds > maximum)
+            throw new IllegalArgumentException("Program deadline is outside its typed bounds");
+        return seconds;
+    }
+
+    private static String text(JsonNode node, String field) {
+        var value = node.get(field);
+        if (value == null || !value.isTextual())
+            throw new IllegalArgumentException("Missing textual Agent field: " + field);
+        return value.textValue();
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 unavailable", unavailable);
+        }
+    }
+}

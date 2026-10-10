@@ -35,6 +35,12 @@
       "libyaml-dev",
       "libreadline-dev",
       "libgdbm-dev"
+    ],
+    "NATIVE_BUILD": [
+      "cmake",
+      "ninja-build",
+      "gcc",
+      "g++"
     ]
   },
   "DNF": {
@@ -79,6 +85,12 @@
       "libyaml-devel",
       "readline-devel",
       "gdbm-devel"
+    ],
+    "NATIVE_BUILD": [
+      "cmake",
+      "ninja-build",
+      "gcc",
+      "gcc-c++"
     ]
   }
 }

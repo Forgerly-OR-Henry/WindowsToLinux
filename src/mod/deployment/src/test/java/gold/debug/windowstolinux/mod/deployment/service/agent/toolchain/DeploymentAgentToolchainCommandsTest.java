@@ -25,6 +25,8 @@ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudge
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -121,6 +123,30 @@ class DeploymentAgentToolchainCommandsTest {
         assertTrue(fixture.intents.isEmpty());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"APT", "DNF"})
+    void nativePrerequisitesUseExactProfileReceiptAndOriginalIndependentGrant(String manager) throws Exception {
+        var fixture = new Fixture(true, request -> reply(dependencyReceipt(manager, "NATIVE_BUILD")));
+        assertEquals(TaskResult.SUCCEEDED, fixture.agent.prepareNativeBuild().outcome());
+        assertEquals(1, fixture.requests.size());
+        assertEquals(1, fixture.grants.size());
+        assertTrue(fixture.requests.getFirst().script().endsWith("'NATIVE_BUILD' '" + OPERATION + "'"));
+        assertEquals(DeploymentAgentToolchainPrograms.dependencies(), new String(fixture.requests.getFirst().stdin(), StandardCharsets.UTF_8));
+        assertEquals(DeploymentAgentToolchainCommands.dependencyTargets(SERVER, "NATIVE_BUILD"),
+            fixture.intents.getFirst().semantics().orElseThrow().targets());
+        assertTrue(fixture.requests.stream().noneMatch(request -> request.script().contains("'prepare'")));
+    }
+
+    @Test
+    void nativePrerequisiteDenialNeverDispatchesAndMalformedReceiptRemainsUnknown() throws Exception {
+        var denied = new Fixture(false, request -> failReply());
+        assertEquals(TaskResult.FAILED, denied.agent.prepareNativeBuild().outcome());
+        assertTrue(denied.requests.isEmpty());
+        var malformed = new Fixture(true, request -> reply(dependencyReceipt("APT", "PYTHON")));
+        assertEquals(TaskResult.UNKNOWN, malformed.agent.prepareNativeBuild().outcome());
+        assertEquals(1, malformed.requests.size());
+    }
+
     private static void assertController(CommandRequest request) {
         assertTrue(request.script().startsWith("/usr/bin/python3 -I -S -c "));
         assertTrue(request.script().contains("PROGRAM_SOURCE"));
@@ -130,17 +156,21 @@ class DeploymentAgentToolchainCommandsTest {
     }
 
     private static String dependencyReceipt() {
+        return dependencyReceipt("APT", "PYTHON");
+    }
+
+    private static String dependencyReceipt(String manager, String profile) {
         try {
             var versions = new java.util.LinkedHashMap<String, String>();
-            DeploymentAgentToolchainPrograms.packages("APT", DeploymentToolchainType.PYTHON).forEach(name -> versions.put(name, "verified-version"));
+            DeploymentAgentToolchainPrograms.packages(manager, profile).forEach(name -> versions.put(name, "verified-version"));
             return "TOOLCHAIN_DEPENDENCIES=" + new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION,
-                "ecosystem", "PYTHON", "manager", "APT", "packages", versions)) + "\n";
+                "ecosystem", profile, "manager", manager, "packages", versions)) + "\n";
         } catch (java.io.IOException failure) {
             throw new AssertionError(failure);
         }
     }
 
-    private static String binding() {
+    static String binding() {
         var requirement = ToolchainRequirement.declared(DeploymentToolchainType.RUST, "1.95", "Cargo.toml", ToolchainRequirement.PurposeType.BUILD);
         var selected = new DeploymentResolvedToolchains(DeploymentToolchainCatalog.defaults().revision(), List.of(
             new DeploymentResolvedToolchains.Selection(requirement, DeploymentToolchainVersion.parse(DeploymentToolchainType.RUST, "1.95.0").orElseThrow(),

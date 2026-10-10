@@ -555,6 +555,96 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
         with mock.patch.object(self.d, 'dependency_protected', return_value=status), mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name), mock.patch.object(self.d, 'dependency_run', return_value='project-owned: /etc/apt/apt.conf.d/99project\n'):
             self.rejected(lambda: self.d.dependency_apt_options(hook, '/etc/apt/apt.conf.d/99project'))
 
+    def test_native_build_uses_exact_single_packaged_manifest_for_both_managers(self):
+        expected = {'APT': ['cmake', 'ninja-build', 'gcc', 'g++'],
+                    'DNF': ['cmake', 'ninja-build', 'gcc', 'gcc-c++']}
+        actual = json.loads(resource(AGENT / 'dependency-packages.json'))
+        for manager, packages in expected.items():
+            with self.subTest(manager=manager):
+                self.assertEqual({'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'}, set(actual[manager]))
+                self.assertEqual(packages, actual[manager]['NATIVE_BUILD'])
+                self.assertEqual(packages, self.d.dependency_packages(manager, 'NATIVE_BUILD'))
+        self.assertEqual(1, self.source.count('DEPENDENCY_PACKAGES='))
+
+    def test_native_build_has_independent_authenticated_transaction_and_exact_receipt(self):
+        for manager in ('APT', 'DNF'):
+            packages = self.d.dependency_packages(manager, 'NATIVE_BUILD')
+            commands = []
+            profile = {'id': 'ubuntu' if manager == 'APT' else 'centos',
+                       'version': '24.04' if manager == 'APT' else '9', 'manager': manager}
+            def run(command):
+                commands.append(command)
+                if command[0].endswith('/dpkg-query') or command[0].endswith('/rpm'):
+                    return ''.join(name + '\t1:2.0-1\n' for name in packages)
+                return ''
+            stream = io.StringIO()
+            with (self.subTest(manager=manager),
+                  mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True),
+                  mock.patch.object(self.d, 'dependency_profile', return_value=profile),
+                  mock.patch.object(self.d, 'dependency_validate_apt') as apt,
+                  mock.patch.object(self.d, 'dependency_validate_dnf') as dnf,
+                  mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
+                  mock.patch.object(self.d, 'dependency_run', run),
+                  contextlib.redirect_stdout(stream)):
+                self.d.dependency_main(['NATIVE_BUILD', OPERATION])
+                (apt if manager == 'APT' else dnf).assert_called_once_with()
+                (dnf if manager == 'APT' else apt).assert_not_called()
+            receipt = stream.getvalue()
+            self.assertEqual(1, len(receipt.splitlines()))
+            self.assertTrue(receipt.startswith('TOOLCHAIN_DEPENDENCIES='))
+            value = json.loads(receipt.removeprefix('TOOLCHAIN_DEPENDENCIES='))
+            self.assertEqual({'operation': OPERATION, 'ecosystem': 'NATIVE_BUILD', 'manager': manager,
+                             'packages': {name: '1:2.0-1' for name in packages}}, value)
+            transaction = next(command for command in commands if 'install' in command)
+            self.assertEqual(packages, transaction[-len(packages):])
+            if manager == 'APT':
+                self.assertIn('APT::Get::AllowUnauthenticated=false', transaction)
+                self.assertIn('Acquire::AllowInsecureRepositories=false', transaction)
+            else:
+                self.assertIn('--disableplugin=*', transaction)
+                self.assertIn('--setopt=gpgcheck=1', transaction)
+                self.assertIn('--setopt=sslverify=1', transaction)
+
+    def test_native_build_rejects_forged_incomplete_or_duplicate_package_receipt(self):
+        packages = self.d.dependency_packages('APT', 'NATIVE_BUILD')
+        valid = ''.join(name + '\t2.0-1\n' for name in packages)
+        for output in (valid + 'model-package\t1\n', valid + packages[0] + '\t1\n',
+                       '\n'.join(valid.splitlines()[:-1]) + '\n', valid.replace('2.0-1', 'secret\nsuffix', 1)):
+            with self.subTest(output=output):
+                self.rejected(lambda: self.d.dependency_versions(output, packages))
+        stream = io.StringIO()
+        with (mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True),
+              mock.patch.object(self.d, 'dependency_profile', return_value=self.d.OS_PROFILE),
+              mock.patch.object(self.d, 'dependency_validate_apt'),
+              mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name),
+              mock.patch.object(self.d, 'dependency_run', side_effect=['', '', valid + 'model-package\t1\n']),
+              contextlib.redirect_stdout(stream)):
+            self.rejected(lambda: self.d.dependency_main(['NATIVE_BUILD', OPERATION]))
+        self.assertEqual('', stream.getvalue())
+
+    def test_native_build_refusal_and_extra_parameters_do_not_dispatch_or_emit_receipt(self):
+        stream = io.StringIO()
+        with (mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True),
+              mock.patch.object(self.d, 'dependency_profile', return_value=self.d.OS_PROFILE),
+              mock.patch.object(self.d, 'dependency_validate_apt', side_effect=self.d.DependencyFailure('UNAUTHENTICATED_APT_CONFIGURATION')),
+              mock.patch.object(self.d, 'dependency_run') as run,
+              contextlib.redirect_stdout(stream)):
+            self.rejected(lambda: self.d.dependency_main(['NATIVE_BUILD', OPERATION]))
+            for args in (['NATIVE_BUILD', OPERATION, 'model-package'], ['NATIVE_BUILD', '../op'],
+                         ['native_build', OPERATION]):
+                self.rejected(lambda: self.d.dependency_main(args))
+            run.assert_not_called()
+        self.assertEqual('', stream.getvalue())
+
+    def test_rust_still_has_no_system_package_transaction_with_native_profile_present(self):
+        stream = io.StringIO()
+        with mock.patch.object(self.d.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.d, 'dependency_profile') as profile, mock.patch.object(self.d, 'dependency_run') as run, contextlib.redirect_stdout(stream):
+            self.d.dependency_main(['RUST', OPERATION])
+            profile.assert_not_called()
+            run.assert_not_called()
+        receipt = json.loads(stream.getvalue().removeprefix('TOOLCHAIN_DEPENDENCIES='))
+        self.assertEqual({'operation': OPERATION, 'ecosystem': 'RUST', 'manager': 'NONE', 'packages': {}}, receipt)
+
 
 if __name__ == '__main__':
     unittest.main()

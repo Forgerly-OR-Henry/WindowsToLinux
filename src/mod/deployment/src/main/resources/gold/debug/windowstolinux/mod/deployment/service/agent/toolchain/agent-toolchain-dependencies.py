@@ -163,7 +163,7 @@ def dependency_packages(manager, ecosystem):
     if not isinstance(table, dict) or set(table) != {'APT', 'DNF'}:
         dependency_reject('PACKAGED_DEPENDENCY_TABLE')
     for branch in table.values():
-        if not isinstance(branch, dict) or set(branch) != {'PYTHON', 'PHP', 'RUBY'}:
+        if not isinstance(branch, dict) or set(branch) != {'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'}:
             dependency_reject('PACKAGED_DEPENDENCY_TABLE')
         for packages in branch.values():
             if not isinstance(packages, list) or not packages or len(packages) > 64 or any(not isinstance(p, str) or not re.fullmatch('[a-z0-9][a-z0-9+.-]{0,95}', p) for p in packages) or len(set(packages)) != len(packages):
@@ -415,11 +415,11 @@ def dependency_versions(output, packages):
 
 def dependency_main(args):
     global OS_PROFILE
-    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY') or not re.fullmatch('[a-f0-9]{32}', args[1]):
+    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD') or not re.fullmatch('[a-f0-9]{32}', args[1]):
         dependency_reject('DEPENDENCY_ARGUMENT_FRAME')
     ecosystem, operation = args
     manager, versions = 'NONE', {}
-    if ecosystem in ('PYTHON', 'PHP', 'RUBY'):
+    if ecosystem in ('PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'):
         OS_PROFILE = dependency_profile()
         manager = OS_PROFILE['manager']
         packages = dependency_packages(manager, ecosystem)

@@ -60,24 +60,15 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         if (commands.remainingSeconds() < 45)
             return budgetExhausted();
         if (Set.of(DeploymentToolchainType.PYTHON, DeploymentToolchainType.PHP, DeploymentToolchainType.RUBY).contains(ecosystem)) {
-            String operation = operation();
-            Set<ActionTarget> targets = new LinkedHashSet<>();
-            for (String manager : List.of("APT", "DNF"))
-                for (String name : DeploymentAgentToolchainPrograms.packages(manager, ecosystem))
-                    targets.add(target("system-package", name));
-            var dependencies = send("deployment.agent.toolchain.dependencies.v1", targets,
-                DeploymentAgentToolchainPrograms.dependencies(), List.of(ecosystem.name(), operation),
-                Math.min(7200, commands.remainingSeconds()));
+            var dependencies = dependencies(ecosystem.name());
             if (!complete(dependencies))
                 return dependencies;
-            if (!dependencyReceipt(dependencies.value().orElseThrow().stdout(), ecosystem, operation))
-                return unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_DEPENDENCIES_UNCONFIRMED");
         }
         seconds = (int) Math.min(seconds, commands.remainingSeconds() - 15);
         if (seconds < 30)
             return budgetExhausted();
         String operation = operation();
-        return send("deployment.agent.toolchain.prepare.v1", controllerTargets(operation),
+        return send("deployment.agent.toolchain.prepare.v1", controllerTargets(server, operation),
             DeploymentAgentToolchainPrograms.controller(), List.of("prepare", ecosystem.name(), branch, exact,
                 Integer.toString(seconds), javaHome, operation), seconds + 15L);
     }
@@ -89,9 +80,26 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         if (seconds < 30)
             return budgetExhausted();
         String operation = operation();
-        return send("deployment.agent.toolchain.bind.v1", controllerTargets(operation),
+        return send("deployment.agent.toolchain.bind.v1", controllerTargets(server, operation),
             DeploymentAgentToolchainPrograms.controller(), List.of("bind", encoded, Long.toString(seconds), operation),
             seconds + 15);
+    }
+
+    /** Prepares fixed native prerequisites after real C/CPP requirements are admitted. / 真实 C/CPP 需求准入后准备固定原生依赖。 */
+    public OperationResult<CommandResult> prepareNativeBuild() throws ApiException {
+        return dependencies("NATIVE_BUILD");
+    }
+
+    private OperationResult<CommandResult> dependencies(String profile) throws ApiException {
+        if (commands.remainingSeconds() < 45)
+            return budgetExhausted();
+        String operation = operation();
+        var result = send("deployment.agent.toolchain.dependencies.v1", dependencyTargets(server, profile),
+            DeploymentAgentToolchainPrograms.dependencies(), List.of(profile, operation), Math.min(7200, commands.remainingSeconds()));
+        if (!complete(result))
+            return result;
+        return dependencyReceipt(result.value().orElseThrow().stdout(), profile, operation)
+            ? result : unconfirmed("DEPLOYMENT_AGENT_TOOLCHAIN_DEPENDENCIES_UNCONFIRMED");
     }
 
     private OperationResult<CommandResult> send(String meaning, Set<ActionTarget> targets, String source,
@@ -100,21 +108,28 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         try {
             if (bytes.length == 0 || bytes.length > 1048576)
                 throw new IllegalArgumentException("Agent toolchain source exceeds executable wire limit");
-            String script = "/usr/bin/python3 -I -S -c " + quote(DeploymentAgentToolchainPrograms.BOOTSTRAP)
-                + arguments.stream().map(DeploymentAgentToolchainCommands::quote).collect(java.util.stream.Collectors.joining(" ", " ", ""));
+            String script = DeploymentAgentToolchainPrograms.command(arguments);
             return commands.send(meaning, targets, script, bytes, Duration.ofSeconds(seconds), 65536);
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }
     }
 
-    private Set<ActionTarget> controllerTargets(String operation) {
-        return Set.of(target("deployment-build", ROOT), target("deployment-build", ROOT + "/versions"), target("deployment-build", ROOT + "/bindings"),
-            target("deployment-build", ROOT + "/work/agent-" + operation), target("deployment-build", ROOT + "/.prepare.lock"),
-            target("systemd-unit", "windowstolinux-toolchain-" + operation + ".service"));
+    static Set<ActionTarget> controllerTargets(ServerId server, String operation) {
+        return Set.of(target(server, "deployment-build", ROOT), target(server, "deployment-build", ROOT + "/versions"), target(server, "deployment-build", ROOT + "/bindings"),
+            target(server, "deployment-build", ROOT + "/work/agent-" + operation), target(server, "deployment-build", ROOT + "/.prepare.lock"),
+            target(server, "systemd-unit", "windowstolinux-toolchain-" + operation + ".service"));
     }
 
-    private ActionTarget target(String kind, String id) {
+    static Set<ActionTarget> dependencyTargets(ServerId server, String profile) {
+        Set<ActionTarget> targets = new LinkedHashSet<>();
+        for (String manager : List.of("APT", "DNF"))
+            for (String name : DeploymentAgentToolchainPrograms.packages(manager, profile))
+                targets.add(target(server, "system-package", name));
+        return Set.copyOf(targets);
+    }
+
+    private static ActionTarget target(ServerId server, String kind, String id) {
         return new ActionTarget(server.id(), kind, id);
     }
 
@@ -125,8 +140,8 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         return operation;
     }
 
-    private static void requirePreparation(DeploymentToolchainType ecosystem, String branch, String exact,
-                                           int seconds, String javaHome) {
+    static void requirePreparation(DeploymentToolchainType ecosystem, String branch, String exact,
+                                   int seconds, String javaHome) {
         Objects.requireNonNull(ecosystem);
         if (seconds < 30 || seconds > 7200 || branch == null || !branch.matches("[0-9]{1,3}(?:\\.[0-9]{1,3})?")
             || DeploymentToolchainCatalog.defaults().branches(ecosystem).stream().noneMatch(candidate -> candidate.version().equals(branch)
@@ -137,7 +152,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             throw new IllegalArgumentException("Invalid Agent toolchain preparation");
     }
 
-    private static void requireBinding(String encoded) {
+    static void requireBinding(String encoded) {
         byte[] bytes = null;
         try {
             if (encoded == null || encoded.length() > 87384)
@@ -158,7 +173,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         }
     }
 
-    private static boolean dependencyReceipt(String stdout, DeploymentToolchainType ecosystem, String operation) {
+    private static boolean dependencyReceipt(String stdout, String ecosystem, String operation) {
         String prefix = "TOOLCHAIN_DEPENDENCIES=";
         if (!stdout.startsWith(prefix) || !stdout.endsWith("\n") || stdout.indexOf('\n') != stdout.length() - 1)
             return false;
@@ -166,7 +181,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             .createParser(stdout.substring(prefix.length()))) {
             JsonNode root = new ObjectMapper().readTree(parser);
             if (root == null || parser.nextToken() != null || !root.isObject() || root.size() != 4
-                || !operation.equals(root.path("operation").asText()) || !ecosystem.name().equals(root.path("ecosystem").asText()))
+                || !operation.equals(root.path("operation").asText()) || !ecosystem.equals(root.path("ecosystem").asText()))
                 return false;
             String manager = root.path("manager").asText();
             if (!List.of("APT", "DNF").contains(manager) || !root.path("packages").isObject())
@@ -189,10 +204,6 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     private static boolean complete(OperationResult<CommandResult> result) {
         return result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
             && result.value().orElseThrow().exitCode().equals(Optional.of(0)) && !result.value().orElseThrow().truncated();
-    }
-
-    private static String quote(String value) {
-        return "'" + value.replace("'", "'\\''") + "'";
     }
 
     private static OperationResult<CommandResult> unconfirmed(String event) {
