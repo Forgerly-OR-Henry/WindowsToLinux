@@ -32,6 +32,21 @@ def dependency_reject(detail, unknown=False, diagnostic=None):
 
 OWNER_DIAGNOSTIC_REASONS = frozenset(('RESPONSE_STRUCTURE', 'PATH_MISMATCH', 'MULTIPLE_OWNERS',
                                     'OWNER_SYNTAX', 'OWNER_ABSENT', 'OWNER_NOT_ALLOWED', 'OUTPUT_LIMIT'))
+APT_BINARY_PATHS = {'dpkg': ('/usr/bin/dpkg',), 'methods': ('/usr/lib/apt/methods',),
+                    'solvers': ('/usr/lib/apt/solvers',), 'planners': ('/usr/lib/apt/planners',),
+                    'apt-key': ('/usr/bin/apt-key',), 'gpg': ('/usr/bin/gpg',), 'gpgv': ('/usr/bin/gpgv',),
+                    'gzip': ('/bin/gzip',), 'bzip2': ('/bin/bzip2',), 'xz': ('/usr/bin/xz',),
+                    'lz4': ('/usr/bin/lz4',), 'zstd': ('/usr/bin/zstd',),
+                    'lzma': ('/usr/bin/xz', '/usr/bin/lzma')}
+APT_BINARY_DIAGNOSTIC_FIELDS = frozenset(APT_BINARY_PATHS) | {'container', 'solver', 'planner', 'unrecognized'}
+APT_BINARY_DIAGNOSTIC_REASONS = frozenset(('KEY_SHAPE', 'VALUE_SHAPE', 'PATH_OVERRIDE', 'PATH_GUARD'))
+
+
+def dependency_binary_reject(reason, field, value):
+    encoded = value.encode('utf-8')
+    dependency_reject('UNSUPPORTED_APT_BINARY', diagnostic={'reason': reason,
+        'field': field if field in APT_BINARY_DIAGNOSTIC_FIELDS else 'unrecognized',
+        'valueBytes': len(encoded), 'valueSha256': hashlib.sha256(encoded).hexdigest()})
 
 
 def dependency_owner_diagnostic(reason, path, owner, owners):
@@ -43,9 +58,19 @@ def dependency_owner_diagnostic(reason, path, owner, owners):
 
 
 def dependency_diagnostic_line(error, args):
-    if error.detail != 'OS_CONFIGURATION_OWNER' or error.unknown or len(args) != 2 or not isinstance(args[1], str) or not re.fullmatch('[a-f0-9]{32}', args[1]):
+    if error.unknown or len(args) != 2 or not isinstance(args[1], str) or not re.fullmatch('[a-f0-9]{32}', args[1]):
         return None
     value = error.diagnostic
+    if error.detail == 'UNSUPPORTED_APT_BINARY':
+        if not isinstance(value, dict) or set(value) != {'reason', 'field', 'valueBytes', 'valueSha256'}:
+            return None
+        if not isinstance(value['reason'], str) or value['reason'] not in APT_BINARY_DIAGNOSTIC_REASONS or not isinstance(value['field'], str) or value['field'] not in APT_BINARY_DIAGNOSTIC_FIELDS:
+            return None
+        if type(value['valueBytes']) is not int or not 0 <= value['valueBytes'] <= 1024 * 1024 or not isinstance(value['valueSha256'], str) or not re.fullmatch('[a-f0-9]{64}', value['valueSha256']):
+            return None
+        return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps({'operation': args[1], 'phase': error.detail, **value}, sort_keys=True, separators=(',', ':'))
+    if error.detail != 'OS_CONFIGURATION_OWNER':
+        return None
     if not isinstance(value, dict) or set(value) != {'reason', 'path', 'owner', 'allowedOwners'}:
         return None
     if not isinstance(value['reason'], str) or value['reason'] not in OWNER_DIAGNOSTIC_REASONS:
@@ -269,6 +294,60 @@ def dependency_apt_hook_owners(path):
     return HOOK_OWNERS
 
 
+def dependency_apt_binaries(value):
+    # apt-config provides the flattened effective tree, including anonymous list entries.
+    for line in value.splitlines():
+        if re.match(r'(?i)^\s*Binary::[^\s]*?::(?:Dir\b|APT::(?:Solver|Planner)\b)', line):
+            dependency_binary_reject('KEY_SHAPE', 'unrecognized', line)
+        if not re.match(r'(?i)^\s*(?:Dir::Bin\b|APT::(?:Solver|Planner)\b)', line):
+            continue
+        match = re.fullmatch(r'\s*([A-Za-z0-9:-]+)\s+"([^"\\]*)"\s*;\s*', line)
+        if not match:
+            dependency_binary_reject('VALUE_SHAPE', 'unrecognized', line)
+        key, location = match[1].lower(), match[2]
+        if key in ('apt::solver', 'apt::planner'):
+            if location != 'internal':
+                dependency_binary_reject('PATH_OVERRIDE', key.split('::')[-1], location)
+            continue
+        if key == 'dir::bin':
+            if location:
+                dependency_binary_reject('PATH_OVERRIDE', 'container', location)
+            continue
+        if not key.startswith('dir::bin::'):
+            dependency_binary_reject('KEY_SHAPE', 'unrecognized', line)
+        field = key.removeprefix('dir::bin::')
+        if field in ('solvers', 'planners') and not location:
+            continue
+        if field in ('solvers::', 'planners::'):
+            field = field[:-2]
+        if field not in APT_BINARY_PATHS:
+            dependency_binary_reject('KEY_SHAPE', 'unrecognized', line)
+        if location.rstrip('/') not in APT_BINARY_PATHS[field]:
+            dependency_binary_reject('PATH_OVERRIDE', field, location)
+        path = pathlib.Path(location)
+        # APT advertises optional compressors even when it uses its built-in fallback.
+        if not path.exists() and not path.is_symlink():
+            if field in ('methods', 'solvers', 'planners', 'dpkg'):
+                dependency_binary_reject('PATH_GUARD', field, location)
+            try:
+                parent = dependency_protected(path.parent)
+                if str(parent) not in ('/usr/bin', '/usr/sbin', '/bin', '/sbin') or not parent.is_dir():
+                    dependency_binary_reject('PATH_GUARD', field, location)
+            except (DependencyFailure, OSError):
+                dependency_binary_reject('PATH_GUARD', field, location)
+            continue
+        try:
+            resolved = dependency_protected(path)
+            if field in ('methods', 'solvers', 'planners'):
+                valid = str(resolved) == location.rstrip('/') and resolved.is_dir()
+            else:
+                valid = str(resolved.parent) in ('/usr/bin', '/usr/sbin', '/bin', '/sbin') and resolved.is_file() and os.access(resolved, os.X_OK)
+            if not valid:
+                dependency_binary_reject('PATH_GUARD', field, location)
+        except (DependencyFailure, OSError):
+            dependency_binary_reject('PATH_GUARD', field, location)
+
+
 def dependency_apt_options(value, path=None, effective=False):
     # Includes effective apt-config output. Reject source-dir/key hook overrides and auth relaxation.
     compact = re.sub(r'["\s;]', '', value).lower()
@@ -300,14 +379,8 @@ def dependency_apt_options(value, path=None, effective=False):
             valid = leaf in expected and location.rstrip('/') in (expected[leaf], '/etc/apt/' + expected[leaf])
         if not valid:
             dependency_reject('UNSUPPORTED_APT_CONFIGURATION')
-    binaries = {'dpkg': '/usr/bin/dpkg', 'methods': '/usr/lib/apt/methods',
-                'solvers': '/usr/lib/apt/solvers', 'planners': '/usr/lib/apt/planners',
-                'apt-key': '/usr/bin/apt-key', 'gpg': '/usr/bin/gpg', 'gpgv': '/usr/bin/gpgv'}
-    for match in re.finditer(r'(?im)^\s*Dir::Bin::([a-z-]+)\s+"([^"]*)"\s*;', value):
-        if match[1].lower() not in binaries or match[2].rstrip('/') != binaries[match[1].lower()]:
-            dependency_reject('UNSUPPORTED_APT_BINARY')
-    if re.search(r'(?im)^\s*(?:APT::Solver|APT::Planner)\s+"(?!internal")[^"]+"', value):
-        dependency_reject('UNSUPPORTED_APT_BINARY')
+    if effective:
+        dependency_apt_binaries(value)
 
 
 def dependency_validate_dpkg():

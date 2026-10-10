@@ -59,6 +59,48 @@ class DeploymentAgentToolchainFailureEvidenceTest {
     }
 
     @Test
+    void aptBinaryDiagnosticRetainsCurrentFixedFieldAndDigestWithoutConfigurationText() throws Exception {
+        var fields = Map.of("operation", OPERATION, "phase", "UNSUPPORTED_APT_BINARY", "reason", "PATH_OVERRIDE",
+            "field", "gzip", "valueBytes", 19, "valueSha256", "c".repeat(64));
+        String diagnostic = new ObjectMapper().writeValueAsString(fields);
+        var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:UNSUPPORTED_APT_BINARY\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+        assertEquals(TaskResult.FAILED, result.outcome());
+        String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+        assertTrue(observation.contains("reportedDiagnostic"));
+        assertTrue(observation.contains("\"field\":\"gzip\""));
+        assertTrue(observation.contains("\"valueBytes\":19"));
+        assertTrue(observation.contains("c".repeat(64)));
+        assertFalse(observation.contains("configurationText"));
+    }
+
+    @Test
+    void aptBinaryDiagnosticRejectsUnknownFieldsMismatchedPhaseAndMalformedBounds() throws Exception {
+        var baseline = Map.of("operation", OPERATION, "phase", "UNSUPPORTED_APT_BINARY", "reason", "PATH_OVERRIDE",
+            "field", "gzip", "valueBytes", 19, "valueSha256", "c".repeat(64));
+        var invalid = new ArrayList<Map<String, Object>>();
+        for (var change : List.of(Map.<String, Object>entry("operation", "b".repeat(32)), Map.<String, Object>entry("phase", "OS_CONFIGURATION_OWNER"),
+            Map.<String, Object>entry("reason", "private-body"), Map.<String, Object>entry("field", "private-field"),
+            Map.<String, Object>entry("valueBytes", -1), Map.<String, Object>entry("valueBytes", 1048577), Map.<String, Object>entry("valueBytes", true),
+            Map.<String, Object>entry("valueSha256", "private-body"))) {
+            var fields = new LinkedHashMap<String, Object>(baseline);
+            fields.put(change.getKey(), change.getValue());
+            invalid.add(fields);
+        }
+        var extra = new LinkedHashMap<String, Object>(baseline);
+        extra.put("configurationText", "private-body");
+        invalid.add(extra);
+        for (var fields : invalid) {
+            String diagnostic = new ObjectMapper().writeValueAsString(fields);
+            var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:UNSUPPORTED_APT_BINARY\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+            String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertFalse(observation.contains("reportedDiagnostic"));
+            assertFalse(observation.contains("private-body"));
+            assertFalse(observation.contains("private-field"));
+            assertEquals(TaskResult.FAILED, result.outcome());
+        }
+    }
+
+    @Test
     void nativeUndispatchedFailureRemainsKnownOnlyWithTheCompleteTransportFacts() {
         var context = Map.of("commandOpenRequested", "false", "channelOpenConfirmed", "false", "exitObserved", "false", "outputObserved", "false");
         var problem = new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NOT_SENT", "Command could not be dispatched", context, Optional.empty());

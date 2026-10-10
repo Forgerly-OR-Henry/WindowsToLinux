@@ -445,6 +445,27 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
         with self.assertRaises(self.d.DependencyFailure):
             call()
 
+    @contextlib.contextmanager
+    def apt_paths(self, missing=(), unsafe=(), links=None, non_executable=()):
+        links = links or {}
+        directories = {'/', '/usr', '/usr/bin', '/bin', '/usr/sbin', '/sbin',
+                       '/usr/lib/apt/methods', '/usr/lib/apt/solvers', '/usr/lib/apt/planners'}
+        class Path(pathlib.PurePosixPath):
+            def exists(self): return str(self) not in missing
+            def is_symlink(self): return str(self) in links
+            def is_dir(self): return str(self) in directories
+            def is_file(self): return str(self) not in directories
+        checked = []
+        def protected(path):
+            checked.append(str(path))
+            if str(path) in unsafe or str(path) in missing:
+                self.d.dependency_reject('UNTRUSTED_OS_PATH')
+            return Path(links.get(str(path), str(path)))
+        with mock.patch.object(self.d, 'pathlib', types.SimpleNamespace(Path=Path)), \
+             mock.patch.object(self.d, 'dependency_protected', protected), \
+             mock.patch.object(self.d.os, 'access', lambda path, mode: str(path) not in non_executable):
+            yield checked
+
     def test_apt_authentication_relaxation_and_custom_hook_are_rejected(self):
         for value in ('deb [trusted=yes] https://archive.ubuntu.com/ubuntu noble main',
                 'APT::Get::AllowUnauthenticated "true";',
@@ -546,11 +567,92 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
 
     def test_default_apt_paths_are_accepted_and_binary_overrides_rejected(self):
         defaults = 'Dir "/";\nDir::Etc "etc/apt";\nDir::Etc::sourcelist "sources.list";\nDir::Etc::sourceparts "sources.list.d";\nDir::Etc::trusted "trusted.gpg";\nDir::Etc::trustedparts "trusted.gpg.d";\nDir::Bin::dpkg "/usr/bin/dpkg";\n'
-        self.d.dependency_apt_options(defaults, effective=True)
-        for value in (defaults.replace('"sources.list.d"', '"/project/repos"'),
-                defaults.replace('"/usr/bin/dpkg"', '"/project/root-script"'),
-                '#include "/project/hook";\n', 'APT::Solver "project";'):
-            self.rejected(lambda: self.d.dependency_apt_options(value, effective=True))
+        with self.apt_paths():
+            self.d.dependency_apt_options(defaults, effective=True)
+            for value in (defaults.replace('"sources.list.d"', '"/project/repos"'),
+                    defaults.replace('"/usr/bin/dpkg"', '"/project/root-script"'),
+                    '#include "/project/hook";\n', 'APT::Solver "project";'):
+                self.rejected(lambda: self.d.dependency_apt_options(value, effective=True))
+
+    def test_effective_apt_tree_accepts_official_compressors_and_anonymous_directory_lists(self):
+        dump = '''Dir::Bin "";
+Dir::Bin::methods "/usr/lib/apt/methods";
+Dir::Bin::dpkg "/usr/bin/dpkg";
+Dir::Bin::solvers "";
+Dir::Bin::solvers:: "/usr/lib/apt/solvers";
+Dir::Bin::planners "";
+Dir::Bin::planners:: "/usr/lib/apt/planners";
+Dir::Bin::gzip "/bin/gzip";
+Dir::Bin::bzip2 "/bin/bzip2";
+Dir::Bin::xz "/usr/bin/xz";
+Dir::Bin::lz4 "/usr/bin/lz4";
+Dir::Bin::zstd "/usr/bin/zstd";
+Dir::Bin::lzma "/usr/bin/xz";
+APT::Solver "internal";
+APT::Planner "internal";
+'''
+        with self.apt_paths(links={'/bin/gzip': '/usr/bin/gzip', '/bin/bzip2': '/usr/bin/bzip2'}) as checked:
+            self.d.dependency_apt_options(dump, effective=True)
+            self.d.dependency_apt_options(dump.replace('Dir::Bin::lzma "/usr/bin/xz"', 'Dir::Bin::lzma "/usr/bin/lzma"'), effective=True)
+            self.d.dependency_apt_options('Dir::Bin::solvers "/usr/lib/apt/solvers";', effective=True)
+        self.assertIn('/usr/lib/apt/solvers', checked)
+        self.assertIn('/usr/lib/apt/planners', checked)
+        self.assertIn('/bin/gzip', checked)
+        self.assertIn('/usr/bin/lz4', checked)
+
+    def test_effective_apt_binary_namespace_cannot_skip_digits_lists_or_malformed_values(self):
+        for value in ('Dir::Bin::bzip2 "/project/execute";', 'Dir::Bin::lz4 "relative";',
+                'Dir::Bin::unknown7 "/usr/bin/dpkg";', 'Dir::Bin::solvers:: "/project/solvers";',
+                'Dir::Bin::planners::named "/usr/lib/apt/planners";', 'Dir::Bin::dpkg:: "/usr/bin/dpkg";',
+                'Dir::Bin::gzip::extra "/bin/gzip";', 'Dir::Bin "/project";',
+                'Dir::Bin::gzip "/bin/gzip\\escape";', 'Dir::Bin::gzip "/bin/gzip"; trailing',
+                'APT::Solver "external";', 'APT::Planner "";',
+                'Binary::apt-get::Dir::Bin::dpkg "/project/execute";',
+                'Binary::apt-get::APT::Solver "external";',
+                'Binary::apt-get::Dir::Etc::sourceparts "/project/repos";'):
+            with self.subTest(value=value), self.apt_paths():
+                with self.assertRaises(self.d.DependencyFailure) as rejected:
+                    self.d.dependency_apt_options(value, effective=True)
+                self.assertEqual('UNSUPPORTED_APT_BINARY', rejected.exception.detail)
+        self.d.dependency_apt_options('Binary::apt::APT::Color "1";', effective=True)
+
+    def test_optional_apt_tools_may_be_absent_only_beneath_a_protected_native_parent(self):
+        for field, location in (('lz4', '/usr/bin/lz4'), ('bzip2', '/bin/bzip2'), ('apt-key', '/usr/bin/apt-key')):
+            with self.subTest(field=field), self.apt_paths(missing=(location,)) as checked:
+                self.d.dependency_apt_options('Dir::Bin::' + field + ' "' + location + '";', effective=True)
+                self.assertIn(str(pathlib.PurePosixPath(location).parent), checked)
+        for kwargs in ({'missing': ('/usr/bin/lz4',), 'unsafe': ('/usr/bin',)},
+                {'missing': ('/usr/bin/lz4',), 'links': {'/usr/bin/lz4': '/missing/tool'}},
+                {'unsafe': ('/usr/bin/lz4',)}, {'non_executable': ('/usr/bin/lz4',)},
+                {'links': {'/usr/bin/lz4': '/project/root-owned-tool'}},
+                {'links': {'/usr/bin/lz4': '/usr/bin'}}):
+            with self.subTest(kwargs=kwargs), self.apt_paths(**kwargs):
+                self.rejected(lambda: self.d.dependency_apt_options('Dir::Bin::lz4 "/usr/bin/lz4";', effective=True))
+        for field, path in (('methods', '/usr/lib/apt/methods'), ('solvers::', '/usr/lib/apt/solvers'),
+                ('planners::', '/usr/lib/apt/planners'), ('dpkg', '/usr/bin/dpkg')):
+            with self.subTest(field=field), self.apt_paths(missing=(path,)):
+                self.rejected(lambda: self.d.dependency_apt_options('Dir::Bin::' + field + ' "' + path + '";', effective=True))
+
+    def test_apt_binary_diagnostic_reports_only_fixed_classification_and_current_digest(self):
+        private = '/project/private-body-never-echo'
+        with self.assertRaises(self.d.DependencyFailure) as rejected:
+            self.d.dependency_apt_binaries('Dir::Bin::gzip "' + private + '";')
+        output = io.StringIO()
+        with mock.patch.object(self.d, 'dependency_main', side_effect=rejected.exception), contextlib.redirect_stdout(output):
+            self.assertEqual(65, self.d.dependency_cli(['NATIVE_BUILD', OPERATION]))
+        lines = output.getvalue().splitlines()
+        self.assertEqual(2, len(lines))
+        self.assertEqual('TOOLCHAIN_FAILURE=dependencies:UNSUPPORTED_APT_BINARY', lines[0])
+        diagnostic = json.loads(lines[1].removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+        self.assertEqual({'operation': OPERATION, 'phase': 'UNSUPPORTED_APT_BINARY', 'reason': 'PATH_OVERRIDE',
+            'field': 'gzip', 'valueBytes': len(private.encode()), 'valueSha256': hashlib.sha256(private.encode()).hexdigest()}, diagnostic)
+        self.assertNotIn(private, output.getvalue())
+        self.assertIsNone(self.d.dependency_diagnostic_line(rejected.exception, ['NATIVE_BUILD', '../invalid']))
+        for key, invalid in (('field', ['gzip']), ('field', 'private-key'), ('reason', ['PATH_OVERRIDE']),
+                ('valueBytes', True), ('valueBytes', 1048577), ('valueSha256', 'private-body')):
+            value = {key: data for key, data in diagnostic.items() if key not in ('operation', 'phase')}
+            value[key] = invalid
+            self.assertIsNone(self.d.dependency_diagnostic_line(self.d.DependencyFailure('UNSUPPORTED_APT_BINARY', diagnostic=value), ['NATIVE_BUILD', OPERATION]))
 
     def test_default_hook_requires_exact_registered_package_content(self):
         hook = 'DPkg::Pre-Install-Pkgs {"/usr/sbin/dpkg-preconfigure --apt || true";};\n'

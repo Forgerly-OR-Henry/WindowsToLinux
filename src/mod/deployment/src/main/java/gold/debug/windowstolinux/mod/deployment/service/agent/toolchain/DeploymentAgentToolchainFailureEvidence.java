@@ -61,7 +61,7 @@ public final class DeploymentAgentToolchainFailureEvidence {
                 if (outcome != TaskResult.CANCELLED && (match.group(1).equals("unknown") || command.exitCode().equals(Optional.of(70))))
                     outcome = TaskResult.UNKNOWN;
                 if (lines.length == 3)
-                    diagnostic(lines[1], identity).ifPresent(value -> facts.put("reportedDiagnostic", value));
+                    diagnostic(lines[1], identity, match.group(2)).ifPresent(value -> facts.put("reportedDiagnostic", value));
             }
         }
         facts.put("productOutcome", outcome.name());
@@ -78,13 +78,25 @@ public final class DeploymentAgentToolchainFailureEvidence {
         }
     }
 
-    private static Optional<com.fasterxml.jackson.databind.JsonNode> diagnostic(String line, String identity) {
+    private static Optional<com.fasterxml.jackson.databind.JsonNode> diagnostic(String line, String identity, String code) {
         String prefix = "TOOLCHAIN_DIAGNOSTIC=";
         if (!line.startsWith(prefix) || line.length() > 2048) return Optional.empty();
         try {
             var value = JSON.readTree(line.substring(prefix.length()));
-            if (value == null || !value.isObject() || value.size() != 6 || !identity.equals(value.path("operation").asText())
-                || !value.path("phase").asText().equals("OS_CONFIGURATION_OWNER")
+            if (value == null || !value.isObject() || value.size() != 6 || !value.path("operation").isTextual()
+                || !identity.equals(value.path("operation").asText()) || !value.path("phase").isTextual()
+                || !code.equals(value.path("phase").asText()))
+                return Optional.empty();
+            if (code.equals("UNSUPPORTED_APT_BINARY")) {
+                if (!value.path("reason").isTextual() || !Set.of("KEY_SHAPE", "VALUE_SHAPE", "PATH_OVERRIDE", "PATH_GUARD").contains(value.path("reason").asText())
+                    || !value.path("field").isTextual() || !Set.of("dpkg", "methods", "solvers", "planners", "apt-key", "gpg", "gpgv", "gzip", "bzip2", "xz", "lz4", "zstd", "lzma", "container", "solver", "planner", "unrecognized").contains(value.path("field").asText())
+                    || !value.path("valueBytes").isIntegralNumber() || !value.path("valueBytes").canConvertToInt()
+                    || value.path("valueBytes").intValue() < 0 || value.path("valueBytes").intValue() > 1024 * 1024
+                    || !value.path("valueSha256").isTextual() || !value.path("valueSha256").asText().matches("[a-f0-9]{64}"))
+                    return Optional.empty();
+                return Optional.of(value);
+            }
+            if (!value.path("phase").asText().equals("OS_CONFIGURATION_OWNER")
                 || !Set.of("RESPONSE_STRUCTURE", "PATH_MISMATCH", "MULTIPLE_OWNERS", "OWNER_SYNTAX", "OWNER_ABSENT", "OWNER_NOT_ALLOWED", "OUTPUT_LIMIT").contains(value.path("reason").asText())
                 || !value.path("path").isTextual() || !value.path("path").asText().matches("/[!-~]{1,511}")
                 || Arrays.asList(value.path("path").asText().substring(1).split("/", -1)).stream().anyMatch(part -> part.isEmpty() || part.equals(".") || part.equals(".."))
