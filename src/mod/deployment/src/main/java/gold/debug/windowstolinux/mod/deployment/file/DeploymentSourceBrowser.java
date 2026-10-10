@@ -42,6 +42,20 @@ public final class DeploymentSourceBrowser {
         return revision;
     }
 
+    /** Returns a rechecked original member digest, never a hash of redacted or paginated text. / 返回复核过的原文件摘要，不散列脱敏或分页文本。
+     * @param path source-relative member / 来源相对成员
+     * @return actual frozen SHA-256 / 实际冻结SHA-256
+     * @throws Exception if membership or bytes changed / 成员或字节变化时 */
+    public String contentSha256(String path) throws Exception {
+        verifyBoundaries();
+        String name = relative(path);
+        String expected = files.get(name);
+        if (expected == null) throw new IOException("Source member was not indexed");
+        if (!expected.equals(digest(root.resolve(name))))
+            throw new SecurityException("Frozen source changed while hashing");
+        return expected;
+    }
+
     /** Rechecks exact file inventory and content before model use. / 模型使用前复核精确文件清单与内容。
      * @throws Exception if a file changed or disappeared / 文件更改或消失时 */
     public void verify() throws Exception {
@@ -92,6 +106,27 @@ public final class DeploymentSourceBrowser {
         return children.stream().skip(offset).limit(limit).toList();
     }
 
+    /** Returns bounded recursive path metadata; it cannot establish READ evidence. / 返回有界递归路径元数据，不构成READ证据。 */
+    public String index(String directory, int offset, int limit) throws Exception {
+        page(offset, limit);
+        verifyBoundaries();
+        String member = directory.endsWith("/") ? directory.substring(0, directory.length() - 1) : directory;
+        String prefix = directory.isEmpty() ? "" : relative(member) + "/";
+        var paths = files.keySet().stream().filter(path -> path.startsWith(prefix)).toList();
+        int next = Math.min(offset, paths.size());
+        var body = new StringBuilder();
+        while (next < paths.size() && next - offset < limit) {
+            String path = paths.get(next);
+            if (body.length() + path.length() + 1 > 5400) break;
+            body.append(path).append('\n');
+            next++;
+        }
+        if (next == offset && next < paths.size())
+            throw new IllegalArgumentException("A source path exceeds index page budget");
+        return "sourceRevision=" + revision + " kind=PATH_INDEX metadataOnly=true total=" + paths.size()
+            + " next=" + next + ". Read the selected files to obtain actual READ evidence.\n" + body;
+    }
+
     /** Reads a bounded page of numbered and redacted UTF-8 lines. / 读取有界的编号脱敏 UTF-8 行。
      * @param path admitted relative file / 已准入相对文件
      * @param offset zero-based line cursor / 从零开始的行游标
@@ -112,6 +147,49 @@ public final class DeploymentSourceBrowser {
             characters += line.length();
         }
         return List.copyOf(result);
+    }
+
+    /** One verified source line page; character pagination of this body cannot read the file's remaining lines. / 一页已验证源码行；正文字符分页不能读取文件剩余行。
+     * @param path actual relative member / 实际相对成员
+     * @param sourceSha256 digest of the verified original bytes / 已验证原字节摘要
+     * @param totalLines actual file line count / 实际文件行数
+     * @param offset first selected zero-based line / 所选首行的从零游标
+     * @param nextLine first unread line after complete displayed lines / 完整显示行之后的首个未读行
+     * @param hasMore whether unread source lines remain / 是否还有未读源码行
+     * @param lines complete numbered redacted lines / 完整编号脱敏行 */
+    public record ReadPage(String path, String sourceSha256, int totalLines, int offset, int nextLine,
+                           boolean hasMore, List<String> lines) {
+        public ReadPage {
+            lines = List.copyOf(lines);
+        }
+    }
+
+    /** Reads verified UTF-8 once and selects complete lines within an independent Agent body budget. / 一次读取已验证UTF-8，并在独立自主正文预算内选取完整行。
+     * @param path admitted relative member / 已准入相对成员
+     * @param offset zero-based source line cursor / 从零源码行游标
+     * @param limit maximum selected lines / 最多选取行数
+     * @param maxCharacters numbered body budget, including line separators / 含行分隔符的编号正文预算
+     * @return exact source continuation and selected lines / 精确源码续读游标及所选行
+     * @throws Exception on changed, unsafe, invalid UTF-8 or zero-progress oversized content / 内容改变、不安全、无效UTF-8或超长内容不能前进时 */
+    public ReadPage readPage(String path, int offset, int limit, int maxCharacters) throws Exception {
+        page(offset, limit);
+        if (maxCharacters < 1 || maxCharacters > 11000)
+            throw new IllegalArgumentException("Invalid source READ body budget");
+        verifyBoundaries();
+        String name = relative(path);
+        var lines = text(name);
+        int start = Math.min(offset, lines.size()), next = start, characters = 0;
+        var selected = new ArrayList<String>();
+        while (next < lines.size() && selected.size() < limit) {
+            String line = (next + 1) + ": " + redacted(lines.get(next));
+            if (characters + line.length() + 1 > maxCharacters) break;
+            selected.add(line);
+            characters += line.length() + 1;
+            next++;
+        }
+        if (next == start && next < lines.size())
+            throw new IllegalArgumentException("Source line exceeds READ page body budget; no source lines were read and EOF is unconfirmed");
+        return new ReadPage(name, files.get(name), lines.size(), start, next, next < lines.size(), selected);
     }
 
     /** Searches a bounded page of admitted files for literal text. / 在已准入文件的有界页中查找字面文本。
@@ -256,10 +334,16 @@ public final class DeploymentSourceBrowser {
      * @param line one source line / 一行源码
      * @return bounded redacted line / 有界脱敏行 */
     private static String safe(String line) {
+        String value = redacted(line);
+        return value.length() <= 4000 ? value : value.substring(0, 4000) + " [line truncated]";
+    }
+
+    /** Redacts a complete line without replacing its remaining source with a truncation marker. / 脱敏完整行，不以截断标记代替剩余源码。 */
+    private static String redacted(String line) {
         if (line.matches("(?i).*(password|passwd|secret|token|authorization|api[_-]?key|private[_-]?key).*[:=].*")
             || line.matches("(?i).*\\bbearer\\s+\\S+.*") || line.contains("PRIVATE KEY")
             || line.matches(".*https?://[^ /]+:[^ /]+@.*"))
             return "[credential content excluded]";
-        return line.length() <= 4000 ? line : line.substring(0, 4000) + " [line truncated]";
+        return line;
     }
 }
