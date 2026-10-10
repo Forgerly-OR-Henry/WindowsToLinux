@@ -22,6 +22,16 @@ class PlatformNativeModelTest {
     @ParameterizedTest
     @CsvSource({"OPENAI_CHAT_COMPLETIONS,true", "OPENAI_CHAT_COMPLETIONS,false", "OPENAI_RESPONSES,true", "OPENAI_RESPONSES,false", "ANTHROPIC_MESSAGES,true", "ANTHROPIC_MESSAGES,false"})
     void nativeRoundTripUsesSelectedProtocolEvenWhenUrlLooksLikeChat(ModelProtocol protocol, boolean allow) throws Exception {
+        nativeRoundTrip(protocol, allow, ModelReasoningLevel.DEFAULT);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ModelProtocol.class)
+    void nativeNoneRoundTripUsesExplicitProtocolSetting(ModelProtocol protocol) throws Exception {
+        nativeRoundTrip(protocol, true, ModelReasoningLevel.NONE);
+    }
+
+    private void nativeRoundTrip(ModelProtocol protocol, boolean allow, ModelReasoningLevel effort) throws Exception {
         var json = PlatformAiServiceTest.JSON;
         var turns = new AtomicInteger();
         try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root, allow)) {
@@ -32,6 +42,14 @@ class PlatformNativeModelTest {
                     var response = json.createObjectNode();
                     assertEquals("/v1/chat/completions", exchange.getRequestURI().getPath());
                     assertEquals(8192, wire.path(protocol == ModelProtocol.OPENAI_RESPONSES ? "max_output_tokens" : "max_tokens").intValue());
+                    if (effort == ModelReasoningLevel.NONE) {
+                        switch (protocol) {
+                            case OPENAI_CHAT_COMPLETIONS ->
+                                assertEquals("none", wire.path("reasoning_effort").asText());
+                            case OPENAI_RESPONSES -> assertEquals("none", wire.at("/reasoning/effort").asText());
+                            case ANTHROPIC_MESSAGES -> assertEquals("disabled", wire.at("/thinking/type").asText());
+                        }
+                    }
                     if (protocol == ModelProtocol.ANTHROPIC_MESSAGES) {
                         assertEquals("fixture-key", exchange.getRequestHeaders().getFirst("x-api-key"));
                         assertEquals("2023-06-01", exchange.getRequestHeaders().getFirst("anthropic-version"));
@@ -91,7 +109,7 @@ class PlatformNativeModelTest {
                     throw error;
                 }
             });
-            var profile = new AiModelProfile("native", fixture.uri("/v1/chat/completions"), "model", "ai/native", null, null, ModelReasoningLevel.DEFAULT, protocol);
+            var profile = new AiModelProfile("native", fixture.uri("/v1/chat/completions"), "model", "ai/native", null, null, effort, protocol);
             service.save(profile, "Native", "fixture-key".toCharArray(), 256);
             var result = service.verify("native", AiCapabilityType.TOOL_CALLING, null, "").completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result.problem().toString());
@@ -99,6 +117,7 @@ class PlatformNativeModelTest {
             assertTrue(saved.verified(AiCapabilityType.TOOL_CALLING));
             assertFalse(saved.verified(AiCapabilityType.TEXT));
             assertEquals(protocol, saved.profile().protocol());
+            assertEquals(effort, saved.profile().reasoningEffort());
             assertEquals(2, turns.get());
         }
     }

@@ -11,6 +11,38 @@ import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
 
 class ModelProtocolCodecTest {
+    @Test
+    void explicitNoneUsesEachProtocolsDisabledReasoningFieldWithoutChangingDefault() throws Exception {
+        var request = new AiRequest(AiPurpose.APPROVAL,
+            List.of(new AiMessage(AiRole.USER, "Review the current command", List.of())),
+            8192, Duration.ofSeconds(30), false);
+        for (var protocol : ModelProtocol.values()) {
+            var codec = ModelProtocolCodec.forProtocol(protocol);
+            var baseline = json.readTree(codec.encode("fixture", request, 8192, ModelReasoningLevel.DEFAULT, Map.of()));
+            var disabled = json.readTree(codec.encode("fixture", request, 8192, ModelReasoningLevel.NONE, Map.of()));
+            String field;
+            switch (protocol) {
+                case OPENAI_CHAT_COMPLETIONS -> {
+                    field = "reasoning_effort";
+                    assertEquals("none", disabled.path(field).textValue());
+                }
+                case OPENAI_RESPONSES -> {
+                    field = "reasoning";
+                    assertEquals("none", disabled.path(field).path("effort").textValue());
+                }
+                case ANTHROPIC_MESSAGES -> {
+                    field = "thinking";
+                    assertEquals("disabled", disabled.path(field).path("type").textValue());
+                    assertFalse(disabled.has("output_config"));
+                }
+                default -> throw new AssertionError(protocol);
+            }
+            assertFalse(baseline.has(field));
+            ((com.fasterxml.jackson.databind.node.ObjectNode) disabled).remove(field);
+            assertEquals(baseline, disabled);
+        }
+    }
+
     private final com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
 
     private final AiToolDefinition tool = new AiToolDefinition("echo", "echo challenge",

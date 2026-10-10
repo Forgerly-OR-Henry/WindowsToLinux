@@ -52,7 +52,9 @@ final class AnthropicMessagesCodec extends NativeModelCodec {
                     .put("name", call.name()).set("input", node(call.arguments()));
         }
         if (system.isEmpty()) body.remove("system");
-        if (effort != ModelReasoningLevel.DEFAULT)
+        if (effort == ModelReasoningLevel.NONE)
+            body.putObject("thinking").put("type", "disabled");
+        else if (effort != ModelReasoningLevel.DEFAULT)
             body.putObject("output_config").put("effort", effort.protocolValue());
         if (!request.tools().isEmpty()) {
             var tools = body.putArray("tools");

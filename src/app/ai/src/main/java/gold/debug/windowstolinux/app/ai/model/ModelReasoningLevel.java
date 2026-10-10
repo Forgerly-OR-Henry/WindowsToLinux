@@ -6,6 +6,8 @@ import java.util.Locale;
 public enum ModelReasoningLevel {
     /** Leaves provider behavior unchanged. / 保留提供者默认行为。 */
     DEFAULT,
+    /** Explicitly requests disabled reasoning; the selected model must verify support. / 明确关闭思考，须验证所选模型支持。 */
+    NONE,
     /** Requests a lower reasoning budget. / 请求较低推理预算。 */
     LOW,
     /** Requests an intermediate reasoning budget. / 请求中等推理预算。 */
