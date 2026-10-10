@@ -603,6 +603,27 @@ class AgentToolchainDependenciesTest(unittest.TestCase):
                 with mock.patch.object(self.d, 'dependency_run', side_effect=[owner + ': ' + str(pathlib.Path(path)) + '\n', '']), mock.patch.object(self.d.pathlib.Path, 'exists', return_value=False):
                     self.rejected(lambda: self.d.dependency_apt_options(hook, path))
 
+    def test_ubuntu_command_not_found_hook_requires_exact_os_path_owner_and_registered_content(self):
+        path = '/etc/apt/apt.conf.d/50command-not-found'
+        hook = 'APT::Update::Post-Invoke-Success {"/usr/lib/cnf-update-db > /dev/null || true";};\n'
+        digest = hashlib.md5(hook.encode()).hexdigest()
+        status = types.SimpleNamespace(is_file=lambda: True, stat=lambda: types.SimpleNamespace(st_size=100))
+        def run(command):
+            registered_path = command[-1] if '-S' in command else str(pathlib.Path(path))
+            return 'command-not-found: ' + registered_path + '\n' if '-S' in command else ' ' + registered_path + ' ' + digest + '\n'
+        with mock.patch.object(self.d, 'dependency_protected', return_value=status), mock.patch.object(self.d, 'dependency_tool', lambda name: '/usr/bin/' + name), mock.patch.object(self.d, 'dependency_run', run):
+            self.d.dependency_apt_options(hook, path)
+            self.rejected(lambda: self.d.dependency_apt_options(hook + '# changed\n', path))
+            self.rejected(lambda: self.d.dependency_apt_options(hook, '/etc/apt/apt.conf.d/99project'))
+            self.rejected(lambda: self.d.dependency_apt_options(hook, '/etc/apt/apt.conf.d/20apt-esm-hook.conf'))
+            self.d.OS_PROFILE = {'id': 'debian', 'version': '12', 'manager': 'APT'}
+            self.rejected(lambda: self.d.dependency_apt_options(hook, path))
+            self.d.OS_PROFILE = {'id': 'ubuntu', 'version': '24.04', 'manager': 'APT'}
+            with mock.patch.object(self.d, 'dependency_run', return_value='project-owned: ' + str(pathlib.Path(path)) + '\n'):
+                self.rejected(lambda: self.d.dependency_apt_options(hook, path))
+            with mock.patch.object(self.d, 'dependency_run', side_effect=['command-not-found: ' + str(pathlib.Path(path)) + '\n', '']), mock.patch.object(self.d.pathlib.Path, 'exists', return_value=False):
+                self.rejected(lambda: self.d.dependency_apt_options(hook, path))
+
     def test_root_owned_unmanaged_and_project_hook_are_not_proven_by_permission(self):
         hook = 'APT::Update::Post-Invoke {"sh /project/custom";};\n'
         status = types.SimpleNamespace(is_file=lambda: True, stat=lambda: types.SimpleNamespace(st_size=100))
