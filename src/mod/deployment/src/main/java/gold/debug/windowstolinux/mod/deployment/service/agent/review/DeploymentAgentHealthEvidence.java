@@ -76,6 +76,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     private Pending pending;
 
+    private ActionIntent verifiedReviewIntent;
+
     private boolean stopped;
 
     private record Selection(DeploymentApplicationGraph.Part part, DeploymentUnitCommit commit,
@@ -138,11 +140,13 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     public String reviewInstructions() throws ApiException {
         if (stopped) throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_REVIEW_STOPPED", null);
         requireBinding();
-        return DeploymentAgentHealthReviewContract.text();
+        return pending != null && pending.health() != null && pending.intent().equals(verifiedReviewIntent)
+            ? DeploymentAgentHealthReviewContract.text() : "";
     }
 
     @Override
     public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
+        verifiedReviewIntent = null;
         String operation = operation(intent);
         if (!covered(operation, request)) return Map.of();
         try {
@@ -275,6 +279,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     @Override
     public void verify(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
+        verifiedReviewIntent = null;
         String operation = operation(intent);
         if (!covered(operation, request) && (pending == null || !pending.intent().equals(intent))) return;
         try {
@@ -292,6 +297,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     || !pending.queryEvents().equals(queryEvents()))
                     throw new IllegalStateException("Original health request or query binding changed");
             }
+            verifiedReviewIntent = intent;
         } catch (Exception changed) {
             stopped = true;
             throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_BINDING_CHANGED", changed);
@@ -576,6 +582,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             if (statusCall) query = null;
             else pending = null;
         }
+        verifiedReviewIntent = null;
         var result = borrowed.execute(request, grant);
         requireBinding();
         if (statusCall) {

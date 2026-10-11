@@ -227,3 +227,15 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 477/478c 已完成：Agent 健康审批增加独立协议/完整 helper SHA 固定的 SYSTEM 合同，准确描述三实参、锁/orphan 写效果、执行分支与 HTTP 归属边界；USER 保留完整动态命令、当前绑定与独立审批。共享 hook 默认空，原 STATIC/ASSISTED SYSTEM 字节兼容检查通过；未知固定 hook 在 persistent 会话降级前拒绝。固定源码提取器逐字节移至 test，生产无旧 class。45 定点 PASS（新增6/直接影响旧39）/0SKIP/Maven0/Java0/noAPI/noSSH，九源码 SHA 与原203fixture/59helper零变；478/478b仅夹具构造/调用参数编译失败，已修正，无付费调用。三混合源码只记录自有增量 patch，mirror反向检查通过并清理。下一步限定本地提交后仅原恢复479；原任务ENDED和产品STOP/DISABLE通过后核验当前容量>=13GiB，再只fresh task-board。旧UNKNOWN/拒绝及跨版本计量保留，正式目标未完成。
 
 三个已有混合或未跟踪源文件的自有增量见 [合同补丁](patches/AGENT-HEALTH-REVIEW-CONTRACT-477.patch)；不整体提交其他任务的迁移源码。补丁使用零上下文，检查或应用需带 `--unidiff-zero`；独立镜像反向检查通过，镜像已清理。可信合同由产品静态文本与独立 helper pin 提供，不接受模型或远端观察生成的 SYSTEM 指令，也不授予任何执行许可。未知 persistent 合同仅拒绝，不改变共享会话合同。
+
+## 479 原状态查询合同范围问题
+
+479 原产品恢复已结束：第二 original-status 独立APP合法DENY，理由为该七参数动词不在健康专用合同内；健康检查尚未进入。固定HealthEvidence的reviewInstructions无条件附合同到STATUS/runtime，480仅Agent收窄至当前已严格匹配HEALTH分支；原动态证据和权限不改。原UNKNOWN/拒绝保留，未cleanup/STOP-DISABLE。2061源码freeze零变/Maven1/Java0；新增3APP29356(input29007/output349/cache8448/miss20559，29.1%)，fresh445跨版本调试累计2680497/4probe未知，仍非正式八项目批次。477本地限定提交7306520d/no push/index0。当前无付费/服务器请求在途，Sol仅两个自有源码修复。
+
+请求返回 SUCCEEDED 是模型传输结果，不能当作命令审批 APPROVE；这轮第二状态查询有合法 DENY，命令没有发送。专用健康合同覆盖到了不相关的状态查询，是源码已确认的呈现缺陷；不能据此推断修正后所有实际审批一定通过。先定点验证适用范围及默认提示，再继续原恢复。
+
+## 480–481 健康合同按当前命令隔离
+
+480/481 完成Agent专用合同范围修正：facts/verify入口清空实际verifiedReviewIntent；仅完整canonical请求、原task/target/pending核验成功后填充，hook仅为该pending HEALTH提供固定SYSTEM文本。STATUS/runtime/无当前选择/未覆盖请求均空，旧pending不继承合同或旧grant，实际send前清空。33定点PASS（新增3/直接旧30）/0SKIP/Maven0/Java0/noAPI/noSSH；两源码SHA/原203fixture59helper零变，477其他七源码未改。IDEA formatter未应用（默认用户锁不可用，隔离bat profile不支持Java），源码字节未变，仅人工风格和diff检查，临时目录已清理；不虚报format通过。所有writer STOP；限定三自有文件提交后仅原恢复482。原任务ENDED和产品STOP-DISABLE成功、当前容量>=13GiB后才fresh task-board483；未开始其他付费项目。
+
+共享 hook 签名、固定默认审批和未知 persistent 合同的 SYSTEM 保护不改。先前477在所有当前上下文统一附合同的策略由本节取代；STATUS/runtime 不再携带健康专属合同。控制验证不能证明实际模型一定批准，所有旧有效 DENY 与原 UNKNOWN 保留。
