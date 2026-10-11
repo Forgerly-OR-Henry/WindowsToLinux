@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+
 import java.time.Duration;
 import java.util.*;
 
@@ -33,27 +34,47 @@ import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentP
 /** Agent-only, invocation-local observations for one exact cleanup review and its absence check. */
 public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCommandEvidence, RemoteSession {
     private static final String OPERATION = "deployment.publication.candidate-cleanup.v1";
+
     private final ModContext original;
+
     private final RemoteSession borrowed;
+
     private final ServerId server;
+
     private final TaskContext task;
+
     private final String revision;
+
     private final DeploymentRemoteLayout layout;
 
     private final DeploymentPublishResult proposal;
+
     private final Map<String, DeploymentGraphPublisher.Candidate> candidates;
+
     private final DeploymentAgentActionLog journal;
+
     private final DeploymentSendGuard guard;
+
     private final boolean successful;
+
     private final DeploymentAgentActionLog.Identity identity;
+
     private final String profile;
+
     private final DeploymentCommandReviewScope reviewed;
+
     private final DeploymentExecutionStore executions;
+
     private final DeploymentExecutionIdentity executionIdentity;
+
     private Capture capture;
+
     private Selection observing;
+
     private String observingCleanupAction;
+
     private Pending pending;
+
     private boolean refused;
 
     private record Selection(DeploymentApplicationGraph.Part part, DeploymentUnitCommit commit,
@@ -65,14 +86,16 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
 
     private record Pending(ActionIntent intent, Selection selected, String evidenceDigest, String reviewDigest,
                            long queryEvent, boolean approved) {
-        Pending approve() { return new Pending(intent, selected, evidenceDigest, reviewDigest, queryEvent, true); }
+        Pending approve() {
+            return new Pending(intent, selected, evidenceDigest, reviewDigest, queryEvent, true);
+        }
     }
 
     public DeploymentAgentCleanupEvidence(ModContext original, RemoteSession borrowed, ServerId server,
-                                           TaskContext task, String revision, DeploymentPublishResult proposal,
-                                           Map<String, DeploymentGraphPublisher.Candidate> candidates,
-                                           DeploymentAgentActionLog journal, DeploymentSendGuard guard,
-                                           boolean successful) throws Exception {
+                                          TaskContext task, String revision, DeploymentPublishResult proposal,
+                                          Map<String, DeploymentGraphPublisher.Candidate> candidates,
+                                          DeploymentAgentActionLog journal, DeploymentSendGuard guard,
+                                          boolean successful) throws Exception {
         this.original = Objects.requireNonNull(original);
         this.borrowed = Objects.requireNonNull(borrowed);
         this.server = Objects.requireNonNull(server);
@@ -91,12 +114,14 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
         identity = journal.find(task).orElseThrow().identity();
         profile = unique(journal.events(task), "TARGET_PROFILE", null);
         reviewed = original instanceof DeploymentCommandReviewScope scope ? scope.withCurrentEvidence(this)
-            : new DeploymentCommandReviewScope(original, original.interaction(), task, identity.approvalMode(),
-                identity.rememberAuthorization(), () -> revision, null, this);
+            : DeploymentAgentApproval.scope(original, task, identity.approvalMode(),
+            identity.rememberAuthorization(), () -> revision, this);
         requireBinding();
     }
 
-    public ModContext context() { return reviewed; }
+    public ModContext context() {
+        return reviewed;
+    }
 
     @Override
     public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
@@ -250,16 +275,19 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             if (candidate == null) throw new IllegalStateException("Original candidate missing");
             var commit = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
             String archive = events.stream().filter(value -> value.type().equals("SOURCE")).map(DeploymentAgentActionLog.Event::action).distinct()
-                .reduce((left, right) -> { throw new IllegalStateException("Conflicting source archives"); }).orElseThrow();
+                .reduce((left, right) -> {
+                    throw new IllegalStateException("Conflicting source archives");
+                }).orElseThrow();
             var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive, layout);
             String script = List.of(layout.helperPath(), "candidate-cleanup-task", part.unit().id(),
-                candidate.candidateId(), task.id().toString()).stream().map(DeploymentBuildCommandChannel::shellQuote)
+                    candidate.candidateId(), task.id().toString()).stream().map(DeploymentBuildCommandChannel::shellQuote)
                 .collect(java.util.stream.Collectors.joining(" "));
             try (var expected = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0], Duration.ofSeconds(90), 4096)) {
                 var actual = RemoteActions.command(server, candidate.artifactSha256(), expected).withSemantics(new ActionSemantics(OPERATION,
                     Set.of(new ActionTarget(server.id(), "deployment-release", part.unit().releaseRoot()))));
                 if (!actual.equals(intent) || !request.script().equals(expected.script())
-                    || !request.timeout().equals(expected.timeout()) || request.outputLimitBytes() != 4096 || request.stdin().length != 0) continue;
+                    || !request.timeout().equals(expected.timeout()) || request.outputLimitBytes() != 4096 || request.stdin().length != 0)
+                    continue;
                 if (!workspace.candidateId().equals(candidate.candidateId()) || !part.unit().server().equals(server)
                     || !latest(events, "CANDIDATE", part.componentId()).equals(candidate.candidateId())
                     || !latest(events, "CURRENT_SOURCE", part.componentId()).equals(candidate.sourceRevision())
@@ -400,7 +428,8 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             requireBinding();
             var projects = new DeploymentAgentProjectChannel(this, reviewed.interaction(), server, task, revision, () -> revision, layout);
             var absent = projects.candidateStatus(selected.selected().workspace());
-            if (absent.present() || absent.buildActive()) throw new IllegalStateException("Deleted candidate absence is unconfirmed");
+            if (absent.present() || absent.buildActive())
+                throw new IllegalStateException("Deleted candidate absence is unconfirmed");
             journal.event(task, "CLEANUP_ABSENCE_VERIFIED", selected.reviewDigest(), selected.selected().candidate().candidateId());
             return result;
         } catch (Exception unavailable) {
@@ -415,12 +444,41 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
         return error;
     }
 
-    @Override public RemoteFacts facts() { return borrowed.facts(); }
-    @Override public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant) throws ApiException { return borrowed.upload(request, grant); }
-    @Override public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException { return borrowed.upload(request, grant, choice); }
-    @Override public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException { return borrowed.download(request, grant); }
-    @Override public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException { return borrowed.download(request, grant, choice); }
-    @Override public OperationResult<TransferResult> resumeTransfer(UUID transferId, ApprovalGrant grant) throws ApiException { return borrowed.resumeTransfer(transferId, grant); }
-    @Override public OperationResult<Void> discardTransfer(UUID transferId, ApprovalGrant grant) throws ApiException { return borrowed.discardTransfer(transferId, grant); }
-    @Override public void close() { /* Borrowed session remains owned by the original workflow. */ }
+    @Override
+    public RemoteFacts facts() {
+        return borrowed.facts();
+    }
+
+    @Override
+    public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant) throws ApiException {
+        return borrowed.upload(request, grant);
+    }
+
+    @Override
+    public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
+        return borrowed.upload(request, grant, choice);
+    }
+
+    @Override
+    public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException {
+        return borrowed.download(request, grant);
+    }
+
+    @Override
+    public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
+        return borrowed.download(request, grant, choice);
+    }
+
+    @Override
+    public OperationResult<TransferResult> resumeTransfer(UUID transferId, ApprovalGrant grant) throws ApiException {
+        return borrowed.resumeTransfer(transferId, grant);
+    }
+
+    @Override
+    public OperationResult<Void> discardTransfer(UUID transferId, ApprovalGrant grant) throws ApiException {
+        return borrowed.discardTransfer(transferId, grant);
+    }
+
+    @Override
+    public void close() { /* Borrowed session remains owned by the original workflow. */ }
 }

@@ -65,6 +65,34 @@ class DeploymentAgentCleanupEvidenceTest {
     private static final String DENIAL = "Current candidate cleanup lacks an authorized deletion boundary.";
 
     @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void actualHealthAndCleanupRoutesUseNativeAgentWithCurrentEvidenceAndPreserveOutcome(boolean health) throws Exception {
+        try (var frame = new Frame()) {
+            frame.nativeAgent = true;
+            if (health) {
+                frame.healthReviewFailure = "denied";
+                assertEquals(TaskResult.UNKNOWN, frame.verifyPublished(ignored -> {
+                }).outcome());
+                assertEquals(0, frame.healthDispatches);
+                assertEquals(0, frame.deletions);
+                assertEquals(List.of("deployment.publication.original-status.v1", "deployment.publication.health.v1"), frame.approvalOperations());
+                assertEquals(1, frame.hostGrants);
+            } else {
+                assertEquals(TaskResult.SUCCEEDED, frame.cleanup().outcome());
+                assertEquals(1, frame.deletions);
+                assertEquals(1, frame.absenceQueries);
+                assertEquals(4, frame.hostGrants);
+                assertEquals(List.of("deployment.publication.original-status.v1", "deployment.publication.original-status.v1",
+                    "deployment.publication.candidate-cleanup.v1", "deployment.agent.helper.v1"), frame.approvalOperations());
+            }
+            assertEquals(frame.reviewFacts.size() * 2, frame.nativeRequests.size(), "Model-selected exact-request reads precede native verdicts");
+            assertTrue(frame.nativeRequests.stream().allMatch(request -> request.purpose() == AiPurpose.APPROVAL
+                && request.tools().stream().anyMatch(tool -> tool.name().equals("request"))));
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state(), "Review and cleanup cannot replace the original outcome");
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"text", "denied"})
     void originalStatusFailureReachesRecoveryDiagnosticsWithoutDispatchOrChangingOutcome(String failure) throws Exception {
         try (var frame = new Frame()) {
@@ -408,6 +436,12 @@ class DeploymentAgentCleanupEvidenceTest {
 
         private final List<JsonNode> reviewFacts = new ArrayList<>();
 
+        private final List<AiRequest> nativeRequests = new ArrayList<>();
+
+        private boolean nativeAgent;
+
+        private int hostGrants;
+
         private String failure = "none";
 
         private String absenceFailure = "none";
@@ -477,6 +511,13 @@ class DeploymentAgentCleanupEvidenceTest {
                 var request = (AiRequest) args[0];
                 assertEquals(AiPurpose.APPROVAL, request.purpose());
                 var facts = JSON.readTree(request.messages().getLast().text());
+                if (nativeAgent) {
+                    nativeRequests.add(request);
+                    facts = facts.path("currentRequest");
+                    if (request.messages().stream().noneMatch(message -> message.toolResult().isPresent()))
+                        return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                            List.of(new AiToolCall("read-" + nativeRequests.size(), "request", "{\"part\":\"script\",\"offset\":0,\"limit\":8000}")), Optional.empty()));
+                }
                 reviewFacts.add(facts);
                 String operation = facts.path("operation").asText();
                 if (operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("text")
@@ -489,12 +530,19 @@ class DeploymentAgentCleanupEvidenceTest {
                     && failure.equals("query-denied") && statusQueries == 1 || operation.equals("deployment.agent.helper.v1") && absenceFailure.equals("denied")
                     || operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("denied");
                 deny |= operation.equals("deployment.publication.original-status.v1") && statusReviewFailure.equals("denied");
+                var verdict = new LinkedHashMap<String, Object>(Map.of("decision", deny ? "DENY" : "APPROVE",
+                    "requiresUserConfirmation", deny, "reason", deny ? DENIAL : "Controlled current boundary"));
+                if (nativeAgent) {
+                    for (String field : List.of("missingEvidence", "adjustments", "candidateCommands"))
+                        verdict.put(field, List.of());
+                    if (deny) verdict.put("discussionStatus", "CLOSED");
+                }
                 return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
-                    List.of(new AiToolCall("review-" + reviewFacts.size(), "submit_result", JSON.writeValueAsString(Map.of("decision", deny ? "DENY" : "APPROVE",
-                        "requiresUserConfirmation", deny, "reason", deny ? DENIAL : "Controlled current boundary")))), Optional.empty()));
+                    List.of(new AiToolCall("review-" + reviewFacts.size(), "submit_result", JSON.writeValueAsString(verdict))), Optional.empty()));
             });
             var host = proxy(InteractionService.class, (name, args) -> {
                 assertTrue(Set.of("approve", "approveReviewedAction").contains(name), name);
+                hostGrants++;
                 return success(new ApprovalGrant(UUID.randomUUID()));
             });
             var tasks = proxy(TaskService.class, (name, args) -> {
@@ -551,13 +599,18 @@ class DeploymentAgentCleanupEvidenceTest {
         }
 
         DeploymentAgentCleanupEvidence evidence() throws Exception {
-            var scope = new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
+            var scope = scope();
             return new DeploymentAgentCleanupEvidence(scope, remote, server, task, REVISION, proposal, Map.of("component", candidate), journal, DeploymentSendGuard.NONE, true);
         }
 
         DeploymentGraphPublisher publisher() throws Exception {
-            var scope = new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
+            var scope = scope();
             return new DeploymentGraphPublisher(scope, remote, server, task, (type, action, detail) -> journal.event(task, type, action, detail));
+        }
+
+        private DeploymentCommandReviewScope scope() throws Exception {
+            return nativeAgent ? DeploymentAgentApproval.scope(context, task, "FULL_CONTROL", true, () -> REVISION, DeploymentCurrentCommandEvidence.NONE)
+                : new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
         }
 
         OperationResult<Void> verifyPublished(Consumer<Exception> diagnostics) throws Exception {
