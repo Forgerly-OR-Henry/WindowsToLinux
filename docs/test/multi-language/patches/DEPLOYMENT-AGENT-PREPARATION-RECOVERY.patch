@@ -1,0 +1,1635 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -22,6 +22,7 @@
+ import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentProjectChannel;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentPrepareNotSentException;
+ import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher;
+@@ -183,8 +184,16 @@
+                                                     List<DeploymentAgentActionLog.Event> events, DeploymentRemoteLayout layout) throws Exception {
+         if (saved.state().equals("SUCCEEDED"))
+             return unknown("DEPLOYMENT_AGENT_FORMAL_SUCCESS_MISSING");
+-        if (!preparationsSettled(events))
+-            return unknown("DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED");
++        if (!preparationsSettled(events)) {
++            try {
++                if (!DeploymentAgentPreparationReconciliation.settle(context, task, journal, saved, layout, events))
++                    return unknown("DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED");
++                events = journal.events(task);
++            } catch (Exception unavailable) {
++                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, unavailable);
++                return unknown("DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED");
++            }
++        }
+         var workspaces = originalWorkspaces(task.id(), saved.identity(), events, layout);
+         if (workspaces.isEmpty())
+             return unknown("DEPLOYMENT_AGENT_PREFORMAL_IDENTITY_MISSING");
+@@ -257,7 +266,7 @@
+     }
+ 
+     private static boolean preparationsSettled(List<DeploymentAgentActionLog.Event> events) {
+-        return DeploymentAgentActionLog.effectsSettled(events.stream().filter(event -> event.type().startsWith("PREPARE_")).toList());
++        return DeploymentAgentActionLog.preparationsSettled(events);
+     }
+ 
+     /** Verifies the original endpoint before handoff, authentication or any remote observation. / 在交权、认证或任何远端观察前核对原端点。
+@@ -288,6 +297,7 @@
+         var observed = new HashMap<String, String>();
+         var attempts = new HashMap<String, Integer>();
+         var unsent = new HashMap<String, Integer>();
++        var absent = new HashMap<String, Integer>();
+         var executing = new HashMap<String, ArrayDeque<DeploymentAgentActionLog.Event>>();
+         var proofs = new HashMap<String, DeploymentAgentActionLog.Event>();
+         var completed = new HashSet<String>();
+@@ -311,6 +321,14 @@
+                     var pending = executing.get(event.action());
+                     if (pending != null && !pending.isEmpty()) completed.add(pending.removeFirst().detail());
+                     proofs.remove(event.action());
++                }
++                case DeploymentAgentPreparationAbsence.EVENT -> {
++                    if (!DeploymentAgentPreparationAbsence.matches(task, identity, layout, event, events))
++                        return Optional.empty();
++                    var pending = executing.get(event.action());
++                    var attempt = pending == null ? null : pending.pollFirst();
++                    if (attempt == null) return Optional.empty();
++                    absent.merge(attempt.detail(), 1, Integer::sum);
+                 }
+                 case "PREPARE_NOT_SENT" -> {
+                     if (!Set.of("ALTERNATIVE_REQUIRED", DeploymentAgentPrepareNotSentException.DETAIL).contains(event.detail()))
+@@ -338,7 +356,7 @@
+         events.stream().filter(event -> event.type().equals("PREPARE_EXECUTING") && preparedBindings.contains(event.action()))
+             .forEach(event -> completed.add(event.detail()));
+         components.removeIf(component -> !completed.contains(component) && attempts.getOrDefault(component, 0) > 0
+-            && attempts.get(component).equals(unsent.get(component)));
++            && attempts.get(component).equals(unsent.getOrDefault(component, 0) + absent.getOrDefault(component, 0)));
+         if (components.isEmpty())
+             return Optional.of(List.of());
+         if (archive == null || application == null)
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+@@ -234,6 +234,55 @@
+         }
+     }
+ 
++    /** Commits an observed original absence only while the entire task and event prefix remain unchanged. */
++    public void preparationAbsent(TaskContext task, DeploymentAgentPreparationAbsence.Captured captured, String proof) throws Exception {
++        if (!task.id().equals(captured.task())) throw new SQLException("Foreign preparation observation");
++        try (var connection = database.openConnection(task)) {
++            connection.setAutoCommit(false);
++            try {
++                DeploymentAgentEvidenceLimit.require(connection, task.id(), false);
++                if (!find(connection, task.id()).orElseThrow().equals(captured.snapshot()))
++                    throw new SQLException("Original preparation identity changed");
++                try (var formal = connection.prepareStatement("SELECT execution_id FROM deployment_execution WHERE platform_task_id=?")) {
++                    formal.setObject(1, task.id());
++                    try (var rows = formal.executeQuery()) {
++                        if (rows.next()) throw new SQLException("Original preparation acquired formal execution");
++                    }
++                }
++                var current = events(connection, task.id());
++                var receipt = current.stream().filter(event -> event.type().equals(DeploymentAgentPreparationAbsence.EVENT)).toList();
++                if (receipt.size() == 1 && current.size() == captured.events().size() + 1
++                    && current.subList(0, captured.events().size()).equals(captured.events()) && receipt.getFirst().equals(current.getLast())
++                    && receipt.getFirst().detail().equals(proof)
++                    && DeploymentAgentPreparationAbsence.matches(task.id(), captured.snapshot().identity(), captured.layout(), receipt.getFirst(), current)) {
++                    connection.commit();
++                    return;
++                }
++                if (!current.equals(captured.events())) throw new SQLException("Original preparation evidence changed");
++                long last = current.getLast().id();
++                var proposed = new Event(Math.addExact(last, 1), DeploymentAgentPreparationAbsence.EVENT, captured.preparation().action(), proof);
++                if (!DeploymentAgentPreparationAbsence.matches(task.id(), captured.snapshot().identity(), captured.layout(), proposed, current))
++                    throw new SQLException("Original preparation absence proof is invalid");
++                try (var statement = connection.prepareStatement("INSERT INTO deployment_agent_event(task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,?,?,?)")) {
++                    statement.setString(1, task.id().toString());
++                    statement.setString(2, captured.preparation().action());
++                    statement.setString(3, DeploymentAgentPreparationAbsence.EVENT);
++                    statement.setString(4, proof);
++                    statement.setLong(5, Instant.now().toEpochMilli());
++                    statement.executeUpdate();
++                }
++                connection.commit();
++            } catch (Exception failure) {
++                try {
++                    connection.rollback();
++                } catch (SQLException rollback) {
++                    failure.addSuppressed(rollback);
++                }
++                throw failure;
++            }
++        }
++    }
++
+     /** Changes task state and records matching evidence in one transaction. / 在同一事务中改变任务状态并记录相应依据。
+      * @param task original task / 原任务
+      * @param state known lifecycle state / 已知生命周期状态
+@@ -387,6 +436,14 @@
+      * @param events original event stream / 原事件流
+      * @return true only if no started effect lacks a trusted result / 仅无未结清的已启动影响时为真 */
+     public static boolean effectsSettled(List<Event> events) {
++        return effectsSettled(events, events);
++    }
++
++    public static boolean preparationsSettled(List<Event> events) {
++        return effectsSettled(events.stream().filter(event -> event.type().startsWith("PREPARE_")).toList(), events);
++    }
++
++    private static boolean effectsSettled(List<Event> events, List<Event> complete) {
+         var pending = new HashMap<List<String>, Integer>();
+         for (var event : events) {
+             if (Set.of("PREPARE_EXECUTING", "COMMAND_EXECUTING", "PATCH_EXECUTING", "SEAL_EXECUTING",
+@@ -401,6 +458,8 @@
+                 || event.type().equals("PREPARE_NOT_SENT") && event.detail().equals("INSTALL_REVIEW_STOPPED_NOT_SENT"))
+                 pending.computeIfPresent(List.of(event.type().substring(0, event.type().length() - "_NOT_SENT".length()), event.action()),
+                     (key, count) -> count == 1 ? null : count - 1);
++            if (event.type().equals(DeploymentAgentPreparationAbsence.EVENT) && DeploymentAgentPreparationAbsence.matches(event, complete))
++                pending.computeIfPresent(List.of("PREPARE", event.action()), (key, count) -> count == 1 ? null : count - 1);
+         }
+         return pending.isEmpty();
+     }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -34,7 +34,7 @@
+         "deployment.publication.observe-restored.v1", "deployment.publication.rollback.v1", "deployment.publication.retain.v1", "deployment.publication.maintenance-end.v1", "deployment.publication.candidate-cleanup.v1",
+         "deployment.application.lifecycle.v1", "deployment.native-db.inspect.v1", "deployment.native-db.target.v1", "deployment.native-db.start.v1", "deployment.native-db.install.v1",
+         "deployment.native-db.prepare.v1", "deployment.native-db.initialize.v1", "deployment.native-db.resume.v1", "deployment.native-db.status.v1", "deployment.agent.helper.v1",
+-        "deployment.model.command.v1", "deployment.model.command.status.v1",
++        "deployment.model.command.v1", "deployment.model.command.status.v1", "deployment.agent.preparation.absence.v1",
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -1,170 +1,170 @@
+-package gold.debug.windowstolinux.mod.deployment.ai.review;
+-
+-import java.nio.ByteBuffer;
+-import java.nio.charset.CharacterCodingException;
+-import java.nio.charset.CodingErrorAction;
+-import java.nio.charset.StandardCharsets;
+-import java.util.Arrays;
+-import java.util.LinkedHashMap;
+-import java.util.Map;
+-import java.util.Set;
+-
+-import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+-import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+-import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+-import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
+-
+-/** Adds complete executable input while keeping protected data payloads opaque. / 增补完整可执行输入，受保护数据载荷继续保持不透明。 */
+-final class DeploymentCommandEvidence {
+-    /** Fixed operations whose stdin is executable Bash rather than protected data. / stdin是可执行Bash而非受保护数据的固定动作。 */
+-    private static final Set<String> SCRIPT_INPUT = Set.of("deployment.helper.install.v1",
+-        "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1",
+-        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1",
+-        "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1");
+-
+-    /** Prevents construction. / 禁止构造。 */
+-    private DeploymentCommandEvidence() {
+-    }
+-
+-    /** Classifies only original executable formats; arbitrary payloads are never decoded. / 仅分类原可执行格式，绝不解码任意载荷。
+-     * @param intent exact fixed command intent / 精确固定命令意图
+-     * @param request complete immutable request / 完整不可变请求
+-     * @return bounded complete command facts with opaque protected input binding / 有界完整命令事实及不透明受保护输入绑定
+-     * @throws java.io.IOException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+-    static Map<String, Object> facts(ActionIntent intent, CommandRequest request) throws java.io.IOException {
+-        return facts(intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+-    }
+-
+-    static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
+-                                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
+-        var facts = new LinkedHashMap<String, Object>();
+-        String operation = intent.semantics().orElseThrow().operation();
+-        boolean installedHelper = !operation.equals("deployment.helper.install.v1") && !operation.equals("deployment.helper.install.tracked.v1")
+-            && !operation.equals("deployment.helper.install.files.v1")
+-            && request.script().contains(layout.helperPath());
+-        String invocation = installedHelper ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout) : request.script();
+-        if (installedHelper) {
+-            facts.put("installedHelperPath", layout.helperPath());
+-            facts.put("installedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
+-            facts.put("platformContractRevision", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION);
+-        }
+-        facts.put("operation", operation);
+-        if (operation.equals("deployment.model.command.v1")) {
+-            facts.put("commandOrigin", "AI_GENERATED_BODY_WITH_PRODUCT_RECEIPT_WRAPPER");
+-            facts.put("executionScope", "Selected SSH host identity; not a project-build sandbox. Deployment and authorized host prerequisites only. modelCommand supplies the exact model body and its untrusted rationale, separated from the byte-validated product envelope. The product envelope records only its own task/operation/body-bound receipt. The model body must not alter receipt or approval files. Review both bodies and all host effects; this description does not grant permission.");
+-        }
+-        facts.put("serverTargets", intent.serverIds());
+-        facts.put("resourceTargets", intent.semantics().orElseThrow().targets().stream().sorted(java.util.Comparator
+-            .comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
+-            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
+-            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
+-        facts.put("businessRevision", intent.revision());
+-        facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
+-        facts.put("exactAction", intent.exactAction());
+-        if (operation.equals("deployment.toolchain.bind.v1"))
+-            facts.put("decodedToolchainBinding", binding(invocation, layout));
+-        if (operation.equals("deployment.build.run.v1"))
+-            buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
+-        if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
+-            || operation.equals("deployment.helper.install.files.v1") || operation.equals("deployment.helper.install.files.custom.v1")) {
+-            facts.put("expectedHelperPath", layout.helperPath());
+-            facts.put("expectedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
+-        }
+-        boolean agentRun = operation.equals("deployment.agent.helper.v1")
+-            && invocation.startsWith("'" + layout.helperPath() + "' 'agent-run' ");
+-        boolean patch = operation.equals("deployment.agent.helper.v1")
+-            && invocation.startsWith("'" + layout.helperPath() + "' 'agent-patch' ");
+-        boolean installedBuildEntry = operation.equals("deployment.build.run.v1") || agentRun;
+-        if (installedBuildEntry) {
+-            facts.put("installedBuildEntryPath", layout.buildEntry());
+-            facts.put("installedBuildEntrySha256", DeploymentManagedHelperBundle.buildEntrySha256(layout));
+-        }
+-        byte[] input = request.stdin();
+-        try {
+-            if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
+-                String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+-                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
+-                if (!patch && !executable.isBlank()) {
+-                    if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
+-                    else DeploymentCommandStaticGate.requireFixedAllowed(executable);
+-                }
+-                if (agentRun)
+-                    facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
+-                facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");
+-                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.custom.v1")
+-                    ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(executable, layout)
+-                    : operation.equals("deployment.helper.install.files.v1")
+-                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describeFiles(executable, layout)
+-                    : operation.equals("deployment.helper.install.v1")
+-                    || operation.equals("deployment.helper.install.tracked.v1")
+-                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable);
+-                if (operation.equals("deployment.model.command.v1")) {
+-                    if (!request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER))
+-                        throw new IllegalArgumentException("Model command launcher changed");
+-                    var modelCommand = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.executableFacts(executable, layout);
+-                    if (!intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
+-                        intent.serverIds().getFirst(), "task", modelCommand.get("task").toString())))
+-                        throw new IllegalArgumentException("Model command task target changed");
+-                    facts.put("modelCommand", modelCommand);
+-                }
+-            } else {
+-                facts.put("inputKind", input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");
+-            }
+-        } finally {
+-            Arrays.fill(input, (byte) 0);
+-        }
+-        return java.util.Collections.unmodifiableMap(facts);
+-    }
+-
+-    /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
+-     * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
+-     * @return decoded original toolchain binding evidence / 已解码原工具链绑定依据
+-     * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+-    private static Map<String, Object> binding(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws CharacterCodingException {
+-        String prefix = "'" + layout.helperPath() + "' prepare-toolchains 'bind' '";
+-        if (!script.startsWith(prefix) || !script.endsWith("'"))
+-            throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
+-        String encoded = script.substring(prefix.length(), script.length() - 1);
+-        return decodeBinding(encoded);
+-    }
+-
+-    /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
+-     * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
+-     * @return decoded original build binding evidence / 已解码原构建绑定依据
+-     * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+-    private static java.util.Optional<Map<String, Object>> buildBinding(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws CharacterCodingException {
+-        var pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' build-run ")
+-            + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
+-        var match = pattern.matcher(script);
+-        if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
+-        return match.group(1).equals("-") ? java.util.Optional.empty() : java.util.Optional.of(decodeBinding(match.group(1)));
+-    }
+-
+-    /** Preserves canonical encoded binding and parsed evidence together. / 同时保留规范编码绑定及已解析依据。
+-     * @param encoded original encoded bound to this operation / 当前操作绑定的原encoded值
+-     * @return canonical binding evidence / 规范绑定依据
+-     * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+-    private static Map<String, Object> decodeBinding(String encoded) throws CharacterCodingException {
+-        if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
+-            throw new IllegalArgumentException("Invalid toolchain binding encoding");
+-        byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
+-        try {
+-            if (bytes.length > 65536) throw new IllegalArgumentException("Toolchain binding exceeds budget");
+-            if (!java.util.Base64.getEncoder().encodeToString(bytes).equals(encoded))
+-                throw new IllegalArgumentException("Toolchain binding Base64 is not canonical");
+-            String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+-                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
+-            var binding = DeploymentToolchainBindingCodec.decode(text);
+-            if (!DeploymentToolchainBindingCodec.encode(binding).equals(text))
+-                throw new IllegalArgumentException("Toolchain binding is not canonical");
+-            return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
+-                "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
+-                "toolchains", binding.selections().stream().map(selection -> Map.of(
+-                    "ecosystem", selection.requirement().ecosystem().name(), "version", selection.version().text(),
+-                    "directory", selection.directory(), "origin", selection.origin().name(),
+-                    "source", selection.source(), "sha256", selection.sha256())).toList());
+-        } finally {
+-            Arrays.fill(bytes, (byte) 0);
+-        }
+-    }
+-}
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import java.nio.ByteBuffer;
++import java.nio.charset.CharacterCodingException;
++import java.nio.charset.CodingErrorAction;
++import java.nio.charset.StandardCharsets;
++import java.util.Arrays;
++import java.util.LinkedHashMap;
++import java.util.Map;
++import java.util.Set;
++
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
++
++/** Adds complete executable input while keeping protected data payloads opaque. / 增补完整可执行输入，受保护数据载荷继续保持不透明。 */
++final class DeploymentCommandEvidence {
++    /** Fixed operations whose stdin is executable Bash rather than protected data. / stdin是可执行Bash而非受保护数据的固定动作。 */
++    private static final Set<String> SCRIPT_INPUT = Set.of("deployment.helper.install.v1",
++        "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1",
++        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1", "deployment.agent.preparation.absence.v1",
++        "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1");
++
++    /** Prevents construction. / 禁止构造。 */
++    private DeploymentCommandEvidence() {
++    }
++
++    /** Classifies only original executable formats; arbitrary payloads are never decoded. / 仅分类原可执行格式，绝不解码任意载荷。
++     * @param intent exact fixed command intent / 精确固定命令意图
++     * @param request complete immutable request / 完整不可变请求
++     * @return bounded complete command facts with opaque protected input binding / 有界完整命令事实及不透明受保护输入绑定
++     * @throws java.io.IOException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
++    static Map<String, Object> facts(ActionIntent intent, CommandRequest request) throws java.io.IOException {
++        return facts(intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
++    }
++
++    static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
++                                     gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
++        var facts = new LinkedHashMap<String, Object>();
++        String operation = intent.semantics().orElseThrow().operation();
++        boolean installedHelper = !operation.equals("deployment.helper.install.v1") && !operation.equals("deployment.helper.install.tracked.v1")
++            && !operation.equals("deployment.helper.install.files.v1")
++            && request.script().contains(layout.helperPath());
++        String invocation = installedHelper ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout) : request.script();
++        if (installedHelper) {
++            facts.put("installedHelperPath", layout.helperPath());
++            facts.put("installedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
++            facts.put("platformContractRevision", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.REVISION);
++        }
++        facts.put("operation", operation);
++        if (operation.equals("deployment.model.command.v1")) {
++            facts.put("commandOrigin", "AI_GENERATED_BODY_WITH_PRODUCT_RECEIPT_WRAPPER");
++            facts.put("executionScope", "Selected SSH host identity; not a project-build sandbox. Deployment and authorized host prerequisites only. modelCommand supplies the exact model body and its untrusted rationale, separated from the byte-validated product envelope. The product envelope records only its own task/operation/body-bound receipt. The model body must not alter receipt or approval files. Review both bodies and all host effects; this description does not grant permission.");
++        }
++        facts.put("serverTargets", intent.serverIds());
++        facts.put("resourceTargets", intent.semantics().orElseThrow().targets().stream().sorted(java.util.Comparator
++            .comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
++            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
++            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
++        facts.put("businessRevision", intent.revision());
++        facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
++        facts.put("exactAction", intent.exactAction());
++        if (operation.equals("deployment.toolchain.bind.v1"))
++            facts.put("decodedToolchainBinding", binding(invocation, layout));
++        if (operation.equals("deployment.build.run.v1"))
++            buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
++        if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
++            || operation.equals("deployment.helper.install.files.v1") || operation.equals("deployment.helper.install.files.custom.v1")) {
++            facts.put("expectedHelperPath", layout.helperPath());
++            facts.put("expectedHelperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
++        }
++        boolean agentRun = operation.equals("deployment.agent.helper.v1")
++            && invocation.startsWith("'" + layout.helperPath() + "' 'agent-run' ");
++        boolean patch = operation.equals("deployment.agent.helper.v1")
++            && invocation.startsWith("'" + layout.helperPath() + "' 'agent-patch' ");
++        boolean installedBuildEntry = operation.equals("deployment.build.run.v1") || agentRun;
++        if (installedBuildEntry) {
++            facts.put("installedBuildEntryPath", layout.buildEntry());
++            facts.put("installedBuildEntrySha256", DeploymentManagedHelperBundle.buildEntrySha256(layout));
++        }
++        byte[] input = request.stdin();
++        try {
++            if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
++                String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
++                    .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
++                if (!patch && !executable.isBlank()) {
++                    if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
++                    else DeploymentCommandStaticGate.requireFixedAllowed(executable);
++                }
++                if (agentRun)
++                    facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
++                facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");
++                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.custom.v1")
++                    ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(executable, layout)
++                    : operation.equals("deployment.helper.install.files.v1")
++                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describeFiles(executable, layout)
++                    : operation.equals("deployment.helper.install.v1")
++                    || operation.equals("deployment.helper.install.tracked.v1")
++                    ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describe(executable, layout) : executable);
++                if (operation.equals("deployment.model.command.v1")) {
++                    if (!request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER))
++                        throw new IllegalArgumentException("Model command launcher changed");
++                    var modelCommand = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.executableFacts(executable, layout);
++                    if (!intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
++                        intent.serverIds().getFirst(), "task", modelCommand.get("task").toString())))
++                        throw new IllegalArgumentException("Model command task target changed");
++                    facts.put("modelCommand", modelCommand);
++                }
++            } else {
++                facts.put("inputKind", input.length == 0 ? "EMPTY" : "OPAQUE_BOUND_DATA");
++            }
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
++        return java.util.Collections.unmodifiableMap(facts);
++    }
++
++    /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
++     * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
++     * @return decoded original toolchain binding evidence / 已解码原工具链绑定依据
++     * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
++    private static Map<String, Object> binding(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws CharacterCodingException {
++        String prefix = "'" + layout.helperPath() + "' prepare-toolchains 'bind' '";
++        if (!script.startsWith(prefix) || !script.endsWith("'"))
++            throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
++        String encoded = script.substring(prefix.length(), script.length() - 1);
++        return decodeBinding(encoded);
++    }
++
++    /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
++     * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
++     * @return decoded original build binding evidence / 已解码原构建绑定依据
++     * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
++    private static java.util.Optional<Map<String, Object>> buildBinding(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws CharacterCodingException {
++        var pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' build-run ")
++            + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
++        var match = pattern.matcher(script);
++        if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
++        return match.group(1).equals("-") ? java.util.Optional.empty() : java.util.Optional.of(decodeBinding(match.group(1)));
++    }
++
++    /** Preserves canonical encoded binding and parsed evidence together. / 同时保留规范编码绑定及已解析依据。
++     * @param encoded original encoded bound to this operation / 当前操作绑定的原encoded值
++     * @return canonical binding evidence / 规范绑定依据
++     * @throws CharacterCodingException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
++    private static Map<String, Object> decodeBinding(String encoded) throws CharacterCodingException {
++        if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
++            throw new IllegalArgumentException("Invalid toolchain binding encoding");
++        byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
++        try {
++            if (bytes.length > 65536) throw new IllegalArgumentException("Toolchain binding exceeds budget");
++            if (!java.util.Base64.getEncoder().encodeToString(bytes).equals(encoded))
++                throw new IllegalArgumentException("Toolchain binding Base64 is not canonical");
++            String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
++                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
++            var binding = DeploymentToolchainBindingCodec.decode(text);
++            if (!DeploymentToolchainBindingCodec.encode(binding).equals(text))
++                throw new IllegalArgumentException("Toolchain binding is not canonical");
++            return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
++                "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
++                "toolchains", binding.selections().stream().map(selection -> Map.of(
++                    "ecosystem", selection.requirement().ecosystem().name(), "version", selection.version().text(),
++                    "directory", selection.directory(), "origin", selection.origin().name(),
++                    "source", selection.source(), "sha256", selection.sha256())).toList());
++        } finally {
++            Arrays.fill(bytes, (byte) 0);
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java
+@@ -10,9 +10,13 @@
+ 
+ import gold.debug.windowstolinux.appapi.linux.LinuxService;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+ import gold.debug.windowstolinux.appapi.task.result.*;
+ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Event;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentPrepareNotSentException;
+@@ -57,6 +61,9 @@
+                 try {
+                     var journal = new DeploymentAgentActionLog(actual.db());
+                     journal.create(task, IDENTITY);
++                    var layout = DeploymentRemoteLayout.original();
++                    DeploymentConfigCapture.remoteLayout(actual.tasks(), task, layout);
++                    DeploymentAgentLayouts.record(journal, task, new ServerId(IDENTITY.server()), layout);
+                     journal.event(task, "SOURCE", ARCHIVE, SOURCE);
+                     journal.event(task, "PLAN_APPLICATION", "", "demo");
+                     journal.event(task, "PREPARE_EXECUTING", "original-prepare", "api");
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java
+@@ -0,0 +1,113 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.util.Arrays;
++import java.util.Optional;
++
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript;
++import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperReadiness;
++
++/** Fixed read-only metadata, independent of the managed helper and without candidate mutation. */
++public final class DeploymentAgentPreparationProbe {
++    public static final String OPERATION = "deployment.agent.preparation.absence.v1";
++
++    private DeploymentAgentPreparationProbe() {
++    }
++
++    public static CommandRequest request(DeploymentAgentPreparationAbsence.Captured captured) {
++        byte[] input = script(captured).getBytes(StandardCharsets.UTF_8);
++        try {
++            return new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, input, Duration.ofSeconds(30), 4096);
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
++    }
++
++    public static String requestDigest(DeploymentAgentPreparationAbsence.Captured captured) {
++        try (var request = request(captured)) {
++            return DeploymentAgentPreparationAbsence.hash(RemoteActions.command(new ServerId(captured.snapshot().identity().server()),
++                captured.snapshot().identity().configurationDigest(), request).exactAction());
++        }
++    }
++
++    public static String absentOutput(DeploymentAgentPreparationAbsence.Captured captured) {
++        return header(captured) + "STATUS=ABSENT\nPATH=ABSENT\nBUILD=ABSENT\nMOUNTS=ABSENT\nLOOPS=ABSENT\n";
++    }
++
++    public static boolean absent(DeploymentAgentPreparationAbsence.Captured captured, CommandResult result) {
++        return result != null && !result.truncated() && result.exitCode().equals(Optional.of(0)) && result.stderr().isEmpty()
++            && absentOutput(captured).equals(result.stdout());
++    }
++
++    private static String header(DeploymentAgentPreparationAbsence.Captured captured) {
++        return "FORMAT=WTL_AGENT_PREPARATION_ABSENCE_1\nTASK=" + captured.task() + "\nPREPARE_EVENT=" + captured.preparation().id()
++            + "\nCANDIDATE=" + captured.workspace().candidateId() + "\nLAYOUT_SHA256=" + captured.layout().digest()
++            + "\nEVENTS_SHA256=" + DeploymentAgentPreparationAbsence.digest(captured.events()) + "\n";
++    }
++
++    public static String script(DeploymentAgentPreparationAbsence.Captured captured) {
++        // Reuse the existing protected system-path and permission/absence guards, not its helper checks.
++        String readiness = DeploymentAgentHelperReadiness.script(captured.layout());
++        String begin = "# WTL_READINESS_GUARDS_BEGIN\n";
++        String end = "# WTL_READINESS_GUARDS_END";
++        int first = readiness.indexOf(begin);
++        int last = readiness.indexOf(end);
++        if (first < 0 || last <= first || readiness.indexOf(begin, first + 1) >= 0 || readiness.indexOf(end, last + 1) >= 0)
++            throw new IllegalStateException("Preparation metadata guards are unavailable");
++        String guards = readiness.substring(first + begin.length(), last);
++        String candidate = captured.workspace().candidateRoot();
++        String unit = "windowstolinux-build-" + captured.workspace().candidateId() + ".service";
++        return "set -uo pipefail\nexport LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin\nunset BASH_ENV ENV CDPATH\ncd -- / || exit 64\n"
++            + guards + "\n" + "candidate='" + candidate + "'\nunit='" + unit + "'\n"
++            + "emit_unknown() { printf '%s' '" + header(captured) + "STATUS=UNKNOWN\nPATH=UNCONFIRMED\nBUILD=UNCONFIRMED\nMOUNTS=UNCONFIRMED\nLOOPS=UNCONFIRMED\n'; exit 0; }\n"
++            + """
++            for tool in /usr/bin/stat /usr/bin/readlink /usr/bin/find /usr/bin/id /usr/bin/systemctl /usr/bin/findmnt /usr/sbin/losetup; do
++              trusted_executable "$tool"
++              [ "$checked" = SAFE ] || emit_unknown
++            done
++            [ "$(/usr/bin/id -u)" = 0 ] || emit_unknown
++            managed_parents "$candidate"
++            [ "$checked" = SAFE ] || emit_unknown
++            confirm_absent "$candidate"
++            [ "$checked" = MISSING ] || emit_unknown
++            # Even an inactive loaded unit is retained: this narrow branch expects no original build unit.
++            unit_info=$(/usr/bin/systemctl show --no-pager --property=LoadState --property=ActiveState --property=ControlGroup -- "$unit" 2>/dev/null)
++            unit_exit=$?
++            [ "$unit_exit" = 0 ] || [ "$unit_exit" = 4 ] || emit_unknown
++            unit_load= unit_active= unit_group= unit_fields=0
++            while IFS= read -r line; do
++              case "$line" in
++                LoadState=not-found) [ -z "$unit_load" ] || emit_unknown; unit_load=not-found ;;
++                ActiveState=inactive) [ -z "$unit_active" ] || emit_unknown; unit_active=inactive ;;
++                ControlGroup=) [ -z "$unit_group" ] || emit_unknown; unit_group=empty ;;
++                *) emit_unknown ;;
++              esac
++              unit_fields=$((unit_fields + 1))
++            done <<< "$unit_info"
++            [ "$unit_fields" = 3 ] && [ "$unit_load" = not-found ] && [ "$unit_active" = inactive ] && [ "$unit_group" = empty ] || emit_unknown
++            mounts=$(/usr/bin/findmnt --kernel --list --noheadings --raw --output TARGET) || emit_unknown
++            [ "${#mounts}" -le 65536 ] || emit_unknown
++            while IFS= read -r mount; do
++              [[ "$mount" = /* ]] || emit_unknown
++              case "$mount" in "$candidate" | "$candidate"/*) emit_unknown ;; esac
++            done <<< "$mounts"
++            loops=$(/usr/sbin/losetup --list --noheadings --raw --output BACK-FILE) || emit_unknown
++            [ "${#loops}" -le 65536 ] || emit_unknown
++            if [ -n "$loops" ]; then
++              while IFS= read -r backing; do
++                [[ "$backing" = /* ]] || emit_unknown
++                case "$backing" in "$candidate" | "$candidate"/*) emit_unknown ;; esac
++              done <<< "$loops"
++            fi
++            # Recheck the original literal path after all kernel metadata observations.
++            confirm_absent "$candidate"
++            [ "$checked" = MISSING ] || emit_unknown
++            """ + "printf '%s' '" + absentOutput(captured) + "'\n";
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java
+@@ -0,0 +1,107 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.Set;
++
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
++import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
++import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
++import gold.debug.windowstolinux.appapi.task.result.ApiException;
++import gold.debug.windowstolinux.appapi.task.result.Problem;
++import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
++import gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner;
++import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval;
++
++/** Observes one original pre-readiness gap; neither starts preparation nor installs a helper. */
++final class DeploymentAgentPreparationReconciliation {
++    private DeploymentAgentPreparationReconciliation() {
++    }
++
++    static boolean settle(ModContext context, TaskContext task, DeploymentAgentActionLog journal,
++                          DeploymentAgentActionLog.Snapshot saved, DeploymentRemoteLayout layout,
++                          List<DeploymentAgentActionLog.Event> events) throws Exception {
++        if (DeploymentAgentPreparationAbsence.capture(task.id(), saved, layout, events).isEmpty()
++            || DeploymentModelCommandRunner.unconfirmed(context, task)) return false;
++        var server = new ServerId(saved.identity().server());
++        var profile = context.servers().get(server, task);
++        var first = DeploymentAgentPreparationAbsence.capture(task.id(), saved, layout, events).orElseThrow();
++        if (!first.profile().equals(DeploymentAgentInputs.targetProfile(profile))
++            || !first.endpoint().equals(DeploymentAgentInputs.physicalTarget(profile))) return false;
++        String revision = DeploymentAgentRecoveryReview.revision(context, task, saved, journal);
++        var captured = DeploymentAgentPreparationAbsence.capture(task.id(), saved, layout, journal.events(task)).orElseThrow();
++        var evidence = new DeploymentCurrentCommandEvidence() {
++            public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext actual) throws ApiException {
++                verify(intent, request, actual);
++                return Map.of("originalPreparationEvent", captured.preparation().id(), "originalPreparationAction", captured.preparation().action(),
++                    "originalTask", task.id().toString(), "originalSourceSha256", captured.source(), "originalArchiveSha256", captured.workspace().archiveSha256(),
++                    "originalLayoutSha256", layout.digest(), "originalEventsSha256", DeploymentAgentPreparationAbsence.digest(captured.events()),
++                    "purpose", "OBSERVE_ORIGINAL_ABSENCE_ONLY_NO_HELPER_NO_MUTATION");
++            }
++
++            public String reviewInstructions() {
++                return "Review only this fixed product read-only pre-readiness recovery observation. It cannot install a helper, execute project code, "
++                    + "prepare or delete a candidate, or alter applications, shared objects or persistent data. The original PREPARE remains uncertain "
++                    + "until an exact absent path/build/mount/loop observation is durably committed. Never infer NOT_SENT from absence.";
++            }
++
++            public void verify(ActionIntent intent, CommandRequest request, TaskContext actual) throws ApiException {
++                try {
++                    if (actual != task || !journal.find(task).orElseThrow().equals(saved) || !journal.events(task).equals(captured.events())
++                        || new DeploymentExecutionStore(context.db()).findForTask(task).isPresent()
++                        || !DeploymentAgentLayouts.original(context, task, saved.identity(), captured.events()).equals(layout))
++                        throw new IllegalStateException("Original preparation binding changed");
++                    var current = context.servers().get(server, task);
++                    if (!captured.profile().equals(DeploymentAgentInputs.targetProfile(current))
++                        || !captured.endpoint().equals(DeploymentAgentInputs.physicalTarget(current)) || task.cancelToken().requested())
++                        throw new IllegalStateException("Original preparation target or cancellation changed");
++                } catch (Exception changed) {
++                    var failure = new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_PREPARATION_OBSERVATION_CHANGED",
++                        "Original preparation observation cannot be confirmed", Map.of(), Optional.of(task.id())));
++                    failure.initCause(changed);
++                    throw failure;
++                }
++            }
++        };
++        var reviewed = DeploymentAgentApproval.scope(context, task, saved.identity().approvalMode(), saved.identity().rememberAuthorization(),
++            () -> revision, evidence);
++        try (var permission = DeploymentWorkflowAuthorization.recover(context, task, server, revision, saved.identity().approvalMode(),
++            saved.identity().rememberAuthorization(), "original=" + task.id() + "\npurpose=observe-original-pre-readiness-absence-only"
++                + "\nprepareEvent=" + captured.preparation().id() + "\neventsSha256=" + DeploymentAgentPreparationAbsence.digest(captured.events()));
++             var session = context.linux().connect(server, task);
++             var request = DeploymentAgentPreparationProbe.request(captured)) {
++            if (!saved.identity().targetDigest().equals(DeploymentAgentInputs.targetDigest(server, session)))
++                return false;
++            var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(DeploymentAgentPreparationProbe.OPERATION, Set.of(
++                new ActionTarget(server.id(), "directory", captured.workspace().candidateRoot()),
++                new ActionTarget(server.id(), "systemd-service", "windowstolinux-build-" + captured.workspace().candidateId() + ".service"),
++                new ActionTarget(server.id(), "host-prerequisites", "fixed-system-metadata-only"))));
++            var grant = DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
++            if (grant.outcome() != TaskResult.SUCCEEDED || grant.value().isEmpty()) return false;
++            evidence.verify(intent, request, task);
++            var result = session.execute(request, grant.value().orElseThrow());
++            if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
++                || !DeploymentAgentPreparationProbe.absent(captured, result.value().orElseThrow())) return false;
++            evidence.verify(intent, request, task);
++            journal.preparationAbsent(task, captured, DeploymentAgentPreparationAbsence.proof(captured,
++                DeploymentAgentPreparationProbe.requestDigest(captured), DeploymentAgentPreparationAbsence.hash(result.value().orElseThrow().stdout())));
++            return true;
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java
+@@ -0,0 +1,184 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence;
++
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.security.NoSuchAlgorithmException;
++import java.util.HashSet;
++import java.util.HexFormat;
++import java.util.List;
++import java.util.Optional;
++import java.util.Set;
++import java.util.UUID;
++
++import com.fasterxml.jackson.core.JsonParser;
++import com.fasterxml.jackson.databind.DeserializationFeature;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe;
++import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentManagedUnitResolver;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++
++/** An observed absence of one original pre-readiness preparation; never a claim that its command was not sent. */
++public final class DeploymentAgentPreparationAbsence {
++    public static final String EVENT = "PREPARE_RECONCILED_ABSENT";
++
++    private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++
++    private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
++        "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE",
++        "PREPARE_EXECUTING", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
++
++    private static final Set<String> AFTER = Set.of("STATE", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
++
++    private static final Set<String> FIELDS = Set.of("formatVersion", "task", "server", "targetSha256", "configurationSha256", "approvalMode", "state",
++        "layoutSha256", "profileSha256", "endpointSha256", "sourceSha256", "archiveSha256", "planSha256", "application", "component",
++        "candidate", "prepareEventId", "prepareAction", "priorEventsSha256", "requestSha256", "resultSha256", "observation");
++
++    private DeploymentAgentPreparationAbsence() {
++    }
++
++    public record Captured(UUID task, DeploymentAgentActionLog.Snapshot snapshot, DeploymentRemoteLayout layout,
++                           DeploymentAgentActionLog.Event preparation, DeploymentRemoteWorkspace workspace,
++                           String source, String plan, String profile, String endpoint, String application,
++                           List<DeploymentAgentActionLog.Event> events) {
++        public Captured {
++            events = List.copyOf(events);
++        }
++    }
++
++    /** Only semantics 4's first preparation, before its durably observed readiness, is eligible. */
++    public static Optional<Captured> capture(UUID task, DeploymentAgentActionLog.Snapshot snapshot, DeploymentRemoteLayout layout,
++                                             List<DeploymentAgentActionLog.Event> events) {
++        try {
++            if (snapshot.executionSemantics() != 4 || !Set.of("UNKNOWN", "CANCELLED").contains(snapshot.state())
++                || events.isEmpty() || events.size() > 10000) return Optional.empty();
++            long previous = 0;
++            for (var event : events) {
++                if (event.id() <= previous || !BEFORE.contains(event.type()) || event.action() == null || event.detail() == null)
++                    return Optional.empty();
++                previous = event.id();
++            }
++            var preparation = one(events, "PREPARE_EXECUTING");
++            var source = one(events, "SOURCE");
++            var plan = one(events, "PLAN");
++            var application = one(events, "PLAN_APPLICATION");
++            var profile = one(events, "TARGET_PROFILE");
++            var endpoint = one(events, "REMOTE_TARGET");
++            var policy = one(events, "REMEMBER_AUTHORIZATION");
++            var capturedLayout = one(events, "REMOTE_LAYOUT");
++            if (!preparation.detail().matches("[a-z0-9][a-z0-9-]{0,62}") || !source.action().matches("[0-9a-f]{64}")
++                || !source.detail().matches("[0-9a-f]{64}") || !plan.action().isEmpty() || !plan.detail().matches("[0-9a-f]{64}")
++                || !application.action().isEmpty() || !application.detail().matches("[a-z0-9][a-z0-9-]{0,62}")
++                || !profile.action().isEmpty() || !profile.detail().matches("[0-9a-f]{64}")
++                || !endpoint.action().isEmpty() || !endpoint.detail().matches("[0-9a-f]{64}")
++                || !policy.action().equals("rememberAuthorization.v1") || !policy.detail().equals(Boolean.toString(snapshot.identity().rememberAuthorization()))
++                || !preparation.action().equals(hash(task + ":" + preparation.detail() + ":" + source.detail())))
++                return Optional.empty();
++            for (var header : List.of(source, plan, application, profile, endpoint, policy, capturedLayout))
++                if (header.id() >= preparation.id()) return Optional.empty();
++            var states = events.stream().filter(event -> event.type().equals("STATE")).toList();
++            if (states.isEmpty() || states.getLast().id() <= preparation.id() || !states.getLast().detail().equals(snapshot.state())
++                || states.stream().anyMatch(event -> !event.action().isEmpty() || !Set.of("RUNNING", "WAITING", "UNKNOWN", "CANCELLED").contains(event.detail())))
++                return Optional.empty();
++            if (events.stream().anyMatch(event -> event.id() > preparation.id() && !AFTER.contains(event.type())))
++                return Optional.empty();
++            var node = JSON.readTree(capturedLayout.detail());
++            var canonical = JSON.createObjectNode().put("formatVersion", 1).put("task", task.toString()).put("server", snapshot.identity().server());
++            canonical.set("layout", JSON.readTree(layout.canonical()));
++            canonical.put("layoutSha256", layout.digest());
++            if (!capturedLayout.action().equals(task.toString()) || !canonical.equals(node) || !canonical.toString().equals(capturedLayout.detail()))
++                return Optional.empty();
++            String managed = DeploymentManagedUnitResolver.managedId(application.detail(), preparation.detail());
++            var workspace = new DeploymentRemoteWorkspace(managed, source.action(), layout);
++            return Optional.of(new Captured(task, snapshot, layout, preparation, workspace, source.detail(), plan.detail(), profile.detail(),
++                endpoint.detail(), application.detail(), events));
++        } catch (Exception invalid) {
++            return Optional.empty();
++        }
++    }
++
++    public static String proof(Captured captured, String requestSha256, String resultSha256) {
++        if (!requestSha256.matches("[0-9a-f]{64}") || !resultSha256.matches("[0-9a-f]{64}"))
++            throw new IllegalArgumentException("Invalid preparation observation digest");
++        var identity = captured.snapshot().identity();
++        return JSON.createObjectNode().put("formatVersion", 1).put("task", captured.task().toString()).put("server", identity.server())
++            .put("targetSha256", identity.targetDigest()).put("configurationSha256", identity.configurationDigest()).put("approvalMode", identity.approvalMode()).put("state", captured.snapshot().state())
++            .put("layoutSha256", captured.layout().digest()).put("profileSha256", captured.profile()).put("endpointSha256", captured.endpoint())
++            .put("sourceSha256", captured.source()).put("archiveSha256", captured.workspace().archiveSha256()).put("planSha256", captured.plan())
++            .put("application", captured.application()).put("component", captured.preparation().detail()).put("candidate", captured.workspace().candidateId())
++            .put("prepareEventId", captured.preparation().id()).put("prepareAction", captured.preparation().action()).put("priorEventsSha256", digest(captured.events()))
++            .put("requestSha256", requestSha256).put("resultSha256", resultSha256).put("observation", "ABSENT_NO_BUILD_MOUNT_LOOP").toString();
++    }
++
++    /** Validates the entire original prefix, including the exact preparation event and all immutable headers. */
++    public static boolean matches(DeploymentAgentActionLog.Event event, List<DeploymentAgentActionLog.Event> events) {
++        try {
++            if (!EVENT.equals(event.type()) || event.detail().length() > 4096) return false;
++            var node = JSON.readTree(event.detail());
++            if (node == null || !node.isObject()) return false;
++            var fields = new HashSet<String>();
++            node.fieldNames().forEachRemaining(fields::add);
++            if (!fields.equals(FIELDS) || !node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1
++                || !node.path("prepareEventId").isIntegralNumber() || !node.path("prepareEventId").canConvertToLong())
++                return false;
++            for (String field : FIELDS)
++                if (!Set.of("formatVersion", "prepareEventId").contains(field) && !node.path(field).isTextual())
++                    return false;
++            UUID task = UUID.fromString(node.path("task").textValue());
++            var prefix = events.stream().filter(value -> value.id() < event.id()).toList();
++            var policy = one(prefix, "REMEMBER_AUTHORIZATION");
++            if (!Set.of("true", "false").contains(policy.detail())) return false;
++            var identity = new DeploymentAgentActionLog.Identity(node.path("server").textValue(), node.path("targetSha256").textValue(),
++                node.path("configurationSha256").textValue(), node.path("approvalMode").textValue(), Boolean.parseBoolean(policy.detail()));
++            var snapshot = new DeploymentAgentActionLog.Snapshot(identity, node.path("state").textValue(), 4);
++            var layoutNode = JSON.readTree(one(prefix, "REMOTE_LAYOUT").detail()).path("layout");
++            var layout = DeploymentRemoteLayout.decode(layoutNode.toString());
++            var captured = capture(task, snapshot, layout, prefix).orElseThrow();
++            String request = node.path("requestSha256").textValue();
++            String result = node.path("resultSha256").textValue();
++            return event.action().equals(captured.preparation().action()) && captured.preparation().id() < event.id()
++                && request.equals(DeploymentAgentPreparationProbe.requestDigest(captured))
++                && result.equals(hash(DeploymentAgentPreparationProbe.absentOutput(captured)))
++                && proof(captured, request, result).equals(event.detail());
++        } catch (Exception invalid) {
++            return false;
++        }
++    }
++
++    public static boolean matches(UUID task, DeploymentAgentActionLog.Identity identity, DeploymentRemoteLayout layout,
++                                  DeploymentAgentActionLog.Event event, List<DeploymentAgentActionLog.Event> events) {
++        if (!matches(event, events)) return false;
++        try {
++            var node = JSON.readTree(event.detail());
++            return task.toString().equals(node.path("task").textValue()) && identity.server().equals(node.path("server").textValue())
++                && identity.targetDigest().equals(node.path("targetSha256").textValue())
++                && identity.configurationDigest().equals(node.path("configurationSha256").textValue())
++                && identity.approvalMode().equals(node.path("approvalMode").textValue())
++                && layout.digest().equals(node.path("layoutSha256").textValue());
++        } catch (Exception invalid) {
++            return false;
++        }
++    }
++
++    public static String digest(List<DeploymentAgentActionLog.Event> events) {
++        var array = JSON.createArrayNode();
++        for (var event : events)
++            array.add(JSON.createObjectNode().put("id", event.id()).put("type", event.type()).put("action", event.action()).put("detail", event.detail()));
++        return hash(array.toString());
++    }
++
++    public static String hash(String value) {
++        try {
++            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
++        } catch (NoSuchAlgorithmException unavailable) {
++            throw new IllegalStateException("SHA-256 unavailable", unavailable);
++        }
++    }
++
++    private static DeploymentAgentActionLog.Event one(List<DeploymentAgentActionLog.Event> events, String type) {
++        var selected = events.stream().filter(event -> event.type().equals(type)).toList();
++        if (selected.size() != 1) throw new IllegalArgumentException("Original preparation header is incomplete");
++        return selected.getFirst();
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
+@@ -0,0 +1,530 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import java.io.InputStreamReader;
++import java.lang.reflect.InvocationTargetException;
++import java.lang.reflect.Proxy;
++import java.nio.charset.StandardCharsets;
++import java.sql.Connection;
++import java.sql.DriverManager;
++import java.sql.SQLException;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HexFormat;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Optional;
++import java.util.UUID;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.ai.AiService;
++import gold.debug.windowstolinux.appapi.ai.model.AiToolCall;
++import gold.debug.windowstolinux.appapi.db.ModDatabase;
++import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
++import gold.debug.windowstolinux.appapi.file.FileService;
++import gold.debug.windowstolinux.appapi.linux.LinuxService;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.ServerService;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
++import gold.debug.windowstolinux.appapi.task.TaskService;
++import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
++import gold.debug.windowstolinux.appapi.task.action.InteractionService;
++import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
++import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.appapi.ui.UiService;
++import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
++import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentHistoryArchive;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++/** Real isolated H2 transactions and native fake-model messages; no API transport or SSH. */
++class DeploymentAgentPreparationAbsenceTest {
++    private static final String REVISION = "a".repeat(64);
++
++    private static final String SOURCE = "b".repeat(64);
++
++    private static final String ARCHIVE = "c".repeat(64);
++
++    private static final ObjectMapper JSON = new ObjectMapper();
++
++    @Test
++    void exactAbsentObservationSettlesFailedOriginalArchivesAndDoesNotDispatchAgain() throws Exception {
++        try (var frame = new Frame()) {
++            var business = frame.business();
++            var original = frame.journal.events(frame.task);
++            frame.approve();
++            var result = frame.recover();
++            assertEquals(TaskResult.FAILED, result.outcome(), "Recovered absence is compensation, not a completed application");
++            assertEquals(1, frame.sent);
++            assertEquals(1, frame.grants);
++            assertEquals(1, frame.filesClosed);
++            var settled = frame.journal.events(frame.task);
++            assertEquals(original, settled.subList(0, original.size()));
++            assertEquals(1, settled.stream().filter(event -> event.type().equals(DeploymentAgentPreparationAbsence.EVENT)).count());
++            assertTrue(settled.stream().noneMatch(event -> event.type().equals("PREPARE_NOT_SENT") || event.type().equals("PREPARE_RESULT")));
++            assertTrue(DeploymentAgentActionLog.effectsSettled(settled));
++            var archive = new DeploymentAgentHistoryArchive(frame.context);
++            assertEquals(TaskResult.FAILED, archive.settle(frame.task, result).outcome());
++            assertTrue(frame.journal.find(frame.task).isEmpty());
++            assertTrue(frame.journal.events(frame.task).isEmpty());
++            assertEquals(TaskResult.FAILED, archive.retained(frame.task).orElseThrow().outcome());
++            assertEquals(TaskResult.FAILED, archive.settle(frame.task, result).outcome());
++            assertEquals(1, frame.sent, "Platform-end crash gap must read the settlement receipt without remote work");
++            assertEquals(business, frame.business(), "Existing formal/config/secret records stay byte-exact");
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"READINESS", "SECOND_PREPARE", "OTHER_EFFECT", "NATIVE_DISPATCHED", "MISSING_HEADER", "WRONG_ACTION", "WRONG_LAYOUT", "LATER_MODEL_ACTIVITY"})
++    void incompleteOrProgressedOriginalNeverObservesOrClosesFiles(String change) throws Exception {
++        try (var frame = new Frame()) {
++            switch (change) {
++                case "READINESS" ->
++                    frame.journal.event(frame.task, "HELPER_READINESS_OBSERVED", "d".repeat(64), "MISSING:HELPER_MISSING");
++                case "SECOND_PREPARE" -> frame.journal.event(frame.task, "PREPARE_EXECUTING", "e".repeat(64), "web");
++                case "OTHER_EFFECT" -> frame.journal.event(frame.task, "COMMAND_EXECUTING", "e".repeat(64), "30");
++                case "NATIVE_DISPATCHED" -> frame.nativeDispatched();
++                case "MISSING_HEADER" -> frame.sql("DELETE FROM deployment_agent_event WHERE event_type='PLAN'");
++                case "WRONG_ACTION" ->
++                    frame.sql("UPDATE deployment_agent_event SET action_id='" + "e".repeat(64) + "' WHERE event_type='PREPARE_EXECUTING'");
++                case "WRONG_LAYOUT" ->
++                    frame.sql("UPDATE deployment_agent_event SET event_detail='{}' WHERE event_type='REMOTE_LAYOUT'");
++                case "LATER_MODEL_ACTIVITY" ->
++                    frame.journal.event(frame.task, "AGENT_OBSERVATION", "READ", "Unexpected later activity");
++                default -> throw new AssertionError(change);
++            }
++            var before = frame.journal.events(frame.task);
++            if (change.equals("WRONG_LAYOUT")) assertThrows(Exception.class, frame::recover);
++            else assertEquals(TaskResult.UNKNOWN, frame.recover().outcome());
++            assertEquals(0, frame.sent);
++            assertEquals(0, frame.connected);
++            assertEquals(0, frame.filesClosed);
++            assertEquals(before, frame.journal.events(frame.task));
++            if (change.equals("NATIVE_DISPATCHED")) {
++                var nativeReceipt = DeploymentNativeDatabaseActionLog.find(frame.context.tasks(), frame.task).orElseThrow();
++                assertEquals("DISPATCHED", nativeReceipt.facts().phase());
++                assertFalse(frame.checkpoints.get(DeploymentNativeDatabaseActionLog.KEY).snapshot().released());
++            }
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"PATH", "BUILD", "MOUNTS", "LOOPS", "PERMISSION", "DANGLING_LINK", "FAILED_OBSERVATION", "TRUNCATED"})
++    void anythingExceptCompleteAbsentMetadataPreservesUnknown(String obstacle) throws Exception {
++        try (var frame = new Frame()) {
++            frame.obstacle = obstacle;
++            frame.approve();
++            var before = frame.journal.events(frame.task);
++            assertEquals(TaskResult.UNKNOWN, frame.recover().outcome());
++            assertEquals(1, frame.sent);
++            assertEquals(0, frame.filesClosed);
++            assertEquals(before, frame.journal.events(frame.task));
++            assertFalse(DeploymentAgentActionLog.effectsSettled(before));
++        }
++    }
++
++    @Test
++    void ledgerChangeAfterObservationDoesNotBackfillOrRelease() throws Exception {
++        try (var frame = new Frame()) {
++            frame.approve();
++            frame.afterSend = () -> frame.journal.state(frame.task, "UNKNOWN");
++            assertEquals(TaskResult.UNKNOWN, frame.recover().outcome());
++            assertEquals(1, frame.sent);
++            assertEquals(0, frame.filesClosed);
++            assertTrue(frame.journal.events(frame.task).stream().noneMatch(event -> event.type().equals(DeploymentAgentPreparationAbsence.EVENT)));
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"PROFILE", "FINGERPRINT"})
++    void changedActualTargetCannotProduceAnAbsenceReceipt(String change) throws Exception {
++        try (var frame = new Frame()) {
++            if (change.equals("PROFILE"))
++                frame.observedProfile = new ServerInfo(frame.server, "Changed", "another.invalid", 22, "root", Optional.empty(), Optional.empty());
++            else frame.observedFingerprint = "another-fingerprint";
++            var before = frame.journal.events(frame.task);
++            assertEquals(TaskResult.UNKNOWN, frame.recover().outcome());
++            assertEquals(0, frame.sent);
++            assertEquals(0, frame.grants);
++            assertEquals(0, frame.filesClosed);
++            assertEquals(before, frame.journal.events(frame.task));
++        }
++    }
++
++    @Test
++    void independentRefusalDoesNotDispatchOrReleaseTheOriginal() throws Exception {
++        try (var frame = new Frame()) {
++            frame.nativeAi.nativeReply(new AiToolCall(UUID.randomUUID().toString(), "submit_result",
++                "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Observation is not authorized\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[],\"discussionStatus\":\"CLOSED\"}"));
++            var before = frame.journal.events(frame.task);
++            assertEquals(TaskResult.UNKNOWN, frame.recover().outcome());
++            assertEquals(0, frame.sent);
++            assertEquals(0, frame.grants);
++            assertEquals(0, frame.filesClosed);
++            assertEquals(before, frame.journal.events(frame.task));
++        }
++    }
++
++    @Test
++    void newFormalExecutionBlocksTheTransactionalAbsenceCommit() throws Exception {
++        try (var frame = new Frame()) {
++            var captured = frame.capture();
++            frame.sql("INSERT INTO deployment_execution(execution_id,platform_task_id,server_profile_id,mode,reviewed_revision,request_payload,recovery_payload,phase,created_at,updated_at) VALUES('"
++                + UUID.randomUUID() + "','" + frame.id + "','original-server','AGENT','" + REVISION + "',X'7b7d',X'7b7d','EXECUTING',1,1)");
++            var before = frame.journal.events(frame.task);
++            assertThrows(SQLException.class, () -> frame.journal.preparationAbsent(frame.task, captured, frame.proof(captured)));
++            assertEquals(before, frame.journal.events(frame.task));
++            assertEquals(0, frame.filesClosed);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"INSERT", "COMMIT_BEFORE", "COMMIT_ACK_LOST"})
++    void transactionFailureRollsBackOrStrictReceiptProvesTheLostCommit(String fault) throws Exception {
++        try (var frame = new Frame()) {
++            var captured = frame.capture();
++            var proof = frame.proof(captured);
++            var before = frame.journal.events(frame.task);
++            frame.fault = fault;
++            assertThrows(SQLException.class, () -> frame.journal.preparationAbsent(frame.task, captured, proof));
++            if (!fault.equals("COMMIT_ACK_LOST")) {
++                assertEquals(before, frame.journal.events(frame.task));
++                assertFalse(DeploymentAgentActionLog.effectsSettled(frame.journal.events(frame.task)));
++            } else {
++                var committed = frame.journal.events(frame.task);
++                assertTrue(DeploymentAgentActionLog.effectsSettled(committed));
++                frame.journal.preparationAbsent(frame.task, captured, proof);
++                assertEquals(committed, frame.journal.events(frame.task), "The exact confirmed receipt is idempotent");
++                assertEquals(TaskResult.FAILED, frame.recover().outcome());
++                assertEquals(0, frame.sent, "Lost commit confirmation cannot cause another probe or preparation");
++            }
++        }
++    }
++
++    @Test
++    void confirmedAbsenceReceiptDoesNotHideLaterLedgerProgress() throws Exception {
++        try (var frame = new Frame()) {
++            var captured = frame.capture();
++            var proof = frame.proof(captured);
++            frame.journal.preparationAbsent(frame.task, captured, proof);
++            var committed = frame.journal.events(frame.task);
++            frame.journal.preparationAbsent(frame.task, captured, proof);
++            assertEquals(committed, frame.journal.events(frame.task));
++            frame.journal.event(frame.task, "STATE", "", "UNKNOWN");
++            var changed = frame.journal.events(frame.task);
++            assertThrows(SQLException.class, () -> frame.journal.preparationAbsent(frame.task, captured, proof));
++            assertEquals(changed, frame.journal.events(frame.task), "The old receipt cannot conceal later evidence or mutate the ledger");
++            assertEquals(0, frame.sent);
++            assertEquals(0, frame.filesClosed);
++        }
++    }
++
++    @Test
++    void foreignTaskAndForgedOrIncompleteProofDoNotSettlePreparation() throws Exception {
++        try (var frame = new Frame()) {
++            var captured = frame.capture();
++            TaskContext foreign = proxy(TaskContext.class, (name, args) -> UUID.randomUUID());
++            assertThrows(SQLException.class, () -> frame.journal.preparationAbsent(foreign, captured, frame.proof(captured)));
++            String wrong = frame.proof(captured).replace("\"resultSha256\":\"", "\"resultSha256\":\"0");
++            assertThrows(SQLException.class, () -> frame.journal.preparationAbsent(frame.task, captured, wrong));
++            var before = frame.journal.events(frame.task);
++            frame.journal.event(frame.task, DeploymentAgentPreparationAbsence.EVENT, captured.preparation().action(), "ABSENT");
++            assertFalse(DeploymentAgentActionLog.effectsSettled(frame.journal.events(frame.task)));
++            assertTrue(DeploymentAgentRecovery.originalWorkspaces(frame.task.id(), captured.snapshot().identity(), frame.journal.events(frame.task)).isEmpty());
++            assertEquals(before.size() + 1, frame.journal.events(frame.task).size());
++        }
++    }
++
++    private static final class Frame implements AutoCloseable {
++        final NativeAiFixture nativeAi = new NativeAiFixture();
++
++        final UUID id = nativeAi.task.id();
++
++        final String jdbc = "jdbc:h2:mem:preparation-absence-" + id;
++
++        final Connection retained = DriverManager.getConnection(jdbc);
++
++        final DeploymentRemoteLayout layout = DeploymentRemoteLayout.original();
++
++        final ServerId server = new ServerId("original-server");
++
++        final ServerInfo profile = new ServerInfo(server, "Original", "original.invalid", 22, "root", Optional.of("controlled-fingerprint"), Optional.empty());
++
++        final RemoteFacts remoteFacts = new RemoteFacts("linux", "amd64", "controlled-fingerprint");
++
++        ServerInfo observedProfile = profile;
++
++        String observedFingerprint = remoteFacts.fingerprint();
++
++        final TaskContext task = nativeAi.task;
++
++        final ModDatabase db;
++
++        final DeploymentAgentActionLog journal;
++
++        final ModContext context;
++
++        final Map<String, TaskCheckpoint> checkpoints = new HashMap<>();
++
++        int connected;
++
++        int sent;
++
++        int grants;
++
++        int filesClosed;
++
++        String obstacle = "";
++
++        String fault = "";
++
++        Hook afterSend = () -> {
++        };
++
++        Frame() throws Exception {
++            nativeAi.configurationRevision = REVISION;
++            try (var schema = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream(
++                "/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
++                org.h2.tools.RunScript.execute(retained, schema);
++            }
++            db = proxy(ModDatabase.class, (name, args) -> name.equals("identity")
++                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, id) : connection());
++            journal = new DeploymentAgentActionLog(db);
++            String target = DeploymentAgentInputs.hash(server.id() + ":" + remoteFacts.fingerprint());
++            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), target, REVISION, "FULL_CONTROL", true),
++                Optional.of(DeploymentAgentInputs.physicalTarget(profile)));
++            DeploymentAgentLayouts.record(journal, task, server, layout);
++            journal.event(task, "SOURCE", ARCHIVE, SOURCE);
++            journal.event(task, "TARGET_PROFILE", "", DeploymentAgentInputs.targetProfile(profile));
++            journal.event(task, "PLAN_APPLICATION", "", "demo");
++            journal.event(task, "PLAN", "", "e".repeat(64));
++            journal.event(task, "PREPARE_EXECUTING", DeploymentAgentInputs.hash(task.id() + ":api:" + SOURCE), "api");
++            journal.state(task, "UNKNOWN");
++            var capturedLayout = JSON.createObjectNode().put("formatVersion", 1).put("task", id.toString());
++            capturedLayout.set("layout", JSON.readTree(layout.canonical()));
++            capturedLayout.put("layoutSha256", layout.digest());
++            TaskCheckpoint checkpoint = proxy(TaskCheckpoint.class, (name, args) -> new TaskCheckpoint.Snapshot(0, capturedLayout.toString(), true));
++            checkpoints.put("deployment.config.remote-layout.v1", checkpoint);
++            var tasks = proxy(TaskService.class, (name, args) -> switch (name) {
++                case "findCheckpoint" -> Optional.ofNullable(checkpoints.get((String) args[1]));
++                case "beginCheckpoint" -> {
++                    var created = new MemoryCheckpoint((String) args[2]);
++                    assertTrue(checkpoints.putIfAbsent((String) args[1], created) == null);
++                    yield created;
++                }
++                case "resourcesReleased" -> filesClosed > 0;
++                default -> throw new AssertionError(name);
++            });
++            var host = proxy(InteractionService.class, (name, args) -> switch (name) {
++                case "openReviewedWorkflow" -> success((WorkflowGrant) () -> {
++                });
++                case "approveReviewedAction" -> {
++                    grants++;
++                    yield success(new ApprovalGrant(UUID.randomUUID()));
++                }
++                default -> throw new AssertionError(name);
++            });
++            var session = proxy(RemoteSession.class, (name, args) -> switch (name) {
++                case "facts" -> new RemoteFacts("linux", "amd64", observedFingerprint);
++                case "close" -> null;
++                case "execute" -> {
++                    sent++;
++                    CommandRequest request = (CommandRequest) args[0];
++                    String body = new String(request.stdin(), StandardCharsets.UTF_8);
++                    assertTrue(body.contains("WTL_AGENT_PREPARATION_ABSENCE_1"));
++                    assertFalse(body.contains("managed-helper") || body.contains("mkdir ") || body.contains("rm ") || body.contains("losetup --detach"));
++                    var captured = capture();
++                    String output = DeploymentAgentPreparationProbe.absentOutput(captured);
++                    if (List.of("PATH", "BUILD", "MOUNTS", "LOOPS").contains(obstacle))
++                        output = output.replace(obstacle + "=ABSENT", obstacle + "=PRESENT");
++                    if (List.of("PERMISSION", "DANGLING_LINK").contains(obstacle))
++                        output = output.replace("STATUS=ABSENT", "STATUS=UNKNOWN");
++                    var result = new CommandResult(Optional.of(obstacle.equals("FAILED_OBSERVATION") ? 1 : 0), output, "", obstacle.equals("TRUNCATED"));
++                    afterSend.run();
++                    yield success(result);
++                }
++                default -> throw new AssertionError("Recovery cannot invoke " + name);
++            });
++            var linux = proxy(LinuxService.class, (name, args) -> {
++                assertEquals("connect", name);
++                connected++;
++                return session;
++            });
++            var files = proxy(FileService.class, (name, args) -> {
++                assertEquals("closeTaskResources", name);
++                filesClosed++;
++                return null;
++            });
++            var servers = proxy(ServerService.class, (name, args) -> {
++                assertEquals("get", name);
++                return observedProfile;
++            });
++            var ui = proxy(UiService.class, (name, args) -> new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
++            var ai = proxy(AiService.class, (name, args) -> {
++                if (name.equals("configurationRevision")) return REVISION;
++                if (name.equals("call")) return args.length == 3
++                    ? nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], (String) args[1], task)
++                    : nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], task);
++                throw new AssertionError(name);
++            });
++            context = proxy(ModContext.class, (name, args) -> switch (name) {
++                case "db" -> db;
++                case "tasks" -> tasks;
++                case "interaction" -> host;
++                case "linux" -> linux;
++                case "servers" -> servers;
++                case "file" -> files;
++                case "ui" -> ui;
++                case "ai" -> ai;
++                case "logs" -> nativeAi.context.logs();
++                default -> throw new AssertionError(name);
++            });
++            sql("INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256,runtime_payload) VALUES('shared-unit','another-server','shared.service','/opt/shared','" + "f".repeat(64) + "',X'010203')");
++            sql("INSERT INTO secret_revision(secret_id,secret_revision,credential_id,purpose,created_at) VALUES('persistent-secret',1,'retained-credential','deployment-runtime',1)");
++            sql("INSERT INTO deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision,configuration_sha256,schema_version,created_at) VALUES('shared-unit',1,'" + "f".repeat(64) + "','1',1)");
++            sql("INSERT INTO deployment_unit_configuration_entry VALUES('shared-unit',1,'persistent-value','RUNTIME','TEXT','KEEP')");
++        }
++
++        Connection connection() throws Exception {
++            var connection = DriverManager.getConnection(jdbc);
++            return proxy(Connection.class, (name, args) -> {
++                if (name.equals("prepareStatement") && fault.equals("INSERT") && ((String) args[0]).startsWith("INSERT INTO deployment_agent_event")) {
++                    fault = "";
++                    throw new SQLException("Controlled append failure");
++                }
++                if (name.equals("commit") && fault.startsWith("COMMIT_")) {
++                    String selected = fault;
++                    fault = "";
++                    if (selected.equals("COMMIT_ACK_LOST")) connection.commit();
++                    throw new SQLException("Controlled commit confirmation failure");
++                }
++                try {
++                    for (var method : Connection.class.getMethods())
++                        if (method.getName().equals(name) && method.getParameterCount() == (args == null ? 0 : args.length)) {
++                            try {
++                                return method.invoke(connection, args);
++                            } catch (IllegalArgumentException overload) {
++                            }
++                        }
++                    throw new AssertionError(name);
++                } catch (InvocationTargetException failed) {
++                    throw failed.getCause();
++                }
++            });
++        }
++
++        void approve() {
++            nativeAi.nativeReply(new AiToolCall(UUID.randomUUID().toString(), "submit_result",
++                "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact metadata observation only\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
++        }
++
++        void nativeDispatched() throws Exception {
++            var receipt = DeploymentNativeDatabaseActionLog.begin(context.tasks(), task, server, UUID.randomUUID(), "prepare", "d".repeat(64), "e".repeat(64), "original-database");
++            receipt.dispatched();
++            journal.event(task, "AGENT_DATABASE_INDEX", "native-dispatched", "d".repeat(64) + ":" + "e".repeat(64));
++        }
++
++        DeploymentAgentPreparationAbsence.Captured capture() throws Exception {
++            return DeploymentAgentPreparationAbsence.capture(id, journal.find(task).orElseThrow(), layout, journal.events(task)).orElseThrow();
++        }
++
++        String proof(DeploymentAgentPreparationAbsence.Captured captured) {
++            return DeploymentAgentPreparationAbsence.proof(captured, DeploymentAgentPreparationProbe.requestDigest(captured),
++                DeploymentAgentPreparationAbsence.hash(DeploymentAgentPreparationProbe.absentOutput(captured)));
++        }
++
++        OperationResult<Void> recover() throws Exception {
++            return new DeploymentAgentRecovery(context, journal).reconcile(task, journal.find(task).orElseThrow());
++        }
++
++        void sql(String statement) throws Exception {
++            try (var query = retained.createStatement()) {
++                query.executeUpdate(statement);
++            }
++        }
++
++        List<String> business() throws Exception {
++            var result = new ArrayList<String>();
++            for (String table : List.of("deployment_unit", "managed_application", "managed_application_component", "managed_application_dependency", "deployment_release",
++                "deployment_unit_configuration_snapshot", "deployment_unit_configuration_entry", "deployment_unit_release_binding", "secret_revision", "deployment_unit_release_secret_reference")) {
++                try (var query = retained.createStatement(); var rows = query.executeQuery("SELECT * FROM " + table + " ORDER BY 1")) {
++                    while (rows.next()) {
++                        var values = new ArrayList<Object>();
++                        for (int column = 1; column <= rows.getMetaData().getColumnCount(); column++) {
++                            Object value = rows.getObject(column);
++                            values.add(value instanceof java.sql.Blob blob ? HexFormat.of().formatHex(blob.getBytes(1, Math.toIntExact(blob.length()))) : value);
++                        }
++                        result.add(table + ":" + values);
++                    }
++                }
++            }
++            return result;
++        }
++
++        public void close() throws Exception {
++            retained.close();
++        }
++    }
++
++    @FunctionalInterface
++    private interface Hook {
++        void run() throws Exception;
++    }
++
++    @FunctionalInterface
++    private interface Invocation {
++        Object call(String name, Object[] args) throws Throwable;
++    }
++
++    private static final class MemoryCheckpoint implements TaskCheckpoint {
++        private Snapshot value;
++
++        MemoryCheckpoint(String payload) {
++            value = new Snapshot(0, payload, false);
++        }
++
++        public Snapshot snapshot() {
++            return value;
++        }
++
++        public Snapshot advance(Snapshot expected, String payload) {
++            assertEquals(value, expected);
++            return value = new Snapshot(value.revision() + 1, payload, false);
++        }
++
++        public void close() {
++            value = new Snapshot(value.revision() + 1, value.payload(), true);
++        }
++    }
++
++    private static <T> T proxy(Class<T> type, Invocation callback) {
++        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (self, method, args) -> callback.call(method.getName(), args)));
++    }
++
++    private static <T> OperationResult<T> success(T value) {
++        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java
+@@ -0,0 +1,139 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.List;
++import java.util.Optional;
++import java.util.UUID;
++import java.util.concurrent.TimeUnit;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import org.junit.jupiter.api.Assumptions;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++/** Runs Bash locally with explicit root/utility metadata substitutes and one emulated link; never asserts real root or remote acceptance. */
++class DeploymentAgentPreparationProbeTest {
++    @TempDir
++    Path root;
++
++    @Test
++    void originalRenderedProbeIsValidBashWithoutExecutingIt() throws Exception {
++        var result = bash(DeploymentAgentPreparationProbe.script(captured()), true);
++        assertEquals(0, result.exitCode(), result.output());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"ABSENT", "PRESENT", "ACTIVE_UNIT", "MOUNT", "LOOP", "UNSAFE_PARENT", "FAILED_ENUMERATION", "DANGLING_LINK"})
++    void actualGuardedBashRequiresAbsentCandidateAndEveryKernelObservation(String condition) throws Exception {
++        var captured = captured();
++        String script = DeploymentAgentPreparationProbe.script(captured)
++            .replace("candidate='" + captured.workspace().candidateRoot() + "'", "candidate=\"$fixture_path/candidate\"")
++            .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/id -u", "fixture_id -u")
++            .replace("/usr/bin/systemctl", "fixture_systemctl").replace("/usr/bin/findmnt", "fixture_findmnt")
++            .replace("/usr/sbin/losetup", "fixture_losetup").replace("/usr/bin/find -H", "fixture_find -H")
++            .replace("for tool in fixture_stat", "trusted_executable() { checked=SAFE; }\nfor tool in fixture_stat");
++        String fixture = "condition='" + condition + "'\n" + """
++            fixture_path=$(pwd -P) || exit 69
++            case "$condition" in
++              PRESENT) mkdir -- "$fixture_path/candidate" || exit 69 ;;
++              DANGLING_LINK)
++                /usr/bin/ln -s -- nonexistent "$fixture_path/candidate" || exit 70
++                [ -L "$fixture_path/candidate" ] || exit 70
++                [ "$(/usr/bin/readlink -- "$fixture_path/candidate")" = nonexistent ] || exit 70
++                [ ! -e "$fixture_path/candidate" ] || exit 70 ;;
++            esac
++            # Only metadata ownership/modes and systemd/mount/loop utilities are substituted.
++            # Real Bash -e/-L, path traversal, readlink and directory enumeration remain active.
++            fixture_stat() {
++              if [ "$2" = '%u:%g' ]; then printf '0:0\n'
++              elif [ "$2" = '%a' ]; then
++                if [ "$condition" = UNSAFE_PARENT ] && [ "$4" = "$fixture_path" ]; then printf '777\n'; else printf '755\n'; fi
++              else /usr/bin/stat "$@"; fi
++            }
++            fixture_id() { printf '0\n'; }
++            fixture_systemctl() {
++              case "$*" in *"windowstolinux-build-demo-api-cccccccccccccccc.service"*) ;; *) exit 65 ;; esac
++              if [ "$condition" = ACTIVE_UNIT ]; then printf 'LoadState=loaded\nActiveState=active\nControlGroup=/system.slice/active\n'
++              else printf 'LoadState=not-found\nActiveState=inactive\nControlGroup=\n'; fi
++            }
++            fixture_findmnt() { printf '/\n'; if [ "$condition" = MOUNT ]; then printf '%s/mutable\n' "$candidate"; fi; }
++            fixture_losetup() { if [ "$condition" = LOOP ]; then printf '%s/.workspace.ext4 (deleted)\n' "$candidate"; fi; }
++            fixture_find() { if [ "$condition" = FAILED_ENUMERATION ]; then return 64; fi; /usr/bin/find "$@"; }
++            """;
++        var result = bash(fixture + script, false, condition.equals("DANGLING_LINK"));
++        if (condition.equals("DANGLING_LINK"))
++            Assumptions.assumeTrue(result.exitCode() != 70, "Local Bash cannot create and read its controlled emulated symbolic link");
++        assertEquals(0, result.exitCode(), result.output());
++        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), "", false);
++        if (condition.equals("ABSENT")) {
++            assertTrue(DeploymentAgentPreparationProbe.absent(captured, observed), result.output());
++            assertEquals(DeploymentAgentPreparationProbe.absentOutput(captured), result.output());
++        } else {
++            assertFalse(DeploymentAgentPreparationProbe.absent(captured, observed), result.output());
++            assertTrue(result.output().contains("STATUS=UNKNOWN\n"), result.output());
++        }
++    }
++
++    private static DeploymentAgentPreparationAbsence.Captured captured() throws Exception {
++        UUID task = UUID.randomUUID();
++        var layout = DeploymentRemoteLayout.original();
++        var identity = new DeploymentAgentActionLog.Identity("original-server", "d".repeat(64), "a".repeat(64), "FULL_CONTROL", true);
++        var json = new ObjectMapper();
++        var node = json.createObjectNode().put("formatVersion", 1).put("task", task.toString()).put("server", identity.server());
++        node.set("layout", json.readTree(layout.canonical()));
++        node.put("layoutSha256", layout.digest());
++        var events = List.of(new DeploymentAgentActionLog.Event(1, "REMEMBER_AUTHORIZATION", "rememberAuthorization.v1", "true"),
++            new DeploymentAgentActionLog.Event(2, "REMOTE_TARGET", "", "f".repeat(64)),
++            new DeploymentAgentActionLog.Event(3, "REMOTE_LAYOUT", task.toString(), node.toString()),
++            new DeploymentAgentActionLog.Event(4, "SOURCE", "c".repeat(64), "b".repeat(64)),
++            new DeploymentAgentActionLog.Event(5, "TARGET_PROFILE", "", "f".repeat(64)),
++            new DeploymentAgentActionLog.Event(6, "PLAN_APPLICATION", "", "demo"),
++            new DeploymentAgentActionLog.Event(7, "PLAN", "", "e".repeat(64)),
++            new DeploymentAgentActionLog.Event(8, "PREPARE_EXECUTING", DeploymentAgentPreparationAbsence.hash(task + ":api:" + "b".repeat(64)), "api"),
++            new DeploymentAgentActionLog.Event(9, "STATE", "", "UNKNOWN"));
++        return DeploymentAgentPreparationAbsence.capture(task, new DeploymentAgentActionLog.Snapshot(identity, "UNKNOWN", 4), layout, events).orElseThrow();
++    }
++
++    private Result bash(String input, boolean syntaxOnly) throws Exception {
++        return bash(input, syntaxOnly, false);
++    }
++
++    private Result bash(String input, boolean syntaxOnly, boolean emulatedLink) throws Exception {
++        String executable = System.getProperty("managed.test.bash", System.getProperty("os.name").startsWith("Windows")
++            ? "C:\\Program Files\\Git\\bin\\bash.exe" : "/bin/bash");
++        Assumptions.assumeTrue(Files.isExecutable(Path.of(executable)), "Configured local Bash is unavailable");
++        var command = new java.util.ArrayList<>(List.of(executable, "--noprofile", "--norc"));
++        if (syntaxOnly) command.add("-n");
++        command.add("-s");
++        var script = Files.createTempFile(root, "probe-input-", ".sh");
++        Files.writeString(script, input, StandardCharsets.UTF_8);
++        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectInput(script.toFile()).redirectErrorStream(true);
++        builder.environment().put("MSYS", emulatedLink ? "winsymlinks" : "winsymlinks:nativestrict");
++        var process = builder.start();
++        try {
++            assertTrue(process.waitFor(15, TimeUnit.SECONDS), "Controlled local Bash must terminate");
++            return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
++        } finally {
++            if (process.isAlive()) {
++                process.destroyForcibly();
++                assertTrue(process.waitFor(5, TimeUnit.SECONDS));
++            }
++            Files.deleteIfExists(script);
++        }
++    }
++
++    private record Result(int exitCode, String output) {
++    }
++}
