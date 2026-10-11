@@ -1,0 +1,7 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1009,0 +1010,4 @@
++            if (Boolean.getBoolean("managed.live.configureAgentRecoveryModel")) {
++                assertTrue(root.getFileName().toString().startsWith("agent-live-"));
++                configureLiveModel(runtime);
++            }

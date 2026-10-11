@@ -263,3 +263,15 @@ STATUS不被描述为验证FragmentPath/drop-ins/unit字节；native inspect/obs
 490–492 Agent-only健康payload字节视图完成：无producer/helper丢字段确证，HTTP支持200–399；URI脱敏不能用于断言APP具体漏字段。仅strict selectHealth后对实际canonical第三参数机械解码，完整有序字段/空字段、strict UTF8/末NUL/65536-byte界限、decoded bytes SHA和encoded文本SHA、字段重拼及规范Base64往返；不复制kind parser、不改原policy/实际命令/固定合同/APP-host-send/DENY。41定点PASS（新增21/直接旧20）/0SKIP/Maven0/Java0/noAPI/noSSH，两个源码冻结零变，原203fixture59helper及其他十源码未改。HTTP200与204、TCP/PROCESS、COMMAND空白引号Unicode/空expectedOutput、UDP_REPLY/CUSTOM空字段、八framing负例及六APP/SEND改变payload反例均覆盖。formatter未应用，仅人工风格/diff检查。全部writer STOP；限定三文件本地提交后才493原恢复，旧UNKNOWN保留，484容量/483fresh尚未执行。
 
 视图只证明所审请求的输入字节及表示一致，不能证明HTTP响应、远端guard、监听归属或授权。合法UTF8/NUL的缺状态或额外字段可以被纯framing如实显示，但完整请求必须与原typed policy产生的canonical请求相同才能进入APP。未修改日志脱敏或旧DENY；模型最终是否批准、原任务结清及task-board完整部署仍待真实验证。
+
+## 493 原本地绑定检查阶段核对
+
+493 原产品恢复结束：firstSTATUS推进，secondSTATUS独立APP合法DENY，认为本地绑定检查仅后续谓词且尚不能判定已获发送授权；HEALTH未进入，原UNKNOWN/拒绝保留，未cleanup/STOP-DISABLE。2064source freeze零变/Maven1/Java0；新增3APP33754(input33287/output467/cache14080/miss19207，42.3%)，fresh445跨版本累计2780528/4probe未知。491/492两源码及状态已提交ce573ce1，41定点实际PASS；不重复相同证据付费。494 Astra只读评估已完成本地gate事实与未来remote/send-time条件分层，以及通用APP LOW对照是否比继续补句合理。原恢复harness不调用configureLiveModel，仅加approvalReasoningEffort property无效，不虚报模型配置已变；若选择对照须通过实际产品配置入口保存/验证与新route冻结。484容量/483fresh仍未执行，原SERVER lease不通过新DB绕开。
+
+本次未触达健康视图审批，不能将结果解释为新字节视图成功或失败。先核对实际已完成本地检查与将来再次检查的表达，再选择必要的Agent修正或明确配置实验；原有效DENY不会改判，核心部署及正式八项目指标仍未完成。
+
+## 494–496 审批推理配置对照准备
+
+494只读审计确认facts/verify/reviewInstructions在APP前已执行本地requireBinding及canonical匹配，之后APP/host/send是重检；未发现门禁漏执行，localBindingChecks名称列表缺明确完成状态，但不能确定NONE是拒绝原因。495仅原恢复test harness四行默认关闭、显式Agent原state限定的configureAgentRecoveryModel入口，复用产品模型配置保存/验证以部署NONE、审批LOW对照，核心facts/合同/helper/permission不改。496限定test-compile PASS/Maven0/Java0/no业务test/noAPI/noSSH；该源冻结0，其他十二Agent证据源码/原203fixture59helper零变，四行自有增量patch隔离反向检查PASS并清理mirror。source混合未跟踪基线只提交formal增量patch与状态，不纳入他人全fixture；原恢复495wrapper仅prepare/parse，真实配置/provider接受及恢复未执行，不虚报LOW已生效或provider确实思考。
+
+[原恢复harness增量](patches/AGENT-RECOVERY-REASONING-PROBE-495.patch)是零上下文补丁；复现需要当前混合fixture基线，应用需git apply --unidiff-zero。默认行为与STATIC/ASSISTED恢复保持；显式开启时非Agent state在配置前拒绝。此次只验证编译与四行增量，尚不支持任何部署、恢复或用量结论。
