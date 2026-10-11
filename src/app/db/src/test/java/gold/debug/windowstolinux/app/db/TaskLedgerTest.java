@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
 import gold.debug.windowstolinux.app.db.task.TaskLedger;
@@ -106,6 +107,52 @@ class TaskLedgerTest {
             assertTrue(ledger.queries().snapshot(first).endedAt().isPresent());
             assertEquals(0, active(db, first));
             assertTrue(ledger.tryStart(waiting));
+        }
+    }
+
+    @Test
+    void alreadyUncertainResultRetainsEvidenceAndResourcesWithoutFinalization() throws Exception {
+        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
+            var ledger = new TaskLedger(db);
+            var task = queue(ledger, "one", "A");
+            assertTrue(ledger.tryStart(task));
+            var physical = new TaskResource("CONNECTION", "physical-1", "one", false);
+            ledger.retain(task, physical);
+            ledger.uncertain(task);
+            var beforeEnd = new AtomicInteger();
+            String evidence = "{\"outcome\":\"UNKNOWN\",\"event\":\"SSH_COMMAND_TIMEOUT\"}";
+            for (int attempt = 0; attempt < 2; attempt++) {
+                var retained = ledger.completeAndArchive(task, TaskResult.UNKNOWN, evidence, false,
+                    beforeEnd::incrementAndGet);
+                assertEquals(TaskState.UNKNOWN, retained.state());
+                assertTrue(retained.outcome().isEmpty());
+                assertTrue(retained.endedAt().isEmpty());
+                assertTrue(ledger.queries().pendingFinalization(task).isEmpty());
+                assertEquals(3, active(db, task));
+                assertTrue(ledger.queries().holds(task, new TaskResource("MOD", "one", "one", false)));
+                assertTrue(ledger.queries().holds(task, new TaskResource("SERVER", "A", "one", true)));
+                assertTrue(ledger.queries().holds(task, physical));
+            }
+            for (var outcome : List.of(TaskResult.SUCCEEDED, TaskResult.FAILED, TaskResult.CANCELLED))
+                assertThrows(SQLException.class, () -> ledger.completeAndArchive(task, outcome, "{}", false,
+                    beforeEnd::incrementAndGet));
+            assertEquals(0, beforeEnd.get());
+            assertEquals(TaskState.UNKNOWN, ledger.queries().snapshot(task).state());
+            assertEquals(3, active(db, task));
+            try (var c = db.openConnection();
+                 var p = c.prepareStatement("SELECT result_json FROM platform_task WHERE task_id=?")) {
+                p.setObject(1, task);
+                try (var r = p.executeQuery()) {
+                    assertTrue(r.next());
+                    assertEquals(evidence, r.getString(1));
+                }
+            }
+            try (var c = db.openConnection();
+                 var p = c.prepareStatement("SELECT COUNT(*) FROM runtime_log WHERE category='platform_task'");
+                 var r = p.executeQuery()) {
+                assertTrue(r.next());
+                assertEquals(0, r.getLong(1));
+            }
         }
     }
 

@@ -991,7 +991,7 @@ public final class TaskLedger {
                     beforeEnd.run();
                     return true;
                 }
-                if (state.equals("QUEUED") || state.equals("UNKNOWN") && !reconciliation)
+                if (state.equals("QUEUED") || state.equals("UNKNOWN") && outcome != TaskResult.UNKNOWN && !reconciliation)
                     throw new SQLException("Task cannot complete without explicit reconciliation");
                 try (var p = c.prepareStatement("UPDATE platform_task SET result_json=? WHERE task_id=?")) {
                     p.setString(1, resultJson);

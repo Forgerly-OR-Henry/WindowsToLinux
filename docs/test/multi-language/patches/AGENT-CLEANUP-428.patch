@@ -1,0 +1,10 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1028 +1028,2 @@
+-                completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
++                if (selected.autostart() != ApplicationAutostartState.DISABLED)
++                    completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
+@@ -1465 +1466,2 @@
+-                    completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
++                    if (selected.autostart() != ApplicationAutostartState.DISABLED)
++                        completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
