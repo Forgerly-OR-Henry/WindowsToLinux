@@ -178,6 +178,9 @@ class DeploymentAgentHealthEvidenceTest {
                 assertEquals(actualMarker, query.path("maintenanceMarker").asText());
                 assertEquals("deployment-" + frame.release(component), query.path("expectedMarker").asText());
                 assertEquals(component.equals("frontend"), query.path("matchesOwnExpectedRelease").asBoolean());
+                assertEquals(component.equals("frontend"), query.path("markerPresence").asBoolean());
+                assertEquals(component.equals("frontend") ? "OWN_EXPECTED_RELEASE" : "ABSENT", query.path("markerState").asText());
+                assertTrue(query.path("markerAcceptedByStatusProtocol").asBoolean());
                 assertEquals(component.equals("frontend"), query.at("/parsedStatus/maintenance").asBoolean());
                 assertEquals("$base_root/application-locks/" + frame.part(component).unit().id() + "/maintenance",
                     query.path("markerPathExpression").asText());
@@ -188,15 +191,39 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, current.at("/helperSourceEvidence/helperSha256").asText());
             assertTrue(current.at("/helperSourceEvidence/sideEffects").asText().contains("not strictly read-only"));
             assertTrue(current.at("/helperSourceEvidence/listenerLimits").asText().contains("does not bind the particular HTTP"));
+            var executionPath = current.path("selectedHealthExecutionPath");
+            assertEquals("backend", executionPath.path("component").asText());
+            assertEquals(backend.id(), executionPath.path("applicationId").asText());
+            assertEquals(DeploymentAgentInputs.hash(backendReview.path("exactAction").asText()), executionPath.path("exactActionSha256").asText());
+            assertEquals(DeploymentAgentInputs.hash(current.at("/argumentBinding/healthPayloadArgument").asText()),
+                executionPath.path("canonicalHealthPayloadSha256").asText());
+            assertTrue(executionPath.path("payloadSha256Meaning").asText().contains("third argument text"));
+            assertTrue(executionPath.path("payloadSha256Meaning").asText().contains("not decoded payload bytes"));
+            assertEquals("HTTP", executionPath.path("kind").asText());
+            assertFalse(executionPath.at("/programVerification/reachableAfterParser").asBoolean());
+            assertFalse(executionPath.at("/customProbe/reachableAfterParser").asBoolean());
+            assertTrue(executionPath.path("parserGuard").asText().contains("every non-COMMAND kind rejects before health_loaded"));
+            assertTrue(executionPath.path("limits").asText().contains("not a complete helper dependency closure"));
+            var observed = java.util.stream.StreamSupport.stream(current.path("currentGraphQueries").spliterator(), false)
+                .filter(value -> value.path("component").asText().equals("backend")).findFirst().orElseThrow();
+            assertEquals(observed.path("event").asLong(), executionPath.at("/earlierObservedRuntime/statusEvent").asLong());
+            assertEquals(observed.path("resultSha256").asText(), executionPath.at("/earlierObservedRuntime/resultSha256").asText());
+            assertEquals("native", executionPath.at("/earlierObservedRuntime/backend").asText());
+            assertEquals("DAEMON", executionPath.at("/earlierObservedRuntime/mode").asText());
+            assertTrue(executionPath.at("/earlierObservedRuntime/meaning").asText().startsWith("Earlier complete original-status receipt"));
             Map<String, Object> hashedFacts = JSON.convertValue(current, Map.class);
             String evidenceDigest = (String) hashedFacts.remove("evidenceSha256");
             hashedFacts.remove("reviewRequestSha256");
             assertEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
+            Object pathEvidence = hashedFacts.remove("selectedHealthExecutionPath");
+            assertNotEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
+            hashedFacts.put("selectedHealthExecutionPath", pathEvidence);
             hashedFacts.remove("helperSourceEvidence");
             assertNotEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
             for (var review : frame.reviewFacts) {
                 String operation = review.path("operation").asText();
                 assertEquals(operation.equals("deployment.publication.health.v1"), review.path("currentCommandEvidence").has("helperSourceEvidence"));
+                assertEquals(operation.equals("deployment.publication.health.v1"), review.path("currentCommandEvidence").has("selectedHealthExecutionPath"));
             }
             for (var actual : frame.healthActions) assertEquals(actual.expectedAction(), actual.actualAction());
             for (var actual : frame.runtimeActions) assertEquals(actual.expectedAction(), actual.actualAction());
@@ -219,6 +246,24 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(0, frame.healthDispatches);
             assertEquals(1, frame.events("HEALTH_STATUS_QUERY_RESULT"));
             assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"kind", "payload"})
+    void changedKindOrPayloadCannotReuseTheApprovedHealthPath(String change) throws Exception {
+        try (var frame = new Frame(); var original = frame.healthRequest("none"); var changed = frame.healthRequest(change)) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            var intent = frame.healthIntent(original, "none");
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            var approval = review.approveCommand(intent, original, frame.task);
+            assertEquals(TaskResult.SUCCEEDED, approval.outcome());
+            int reviews = frame.reviewFacts.size();
+            assertThrows(ApiException.class, () -> evidence.execute(changed, approval.value().orElseThrow()));
+            assertThrows(ApiException.class, () -> evidence.execute(original, approval.value().orElseThrow()));
+            assertEquals(reviews, frame.reviewFacts.size());
+            assertEquals(0, frame.healthDispatches);
         }
     }
 
@@ -340,6 +385,15 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(TaskResult.SUCCEEDED, frame.health(evidence, part, part.reviewedRuntime().healthCheck()).outcome());
             var current = frame.reviewFacts.getLast().path("currentCommandEvidence");
             assertEquals(kind, current.at("/typedHealthPolicy/kind").asText());
+            var path = current.path("selectedHealthExecutionPath");
+            assertEquals(kind, path.path("kind").asText());
+            assertEquals(kind.equals("COMMAND"), path.at("/programVerification/reachableAfterParser").asBoolean());
+            assertEquals(kind.equals("UDP"), path.at("/customProbe/reachableAfterParser").asBoolean());
+            assertEquals("DAEMON", path.at("/earlierObservedRuntime/mode").asText());
+            if (kind.equals("COMMAND"))
+                assertTrue(path.at("/programVerification/meaning").asText().contains("complete original program still require review"));
+            if (kind.equals("UDP"))
+                assertTrue(path.at("/customProbe/meaning").asText().contains("complete original probe still require review"));
             assertEquals(DeploymentWorkloadArguments.healthPayload(part.reviewedRuntime().healthCheck()),
                 current.at("/argumentBinding/healthPayloadArgument").asText());
             if (kind.equals("COMMAND")) {
@@ -967,7 +1021,9 @@ class DeploymentAgentHealthEvidenceTest {
         CommandRequest healthRequest(String change) {
             var unit = part("backend").unit();
             String payload = DeploymentWorkloadArguments.healthPayload(change.equals("payload")
-                ? new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:9999/foreign"), 200, 120) : part("backend").reviewedRuntime().healthCheck());
+                ? new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:9999/foreign"), 200, 120)
+                : change.equals("kind") ? new DeploymentHealthCheck.Command(new DeploymentCommand("verify.sh", List.of()), "foreign", 120)
+                : part("backend").reviewedRuntime().healthCheck());
             String script = List.of(DeploymentManagedHelperBundle.PATH, "application-health", unit.id(),
                     change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256(), payload).stream()
                 .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));

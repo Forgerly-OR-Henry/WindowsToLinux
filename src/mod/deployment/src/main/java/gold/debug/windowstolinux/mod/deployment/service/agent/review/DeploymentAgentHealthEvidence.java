@@ -187,10 +187,11 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
             if (health != null) {
                 facts.put("helperSourceEvidence", DeploymentAgentHelperSourceEvidence.facts());
+                facts.put("selectedHealthExecutionPath", healthExecutionPath(intent, health));
                 facts.put("healthMaintenanceScope", Map.of("applicationId", selected.part().unit().id(),
                     "markerPathExpression", maintenanceMarkerPath(selected),
                     "meaning", "This canonical health entry admits only this application's run. Its local validation flag skips only its own marker-existence rejection while keeping its own admission/run locks and orphan checks. Other components' markers are separate observations, not this application's systemd state or permission; no maintenance completion is inferred."));
-                facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses the typed health-v1 payload. The attached selected assembled source shows its locks, orphan checks, same-port listener PID/cgroup guard and probes. HTTP curls the loopback URL and rechecks process identity but does not bind that particular response socket to the owned PID or prove the exact release loaded. Health admission can create lock directories/files or remove a verified inactive old job/container; COMMAND/on-demand/custom-probe branches execute the original typed programs. These effects require review and are not authorized by this evidence.");
+                facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses this exact health-v1 payload before health_loaded. selectedHealthExecutionPath explains which application verification/custom-probe branches this payload can reach; descriptions of other kinds in the attached source are not selected paths. HTTP curls the loopback URL and rechecks process identity but does not bind that particular response socket to the owned PID or prove the exact release loaded. Admission can still create lock directories/files or remove a verified inactive old job/container before parsing. These effects require review and are not authorized by this evidence.");
             } else
                 facts.put("enforcedRuntimeBoundary", "The pinned inspect-runtime and native observe-deployment implementations validate the application id and ownership digest, resolve CURRENT strictly inside this application's managed releases directory and check CURRENT/.windowstolinux-owner. Native checks also verify the original derived systemd unit fragment path, absence of foreign drop-ins and expected unit bytes before reading runtime mode/state. These are helper execution-time guards; the captured original-status receipt is the earlier current-release observation and does not prove present listener ownership. The container inline observation retains its existing independent command review without this supplement.");
             facts.put("observationLimits", "The captured status proves owned CURRENT and original candidate ownership/build state at this invocation's query. It does not prove listener ownership or health; the subsequent helper enforces those checks at execution. Sealed source/artifact and configuration identities are retained original facts, not freshly rehashed remote content. Artifact SHA and release SHA identify different objects. No historical approval is reused and no unresolved outer delivery is declared settled.");
@@ -621,6 +622,52 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         return Collections.unmodifiableMap(facts);
     }
 
+    private Map<String, Object> healthExecutionPath(ActionIntent intent, Health health) {
+        var selected = health.selected();
+        var observed = observations.get(selected.part().componentId());
+        String kind = (String) healthFacts(health.check()).get("kind");
+        boolean command = health.check() instanceof DeploymentHealthCheck.Command;
+        boolean customProbe = health.check() instanceof DeploymentHealthCheck.Udp udp && udp.probe().isPresent();
+        String selectedBranch = switch (health.check()) {
+            case DeploymentHealthCheck.Http ignored ->
+                "HTTP: listener ownership guard, loopback curl/status and process-identity recheck; no application verification/custom-probe program";
+            case DeploymentHealthCheck.Tcp ignored ->
+                "TCP: listener ownership guard, TCP response and process stability; no application verification/custom-probe program";
+            case DeploymentHealthCheck.Process ignored ->
+                "PROCESS: process identity/stability; no application verification/custom-probe program";
+            case DeploymentHealthCheck.Command ignored ->
+                "COMMAND: application verification program if admission/load/input/parser checks succeed";
+            case DeploymentHealthCheck.Udp udp -> udp.probe().isPresent()
+                ? "UDP custom: listener ownership guard, original protocol probe program and process-identity recheck if prior checks succeed"
+                : "UDP reply: listener ownership guard, UDP request/response and process-identity recheck; no custom probe program";
+        };
+        return Map.ofEntries(Map.entry("component", selected.part().componentId()), Map.entry("applicationId", selected.part().unit().id()),
+            Map.entry("exactActionSha256", DeploymentAgentInputs.hash(intent.exactAction())),
+            Map.entry("canonicalHealthPayloadSha256", DeploymentAgentInputs.hash(DeploymentWorkloadArguments.healthPayload(health.check()))),
+            Map.entry("payloadSha256Meaning", "SHA256 of the UTF-8 canonical Base64 health-v1 third argument text in this exact request; not decoded payload bytes or remote program content"),
+            Map.entry("kind", kind), Map.entry("kindSource", "Current canonical third argument; the pinned parse_application_health_payload -> parse_application_health will derive its kind at execution, not from a retained field or earlier status"),
+            Map.entry("sourceSymbols", List.of("application_health", "application_field", "application_number", "application_command_fields",
+                "parse_application_health_payload", "parse_application_health", "application_health_loaded")),
+            Map.entry("earlierObservedRuntime", Map.of("backend", backend(selected), "currentKind", observed.status().currentKind(),
+                "mode", observed.status().currentMode(), "statusEvent", observed.event(), "resultSha256", observed.resultDigest(),
+                "meaning", "Earlier complete original-status receipt in this invocation; not a new execution-time workload/listener observation or permission")),
+            Map.entry("parserGuard", "application_health admits, loads CURRENT/workload and checks inputs, then parses this payload before health_loaded. The parser overwrites application_health_kind. If the loaded execution-time mode is ON_DEMAND, only COMMAND with entry and literal argv matching the loaded installation verification is admitted; every non-COMMAND kind rejects before health_loaded. No unchanged remote mode is assumed."),
+            Map.entry("programVerification", Map.of("reachableAfterParser", command,
+                "state", command ? "CONDITIONAL_PROGRAM_EXECUTION" : "EXCLUDED_BY_CURRENT_CANONICAL_PAYLOAD",
+                "branchCondition", "health_loaded enters verification only for application_mode=ON_DEMAND OR application_health_kind=COMMAND; ON_DEMAND non-COMMAND was already rejected by the parser",
+                "meaning", command
+                    ? "DAEMON COMMAND uses the current typed command/argv; ON_DEMAND COMMAND must match the loaded installation verification entry/argv. Native/container execution helpers and the complete original program still require review; this branch fact grants no permission."
+                    : "This current non-COMMAND payload cannot reach application verification, including if the remote mode changes to ON_DEMAND, because that combination rejects first. OS commands and admission/orphan effects are not excluded.")),
+            Map.entry("customProbe", Map.of("reachableAfterParser", customProbe,
+                "state", customProbe ? "CONDITIONAL_PROGRAM_EXECUTION" : "EXCLUDED_BY_CURRENT_CANONICAL_PAYLOAD",
+                "branchCondition", "Only the UDP case with application_health_custom=1 invokes an application protocol-probe program",
+                "meaning", customProbe
+                    ? "The current UDP payload selects its original probe entry/argv. The unexpanded native/container program execution path and complete original probe still require review; this fact grants no permission."
+                    : "Other kinds never enter the UDP case; a stale application_health_custom=1 does not make HTTP execute a UDP probe. UDP without a custom probe uses its typed request/response socket check.")),
+            Map.entry("selectedBranch", selectedBranch),
+            Map.entry("limits", "Only application verification/custom-probe reachability is described, not a complete helper dependency closure or current health proof. Admission/load/input checks run before the parser and retain lock creation/truncation and verified inactive orphan cleanup effects. HTTP does not bind its exact response socket to the cgroup PID or prove an exact release loaded. Later helper guards still execute; no historical authorization, current PID or unchanged remote state is inferred."));
+    }
+
     private static Map<String, Object> observationFacts(Observation observed) {
         var selected = observed.query().selected();
         String expectedMarker = "deployment-" + selected.commit().release().sha256();
@@ -635,8 +682,11 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             Map.entry("parsedStatus", statusFacts(observed.status())), Map.entry("resultSha256", observed.resultDigest()),
             Map.entry("maintenanceMarker", marker), Map.entry("expectedMarker", expectedMarker),
             Map.entry("matchesOwnExpectedRelease", marker.equals(expectedMarker)),
+            Map.entry("markerPresence", !marker.equals("none")),
+            Map.entry("markerState", marker.equals("none") ? "ABSENT" : "OWN_EXPECTED_RELEASE"),
+            Map.entry("markerAcceptedByStatusProtocol", true),
             Map.entry("markerPathExpression", maintenanceMarkerPath(selected)),
-            Map.entry("maintenanceMeaning", "MAINTENANCE is this application's persistent publication marker from this complete current receipt. none means absent at that query; a matching deployment token refers only to this unit's expected release. It is not systemd state, another application's marker or permission, and does not establish that maintenance ended."));
+            Map.entry("maintenanceMeaning", "MAINTENANCE is this application's persistent publication marker from this complete current receipt. none is the protocol-accepted ABSENT state: matchesOwnExpectedRelease=false means no marker, not a foreign-owner mismatch. A present OWN_EXPECTED_RELEASE token matches only this unit's expected release; foreign tokens were rejected. markerAcceptedByStatusProtocol means only the receipt protocol accepted this state, not authorization or health success. It is not systemd state, another application's marker or permission, and does not establish that maintenance ended."));
     }
 
     private static String maintenanceMarkerPath(Selection selected) {

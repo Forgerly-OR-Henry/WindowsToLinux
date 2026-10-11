@@ -207,3 +207,9 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 467 的 Agent 健康补充现包含完整摘要已核验的实际 assembled helper 源码段、精确行位置和逐段 SHA；源码全部纳入当前审批证据摘要。入口采用精确行锚点，缺失、重复、逆序、越界或完整源码漂移均停止。逐组件维护标记保留各自完整回执的实际 token，不改变后端目标或推断维护已结束。HEALTH 附源码，STATUS 保留待执行查询事实；运行观察只增加当前逐组件标记事实，容器内联默认审批保留。锁文件创建、打开/截断、已核验旧作业清理等副作用，以及未展开依赖、可选 override 和 HTTP 具体响应归属限制均明确展示。
 
 467 只执行新增 9 个与直接受影响既有 18 个场景，27 PASS、无跳过，Maven 0、Java 0，没有 API/SSH 请求。实际 `renderScript()` 的逐行字节、完整 helper pin、逐段 SHA、健康证据摘要和二组件标记正/反例均通过；原 DENY 终止及 APP/宿主授权/实际发送三处绑定检查保持。四个 Java 文件精确格式化，运行前后 SHA 一致，原 203 样例和 59 个已冻结 helper 资源未变。真实恢复 468 和新任务看板业务验收仍待执行。
+
+468 原恢复再次在 backend 健康审批停下。两个原状态查询通过，新的合法 DENY 称健康入口会执行未展开的 COMMAND/probe 辅助程序，并把后端没有维护标记时的 `matchesOwnExpectedRelease=false` 视为不匹配。实际当前请求为 DAEMON + HTTP；尚需逐源码核对前置解析与分支条件，不能只凭模型理由断言该请求会执行那些程序。命令未发送，原 UNKNOWN 与拒绝保留，没有清理或 STOP/DISABLE。Maven 1、Java 0，2058 源码冻结零变化；4 次新增 APP 为 55,695 Token，输入 55,170、输出 525、缓存命中 14,720、未命中 40,450，缓存率 26.7%。445 跨版本调试累计 2,530,858，四项配置探测用量未知；不作为正式同版八项目指标。
+
+469–471 已核对并补齐当前健康请求的实际路径证据：入口在 health_loaded 前解析当前 canonical payload，重设 kind；若实际 mode 变为 ON_DEMAND，非 COMMAND 会先拒绝，因此当前 HTTP 不会执行 verification 或 UDP custom probe。证据明确保留锁与 orphan 副作用、未展开依赖和 HTTP 响应归属限制，不授权执行。维护标记新增 ABSENT / OWN_EXPECTED_RELEASE 和是否存在等明确事实；旧 false 保留，但说明“无标记”不是外来身份冲突，foreign token 仍拒绝。
+
+471 仅新增 8 个及直接受影响既有 19 个场景，27 PASS、0 跳过，Maven 0、Java 0，无 API/SSH 请求。其中六个实际 Git Bash 场景运行完整 pinned 入口、解析器和健康分支，OS/加载/程序边界使用显式受控夹具，不能表述为完整 helper 或真实服务器验证。三 Java 精确格式化及运行前后 SHA 核对通过；467 的 HelperSourceEvidence 两文件、原203样例及59个冻结 helper 资源未改。接下来通过原产品恢复472；UNKNOWN 不会释放 TaskLedger 的 TASK_END 逻辑申请，公开 blockers 又省略这类申请，故不得以没有 SERVER blocker 或新数据库绕过原任务准入。待原恢复结清后，重新取得当次产品容量回执并明确检查至少13GiB，再仅复验任务看板。
