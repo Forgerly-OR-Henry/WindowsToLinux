@@ -134,6 +134,12 @@ task-board-04 一项入口检查失败、零跳过，3257 项源码冻结零变�
 
 `findmnt-focused-01` 于 2026-10-12 04:46:51+08 通过 14 个不同直接场景，零失败/错误/跳过：Bash 语法、12 项受控工具/文件系统观察及一次 JDBC 严格结清幂等。夹具明确模拟官方参数互斥契约；重新注入旧冲突参数必须形成 MOUNTS/MOUNT_QUERY_UNCONFIRMED、不能结清。两文件格式通过，3262 项源码零变化，进程退出，无模型/SSH；不冒充真实 util-linux 或服务器验收。两份前像匹配 `7619662a`，新自有增量见 [DEPLOYMENT-AGENT-PREPARATION-FINDMNT.patch](patches/DEPLOYMENT-AGENT-PREPARATION-FINDMNT.patch)，SHA256 `1fb8cc4d4aadb88145271b64fb2a8aef9cbb1893dad3027661c51a245ba9a73e`，反向检查通过，所有旧补丁及原迁移改动保留。
 
+findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5e9f8fb4194ed`，未推送。`task-board-recovery02-04` 于 2026-10-12 04:49:12+08 通过一个真实产品入口场景，零失败/错误/跳过，3262 项源码零变化，进程退出。产品独立审批固定只读探针后取得严格 ABSENT，原任务由 UNKNOWN 结清为 ENDED/FAILED、无阻塞，随后释放恢复模式并重新打开产品正常启动通过；没有重放原准备计划，也没有 Linux 主机重启。
+
+恢复后只读核对：原平台任务已归档、资源行 1168→0；原 Agent task 不存在、action event 0、formal execution 0。仅保留绑定原 operation `eb65b964-bb37-4bcf-b6b7-d6682dbb8def` 的 AGENT/FAILED 回执，摘要 447 字节，无 App/发布身份。十张正式业务表原本均为空且保持为空，模型 2、服务器 1 保持，审计未改变数据库字节。候选路径实际 ABSENT，因此没有通过手工删除释放磁盘；实际不存在的准备效果已证明并结清。此轮证明失败部署的补偿恢复和产品重开，不等于成功发布，也不证明旧 373 的正式应用或共享引用已重新验收。
+
+本轮新增 2 个审批 provider 响应：input 13708、output 1097、合计 14805，hit 7936、miss 5772，捕获输入命中率 57.89%，2 项 reasoning 未知、输出上限 8192，无新配置探测。usage 窗口 37→38 并淘汰 1 项旧记录，按 ID 差集计算；不并入原部署、其他恢复或最终八项目批次。原失败日志与所有调查文件保留，尚未结清的其他旧记录不删除。
+
 新 task-board 独立部署、真实浏览器业务、非默认目录的真实服务器部署与重启恢复、其余七项目及全新服务器的冻结八项目批次均未验证。缓存及审批比例必须按对应轮次实际 provider usage 计算，未知值不得补零；历史调试用量不能混入冻结八项目批次。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
