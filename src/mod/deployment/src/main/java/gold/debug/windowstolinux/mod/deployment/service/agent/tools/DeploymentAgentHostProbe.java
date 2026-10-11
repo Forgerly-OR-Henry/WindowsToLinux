@@ -39,7 +39,7 @@ public final class DeploymentAgentHostProbe {
             else printf 'PACKAGE_ARCH=unknown\\n'; fi
             # SYSTEMD describes protected command availability; no daemon or runtime admission is inferred.
             if probe_command systemctl >/dev/null 2>&1; then printf 'SYSTEMD=1\\n'; else printf 'SYSTEMD=0\\n'; fi
-            """);
+            """, true);
     }
 
     /** Renders a separate observation of only the selected engine, including possible native-store initialization. / 单独渲染所选引擎观测，包含原生存储可能初始化的影响。 */
@@ -63,16 +63,20 @@ public final class DeploymentAgentHostProbe {
                 printf 'FORMAT=WTL_AGENT_CONTAINER_1\\nENGINE=PODMAN\\nCLIENT=%s\\nOPERATIONAL=%s\\nQUADLET=%s\\n' "$client" "$operational" "$quadlet"
                 """;
         };
-        return isolated("# The selected engine info/quadlet query may initialize its native storage or configuration.\n" + body);
+        return isolated("# The selected engine info/quadlet query may initialize its native storage or configuration.\n" + body, false);
     }
 
-    private static String isolated(String body) {
+    private static String isolated(String body, boolean baseline) {
+        String path = baseline ? "/usr/sbin:/usr/bin:/sbin:/bin" : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+        String guards = DeploymentPlatformCapabilityProbe.probeGuards();
+        if (baseline)
+            guards = guards.replace("/usr/local/sbin:/usr/local/bin:", "").replace("/usr/local/sbin /usr/local/bin ", "");
         return """
-            exec /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \\
+            exec /usr/bin/env -i PATH=%s LC_ALL=C \\
               HOME=/dev/null XDG_CONFIG_HOME=/dev/null XDG_CACHE_HOME=/dev/null XDG_DATA_HOME=/dev/null \\
               /bin/bash --noprofile --norc -p -s <<'WTL_AGENT_HOST_OBSERVATION'
             cd -- /
-            """ + DeploymentPlatformCapabilityProbe.probeGuards() + "probe_parents / || exit 64\n" + body
+            """.formatted(path) + guards + "probe_parents / || exit 64\n" + body
             + "WTL_AGENT_HOST_OBSERVATION\n";
     }
 }

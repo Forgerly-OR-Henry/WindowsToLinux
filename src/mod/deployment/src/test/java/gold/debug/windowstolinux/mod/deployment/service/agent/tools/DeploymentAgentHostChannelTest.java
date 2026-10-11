@@ -46,6 +46,10 @@ class DeploymentAgentHostChannelTest {
     void baselineContainsOnlyFixedNecessaryQueriesAndProtectedOsReader() {
         String script = DeploymentAgentHostProbe.baseline();
         assertTrue(script.startsWith("exec /usr/bin/env -i"));
+        assertTrue(script.contains("PATH=/usr/sbin:/usr/bin:/sbin:/bin"));
+        assertFalse(script.contains("/usr/local/"));
+        assertTrue(DeploymentAgentHostProbe.container(ContainerEngineType.PODMAN)
+            .contains("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"));
         assertTrue(script.contains("/bin/bash --noprofile --norc -p -s"));
         assertTrue(script.contains("probe_parents / || exit 64"));
         assertTrue(script.contains("[ ! -L \"$os_release\" ] && probe_file \"$os_release\" || exit 64"));

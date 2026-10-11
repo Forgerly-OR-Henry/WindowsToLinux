@@ -97,3 +97,17 @@
 上述失败回收方案尚未实施或通过真实服务器验证。前次暂停期间没有启动新的模型请求、部署或远端清理；本次已按用户唤醒恢复单项目工作。
 
 详细历史见 [失败分析](AGENT-FAILURE-ANALYSIS.md) 和 [AI 验收记录](AI-LIVE-VERIFICATION.md)；原日志、用量与源码摘要位于 [本轮证据目录](../../../.ai-workspace/agent-live-evidence/agent-root-cause-20261010/)。
+
+## 430 task-board 首次主机基线拒绝
+
+file-transfer 业务及原产品恢复收尾完成后，仅串行测试原 task-board（Java＋Node，MANUAL_REVIEW，remember=false）。首次固定主机基线独立审批 DENY，命令未发送，任务 `937e921c-eddc-4573-bd01-3ffe224099c5` 返回 FAILED/ACCESS_DENIED；部署和人工审批阶段未开始。原拒绝保留。两次请求均返回用量：13,936 Token，部署 8,124、审批 5,812；输入缓存命中 12,672、未命中 1,025（92.5%），审批占总 41.7%。另 4 项配置探测用量未知。Maven 退出 1、本地 Java 0、2,043 源码及 203 原样例字节未变。新服务器调试累计已知 3,853,942，20 项配置探测未知，不能作为正式八项目指标。
+
+当前理由要求预先提供服务器 OS 二进制摘要。源码中 uname/dpkg/rpm 已使用固定绝对路径，apt-get/dnf/systemctl 仅检查可用性；当前所有权、不可写性及父目录守卫完整，系统二进制预置摘要不属于现有 OS 信任合同。接下来核对并补齐 Agent 固定基线的机械源绑定与该信任边界，避免任意命令借用标签；不重复同一付费拒绝。
+
+## 431–432 Agent 固定基线信任与源码绑定
+
+仅 Agent baseline 的启动 PATH、guard PATH 和目录扫描集合去掉 `/usr/local` 搜索目录；uname/dpkg/rpm 的固定绝对路径及文件守卫保留。container 渲染保持原字节，共享 capability probe、默认 guards 以及 STATIC/ASSISTED 路径不改。root-owned 受保护系统文件与 OS/SSH 启动是既有信任假设，并不等于实际二进制摘要测量，也不防御已被 root 篡改的系统、完整中间 symlink 链或检查与使用竞态。
+
+Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin 长度/摘要、真实 output/timeout 边界及唯一当前 deployment-host 目标匹配时生成。脚本仍完整保留在 exactAction；导航 SHA 和范围仅绑定显示的脚本字节，不伪造远端工具已验证结论。apt-get/dnf/systemctl 仅检查存在性。facts 拒绝注入导航，messages 重算并核对导航及原会话绑定；任意同标签脚本继续独立完整审查，不借用信任。当前每条命令仍独立审批，原有效 DENY 不重审、不取得宿主许可或 dispatch。
+
+432 明确筛选的 14 项 Java 定点全 PASS/0 SKIP，四个自有 Java 文件按项目 IDEA formatter 处理；没有调用真实 API/SSH，没有运行全套，所有验证进程退出。两个已有混合迁移文件仅保留 [本任务增量](patches/AGENT-HOST-BASELINE-431.patch)，before/after/SHA 与原用量单列保留。该补丁以零上下文记录自有增量，使用 `git apply --unidiff-zero`，当前反向检查通过。下一步仅 fresh 复验 task-board，不能由本地通过推断真实部署或审批通过。

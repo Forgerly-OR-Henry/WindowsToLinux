@@ -1,0 +1,39 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
+@@ -15,0 +16 @@
++import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHostProbeEvidence;
+@@ -79 +80,2 @@
+-            || current.containsKey(DeploymentAgentToolchainInputEvidence.FIELD))
++            || current.containsKey(DeploymentAgentToolchainInputEvidence.FIELD)
++            || current.containsKey(DeploymentAgentHostProbeEvidence.FIELD))
+@@ -94,0 +97,2 @@
++        DeploymentAgentHostProbeEvidence.select(JSON.valueToTree(current))
++            .ifPresent(value -> result.put(DeploymentAgentHostProbeEvidence.FIELD, value));
+@@ -261,0 +266,8 @@
++        var baseline = DeploymentAgentHostProbeEvidence.select(facts);
++        if (baseline.isPresent()) {
++            if (!JSON.valueToTree(binding).equals(facts.get("reviewSession"))
++                || !JSON.valueToTree(List.of(server)).equals(facts.get("serverTargets"))
++                || !JSON.valueToTree(baseline.orElseThrow()).equals(facts.get(DeploymentAgentHostProbeEvidence.FIELD)))
++                throw new IllegalArgumentException("Current Agent host baseline source binding changed");
++            policy += "\n" + DeploymentAgentHostProbeEvidence.INSTRUCTION;
++        }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
+@@ -447 +447 @@
+-        assertTrue(hostProbe.contains("/bin/bash --noprofile --norc -s"));
++        assertTrue(hostProbe.contains("/bin/bash --noprofile --norc -p -s"));
+@@ -456 +456 @@
+-                script, new byte[0], java.time.Duration.ofMinutes(2), 65536)) {
++                script, new byte[0], java.time.Duration.ofMinutes(2), 4096)) {
+@@ -491,0 +492,2 @@
++                assertEquals(!container, latest.has(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHostProbeEvidence.FIELD));
++                assertEquals(!container, policy.contains(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHostProbeEvidence.INSTRUCTION));
+@@ -524 +526 @@
+-            try (var command = new CommandRequest(scripts.get(index), input, Duration.ofSeconds(30), 8192)) {
++            try (var command = new CommandRequest(scripts.get(index), input, Duration.ofSeconds(30), helper ? 8192 : 4096)) {
+@@ -571,0 +574,2 @@
++                assertFalse(current.has(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHostProbeEvidence.FIELD));
++                assertFalse(request.messages().getFirst().text().contains(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHostProbeEvidence.INSTRUCTION));
