@@ -1,0 +1,701 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java
+@@ -17,7 +17,7 @@
+     private int remaining;
+ 
+     private DeploymentToolBudget(int maximum) {
+-        if (maximum < 1 || maximum > 160 || CURRENT.get() != null)
++        if (maximum < 1 || maximum > 512 || CURRENT.get() != null)
+             throw new IllegalStateException("Invalid nested tool budget scope");
+         this.maximum = maximum;
+         remaining = maximum;
+@@ -26,6 +26,12 @@
+ 
+     public static DeploymentToolBudget open(int maximum) {
+         return new DeploymentToolBudget(maximum);
++    }
++
++    /** Owns a bounded standalone scope only when no enclosing coordinator owns one. / 仅在没有外层协调预算时持有独立有界作用域。
++     * @return owned default scope, or null while the enclosing scope remains responsible / 自有默认作用域；已有外层预算时返回null且不回填 */
++    public static DeploymentToolBudget openStandaloneIfAbsent() {
++        return CURRENT.get() == null ? open(80) : null;
+     }
+ 
+     public static int maximum() {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -213,7 +213,7 @@
+      * @return actual publication outcome / 真实发布结果
+      * @throws Exception on denied, unknown, cancelled or exhausted work / 工作被拒绝、未知、取消或耗尽时 */
+     public OperationResult<DeploymentAgentDeliveryPort.Published> run() throws Exception {
+-        try (var budget = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(160)) {
++        try (var budget = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(512)) {
+             return runBounded();
+         }
+     }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java
+@@ -27,21 +27,22 @@
+     void explicitLargerScopeRetainsMaximumAndCannotReplenishAfterExhaustion() {
+         assertEquals(80, DeploymentToolBudget.maximum());
+         assertEquals(80, DeploymentToolBudget.remaining());
+-        try (var scope = DeploymentToolBudget.open(160)) {
+-            assertEquals(160, DeploymentToolBudget.maximum());
+-            var main = java.util.stream.IntStream.range(0, 81)
++        try (var scope = DeploymentToolBudget.open(512)) {
++            assertEquals(512, DeploymentToolBudget.maximum());
++            var main = java.util.stream.IntStream.range(0, 320)
+                 .mapToObj(i -> new AiToolCall("main-" + i, "read", "{}")).toList();
+             assertTrue(DeploymentToolBudget.consume(main));
+-            assertEquals(79, DeploymentToolBudget.remaining());
++            assertEquals(192, DeploymentToolBudget.remaining());
+             assertFalse(DeploymentToolBudget.consume(List.of(new AiToolCall("main-0", "read", "{}"))));
+-            var publication = java.util.stream.IntStream.range(0, 78)
++            assertEquals(191, DeploymentToolBudget.remaining());
++            var publication = java.util.stream.IntStream.range(0, 191)
+                 .mapToObj(i -> new AiToolCall("publication-" + i, "inspect", "{}")).toList();
+             assertTrue(DeploymentToolBudget.consume(publication));
+             assertEquals(0, DeploymentToolBudget.remaining());
+-            assertEquals(160, DeploymentToolBudget.maximum());
++            assertEquals(512, DeploymentToolBudget.maximum());
+             assertFalse(DeploymentToolBudget.consume(List.of(new AiToolCall("overflow", "read", "{}"))));
+             assertEquals(0, DeploymentToolBudget.remaining());
+-            assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(160));
++            assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(512));
+         }
+         assertEquals(80, DeploymentToolBudget.maximum());
+         assertEquals(80, DeploymentToolBudget.remaining());
+@@ -54,7 +55,24 @@
+     @Test
+     void unsupportedScopeLimitsAreRejectedWithoutOpeningAScope() {
+         assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(0));
+-        assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(161));
++        assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(513));
++        assertEquals(80, DeploymentToolBudget.maximum());
++        assertEquals(80, DeploymentToolBudget.remaining());
++    }
++
++    @Test
++    void activeScopeCannotBeReplacedAndNewScopeCannotRetainOldIdsOrCredits() {
++        try (var scope = DeploymentToolBudget.open(512)) {
++            assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("same-id", "read", "{}"))));
++            assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(80));
++            assertEquals(512, DeploymentToolBudget.maximum());
++            assertEquals(511, DeploymentToolBudget.remaining());
++        }
++        try (var scope = DeploymentToolBudget.open(80)) {
++            assertEquals(80, DeploymentToolBudget.maximum());
++            assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("same-id", "read", "{}"))));
++            assertEquals(79, DeploymentToolBudget.remaining());
++        }
+         assertEquals(80, DeploymentToolBudget.maximum());
+         assertEquals(80, DeploymentToolBudget.remaining());
+     }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java
+@@ -45,17 +45,18 @@
+ 
+     @Test
+     void factsDeriveActualScopeMaximumWhileModelResponsesRemainEighty() {
+-        for (int maximum : List.of(4, 80, 160)) {
++        for (int maximum : List.of(4, 80, 512)) {
+             try (var scope = DeploymentToolBudget.open(maximum)) {
+                 assertTrue(DeploymentToolBudget.consume(List.of(call("main"), call("publication"))));
+                 var facts = DeploymentAgentBudgetFacts.observe(79, 1);
+                 assertEquals(80, facts.get("maximumModelResponses"));
+                 assertEquals(79, facts.get("remainingModelResponsesAfterThisRequest"));
+-                assertEquals(maximum, facts.get("maximumMainToolAttempts"));
++                int mainMaximum = Math.min(maximum, 320);
++                assertEquals(mainMaximum, facts.get("maximumMainToolAttempts"));
+                 assertEquals(maximum, facts.get("maximumSharedToolAttempts"));
+-                assertEquals(maximum - 1, facts.get("remainingMainToolAttempts"));
++                assertEquals(mainMaximum - 1, facts.get("remainingMainToolAttempts"));
+                 assertEquals(maximum - 2, facts.get("remainingSharedToolAttempts"));
+-                assertEquals(maximum - 2, facts.get("remainingExecutableToolAttempts"));
++                assertEquals(Math.min(mainMaximum - 1, maximum - 2), facts.get("remainingExecutableToolAttempts"));
+                 assertEquals(4, facts.get("maximumCallsPerResponse"));
+                 assertEquals(maximum - 2, DeploymentToolBudget.remaining());
+             }
+@@ -67,17 +68,36 @@
+ 
+     @Test
+     void attemptsBeyondEightyAndPublicationDebitsUseTheSameScope() {
+-        try (var scope = DeploymentToolBudget.open(160)) {
++        try (var scope = DeploymentToolBudget.open(512)) {
+             var main = java.util.stream.IntStream.range(0, 81).mapToObj(i -> call("main-" + i)).toList();
+             assertTrue(DeploymentToolBudget.consume(main));
+             assertTrue(DeploymentToolBudget.consume(List.of(call("publish"), call("verify"))));
+             var facts = DeploymentAgentBudgetFacts.observe(50, 81);
+-            assertEquals(79, facts.get("remainingMainToolAttempts"));
+-            assertEquals(77, facts.get("remainingSharedToolAttempts"));
+-            assertEquals(77, facts.get("remainingExecutableToolAttempts"));
++            assertEquals(204, facts.get("remainingMainToolAttempts"));
++            assertEquals(429, facts.get("remainingSharedToolAttempts"));
++            assertEquals(204, facts.get("remainingExecutableToolAttempts"));
+             assertEquals(80, facts.get("maximumModelResponses"));
+             assertFalse(DeploymentToolBudget.consume(List.of(call("publish"))));
+-            assertEquals(76, DeploymentAgentBudgetFacts.observe(50, 81).get("remainingExecutableToolAttempts"));
++            assertEquals(428, DeploymentToolBudget.remaining());
++            var publication = java.util.stream.IntStream.range(0, 300).mapToObj(i -> call("publication-" + i)).toList();
++            assertTrue(DeploymentToolBudget.consume(publication));
++            assertEquals(128, DeploymentAgentBudgetFacts.observe(50, 81).get("remainingExecutableToolAttempts"));
++        }
++    }
++
++    @Test
++    void unusedBatchSlotsCannotReplenishRemainingDecisionCapacity() {
++        try (var scope = DeploymentToolBudget.open(512)) {
++            assertTrue(DeploymentToolBudget.consume(List.of(call("main"))));
++            var lastResponse = DeploymentAgentBudgetFacts.observe(0, 1);
++            assertEquals(320, lastResponse.get("maximumMainToolAttempts"));
++            assertEquals(512, lastResponse.get("maximumSharedToolAttempts"));
++            assertEquals(4, lastResponse.get("remainingMainToolAttempts"));
++            assertEquals(511, lastResponse.get("remainingSharedToolAttempts"));
++            assertEquals(4, lastResponse.get("remainingExecutableToolAttempts"));
++            var twoResponses = DeploymentAgentBudgetFacts.observe(1, 1);
++            assertEquals(8, twoResponses.get("remainingExecutableToolAttempts"));
++            assertEquals(511, DeploymentToolBudget.remaining());
+         }
+     }
+ 
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -120,6 +120,12 @@
+ 
+     private final AtomicInteger independentReviews = new AtomicInteger();
+ 
++    private final Map<String, StringBuilder> nativeApprovalFacts = new HashMap<>();
++
++    private final Set<String> nativeApprovalPageReceipts = new HashSet<>();
++
++    private int nativeApprovalEvidencePages, nativeApprovalPagedReviews, nativeApprovalMultiPageReviews, nativeApprovalVerdicts;
++
+     /** Original algorithm fixture worker and its last proposed protected source identity. / 原算法夹具工作任务及其最近提案的受保护来源身份。 */
+     private final AtomicReference<UUID> originalAiTask = new AtomicReference<>();
+ 
+@@ -335,12 +341,12 @@
+     }
+ 
+     @Test
+-    void agentExecutesOneHundredSixtyDistinctReadsInFortyModelResponsesThenStops() throws Exception {
++    void agentExecutesThreeHundredTwentyDistinctReadsInEightyModelResponsesThenStops() throws Exception {
+         fourCallAttemptBudget = true;
+         verifyScenario(ScenarioType.BUDGET);
+-        assertEquals(160, nativeIds, "The original session receives exactly four calls per response");
+-        assertEquals(40, calls.get(), "Increasing the tool scope does not increase the eighty-response allowance");
+-        assertEquals(java.util.stream.IntStream.range(0, 40).map(i -> 79 - i).boxed().toList(), budgets);
++        assertEquals(320, nativeIds, "The original session receives exactly four calls per response");
++        assertEquals(80, calls.get(), "Increasing the shared tool scope does not increase the eighty-response allowance");
++        assertEquals(java.util.stream.IntStream.range(0, 80).map(i -> 79 - i).boxed().toList(), budgets);
+         assertTrue(boundarySends.isEmpty(), "Actual local source reads do not create server authority or dispatch");
+     }
+ 
+@@ -471,6 +477,13 @@
+         assertTrue(baselineCheckProposed);
+         assertEquals(4, boundarySends.stream().filter(DeploymentAgentHostProbe.baseline()::equals).count(),
+             "Inspect, check and both actual component preparations use the same limited Agent observation");
++        assertTrue(nativeApprovalPagedReviews > 0, "Independent approval reads the actual complete facts through native evidence receipts");
++        assertTrue(nativeApprovalMultiPageReviews > 0, "Large executable evidence is reconstructed from all actual pages before review");
++        assertTrue(nativeApprovalEvidencePages > nativeApprovalPagedReviews);
++        assertEquals(nativeApprovalPagedReviews, nativeApprovalVerdicts, "Every completed independent review submits the current six-field native verdict");
++        assertTrue(nativeApprovalFacts.isEmpty(), "Completed approval investigations retain no unfinished page collection");
++        assertEquals(1, filesInstallerSends.get(), "The canonical Agent bootstrap is dispatched once through its original host grant");
++        assertEquals(2, readinessSends.get(), "The installed helper is freshly verified after the original bootstrap");
+     }
+ 
+     @Test
+@@ -931,7 +944,7 @@
+             : "Build api and web into protected output.\n";
+         Files.writeString(selectedSourceDirectory().resolve("README.md"), sourceText);
+         if (fourCallAttemptBudget) {
+-            for (int index = 0; index < 160; index++)
++            for (int index = 0; index < 320; index++)
+                 Files.writeString(selectedSourceDirectory().resolve("budget-" + index + ".txt"), "Actual distinct source fact " + index + "\n");
+         }
+         enable();
+@@ -977,7 +990,7 @@
+                         ? "FULL_CONTROL"
+                         : selected == ScenarioType.AI_APPROVAL_DRIFT
+                         || selected == ScenarioType.APPROVAL_MISSING ? "AUTOMATIC" : "MANUAL_REVIEW",
+-                    selected != ScenarioType.APPROVAL_DRIFT && rememberAuthorization, 65536, fourCallAttemptBudget ? 200 : 100, 65536), location);
++                    selected != ScenarioType.APPROVAL_DRIFT && rememberAuthorization, 65536, fourCallAttemptBudget ? 400 : 100, 65536), location);
+                 waitReturned(handle);
+                 if (preselectedSource) {
+                     assertNotEquals(pickerId, handle.id());
+@@ -1301,13 +1314,13 @@
+                     || selected == ScenarioType.TRAILING_JSON || selected == ScenarioType.INVALID_TOOL || selected == ScenarioType.REPEATED_BROWSE || selected == ScenarioType.REPEATED_FEEDBACK || selected == ScenarioType.FEEDBACK_AFTER_REJECTION || selected == ScenarioType.NOVEL_READ_PROGRESS)
+                     assertEquals(0, peer.commands.get());
+                 if (selected == ScenarioType.BUDGET) {
+-                    assertEquals(fourCallAttemptBudget ? 40 : 80, calls.get());
+-                    assertEquals(fourCallAttemptBudget ? 40 : 0, budgets.getLast());
++                    assertEquals(80, calls.get());
++                    assertEquals(0, budgets.getLast());
+                     if (fourCallAttemptBudget) {
+                         var journal = page.events(handle.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).value().orElseThrow().events();
+-                        assertEquals(160, journal.stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("READ")).count(),
+-                            "All 160 actual reads, including the final batch, are durably retained before the attempt limit stops execution");
+-                        assertEquals(40, journal.stream().filter(event -> event.type().equals("DECISION")).count());
++                        assertEquals(320, journal.stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("READ")).count(),
++                            "All 320 actual reads, including the final batch, are durably retained before the decision limit stops execution");
++                        assertEquals(80, journal.stream().filter(event -> event.type().equals("DECISION")).count());
+                     }
+                 }
+                 if (selected == ScenarioType.INVALID_TOOL && exhaustedNativeOutput) {
+@@ -1583,7 +1596,14 @@
+                                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
+                                         Optional.of(0), facts, "", false)), Optional.empty());
+                                 }
+-                                if (body.equals(DeploymentHelperInstallerScript.renderFiles())) {
++                                if (body.equals(DeploymentHelperInstallerScript.renderFiles())
++                                    || fixedCommands.isAgentBootstrap(task, (CommandRequest) arguments[0])) {
++                                    if (!body.equals(DeploymentHelperInstallerScript.renderFiles())) {
++                                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER,
++                                            ((CommandRequest) arguments[0]).script());
++                                        String operation = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseOperation(body);
++                                        assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation), body);
++                                    }
+                                     assertTrue(bootstrapFilesAvailable.compareAndSet(false, true), "A matching helper is never reinstalled");
+                                     filesInstallerSends.incrementAndGet();
+                                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
+@@ -1755,10 +1775,12 @@
+                     var budget = data.at("/state/budget");
+                     assertTrue(budget.isObject(), "The actual coordinator request must expose its distinct tool allowance");
+                     assertEquals(data.path("remaining").asInt(), budget.path("remainingModelResponsesAfterThisRequest").asInt());
+-                    assertEquals(160, budget.path("maximumSharedToolAttempts").asInt());
++                    assertEquals(320, budget.path("maximumMainToolAttempts").asInt());
++                    assertEquals(512, budget.path("maximumSharedToolAttempts").asInt());
+                     assertEquals(80, budget.path("maximumModelResponses").asInt());
+                     assertEquals(4, budget.path("maximumCallsPerResponse").asInt());
+-                    assertTrue(budget.path("remainingSharedToolAttempts").asInt() <= budget.path("remainingMainToolAttempts").asInt());
++                    assertEquals(Math.min(budget.path("remainingMainToolAttempts").asInt(), budget.path("remainingSharedToolAttempts").asInt()),
++                        budget.path("remainingExecutableToolAttempts").asInt());
+                     assertTrue(budget.path("publicationUsesSharedAttempts").asBoolean());
+                 }
+                 if (data.path("state").path("stage").asText().equals("INVESTIGATING"))
+@@ -1798,11 +1820,13 @@
+                 budgets.add(data.path("remaining").intValue());
+                 if (fourCallAttemptBudget) {
+                     var budget = data.at("/state/budget");
+-                    assertEquals(160, budget.path("maximumMainToolAttempts").asInt());
+-                    assertEquals(160, budget.path("maximumSharedToolAttempts").asInt());
++                    assertEquals(320, budget.path("maximumMainToolAttempts").asInt());
++                    assertEquals(512, budget.path("maximumSharedToolAttempts").asInt());
+                     assertEquals(80, budget.path("maximumModelResponses").asInt());
+                     assertEquals(turn * 4, budget.path("mainToolAttempts").asInt());
+-                    assertEquals(160 - turn * 4, budget.path("remainingExecutableToolAttempts").asInt());
++                    assertEquals(320 - turn * 4, budget.path("remainingMainToolAttempts").asInt());
++                    assertEquals(512 - turn * 4, budget.path("remainingSharedToolAttempts").asInt());
++                    assertEquals(320 - turn * 4, budget.path("remainingExecutableToolAttempts").asInt());
+                     assertEquals(turn * 4, data.at("/state/readFiles").size(), "Each prior batch executed four different real source reads");
+                     var batch = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolCall>();
+                     for (int index = 0; index < 4; index++) {
+@@ -2138,11 +2162,108 @@
+     /** Accepts exact original candidates or independently reconstructed fixed requests, never host rememberAuthorization. / 仅接纳精确原候选或独立重建的固定请求，绝不冒充宿主授权。 */
+     private OperationResult<AiResponse> exactIndependentReview(AiRequest request, TaskContext task) {
+         try {
++            var envelope = new ObjectMapper().readTree(request.messages().getLast().text());
++            if (envelope.has("currentRequest")) return nativeIndependentReview(request, task, envelope);
+             return exactIndependentReviewUnchecked(request, task);
++        } catch (java.io.IOException invalid) {
++            fixtureFailure.compareAndSet(null, invalid);
++            throw new AssertionError("Independent fixture received malformed native evidence", invalid);
+         } catch (RuntimeException | AssertionError failure) {
+             fixtureFailure.compareAndSet(null, failure);
+             throw failure;
+         }
++    }
++
++    private OperationResult<AiResponse> nativeIndependentReview(AiRequest request, TaskContext task, JsonNode envelope) throws java.io.IOException {
++        assertEquals(originalAiTask.get(), task.id());
++        assertFalse(request.jsonObjectResponse());
++        assertEquals(AiRole.SYSTEM, request.messages().getFirst().role());
++        assertEquals(AiRole.USER, request.messages().getLast().role());
++        assertEquals(0, (request.messages().size() - 2) % 3, "Native investigation history retains complete request, call and receipt groups");
++        for (int index = 1; index < request.messages().size() - 1; index += 3) {
++            assertEquals(AiRole.USER, request.messages().get(index).role());
++            assertTrue(request.messages().get(index).text().startsWith("Previous decision "));
++            var decision = request.messages().get(index + 1);
++            assertEquals(AiRole.ASSISTANT, decision.role());
++            assertEquals(1, decision.toolCalls().size());
++            assertEquals("evidence", decision.toolCalls().getFirst().name());
++            assertTrue(decision.continuation().isPresent());
++            var receipt = request.messages().get(index + 2);
++            assertEquals(AiRole.TOOL, receipt.role());
++            assertEquals(decision.toolCalls().getFirst().id(), receipt.toolResult().orElseThrow().callId());
++            assertFalse(receipt.toolResult().orElseThrow().error());
++        }
++        assertEquals(Set.of("task", "binding", "reviewBinding", "currentRequest", "evidencePages", "sourceRevisions",
++            "remainingTaskTools", "receiptSha256", "discussion", "skills"), keys(envelope));
++        assertEquals(task.id().toString(), envelope.path("task").asText());
++        assertTrue(envelope.path("currentRequest").isObject());
++        assertTrue(envelope.path("evidencePages").isObject());
++        assertFalse(envelope.has("reviewSession"));
++        var binding = envelope.path("binding");
++        assertEquals(Set.of("server", "target", "sourceRevision"), keys(binding));
++        assertEquals("server", binding.path("server").asText());
++        try {
++            var journal = new DeploymentAgentActionLog(fixedCommands.actual.db());
++            assertEquals(journal.find(task).orElseThrow().identity().targetDigest(), binding.path("target").asText());
++            assertEquals(journal.events(task).stream().filter(event -> event.type().equals("SOURCE")).findFirst().orElseThrow().detail(),
++                binding.path("sourceRevision").asText());
++        } catch (Exception unavailable) {
++            throw new AssertionError("Native approval binding must match the authentic original target and source", unavailable);
++        }
++        String reviewBinding = envelope.path("reviewBinding").asText();
++        assertTrue(reviewBinding.matches("[0-9a-f]{64}"));
++        var json = new ObjectMapper();
++        var schema = json.readTree(request.tools().stream().filter(tool -> tool.name().equals("evidence")).findFirst().orElseThrow().inputSchema());
++        assertEquals(8000, schema.at("/properties/limit/maximum").asInt());
++        assertTrue(request.tools().stream().noneMatch(tool -> tool.name().equals("host_command")));
++        var collected = nativeApprovalFacts.computeIfAbsent(reviewBinding, ignored -> new StringBuilder());
++        var receipts = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
++        if (!receipts.isEmpty()) {
++            var receipt = receipts.getLast();
++            assertTrue(nativeApprovalPageReceipts.add(receipt.callId()), "Each real page receipt advances the original investigation once");
++            assertFalse(receipt.error());
++            var call = request.messages().stream().flatMap(message -> message.toolCalls().stream())
++                .filter(value -> value.id().equals(receipt.callId())).findFirst().orElseThrow();
++            assertEquals("evidence", call.name());
++            var args = json.readTree(call.arguments());
++            assertEquals(Set.of("pointer", "offset", "limit"), keys(args));
++            assertEquals("", args.path("pointer").asText());
++            assertEquals(collected.length(), args.path("offset").asInt());
++            assertEquals(8000, args.path("limit").asInt());
++            var response = json.readTree(receipt.text());
++            assertEquals("UNTRUSTED_DATA", response.path("trust").asText());
++            assertEquals(reviewBinding, response.path("reviewBinding").asText());
++            var page = response.path("value");
++            assertEquals(collected.length(), page.path("offset").asInt());
++            assertTrue(page.path("text").isTextual());
++            collected.append(page.path("text").asText());
++            assertEquals(collected.length(), page.path("next").asInt());
++            assertEquals(collected.length() < page.path("total").asInt(), page.path("hasMore").asBoolean());
++            nativeApprovalEvidencePages++;
++            if (!page.path("hasMore").asBoolean()) {
++                assertEquals(page.path("total").asInt(), collected.length());
++                assertEquals(DeploymentAgentInputs.hash(collected.toString()), page.path("sha256").asText());
++                var facts = json.readTree(collected.toString());
++                assertFalse(facts.has("reviewSession"));
++                assertFalse(facts.has("currentReviewContract"));
++                var decision = exactIndependentReviewFacts(request, task, facts);
++                var verdict = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(decision.value().orElseThrow().text());
++                verdict.putArray("missingEvidence");
++                verdict.putArray("adjustments");
++                verdict.putArray("candidateCommands");
++                assertEquals(Set.of("decision", "requiresUserConfirmation", "reason", "missingEvidence", "adjustments", "candidateCommands"), keys(verdict));
++                nativeApprovalPagedReviews++;
++                if (collected.length() > 8000) nativeApprovalMultiPageReviews++;
++                nativeApprovalVerdicts++;
++                nativeApprovalFacts.remove(reviewBinding);
++                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(verdict.toString(), "independent", "stop",
++                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty());
++            }
++        }
++        var args = json.createObjectNode().put("pointer", "").put("offset", collected.length()).put("limit", 8000);
++        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "independent", "tool_calls",
++            new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
++            List.of(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native_" + (++nativeIds), "evidence", args.toString())), Optional.empty())), Optional.empty());
+     }
+ 
+     private OperationResult<AiResponse> exactIndependentReviewUnchecked(AiRequest request, TaskContext task) {
+@@ -2192,6 +2313,10 @@
+             assertFalse(envelope.path("currentReviewContract").asText().isBlank());
+         } else
+             assertEquals(2, request.messages().size(), "Only unbound fresh inspection reviews lack a continuing transcript");
++        return exactIndependentReviewFacts(request, task, envelope);
++    }
++
++    private OperationResult<AiResponse> exactIndependentReviewFacts(AiRequest request, TaskContext task, JsonNode envelope) {
+         if (!envelope.has("type")) {
+             assertTrue(envelope.path("serverTargets").isArray());
+             assertTrue(envelope.path("operation").isTextual());
+@@ -2267,6 +2392,8 @@
+         private final Map<List<String>, Proof> reviewed = new ConcurrentHashMap<>();
+ 
+         private final Map<UUID, Proof> granted = new ConcurrentHashMap<>();
++
++        private final Set<List<String>> sentRequests = ConcurrentHashMap.newKeySet();
+ 
+         private final AtomicInteger reviews = new AtomicInteger(), sends = new AtomicInteger(), denied = new AtomicInteger();
+ 
+@@ -2331,6 +2458,24 @@
+                 if (routes.contains(business)) {
+                     if (original.equals(task.id())) originalCommands(expected, task, business, source.action(), events);
+                     else inspectionCommands(expected, task, business, source.action(), events, original);
++                }
++                if (facts.path("operation").asText().equals("deployment.helper.install.files.custom.v1")) {
++                    assertTrue(routes.contains(business));
++                    String reconstructed = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.reconstruct(facts.path("completeExecutableInput"));
++                    String operation = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.parseOperation(reconstructed);
++                    String canonical = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation);
++                    assertEquals(canonical, reconstructed, "Every observed installer byte matches the current canonical Agent bootstrap");
++                    var targets = new HashSet<gold.debug.windowstolinux.appapi.task.action.ActionTarget>();
++                    for (var target : facts.path("resourceTargets")) {
++                        assertEquals(Set.of("serverId", "kind", "id"), keys(target));
++                        assertTrue(targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(target.path("serverId").asText(),
++                            target.path("kind").asText(), target.path("id").asText())));
++                    }
++                    assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.targets(new ServerId("server")), targets);
++                    add(expected, task, "deployment.helper.install.files.custom.v1", business,
++                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER,
++                        canonical.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072, Optional.of(canonical),
++                        Optional.of(DeploymentManagedHelperBundle.renderScript()));
+                 }
+                 var executions = new DeploymentExecutionStore(actual.db());
+                 var record = executions.findForTask(task);
+@@ -2372,7 +2517,11 @@
+                 }
+                 var matches = expected.stream().filter(value -> value.operation().equals(facts.path("operation").textValue())
+                     && value.revision().equals(business) && value.exact().equals(facts.path("exactAction").textValue())).toList();
+-                assertEquals(1, matches.size(), "Fixed evidence must match one independently reconstructed original request");
++                assertEquals(1, matches.size(), () -> "Fixed evidence must match one independently reconstructed original request: operation="
++                    + facts.path("operation").asText() + " revision=" + business + " requestSha256="
++                    + sha(facts.path("exactAction").asText().getBytes(StandardCharsets.UTF_8)) + " expected="
++                    + expected.stream().filter(value -> value.operation().equals(facts.path("operation").asText()))
++                    .map(value -> value.revision() + ":" + sha(value.exact().getBytes(StandardCharsets.UTF_8))).toList());
+                 var proof = matches.getFirst();
+                 var fields = new HashSet<>(Set.of("operation", "serverTargets", "resourceTargets", "businessRevision", "businessRevisionMeaning", "presentationLocale", "exactAction", "inputKind", "authorizationPolicy", "effectSummary"));
+                 if (facts.has("reviewSession")) fields.addAll(Set.of("reviewSession", "currentReviewContract"));
+@@ -2386,7 +2535,7 @@
+                     assertTrue(facts.path("executionScope").asText().startsWith("Selected SSH host identity"));
+                 }
+                 if (proof.operation().equals("deployment.helper.install.v1") || proof.operation().equals("deployment.helper.install.tracked.v1")
+-                    || proof.operation().equals("deployment.helper.install.files.v1")) {
++                    || proof.operation().equals("deployment.helper.install.files.v1") || proof.operation().equals("deployment.helper.install.files.custom.v1")) {
+                     fields.addAll(Set.of("expectedHelperPath", "expectedHelperSha256"));
+                     if (facts.has("reviewSession")) {
+                         fields.add("helperInstallationSourceEvidence");
+@@ -2414,6 +2563,11 @@
+                         facts.path("installedBuildEntryPath").asText());
+                     assertEquals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildEntrySha256(),
+                         facts.path("installedBuildEntrySha256").asText());
++                }
++                if (facts.has("currentCommandEvidence")) {
++                    assertEquals("deployment.publication.candidate-cleanup.v1", proof.operation());
++                    requireCleanupEvidence(facts, proof, task, events);
++                    fields.add("currentCommandEvidence");
+                 }
+                 if (proof.operation().equals("deployment.agent.helper.v1") && proof.exact().contains("'agent-run'")) {
+                     fields.add("agentExecutableInputBinding");
+@@ -2534,6 +2688,10 @@
+ 
+         void beforeSend(TaskContext task, CommandRequest request, ApprovalGrant grant) {
+             var proof = granted.remove(grant.id());
++            if (isAgentBootstrap(task, request)) {
++                assertNotNull(proof, "Canonical Agent bootstrap must consume its single independently reviewed original host grant");
++                assertEquals("deployment.helper.install.files.custom.v1", proof.operation());
++            }
+             if (request.script().contains(" candidate-create-task ")) {
+                 assertNotNull(proof, "Candidate allocation must use the exact independently reconstructed configured-capacity request and its original host grant");
+                 assertEquals("deployment.candidate.create.v1", proof.operation());
+@@ -2563,6 +2721,97 @@
+                 Arrays.fill(input, (byte) 0);
+             }
+             sends.incrementAndGet();
++            sentRequests.add(key(proof.task(), proof.revision(), proof.exact()));
++        }
++
++        private void requireCleanupEvidence(JsonNode facts, Proof proof, TaskContext task,
++                                            List<DeploymentAgentActionLog.Event> events) throws Exception {
++            var evidence = facts.path("currentCommandEvidence");
++            assertEquals(Set.of("schema", "scope", "currentTask", "originalTask", "cleanupExactActionSha256", "server",
++                "targetProfileSha256", "authenticatedTargetSha256", "originalConfigurationRevision", "currentReviewConfigurationRevision",
++                "component", "unit", "releaseRoot", "ownershipManifestSha256", "candidate", "candidateRoot", "sourceArchiveSha256",
++                "originalSourceRevision", "sealedSourceRevision", "sealedArtifactSha256", "releaseSha256", "runtimeConfigurationSha256",
++                "proposalSha256", "originalExecution", "originalReviewedRevision", "originalRemoteLayout", "helperSha256", "helperProtocol",
++                "publicationVerified", "outerDeliveryOutcome", "observationLimits", "queryEvent", "queryRequest", "queryResult", "parsedStatus",
++                "originalEventReferences", "evidenceSha256", "reviewRequestSha256"), keys(evidence));
++            var identity = new DeploymentAgentActionLog(actual.db()).find(task).orElseThrow().identity();
++            var executions = new DeploymentExecutionStore(actual.db());
++            var record = executions.findForTask(task).orElseThrow();
++            var proposal = executions.publicationTemplate(record).orElseThrow();
++            var part = proposal.graph().components().stream().filter(value -> value.componentId().equals(evidence.path("component").asText())).findFirst().orElseThrow();
++            var commit = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
++            var source = events.stream().filter(value -> value.type().equals("SOURCE")).findFirst().orElseThrow();
++            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), source.action());
++            var expected = Map.ofEntries(Map.entry("schema", "agent-current-cleanup-evidence.v1"), Map.entry("currentTask", task.id().toString()),
++                Map.entry("originalTask", task.id().toString()), Map.entry("cleanupExactActionSha256", DeploymentAgentInputs.hash(proof.exact())),
++                Map.entry("server", "server"), Map.entry("authenticatedTargetSha256", identity.targetDigest()),
++                Map.entry("originalConfigurationRevision", identity.configurationDigest()), Map.entry("currentReviewConfigurationRevision", revision.get()),
++                Map.entry("unit", part.unit().id()), Map.entry("releaseRoot", part.unit().releaseRoot()),
++                Map.entry("ownershipManifestSha256", part.unit().ownershipManifestSha256()), Map.entry("candidate", workspace.candidateId()),
++                Map.entry("candidateRoot", workspace.candidateRoot()), Map.entry("sourceArchiveSha256", source.action()),
++                Map.entry("originalSourceRevision", source.detail()), Map.entry("releaseSha256", commit.release().sha256()),
++                Map.entry("runtimeConfigurationSha256", commit.configuration().sha256()), Map.entry("originalExecution", record.identity().executionId().toString()),
++                Map.entry("originalReviewedRevision", record.identity().reviewedRevision()), Map.entry("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256),
++                Map.entry("proposalSha256", DeploymentAgentInputs.hash(new gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult(proposal.graph(), proposal.units()).toString())),
++                Map.entry("targetProfileSha256", events.stream().filter(value -> value.type().equals("TARGET_PROFILE")).findFirst().orElseThrow().detail()));
++            expected.forEach((field, value) -> assertEquals(value, evidence.path(field).asText(), field));
++            assertEquals("CURRENT_APPROVAL_CALL_ONLY; historical events are references, not current observations or permissions", evidence.path("scope").asText());
++            assertEquals("UNCONFIRMED_WRAPPER_RESULT; no delivery result is synthesized", evidence.path("outerDeliveryOutcome").asText());
++            assertFalse(evidence.path("observationLimits").asText().isBlank());
++            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++            var json = new ObjectMapper();
++            assertEquals(json.valueToTree(Map.of("canonical", layout.canonical(), "sha256", layout.digest())), evidence.path("originalRemoteLayout"));
++            assertEquals(DeploymentManagedHelperBundle.PROTOCOL_VERSION, evidence.path("helperProtocol").asInt());
++            assertTrue(evidence.path("publicationVerified").asBoolean());
++            assertTrue(events.stream().anyMatch(value -> value.type().equals("AI_PUBLICATION_VERIFIED")
++                && value.action().equals(proposal.graph().applicationId()) && value.detail().equals("HEALTHY")));
++            for (var entry : Map.of("sealedSourceRevision", "CURRENT_SOURCE", "sealedArtifactSha256", "SEALED_ARTIFACT", "candidate", "CANDIDATE").entrySet())
++                assertEquals(events.stream().filter(value -> value.type().equals(entry.getValue()) && value.action().equals(part.componentId())).findFirst().orElseThrow().detail(),
++                    evidence.path(entry.getKey()).asText());
++            assertEquals(proof.revision(), evidence.path("sealedArtifactSha256").asText());
++            var targets = json.createArrayNode().add(json.valueToTree(Map.of("serverId", "server", "kind", "deployment-release", "id", part.unit().releaseRoot())));
++            assertEquals(targets, facts.path("resourceTargets"));
++            var queries = new ArrayList<Proof>();
++            publication(queries, task, proof.revision(), "original-status", "publication-original-status", List.of(part.unit().id(),
++                part.unit().ownershipManifestSha256(), task.id().toString(), workspace.candidateId(), commit.release().sha256(), "native", "none"), 30);
++            var query = queries.getFirst();
++            assertTrue(sentRequests.contains(key(task.id(), query.revision(), query.exact())), "Current status evidence has an actual independently reviewed host send");
++            var queryRequest = json.valueToTree(Map.of("exactAction", query.exact(), "operation", query.operation(), "serverTargets", List.of("server"),
++                "resourceTargets", targets, "businessRevision", query.revision(), "timeout", "PT30S", "outputLimitBytes", 4096, "stdinBytes", 0));
++            assertEquals(queryRequest, evidence.path("queryRequest"));
++            var result = evidence.path("queryResult");
++            assertEquals(Set.of("outcome", "exitCode", "stdout", "stderr", "truncated"), keys(result));
++            assertEquals("SUCCEEDED", result.path("outcome").asText());
++            assertEquals(0, result.path("exitCode").asInt());
++            assertFalse(result.path("truncated").asBoolean());
++            assertEquals("", result.path("stderr").asText());
++            assertEquals("PUBLICATION_STATUS=1\nCURRENT=" + commit.release().sha256() + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n", result.path("stdout").asText());
++            assertEquals(json.valueToTree(Map.ofEntries(Map.entry("current", commit.release().sha256()), Map.entry("currentKind", "deployment"),
++                Map.entry("currentMode", "DAEMON"), Map.entry("snapshot", false), Map.entry("previousDigest", "none"), Map.entry("previousKind", "none"),
++                Map.entry("previousRunning", "none"), Map.entry("maintenance", false), Map.entry("candidate", "owned"), Map.entry("buildActive", false),
++                Map.entry("unitPresent", true), Map.entry("containerPresent", "not-applicable"), Map.entry("retainedCount", 1))), evidence.path("parsedStatus"));
++            long queryEvent = evidence.path("queryEvent").asLong();
++            var captured = events.stream().filter(value -> value.id() == queryEvent).findFirst().orElseThrow();
++            assertEquals("CLEANUP_STATUS_QUERY_RESULT", captured.type());
++            assertEquals(DeploymentAgentInputs.hash(query.exact()), captured.action());
++            assertEquals(evidenceDigest(result), captured.detail());
++            assertTrue(evidence.path("originalEventReferences").isArray());
++            assertFalse(evidence.path("originalEventReferences").isEmpty());
++            for (var reference : evidence.path("originalEventReferences")) {
++                var event = events.stream().filter(value -> value.id() == reference.path("id").asLong()).findFirst().orElseThrow();
++                assertTrue(event.id() < queryEvent);
++                assertEquals(json.readTree(json.writeValueAsString(Map.of("id", event.id(), "type", event.type(), "action", event.action(), "detail", event.detail()))), reference);
++            }
++            var raw = (com.fasterxml.jackson.databind.node.ObjectNode) evidence.deepCopy();
++            raw.remove(List.of("evidenceSha256", "reviewRequestSha256"));
++            assertEquals(evidenceDigest(raw), evidence.path("evidenceSha256").asText());
++            assertEquals(evidenceDigest(json.valueToTree(Map.of("command", Map.of("exactAction", proof.exact(), "operation", proof.operation(),
++                "serverTargets", List.of("server"), "resourceTargets", targets, "businessRevision", proof.revision(), "timeout", "PT1M30S",
++                "outputLimitBytes", 4096, "stdinBytes", 0), "currentEvidenceSha256", evidence.path("evidenceSha256").asText()))), evidence.path("reviewRequestSha256").asText());
++        }
++
++        private String evidenceDigest(JsonNode value) throws java.io.IOException {
++            return DeploymentAgentInputs.hash(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.facts(new ObjectMapper().convertValue(value, Map.class), 1048576));
+         }
+ 
+         void completed() {
+@@ -2584,6 +2833,12 @@
+         boolean isInitialInstaller(ActionIntent intent, UUID task) {
+             var proof = reviewed.get(key(task, intent.revision(), intent.exactAction()));
+             return proof != null && proof.operation().equals("deployment.helper.install.files.v1");
++        }
++
++        boolean isAgentBootstrap(TaskContext task, CommandRequest request) {
++            return reviewed.values().stream().anyMatch(proof -> proof.task().equals(task.id())
++                && proof.operation().equals("deployment.helper.install.files.custom.v1")
++                && proof.exact().equals(RemoteActions.command(new ServerId("server"), proof.revision(), request).exactAction()));
+         }
+ 
+         private void originalCommands(List<Proof> expected, TaskContext task, String business, String archive,
+@@ -2598,7 +2853,8 @@
+             add(expected, task, "deployment.helper.install.files.v1", business, "exec /bin/bash --noprofile --norc -s",
+                 filesBody.getBytes(StandardCharsets.UTF_8), Duration.ofHours(2), 131072, Optional.of(filesBody), Optional.of(installed));
+             String readiness = DeploymentAgentHelperReadiness.script();
+-            add(expected, task, DeploymentAgentHelperReadiness.OPERATION, business, "exec /bin/bash --noprofile --norc -s",
++            add(expected, task, DeploymentAgentHelperReadiness.OPERATION, business,
++                gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER,
+                 readiness.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(30), 4096, Optional.of(readiness), Optional.empty());
+             String probe = "'" + helper + "' probe\n" + "printf 'SHA256="
+                 + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\\n'\n";
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java
+@@ -11,10 +11,11 @@
+ 
+     static Map<String, Object> observe(int remainingResponses, int mainAttempts) {
+         int maximumAttempts = DeploymentToolBudget.maximum();
+-        int mainRemaining = Math.max(0, maximumAttempts - mainAttempts);
++        int maximumMainAttempts = Math.min(maximumAttempts, 80 * 4);
++        int mainRemaining = Math.min(Math.max(0, maximumMainAttempts - mainAttempts), Math.max(0, remainingResponses + 1) * 4);
+         int sharedRemaining = DeploymentToolBudget.remaining();
+         return Map.ofEntries(Map.entry("maximumModelResponses", 80), Map.entry("remainingModelResponsesAfterThisRequest", remainingResponses),
+-            Map.entry("maximumMainToolAttempts", maximumAttempts), Map.entry("maximumSharedToolAttempts", maximumAttempts),
++            Map.entry("maximumMainToolAttempts", maximumMainAttempts), Map.entry("maximumSharedToolAttempts", maximumAttempts),
+             Map.entry("mainToolAttempts", mainAttempts), Map.entry("remainingMainToolAttempts", mainRemaining),
+             Map.entry("remainingSharedToolAttempts", sharedRemaining), Map.entry("remainingExecutableToolAttempts", Math.min(mainRemaining, sharedRemaining)),
+             Map.entry("maximumCallsPerResponse", 4), Map.entry("rejectedCallsConsumeAttempts", true), Map.entry("publicationUsesSharedAttempts", true));
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -136,7 +136,7 @@
+                          String revision, TaskContext supplied) throws ApiException, DeploymentAiJson.CapabilityOutcomeException, IOException {
+         var stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+         String selectedTool = "";
+-        try {
++        try (var standaloneBudget = DeploymentToolBudget.openStandaloneIfAbsent()) {
+             if (supplied != task) throw new SecurityException("Foreign approval task");
+             var binding = evidence.binding();
+             if (!intent.serverIds().equals(List.of(binding.server())))
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -677,6 +677,52 @@
+         return new AiToolCall(UUID.randomUUID().toString(), name, JSON.writeValueAsString(args));
+     }
+ 
++    @Test
++    void standaloneApprovalConsumesItsFiniteBudgetAndReleasesItAfterFailure() throws Exception {
++        var f = new Frame();
++        for (int index = 0; index < 80; index++)
++            f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertEquals("TASK_TOOL_BUDGET_EXHAUSTED", rejected.problem().context().get("reviewCode"));
++        }
++        assertEquals(80, f.fixture.requests.size());
++        for (int index = 0; index < 80; index++) {
++            var actual = JSON.readTree(f.fixture.requests.get(index).messages().getLast().text());
++            assertEquals(80 - index, actual.path("remainingTaskTools").asInt());
++        }
++        assertEquals(1, f.fixture.replies.size(), "Exhaustion must stop before the queued approval can grant authority");
++        assertTrue(f.grants.isEmpty());
++        try (var next = DeploymentToolBudget.open(3)) {
++            assertEquals(3, DeploymentToolBudget.remaining(), "A failed standalone review must not leak its owned scope");
++        }
++        assertEquals(80, DeploymentToolBudget.remaining());
++    }
++
++    @Test
++    void nestedApprovalDebitsExistingSharedBudgetWithoutReplenishingOrClosingIt() throws Exception {
++        var f = new Frame();
++        try (var shared = DeploymentToolBudget.open(512)) {
++            var prior = java.util.stream.IntStream.range(0, 420)
++                .mapToObj(index -> new AiToolCall("prior_" + index, "read", "{}")).toList();
++            assertTrue(DeploymentToolBudget.consume(prior));
++            f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
++            f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++            assertEquals("APPROVE", f.review(Map.of()).decision().decision());
++            assertEquals(512, DeploymentToolBudget.maximum());
++            assertEquals(90, DeploymentToolBudget.remaining());
++            assertEquals(92, JSON.readTree(f.fixture.requests.getFirst().messages().getLast().text()).path("remainingTaskTools").asInt());
++            assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(80));
++            f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++            assertEquals("APPROVE", f.review(Map.of()).decision().decision());
++            assertEquals(89, DeploymentToolBudget.remaining());
++        }
++        assertEquals(80, DeploymentToolBudget.maximum());
++        assertEquals(80, DeploymentToolBudget.remaining());
++    }
++
+     private static DeploymentAgentPlan measuredPlan(String entrypoint) {
+         var health = new DeploymentHealthCheck.Process(10, 1);
+         var workload = new DeploymentWorkload(DeploymentWorkload.ExecutionMode.DAEMON, true,

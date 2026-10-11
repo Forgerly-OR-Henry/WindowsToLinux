@@ -677,6 +677,52 @@ class DeploymentAgentApprovalTest {
         return new AiToolCall(UUID.randomUUID().toString(), name, JSON.writeValueAsString(args));
     }
 
+    @Test
+    void standaloneApprovalConsumesItsFiniteBudgetAndReleasesItAfterFailure() throws Exception {
+        var f = new Frame();
+        for (int index = 0; index < 80; index++)
+            f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertEquals("TASK_TOOL_BUDGET_EXHAUSTED", rejected.problem().context().get("reviewCode"));
+        }
+        assertEquals(80, f.fixture.requests.size());
+        for (int index = 0; index < 80; index++) {
+            var actual = JSON.readTree(f.fixture.requests.get(index).messages().getLast().text());
+            assertEquals(80 - index, actual.path("remainingTaskTools").asInt());
+        }
+        assertEquals(1, f.fixture.replies.size(), "Exhaustion must stop before the queued approval can grant authority");
+        assertTrue(f.grants.isEmpty());
+        try (var next = DeploymentToolBudget.open(3)) {
+            assertEquals(3, DeploymentToolBudget.remaining(), "A failed standalone review must not leak its owned scope");
+        }
+        assertEquals(80, DeploymentToolBudget.remaining());
+    }
+
+    @Test
+    void nestedApprovalDebitsExistingSharedBudgetWithoutReplenishingOrClosingIt() throws Exception {
+        var f = new Frame();
+        try (var shared = DeploymentToolBudget.open(512)) {
+            var prior = java.util.stream.IntStream.range(0, 420)
+                .mapToObj(index -> new AiToolCall("prior_" + index, "read", "{}")).toList();
+            assertTrue(DeploymentToolBudget.consume(prior));
+            f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
+            f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+            assertEquals(512, DeploymentToolBudget.maximum());
+            assertEquals(90, DeploymentToolBudget.remaining());
+            assertEquals(92, JSON.readTree(f.fixture.requests.getFirst().messages().getLast().text()).path("remainingTaskTools").asInt());
+            assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(80));
+            f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+            assertEquals(89, DeploymentToolBudget.remaining());
+        }
+        assertEquals(80, DeploymentToolBudget.maximum());
+        assertEquals(80, DeploymentToolBudget.remaining());
+    }
+
     private static DeploymentAgentPlan measuredPlan(String entrypoint) {
         var health = new DeploymentHealthCheck.Process(10, 1);
         var workload = new DeploymentWorkload(DeploymentWorkload.ExecutionMode.DAEMON, true,
