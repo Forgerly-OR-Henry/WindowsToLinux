@@ -7,12 +7,14 @@ import java.util.Set;
 
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
+import gold.debug.windowstolinux.appapi.task.result.OperationResult;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
@@ -28,6 +30,7 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.contract.Deploymen
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
 import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval;
+import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
 
 /** Observes one original pre-readiness gap; neither starts preparation nor installs a helper. */
 final class DeploymentAgentPreparationReconciliation {
@@ -95,13 +98,43 @@ final class DeploymentAgentPreparationReconciliation {
             var grant = DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
             if (grant.outcome() != TaskResult.SUCCEEDED || grant.value().isEmpty()) return false;
             evidence.verify(intent, request, task);
-            var result = session.execute(request, grant.value().orElseThrow());
-            if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
-                || !DeploymentAgentPreparationProbe.absent(captured, result.value().orElseThrow())) return false;
+            OperationResult<CommandResult> result;
+            try {
+                result = session.execute(request, grant.value().orElseThrow());
+            } catch (Exception failure) {
+                observe(context, task, captured, null, failure instanceof ApiException api ? api.problem().code() : ProblemCode.UNKNOWN);
+                return false;
+            }
+            if (result == null || result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
+                || !DeploymentAgentPreparationProbe.absent(captured, result.value().orElseThrow())) {
+                observe(context, task, captured, result, ProblemCode.UNKNOWN);
+                return false;
+            }
             evidence.verify(intent, request, task);
             journal.preparationAbsent(task, captured, DeploymentAgentPreparationAbsence.proof(captured,
                 DeploymentAgentPreparationProbe.requestDigest(captured), DeploymentAgentPreparationAbsence.hash(result.value().orElseThrow().stdout())));
             return true;
+        }
+    }
+
+    private static void observe(ModContext context, TaskContext task, DeploymentAgentPreparationAbsence.Captured captured,
+                                OperationResult<CommandResult> result, ProblemCode failureCode) {
+        token(context, task, "outcome", result == null ? TaskResult.UNKNOWN.name() : result.outcome().name());
+        token(context, task, "problemCode", result == null ? failureCode.name() : result.problem().map(problem -> problem.code().name()).orElse("NONE"));
+        var value = result == null ? Optional.<CommandResult>empty() : result.value();
+        token(context, task, "value", value.isPresent() ? "PRESENT" : "ABSENT");
+        token(context, task, "observedExit", value.flatMap(CommandResult::exitCode).map(String::valueOf).orElse("ABSENT"));
+        token(context, task, "truncated", value.map(command -> Boolean.toString(command.truncated())).orElse("ABSENT"));
+        var unknown = value.flatMap(command -> DeploymentAgentPreparationProbe.unknown(captured, command));
+        token(context, task, "unknownStage", unknown.map(observation -> observation.stage().name()).orElse("UNCONFIRMED"));
+        token(context, task, "unknownReason", unknown.map(observation -> observation.reason().name()).orElse("UNCONFIRMED"));
+    }
+
+    private static void token(ModContext context, TaskContext task, String field, String value) {
+        try {
+            DeploymentDiagnostics.agentObservation(context, task, "preparation." + field + ":" + value);
+        } catch (RuntimeException unavailable) {
+            // Diagnostic storage cannot confirm absence or change the original recovery outcome.
         }
     }
 }

@@ -17,6 +17,31 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAg
 public final class DeploymentAgentPreparationProbe {
     public static final String OPERATION = "deployment.agent.preparation.absence.v1";
 
+    private static final String UNKNOWN = "STATUS=UNKNOWN\nPATH=UNCONFIRMED\nBUILD=UNCONFIRMED\nMOUNTS=UNCONFIRMED\nLOOPS=UNCONFIRMED\n";
+
+    public enum Stage {TOOLS, USER, PATH, BUILD_UNIT, MOUNTS, LOOPS, PATH_RECHECK}
+
+    public enum Reason {
+        TOOL_UNCONFIRMED(Stage.TOOLS), USER_UNCONFIRMED(Stage.USER), PARENTS_UNCONFIRMED(Stage.PATH),
+        PATH_ABSENCE_UNCONFIRMED(Stage.PATH), BUILD_QUERY_UNCONFIRMED(Stage.BUILD_UNIT), BUILD_STATE_UNCONFIRMED(Stage.BUILD_UNIT),
+        MOUNT_QUERY_UNCONFIRMED(Stage.MOUNTS), MOUNT_OUTPUT_LIMIT(Stage.MOUNTS), MOUNT_TARGET_INVALID(Stage.MOUNTS), CANDIDATE_MOUNT_PRESENT(Stage.MOUNTS),
+        LOOP_QUERY_UNCONFIRMED(Stage.LOOPS), LOOP_OUTPUT_LIMIT(Stage.LOOPS), LOOP_BACKING_INVALID(Stage.LOOPS), CANDIDATE_LOOP_PRESENT(Stage.LOOPS),
+        PATH_RECHECK_UNCONFIRMED(Stage.PATH_RECHECK);
+
+        private final Stage stage;
+
+        Reason(Stage stage) {
+            this.stage = stage;
+        }
+    }
+
+    public record UnknownObservation(Stage stage, Reason reason) {
+        public UnknownObservation {
+            if (stage == null || reason == null || stage != reason.stage)
+                throw new IllegalArgumentException("Preparation observation stage and reason differ");
+        }
+    }
+
     private DeploymentAgentPreparationProbe() {
     }
 
@@ -45,6 +70,28 @@ public final class DeploymentAgentPreparationProbe {
             && absentOutput(captured).equals(result.stdout());
     }
 
+    public static String unknownOutput(DeploymentAgentPreparationAbsence.Captured captured, UnknownObservation observation) {
+        return header(captured) + UNKNOWN + "UNKNOWN_STAGE=" + observation.stage() + "\nUNKNOWN_REASON=" + observation.reason() + "\n";
+    }
+
+    /** Projects only a complete bound UNKNOWN protocol, never arbitrary process text. */
+    public static Optional<UnknownObservation> unknown(DeploymentAgentPreparationAbsence.Captured captured, CommandResult result) {
+        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(0)) || !result.stderr().isEmpty()
+            || result.stdout().length() > 4096) return Optional.empty();
+        String prefix = header(captured) + UNKNOWN;
+        if (!result.stdout().startsWith(prefix)) return Optional.empty();
+        String[] fields = result.stdout().substring(prefix.length()).split("\n", -1);
+        if (fields.length != 3 || !fields[0].startsWith("UNKNOWN_STAGE=") || !fields[1].startsWith("UNKNOWN_REASON=") || !fields[2].isEmpty())
+            return Optional.empty();
+        try {
+            var observation = new UnknownObservation(Stage.valueOf(fields[0].substring("UNKNOWN_STAGE=".length())),
+                Reason.valueOf(fields[1].substring("UNKNOWN_REASON=".length())));
+            return unknownOutput(captured, observation).equals(result.stdout()) ? Optional.of(observation) : Optional.empty();
+        } catch (IllegalArgumentException invalid) {
+            return Optional.empty();
+        }
+    }
+
     private static String header(DeploymentAgentPreparationAbsence.Captured captured) {
         return "FORMAT=WTL_AGENT_PREPARATION_ABSENCE_1\nTASK=" + captured.task() + "\nPREPARE_EVENT=" + captured.preparation().id()
             + "\nCANDIDATE=" + captured.workspace().candidateId() + "\nLAYOUT_SHA256=" + captured.layout().digest()
@@ -65,49 +112,50 @@ public final class DeploymentAgentPreparationProbe {
         String unit = "windowstolinux-build-" + captured.workspace().candidateId() + ".service";
         return "set -uo pipefail\nexport LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin\nunset BASH_ENV ENV CDPATH\ncd -- / || exit 64\n"
             + guards + "\n" + "candidate='" + candidate + "'\nunit='" + unit + "'\n"
-            + "emit_unknown() { printf '%s' '" + header(captured) + "STATUS=UNKNOWN\nPATH=UNCONFIRMED\nBUILD=UNCONFIRMED\nMOUNTS=UNCONFIRMED\nLOOPS=UNCONFIRMED\n'; exit 0; }\n"
+            + "emit_unknown() { printf '%s' '" + header(captured) + UNKNOWN
+            + "'; printf 'UNKNOWN_STAGE=%s\\nUNKNOWN_REASON=%s\\n' \"$1\" \"$2\"; exit 0; }\n"
             + """
             for tool in /usr/bin/stat /usr/bin/readlink /usr/bin/find /usr/bin/id /usr/bin/systemctl /usr/bin/findmnt /usr/sbin/losetup; do
               trusted_executable "$tool"
-              [ "$checked" = SAFE ] || emit_unknown
+              [ "$checked" = SAFE ] || emit_unknown TOOLS TOOL_UNCONFIRMED
             done
-            [ "$(/usr/bin/id -u)" = 0 ] || emit_unknown
+            [ "$(/usr/bin/id -u)" = 0 ] || emit_unknown USER USER_UNCONFIRMED
             managed_parents "$candidate"
-            [ "$checked" = SAFE ] || emit_unknown
+            [ "$checked" = SAFE ] || emit_unknown PATH PARENTS_UNCONFIRMED
             confirm_absent "$candidate"
-            [ "$checked" = MISSING ] || emit_unknown
+            [ "$checked" = MISSING ] || emit_unknown PATH PATH_ABSENCE_UNCONFIRMED
             # Even an inactive loaded unit is retained: this narrow branch expects no original build unit.
             unit_info=$(/usr/bin/systemctl show --no-pager --property=LoadState --property=ActiveState --property=ControlGroup -- "$unit" 2>/dev/null)
             unit_exit=$?
-            [ "$unit_exit" = 0 ] || [ "$unit_exit" = 4 ] || emit_unknown
+            [ "$unit_exit" = 0 ] || [ "$unit_exit" = 4 ] || emit_unknown BUILD_UNIT BUILD_QUERY_UNCONFIRMED
             unit_load= unit_active= unit_group= unit_fields=0
             while IFS= read -r line; do
               case "$line" in
-                LoadState=not-found) [ -z "$unit_load" ] || emit_unknown; unit_load=not-found ;;
-                ActiveState=inactive) [ -z "$unit_active" ] || emit_unknown; unit_active=inactive ;;
-                ControlGroup=) [ -z "$unit_group" ] || emit_unknown; unit_group=empty ;;
-                *) emit_unknown ;;
+                LoadState=not-found) [ -z "$unit_load" ] || emit_unknown BUILD_UNIT BUILD_STATE_UNCONFIRMED; unit_load=not-found ;;
+                ActiveState=inactive) [ -z "$unit_active" ] || emit_unknown BUILD_UNIT BUILD_STATE_UNCONFIRMED; unit_active=inactive ;;
+                ControlGroup=) [ -z "$unit_group" ] || emit_unknown BUILD_UNIT BUILD_STATE_UNCONFIRMED; unit_group=empty ;;
+                *) emit_unknown BUILD_UNIT BUILD_STATE_UNCONFIRMED ;;
               esac
               unit_fields=$((unit_fields + 1))
             done <<< "$unit_info"
-            [ "$unit_fields" = 3 ] && [ "$unit_load" = not-found ] && [ "$unit_active" = inactive ] && [ "$unit_group" = empty ] || emit_unknown
-            mounts=$(/usr/bin/findmnt --kernel --list --noheadings --raw --output TARGET) || emit_unknown
-            [ "${#mounts}" -le 65536 ] || emit_unknown
+            [ "$unit_fields" = 3 ] && [ "$unit_load" = not-found ] && [ "$unit_active" = inactive ] && [ "$unit_group" = empty ] || emit_unknown BUILD_UNIT BUILD_STATE_UNCONFIRMED
+            mounts=$(/usr/bin/findmnt --kernel --list --noheadings --raw --output TARGET) || emit_unknown MOUNTS MOUNT_QUERY_UNCONFIRMED
+            [ "${#mounts}" -le 65536 ] || emit_unknown MOUNTS MOUNT_OUTPUT_LIMIT
             while IFS= read -r mount; do
-              [[ "$mount" = /* ]] || emit_unknown
-              case "$mount" in "$candidate" | "$candidate"/*) emit_unknown ;; esac
+              [[ "$mount" = /* ]] || emit_unknown MOUNTS MOUNT_TARGET_INVALID
+              case "$mount" in "$candidate" | "$candidate"/*) emit_unknown MOUNTS CANDIDATE_MOUNT_PRESENT ;; esac
             done <<< "$mounts"
-            loops=$(/usr/sbin/losetup --list --noheadings --raw --output BACK-FILE) || emit_unknown
-            [ "${#loops}" -le 65536 ] || emit_unknown
+            loops=$(/usr/sbin/losetup --list --noheadings --raw --output BACK-FILE) || emit_unknown LOOPS LOOP_QUERY_UNCONFIRMED
+            [ "${#loops}" -le 65536 ] || emit_unknown LOOPS LOOP_OUTPUT_LIMIT
             if [ -n "$loops" ]; then
               while IFS= read -r backing; do
-                [[ "$backing" = /* ]] || emit_unknown
-                case "$backing" in "$candidate" | "$candidate"/*) emit_unknown ;; esac
+                [[ "$backing" = /* ]] || emit_unknown LOOPS LOOP_BACKING_INVALID
+                case "$backing" in "$candidate" | "$candidate"/*) emit_unknown LOOPS CANDIDATE_LOOP_PRESENT ;; esac
               done <<< "$loops"
             fi
             # Recheck the original literal path after all kernel metadata observations.
             confirm_absent "$candidate"
-            [ "$checked" = MISSING ] || emit_unknown
+            [ "$checked" = MISSING ] || emit_unknown PATH_RECHECK PATH_RECHECK_UNCONFIRMED
             """ + "printf '%s' '" + absentOutput(captured) + "'\n";
     }
 }

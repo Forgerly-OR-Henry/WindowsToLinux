@@ -41,8 +41,15 @@ import gold.debug.windowstolinux.appapi.task.TaskService;
 import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
 import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
+import gold.debug.windowstolinux.appapi.task.log.LogCategory;
+import gold.debug.windowstolinux.appapi.task.log.LogEvent;
+import gold.debug.windowstolinux.appapi.task.log.LogService;
+import gold.debug.windowstolinux.appapi.task.log.LogTarget;
 import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+import gold.debug.windowstolinux.appapi.task.result.ApiException;
 import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.ui.UiService;
@@ -143,6 +150,52 @@ class DeploymentAgentPreparationAbsenceTest {
             assertEquals(0, frame.filesClosed);
             assertEquals(before, frame.journal.events(frame.task));
             assertFalse(DeploymentAgentActionLog.effectsSettled(before));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "FAILED_RESULT", "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT", "LOGGER_FAILURE"})
+    void unconfirmedObservationDiagnosticsRemainTypedAndNeverLeakProcessData(String obstacle) throws Exception {
+        try (var frame = new Frame()) {
+            frame.obstacle = obstacle;
+            frame.approve();
+            var before = frame.journal.events(frame.task);
+            var business = frame.business();
+            assertEquals(TaskResult.UNKNOWN, frame.recover().outcome());
+            assertEquals(1, frame.sent);
+            assertEquals(1, frame.grants, "Only the independently approved read-only observation is authorized");
+            assertEquals(0, frame.filesClosed);
+            assertEquals(before, frame.journal.events(frame.task), "Diagnostics are not new original operation evidence");
+            assertEquals(business, frame.business());
+            assertFalse(frame.nativeAi.events.toString().contains("FAKE_PASSWORD_MARKER"));
+            assertFalse(frame.nativeAi.events.toString().contains("FAKE_SOURCE_MARKER"));
+            var tokens = frame.nativeAi.events.stream().filter(event -> event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION"))
+                .map(LogEvent::message).filter(message -> message.startsWith("preparation.")).toList();
+            assertEquals(7, frame.diagnosticAttempts);
+            if (obstacle.equals("LOGGER_FAILURE")) {
+                assertTrue(tokens.isEmpty(), "Unavailable logging cannot change UNKNOWN or create a receipt");
+            } else {
+                assertEquals(7, tokens.size());
+                assertTrue(tokens.stream().allMatch(token -> token.matches("[A-Za-z0-9_.:-]{1,80}")));
+                String outcome = switch (obstacle) {
+                    case "FAILED_RESULT" -> "FAILED";
+                    case "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT" -> "UNKNOWN";
+                    default -> "SUCCEEDED";
+                };
+                String code = switch (obstacle) {
+                    case "FAILED_RESULT", "TRANSPORT" -> "IO_FAILURE";
+                    case "UNKNOWN_RESULT", "RUNTIME_TRANSPORT" -> "UNKNOWN";
+                    default -> "NONE";
+                };
+                boolean missingValue = List.of("UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT").contains(obstacle);
+                assertTrue(tokens.contains("preparation.outcome:" + outcome));
+                assertTrue(tokens.contains("preparation.problemCode:" + code));
+                assertTrue(tokens.contains("preparation.value:" + (missingValue ? "ABSENT" : "PRESENT")));
+                assertTrue(tokens.contains("preparation.observedExit:" + (missingValue ? "ABSENT" : obstacle.equals("FAILED_RESULT") ? "1" : "0")));
+                assertTrue(tokens.contains("preparation.truncated:" + (missingValue ? "ABSENT" : Boolean.toString(obstacle.equals("DIAGNOSTIC_TRUNCATED")))));
+                assertTrue(tokens.contains("preparation.unknownStage:" + (obstacle.equals("BOUND_UNKNOWN") ? "BUILD_UNIT" : "UNCONFIRMED")));
+                assertTrue(tokens.contains("preparation.unknownReason:" + (obstacle.equals("BOUND_UNKNOWN") ? "BUILD_QUERY_UNCONFIRMED" : "UNCONFIRMED")));
+            }
         }
     }
 
@@ -289,6 +342,8 @@ class DeploymentAgentPreparationAbsenceTest {
 
         final Map<String, TaskCheckpoint> checkpoints = new HashMap<>();
 
+        int diagnosticAttempts;
+
         int connected;
 
         int sent;
@@ -356,14 +411,35 @@ class DeploymentAgentPreparationAbsenceTest {
                     String body = new String(request.stdin(), StandardCharsets.UTF_8);
                     assertTrue(body.contains("WTL_AGENT_PREPARATION_ABSENCE_1"));
                     assertFalse(body.contains("managed-helper") || body.contains("mkdir ") || body.contains("rm ") || body.contains("losetup --detach"));
+                    if (obstacle.equals("TRANSPORT")) throw new ApiException(processProblem(ProblemCode.IO_FAILURE));
+                    if (obstacle.equals("RUNTIME_TRANSPORT"))
+                        throw new IllegalStateException("password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER");
+                    if (obstacle.equals("UNKNOWN_RESULT"))
+                        yield new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(processProblem(ProblemCode.UNKNOWN)));
                     var captured = capture();
                     String output = DeploymentAgentPreparationProbe.absentOutput(captured);
                     if (List.of("PATH", "BUILD", "MOUNTS", "LOOPS").contains(obstacle))
                         output = output.replace(obstacle + "=ABSENT", obstacle + "=PRESENT");
                     if (List.of("PERMISSION", "DANGLING_LINK").contains(obstacle))
                         output = output.replace("STATUS=ABSENT", "STATUS=UNKNOWN");
-                    var result = new CommandResult(Optional.of(obstacle.equals("FAILED_OBSERVATION") ? 1 : 0), output, "", obstacle.equals("TRUNCATED"));
+                    if (List.of("BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "LOGGER_FAILURE").contains(obstacle)) {
+                        output = DeploymentAgentPreparationProbe.unknownOutput(captured,
+                            new DeploymentAgentPreparationProbe.UnknownObservation(DeploymentAgentPreparationProbe.Stage.BUILD_UNIT,
+                                DeploymentAgentPreparationProbe.Reason.BUILD_QUERY_UNCONFIRMED));
+                        if (obstacle.equals("MALICIOUS_STDOUT"))
+                            output = output.replace("UNKNOWN_STAGE=BUILD_UNIT", "UNKNOWN_STAGE=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER");
+                        if (obstacle.equals("INCOMPLETE"))
+                            output = output.substring(0, output.indexOf("UNKNOWN_REASON="));
+                    }
+                    boolean failed = List.of("FAILED_OBSERVATION", "FAILED_RESULT").contains(obstacle);
+                    if (obstacle.equals("FAILED_RESULT"))
+                        output = "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER";
+                    var result = new CommandResult(Optional.of(failed ? 1 : 0), output,
+                        List.of("MALICIOUS_STDERR", "FAILED_RESULT").contains(obstacle) ? "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER" : "",
+                        List.of("TRUNCATED", "DIAGNOSTIC_TRUNCATED").contains(obstacle));
                     afterSend.run();
+                    if (obstacle.equals("FAILED_RESULT"))
+                        yield new OperationResult<>(TaskResult.FAILED, Optional.of(result), Optional.of(processProblem(ProblemCode.IO_FAILURE)));
                     yield success(result);
                 }
                 default -> throw new AssertionError("Recovery cannot invoke " + name);
@@ -390,6 +466,19 @@ class DeploymentAgentPreparationAbsenceTest {
                     : nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], task);
                 throw new AssertionError(name);
             });
+            var logs = proxy(LogService.class, (name, args) -> switch (name) {
+                case "register" -> nativeAi.context.logs().register((LogCategory) args[0]);
+                case "write" -> {
+                    var event = (LogEvent) args[1];
+                    if (event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION") && event.message().startsWith("preparation.")) {
+                        diagnosticAttempts++;
+                        if (obstacle.equals("LOGGER_FAILURE"))
+                            throw new IllegalStateException("password=FAKE_PASSWORD_MARKER");
+                    }
+                    yield nativeAi.context.logs().write((LogTarget) args[0], event);
+                }
+                default -> throw new AssertionError(name);
+            });
             context = proxy(ModContext.class, (name, args) -> switch (name) {
                 case "db" -> db;
                 case "tasks" -> tasks;
@@ -399,13 +488,18 @@ class DeploymentAgentPreparationAbsenceTest {
                 case "file" -> files;
                 case "ui" -> ui;
                 case "ai" -> ai;
-                case "logs" -> nativeAi.context.logs();
+                case "logs" -> logs;
                 default -> throw new AssertionError(name);
             });
             sql("INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256,runtime_payload) VALUES('shared-unit','another-server','shared.service','/opt/shared','" + "f".repeat(64) + "',X'010203')");
             sql("INSERT INTO secret_revision(secret_id,secret_revision,credential_id,purpose,created_at) VALUES('persistent-secret',1,'retained-credential','deployment-runtime',1)");
             sql("INSERT INTO deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision,configuration_sha256,schema_version,created_at) VALUES('shared-unit',1,'" + "f".repeat(64) + "','1',1)");
             sql("INSERT INTO deployment_unit_configuration_entry VALUES('shared-unit',1,'persistent-value','RUNTIME','TEXT','KEEP')");
+        }
+
+        Problem processProblem(ProblemCode code) {
+            return new Problem(code, "FAKE_PASSWORD_MARKER", "password=FAKE_PASSWORD_MARKER",
+                Map.of("source", "FAKE_SOURCE_MARKER"), Optional.of(id));
         }
 
         Connection connection() throws Exception {
