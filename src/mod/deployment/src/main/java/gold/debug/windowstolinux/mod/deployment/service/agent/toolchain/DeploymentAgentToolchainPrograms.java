@@ -16,7 +16,7 @@ public final class DeploymentAgentToolchainPrograms {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private static final List<String> PROFILES = List.of("PYTHON", "PHP", "RUBY", "NATIVE_BUILD");
+    private static final List<String> PROFILES = List.of("PYTHON", "PHP", "RUBY", "NATIVE_BUILD", "HELPER_RUNTIME");
 
     private static final String PACKAGES_TEXT = resource("dependency-packages.json");
 

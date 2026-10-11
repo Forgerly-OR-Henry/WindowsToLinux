@@ -1,0 +1,246 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentHelperInstallerScript.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentHelperInstallerScript.java
+@@ -34,0 +35,18 @@
++        return renderFiles("""
++              if command -v apt-get >/dev/null; then
++                export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
++                apt-get -o DPkg::Lock::Timeout=300 update
++                apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
++              elif command -v dnf >/dev/null; then
++                dnf install -y %s
++              else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
++            """.formatted(APT_PACKAGES, DNF_PACKAGES));
++    }
++
++    /** Reuses fixed file installation with an implementation-owned prerequisite stage, never model input.
++     * @param prerequisitesScript complete fixed prerequisite statements with a final newline
++     * @return original installer envelope with the supplied narrow prerequisite stage */
++    public static String renderFiles(String prerequisitesScript) {
++        java.util.Objects.requireNonNull(prerequisitesScript);
++        if (prerequisitesScript.isBlank() || !prerequisitesScript.endsWith("\n"))
++            throw new IllegalArgumentException("Incomplete helper prerequisite stage");
+@@ -115,7 +133 @@
+-              if command -v apt-get >/dev/null; then
+-                export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
+-                apt-get -o DPkg::Lock::Timeout=300 update
+-                apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends %s
+-              elif command -v dnf >/dev/null; then
+-                dnf install -y %s
+-              else printf 'PREPARE_REJECT=platform-package-manager\\n'; exit 64; fi
++            """ + prerequisitesScript + """
+@@ -156 +168 @@
+-            """.formatted(APT_PACKAGES, DNF_PACKAGES, quote(DeploymentManagedHelperBundle.PATH),
++            """.formatted(quote(DeploymentManagedHelperBundle.PATH),
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainPrograms.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainPrograms.java
+@@ -19 +19 @@
+-    private static final List<String> PROFILES = List.of("PYTHON", "PHP", "RUBY", "NATIVE_BUILD");
++    private static final List<String> PROFILES = List.of("PYTHON", "PHP", "RUBY", "NATIVE_BUILD", "HELPER_RUNTIME");
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/agent-toolchain-dependencies.py
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/agent-toolchain-dependencies.py
+@@ -249 +249 @@
+-        if not isinstance(branch, dict) or set(branch) != {'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'}:
++        if not isinstance(branch, dict) or set(branch) != {'PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'}:
+@@ -515 +515 @@
+-def dependency_dnf_config(value, repository=False):
++def dependency_dnf_config(value, repository=False, enable_crb=True):
+@@ -529 +529 @@
+-        forced = OS_PROFILE is not None and OS_PROFILE['id'] == 'centos' and OS_PROFILE['manager'] == 'DNF' and section == 'crb'
++        forced = enable_crb and OS_PROFILE is not None and OS_PROFILE['id'] == 'centos' and OS_PROFILE['manager'] == 'DNF' and section == 'crb'
+@@ -545 +545 @@
+-def dependency_validate_dnf():
++def dependency_validate_dnf(enable_crb=True):
+@@ -549 +549 @@
+-            dependency_dnf_config(dependency_text(path))
++            dependency_dnf_config(dependency_text(path), enable_crb=enable_crb)
+@@ -554 +554 @@
+-    count = sum(dependency_dnf_config(dependency_text(path), True) for path in files if path.suffix == '.repo')
++    count = sum(dependency_dnf_config(dependency_text(path), True, enable_crb) for path in files if path.suffix == '.repo')
+@@ -573 +573 @@
+-    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD') or not re.fullmatch('[a-f0-9]{32}', args[1]):
++    if os.geteuid() != 0 or len(args) != 2 or args[0] not in ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME') or not re.fullmatch('[a-f0-9]{32}', args[1]):
+@@ -577 +577 @@
+-    if ecosystem in ('PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD'):
++    if ecosystem in ('PYTHON', 'PHP', 'RUBY', 'NATIVE_BUILD', 'HELPER_RUNTIME'):
+@@ -590 +590,4 @@
+-            dependency_validate_dnf()
++            if ecosystem == 'HELPER_RUNTIME':
++                dependency_validate_dnf(enable_crb=False)
++            else:
++                dependency_validate_dnf()
+@@ -592 +595 @@
+-            if OS_PROFILE['id'] == 'centos':
++            if OS_PROFILE['id'] == 'centos' and ecosystem != 'HELPER_RUNTIME':
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/dependency-packages.json
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/dependency-packages.json
+@@ -37,0 +38,15 @@
++    ],
++    "HELPER_RUNTIME": [
++      "python3",
++      "curl",
++      "tar",
++      "gzip",
++      "coreutils",
++      "util-linux",
++      "findutils",
++      "gawk",
++      "e2fsprogs",
++      "acl",
++      "sudo",
++      "iproute2",
++      "sqlite3"
+@@ -88,0 +104,15 @@
++    "HELPER_RUNTIME": [
++      "python3",
++      "curl",
++      "tar",
++      "gzip",
++      "coreutils",
++      "util-linux",
++      "findutils",
++      "gawk",
++      "e2fsprogs",
++      "acl",
++      "sudo",
++      "iproute",
++      "sqlite"
++    ],
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelper.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelper.java
+@@ -142,0 +143,5 @@
++    }
++
++    /** Installs fixed files with a caller-owned complete prerequisite implementation, through exact independent review. */
++    public OperationResult<Identity> installFilesWithPrerequisites(String prerequisitesScript) throws ApiException {
++        return install(DeploymentHelperInstallerScript.renderFiles(prerequisitesScript), "deployment.helper.install.files.custom.v1");
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentInstallerEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentInstallerEvidence.java
+@@ -25 +25,2 @@
+-    private static Map<String, Object> describe(String executable, String requiredInstallation) {
++    /** Projects complete ordered bytes after the caller verifies its own fixed installer implementation. */
++    public static Map<String, Object> describe(String executable, String requiredInstallation) {
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -21 +21 @@
+-        "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.agent.helper.readiness.v1",
++        "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1",
+@@ -64 +64 @@
+-            || operation.equals("deployment.helper.install.files.v1")) {
++            || operation.equals("deployment.helper.install.files.v1") || operation.equals("deployment.helper.install.files.custom.v1")) {
+@@ -89 +89,3 @@
+-                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.v1")
++                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.custom.v1")
++                    ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(executable)
++                    : operation.equals("deployment.helper.install.files.v1")
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
+@@ -88 +88,2 @@
+-            || "deployment.helper.install.files.v1".equals(current.get("operation")))
++            || "deployment.helper.install.files.v1".equals(current.get("operation"))
++            || "deployment.helper.install.files.custom.v1".equals(current.get("operation")))
+@@ -98 +99,2 @@
+-        boolean filesOnly = "deployment.helper.install.files.v1".equals(current.get("operation"));
++        boolean customPrerequisites = "deployment.helper.install.files.custom.v1".equals(current.get("operation"));
++        boolean filesOnly = customPrerequisites || "deployment.helper.install.files.v1".equals(current.get("operation"));
+@@ -110 +112,5 @@
+-        if (!evidence.equals(JSON.valueToTree(filesOnly ? DeploymentInstallerEvidence.describeFiles(installer)
++        if (customPrerequisites)
++            gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.requireCurrent(current, installer);
++        if (!evidence.equals(JSON.valueToTree(customPrerequisites
++            ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(installer)
++            : filesOnly ? DeploymentInstallerEvidence.describeFiles(installer)
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -31 +31 @@
+-    private static final Set<String> OPERATIONS = Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.agent.helper.readiness.v1", "deployment.helper.install.status.v1", "deployment.helper.probe.v1",
++    private static final Set<String> OPERATIONS = Set.of("deployment.helper.install.v1", "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1", "deployment.helper.install.status.v1", "deployment.helper.probe.v1",
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -304 +304 @@
+-            value(installer.installFiles());
++            value(installer.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.prerequisites(attempt.bootstrapOperation)));
+@@ -318,0 +319,2 @@
++        private final String bootstrapOperation = UUID.randomUUID().toString().replace("-", "");
++
+@@ -338,3 +340,5 @@
+-            var reviewedIntent = owns ? intent.semantics().orElseThrow().operation().equals("deployment.helper.install.files.v1")
+-                ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentInstallReviewIntent.upgradeFiles(intent, request, server, revision)
+-                : gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentInstallReviewIntent.upgrade(intent, request, server, revision) : intent;
++            var reviewedIntent = owns ? switch (intent.semantics().orElseThrow().operation()) {
++                case "deployment.helper.install.files.custom.v1" -> gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.upgrade(intent, request, server, revision, bootstrapOperation);
++                case "deployment.helper.install.files.v1" -> gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentInstallReviewIntent.upgradeFiles(intent, request, server, revision);
++                default -> gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentInstallReviewIntent.upgrade(intent, request, server, revision);
++            } : intent;
+@@ -380 +384 @@
+-            && intent.semantics().map(value -> (value.operation().equals("deployment.helper.install.v1") || value.operation().equals("deployment.helper.install.files.v1"))
++            && intent.semantics().map(value -> (value.operation().equals("deployment.helper.install.v1") || value.operation().equals("deployment.helper.install.files.v1") || value.operation().equals("deployment.helper.install.files.custom.v1"))
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
+@@ -169,0 +170,32 @@
++    }
++
++    @Test
++    void guardedAgentBootstrapSuppliesCompleteCurrentSourceAndKeepsDenialFinal() throws Exception {
++        var fixture = new NativeAiFixture();
++        var boundary = boundary(fixture);
++        var conversation = new DeploymentApprovalConversation(boundary.context(), fixture.task, server,
++            "fixture-fingerprint", "a".repeat(64), "fixture-route");
++        var ai = new DeploymentAiJson(boundary.context(), conversation);
++        String operation = "1234567890abcdef1234567890abcdef";
++        String script = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.render(operation);
++        reply(fixture, "deny-guarded-bootstrap", "DENY");
++        try (var command = new CommandRequest("exec /bin/bash --noprofile --norc -s", script.getBytes(StandardCharsets.UTF_8),
++            Duration.ofHours(2), 131072)) {
++            var original = RemoteActions.command(server, "fixture-route", command).withSemantics(new ActionSemantics(
++                gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.OPERATION,
++                Set.of(new ActionTarget(server.id(), "deployment-helper", DeploymentManagedHelperBundle.PATH))));
++            var intent = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence
++                .upgrade(original, command, server, "fixture-route", operation);
++            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", approvalFailure(boundary, fixture, ai, intent, command).problem().eventCode());
++        }
++        assertEquals(1, fixture.requests.size());
++        assertEquals(0, boundary.grants().get());
++        assertEquals(0, boundary.remoteAccesses().get());
++        var submitted = json.readTree(fixture.requests.getFirst().messages().getLast().text());
++        String reconstructed = DeploymentInstallerEvidence.reconstruct(submitted.path("completeExecutableInput"));
++        assertEquals(script, reconstructed);
++        assertTrue(reconstructed.contains(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.dependencies()));
++        assertTrue(submitted.path("resourceTargets").toString().contains("authenticated-dependency-closure:HELPER_RUNTIME"));
++        assertEquals(2, submitted.at("/helperInstallationSourceEvidence/installerLocations").size());
++        assertFalse(submitted.has("installedHelperPath"));
++        assertTrue(fixture.replies.isEmpty());
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
+@@ -48,0 +49 @@
++import org.junit.jupiter.api.Test;
+@@ -104 +105 @@
+-        "INSTALL_REVIEW_UNKNOWN", "INSTALL_GUARD_FAILURE", "INSTALL_EXECUTE_SAME_EVENT", "INSTALL_POSTPROBE_DENY",
++        "INSTALL_REVIEW_UNKNOWN", "INSTALL_EXECUTE_SAME_EVENT", "INSTALL_POSTPROBE_DENY",
+@@ -107,0 +109,5 @@
++    }
++
++    @Test
++    void installSendGuardFailureAfterIndependentGrantIsNotAnUnsentApprovalProof() throws Exception {
++        runBoundary(Boundary.INSTALL_GUARD_FAILURE);
+@@ -252 +258 @@
+-                        if (boundary == Boundary.INSTALL_GUARD_FAILURE && StackWalker.getInstance().walk(frames -> frames.anyMatch(frame ->
++                        if (boundary == Boundary.INSTALL_GUARD_FAILURE && installAuthorizations > 0 && StackWalker.getInstance().walk(frames -> frames.anyMatch(frame ->
+@@ -295 +301 @@
+-                        if (intent.semantics().orElseThrow().operation().equals("deployment.helper.install.v1")) {
++                        if (intent.semantics().orElseThrow().operation().equals("deployment.helper.install.files.custom.v1")) {
+@@ -574 +580 @@
+-            if (facts.path("operation").asText().equals("deployment.helper.install.v1")) {
++            if (facts.path("operation").asText().equals("deployment.helper.install.files.custom.v1")) {
+@@ -582 +588 @@
+-                assertEquals(11, targets.size());
++                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.targets(server), targets);
+@@ -680,0 +687,5 @@
++            String program = new String(request.stdin(), StandardCharsets.UTF_8);
++            if (program.equals(DeploymentAgentHelperReadiness.script()))
++                return reply("FORMAT=WTL_AGENT_HELPER_READINESS_1\nSTATUS=MISSING\nREASON=HELPER_MISSING\nPACKAGED_PROTOCOL="
++                    + DeploymentManagedHelperBundle.PROTOCOL_VERSION
++                    + "\nHELPER=ABSENT\nBUILD_ENTRY=ABSENT\nDEPENDENCIES=ABSENT\nROOTS=VALID_OR_ABSENT\nRECEIPTS=ABSENT\n");
+@@ -681,0 +693 @@
++                DeploymentAgentHelperInstallerScript.parseOperation(program);
+@@ -694 +705,0 @@
+-            String program = new String(request.stdin(), StandardCharsets.UTF_8);
