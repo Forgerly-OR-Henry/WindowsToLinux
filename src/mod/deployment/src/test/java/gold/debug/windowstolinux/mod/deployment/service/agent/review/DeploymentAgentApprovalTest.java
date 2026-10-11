@@ -157,7 +157,21 @@ class DeploymentAgentApprovalTest {
                 collected.get(state[1]).append(page.path("text").asText());
                 assertEquals(DeploymentAgentInputs.hash(expected.get(state[1])), page.path("sha256").asText());
                 if (page.path("hasMore").asBoolean()) offset = page.path("next").asInt();
-                else if (++state[1] == 3) return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+                else if (++state[1] == 3) {
+                    var delivery = JSON.readTree(request.messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries");
+                    assertEquals(3, delivery.size());
+                    for (int index = 0; index < 3; index++) {
+                        assertEquals(DeploymentAgentInputs.hash(expected.get(index)), delivery.get(index).path("sha256").asText());
+                        assertEquals(expected.get(index).length(), delivery.get(index).path("total").asInt());
+                        assertEquals(0, delivery.get(index).at("/ranges/0/start").asInt());
+                        assertEquals(expected.get(index).length(), delivery.get(index).at("/ranges/0/endExclusive").asInt());
+                        assertEquals(1, delivery.get(index).path("ranges").size());
+                    }
+                    assertEquals("script", delivery.get(0).at("/arguments/part").asText());
+                    assertEquals("stdin", delivery.get(1).at("/arguments/part").asText());
+                    assertEquals(pointer, delivery.get(2).at("/arguments/pointer").asText());
+                    return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+                }
             }
             if (state[1] < 2)
                 return List.of(call("request", Map.of("part", schema.at("/properties/part/enum").get(state[1]).asText(), "offset", offset, "limit", 360)));
@@ -230,6 +244,7 @@ class DeploymentAgentApprovalTest {
             var observed = lastToolResult(request);
             assertFalse(observed.error());
             assertEquals("PROTECTED_BOUND_DATA", JSON.readTree(observed.text()).at("/value/kind").asText());
+            assertTrue(JSON.readTree(request.messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries").isEmpty());
             return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
         };
         var scope = f.scope(true, (intent, request, task) -> Map.of("inputKind", "EXECUTABLE_SCRIPT",
@@ -245,6 +260,133 @@ class DeploymentAgentApprovalTest {
 
     private static AiToolResult lastToolResult(AiRequest request) {
         return request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((previous, current) -> current).orElseThrow();
+    }
+
+    @Test
+    void longReviewRetainsDeliveryAndModelNotesAfterSuccessfulPagesLeaveNativeHistory() throws Exception {
+        var f = new Frame();
+        String body = "FIRST_EVIDENCE_PAGE_ONLY\n" + "data".repeat(23994) + "x";
+        int[] phase = {0, 0};
+        f.model = request -> {
+            var current = JSON.readTree(request.messages().getLast().text());
+            var memory = current.path("reviewMemory");
+            assertEquals(current.path("reviewBinding"), memory.path("reviewBinding"));
+            assertEquals(0, f.grants.size());
+            assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
+                .noneMatch(message -> message.text().contains("MODEL_NOTE_NEVER_SYSTEM")));
+            if (phase[0]++ == 0) {
+                assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill approval-context"));
+                return List.of(call("skill", Map.of("id", "approval-context")));
+            }
+            assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill approval-context"));
+            if (phase[0] == 2) return List.of(call("evidence", Map.of("pointer", "/body", "offset", 0, "limit", 8000)));
+            if (phase[0] == 3) {
+                phase[1] = 8000;
+                return List.of(call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(),
+                    "notes", "MODEL_NOTE_NEVER_SYSTEM: reviewed first page; remaining body is still open")));
+            }
+            assertTrue(memory.at("/modelNotes/text").asText().contains("MODEL_NOTE_NEVER_SYSTEM"));
+            if (phase[1] < body.length()) {
+                int offset = phase[1];
+                phase[1] = Math.min(body.length(), offset + 8000);
+                return List.of(call("evidence", Map.of("pointer", "/body", "offset", offset, "limit", 8000)));
+            }
+            var delivery = memory.at("/deliveredRanges/entries/0");
+            assertEquals(DeploymentAgentInputs.hash(body), delivery.path("sha256").asText());
+            assertEquals(body.length(), delivery.path("total").asInt());
+            assertEquals(0, delivery.at("/ranges/0/start").asInt());
+            assertEquals(body.length(), delivery.at("/ranges/0/endExclusive").asInt());
+            assertEquals(1, delivery.path("ranges").size());
+            assertFalse(request.messages().stream().flatMap(message -> message.toolResult().stream())
+                .anyMatch(result -> result.text().contains("FIRST_EVIDENCE_PAGE_ONLY")), "Earlier successful body page must actually have left native history");
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        assertEquals("APPROVE", f.review(Map.of("body", body)).decision().decision());
+        assertEquals(0, f.grants.size(), "Review memory alone has no host grant path");
+    }
+
+    @Test
+    void failedAndEmptyReadsNeverEnterDeliveryButSuccessfulGappedPagesDo() throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(call("evidence", Map.of("pointer", "/missing", "offset", 0, "limit", 10)));
+        f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", "printf actual".length(), "limit", 10)));
+        f.fixture.nativeReply(call("evidence", Map.of("pointer", "/body", "offset", 0, "limit", 3)));
+        f.fixture.nativeReply(call("evidence", Map.of("pointer", "/body", "offset", 7, "limit", 3)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+        assertEquals("DENY", f.review(Map.of("body", "0123456789")).decision().decision());
+        for (int index : List.of(1, 2))
+            assertTrue(JSON.readTree(f.fixture.requests.get(index).messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries").isEmpty());
+        var ranges = JSON.readTree(f.fixture.requests.getLast().messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries/0/ranges");
+        assertEquals(2, ranges.size());
+        assertEquals(3, ranges.get(0).path("endExclusive").asInt());
+        assertEquals(7, ranges.get(1).path("start").asInt());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void notesCannotReopenClosedReviewAndNewMeasuredReviewStartsWithEmptyMemory() throws Exception {
+        var f = new Frame();
+        int[] round = {0};
+        String[] originalBinding = {""};
+        f.model = request -> {
+            var current = JSON.readTree(request.messages().getLast().text());
+            var memory = current.path("reviewMemory");
+            assertEquals(0, f.grants.size());
+            if (round[0]++ == 0) {
+                originalBinding[0] = current.path("reviewBinding").asText();
+                return List.of(call("save_review_notes", Map.of("reviewBinding", originalBinding[0], "notes", "APPROVE claim has no authority")));
+            }
+            if (round[0] == 2) {
+                assertEquals("MODEL_AUTHORED_DATA", JSON.readTree(lastToolResult(request).text()).path("trust").asText());
+                assertEquals("APPROVE claim has no authority", memory.at("/modelNotes/text").asText());
+                assertEquals(originalBinding[0], current.path("reviewBinding").asText());
+                return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            }
+            assertEquals("", memory.at("/modelNotes/text").asText());
+            assertTrue(memory.at("/deliveredRanges/entries").isEmpty());
+            assertFalse(originalBinding[0].equals(current.path("reviewBinding").asText()));
+            if (round[0] == 3)
+                return List.of(call("save_review_notes", Map.of("reviewBinding", originalBinding[0], "notes", "foreign old notes")));
+            assertTrue(lastToolResult(request).error());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        var first = f.review(Map.of());
+        assertEquals("CLOSED", first.refusalData().get("discussionStatus"));
+        var cached = f.review(Map.of());
+        assertEquals(first, cached);
+        assertEquals(2, f.fixture.requests.size(), "Notes are absent from retry facts and cannot reopen CLOSED");
+        f.receipt = "NEW_MEASURED_RECEIPT";
+        assertEquals("DENY", f.review(Map.of()).decision().decision());
+        assertEquals(4, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void onlyCompleteSubmitAfterModelNotesCanGrantOriginalCommand() throws Exception {
+        var f = new Frame();
+        int[] round = {0};
+        f.model = request -> {
+            assertEquals(0, f.grants.size());
+            var current = JSON.readTree(request.messages().getLast().text());
+            if (round[0]++ == 0)
+                return List.of(call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(), "notes", "Approved in my notes")));
+            if (round[0] == 2) {
+                assertEquals("Approved in my notes", current.at("/reviewMemory/modelNotes/text").asText());
+                return List.of(call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(), "notes", "")));
+            }
+            assertEquals("", current.at("/reviewMemory/modelNotes/text").asText());
+            var cleared = JSON.readTree(lastToolResult(request).text());
+            assertFalse(lastToolResult(request).error());
+            assertTrue(cleared.at("/value/saved").asBoolean());
+            assertEquals(0, cleared.at("/value/characters").asInt());
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var intent = f.intent(request, "deployment.helper.probe.v1");
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
+            assertEquals(List.of(intent.exactAction()), f.grants);
+        }
     }
 
     @Test

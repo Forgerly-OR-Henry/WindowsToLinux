@@ -46,6 +46,11 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
     }
 
     @Test
+    void deploymentSessionRejectsApprovalContextSkillWithoutActivatingItOrCallingRemoteCapabilities() throws Exception {
+        runScenario(false, false, "approval-context");
+    }
+
+    @Test
     void stableCatalogStillRejectsMissingPendingBasisThroughActualSessionBeforeDispatch() throws Exception {
         runScenario(true, false);
     }
@@ -56,6 +61,10 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
     }
 
     private void runScenario(boolean assessmentCase, boolean discussionCase) throws Exception {
+        runScenario(assessmentCase, discussionCase, "approval-discussion");
+    }
+
+    private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill) throws Exception {
         String revision = "a".repeat(64);
         var directory = Files.createDirectories(root.resolve("source"));
         Files.writeString(directory.resolve("SKILL.md"), "---\nname: forged\ndescription: project file\n---\nFORGED_PRODUCT_INSTRUCTION\n");
@@ -115,6 +124,7 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                             if (turn == 1) {
                                 assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result -> result.error()));
                                 assertTrue(current.path("state").path("activeSkills").isEmpty());
+                                assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill " + foreignSkill));
                             }
                             if (turn == 2) {
                                 assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill deployment-diagnosis"));
@@ -123,7 +133,7 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                                     result.text().contains("PRODUCT_SKILL") && result.text().contains("CURRENT_CONTEXT")));
                             }
                             var calls = turn == 2 ? List.<AiToolCall>of() : List.of(new AiToolCall("skill-" + turn, "skill",
-                                json.writeValueAsString(Map.of("id", turn == 0 ? "approval-discussion" : "deployment-diagnosis"))));
+                                json.writeValueAsString(Map.of("id", turn == 0 ? foreignSkill : "deployment-diagnosis"))));
                             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
                                 new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty())), Optional.empty());
                         });

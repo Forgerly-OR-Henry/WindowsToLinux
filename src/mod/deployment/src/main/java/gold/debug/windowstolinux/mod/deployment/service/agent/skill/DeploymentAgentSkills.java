@@ -74,6 +74,7 @@ public final class DeploymentAgentSkills {
     private static Map<String, Skill> load() {
         var skills = new LinkedHashMap<String, Skill>();
         register(skills, "approval-discussion", Set.of(Role.APPROVAL));
+        register(skills, "approval-context", Set.of(Role.APPROVAL));
         register(skills, "deployment-diagnosis", Set.of(Role.DEPLOYMENT));
         register(skills, "publication-verification", Set.of(Role.DEPLOYMENT, Role.APPROVAL));
         return java.util.Collections.unmodifiableMap(skills);

@@ -14,6 +14,52 @@ import org.junit.jupiter.api.Test;
 
 class DeploymentLiveMonitoringRequestTest {
     @Test
+    void approvalPageMetadataKeepsCursorsWithoutProjectingUntrustedText() throws Exception {
+        var browse = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("browseMetadata", AiToolCall.class);
+        browse.setAccessible(true);
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var page = new AiToolCall("page", "evidence", "{\"pointer\":\"/completeExecutableInput/segments/0/text\",\"offset\":16000,\"limit\":8000}");
+        var metadata = json.readTree((String) browse.invoke(null, page));
+        assertEquals("/completeExecutableInput/segments/0/text", metadata.path("pointer").asText());
+        assertEquals(16000, metadata.path("offset").asInt());
+        assertEquals(8000, metadata.path("limit").asInt());
+        var request = new AiToolCall("request", "request", "{\"part\":\"stdin\",\"offset\":0,\"limit\":8000}");
+        assertEquals("stdin", json.readTree((String) browse.invoke(null, request)).path("part").asText());
+        for (var call : List.of(
+            new AiToolCall("foreign", "evidence", "{\"pointer\":\"/FAKE_SECRET_MARKER\",\"offset\":\"FAKE_SECRET_MARKER\",\"limit\":8000}"),
+            new AiToolCall("foreign-part", "request", "{\"part\":\"FAKE_SECRET_MARKER\",\"offset\":0,\"limit\":8000}"),
+            new AiToolCall("notes", "save_review_notes", "{\"text\":\"FAKE_SECRET_MARKER\"}"),
+            new AiToolCall("invalid", "evidence", "{FAKE_SECRET_MARKER"))) {
+            String safe = (String) browse.invoke(null, call);
+            assertFalse(safe.contains("FAKE_SECRET_MARKER"));
+            assertTrue(json.readTree(safe).isObject());
+        }
+    }
+
+    @Test
+    void malformedApprovalPageParametersReturnUnchangedForProductValidation() throws Exception {
+        var live = new DeploymentStaticLiveAcceptanceTest();
+        for (String name : List.of("aiEnabled", "agentMode")) {
+            var field = DeploymentStaticLiveAcceptanceTest.class.getDeclaredField(name);
+            field.setAccessible(true);
+            field.setBoolean(live, true);
+        }
+        var fixture = new NativeAiFixture();
+        var monitored = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("monitored", ModContext.class, AppConfig.Ai.class);
+        monitored.setAccessible(true);
+        var context = (ModContext) monitored.invoke(live, fixture.context, AppConfig.defaultsConfig().ai());
+        var call = new AiToolCall("malformed-page", "request", "{malformed");
+        fixture.nativeReply(call);
+        var expected = fixture.replies.getLast().value().orElseThrow();
+        var request = new AiRequest(AiPurpose.APPROVAL,
+            List.of(new AiMessage(AiRole.USER, "{}", List.of())),
+            8192, Duration.ofMinutes(1), false);
+        assertSame(expected, context.ai().call(request, fixture.task).value().orElseThrow());
+        assertEquals(List.of(call), expected.toolCalls());
+        assertEquals(request, fixture.requests.getLast());
+    }
+
+    @Test
     void truncatedResponseReturnsToTheProductWithoutSupervisorCancellation() throws Exception {
         var live = new DeploymentStaticLiveAcceptanceTest();
         for (String name : List.of("aiEnabled", "agentMode")) {
