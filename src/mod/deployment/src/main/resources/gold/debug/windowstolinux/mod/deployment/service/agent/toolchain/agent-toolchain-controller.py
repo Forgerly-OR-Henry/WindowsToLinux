@@ -15,6 +15,8 @@ AGENT_SYSTEM_COMMANDS = frozenset(('fallocate', 'findmnt', 'losetup', 'mkfs.ext4
     'mount', 'systemctl', 'systemd-run', 'umount', 'UNCLASSIFIED'))
 AGENT_MAX_MEMBERS = 200000
 AGENT_MAX_PROGRAM = 1024 * 1024
+AGENT_LIFECYCLE_PHASES = frozenset(('AGENT_SETUP_UNCONFIRMED', 'AGENT_EXECUTION_UNCONFIRMED',
+    'AGENT_STOP_UNCONFIRMED', 'AGENT_FREEZE_UNCONFIRMED'))
 AGENT_ALIAS = pathlib.Path('/run/wtl-agent-toolchain')
 AGENT_ECOSYSTEMS = ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY')
 AGENT_BINARIES = {
@@ -32,7 +34,9 @@ AGENT_DIAGNOSTIC_FUNCTIONS = frozenset(('agent_main', 'agent_prepare', 'agent_cr
     'agent_execute', 'agent_bind', 'agent_setup', 'agent_worker', 'agent_freeze', 'agent_release_source',
     'agent_probe_records', 'agent_promote', 'agent_detach', 'agent_cleanup_before_start',
     'agent_cleanup_placeholder', 'agent_os', 'agent_tool', 'agent_regular', 'agent_write',
-    'agent_record', 'agent_identity', 'agent_scan', 'agent_copy_tree', 'agent_require_space', 'entry'))
+    'agent_record', 'agent_identity', 'agent_scan', 'agent_copy_tree', 'agent_require_space',
+    'agent_unit_identity', 'agent_ready_file', 'agent_publish_ready', 'agent_wait_ready',
+    'agent_unit_stopped', 'agent_stopped', 'agent_manifest', 'entry'))
 
 
 def remaining():
@@ -149,19 +153,21 @@ def agent_tool(name):
     agent_reject('REQUIRED_SYSTEM_TOOL')
 
 
-def agent_os(command, allow_failure=False, timeout=None):
+def agent_os(command, allow_failure=False, timeout=None, on_poll=None):
     """Root executes only product-selected OS administration tools, never a vendor path."""
+    deadline = time.monotonic() + (timeout if timeout is not None else remaining())
     process = subprocess.Popen(command, cwd='/', stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'},
                                start_new_session=True)
     output = bytearray()
-    deadline = time.monotonic() + (timeout if timeout is not None else remaining())
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
             while selector.get_map():
                 if time.monotonic() >= deadline:
                     agent_reject('SYSTEM_COMMAND_TIMEOUT', 'unknown')
+                if on_poll is not None and process.poll() is None:
+                    on_poll()
                 for key, _ in selector.select(min(0.2, max(0.01, deadline - time.monotonic()))):
                     block = os.read(key.fileobj.fileno(), 8192)
                     if not block:
@@ -178,9 +184,18 @@ def agent_os(command, allow_failure=False, timeout=None):
                 'exitCode': code, 'outputBytes': len(output), 'outputSha256': hashlib.sha256(output).hexdigest()}
             raise error
         return code, bytes(output)
+    except Exception as error:
+        if on_poll is not None:
+            captured = bytes(output[:65536])
+            error.run_observation = {'exitCode': process.poll(), 'outputBytes': len(captured),
+                'outputSha256': hashlib.sha256(captured).hexdigest()}
+        raise
     finally:
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         process.wait()
         process.stdout.close()
 
@@ -206,7 +221,7 @@ def agent_manifest(operation, alias=False):
     owned_directory(base)
     manifest = agent_json(agent_regular(base / 'manifest.json'))
     fields = {'format', 'operation', 'programSha256', 'seconds', 'deadline', 'action', 'request',
-              'directories', 'loop', 'imageIdentity', 'mountIdentity'}
+              'directories', 'loop', 'imageIdentity', 'mountIdentity', 'readyIdentity'}
     if not isinstance(manifest, dict) or set(manifest) != fields or manifest['format'] != 'WTL_AGENT_TOOLCHAIN_1':
         agent_reject('MANIFEST_SCHEMA')
     if manifest['operation'] != operation or not agent_hash(manifest['programSha256']):
@@ -222,7 +237,7 @@ def agent_manifest(operation, alias=False):
         agent_reject('MANIFEST_ACTION')
     if not isinstance(manifest['loop'], str) or not re.fullmatch('/dev/loop[0-9]+', manifest['loop']):
         agent_reject('MANIFEST_LOOP')
-    for key in ('imageIdentity', 'mountIdentity'):
+    for key in ('imageIdentity', 'mountIdentity', 'readyIdentity'):
         if not isinstance(manifest[key], list) or len(manifest[key]) != 2 or any(type(v) is not int or v < 1 for v in manifest[key]):
             agent_reject('MANIFEST_INODE')
     directories = manifest['directories']
@@ -291,23 +306,103 @@ def agent_volume(manifest, require_ro=False):
         agent_reject('VOLUME_MOUNT_CHANGED')
 
 
-def agent_setup(operation):
-    import pwd
+def agent_unit_identity(manifest):
+    operation = manifest['operation']
+    fields = ('Id', 'LoadState', 'ActiveState', 'User', 'Group', 'DynamicUser', 'UID', 'GID',
+              'InvocationID', 'MainPID', 'ControlGroup')
+    code, output = agent_os([agent_tool('systemctl'), 'show', '--all'] +
+        ['--property=' + key for key in fields] + [agent_unit(operation)], allow_failure=True,
+        timeout=min(5, remaining()))
+    values = {}
+    for line in output.decode('utf-8').splitlines():
+        key, separator, value = line.partition('=')
+        if not separator or key not in fields or key in values:
+            agent_reject('UNIT_IDENTITY', 'unknown')
+        values[key] = value
+    if values.get('Id') != agent_unit(operation):
+        agent_reject('UNIT_IDENTITY', 'unknown')
+    if values.get('LoadState') == 'not-found' and values.get('ActiveState') == 'inactive':
+        return None
+    if code or set(values) != set(fields) or values['LoadState'] != 'loaded' or values['ActiveState'] not in ('activating', 'active'):
+        agent_reject('UNIT_IDENTITY', 'unknown')
+    if values['DynamicUser'] != 'yes' or values['User'] != agent_user(operation) or values['Group'] != agent_user(operation):
+        agent_reject('UNIT_IDENTITY', 'unknown')
+    if values['UID'] in ('', '4294967295') or values['GID'] in ('', '4294967295') or values['MainPID'] == '0':
+        return None
+    if any(not re.fullmatch('[1-9][0-9]{0,9}', values[key]) for key in ('UID', 'GID', 'MainPID')) or any(int(values[key]) >= 4294967295 for key in ('UID', 'GID', 'MainPID')):
+        agent_reject('UNIT_IDENTITY', 'unknown')
+    if not re.fullmatch('[a-f0-9]{32}', values['InvocationID']) or values['InvocationID'] == '0' * 32 or values['ControlGroup'] != '/system.slice/' + agent_unit(operation):
+        agent_reject('UNIT_IDENTITY', 'unknown')
+    return {'uid': int(values['UID']), 'gid': int(values['GID']), 'invocationId': values['InvocationID']}
+
+
+def agent_ready_file(manifest, value=None, alias=False):
+    import fcntl
+    path = (AGENT_ALIAS if alias else agent_operation(manifest['operation'])) / 'ready.json'
+    fd = os.open(str(path), (os.O_RDONLY if value is None else os.O_WRONLY) | os.O_NOFOLLOW)
+    try:
+        # The worker may race the one root publication; locking avoids accepting a partial record.
+        while True:
+            try:
+                fcntl.flock(fd, (fcntl.LOCK_SH if value is None else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                remaining()
+                time.sleep(0.05)
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or info.st_mode & 0o222 or info.st_nlink != 1 or info.st_size > 1024 or [info.st_dev, info.st_ino] != manifest['readyIdentity']:
+            agent_reject('READY_FILE', 'unknown')
+        if value is not None:
+            if info.st_size != 0 or os.geteuid() != 0:
+                agent_reject('READY_ALREADY_PUBLISHED', 'unknown')
+            if os.write(fd, value) != len(value):
+                agent_reject('READY_SHORT_WRITE', 'unknown')
+            os.fsync(fd)
+            return
+        data = os.read(fd, 1025)
+        if len(data) != info.st_size or not agent_same_file(info, os.fstat(fd)):
+            agent_reject('READY_FILE_CHANGED', 'unknown')
+        return data
+    finally:
+        os.close(fd)
+
+
+def agent_publish_ready(manifest, identity):
+    if agent_unit_identity(manifest) != identity:
+        agent_reject('UNIT_IDENTITY_CHANGED', 'unknown')
+    value = {'operation': manifest['operation'], 'programSha256': manifest['programSha256'], **identity}
+    agent_ready_file(manifest, agent_encode(value))
+
+
+def agent_wait_ready(manifest):
+    while True:
+        remaining()
+        data = agent_ready_file(manifest, alias=True)
+        if data:
+            value = agent_json(data)
+            if not isinstance(value, dict) or set(value) != {'operation', 'programSha256', 'uid', 'gid', 'invocationId'} or value['operation'] != manifest['operation'] or value['programSha256'] != manifest['programSha256']:
+                agent_reject('READY_BINDING', 'unknown')
+            if any(type(value[key]) is not int or value[key] <= 0 for key in ('uid', 'gid')) or value['uid'] != os.getuid() or value['gid'] != os.getgid() or not isinstance(value['invocationId'], str) or not re.fullmatch('[a-f0-9]{32}', value['invocationId']) or value['invocationId'] == '0' * 32:
+                agent_reject('READY_IDENTITY', 'unknown')
+            return
+        time.sleep(0.05)
+
+
+def agent_setup(operation, identity):
     if os.geteuid() != 0:
         agent_reject('SETUP_REQUIRES_ROOT')
     manifest = agent_manifest(operation)
     agent_volume(manifest)
-    user = pwd.getpwnam(agent_user(operation))
-    if user.pw_uid <= 0 or user.pw_gid <= 0:
+    if not isinstance(identity, dict) or set(identity) != {'uid', 'gid', 'invocationId'} or any(type(identity[key]) is not int or not 0 < identity[key] < 4294967295 for key in ('uid', 'gid')) or not isinstance(identity['invocationId'], str) or not re.fullmatch('[a-f0-9]{32}', identity['invocationId']) or identity['invocationId'] == '0' * 32:
         agent_reject('DYNAMIC_IDENTITY')
     base = agent_operation(operation)
-    for name, identity in manifest['directories'].items():
+    for name, original in manifest['directories'].items():
         fd = os.open(str(base / 'mutable' / name), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             info = os.fstat(fd)
-            if [info.st_dev, info.st_ino] != identity or info.st_uid != 0 or info.st_mode & 0o022 or os.listdir(fd):
+            if [info.st_dev, info.st_ino] != original or info.st_uid != 0 or info.st_mode & 0o022 or os.listdir(fd):
                 agent_reject('SETUP_REQUIRES_ORIGINAL_EMPTY_DIRECTORY')
-            os.fchown(fd, user.pw_uid, user.pw_gid)
+            os.fchown(fd, identity['uid'], identity['gid'])
             os.fchmod(fd, 0o700)
         finally:
             os.close(fd)
@@ -315,11 +410,12 @@ def agent_setup(operation):
     initial = agent_json(agent_regular(path))
     if initial != {'operation': operation, 'uid': 0, 'gid': 0, 'programSha256': manifest['programSha256']}:
         agent_reject('IDENTITY_ALREADY_ASSIGNED')
-    value = agent_encode({'operation': operation, 'uid': user.pw_uid, 'gid': user.pw_gid, 'programSha256': manifest['programSha256']})
+    value = agent_encode({'operation': operation, 'uid': identity['uid'], 'gid': identity['gid'], 'programSha256': manifest['programSha256']})
     fd = os.open(str(path), os.O_WRONLY | os.O_NOFOLLOW)
     try:
         os.ftruncate(fd, 0)
-        os.write(fd, value)
+        if os.write(fd, value) != len(value):
+            agent_reject('IDENTITY_SHORT_WRITE', 'unknown')
         os.fsync(fd)
     finally:
         os.close(fd)
@@ -356,7 +452,7 @@ def agent_sandbox_properties(manifest):
     binds += [str(base / 'mutable/tmp') + ':' + name for name in ('/tmp', '/var/tmp', '/dev/shm')]
     if manifest['action'] == 'INSTALL':
         binds.append(str(base / 'mutable/out') + ':' + manifest['request']['destination'])
-    readonly = [str(base / name) + ':' + str(alias / name) for name in ('controller.py', 'manifest.json', 'identity.json')]
+    readonly = [str(base / name) + ':' + str(alias / name) for name in ('controller.py', 'manifest.json', 'identity.json', 'ready.json')]
     readonly.append(str(base / 'mutable/input') + ':' + str(alias / 'input'))
     properties = [
         'User=' + agent_user(operation), 'Group=' + agent_user(operation), 'DynamicUser=yes',
@@ -373,14 +469,10 @@ def agent_sandbox_properties(manifest):
         'InaccessiblePaths=-/run/dbus -/run/docker.sock -/run/podman -/run/user -/opt/windowstolinux/apps -/etc/opt/windowstolinux/apps -/var/opt/windowstolinux/apps',
         'WorkingDirectory=/',
     ]
-    # Only the fixed controller callbacks use +; the vendor worker is the ordinary unprivileged ExecStart.
-    for kind in ('setup', 'freeze'):
-        command = '/usr/bin/python3 -I -S -c ' + json.dumps(AGENT_BOOTSTRAP) + ' ' + str(base / 'controller.py') + ' ' + kind + ' ' + operation
-        properties.append(('ExecStartPre=+' if kind == 'setup' else 'ExecStopPost=+') + command)
     return properties
 
 
-def agent_stopped(manifest):
+def agent_unit_stopped(manifest):
     operation = manifest['operation']
     code, output = agent_os([agent_tool('systemctl'), 'show', '--property=LoadState', '--property=ActiveState',
                             '--property=ControlGroup', agent_unit(operation)], allow_failure=True, timeout=30)
@@ -398,6 +490,11 @@ def agent_stopped(manifest):
         for path in group.rglob('cgroup.procs'):
             if path.read_text().strip():
                 agent_reject('CGROUP_NOT_EMPTY', 'unknown')
+
+
+def agent_stopped(manifest):
+    agent_unit_stopped(manifest)
+    operation = manifest['operation']
     frozen = agent_json(agent_regular(agent_operation(operation) / 'frozen.json'))
     if frozen != {'operation': operation, 'programSha256': manifest['programSha256'], 'mountIdentity': manifest['mountIdentity']}:
         agent_reject('FREEZE_RECEIPT', 'unknown')
@@ -412,16 +509,49 @@ def agent_execute(manifest):
     args += ['/usr/bin/env', '-i', 'PATH=/usr/bin:/bin', 'HOME=' + str(AGENT_ALIAS / 'home'),
              'TMPDIR=' + str(AGENT_ALIAS / 'tmp'), 'XDG_CACHE_HOME=' + str(AGENT_ALIAS / 'home/.cache'),
              '/usr/bin/python3', '-I', '-S', '-c', AGENT_BOOTSTRAP, str(AGENT_ALIAS / 'controller.py'), 'worker', manifest['operation']]
-    code, output = 1, b''
+    code, output, execution_error, setup_complete = None, b'', None, False
+    observation = {'exitCode': None, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}
+    def setup():
+        nonlocal setup_complete
+        if setup_complete:
+            return
+        identity = agent_unit_identity(manifest)
+        if identity is not None:
+            agent_setup(manifest['operation'], identity)
+            agent_publish_ready(manifest, identity)
+            setup_complete = True
     agent_write(agent_operation(manifest['operation']) / 'start-intent.json', agent_encode({
         'operation': manifest['operation'], 'programSha256': manifest['programSha256']}))
     try:
-        code, output = agent_os(args, allow_failure=True)
+        code, output = agent_os(args, allow_failure=True, on_poll=setup)
+        observation = {'exitCode': code, 'outputBytes': len(output), 'outputSha256': hashlib.sha256(output).hexdigest()}
+    except Exception as error:
+        execution_error = error
+        observation = getattr(error, 'run_observation', observation)
     finally:
-        agent_os([agent_tool('systemctl'), 'stop', agent_unit(manifest['operation'])], allow_failure=True, timeout=30)
-        agent_stopped(manifest)
+        try:
+            agent_os([agent_tool('systemctl'), 'stop', agent_unit(manifest['operation'])], allow_failure=True, timeout=30)
+            agent_unit_stopped(manifest)
+        except Exception:
+            raise agent_lifecycle_failure(manifest, 'AGENT_STOP_UNCONFIRMED', observation) from None
+        if not setup_complete:
+            raise agent_lifecycle_failure(manifest, 'AGENT_SETUP_UNCONFIRMED', observation) from None
+        try:
+            agent_freeze(manifest['operation'])
+            agent_stopped(manifest)
+        except Exception:
+            raise agent_lifecycle_failure(manifest, 'AGENT_FREEZE_UNCONFIRMED', observation) from None
+    if execution_error is not None:
+        raise agent_lifecycle_failure(manifest, 'AGENT_EXECUTION_UNCONFIRMED', observation) from None
     if code or output != ('WORKER_OK=' + manifest['programSha256'] + '\n').encode():
         agent_reject('NONROOT_WORKER_FAILED', 'installation')
+
+
+def agent_lifecycle_failure(manifest, phase, observation):
+    error = PreparationFailure('unknown', phase)
+    error.lifecycle_diagnostic = {'operation': manifest['operation'], 'phase': phase,
+        'command': 'systemd-run', **observation}
+    return error
 
 
 def agent_vendor(command, environment, cwd=None, capture=False):
@@ -492,6 +622,7 @@ def agent_worker(operation):
         agent_reject('WORKER_REQUIRES_NONROOT')
     manifest = agent_manifest(operation, alias=True)
     DEADLINE = manifest['deadline']
+    agent_wait_ready(manifest)
     identity = agent_json(agent_regular(AGENT_ALIAS / 'identity.json'))
     if identity != {'operation': operation, 'uid': os.getuid(), 'gid': os.getgid(), 'programSha256': manifest['programSha256']} or os.getgid() == 0:
         agent_reject('WORKER_IDENTITY')
@@ -604,6 +735,8 @@ def agent_create(operation, seconds):
     base.mkdir(mode=0o755)
     agent_write(base / 'controller.py', source)
     agent_write(base / 'identity.json', agent_encode({'operation': operation, 'uid': 0, 'gid': 0, 'programSha256': hashlib.sha256(source).hexdigest()}))
+    agent_write(base / 'ready.json', b'')
+    ready = (base / 'ready.json').lstat()
     image = base / 'volume.ext4'
     agent_write(image, b'', 0o600)
     agent_os([agent_tool('fallocate'), '-l', str(AGENT_VOLUME_BYTES), '--', str(image)])
@@ -620,7 +753,8 @@ def agent_create(operation, seconds):
     return {'format': 'WTL_AGENT_TOOLCHAIN_1', 'operation': operation, 'programSha256': hashlib.sha256(source).hexdigest(),
             'seconds': seconds, 'deadline': int(DEADLINE), 'action': '', 'request': {},
             'directories': {name: agent_identity(base / 'mutable' / name) for name in ('out', 'work', 'home', 'tmp')},
-            'loop': device, 'imageIdentity': [info.st_dev, info.st_ino], 'mountIdentity': agent_identity(base / 'mutable')}
+            'loop': device, 'imageIdentity': [info.st_dev, info.st_ino], 'mountIdentity': agent_identity(base / 'mutable'),
+            'readyIdentity': [ready.st_dev, ready.st_ino]}
 
 
 def agent_validate_entry(info, root_device, capabilities=b''):
@@ -1071,8 +1205,8 @@ def agent_bind(args):
 def agent_main(args):
     import fcntl
     global DEADLINE
-    if len(args) == 2 and args[0] in ('setup', 'freeze', 'worker'):
-        {'setup': agent_setup, 'freeze': agent_freeze, 'worker': agent_worker}[args[0]](args[1])
+    if len(args) == 2 and args[0] == 'worker':
+        agent_worker(args[1])
         return
     if os.geteuid() != 0:
         agent_reject('CONTROLLER_REQUIRES_ROOT')
@@ -1179,6 +1313,23 @@ def agent_command_diagnostic(error, args):
     return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps({'operation': operation, 'phase': 'SYSTEM_COMMAND_FAILED', **value}, sort_keys=True, separators=(',', ':'))
 
 
+def agent_lifecycle_diagnostic(error, args):
+    if not (len(args) == 8 and args[0] == 'prepare' or len(args) == 4 and args[0] == 'bind'):
+        return None
+    operation = agent_diagnostic_operation(args)
+    value = getattr(error, 'lifecycle_diagnostic', None)
+    fields = {'operation', 'phase', 'command', 'exitCode', 'outputBytes', 'outputSha256'}
+    if operation is None or not isinstance(value, dict) or set(value) != fields:
+        return None
+    if error.category != 'unknown' or value['operation'] != operation or value['phase'] not in AGENT_LIFECYCLE_PHASES or value['phase'] != error.detail or value['command'] != 'systemd-run':
+        return None
+    if value['exitCode'] is not None and (type(value['exitCode']) is not int or not -255 <= value['exitCode'] <= 255):
+        return None
+    if type(value['outputBytes']) is not int or not 0 <= value['outputBytes'] <= 65536 or not agent_hash(value['outputSha256']):
+        return None
+    return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps(value, sort_keys=True, separators=(',', ':'))
+
+
 def agent_cli(args):
     try:
         agent_main(args)
@@ -1193,6 +1344,10 @@ def agent_cli(args):
                 print(diagnostic)
         elif detail == 'SYSTEM_COMMAND_FAILED':
             diagnostic = agent_command_diagnostic(error, args)
+            if diagnostic is not None:
+                print(diagnostic)
+        elif detail in AGENT_LIFECYCLE_PHASES:
+            diagnostic = agent_lifecycle_diagnostic(error, args)
             if diagnostic is not None:
                 print(diagnostic)
         return 70 if category == 'unknown' else 65

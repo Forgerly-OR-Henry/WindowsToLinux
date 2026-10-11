@@ -20,6 +20,9 @@ public final class DeploymentAgentToolchainFailureEvidence {
 
     private static final Pattern FAILURE = Pattern.compile("TOOLCHAIN_FAILURE=([a-z_]{1,32}):([A-Z_]{1,96})");
 
+    private static final Set<String> LIFECYCLE_PHASES = Set.of("AGENT_SETUP_UNCONFIRMED", "AGENT_EXECUTION_UNCONFIRMED",
+        "AGENT_STOP_UNCONFIRMED", "AGENT_FREEZE_UNCONFIRMED");
+
     private DeploymentAgentToolchainFailureEvidence() {
     }
 
@@ -58,9 +61,10 @@ public final class DeploymentAgentToolchainFailureEvidence {
             if (match.matches() && (command.exitCode().equals(Optional.of(65)) || command.exitCode().equals(Optional.of(70)))) {
                 facts.put("reportedCategory", match.group(1));
                 facts.put("reportedCode", match.group(2));
-                if (outcome != TaskResult.CANCELLED && (match.group(1).equals("unknown") || command.exitCode().equals(Optional.of(70))))
+                boolean lifecycle = LIFECYCLE_PHASES.contains(match.group(2));
+                if (outcome != TaskResult.CANCELLED && (match.group(1).equals("unknown") || command.exitCode().equals(Optional.of(70)) || lifecycle))
                     outcome = TaskResult.UNKNOWN;
-                if (lines.length == 3)
+                if (lines.length == 3 && (!lifecycle || match.group(1).equals("unknown") && command.exitCode().equals(Optional.of(70))))
                     diagnostic(lines[1], identity, match.group(2)).ifPresent(value -> facts.put("reportedDiagnostic", value));
             }
         }
@@ -106,6 +110,16 @@ public final class DeploymentAgentToolchainFailureEvidence {
                     return Optional.empty();
                 return Optional.of(value);
             }
+            if (LIFECYCLE_PHASES.contains(code)) {
+                if (!value.path("command").isTextual() || !value.path("command").asText().equals("systemd-run")
+                    || !(value.path("exitCode").isNull() || value.path("exitCode").isIntegralNumber() && value.path("exitCode").canConvertToInt()
+                    && value.path("exitCode").intValue() >= -255 && value.path("exitCode").intValue() <= 255)
+                    || !value.path("outputBytes").isIntegralNumber() || !value.path("outputBytes").canConvertToInt()
+                    || value.path("outputBytes").intValue() < 0 || value.path("outputBytes").intValue() > 65536
+                    || !value.path("outputSha256").isTextual() || !value.path("outputSha256").asText().matches("[a-f0-9]{64}"))
+                    return Optional.empty();
+                return Optional.of(value);
+            }
             if (code.equals("HOST_SPACE_REQUIRED")) {
                 long reserve = 1024L * 1024 * 1024;
                 if (!value.path("stage").isTextual() || !Set.of("VOLUME", "PROMOTION").contains(value.path("stage").asText())
@@ -123,7 +137,9 @@ public final class DeploymentAgentToolchainFailureEvidence {
                 if (!value.path("function").isTextual() || !Set.of("agent_main", "agent_prepare", "agent_create", "agent_prepare_selected",
                     "agent_execute", "agent_bind", "agent_setup", "agent_worker", "agent_freeze", "agent_release_source", "agent_probe_records",
                     "agent_promote", "agent_detach", "agent_cleanup_before_start", "agent_cleanup_placeholder", "agent_os", "agent_tool",
-                    "agent_regular", "agent_write", "agent_record", "agent_identity", "agent_scan", "agent_copy_tree", "agent_require_space", "entry").contains(value.path("function").asText())
+                    "agent_regular", "agent_write", "agent_record", "agent_identity", "agent_scan", "agent_copy_tree", "agent_require_space",
+                    "agent_unit_identity", "agent_ready_file", "agent_publish_ready", "agent_wait_ready", "agent_unit_stopped",
+                    "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "entry").contains(value.path("function").asText())
                     || !value.path("exception").isTextual() || !Set.of("OSError", "ValueError", "KeyError", "StopIteration", "TimeoutExpired").contains(value.path("exception").asText())
                     || !(value.path("errno").isNull() || value.path("errno").isIntegralNumber() && value.path("errno").canConvertToInt()
                     && value.path("errno").intValue() >= 1 && value.path("errno").intValue() <= 4095)

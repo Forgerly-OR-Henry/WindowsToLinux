@@ -16,6 +16,66 @@ class DeploymentAgentToolchainFailureEvidenceTest {
     private static final ServerId SERVER = new ServerId("original-server");
 
     @Test
+    void lifecycleUnknownKeepsActualRunExitIncludingZeroAndUnavailableWithoutClaimingCompletion() throws Exception {
+        for (String phase : List.of("AGENT_SETUP_UNCONFIRMED", "AGENT_EXECUTION_UNCONFIRMED", "AGENT_STOP_UNCONFIRMED", "AGENT_FREEZE_UNCONFIRMED")) {
+            for (Integer exit : Arrays.asList(null, 0, -9, 65)) {
+                var fields = new LinkedHashMap<String, Object>();
+                fields.put("operation", OPERATION);
+                fields.put("phase", phase);
+                fields.put("command", "systemd-run");
+                fields.put("exitCode", exit);
+                fields.put("outputBytes", 42);
+                fields.put("outputSha256", "d".repeat(64));
+                String output = "TOOLCHAIN_FAILURE=unknown:" + phase + "\nTOOLCHAIN_DIAGNOSTIC="
+                    + new ObjectMapper().writeValueAsString(fields) + "\n";
+                var result = retain(TaskResult.FAILED, 70, output, false);
+                assertEquals(TaskResult.UNKNOWN, result.outcome());
+                String evidence = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+                assertTrue(evidence.contains("reportedDiagnostic"));
+                assertTrue(evidence.contains("\"exitCode\":" + exit));
+                assertTrue(evidence.contains("\"actualExit\":70"));
+                assertTrue(evidence.contains("not permission"));
+                assertEquals(TaskResult.CANCELLED, retain(TaskResult.CANCELLED, 70, output, false).outcome());
+            }
+        }
+    }
+
+    @Test
+    void lifecycleProjectionRejectsForeignRunTextMalformedBoundsAndFalseKnownOutcome() throws Exception {
+        String phase = "AGENT_FREEZE_UNCONFIRMED";
+        var original = Map.<String, Object>of("operation", OPERATION, "phase", phase, "command", "systemd-run",
+            "exitCode", 0, "outputBytes", 65536, "outputSha256", "d".repeat(64));
+        var invalid = new ArrayList<Map<String, Object>>();
+        for (var change : List.of(Map.<String, Object>entry("operation", "c".repeat(32)), Map.<String, Object>entry("phase", "SYSTEM_COMMAND_FAILED"),
+            Map.<String, Object>entry("command", "/private/tool"), Map.<String, Object>entry("exitCode", true),
+            Map.<String, Object>entry("exitCode", 256), Map.<String, Object>entry("exitCode", -256),
+            Map.<String, Object>entry("outputBytes", -1), Map.<String, Object>entry("outputBytes", 65537),
+            Map.<String, Object>entry("outputBytes", true), Map.<String, Object>entry("outputSha256", "private-body"),
+            Map.<String, Object>entry("rawOutput", "private-body"))) {
+            var fields = new LinkedHashMap<String, Object>(original);
+            fields.put(change.getKey(), change.getValue());
+            invalid.add(fields);
+        }
+        var missing = new LinkedHashMap<String, Object>(original);
+        missing.remove("exitCode");
+        missing.put("rawOutput", "private-body");
+        invalid.add(missing);
+        for (var fields : invalid) {
+            var result = retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:" + phase + "\nTOOLCHAIN_DIAGNOSTIC="
+                + new ObjectMapper().writeValueAsString(fields) + "\n", false);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            String evidence = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertFalse(evidence.contains("reportedDiagnostic"));
+            assertFalse(evidence.contains("private-body"));
+        }
+        String wrongProtocol = "TOOLCHAIN_FAILURE=isolation:" + phase + "\nTOOLCHAIN_DIAGNOSTIC="
+            + new ObjectMapper().writeValueAsString(original) + "\n";
+        var result = retain(TaskResult.FAILED, 65, wrongProtocol, false);
+        assertEquals(TaskResult.UNKNOWN, result.outcome());
+        assertFalse(DeploymentAgentToolchainFailureEvidence.observation(result.problem()).contains("reportedDiagnostic"));
+    }
+
+    @Test
     void systemCommandFailurePreservesCurrentFixedToolExitAndHashWithoutExecutableEvidence() throws Exception {
         for (String command : List.of("fallocate", "mke2fs", "mount", "systemd-run", "UNCLASSIFIED")) {
             String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "SYSTEM_COMMAND_FAILED",

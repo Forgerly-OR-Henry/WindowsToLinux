@@ -184,7 +184,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
                 'ecosystem': 'RUST', 'version': '1.95.0',
                 'directory': str(self.c.ROOT) + '/versions/rust-' + 'a' * 64}], 'javaHome': '-'},
             'directories': {key: [5, index] for index, key in enumerate(('out', 'work', 'home', 'tmp'), 1)},
-            'loop': '/dev/loop9', 'imageIdentity': [5, 10], 'mountIdentity': [5, 11]}
+            'loop': '/dev/loop9', 'imageIdentity': [5, 10], 'mountIdentity': [5, 11], 'readyIdentity': [5, 12]}
 
     def parse_manifest(self, value):
         fake_pathlib = types.SimpleNamespace(Path=pathlib.PurePosixPath)
@@ -241,6 +241,9 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         bad = copy.deepcopy(good)
         bad['directories']['work'] = [0, 1]
         self.rejected('MANIFEST_DIRECTORY_INODE', lambda: self.parse_manifest(bad))
+        bad = copy.deepcopy(good)
+        bad['readyIdentity'] = [5, True]
+        self.rejected('MANIFEST_INODE', lambda: self.parse_manifest(bad))
 
     def test_every_vendor_probe_is_rejected_at_root_before_process_creation(self):
         with mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.c.subprocess, 'Popen') as popen:
@@ -265,10 +268,8 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         self.assertIn('WorkingDirectory=/', properties)
         bind = next(v for v in properties if v.startswith('BindPaths='))
         self.assertIn('mutable/out:' + manifest['request']['destination'], bind)
-        for prefix in ('ExecStartPre=+', 'ExecStopPost=+'):
-            callback = next(v for v in properties if v.startswith(prefix))
-            self.assertIn('/usr/bin/python3 -I -S -c ', callback)
-            self.assertNotIn('install.sh', callback)
+        self.assertFalse(any(v.startswith(('ExecStartPre=', 'ExecStopPost=')) for v in properties))
+        self.assertTrue(any('ready.json:' + str(self.c.AGENT_ALIAS / 'ready.json') in v for v in properties))
         self.assertEqual('windowstolinux-toolchain-' + OPERATION + '.service', self.c.agent_unit(OPERATION))
         self.assertTrue(any('-/run/dbus' in v and '-/var/opt/windowstolinux/apps' in v for v in properties))
 
@@ -394,8 +395,11 @@ class AgentToolchainIsolationTest(unittest.TestCase):
 
     def test_failed_freeze_overrides_worker_success_without_publishing(self):
         manifest = self.manifest()
-        with mock.patch.object(self.c, 'agent_tool', lambda n: '/usr/bin/' + n), mock.patch.object(self.c, 'agent_write'), mock.patch.object(self.c, 'agent_os', return_value=(0, ('WORKER_OK=' + manifest['programSha256'] + '\n').encode())), mock.patch.object(self.c, 'agent_stopped', side_effect=self.c.PreparationFailure('unknown', 'VOLUME_NOT_FROZEN')), mock.patch.object(self.c, 'agent_promote') as promote:
-            self.rejected('VOLUME_NOT_FROZEN', lambda: self.c.agent_execute(manifest))
+        with self.execution(manifest) as events, mock.patch.object(self.c, 'agent_freeze', side_effect=self.c.PreparationFailure('unknown', 'VOLUME_NOT_FROZEN')), mock.patch.object(self.c, 'agent_promote') as promote:
+            with self.assertRaises(self.c.PreparationFailure) as failure:
+                self.c.agent_execute(manifest)
+            self.assertEqual('AGENT_FREEZE_UNCONFIRMED', failure.exception.detail)
+            self.assertEqual(0, failure.exception.lifecycle_diagnostic['exitCode'])
             promote.assert_not_called()
 
     def test_existing_operation_is_not_reused_or_removed(self):
@@ -442,7 +446,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
                     manifest, 'RUST', '1.95.0', record['source'], 'sha256', expected, 'rust', '-'))
                 probe.assert_not_called()
 
-    def test_setup_only_chowns_four_original_empty_directories_to_positive_nss_identity(self):
+    def test_setup_only_chowns_four_original_empty_directories_to_positive_unit_identity(self):
         manifest = self.manifest()
         identity = {'operation': OPERATION, 'uid': 0, 'gid': 0, 'programSha256': manifest['programSha256']}
         descriptors, changes = {}, []
@@ -454,9 +458,8 @@ class AgentToolchainIsolationTest(unittest.TestCase):
             name = descriptors[fd]
             return types.SimpleNamespace(st_dev=5, st_ino=manifest['directories'][name][1],
                 st_uid=0, st_mode=stat.S_IFDIR | 0o755)
-        nss = types.SimpleNamespace(getpwnam=lambda _: types.SimpleNamespace(pw_uid=1234, pw_gid=1234))
-        with (mock.patch.dict('sys.modules', {'pwd': nss}),
-              mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True),
+        selected = {'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        with (mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True),
               mock.patch.object(self.c, 'agent_manifest', return_value=manifest),
               mock.patch.object(self.c, 'agent_volume'),
               mock.patch.object(self.c.os, 'O_DIRECTORY', 0x10000, create=True),
@@ -466,13 +469,12 @@ class AgentToolchainIsolationTest(unittest.TestCase):
               mock.patch.object(self.c.os, 'listdir', return_value=[]),
               mock.patch.object(self.c.os, 'fchown', lambda fd, uid, gid: changes.append((descriptors[fd], uid, gid)), create=True),
               mock.patch.object(self.c.os, 'fchmod', create=True), mock.patch.object(self.c.os, 'ftruncate'),
-              mock.patch.object(self.c.os, 'write'), mock.patch.object(self.c.os, 'fsync'),
+              mock.patch.object(self.c.os, 'write', side_effect=lambda _, value: len(value)), mock.patch.object(self.c.os, 'fsync'),
               mock.patch.object(self.c.os, 'close')):
-            self.c.agent_setup(OPERATION)
+            self.c.agent_setup(OPERATION, selected)
         self.assertEqual([(name, 1234, 1234) for name in ('out', 'work', 'home', 'tmp')], changes)
-        nss.getpwnam = lambda _: types.SimpleNamespace(pw_uid=0, pw_gid=0)
-        with mock.patch.dict('sys.modules', {'pwd': nss}), mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.c, 'agent_manifest', return_value=manifest), mock.patch.object(self.c, 'agent_volume'), mock.patch.object(self.c.os, 'fchown', create=True) as chown:
-            self.rejected('DYNAMIC_IDENTITY', lambda: self.c.agent_setup(OPERATION))
+        with mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True), mock.patch.object(self.c, 'agent_manifest', return_value=manifest), mock.patch.object(self.c, 'agent_volume'), mock.patch.object(self.c.os, 'fchown', create=True) as chown:
+            self.rejected('DYNAMIC_IDENTITY', lambda: self.c.agent_setup(OPERATION, dict(selected, uid=0)))
             chown.assert_not_called()
 
     def test_install_and_final_probe_all_layouts_execute_only_in_nonroot_worker(self):
@@ -503,7 +505,7 @@ class AgentToolchainIsolationTest(unittest.TestCase):
                 commands.append(command)
                 return version if capture else ''
             identity = {'operation': OPERATION, 'uid': 123, 'gid': 123, 'programSha256': manifest['programSha256']}
-            with self.subTest(ecosystem=ecosystem), mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=Path)), mock.patch.object(self.c, 'AGENT_ALIAS', Path('/run/wtl-agent-toolchain')), mock.patch.object(self.c, 'agent_manifest', return_value=manifest), mock.patch.object(self.c, 'agent_regular', return_value=json.dumps(identity).encode()), mock.patch.object(self.c.os, 'geteuid', return_value=123, create=True), mock.patch.object(self.c.os, 'getuid', return_value=123, create=True), mock.patch.object(self.c.os, 'getgid', return_value=123, create=True), mock.patch.object(self.c.os, 'chdir') as chdir, mock.patch.object(self.c.shutil, 'copytree'), mock.patch.object(self.c.os, 'walk', return_value=[]), mock.patch.object(self.c, 'agent_vendor', vendor), contextlib.redirect_stdout(io.StringIO()):
+            with self.subTest(ecosystem=ecosystem), mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=Path)), mock.patch.object(self.c, 'AGENT_ALIAS', Path('/run/wtl-agent-toolchain')), mock.patch.object(self.c, 'agent_manifest', return_value=manifest), mock.patch.object(self.c, 'agent_wait_ready'), mock.patch.object(self.c, 'agent_regular', return_value=json.dumps(identity).encode()), mock.patch.object(self.c.os, 'geteuid', return_value=123, create=True), mock.patch.object(self.c.os, 'getuid', return_value=123, create=True), mock.patch.object(self.c.os, 'getgid', return_value=123, create=True), mock.patch.object(self.c.os, 'chdir') as chdir, mock.patch.object(self.c.shutil, 'copytree'), mock.patch.object(self.c.os, 'walk', return_value=[]), mock.patch.object(self.c, 'agent_vendor', vendor), contextlib.redirect_stdout(io.StringIO()):
                 self.c.agent_worker(OPERATION)
                 chdir.assert_called_once_with('/run/wtl-agent-toolchain/work')
             self.assertTrue(any(command[0].startswith('/final/' + ecosystem) for command in commands))
@@ -642,6 +644,282 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         verbs = [value[0].rsplit('/', 1)[-1] for value in calls if isinstance(value, list)]
         self.assertEqual(['systemctl', 'mount', 'umount', 'findmnt', 'losetup', 'losetup'], verbs)
         self.assertEqual('unlink:/root/current/volume.ext4', calls[-1])
+
+
+    def unit_output(self, **changes):
+        values = {'Id': self.c.agent_unit(OPERATION), 'LoadState': 'loaded', 'ActiveState': 'active',
+            'User': self.c.agent_user(OPERATION), 'Group': self.c.agent_user(OPERATION), 'DynamicUser': 'yes',
+            'UID': '1234', 'GID': '1234', 'InvocationID': 'e' * 32, 'MainPID': '4567',
+            'ControlGroup': '/system.slice/' + self.c.agent_unit(OPERATION)}
+        values.update(changes)
+        return ''.join(key + '=' + value + '\n' for key, value in values.items()).encode()
+
+    @contextlib.contextmanager
+    def execution(self, manifest, code=0, output=None, error=None):
+        events = []
+        identity = {'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        if output is None:
+            output = ('WORKER_OK=' + manifest['programSha256'] + '\n').encode()
+        def command(args, **kwargs):
+            if args[0].endswith('/systemd-run'):
+                events.append('start')
+                kwargs['on_poll']()
+                kwargs['on_poll']()
+                events.append('worker')
+                if error is not None:
+                    raise error
+                return code, output
+            self.assertEqual('stop', args[1])
+            events.append('stop')
+            return 0, b''
+        with mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+             mock.patch.object(self.c, 'agent_write', side_effect=lambda *_: events.append('intent')), \
+             mock.patch.object(self.c, 'agent_os', side_effect=command), \
+             mock.patch.object(self.c, 'agent_unit_identity', return_value=identity), \
+             mock.patch.object(self.c, 'agent_setup', side_effect=lambda *_: events.append('setup')), \
+             mock.patch.object(self.c, 'agent_publish_ready', side_effect=lambda *_: events.append('ready')), \
+             mock.patch.object(self.c, 'agent_unit_stopped', side_effect=lambda *_: events.append('empty')), \
+             mock.patch.object(self.c, 'agent_freeze', side_effect=lambda *_: events.append('freeze')), \
+             mock.patch.object(self.c, 'agent_stopped', side_effect=lambda *_: events.append('frozen-proof')):
+            yield events
+
+    @contextlib.contextmanager
+    def ready_storage(self, manifest, data=b'', inode=12, links=1, mode=0o444, uid=0):
+        state = {'data': data, 'inode': inode, 'links': links, 'mode': mode, 'uid': uid, 'short': False}
+        locks, actions = [], []
+        def status(_):
+            value = info(mode=stat.S_IFREG | state['mode'], inode=state['inode'], links=state['links'], size=len(state['data']))
+            value.st_uid, value.st_gid = state['uid'], 0
+            return value
+        def writing(_, value):
+            actions.append('write')
+            state['data'] = value[:-1] if state['short'] else value
+            return len(state['data'])
+        fcntl = types.SimpleNamespace(LOCK_SH=1, LOCK_EX=2, LOCK_NB=4,
+            flock=mock.Mock(side_effect=lambda fd, flag: locks.append(flag)))
+        with mock.patch.dict('sys.modules', {'fcntl': fcntl}), \
+             mock.patch.object(self.c.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(self.c.os, 'open', return_value=42), \
+             mock.patch.object(self.c.os, 'fstat', side_effect=status), \
+             mock.patch.object(self.c.os, 'read', side_effect=lambda *_: state['data']), \
+             mock.patch.object(self.c.os, 'write', side_effect=writing), \
+             mock.patch.object(self.c.os, 'fsync', side_effect=lambda *_: actions.append('fsync')), \
+             mock.patch.object(self.c.os, 'close'), \
+             mock.patch.object(self.c.os, 'geteuid', return_value=0, create=True):
+            yield state, locks, actions, fcntl
+
+    def test_poll_hook_runs_without_output_and_preserves_captured_exception_metadata(self):
+        with self.system_process(b'private-output', 70) as (process, _, _):
+            process.poll.side_effect = [None, None, 70, 70]
+            polling = mock.Mock(side_effect=[None, OSError(2, '/private/callback')])
+            with self.assertRaises(OSError) as failed:
+                self.c.agent_os(['/usr/bin/systemd-run'], allow_failure=True, on_poll=polling)
+        self.assertEqual(2, polling.call_count)
+        self.assertEqual({'exitCode': 70, 'outputBytes': 14,
+            'outputSha256': hashlib.sha256(b'private-output').hexdigest()}, failed.exception.run_observation)
+        with self.system_process(b'', 0) as (process, _, _), \
+             mock.patch.object(self.c.selectors, 'DefaultSelector') as selectors:
+            selector = selectors.return_value.__enter__.return_value
+            selector.get_map.side_effect = [{1: True}, {}]
+            selector.select.return_value = []
+            process.poll.side_effect = [None, 0]
+            polling = mock.Mock()
+            with mock.patch.object(self.c.os, 'killpg', create=True):
+                self.assertEqual((0, b''), self.c.agent_os(['/usr/bin/systemd-run'], on_poll=polling))
+            polling.assert_called_once_with()
+
+    def test_unit_identity_requires_current_systemd_identity_and_complete_shape(self):
+        expected = {'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        with mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+             mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output())) as command:
+            self.assertEqual(expected, self.c.agent_unit_identity(self.manifest()))
+            self.assertEqual(self.c.agent_unit(OPERATION), command.call_args.args[0][-1])
+        bad = [{'Id': 'foreign.service'}, {'User': 'root'}, {'Group': 'root'}, {'DynamicUser': 'no'},
+               {'UID': '0'}, {'GID': '-1'}, {'InvocationID': '0' * 32}, {'MainPID': '../1'},
+               {'ControlGroup': '/foreign'}, {'ActiveState': 'failed'}]
+        for values in bad:
+            with self.subTest(values=values), mock.patch.object(self.c, 'agent_tool', lambda n: '/usr/bin/' + n), \
+                 mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output(**values))):
+                self.rejected('UNIT_IDENTITY', lambda: self.c.agent_unit_identity(self.manifest()))
+        for output in (self.unit_output() + b'UID=1234\n', self.unit_output() + b'Unknown=value\n'):
+            with mock.patch.object(self.c, 'agent_tool', lambda n: '/usr/bin/' + n), mock.patch.object(self.c, 'agent_os', return_value=(0, output)):
+                self.rejected('UNIT_IDENTITY', lambda: self.c.agent_unit_identity(self.manifest()))
+        for values in ({'UID': '4294967295'}, {'MainPID': '0'}, {'LoadState': 'not-found', 'ActiveState': 'inactive'}):
+            with mock.patch.object(self.c, 'agent_tool', lambda n: '/usr/bin/' + n), mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output(**values))):
+                self.assertIsNone(self.c.agent_unit_identity(self.manifest()))
+
+    def test_ready_file_locks_single_publication_and_rejects_links_replacement_and_short_write(self):
+        manifest = self.manifest()
+        with self.ready_storage(manifest) as (state, locks, actions, _):
+            self.assertEqual(b'', self.c.agent_ready_file(manifest, alias=True))
+            self.c.agent_ready_file(manifest, b'complete-record')
+            self.assertEqual(b'complete-record', self.c.agent_ready_file(manifest, alias=True))
+            self.assertEqual([5, 6, 5], locks)
+            self.assertEqual(['write', 'fsync'], actions)
+            self.rejected('READY_ALREADY_PUBLISHED', lambda: self.c.agent_ready_file(manifest, b'again'))
+        for invalid in ({'inode': 13}, {'links': 2}, {'mode': 0o644}, {'uid': 1234}):
+            with self.subTest(invalid=invalid), self.ready_storage(manifest, **invalid) as (_, _, actions, _):
+                self.rejected('READY_FILE', lambda: self.c.agent_ready_file(manifest, b'value'))
+                self.assertEqual([], actions)
+        with self.ready_storage(manifest) as (state, _, actions, _):
+            state['short'] = True
+            self.rejected('READY_SHORT_WRITE', lambda: self.c.agent_ready_file(manifest, b'complete'))
+            self.assertNotIn('fsync', actions)
+
+    def test_ready_lock_wait_obeys_deadline_without_reading_or_writing_unlocked(self):
+        with self.ready_storage(self.manifest()) as (_, _, actions, fcntl), \
+             mock.patch.object(self.c, 'remaining', side_effect=self.c.PreparationFailure('timeout', 'DEADLINE_EXHAUSTED')):
+            fcntl.flock.side_effect = BlockingIOError()
+            self.rejected('DEADLINE_EXHAUSTED', lambda: self.c.agent_ready_file(self.manifest(), b'value'))
+            self.assertEqual([], actions)
+
+    def test_ready_gate_requires_exact_source_operation_and_actual_worker_identity(self):
+        manifest = self.manifest()
+        value = {'operation': OPERATION, 'programSha256': manifest['programSha256'],
+            'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        with mock.patch.object(self.c.os, 'getuid', return_value=1234, create=True), \
+             mock.patch.object(self.c.os, 'getgid', return_value=1234, create=True), \
+             mock.patch.object(self.c, 'agent_ready_file', side_effect=[b'', self.c.agent_encode(value)]), \
+             mock.patch.object(self.c.time, 'sleep') as sleep:
+            self.c.agent_wait_ready(manifest)
+            sleep.assert_called_once_with(0.05)
+        invalid = [dict(value, operation='f' * 32), dict(value, programSha256='f' * 64), dict(value, uid=0),
+                   dict(value, uid=True), dict(value, gid=999), dict(value, invocationId='0' * 32), dict(value, extra=True)]
+        for record in invalid:
+            with self.subTest(record=record), mock.patch.object(self.c.os, 'getuid', return_value=1234, create=True), \
+                 mock.patch.object(self.c.os, 'getgid', return_value=1234, create=True), \
+                 mock.patch.object(self.c, 'agent_ready_file', return_value=self.c.agent_encode(record)):
+                with self.assertRaises(self.c.PreparationFailure):
+                    self.c.agent_wait_ready(manifest)
+
+    def test_worker_cannot_run_vendor_before_the_root_gate_or_after_invalid_gate(self):
+        with mock.patch.object(self.c.os, 'geteuid', return_value=1234, create=True), \
+             mock.patch.object(self.c, 'agent_manifest', return_value=self.manifest()), \
+             mock.patch.object(self.c, 'agent_wait_ready', side_effect=self.c.PreparationFailure('unknown', 'READY_BINDING')), \
+             mock.patch.object(self.c, 'agent_regular') as read_identity, \
+             mock.patch.object(self.c, 'agent_vendor') as vendor:
+            self.rejected('READY_BINDING', lambda: self.c.agent_worker(OPERATION))
+            read_identity.assert_not_called()
+            vendor.assert_not_called()
+
+    def test_host_lifecycle_orders_one_setup_gate_stop_empty_freeze_and_proof(self):
+        with self.execution(self.manifest()) as events:
+            self.c.agent_execute(self.manifest())
+        self.assertEqual(['intent', 'start', 'setup', 'ready', 'worker', 'stop', 'empty', 'freeze', 'frozen-proof'], events)
+
+    def test_unit_change_after_setup_prevents_ready_and_keeps_unknown(self):
+        identity = {'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        with mock.patch.object(self.c, 'agent_unit_identity', return_value=dict(identity, invocationId='f' * 32)), \
+             mock.patch.object(self.c, 'agent_ready_file') as write:
+            self.rejected('UNIT_IDENTITY_CHANGED', lambda: self.c.agent_publish_ready(self.manifest(), identity))
+            write.assert_not_called()
+        with self.execution(self.manifest()) as events, \
+             mock.patch.object(self.c, 'agent_publish_ready', side_effect=self.c.PreparationFailure('unknown', 'UNIT_IDENTITY_CHANGED')):
+            self.rejected('AGENT_SETUP_UNCONFIRMED', lambda: self.c.agent_execute(self.manifest()))
+        self.assertIn('empty', events)
+        self.assertNotIn('freeze', events)
+        self.assertNotIn('worker', events)
+
+    def test_stop_failure_preserves_actual_run_exit_and_digest_and_never_freezes(self):
+        private = b'PRIVATE_VENDOR_BODY /private/path'
+        for code in (0, 70):
+            with self.subTest(code=code), self.execution(self.manifest(), code, private) as events, \
+                 mock.patch.object(self.c, 'agent_unit_stopped', side_effect=OSError(2, 'missing')):
+                with self.assertRaises(self.c.PreparationFailure) as failed:
+                    self.c.agent_execute(self.manifest())
+            self.assertEqual('AGENT_STOP_UNCONFIRMED', failed.exception.detail)
+            self.assertEqual({'operation': OPERATION, 'phase': 'AGENT_STOP_UNCONFIRMED', 'command': 'systemd-run',
+                'exitCode': code, 'outputBytes': len(private), 'outputSha256': hashlib.sha256(private).hexdigest()}, failed.exception.lifecycle_diagnostic)
+            self.assertNotIn('freeze', events)
+
+    def test_unknown_execution_and_known_worker_failure_keep_distinct_outcomes(self):
+        error = OSError(2, 'private-body')
+        error.run_observation = {'exitCode': None, 'outputBytes': 5, 'outputSha256': hashlib.sha256(b'prior').hexdigest()}
+        with self.execution(self.manifest(), error=error) as events:
+            with self.assertRaises(self.c.PreparationFailure) as failed:
+                self.c.agent_execute(self.manifest())
+        self.assertEqual('AGENT_EXECUTION_UNCONFIRMED', failed.exception.detail)
+        self.assertIsNone(failed.exception.lifecycle_diagnostic['exitCode'])
+        self.assertEqual('frozen-proof', events[-1])
+        with self.execution(self.manifest(), code=2, output=b'actual failure'):
+            with self.assertRaises(self.c.PreparationFailure) as failed:
+                self.c.agent_execute(self.manifest())
+        self.assertEqual(('installation', 'NONROOT_WORKER_FAILED'), (failed.exception.category, failed.exception.detail))
+
+    def test_lifecycle_diagnostic_is_strict_current_unknown_metadata_without_private_output(self):
+        args = ['prepare', 'RUST', '1.95', '1.95.0', '60', '-', OPERATION, 'private-descriptor']
+        observation = {'exitCode': None, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}
+        for phase in self.c.AGENT_LIFECYCLE_PHASES:
+            error = self.c.agent_lifecycle_failure(self.manifest(), phase, observation)
+            stream = io.StringIO()
+            with mock.patch.object(self.c, 'agent_main', side_effect=error), contextlib.redirect_stdout(stream):
+                self.assertEqual(70, self.c.agent_cli(args))
+            lines = stream.getvalue().splitlines()
+            self.assertEqual('TOOLCHAIN_FAILURE=unknown:' + phase, lines[0])
+            self.assertEqual(error.lifecycle_diagnostic, json.loads(lines[1].removeprefix('TOOLCHAIN_DIAGNOSTIC=')))
+            self.assertNotIn('private', stream.getvalue())
+        error = self.c.agent_lifecycle_failure(self.manifest(), 'AGENT_STOP_UNCONFIRMED', observation)
+        good = dict(error.lifecycle_diagnostic)
+        for field, invalid in (('exitCode', True), ('exitCode', 256), ('outputBytes', 65537), ('outputBytes', -1),
+                ('outputSha256', 'private'), ('command', 'mount'), ('operation', 'f' * 32), ('extra', 'private')):
+            error.lifecycle_diagnostic = dict(good, **{field: invalid})
+            self.assertIsNone(self.c.agent_lifecycle_diagnostic(error, args))
+        error.lifecycle_diagnostic = good
+        error.category = 'isolation'
+        self.assertIsNone(self.c.agent_lifecycle_diagnostic(error, args))
+
+    def test_nonempty_cgroup_never_reaches_host_freeze_or_frozen_receipt(self):
+        class Group(pathlib.PurePosixPath):
+            def exists(self): return True
+            def rglob(self, _): return [self / 'cgroup.procs']
+            def read_text(self): return '1234\n'
+        response = ('LoadState=loaded\nActiveState=inactive\nControlGroup=/system.slice/' + self.c.agent_unit(OPERATION) + '\n').encode()
+        with mock.patch.object(self.c.pathlib, 'Path', Group), \
+             mock.patch.object(self.c, 'agent_tool', lambda n: '/usr/bin/' + n), \
+             mock.patch.object(self.c, 'agent_os', return_value=(0, response)), \
+             mock.patch.object(self.c, 'agent_regular') as receipt:
+            self.rejected('CGROUP_NOT_EMPTY', lambda: self.c.agent_stopped(self.manifest()))
+            receipt.assert_not_called()
+
+    def test_early_run_exit_without_setup_keeps_real_zero_or_nonzero_unknown(self):
+        output = b'private startup failure'
+        for code in (0, 70):
+            def command(args, **kwargs):
+                return (code, output) if args[0].endswith('/systemd-run') else (0, b'')
+            with self.subTest(code=code), self.execution(self.manifest()) as events, \
+                 mock.patch.object(self.c, 'agent_os', side_effect=command):
+                with self.assertRaises(self.c.PreparationFailure) as failed:
+                    self.c.agent_execute(self.manifest())
+            self.assertEqual('AGENT_SETUP_UNCONFIRMED', failed.exception.detail)
+            self.assertEqual(code, failed.exception.lifecycle_diagnostic['exitCode'])
+            self.assertEqual(hashlib.sha256(output).hexdigest(), failed.exception.lifecycle_diagnostic['outputSha256'])
+            self.assertEqual(['intent', 'empty'], events)
+
+    def test_empty_ready_until_deadline_never_reaches_vendor_or_identity_reads(self):
+        with mock.patch.object(self.c.os, 'geteuid', return_value=1234, create=True), \
+             mock.patch.object(self.c, 'agent_manifest', return_value=self.manifest()), \
+             mock.patch.object(self.c, 'agent_ready_file', return_value=b''), \
+             mock.patch.object(self.c, 'remaining', side_effect=[1, self.c.PreparationFailure('timeout', 'DEADLINE_EXHAUSTED')]), \
+             mock.patch.object(self.c.time, 'sleep'), \
+             mock.patch.object(self.c, 'agent_regular') as identity, \
+             mock.patch.object(self.c, 'agent_vendor') as vendor:
+            self.rejected('DEADLINE_EXHAUSTED', lambda: self.c.agent_worker(OPERATION))
+            identity.assert_not_called()
+            vendor.assert_not_called()
+
+    def test_expired_budget_does_not_spawn_and_exit_race_keeps_original_observation(self):
+        with mock.patch.object(self.c, 'remaining', side_effect=self.c.PreparationFailure('timeout', 'DEADLINE_EXHAUSTED')), \
+             mock.patch.object(self.c.subprocess, 'Popen') as spawn:
+            self.rejected('DEADLINE_EXHAUSTED', lambda: self.c.agent_os(['/usr/bin/systemd-run']))
+            spawn.assert_not_called()
+        with self.system_process(b'data', 70) as (process, _, kill), \
+             mock.patch.object(self.c.signal, 'SIGKILL', 9, create=True):
+            process.poll.side_effect = [None, None, None]
+            kill.side_effect = ProcessLookupError()
+            with self.assertRaises(OSError) as failed:
+                self.c.agent_os(['/usr/bin/systemd-run'], on_poll=mock.Mock(side_effect=OSError(2, 'private')))
+            self.assertEqual(2, failed.exception.errno)
+            self.assertEqual({'exitCode': None, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}, failed.exception.run_observation)
 
 
 class AgentToolchainDependenciesTest(unittest.TestCase):
