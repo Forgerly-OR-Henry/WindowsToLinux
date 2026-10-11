@@ -826,6 +826,223 @@ class DeploymentAgentApprovalTest {
         assertEquals(1, f.grants.size());
     }
 
+    @Test
+    void completeOversizedBatchCanBeAutonomouslySplitBeforeExactOriginalCommandGrant() throws Exception {
+        var f = new Frame();
+        String body = "s".repeat(5000), script = "printf exact script\n", stdin = "printf exact stdin\n";
+        String pointer = "/currentCommandEvidence/completeExecutableInput/0";
+        var collected = new StringBuilder();
+        var original = new ArrayList<AiToolCall>();
+        int[] round = {0};
+        f.model = request -> {
+            assertTrue(f.grants.isEmpty());
+            var current = JSON.readTree(request.messages().getLast().text());
+            int maximum = current.path("maxCallsPerBatch").asInt();
+            assertEquals(4, maximum);
+            assertTrue(current.path("submitResultMustBeAlone").asBoolean());
+            int selected = round[0]++;
+            var route = current.path("evidencePages").path(pointer);
+            assertEquals("evidence", route.path("tool").asText());
+            if (selected == 0) {
+                for (int offset = 0; offset < body.length(); offset += 1000)
+                    original.add(call(route.path("tool").asText(), Map.of("pointer", route.at("/arguments/pointer").asText(), "offset", offset, "limit", 1000)));
+                return original;
+            }
+            var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
+            if (selected == 1) {
+                assertEquals(507, current.path("remainingTaskTools").asInt());
+                assertEquals(original.stream().map(AiToolCall::id).toList(), results.stream().map(AiToolResult::callId).toList());
+                assertTrue(current.at("/reviewMemory/deliveredRanges/entries").isEmpty());
+                for (var result : results) {
+                    var feedback = JSON.readTree(result.text());
+                    assertTrue(result.error());
+                    assertEquals("NATIVE_BATCH_LIMIT_REJECTED", feedback.path("error").asText());
+                    assertEquals(maximum, feedback.path("maxCallsPerBatch").asInt());
+                    assertEquals(5, feedback.path("callCount").asInt());
+                    assertFalse(feedback.path("batchApplied").asBoolean());
+                    assertEquals(current.path("reviewBinding"), feedback.path("reviewBinding"));
+                    assertTrue(feedback.path("batchIdentity").asText().matches("[0-9a-f]{64}"));
+                    assertTrue(result.text().length() < 600);
+                }
+                var split = new ArrayList<AiToolCall>();
+                for (int index = 0; index < maximum; index++)
+                    split.add(call(route.path("tool").asText(), Map.of("pointer", pointer, "offset", index * 1000, "limit", 1000)));
+                return split;
+            }
+            if (selected == 2 || selected == 3) {
+                for (var result : results) {
+                    var envelope = JSON.readTree(result.text());
+                    if (!result.error() && envelope.at("/value/offset").asInt(-1) == collected.length()
+                        && envelope.at("/value/sha256").asText().equals(DeploymentAgentInputs.hash(body)))
+                        collected.append(envelope.at("/value/text").asText());
+                }
+                if (collected.length() < body.length())
+                    return List.of(call(route.path("tool").asText(), Map.of("pointer", pointer, "offset", collected.length(), "limit", 1000)));
+                return List.of(call("request", Map.of("part", "script", "offset", 0, "limit", 8000)),
+                    call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+            }
+            assertTrue(results.stream().anyMatch(result -> result.text().contains(script.replace("\n", "\\n"))));
+            assertTrue(results.stream().anyMatch(result -> result.text().contains(stdin.replace("\n", "\\n"))));
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var budget = DeploymentToolBudget.open(512); var request = f.command(script, stdin)) {
+            var scope = f.scope(true, (intent, command, task) -> Map.of("completeExecutableInput", List.of(body)));
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+            var intent = f.intent(request, "deployment.agent.helper.readiness.v1");
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
+            assertEquals(List.of(intent.exactAction()), f.grants);
+            assertEquals(499, DeploymentToolBudget.remaining(), "All five rejected attempts and all eight admitted attempts are debited");
+        }
+        assertEquals(body, collected.toString());
+        assertEquals(5, f.fixture.requests.size());
+    }
+
+    @Test
+    void oversizedMixedVerdictNotesSkillAndReadBatchHasNoPartialEffects() throws Exception {
+        var f = new Frame();
+        Files.write(root.resolve("binary.txt"), new byte[]{(byte) 0xff});
+        f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+        int[] round = {0};
+        f.model = request -> {
+            assertTrue(f.grants.isEmpty());
+            var current = JSON.readTree(request.messages().getLast().text());
+            if (round[0]++ == 0)
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)),
+                    call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(), "notes", "NOT_APPLIED_NOTE")),
+                    call("skill", Map.of("id", current.path("skills").get(0).path("id").asText())),
+                    call("source_read", Map.of("component", "api", "sourceRevision", REVISION, "subject", "binary.txt", "offset", 0, "limit", 10)),
+                    call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
+            var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
+            assertEquals(5, results.size());
+            assertTrue(results.stream().allMatch(AiToolResult::error));
+            assertEquals("", current.at("/reviewMemory/modelNotes/text").asText());
+            assertTrue(current.at("/reviewMemory/deliveredRanges/entries").isEmpty());
+            assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill"));
+            assertFalse(results.stream().anyMatch(result -> result.text().contains("NOT_APPLIED_NOTE") || result.text().contains("printf actual")));
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", f.review(Map.of()).decision().decision());
+        assertEquals(2, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void oversizedAttemptsDebitStandaloneAndExistingSharedBudgetWithoutReplenishing(boolean shared) throws Exception {
+        var f = new Frame();
+        int[] round = {0};
+        f.model = request -> {
+            var current = JSON.readTree(request.messages().getLast().text());
+            assertEquals((shared ? 92 : 80) - round[0] * 5, current.path("remainingTaskTools").asInt());
+            if (shared && round[0]++ == 1) return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            if (!shared) round[0]++;
+            return oversizedEvidenceCalls(5, "{}");
+        };
+        if (shared) {
+            try (var budget = DeploymentToolBudget.open(512)) {
+                assertTrue(DeploymentToolBudget.consume(java.util.stream.IntStream.range(0, 420)
+                    .mapToObj(index -> new AiToolCall("prior_batch_" + index, "read", "{}")).toList()));
+                assertEquals("DENY", f.review(Map.of()).decision().decision());
+                assertEquals(86, DeploymentToolBudget.remaining());
+                assertEquals(512, DeploymentToolBudget.maximum());
+            }
+            assertEquals(2, f.fixture.requests.size());
+        } else {
+            assertThrows(IOException.class, () -> f.review(Map.of()));
+            assertEquals(16, f.fixture.requests.size());
+            assertEquals(80, DeploymentToolBudget.remaining(), "Owned standalone scope is released after exhaustion");
+        }
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CANCEL", "OVERRUN"})
+    void oversizedBatchCannotBypassCancellationOrInsufficientAttemptBudget(String boundary) throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(oversizedEvidenceCalls(5, "{}").toArray(AiToolCall[]::new));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        if (boundary.equals("CANCEL")) f.afterCall = () -> f.cancelled.set(f.fixture.requests.size() == 2);
+        try (var budget = DeploymentToolBudget.open(boundary.equals("CANCEL") ? 8 : 4); var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, failure, boundary.equals("CANCEL") ? "BINDING_SNAPSHOT" : "RESPONSE_CHECK", "IOException");
+            assertEquals(boundary.equals("CANCEL") ? 3 : 0, DeploymentToolBudget.remaining());
+        }
+        assertTrue(f.grants.isEmpty());
+        assertEquals(boundary.equals("CANCEL") ? 2 : 1, f.fixture.requests.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EMPTY", "STOP", "LENGTH", "MISSING_ID", "BAD_ID", "DUPLICATE", "REUSED_ID"})
+    void oversizedFeedbackNeverRepairsIncompleteTruncatedOrInvalidNativeIdentity(String boundary) throws Exception {
+        var f = new Frame();
+        var original = oversizedEvidenceCalls(5, "{}");
+        if (Set.of("EMPTY", "STOP", "LENGTH").contains(boundary))
+            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "fixture",
+                boundary.equals("EMPTY") ? "tool_calls" : boundary.equals("STOP") ? "stop" : "length",
+                new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                boundary.equals("EMPTY") ? List.of() : original, Optional.empty())), Optional.empty()));
+        else if (boundary.equals("REUSED_ID")) {
+            f.fixture.nativeReply(original.toArray(AiToolCall[]::new));
+            f.fixture.nativeReply(original.getFirst());
+        } else f.model = request -> boundary.equals("DUPLICATE") ? List.of(original.getFirst(), original.getFirst())
+            : List.of(new AiToolCall(boundary.equals("MISSING_ID") ? "" : "bad/id", "evidence", "{}"));
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            if (boundary.equals("LENGTH"))
+                assertEquals(TaskResult.FAILED, review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task).outcome());
+            else {
+                var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+                assertFailureDiagnostics(f, failure, "RESPONSE_CHECK",
+                    Set.of("MISSING_ID", "BAD_ID", "DUPLICATE").contains(boundary) ? "IllegalArgumentException" : "IOException");
+            }
+        }
+        assertTrue(f.grants.isEmpty());
+        assertTrue(f.fixture.requests.size() <= (boundary.equals("REUSED_ID") ? 2 : 1));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CHARACTERS", "UTF8", "CONTINUATION", "CALLCOUNT", "VISIBILITY"})
+    void oversizedBatchFeedbackMustRemainCompleteBoundedAndVisible(String boundary) throws Exception {
+        var f = new Frame();
+        int count = boundary.equals("CALLCOUNT") ? 512 : 5;
+        String arguments = boundary.equals("CHARACTERS") ? "x".repeat(9000) : boundary.equals("UTF8") ? "中".repeat(6000) : "{}";
+        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(
+            boundary.equals("VISIBILITY") ? "x".repeat(36000) : "", "fixture", "tool_calls",
+            new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), oversizedEvidenceCalls(count, arguments),
+            boundary.equals("CONTINUATION") ? Optional.of(new gold.debug.windowstolinux.appapi.ai.model.AiContinuation(UUID.randomUUID(), 1024 * 1024)) : Optional.empty())), Optional.empty()));
+        Map<String, ?> facts = boundary.equals("VISIBILITY") ? Map.of("retainedSmallFacts", java.util.Collections.nCopies(40, "z".repeat(500))) : Map.of();
+        try (var budget = DeploymentToolBudget.open(512); var request = f.command("printf actual", "")) {
+            var scope = f.scope(true, (intent, command, task) -> facts);
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, failure, boundary.equals("VISIBILITY") ? "HISTORY_CONTEXT" : "HISTORY_RETAIN",
+                boundary.equals("VISIBILITY") ? "IOException" : "IllegalArgumentException");
+            assertEquals("REVIEW_EXCEPTION", failure.problem().context().get("reviewCode"), "Resource closure keeps the existing safe diagnostic-code whitelist");
+            assertEquals(512 - count, DeploymentToolBudget.remaining());
+        }
+        assertEquals(1, f.fixture.requests.size());
+        assertTrue(f.grants.isEmpty());
+    }
+
+    @Test
+    void mixedVerdictWithinBatchLimitStillFailsBeforeAnyToolEffect() throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)), call("skill", Map.of("id", "approval-discussion")));
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertEquals("VERDICT_BATCH_MIXED", failure.problem().context().get("reviewCode"));
+        }
+        assertTrue(f.grants.isEmpty());
+        assertEquals(1, f.fixture.requests.size());
+    }
+
+    private static List<AiToolCall> oversizedEvidenceCalls(int count, String arguments) {
+        return java.util.stream.IntStream.range(0, count)
+            .mapToObj(index -> new AiToolCall(UUID.randomUUID().toString(), "evidence", arguments)).toList();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"EVIDENCE_READ", "HISTORY_RETAIN", "RESPONSE_CHECK"})
     void nativeReadHistoryAndResponseFailureRetainSafeStageWithoutGrant(String stage) throws Exception {

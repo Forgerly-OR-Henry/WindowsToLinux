@@ -45,6 +45,8 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAg
 public final class DeploymentAgentApproval implements DeploymentCommandReviewModel {
     private static final ObjectMapper JSON = new ObjectMapper().enable(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
 
+    private static final int MAX_CALLS_PER_BATCH = 4;
+
     private static final String POLICY = DeploymentSkillResources.text(DeploymentAgentApproval.class, "approval-agent.md");
 
     public record Binding(String server, String target, String sourceRevision) {
@@ -179,6 +181,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             var history = new DeploymentNativeHistory();
             var definitions = definitions(!sources.isEmpty());
             var seenIds = new HashSet<String>();
+            String pendingBatchFeedback = null;
             int corrections = 0;
             String session = java.util.UUID.randomUUID().toString();
             var skills = new DeploymentAgentSkills(task, DeploymentAgentSkills.Role.APPROVAL);
@@ -186,25 +189,44 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             while (DeploymentToolBudget.remaining() > 0) {
                 selectedTool = "";
                 var currentInput = ((ObjectNode) JSON.valueToTree(initial)).put("remainingTaskTools", DeploymentToolBudget.remaining());
+                currentInput.put("maxCallsPerBatch", MAX_CALLS_PER_BATCH).put("submitResultMustBeAlone", true);
                 currentInput.set("reviewMemory", JSON.valueToTree(memory.projection()));
                 input = JSON.writeValueAsString(currentInput);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                 check(binding, revision, sources, receipts);
                 stage = DeploymentCommandReviewModel.FailureStage.HISTORY_CONTEXT;
                 var messages = history.agentMessages(policy + skills.system(), input);
+                if (pendingBatchFeedback != null && !history.visibleToolResult(pendingBatchFeedback))
+                    throw new DeploymentCommandReviewModel.Failure(stage, "", new IOException("Complete batch feedback is outside current context"));
+                pendingBatchFeedback = null;
                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
                 var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                 check(binding, revision, sources, receipts);
                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
-                if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty()
-                    || response.toolCalls().size() > 4)
+                if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
                     throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_BATCH_INCOMPLETE", new IOException("Incomplete native batch"));
                 if (!DeploymentToolBudget.consume(response.toolCalls().stream().map(call ->
                     new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("approval_" + sha(session + ":" + call.id()), call.name(), call.arguments())).toList()))
                     throw new DeploymentCommandReviewModel.Failure(stage, "", "TASK_TOOL_BUDGET_EXHAUSTED", new IOException("Task tool budget unavailable"));
                 if (response.toolCalls().stream().anyMatch(call -> !seenIds.add(call.id())))
                     throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_CALL_ID_REPEATED", new IOException("Repeated native call identity"));
+                if (response.toolCalls().size() > MAX_CALLS_PER_BATCH) {
+                    String feedback = JSON.writeValueAsString(Map.of("error", "NATIVE_BATCH_LIMIT_REJECTED",
+                        "maxCallsPerBatch", MAX_CALLS_PER_BATCH, "callCount", response.toolCalls().size(), "batchApplied", false,
+                        "submitResultMustBeAlone", true, "reviewBinding", bound,
+                        "batchIdentity", sha(session + ":" + response.toolCalls().stream().map(call -> call.id()).toList()),
+                        "meaning", "No tool in this batch was applied. Attempts consumed the remaining task tool budget. This feedback grants no authority."));
+                    var rejected = response.toolCalls().stream().map(call -> new AiToolResult(call.id(), feedback, true)).toList();
+                    stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
+                    try {
+                        history.retain(input, response, rejected);
+                    } catch (IllegalArgumentException unavailable) {
+                        throw new DeploymentCommandReviewModel.Failure(stage, "", unavailable);
+                    }
+                    pendingBatchFeedback = feedback;
+                    continue;
+                }
                 if (response.toolCalls().stream().anyMatch(call -> call.name().equals("submit_result"))) {
                     stage = DeploymentCommandReviewModel.FailureStage.VERDICT;
                     selectedTool = "submit_result";
