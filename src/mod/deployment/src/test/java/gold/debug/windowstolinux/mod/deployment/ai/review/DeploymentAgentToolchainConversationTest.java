@@ -23,6 +23,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
 import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainInputEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.*;
 import org.junit.jupiter.api.Test;
 
 class DeploymentAgentToolchainConversationTest {
@@ -62,7 +63,7 @@ class DeploymentAgentToolchainConversationTest {
         var review = conversation(context, fixture);
         var ai = new DeploymentAiJson(context, review);
         String prefix = null;
-        for (String phase : List.of("prepare", "dependencies", "resolve")) {
+        for (String phase : List.of("prepare", "dependencies", "resolve", "bind")) {
             boolean dependencies = phase.equals("dependencies");
             fixture.nativeReply(new AiToolCall("deny-" + phase, "submit_result",
                 "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Current enforced boundary is insufficient\"}"));
@@ -79,7 +80,23 @@ class DeploymentAgentToolchainConversationTest {
                 assertEquals(REVISION, current.path("businessRevision").asText());
                 assertEquals("fixture-route", current.at("/reviewSession/configurationRevision").asText());
                 assertTrue(current.path(FIELD).path("inputMatchesRenderer").asBoolean());
-                assertEquals(dependencies ? "NATIVE_BUILD" : "RUST", current.path(FIELD).path("profile").asText());
+                assertEquals(dependencies ? "NATIVE_BUILD" : phase.equals("bind") ? "EXACT_TOOLCHAIN_BINDING" : "RUST",
+                    current.path(FIELD).path("profile").asText());
+                if (phase.equals("bind")) {
+                    var decoded = current.path(FIELD).path("decodedBinding");
+                    assertEquals(DeploymentToolchainBindingCodec.identity(selectedBinding()), decoded.path("bindingSha256").asText());
+                    assertEquals(selectedBinding().catalogRevision(), decoded.path("catalogRevision").asText());
+                    assertEquals(1, decoded.path("selectionCount").asInt());
+                    var selected = decoded.path("selections").get(0);
+                    assertEquals("GO", selected.at("/requirement/ecosystem").asText());
+                    assertEquals("go.mod", selected.at("/requirement/source").asText());
+                    assertEquals("1.24.13", selected.path("version").asText());
+                    assertEquals(selectedBinding().selections().getFirst().directory(), selected.path("directory").asText());
+                    assertEquals("MANAGED", selected.path("origin").asText());
+                    assertEquals(selectedBinding().selections().getFirst().source(), selected.path("source").asText());
+                    assertEquals("b".repeat(64), selected.path("sha256").asText());
+                    assertTrue(current.path(FIELD).path("bindingDigestMeaning").asText().contains("key is not an archive or tree digest"));
+                }
                 assertEquals(intent.semantics().orElseThrow().targets().size(), current.path("resourceTargets").size());
                 assertFalse(current.has("installedHelperPath"));
                 assertFalse(current.path(FIELD).has("approved"));
@@ -95,7 +112,7 @@ class DeploymentAgentToolchainConversationTest {
                 assertTrue(prefix.contains("Every stage still needs a fresh independent verdict"));
             }
         }
-        assertEquals(3, fixture.requests.size(), "Each valid DENY consumes exactly one fresh review");
+        assertEquals(4, fixture.requests.size(), "Each valid DENY consumes exactly one fresh review");
         assertEquals(0, accesses.get());
         assertTrue(fixture.replies.isEmpty());
     }
@@ -135,6 +152,25 @@ class DeploymentAgentToolchainConversationTest {
         assertTrue(fixture.requests.isEmpty(), "Consistency failures stop before any model request");
     }
 
+    @Test
+    void readableBindingMustMatchTheExactCurrentPayloadBeforeAnyReviewRequest() throws Exception {
+        var fixture = new NativeAiFixture();
+        var conversation = conversation(fixture.context, fixture);
+        ObjectNode current;
+        try (var command = command("bind")) {
+            current = JSON.valueToTree(conversation.facts("Current binding",
+                DeploymentCommandEvidence.facts(intent("bind", command), command), "fixture-route", fixture.task));
+        }
+        assertDoesNotThrow(() -> conversation.messages(current.toString(), "fixture-route", fixture.task));
+        for (String field : List.of("version", "directory", "source", "sha256", "origin")) {
+            var changed = current.deepCopy();
+            ((ObjectNode) changed.path(FIELD).path("decodedBinding").path("selections").get(0)).put(field, "changed");
+            assertThrows(IllegalArgumentException.class,
+                () -> conversation.messages(changed.toString(), "fixture-route", fixture.task), field);
+        }
+        assertTrue(fixture.requests.isEmpty(), "Altered decoded evidence never reaches the model");
+    }
+
     private static DeploymentApprovalConversation conversation(ModContext context, NativeAiFixture fixture) {
         return new DeploymentApprovalConversation(context, fixture.task, SERVER, "original-fingerprint", "b".repeat(64), "fixture-route");
     }
@@ -146,11 +182,29 @@ class DeploymentAgentToolchainConversationTest {
     private static CommandRequest command(String phase) {
         var arguments = phase.equals("dependencies") ? List.of("NATIVE_BUILD", OPERATION)
             : phase.equals("resolve") ? List.of("resolve", "RUST", "1.95", "1.95.0", "60", OPERATION)
+            : phase.equals("bind") ? List.of("bind", Base64.getEncoder().encodeToString(
+            DeploymentToolchainBindingCodec.encode(selectedBinding()).getBytes(StandardCharsets.UTF_8)), "60", OPERATION)
             : List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION,
             gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION));
         String source = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies()
             : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller();
         return new CommandRequest(DeploymentAgentToolchainPrograms.command(arguments), source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(75), 65536);
+    }
+
+    private static DeploymentResolvedToolchains selectedBinding() {
+        var requirement = ToolchainRequirement.declared(DeploymentToolchainType.GO, "1.24", "go.mod", ToolchainRequirement.PurposeType.BUILD);
+        String digest = "b".repeat(64);
+        String key;
+        try {
+            key = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(("GO\n1.24.13\n" + digest).getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException unavailable) {
+            throw new AssertionError(unavailable);
+        }
+        return new DeploymentResolvedToolchains(DeploymentToolchainCatalog.defaults().revision(), List.of(
+            new DeploymentResolvedToolchains.Selection(requirement, DeploymentToolchainVersion.parse(DeploymentToolchainType.GO, "1.24.13").orElseThrow(),
+                "/usr/local/lib/windowstolinux/toolchains/versions/go-" + key, DeploymentResolvedToolchains.OriginType.MANAGED,
+                "https://go.dev/dl/go1.24.13.linux-amd64.tar.gz", digest)));
     }
 
     private static ActionIntent intent(boolean dependencies, CommandRequest command) {

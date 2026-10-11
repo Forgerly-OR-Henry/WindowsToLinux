@@ -27,6 +27,7 @@ import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import gold.debug.windowstolinux.appapi.task.result.TaskResult;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
@@ -187,7 +188,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             throw new IllegalArgumentException("Invalid Agent toolchain preparation");
     }
 
-    static void requireBinding(String encoded) {
+    static DeploymentResolvedToolchains requireBinding(String encoded) {
         byte[] bytes = null;
         try {
             if (encoded == null || encoded.length() > 87384)
@@ -200,6 +201,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
                 || !Base64.getEncoder().encodeToString(bytes).equals(encoded)
                 || !DeploymentToolchainBindingCodec.encode(binding).equals(text))
                 throw new IllegalArgumentException("Noncanonical Agent binding");
+            return binding;
         } catch (java.nio.charset.CharacterCodingException malformed) {
             throw new IllegalArgumentException("Invalid Agent binding encoding", malformed);
         } finally {

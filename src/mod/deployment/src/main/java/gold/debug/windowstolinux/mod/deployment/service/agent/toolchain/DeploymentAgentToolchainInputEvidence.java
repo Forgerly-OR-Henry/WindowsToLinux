@@ -18,6 +18,8 @@ import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
 
 /** Proves current bundled input consistency, without claiming safety, installation or permission. / 证明当前随产品输入的一致性，不宣称安全、安装成功或许可。 */
@@ -34,7 +36,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         "agent_regular", "agent_tool", "agent_os", "agent_require_space", "agent_create", "agent_release_source", "agent_sandbox_properties", "agent_setup",
         "agent_unit_identity", "agent_ready_file", "agent_publish_ready", "agent_wait_ready", "agent_unit_stopped",
         "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "agent_identity_reject", "agent_exception_facts", "agent_lifecycle_cause", "agent_valid_lifecycle_cause", "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
-        "agent_detach", "agent_installation_selection", "agent_record", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
+        "agent_detach", "agent_installation_key", "agent_installation_selection", "agent_record", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 
     private static final List<String> DEPENDENCY_LOCATIONS = List.of("dependency_protected", "dependency_bytes", "dependency_profile",
         "dependency_registered", "dependency_tool", "dependency_run", "dependency_packages", "dependency_url", "dependency_key",
@@ -85,6 +87,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         String profile;
         Set<ActionTarget> targets;
         Map<String, String> resolvedRelease = Map.of();
+        DeploymentResolvedToolchains decodedBinding = null;
         if (phase.equals("dependencies")) {
             if (arguments.size() != 2)
                 throw new IllegalArgumentException("Dependency frame changed");
@@ -111,7 +114,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         } else {
             if (arguments.size() != 4 || !arguments.get(0).equals("bind"))
                 throw new IllegalArgumentException("Binding frame changed");
-            DeploymentAgentToolchainCommands.requireBinding(arguments.get(1));
+            decodedBinding = DeploymentAgentToolchainCommands.requireBinding(arguments.get(1));
             seconds(arguments.get(2), 180);
             profile = "EXACT_TOOLCHAIN_BINDING";
             identity = identity(arguments.get(3));
@@ -133,6 +136,10 @@ public final class DeploymentAgentToolchainInputEvidence {
             facts.put("sourceKind", "COMPLETE_BUNDLED_INLINE_PYTHON");
             facts.put("phase", phase);
             facts.put("profile", profile);
+            if (decodedBinding != null) {
+                facts.put("decodedBinding", bindingFacts(decodedBinding));
+                facts.put("bindingDigestMeaning", "Decoded from this exact canonical bind argv. MANAGED selection sha256 is the downloaded archive SHA-256; the directory key hashes ecosystem, version, official digest and any fixed build profile suffix in agent_installation_key. The key is not an archive or tree digest. agent_record checks the canonical directory and compares archive SHA-256 to official_digest only when official_algorithm is sha256. SYSTEM selection identity follows agent_record's protected host-file checks. These are declared input and current implementation facts, not observed installation or permission.");
+            }
             if (!resolvedRelease.isEmpty()) {
                 facts.put("resolvedRelease", resolvedRelease);
                 facts.put("releaseBindingMeaning", "Current successful canonical resolver receipt is bound into this exact preparation argv; download must match this fixed official digest. No new metadata lookup or silent substitution is permitted. This is asset consistency evidence, not signature or safety proof.");
@@ -173,6 +180,21 @@ public final class DeploymentAgentToolchainInputEvidence {
 
     private static List<Map<String, Object>> sourceLocations(String body, List<String> required) {
         return sourceLocations(body, required, "/completeExecutableInput");
+    }
+
+    private static Map<String, Object> bindingFacts(DeploymentResolvedToolchains binding) {
+        var selections = binding.selections().stream().map(selection -> {
+            var requirement = selection.requirement();
+            return Map.<String, Object>of("requirement", Map.of(
+                    "ecosystem", requirement.ecosystem().name(), "purpose", requirement.purpose().name(),
+                    "declaration", requirement.declaration(), "source", requirement.source(),
+                    "constraint", requirement.constraint().name(),
+                    "version", requirement.version().map(version -> version.text()).orElse("-")),
+                "version", selection.version().text(), "directory", selection.directory(), "origin", selection.origin().name(),
+                "source", selection.source(), "sha256", selection.sha256());
+        }).toList();
+        return Map.of("catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
+            "selectionCount", selections.size(), "selections", selections);
     }
 
     /** Function navigation in the complete current dependency source, including a canonical installer literal. */

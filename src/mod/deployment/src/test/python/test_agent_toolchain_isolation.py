@@ -462,6 +462,63 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         args = ['RUST', '1.95', '1.95.0', '60', '-', OPERATION, 'fixture-release']
         return root, directory, record, release, args
 
+    @contextlib.contextmanager
+    def installation_record_io(self, record):
+        with mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)), \
+             mock.patch.object(self.c, 'owned_directory'), \
+             mock.patch.object(self.c, 'agent_regular', return_value=self.c.agent_encode(record)):
+            yield pathlib.PurePosixPath(record['directory'])
+
+    def test_managed_record_accepts_matching_sha256_and_distinct_archive_sha256_for_sha512(self):
+        _, _, original, _, _ = self.installation()
+        for algorithm, official, archive in (('sha256', 'a' * 64, 'a' * 64),
+                ('sha512', 'b' * 128, 'c' * 64)):
+            record = dict(original, official_algorithm=algorithm, official_digest=official, sha256=archive)
+            record['directory'] = str(self.c.ROOT / 'versions' / ('rust-' + self.c.agent_installation_key(
+                record['ecosystem'], record['version'], official)))
+            with self.subTest(algorithm=algorithm), self.installation_record_io(record) as directory:
+                self.assertEqual(record, self.c.agent_record(directory))
+
+    def inconsistent_managed_records(self):
+        _, _, record, _, _ = self.installation()
+        wrong_directory = str(self.c.ROOT / 'versions' / ('rust-' + '0' * 64))
+        return ((dict(record, directory=wrong_directory), 'MANAGED_DIRECTORY'),
+            (dict(record, official_digest='b' * 64), 'MANAGED_DIRECTORY'),
+            (dict(record, sha256='c' * 64), 'INSTALLATION_DIGEST'))
+
+    def test_managed_record_rejects_directory_key_changed_official_digest_and_archive_digest(self):
+        for record, reason in self.inconsistent_managed_records():
+            with self.subTest(reason=reason, directory=record['directory']), \
+                 self.installation_record_io(record) as directory:
+                self.rejected(reason, lambda: self.c.agent_record(directory))
+
+    def test_system_record_retains_original_file_digest_and_source_validation(self):
+        _, _, original, _, _ = self.installation()
+        record = {key: value for key, value in original.items() if key not in ('official_algorithm', 'official_digest')}
+        record.update(origin='SYSTEM', source='system:/usr/bin/rustc', system_files=[
+            {'name': 'rustc', 'path': '/usr/bin/rustc', 'sha256': 'd' * 64}])
+        with self.installation_record_io(record) as directory, \
+             mock.patch.object(pathlib.PurePosixPath, 'is_symlink', return_value=False, create=True), \
+             mock.patch.object(self.c, 'agent_file_sha', return_value='d' * 64):
+            self.assertEqual(record, self.c.agent_record(directory))
+        with self.installation_record_io(record) as directory, \
+             mock.patch.object(pathlib.PurePosixPath, 'is_symlink', return_value=False, create=True), \
+             mock.patch.object(self.c, 'agent_file_sha', return_value='e' * 64):
+            self.rejected('SYSTEM_FILE_CHANGED', lambda: self.c.agent_record(directory))
+
+    def test_bind_rejects_inconsistent_managed_record_before_create_or_probe(self):
+        for record, reason in self.inconsistent_managed_records():
+            fields = ['RUST', '1.95', '-', '-', '-', '-', record['version'], record['directory'], record['origin'],
+                base64.b64encode(record['source'].encode()).decode(), record['sha256']]
+            payload = ('WTL-TOOLS-1\tfixture\n' + '\t'.join(fields) + '\n').encode()
+            args = [base64.b64encode(payload).decode(), '60', OPERATION]
+            with self.subTest(reason=reason), self.installation_record_io(record), \
+                 mock.patch.object(self.c, 'agent_create') as create, \
+                 mock.patch.object(self.c, 'agent_probe_records') as probe:
+                self.rejected(reason, lambda: self.c.agent_bind(args))
+                create.assert_not_called()
+                probe.assert_not_called()
+
     def test_missing_installation_marker_is_unknown_before_allocation_and_leaves_old_state(self):
         _, _, record, release, args = self.installation()
         with tempfile.TemporaryDirectory() as temporary:
