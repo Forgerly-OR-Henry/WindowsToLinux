@@ -19,15 +19,15 @@ final class SshCommandFrame implements AutoCloseable {
 
     /** Fixed Bash bootstrap; only a small descriptor path becomes a script argument. / 固定 Bash 引导；只有短描述符路径作为脚本参数。 */
     private static final String BOOTSTRAP = """
-        IFS= read -r length || exit 125
+        IFS= builtin read -r length || exit 125
         case "$length" in ''|*[!0-9]*) exit 125;; esac
         [ "$length" -le 16777216 ] || exit 125
-        IFS= read -r -N "$length" script || exit 125
-        exec /bin/bash --noprofile --norc /dev/fd/3 3< <(builtin printf '%s' "$script")
+        IFS= builtin read -r -N "$length" script || exit 125
+        exec /bin/bash --noprofile --norc -p /dev/fd/3 3< <(builtin printf '%s' "$script")
         """;
 
     /** Constant SSH exec request, containing no author script or secret input. / 不含作者脚本或秘密输入的固定 SSH exec 请求。 */
-    static final String COMMAND = "exec /usr/bin/env BASH_ENV=/dev/null ENV=/dev/null LC_ALL=C /bin/bash --noprofile --norc -c '"
+    static final String COMMAND = "exec /usr/bin/env BASH_ENV=/dev/null ENV=/dev/null LC_ALL=C /bin/bash --noprofile --norc -p -c '"
         + BOOTSTRAP.replace("'", "'\"'\"'") + "'";
 
     /** Owned UTF-8 script bytes, wiped after actual sender termination. / 发送线程实际终止后清零的所属 UTF-8 脚本字节。 */

@@ -70,7 +70,7 @@ public final class DeploymentAgentHostProbe {
         return """
             exec /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C \\
               HOME=/dev/null XDG_CONFIG_HOME=/dev/null XDG_CACHE_HOME=/dev/null XDG_DATA_HOME=/dev/null \\
-              /bin/bash --noprofile --norc -s <<'WTL_AGENT_HOST_OBSERVATION'
+              /bin/bash --noprofile --norc -p -s <<'WTL_AGENT_HOST_OBSERVATION'
             cd -- /
             """ + DeploymentPlatformCapabilityProbe.probeGuards() + "probe_parents / || exit 64\n" + body
             + "WTL_AGENT_HOST_OBSERVATION\n";
