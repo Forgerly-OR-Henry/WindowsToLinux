@@ -14,6 +14,11 @@ public interface DeploymentCurrentCommandEvidence {
 
     Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext task) throws ApiException;
 
+    /** Fixed product-owned instructions; never derived from model input or observations, and never execution permission. */
+    default String reviewInstructions() throws ApiException {
+        return "";
+    }
+
     default void reviewed(ActionIntent intent, CommandRequest request, TaskContext task,
                           DeploymentReviewDecision decision) throws ApiException {
     }

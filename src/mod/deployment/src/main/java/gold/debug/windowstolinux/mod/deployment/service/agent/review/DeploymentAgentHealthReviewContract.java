@@ -1,0 +1,40 @@
+package gold.debug.windowstolinux.mod.deployment.service.agent.review;
+
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+
+/** Fixed Agent health implementation semantics; never a command permission or current remote observation. */
+public final class DeploymentAgentHealthReviewContract {
+    public static final String REVISION = "agent-health-review.v1";
+
+    public static final int HELPER_PROTOCOL = 16;
+
+    public static final String HELPER_SHA256 = "90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d";
+
+    private static final String TEXT = """
+        Trusted Agent health implementation contract agent-health-review.v1, helper protocol 16.
+        Independently pinned helper /usr/local/lib/windowstolinux/managed-helper SHA256 90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d.
+        This fixed SYSTEM contract applies only to the literal application-health entrypoint of that checked helper. It does not define or authorize other verbs. The complete current integrity-guarded command, ordered literal arguments, resourceTargets, dynamic policy/programs and current task/target bindings still require independent review. Hashes, operation labels, status receipts and this contract never grant command permission.
+        Exact interface: managed-helper application-health APPLICATION_ID OWNERSHIP_MANIFEST_SHA256 CANONICAL_HEALTH_PAYLOAD. There are exactly three positional arguments after the verb; the executable path and verb are not arguments. Argument 1 is the managed application id, validated by require_app. Argument 2 is the lowercase 64-hex ownership manifest digest, not an application/deployment id or resource target path. Argument 3 is the complete canonical Base64 NUL-framed health-v1 payload, not an optional argument, resource id or shell program. application_health rejects any argument count other than 3. Its parser checks canonical re-encoding, health-v1 version, typed fields and absence of trailing fields; it does not evaluate this payload as shell code.
+        Managed identities derive separately from the application: app_root is /opt/windowstolinux/apps/APPLICATION_ID; CURRENT must resolve within that application's releases directory to a digest-named root-owned release, whose root-owned .windowstolinux-owner equals argument 2. The resource target deployment-release identifies the managed app root, separate from all three positional arguments. Native load validates CURRENT parameters and the derived windowstolinux-APPLICATION_ID.service, /etc/systemd/system/windowstolinux-APPLICATION_ID.service, expected unit bytes and absence of foreign drop-ins. Container load uses its own checked CURRENT/container binding. These guards run at execution; an earlier original-status receipt is not proof that remote state remains unchanged or that the exact expected release is loaded now.
+        Health is not strictly read-only. application_health sets a local application_validation=1, calls application_admit_run(argument 1), application_load_current(arguments 1 and 2), application_assert_inputs(argument 1), parse_application_health_payload(argument 3), then application_health_loaded(argument 1), in that order. Admission uses only /var/lib/windowstolinux/application-locks/APPLICATION_ID: guarded install -d creates or sets root:root mode 700; shell > redirections open/create/truncate its admission and run lock files; flock takes nonblocking exclusive admission and run locks. The admission lock is released after the orphan check while the run lock remains held by the invocation. The validation flag skips only this application's maintenance-marker existence rejection, not either lock or the orphan checks. MAINTENANCE is this application's own persistent marker, not systemd state; another component's marker does not redirect this application's lock, CURRENT, unit or health payload. Protocol-accepted none means marker absent, not a foreign-owner mismatch, authorization, health success or maintenance completion.
+        application_assert_no_orphan examines this application's root-owned job record. A native windowstolinux-job-*.service must be not-found, or loaded with MainPID=0 and ActiveState inactive/failed, and any remaining job cgroup must contain no processes. A recorded docker/podman windowstolinux-job-* container must inspect as State.Running=false before removal by that recorded engine. Only after those checks can the old job record be removed. Unknown/unverified or active jobs reject. These bounded orphan-removal and lock-file effects still require review under the selected scope; they are not effects authorized by a receipt or this contract.
+        Parser/branch order matters: parse_application_health overwrites application_health_kind from the current third argument. If the loaded execution-time application_mode is ON_DEMAND, the payload parser accepts only COMMAND whose entry and exact argv match the loaded installation verification; every non-COMMAND kind rejects before application_health_loaded. Do not assume the mode observed earlier is unchanged. health_loaded enters application verification only for application_mode=ON_DEMAND OR application_health_kind=COMMAND. Consequently a canonical HTTP payload cannot reach that application verification path even if mode changes to ON_DEMAND: it rejects first. The custom application probe is reachable only inside the UDP case with application_health_custom=1; a stale custom flag cannot make HTTP enter that UDP case.
+        A surviving HTTP branch obtains process identity, derives the loopback port, checks listener ownership through application_udp_owned, curls the literal loopback URL/status and rechecks process identity. TCP/PROCESS and non-custom UDP use their corresponding typed checks. Native listener ownership checks same-port listener PIDs against the selected unit's ControlGroup or descendants; external endpoint checks also classify owned listener addresses. This does not bind the particular HTTP response socket to the owned PID, prove that HTTP response came from that PID, or prove exact release contents loaded. Native identity functions use the optional application_health_unit override when set; ordinary application_health does not assign it, while restore paths can. Container listeners use checked container ports/network namespace rather than a native cgroup equivalence.
+        COMMAND, admitted ON_DEMAND COMMAND and custom UDP can execute application code through native/container verification/probe helpers. The complete original dynamic entry, argv, expected output, program and its reachable effects must still be reviewed with the current request; this contract does not trust those programs or present a complete execution dependency closure. HTTP excludes only application verification/custom-probe programs, not OS tools, admission writes, input checks or verified orphan cleanup. Missing dynamic executable evidence or enforced boundaries still requires DENY.
+        Only a fresh independent APP verdict may lead to the original host's single-use grant for the exact unchanged action. Original proposal/source/artifact/configuration, task/server/profile/route/helper identities and current request must remain bound after APP, after host authorization and immediately before actual send. No grant is asserted obtained by this contract; valid DENY is final for this request, and historical approvals/receipts cannot authorize another request.
+        """;
+
+    private DeploymentAgentHealthReviewContract() {
+    }
+
+    public static String text() {
+        requireIdentity(DeploymentManagedHelperBundle.PROTOCOL_VERSION, DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        DeploymentManagedHelperBundle.renderScript();
+        return TEXT;
+    }
+
+    static void requireIdentity(int protocol, String helperSha256) {
+        if (protocol != HELPER_PROTOCOL || !HELPER_SHA256.equals(helperSha256))
+            throw new IllegalArgumentException("Agent health review contract identity changed");
+    }
+}

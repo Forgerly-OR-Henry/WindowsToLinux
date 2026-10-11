@@ -30,7 +30,11 @@ import gold.debug.windowstolinux.appapi.task.run.*;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
+import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.db.execution.*;
 import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal;
 import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
@@ -65,6 +69,75 @@ class DeploymentAgentHealthEvidenceTest {
     private static final String RELEASE = "e".repeat(64);
 
     private static final String DENIAL = "Controlled original health target denial";
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HTTP", "COMMAND"})
+    void trustedHealthContractIsFixedSystemTextOnceAndNotRepeatedAsUserSource(String kind) throws Exception {
+        try (var frame = new Frame(kind)) {
+            frame.maintenanceMarkers.put("frontend", "deployment-" + frame.release("frontend"));
+            var evidence = frame.evidence();
+            String contract = DeploymentAgentHealthReviewContract.text();
+            assertEquals(contract, evidence.reviewInstructions());
+            assertEquals(TaskResult.SUCCEEDED, frame.verify(evidence).outcome());
+            assertEquals(contract, evidence.reviewInstructions());
+            assertEquals(9, frame.aiRequests.size());
+            for (var request : frame.aiRequests) {
+                var systems = request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM).toList();
+                assertEquals(1, systems.size());
+                String system = systems.getFirst().text();
+                assertTrue(system.contains(contract));
+                assertEquals(system.indexOf(contract), system.lastIndexOf(contract));
+                var users = request.messages().stream().filter(message -> message.role() == AiRole.USER).toList();
+                assertEquals(1, users.size());
+                String user = users.getFirst().text();
+                assertFalse(user.contains(contract));
+                assertFalse(user.contains("helperSourceEvidence"));
+                assertFalse(user.contains("application_health() {"));
+                var current = JSON.readTree(user).path("currentCommandEvidence");
+                assertTrue(current.path("currentWorkflow").asText().contains("no approval, host grant or health success is asserted obtained"));
+                assertFalse(contract.contains(frame.task.id().toString()));
+                assertFalse(contract.contains(frame.part("backend").unit().ownershipManifestSha256()));
+                if (current.path("schema").asText().equals("agent-current-health-evidence.v1")) {
+                    assertEquals(DeploymentAgentHealthReviewContract.REVISION, current.at("/healthReviewContract/revision").asText());
+                    assertEquals(DeploymentAgentInputs.hash(contract), current.at("/healthReviewContract/textSha256").asText());
+                    if (current.at("/unitBinding/component").asText().equals("backend"))
+                        assertEquals(kind, current.at("/typedHealthPolicy/kind").asText());
+                    assertEquals(3, current.at("/argumentBinding/argumentCount").asInt());
+                } else assertFalse(current.has("healthReviewContract"));
+            }
+            assertEquals(2, frame.statusQueries);
+            assertEquals(3, frame.healthDispatches);
+            for (var actual : frame.healthActions) assertEquals(actual.expectedAction(), actual.actualAction());
+            frame.changeBinding("CURRENT_SOURCE");
+            assertThrows(ApiException.class, evidence::reviewInstructions);
+            assertEquals(9, frame.aiRequests.size());
+        }
+    }
+
+    @Test
+    void persistentApprovalConversationCannotDowngradeTrustedHealthInstructionsToUserFacts() throws Exception {
+        try (var frame = new Frame(); var request = frame.queryRequest("none")) {
+            var conversation = new DeploymentApprovalConversation(frame.context, frame.task, frame.server,
+                "controlled-fingerprint", SOURCE, REVISION);
+            var scope = new DeploymentCommandReviewScope(frame.context, frame.context.interaction(), frame.task,
+                "FULL_CONTROL", true, () -> REVISION, () -> conversation);
+            var evidence = new DeploymentAgentHealthEvidence(scope, frame.remote, frame.server, frame.task,
+                REVISION, frame.proposal, frame.candidates, frame.journal);
+            assertEquals(DeploymentAgentHealthReviewContract.text(), evidence.reviewInstructions());
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            var refusal = assertThrows(ApiException.class, () -> review.approveCommand(frame.queryIntent(request), request, frame.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", refusal.problem().eventCode());
+            assertTrue(refusal.getCause().getMessage().contains("SYSTEM delivery"));
+            assertEquals(0, frame.aiRequests.size());
+            assertEquals(0, frame.reviewFacts.size());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.statusQueries);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.runtimeInspections);
+            assertEquals(0, frame.runtimeObservations);
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
 
     @Test
     void originalGraphQueriesSupplyCompleteCurrentFactsWithoutChangingHealthRequestsOrSettlingDelivery() throws Exception {
@@ -261,10 +334,12 @@ class DeploymentAgentHealthEvidenceTest {
                 assertTrue(query.path("maintenanceMeaning").asText().contains("not systemd state"));
                 assertTrue(query.path("maintenanceMeaning").asText().contains("does not establish that maintenance ended"));
             }
-            assertEquals("agent-assembled-helper-source-evidence.v1", current.at("/helperSourceEvidence/schema").asText());
-            assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, current.at("/helperSourceEvidence/helperSha256").asText());
-            assertTrue(current.at("/helperSourceEvidence/sideEffects").asText().contains("not strictly read-only"));
-            assertTrue(current.at("/helperSourceEvidence/listenerLimits").asText().contains("does not bind the particular HTTP"));
+            assertFalse(current.has("helperSourceEvidence"));
+            assertEquals(DeploymentAgentHealthReviewContract.REVISION, current.at("/healthReviewContract/revision").asText());
+            assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, current.at("/healthReviewContract/helperSha256").asText());
+            assertEquals(DeploymentAgentInputs.hash(DeploymentAgentHealthReviewContract.text()), current.at("/healthReviewContract/textSha256").asText());
+            assertTrue(current.path("enforcedHealthBoundary").asText().contains("fixed SYSTEM health contract"));
+            assertTrue(current.path("enforcedHealthBoundary").asText().contains("does not bind that particular response socket"));
             var executionPath = current.path("selectedHealthExecutionPath");
             assertEquals("backend", executionPath.path("component").asText());
             assertEquals(backend.id(), executionPath.path("applicationId").asText());
@@ -292,11 +367,12 @@ class DeploymentAgentHealthEvidenceTest {
             Object pathEvidence = hashedFacts.remove("selectedHealthExecutionPath");
             assertNotEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
             hashedFacts.put("selectedHealthExecutionPath", pathEvidence);
-            hashedFacts.remove("helperSourceEvidence");
+            hashedFacts.remove("healthReviewContract");
             assertNotEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
             for (var review : frame.reviewFacts) {
                 String operation = review.path("operation").asText();
-                assertEquals(operation.equals("deployment.publication.health.v1"), review.path("currentCommandEvidence").has("helperSourceEvidence"));
+                assertFalse(review.path("currentCommandEvidence").has("helperSourceEvidence"));
+                assertEquals(operation.equals("deployment.publication.health.v1"), review.path("currentCommandEvidence").has("healthReviewContract"));
                 assertEquals(operation.equals("deployment.publication.health.v1"), review.path("currentCommandEvidence").has("selectedHealthExecutionPath"));
             }
             for (var actual : frame.healthActions) assertEquals(actual.expectedAction(), actual.actualAction());
@@ -784,6 +860,30 @@ class DeploymentAgentHealthEvidenceTest {
         }
     }
 
+    @Test
+    void emptyEvidenceHookKeepsOriginalSystemPolicyBytesAndHostGrantOrder() throws Exception {
+        try (var frame = new Frame(); var request = frame.healthRequest("none")) {
+            var scope = new DeploymentCommandReviewScope(frame.context, frame.context.interaction(), frame.task,
+                "FULL_CONTROL", true, () -> REVISION);
+            frame.onHealthHost = () -> assertEquals(1, frame.aiRequests.size(), "The host still follows the independent verdict");
+            var result = ((DeploymentCommandReview) scope.interaction()).approveCommand(frame.healthIntent(request, "none"), request, frame.task);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertTrue(result.value().isPresent());
+            assertEquals(1, frame.hostAuthorizations);
+            assertEquals(0, frame.healthDispatches);
+            assertFalse(frame.reviewFacts.getFirst().has("currentCommandEvidence"));
+            assertEquals(frame.healthIntent(request, "none").exactAction(), frame.reviewFacts.getFirst().path("exactAction").asText());
+            String actualSystem = frame.aiRequests.getFirst().messages().getFirst().text();
+            new DeploymentAiJson(frame.context).askCommand(
+                DeploymentReviewDecision.INSTRUCTION + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md"),
+                Map.of("operation", "deployment.publication.health.v1"), REVISION, frame.task, ignored -> false);
+            assertEquals(actualSystem, frame.aiRequests.getLast().messages().getFirst().text(),
+                "The empty hook must keep the original shared command-review policy byte for byte");
+            assertFalse(actualSystem.contains(DeploymentAgentHealthReviewContract.text()));
+            assertEquals(1, frame.hostAuthorizations);
+        }
+    }
+
     private record ActionCheck(String expectedAction, String actualAction) {
     }
 
@@ -818,6 +918,8 @@ class DeploymentAgentHealthEvidenceTest {
         private final DeploymentAgentActionLog journal;
 
         private final List<JsonNode> reviewFacts = new ArrayList<>();
+
+        private final List<AiRequest> aiRequests = new ArrayList<>();
 
         private final List<String> statusActions = new ArrayList<>();
 
@@ -928,6 +1030,7 @@ class DeploymentAgentHealthEvidenceTest {
                 if (name.equals("configurationRevision")) return route;
                 assertEquals("call", name);
                 var request = (AiRequest) args[0];
+                aiRequests.add(request);
                 assertEquals(Optional.of("submit_result"), request.requiredToolName());
                 var facts = JSON.readTree(request.messages().getLast().text());
                 reviewFacts.add(facts);

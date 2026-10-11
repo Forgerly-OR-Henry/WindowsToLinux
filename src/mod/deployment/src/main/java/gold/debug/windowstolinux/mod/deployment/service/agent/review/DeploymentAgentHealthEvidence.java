@@ -135,6 +135,13 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     }
 
     @Override
+    public String reviewInstructions() throws ApiException {
+        if (stopped) throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_REVIEW_STOPPED", null);
+        requireBinding();
+        return DeploymentAgentHealthReviewContract.text();
+    }
+
+    @Override
     public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
         String operation = operation(intent);
         if (!covered(operation, request)) return Map.of();
@@ -199,12 +206,16 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             facts.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
             facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
             if (health != null) {
-                facts.put("helperSourceEvidence", DeploymentAgentHelperSourceEvidence.facts());
+                facts.put("healthReviewContract", Map.of("revision", DeploymentAgentHealthReviewContract.REVISION,
+                    "textSha256", DeploymentAgentInputs.hash(DeploymentAgentHealthReviewContract.text()),
+                    "helperSha256", DeploymentAgentHealthReviewContract.HELPER_SHA256,
+                    "helperProtocol", DeploymentAgentHealthReviewContract.HELPER_PROTOCOL,
+                    "meaning", "Reference to the independently pinned fixed SYSTEM implementation contract; not current remote state, approval or host permission"));
                 facts.put("selectedHealthExecutionPath", healthExecutionPath(intent, health));
                 facts.put("healthMaintenanceScope", Map.of("applicationId", selected.part().unit().id(),
                     "markerPathExpression", maintenanceMarkerPath(selected),
                     "meaning", "This canonical health entry admits only this application's run. Its local validation flag skips only its own marker-existence rejection while keeping its own admission/run locks and orphan checks. Other components' markers are separate observations, not this application's systemd state or permission; no maintenance completion is inferred."));
-                facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses this exact health-v1 payload before health_loaded. selectedHealthExecutionPath explains which application verification/custom-probe branches this payload can reach; descriptions of other kinds in the attached source are not selected paths. HTTP curls the loopback URL and rechecks process identity but does not bind that particular response socket to the owned PID or prove the exact release loaded. Admission can still create lock directories/files or remove a verified inactive old job/container before parsing. These effects require review and are not authorized by this evidence.");
+                facts.put("enforcedHealthBoundary", "The independently pinned fixed SYSTEM health contract describes application-health loading this application's CURRENT under its managed release root, checking its ownership manifest and native unit/container binding, then parsing this exact health-v1 payload before health_loaded. selectedHealthExecutionPath explains which application verification/custom-probe branches this payload can reach; other kinds described by the fixed contract are not selected paths. HTTP curls the loopback URL and rechecks process identity but does not bind that particular response socket to the owned PID or prove the exact release loaded. Admission can still create lock directories, create/truncate lock files or remove a verified inactive old job/container before parsing. These effects require review and are not authorized by this evidence.");
             } else
                 facts.put("enforcedRuntimeBoundary", "The pinned inspect-runtime and native observe-deployment implementations validate the application id and ownership digest, resolve CURRENT strictly inside this application's managed releases directory and check CURRENT/.windowstolinux-owner. Native checks also verify the original derived systemd unit fragment path, absence of foreign drop-ins and expected unit bytes before reading runtime mode/state. These are helper execution-time guards; the captured original-status receipt is the earlier current-release observation and does not prove present listener ownership. The container inline observation retains its existing independent command review without this supplement.");
             facts.put("observationLimits", "The captured status proves owned CURRENT and original candidate ownership/build state at this invocation's query. It does not prove listener ownership or health; the subsequent helper enforces those checks at execution. Sealed source/artifact and configuration identities are retained original facts, not freshly rehashed remote content. Artifact SHA and release SHA identify different objects. No historical approval is reused and no unresolved outer delivery is declared settled.");
@@ -274,7 +285,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     throw new IllegalStateException("Original query changed");
             } else {
                 requireObservations();
-                if (operation.equals(HEALTH)) DeploymentAgentHelperSourceEvidence.facts();
+                if (operation.equals(HEALTH)) DeploymentAgentHealthReviewContract.text();
                 if (pending == null || !pending.intent().equals(intent)
                     || (operation.equals(HEALTH) ? !Objects.equals(pending.health(), selectHealth(intent, request))
                     : !Objects.equals(pending.runtime(), selectRuntime(intent, request)))
@@ -363,6 +374,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         var facts = new LinkedHashMap<String, Object>();
         facts.put("schema", schema);
         facts.put("scope", "THIS_GRAPH_VERIFICATION_ONLY; retained events are references, never current receipts or execution permission");
+        facts.put("currentWorkflow", "Intended original graph verification and current unit health with the fixed admission/orphan controls described by the trusted health contract. Independent APP review, the original host single-use grant and send-time binding checks remain required; no approval, host grant or health success is asserted obtained.");
         facts.put("currentTask", task.id().toString());
         facts.put("originalTask", task.id().toString());
         facts.put(exactActionKey, DeploymentAgentInputs.hash(intent.exactAction()));
@@ -438,6 +450,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     private void requireBinding() throws ApiException {
         try {
+            DeploymentAgentHealthReviewContract.text();
             var saved = journal.find(task).orElseThrow();
             var current = executions.findForTask(task).orElseThrow();
             var template = executions.publicationTemplate(current).orElseThrow();

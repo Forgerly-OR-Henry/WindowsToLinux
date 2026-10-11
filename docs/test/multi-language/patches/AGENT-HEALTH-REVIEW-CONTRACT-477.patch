@@ -1,0 +1,31 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -102,0 +103,9 @@
++            String instruction = DeploymentReviewDecision.INSTRUCTION
++                + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md");
++            String supplement = currentEvidence.reviewInstructions();
++            if (supplement == null) throw new IOException("Current review instructions are missing");
++            if (!supplement.isEmpty()) {
++                if (!ai.supportsTrustedCommandInstructions())
++                    throw new IOException("Trusted current instructions require SYSTEM delivery; this approval conversation cannot preserve them");
++                instruction += "\n" + supplement;
++            }
+@@ -105 +114 @@
+-                DeploymentReviewDecision.INSTRUCTION + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md"),
++                instruction,
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
+@@ -45,0 +46,5 @@
++    }
++
++    /** Unknown instruction supplements retain SYSTEM authority only on the current stateless transport. */
++    public boolean supportsTrustedCommandInstructions() {
++        return approvalConversation == null;
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -104 +104,4 @@
+-            "original=" + task.id() + "\nexecution=" + record.identity().executionId());
++            "original=" + task.id() + "\nexecution=" + record.identity().executionId()
++                + "\npurpose=verify-original-publication-and-settle-original-candidates"
++                + "\nhealthEffects=original-app-current-and-health-validation;fixed-app-admission-locks;verified-inactive-orphan-cleanup"
++                + "\npermission=each-command-still-requires-independent-review-and-current-single-use-host-grant");

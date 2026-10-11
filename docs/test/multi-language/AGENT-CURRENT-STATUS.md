@@ -219,3 +219,11 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 473/474 的补充仅作用于 Agent HEALTH：保留原字段，增加有序三个 literalArguments 和独立 resource target；展示实际与 expected canonical 完整脚本的机械匹配结果，并通过既有 verifiedBody 提取易读调用正文。该 expected 来自 selectHealth 已匹配的实际请求，全量纳入证据摘要；未增加 shell 解析器、改变命令、helper 或审批权限。
 
 474 只执行新增3场景和直接受影响20场景，23 PASS、0跳过，Maven0、Java0，无API/SSH。正例验证完整三实参、实际UTF-8字节与证据SHA；缺payload/替换unit均在证据或发送前拒绝；原APP、宿主授权、发送三处重校验与合法DENY终止保留。两Java精确格式化与运行前后SHA检查通过，203样例、59helper资源以及467 HelperSourceEvidence与470 Bash测试文件未变。接下来仅进行原产品恢复475，不能将本地通过或原恢复结清计为任务看板业务成功。
+
+475 原恢复再次获得合法健康 DENY：两个原状态查询通过，三参数问题未再被提出，但审批理由回到固定锁写效果未获授权及 run_application_native 未展开。命令未发送，原UNKNOWN及拒绝保留，未清理或STOP/DISABLE；2059源码冻结零变、Maven1、Java0。新增4APP为61,800 Token，输入61,299、输出501、命中14,592、未命中46,707，缓存率23.8%。445跨版本调试累计2,651,141，四项配置探测仍未知。476只读核查确认可信共享合同对health只给高层描述，缺三参、固定锁/orphan副作用与HTTP分支边界；补充的重复固定源码触发第二套审查的呈现问题有依据，但静态核查不能证明这就是模型拒绝的全部原因。下一修复为Agent专用固定摘要健康SYSTEM合同；保留动态完整命令、独立APP和当前宿主单次授权，默认STATIC/ASSISTED不改。原源码提取器仅移到测试验证用途，不能称作取消动态程序源码审查。
+
+## 477–478 Agent 健康审批合同
+
+477/478c 已完成：Agent 健康审批增加独立协议/完整 helper SHA 固定的 SYSTEM 合同，准确描述三实参、锁/orphan 写效果、执行分支与 HTTP 归属边界；USER 保留完整动态命令、当前绑定与独立审批。共享 hook 默认空，原 STATIC/ASSISTED SYSTEM 字节兼容检查通过；未知固定 hook 在 persistent 会话降级前拒绝。固定源码提取器逐字节移至 test，生产无旧 class。45 定点 PASS（新增6/直接影响旧39）/0SKIP/Maven0/Java0/noAPI/noSSH，九源码 SHA 与原203fixture/59helper零变；478/478b仅夹具构造/调用参数编译失败，已修正，无付费调用。三混合源码只记录自有增量 patch，mirror反向检查通过并清理。下一步限定本地提交后仅原恢复479；原任务ENDED和产品STOP/DISABLE通过后核验当前容量>=13GiB，再只fresh task-board。旧UNKNOWN/拒绝及跨版本计量保留，正式目标未完成。
+
+三个已有混合或未跟踪源文件的自有增量见 [合同补丁](patches/AGENT-HEALTH-REVIEW-CONTRACT-477.patch)；不整体提交其他任务的迁移源码。补丁使用零上下文，检查或应用需带 `--unidiff-zero`；独立镜像反向检查通过，镜像已清理。可信合同由产品静态文本与独立 helper pin 提供，不接受模型或远端观察生成的 SYSTEM 指令，也不授予任何执行许可。未知 persistent 合同仅拒绝，不改变共享会话合同。
