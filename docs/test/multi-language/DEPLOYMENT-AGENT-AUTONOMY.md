@@ -124,7 +124,15 @@ task-board-04 一项入口检查失败、零跳过，3257 项源码冻结零变�
 
 `observation-shape-focused-01` 于 2026-10-12 04:35:35+08 通过 54 个不同直接场景，零失败/错误/跳过：本地 Bash 语法及 11 项受控阶段、3 项退出/截断、23 项协议形状反例、2 项实际 `SshCommandFrame` 与原 launcher 的双流验证、13 项 JDBC 安全诊断及一次严格成功结清幂等。四文件限定格式通过；3262 项源码零变化，本次进程已退出，无 API/SSH。辅助 runner 最初读取旧 selectors 结构被拒，未进入 Maven，错误记录保留后按实际新结构修正。此轮验证覆盖本地双流与恢复保护，不证明服务器工具或业务成功。
 
-四份前像匹配 `dc27945d` 基线，新自有精确增量见 [DEPLOYMENT-AGENT-PREPARATION-OBSERVATION-SHAPE.patch](patches/DEPLOYMENT-AGENT-PREPARATION-OBSERVATION-SHAPE.patch)，SHA256 `a45601e867743f0ad3f0110820e0caf1cbef8f1d392b284ef11cba07a9e22f77`，反向及缓存应用检查通过。原观察、恢复及其他迁移补丁保留；真实第三轮尚未启动。
+四份前像匹配 `dc27945d` 基线，新自有精确增量见 [DEPLOYMENT-AGENT-PREPARATION-OBSERVATION-SHAPE.patch](patches/DEPLOYMENT-AGENT-PREPARATION-OBSERVATION-SHAPE.patch)，SHA256 `a45601e867743f0ad3f0110820e0caf1cbef8f1d392b284ef11cba07a9e22f77`，反向及缓存应用检查通过。原观察、恢复及其他迁移补丁保留；六个自有路径已提交 `7619662a671154697fec57c2537d84a4f7d817b5`，未推送。
+
+`task-board-recovery02-03` 于 2026-10-12 04:38:30+08 结束，一项失败、零跳过，3262 项源码零变化，验证进程退出。实际新诊断为 SUCCEEDED、exit 0、value PRESENT、truncated false、problem NONE，stdout 471 字符、stderr 69 字符、stdoutShape EXACT_UNKNOWN、stdoutMismatch NONE、unknownStage MOUNTS、unknownReason MOUNT_QUERY_UNCONFIRMED。这次完整绑定的 UNKNOWN 明确定位到挂载查询；未记录原始错误正文，未读取服务器具体 util-linux 版本。原任务仍 UNKNOWN、两个 FILE 阻塞保留，无结清摘要；只读原库资源总行数 1168、Agent 存在，正式业务计数仍 0，模型 2、服务器 1 保持，数据库字节未变化。
+
+前后日志 ID 去重新增 3 项审批响应：input 26499、output 1646、合计 28145，cache hit 15616、miss 10883，捕获输入命中率 58.93%，3 项 reasoning 未知，输出上限均为 8192，无新配置探测。usage 窗口 38→37 且淘汰 4 项旧记录；不能通过窗口计数差求本轮用量，也不将原 task-board-02 或此前恢复轮混入本轮。这是失败的恢复观察轮，不是最终部署批次。
+
+产品固定探针同时传入 `findmnt --list --raw`。在 [util-linux v2.37.4 官方源码](https://raw.githubusercontent.com/util-linux/util-linux/v2.37.4/misc-utils/findmnt.c) 和 [当前官方源码](https://raw.githubusercontent.com/util-linux/util-linux/master/misc-utils/findmnt.c) 中，两参数属于同一互斥输出组，`--raw` 自身关闭树形输出；此代码缺陷与实际 MOUNT_QUERY_UNCONFIRMED 阶段吻合。修复只移除 `--list`，保留 kernel、noheadings、raw、TARGET 与全部原挂载/回环/路径重查、授权和严格 ABSENT 门。没有向运行中的模型提供步骤或命令。
+
+`findmnt-focused-01` 于 2026-10-12 04:46:51+08 通过 14 个不同直接场景，零失败/错误/跳过：Bash 语法、12 项受控工具/文件系统观察及一次 JDBC 严格结清幂等。夹具明确模拟官方参数互斥契约；重新注入旧冲突参数必须形成 MOUNTS/MOUNT_QUERY_UNCONFIRMED、不能结清。两文件格式通过，3262 项源码零变化，进程退出，无模型/SSH；不冒充真实 util-linux 或服务器验收。两份前像匹配 `7619662a`，新自有增量见 [DEPLOYMENT-AGENT-PREPARATION-FINDMNT.patch](patches/DEPLOYMENT-AGENT-PREPARATION-FINDMNT.patch)，SHA256 `1fb8cc4d4aadb88145271b64fb2a8aef9cbb1893dad3027661c51a245ba9a73e`，反向检查通过，所有旧补丁及原迁移改动保留。
 
 新 task-board 独立部署、真实浏览器业务、非默认目录的真实服务器部署与重启恢复、其余七项目及全新服务器的冻结八项目批次均未验证。缓存及审批比例必须按对应轮次实际 provider usage 计算，未知值不得补零；历史调试用量不能混入冻结八项目批次。
 

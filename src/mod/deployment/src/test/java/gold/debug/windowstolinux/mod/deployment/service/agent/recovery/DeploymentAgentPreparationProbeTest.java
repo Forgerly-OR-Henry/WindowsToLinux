@@ -46,7 +46,7 @@ class DeploymentAgentPreparationProbeTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"ABSENT", "PRESENT", "ACTIVE_UNIT", "MOUNT", "LOOP", "UNSAFE_PARENT", "FAILED_ENUMERATION", "DANGLING_LINK", "UNTRUSTED_TOOL", "NON_ROOT", "PATH_RECHECK"})
+    @ValueSource(strings = {"ABSENT", "PRESENT", "ACTIVE_UNIT", "MOUNT", "LOOP", "UNSAFE_PARENT", "FAILED_ENUMERATION", "DANGLING_LINK", "UNTRUSTED_TOOL", "NON_ROOT", "PATH_RECHECK", "ARGUMENT_CONFLICT"})
     void actualGuardedBashRequiresAbsentCandidateAndEveryKernelObservation(String condition) throws Exception {
         var captured = captured();
         String script = DeploymentAgentPreparationProbe.script(captured)
@@ -55,6 +55,8 @@ class DeploymentAgentPreparationProbeTest {
             .replace("/usr/bin/systemctl", "fixture_systemctl").replace("/usr/bin/findmnt", "fixture_findmnt")
             .replace("/usr/sbin/losetup", "fixture_losetup").replace("/usr/bin/find -H", "fixture_find -H")
             .replace("for tool in fixture_stat", "trusted_executable() { checked=SAFE; [ \"$condition\" != UNTRUSTED_TOOL ] || checked=UNKNOWN; }\nfor tool in fixture_stat");
+        if (condition.equals("ARGUMENT_CONFLICT"))
+            script = script.replace("fixture_findmnt --kernel --noheadings", "fixture_findmnt --kernel --list --noheadings");
         String fixture = "condition='" + condition + "'\n" + """
             fixture_path=$(pwd -P) || exit 69
             case "$condition" in
@@ -79,7 +81,19 @@ class DeploymentAgentPreparationProbeTest {
               if [ "$condition" = ACTIVE_UNIT ]; then printf 'LoadState=loaded\nActiveState=active\nControlGroup=/system.slice/active\n'
               else printf 'LoadState=not-found\nActiveState=inactive\nControlGroup=\n'; fi
             }
-            fixture_findmnt() { printf '/\n'; if [ "$condition" = MOUNT ]; then printf '%s/mutable\n' "$candidate"; fi; }
+            fixture_findmnt() {
+              # util-linux findmnt treats --list and --raw as mutually exclusive output formats.
+              local has_list=0 has_raw=0 option
+              for option in "$@"; do
+                case "$option" in --list) has_list=1 ;; --raw) has_raw=1 ;; esac
+              done
+              if [ "$has_list" = 1 ] && [ "$has_raw" = 1 ]; then
+                printf 'fixture: mutually exclusive output formats\n' >&2
+                return 64
+              fi
+              printf '/\n'
+              if [ "$condition" = MOUNT ]; then printf '%s/mutable\n' "$candidate"; fi
+            }
             fixture_losetup() {
               if [ "$condition" = LOOP ]; then printf '%s/.workspace.ext4 (deleted)\n' "$candidate"; fi
               # Local filesystem race before the final path check, never a production mutation.
@@ -223,6 +237,7 @@ class DeploymentAgentPreparationProbeTest {
                 new UnknownObservation(Stage.PATH, Reason.PATH_ABSENCE_UNCONFIRMED);
             case "ACTIVE_UNIT" -> new UnknownObservation(Stage.BUILD_UNIT, Reason.BUILD_STATE_UNCONFIRMED);
             case "MOUNT" -> new UnknownObservation(Stage.MOUNTS, Reason.CANDIDATE_MOUNT_PRESENT);
+            case "ARGUMENT_CONFLICT" -> new UnknownObservation(Stage.MOUNTS, Reason.MOUNT_QUERY_UNCONFIRMED);
             case "LOOP" -> new UnknownObservation(Stage.LOOPS, Reason.CANDIDATE_LOOP_PRESENT);
             case "PATH_RECHECK" -> new UnknownObservation(Stage.PATH_RECHECK, Reason.PATH_RECHECK_UNCONFIRMED);
             default -> throw new AssertionError(condition);

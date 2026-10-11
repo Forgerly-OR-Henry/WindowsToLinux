@@ -183,7 +183,7 @@ public final class DeploymentAgentPreparationProbe {
               unit_fields=$((unit_fields + 1))
             done <<< "$unit_info"
             [ "$unit_fields" = 3 ] && [ "$unit_load" = not-found ] && [ "$unit_active" = inactive ] && [ "$unit_group" = empty ] || emit_unknown BUILD_UNIT BUILD_STATE_UNCONFIRMED
-            mounts=$(/usr/bin/findmnt --kernel --list --noheadings --raw --output TARGET) || emit_unknown MOUNTS MOUNT_QUERY_UNCONFIRMED
+            mounts=$(/usr/bin/findmnt --kernel --noheadings --raw --output TARGET) || emit_unknown MOUNTS MOUNT_QUERY_UNCONFIRMED
             [ "${#mounts}" -le 65536 ] || emit_unknown MOUNTS MOUNT_OUTPUT_LIMIT
             while IFS= read -r mount; do
               [[ "$mount" = /* ]] || emit_unknown MOUNTS MOUNT_TARGET_INVALID
