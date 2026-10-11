@@ -1,0 +1,365 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandReviewModel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandReviewModel.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandReviewModel.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandReviewModel.java
+@@ -3,6 +3,8 @@
+ import java.io.IOException;
+ import java.util.Map;
+ import java.util.Objects;
++import java.util.LinkedHashMap;
++import java.util.Set;
+ 
+ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+@@ -13,6 +15,72 @@
+ /** Model verdict only; exact request validation and host grants remain in the shared approval boundary. */
+ @FunctionalInterface
+ public interface DeploymentCommandReviewModel {
++    enum FailureStage {
++        SHARED_REVIEW, BINDING_SNAPSHOT, HISTORY_CONTEXT, RESPONSE_CHECK, EVIDENCE_READ, HISTORY_RETAIN, VERDICT
++    }
++
++    /** A diagnostic boundary, never model data or a replacement authorization result. */
++    final class Failure extends IOException {
++        private final FailureStage stage;
++
++        private final String tool;
++
++        private final String code;
++
++        public Failure(FailureStage stage, String tool, Throwable cause) {
++            this(stage, tool, "REVIEW_EXCEPTION", cause);
++        }
++
++        public Failure(FailureStage stage, String tool, String code, Throwable cause) {
++            super("Independent command review failed at a protected boundary", cause);
++            this.stage = Objects.requireNonNull(stage);
++            this.tool = safeTools().contains(tool == null ? "" : tool) ? tool : "";
++            this.code = safeCodes().contains(code == null ? "" : code) ? code : "REVIEW_EXCEPTION";
++        }
++    }
++
++    static Map<String, String> failureDiagnostics(Throwable failure) {
++        var values = new LinkedHashMap<String, String>();
++        var boundary = failure instanceof Failure value ? value : null;
++        values.put("reviewStage", (boundary == null ? FailureStage.SHARED_REVIEW : boundary.stage).name());
++        values.put("reviewCode", boundary == null ? "REVIEW_EXCEPTION" : boundary.code);
++        Throwable cause = boundary == null ? failure : boundary.getCause();
++        String type = cause instanceof java.nio.charset.CharacterCodingException ? "CharacterCodingException"
++            : cause instanceof com.fasterxml.jackson.core.JsonProcessingException ? "JsonProcessingException"
++            : cause instanceof SecurityException ? "SecurityException"
++            : cause instanceof IOException ? "IOException"
++            : cause instanceof IllegalArgumentException ? "IllegalArgumentException"
++            : cause instanceof IllegalStateException ? "IllegalStateException"
++            : cause instanceof NullPointerException ? "NullPointerException"
++            : cause instanceof InterruptedException ? "InterruptedException" : "OtherException";
++        values.put("reviewFailureType", type);
++        if (boundary != null && !boundary.tool.isEmpty()) values.put("reviewTool", boundary.tool);
++        return Map.copyOf(values);
++    }
++
++    /** Revalidates even caller-supplied exception context before it reaches public diagnostics. */
++    static Map<String, String> safeFailureDiagnostics(Map<String, String> details) {
++        var safe = new LinkedHashMap<String, String>();
++        String stage = details.get("reviewStage");
++        if (java.util.Arrays.stream(FailureStage.values()).anyMatch(value -> value.name().equals(stage)))
++            safe.put("reviewStage", stage);
++        String code = details.get("reviewCode"), tool = details.get("reviewTool"), type = details.get("reviewFailureType");
++        if (safeCodes().contains(code == null ? "" : code)) safe.put("reviewCode", code);
++        if (safeTools().contains(tool == null ? "" : tool)) safe.put("reviewTool", tool);
++        if (Set.of("CharacterCodingException", "JsonProcessingException", "SecurityException", "IOException", "IllegalArgumentException",
++            "IllegalStateException", "NullPointerException", "InterruptedException", "OtherException").contains(type == null ? "" : type))
++            safe.put("reviewFailureType", type);
++        return Map.copyOf(safe);
++    }
++
++    private static Set<String> safeTools() {
++        return Set.of("request", "skill", "evidence", "receipts", "contract", "source_list", "source_read", "source_search", "submit_result");
++    }
++
++    private static Set<String> safeCodes() {
++        return Set.of("REVIEW_EXCEPTION", "NATIVE_BATCH_INCOMPLETE", "NATIVE_CALL_ID_REPEATED", "VERDICT_BATCH_MIXED", "VERDICT_SCHEMA_INVALID", "TASK_TOOL_BUDGET_EXHAUSTED");
++    }
++
+     default String responseInstructions() {
+         return DeploymentReviewDecision.INSTRUCTION;
+     }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -147,6 +147,7 @@
+         } catch (SecurityException denied) {
+             throw denied(task, "DEPLOYMENT_COMMAND_STATIC_DENIED");
+         } catch (IOException | IllegalArgumentException invalid) {
++            diagnostic.putAll(DeploymentCommandReviewModel.failureDiagnostics(invalid));
+             var error = new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_COMMAND_REVIEW_INVALID",
+                 "Complete independent command review was invalid", diagnostic, Optional.empty()));
+             error.initCause(invalid);
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -134,6 +134,8 @@
+     @Override
+     public Result review(String instructions, Map<String, ?> facts, ActionIntent intent, CommandRequest request,
+                          String revision, TaskContext supplied) throws ApiException, DeploymentAiJson.CapabilityOutcomeException, IOException {
++        var stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
++        String selectedTool = "";
+         try {
+             if (supplied != task) throw new SecurityException("Foreign approval task");
+             var binding = evidence.binding();
+@@ -181,29 +183,42 @@
+             String session = java.util.UUID.randomUUID().toString();
+             var skills = new DeploymentAgentSkills(task, DeploymentAgentSkills.Role.APPROVAL);
+             while (DeploymentToolBudget.remaining() > 0) {
++                selectedTool = "";
+                 input = JSON.writeValueAsString(((ObjectNode) JSON.valueToTree(initial)).put("remainingTaskTools", DeploymentToolBudget.remaining()));
++                stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+                 check(binding, revision, sources, receipts);
+-                var response = ai.call(AiPurpose.APPROVAL, history.agentMessages(policy + skills.system(), input), definitions, revision, task, false);
++                stage = DeploymentCommandReviewModel.FailureStage.HISTORY_CONTEXT;
++                var messages = history.agentMessages(policy + skills.system(), input);
++                stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
++                var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
++                stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+                 check(binding, revision, sources, receipts);
++                stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
+                 if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty()
+-                    || response.toolCalls().size() > 4 || !DeploymentToolBudget.consume(response.toolCalls().stream().map(call ->
++                    || response.toolCalls().size() > 4)
++                    throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_BATCH_INCOMPLETE", new IOException("Incomplete native batch"));
++                if (!DeploymentToolBudget.consume(response.toolCalls().stream().map(call ->
+                     new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("approval_" + sha(session + ":" + call.id()), call.name(), call.arguments())).toList()))
+-                    throw new IOException("Approval Agent requires a complete bounded native tool batch");
++                    throw new DeploymentCommandReviewModel.Failure(stage, "", "TASK_TOOL_BUDGET_EXHAUSTED", new IOException("Task tool budget unavailable"));
+                 if (response.toolCalls().stream().anyMatch(call -> !seenIds.add(call.id())))
+-                    throw new IOException("Approval Agent repeated a native call identity");
++                    throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_CALL_ID_REPEATED", new IOException("Repeated native call identity"));
+                 if (response.toolCalls().stream().anyMatch(call -> call.name().equals("submit_result"))) {
++                    stage = DeploymentCommandReviewModel.FailureStage.VERDICT;
++                    selectedTool = "submit_result";
+                     if (response.toolCalls().size() != 1)
+-                        throw new IOException("Verdict cannot share an evidence batch");
++                        throw new DeploymentCommandReviewModel.Failure(stage, selectedTool, "VERDICT_BATCH_MIXED", new IOException("Mixed verdict batch"));
+                     Result result;
+                     try {
+                         result = decision(DeploymentAiJson.arguments(response.toolCalls().getFirst()), bound);
+                     } catch (IOException | IllegalArgumentException invalid) {
+                         if (corrections++ >= 1)
+-                            throw new IOException("Approval verdict remains malformed after one native correction", invalid);
++                            throw new DeploymentCommandReviewModel.Failure(stage, selectedTool, "VERDICT_SCHEMA_INVALID", invalid);
++                        stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
+                         history.retain(input, response, List.of(new AiToolResult(response.toolCalls().getFirst().id(),
+                             JSON.writeValueAsString(Map.of("error", "VERDICT_SCHEMA_REJECTED", "reason", "Submit complete offered verdict fields and bounded arrays. No authorization was issued.")), true)));
+                         continue;
+                     }
++                    stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+                     check(binding, revision, sources, receipts);
+                     for (var source : sources.values()) source.verify();
+                     discussions.put(requestIdentity, new Discussion(retryBinding, result));
+@@ -213,7 +228,10 @@
+                 }
+                 var results = new ArrayList<AiToolResult>();
+                 for (var call : response.toolCalls()) {
++                    selectedTool = call.name();
++                    stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+                     check(binding, revision, sources, receipts);
++                    stage = DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ;
+                     try {
+                         Object value;
+                         if (call.name().equals("skill")) {
+@@ -232,13 +250,17 @@
+                             "reason", String.valueOf(rejected.getMessage()))), true));
+                     }
+                 }
++                stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
++                selectedTool = "";
+                 history.retain(input, response, results);
+             }
+-            throw new IOException("Original shared task tool budget exhausted without an approval verdict");
+-        } catch (ApiException | DeploymentAiJson.CapabilityOutcomeException | IOException failure) {
++            throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK, "",
++                "TASK_TOOL_BUDGET_EXHAUSTED", new IOException("Task tool budget unavailable"));
++        } catch (ApiException | DeploymentAiJson.CapabilityOutcomeException failure) {
+             throw failure;
+         } catch (Exception failure) {
+-            throw new IOException("Approval Agent evidence boundary rejected", failure);
++            if (failure instanceof DeploymentCommandReviewModel.Failure boundary) throw boundary;
++            throw new DeploymentCommandReviewModel.Failure(stage, selectedTool, failure);
+         }
+     }
+ 
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java
+@@ -127,7 +127,8 @@
+             if (api.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED"))
+                 reason += " " + api.problem().context().getOrDefault("reviewReason", "");
+             if (api.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_INVALID"))
+-                reason += reviewValidationDetails(api.problem().context());
++                reason = "Complete independent command review was invalid [" + api.problem().code()
++                    + "/DEPLOYMENT_COMMAND_REVIEW_INVALID]" + reviewValidationDetails(api.problem().context());
+         }
+         new DeploymentDiagnostics(context).event(task.id(), LogLevel.ERROR, "DEPLOYMENT_AGENT_FAILURE",
+             failure.getClass().getSimpleName() + ": " + agentReason(reason), Optional.empty());
+@@ -167,6 +168,9 @@
+         String stage = details.get("validationStage");
+         if (java.util.Set.of("evidence", "response", "rememberAuthorization").contains(stage == null ? "" : stage))
+             values.add("validationStage=" + stage);
++        var review = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.safeFailureDiagnostics(details);
++        for (String field : java.util.List.of("reviewStage", "reviewCode", "reviewTool", "reviewFailureType"))
++            if (review.containsKey(field)) values.add(field + "=" + review.get(field));
+         String exact = details.get("fieldsExact");
+         if ("true".equals(exact) || "false".equals(exact)) values.add("fieldsExact=" + exact);
+         for (String field : java.util.List.of("decision", "requiresUserConfirmation", "reason")) {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -68,6 +68,10 @@
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentIdentityMode;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
++import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
++import gold.debug.windowstolinux.appapi.task.result.Problem;
++import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.io.TempDir;
+ import org.junit.jupiter.params.ParameterizedTest;
+@@ -344,7 +348,12 @@
+         var invalid = new Frame();
+         invalid.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE")));
+         invalid.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE")));
+-        assertThrows(IOException.class, () -> invalid.review(Map.of()));
++        try (var request = invalid.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) invalid.scope(true).interaction();
++            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(invalid.intent(request, "deployment.helper.probe.v1"), request, invalid.task));
++            assertFailureDiagnostics(invalid, rejected, "VERDICT", "IllegalArgumentException");
++            assertEquals("VERDICT_SCHEMA_INVALID", rejected.problem().context().get("reviewCode"));
++        }
+         assertEquals(2, invalid.fixture.requests.size());
+         assertEquals(0, invalid.grants.size());
+     }
+@@ -353,10 +362,11 @@
+     void receiptChangeAfterModelResponseRejectsTheVerdictBeforeGrant() throws Exception {
+         var f = new Frame();
+         f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+-        f.afterCall = () -> f.receipt = "NEW_RECEIPT_NOT_SEEN_BY_APPROVER";
++        f.afterCall = () -> f.receipt = "FAKE_PASSWORD_MARKER_NEW_RECEIPT_NOT_SEEN_BY_APPROVER";
+         try (var request = f.command("printf actual", "")) {
+             var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+-            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertFailureDiagnostics(f, rejected, "BINDING_SNAPSHOT", "SecurityException");
+         }
+         assertEquals(0, f.grants.size());
+     }
+@@ -391,6 +401,110 @@
+         assertEquals(1, f.fixture.requests.getFirst().tools().size());
+         assertEquals("submit_result", f.fixture.requests.getFirst().tools().getFirst().name());
+         assertEquals(1, f.grants.size());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"EVIDENCE_READ", "HISTORY_RETAIN", "RESPONSE_CHECK"})
++    void nativeReadHistoryAndResponseFailureRetainSafeStageWithoutGrant(String stage) throws Exception {
++        var f = new Frame();
++        String type;
++        if (stage.equals("RESPONSE_CHECK")) {
++            type = "IOException";
++            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("FAKE_PASSWORD_MARKER",
++                "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++        } else {
++            Path member = root.resolve("FAKE_PASSWORD_MARKER.txt");
++            if (stage.equals("EVIDENCE_READ")) {
++                type = "CharacterCodingException";
++                Files.write(member, new byte[]{(byte) 0xff});
++            } else {
++                type = "IllegalArgumentException";
++                Files.writeString(member, "中".repeat(7000));
++            }
++            f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
++            var calls = new ArrayList<AiToolCall>();
++            for (int i = 0; i < (stage.equals("HISTORY_RETAIN") ? 4 : 1); i++)
++                calls.add(call("source_read", Map.of("component", "api", "sourceRevision", REVISION,
++                    "subject", member.getFileName().toString(), "offset", 0, "limit", 10)));
++            f.fixture.nativeReply(calls.toArray(AiToolCall[]::new));
++        }
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertFailureDiagnostics(f, rejected, stage, type);
++            if (stage.equals("EVIDENCE_READ"))
++                assertEquals("source_read", rejected.problem().context().get("reviewTool"));
++        }
++        assertEquals(1, f.fixture.requests.size());
++        assertEquals(0, f.grants.size());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"STATIC", "ASSISTED"})
++    void defaultThreeFieldReviewFailureKeepsSafeTypeForBothModeFacts(String mode) throws Exception {
++        var f = new Frame();
++        for (int i = 0; i < 2; i++)
++            f.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE",
++                "requiresUserConfirmation", false, "reason", Map.of("password", "FAKE_PASSWORD_MARKER"))));
++        var scope = f.scope(false).withCurrentEvidence(new DeploymentCurrentCommandEvidence() {
++            public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext task) {
++                return Map.of("deploymentMode", mode);
++            }
++        });
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
++            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertFailureDiagnostics(f, rejected, "SHARED_REVIEW", "IOException");
++        }
++        assertEquals(2, f.fixture.requests.size());
++        for (var request : f.fixture.requests) {
++            assertEquals(1, request.tools().size());
++            assertEquals(List.of("decision", "requiresUserConfirmation", "reason"), JSON.convertValue(
++                JSON.readTree(request.tools().getFirst().inputSchema()).path("required"), List.class));
++            var originalFacts = request.messages().stream().filter(message -> message.role() == AiRole.USER).findFirst().orElseThrow();
++            assertEquals(mode, JSON.readTree(originalFacts.text()).path("currentCommandEvidence").path("deploymentMode").asText());
++        }
++        assertEquals(0, f.grants.size());
++    }
++
++    @Test
++    void exceptionMessagesAndForgedDiagnosticFieldsNeverEnterPublicLogs() throws Exception {
++        var f = new Frame();
++        var original = new IOException("password=FAKE_PASSWORD_MARKER stdin=ATTACK_PAYLOAD");
++        DeploymentCommandReviewModel model = (instructions, facts, intent, request, revision, task) -> {
++            throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ,
++                "source_read FAKE_PASSWORD_MARKER", "ATTACK_PAYLOAD", original);
++        };
++        var scope = new DeploymentCommandReviewScope(f.context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
++            null, DeploymentCurrentCommandEvidence.NONE, () -> model);
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
++            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertFailureDiagnostics(f, rejected, "EVIDENCE_READ", "IOException");
++            assertFalse(rejected.problem().context().containsKey("reviewTool"));
++            assertTrue(rejected.getCause().getCause() == original, "The in-memory causal evidence remains available without being logged");
++        }
++        var forged = new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_COMMAND_REVIEW_INVALID", "FAKE_PASSWORD_MARKER ATTACK_PAYLOAD",
++            Map.of("validationStage", "response", "reviewStage", "FAKE_PASSWORD_MARKER", "reviewTool", "ATTACK_PAYLOAD",
++                "reviewFailureType", "FAKE_PASSWORD_MARKER", "reviewCode", "ATTACK_PAYLOAD"), Optional.empty()));
++        DeploymentDiagnostics.agentFailure(f.context, f.task, forged);
++        String log = f.fixture.events.getLast().message();
++        assertFalse(log.contains("FAKE_PASSWORD_MARKER") || log.contains("ATTACK_PAYLOAD"));
++        assertTrue(log.contains("validationStage=response"));
++        assertEquals(0, f.grants.size());
++    }
++
++    private void assertFailureDiagnostics(Frame frame, ApiException failure, String stage, String type) throws Exception {
++        assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", failure.problem().eventCode());
++        assertEquals("response", failure.problem().context().get("validationStage"));
++        assertEquals(stage, failure.problem().context().get("reviewStage"));
++        assertEquals(type, failure.problem().context().get("reviewFailureType"));
++        DeploymentDiagnostics.agentFailure(frame.context, frame.task, failure);
++        var event = frame.fixture.events.getLast();
++        assertEquals("DEPLOYMENT_AGENT_FAILURE", event.eventCode());
++        assertTrue(event.message().contains("reviewStage=" + stage) && event.message().contains("reviewFailureType=" + type));
++        String publicEvidence = JSON.writeValueAsString(failure.problem().context()) + event.message() + event.details().orElse("");
++        assertFalse(publicEvidence.contains("FAKE_PASSWORD_MARKER") || publicEvidence.contains("ATTACK_PAYLOAD"));
+     }
+ 
+     @Test

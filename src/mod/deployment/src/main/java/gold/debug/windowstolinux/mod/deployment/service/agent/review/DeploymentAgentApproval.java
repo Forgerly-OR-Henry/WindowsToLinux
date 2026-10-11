@@ -134,6 +134,8 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     @Override
     public Result review(String instructions, Map<String, ?> facts, ActionIntent intent, CommandRequest request,
                          String revision, TaskContext supplied) throws ApiException, DeploymentAiJson.CapabilityOutcomeException, IOException {
+        var stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+        String selectedTool = "";
         try {
             if (supplied != task) throw new SecurityException("Foreign approval task");
             var binding = evidence.binding();
@@ -181,29 +183,42 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             String session = java.util.UUID.randomUUID().toString();
             var skills = new DeploymentAgentSkills(task, DeploymentAgentSkills.Role.APPROVAL);
             while (DeploymentToolBudget.remaining() > 0) {
+                selectedTool = "";
                 input = JSON.writeValueAsString(((ObjectNode) JSON.valueToTree(initial)).put("remainingTaskTools", DeploymentToolBudget.remaining()));
+                stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                 check(binding, revision, sources, receipts);
-                var response = ai.call(AiPurpose.APPROVAL, history.agentMessages(policy + skills.system(), input), definitions, revision, task, false);
+                stage = DeploymentCommandReviewModel.FailureStage.HISTORY_CONTEXT;
+                var messages = history.agentMessages(policy + skills.system(), input);
+                stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
+                var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
+                stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                 check(binding, revision, sources, receipts);
+                stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
                 if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty()
-                    || response.toolCalls().size() > 4 || !DeploymentToolBudget.consume(response.toolCalls().stream().map(call ->
+                    || response.toolCalls().size() > 4)
+                    throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_BATCH_INCOMPLETE", new IOException("Incomplete native batch"));
+                if (!DeploymentToolBudget.consume(response.toolCalls().stream().map(call ->
                     new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("approval_" + sha(session + ":" + call.id()), call.name(), call.arguments())).toList()))
-                    throw new IOException("Approval Agent requires a complete bounded native tool batch");
+                    throw new DeploymentCommandReviewModel.Failure(stage, "", "TASK_TOOL_BUDGET_EXHAUSTED", new IOException("Task tool budget unavailable"));
                 if (response.toolCalls().stream().anyMatch(call -> !seenIds.add(call.id())))
-                    throw new IOException("Approval Agent repeated a native call identity");
+                    throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_CALL_ID_REPEATED", new IOException("Repeated native call identity"));
                 if (response.toolCalls().stream().anyMatch(call -> call.name().equals("submit_result"))) {
+                    stage = DeploymentCommandReviewModel.FailureStage.VERDICT;
+                    selectedTool = "submit_result";
                     if (response.toolCalls().size() != 1)
-                        throw new IOException("Verdict cannot share an evidence batch");
+                        throw new DeploymentCommandReviewModel.Failure(stage, selectedTool, "VERDICT_BATCH_MIXED", new IOException("Mixed verdict batch"));
                     Result result;
                     try {
                         result = decision(DeploymentAiJson.arguments(response.toolCalls().getFirst()), bound);
                     } catch (IOException | IllegalArgumentException invalid) {
                         if (corrections++ >= 1)
-                            throw new IOException("Approval verdict remains malformed after one native correction", invalid);
+                            throw new DeploymentCommandReviewModel.Failure(stage, selectedTool, "VERDICT_SCHEMA_INVALID", invalid);
+                        stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
                         history.retain(input, response, List.of(new AiToolResult(response.toolCalls().getFirst().id(),
                             JSON.writeValueAsString(Map.of("error", "VERDICT_SCHEMA_REJECTED", "reason", "Submit complete offered verdict fields and bounded arrays. No authorization was issued.")), true)));
                         continue;
                     }
+                    stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                     check(binding, revision, sources, receipts);
                     for (var source : sources.values()) source.verify();
                     discussions.put(requestIdentity, new Discussion(retryBinding, result));
@@ -213,7 +228,10 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 }
                 var results = new ArrayList<AiToolResult>();
                 for (var call : response.toolCalls()) {
+                    selectedTool = call.name();
+                    stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                     check(binding, revision, sources, receipts);
+                    stage = DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ;
                     try {
                         Object value;
                         if (call.name().equals("skill")) {
@@ -232,13 +250,17 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                             "reason", String.valueOf(rejected.getMessage()))), true));
                     }
                 }
+                stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
+                selectedTool = "";
                 history.retain(input, response, results);
             }
-            throw new IOException("Original shared task tool budget exhausted without an approval verdict");
-        } catch (ApiException | DeploymentAiJson.CapabilityOutcomeException | IOException failure) {
+            throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK, "",
+                "TASK_TOOL_BUDGET_EXHAUSTED", new IOException("Task tool budget unavailable"));
+        } catch (ApiException | DeploymentAiJson.CapabilityOutcomeException failure) {
             throw failure;
         } catch (Exception failure) {
-            throw new IOException("Approval Agent evidence boundary rejected", failure);
+            if (failure instanceof DeploymentCommandReviewModel.Failure boundary) throw boundary;
+            throw new DeploymentCommandReviewModel.Failure(stage, selectedTool, failure);
         }
     }
 

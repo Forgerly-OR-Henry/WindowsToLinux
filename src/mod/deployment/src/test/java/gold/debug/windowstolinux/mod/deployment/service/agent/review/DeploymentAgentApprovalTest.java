@@ -68,6 +68,10 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentIdentityMode;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
+import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
+import gold.debug.windowstolinux.appapi.task.result.Problem;
+import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -344,7 +348,12 @@ class DeploymentAgentApprovalTest {
         var invalid = new Frame();
         invalid.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE")));
         invalid.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE")));
-        assertThrows(IOException.class, () -> invalid.review(Map.of()));
+        try (var request = invalid.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) invalid.scope(true).interaction();
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(invalid.intent(request, "deployment.helper.probe.v1"), request, invalid.task));
+            assertFailureDiagnostics(invalid, rejected, "VERDICT", "IllegalArgumentException");
+            assertEquals("VERDICT_SCHEMA_INVALID", rejected.problem().context().get("reviewCode"));
+        }
         assertEquals(2, invalid.fixture.requests.size());
         assertEquals(0, invalid.grants.size());
     }
@@ -353,10 +362,11 @@ class DeploymentAgentApprovalTest {
     void receiptChangeAfterModelResponseRejectsTheVerdictBeforeGrant() throws Exception {
         var f = new Frame();
         f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
-        f.afterCall = () -> f.receipt = "NEW_RECEIPT_NOT_SEEN_BY_APPROVER";
+        f.afterCall = () -> f.receipt = "FAKE_PASSWORD_MARKER_NEW_RECEIPT_NOT_SEEN_BY_APPROVER";
         try (var request = f.command("printf actual", "")) {
             var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
-            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, rejected, "BINDING_SNAPSHOT", "SecurityException");
         }
         assertEquals(0, f.grants.size());
     }
@@ -391,6 +401,110 @@ class DeploymentAgentApprovalTest {
         assertEquals(1, f.fixture.requests.getFirst().tools().size());
         assertEquals("submit_result", f.fixture.requests.getFirst().tools().getFirst().name());
         assertEquals(1, f.grants.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EVIDENCE_READ", "HISTORY_RETAIN", "RESPONSE_CHECK"})
+    void nativeReadHistoryAndResponseFailureRetainSafeStageWithoutGrant(String stage) throws Exception {
+        var f = new Frame();
+        String type;
+        if (stage.equals("RESPONSE_CHECK")) {
+            type = "IOException";
+            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("FAKE_PASSWORD_MARKER",
+                "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+        } else {
+            Path member = root.resolve("FAKE_PASSWORD_MARKER.txt");
+            if (stage.equals("EVIDENCE_READ")) {
+                type = "CharacterCodingException";
+                Files.write(member, new byte[]{(byte) 0xff});
+            } else {
+                type = "IllegalArgumentException";
+                Files.writeString(member, "中".repeat(7000));
+            }
+            f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+            var calls = new ArrayList<AiToolCall>();
+            for (int i = 0; i < (stage.equals("HISTORY_RETAIN") ? 4 : 1); i++)
+                calls.add(call("source_read", Map.of("component", "api", "sourceRevision", REVISION,
+                    "subject", member.getFileName().toString(), "offset", 0, "limit", 10)));
+            f.fixture.nativeReply(calls.toArray(AiToolCall[]::new));
+        }
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, rejected, stage, type);
+            if (stage.equals("EVIDENCE_READ"))
+                assertEquals("source_read", rejected.problem().context().get("reviewTool"));
+        }
+        assertEquals(1, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"STATIC", "ASSISTED"})
+    void defaultThreeFieldReviewFailureKeepsSafeTypeForBothModeFacts(String mode) throws Exception {
+        var f = new Frame();
+        for (int i = 0; i < 2; i++)
+            f.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE",
+                "requiresUserConfirmation", false, "reason", Map.of("password", "FAKE_PASSWORD_MARKER"))));
+        var scope = f.scope(false).withCurrentEvidence(new DeploymentCurrentCommandEvidence() {
+            public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext task) {
+                return Map.of("deploymentMode", mode);
+            }
+        });
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, rejected, "SHARED_REVIEW", "IOException");
+        }
+        assertEquals(2, f.fixture.requests.size());
+        for (var request : f.fixture.requests) {
+            assertEquals(1, request.tools().size());
+            assertEquals(List.of("decision", "requiresUserConfirmation", "reason"), JSON.convertValue(
+                JSON.readTree(request.tools().getFirst().inputSchema()).path("required"), List.class));
+            var originalFacts = request.messages().stream().filter(message -> message.role() == AiRole.USER).findFirst().orElseThrow();
+            assertEquals(mode, JSON.readTree(originalFacts.text()).path("currentCommandEvidence").path("deploymentMode").asText());
+        }
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void exceptionMessagesAndForgedDiagnosticFieldsNeverEnterPublicLogs() throws Exception {
+        var f = new Frame();
+        var original = new IOException("password=FAKE_PASSWORD_MARKER stdin=ATTACK_PAYLOAD");
+        DeploymentCommandReviewModel model = (instructions, facts, intent, request, revision, task) -> {
+            throw new DeploymentCommandReviewModel.Failure(DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ,
+                "source_read FAKE_PASSWORD_MARKER", "ATTACK_PAYLOAD", original);
+        };
+        var scope = new DeploymentCommandReviewScope(f.context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
+            null, DeploymentCurrentCommandEvidence.NONE, () -> model);
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, rejected, "EVIDENCE_READ", "IOException");
+            assertFalse(rejected.problem().context().containsKey("reviewTool"));
+            assertTrue(rejected.getCause().getCause() == original, "The in-memory causal evidence remains available without being logged");
+        }
+        var forged = new ApiException(new Problem(ProblemCode.INVALID_INPUT, "DEPLOYMENT_COMMAND_REVIEW_INVALID", "FAKE_PASSWORD_MARKER ATTACK_PAYLOAD",
+            Map.of("validationStage", "response", "reviewStage", "FAKE_PASSWORD_MARKER", "reviewTool", "ATTACK_PAYLOAD",
+                "reviewFailureType", "FAKE_PASSWORD_MARKER", "reviewCode", "ATTACK_PAYLOAD"), Optional.empty()));
+        DeploymentDiagnostics.agentFailure(f.context, f.task, forged);
+        String log = f.fixture.events.getLast().message();
+        assertFalse(log.contains("FAKE_PASSWORD_MARKER") || log.contains("ATTACK_PAYLOAD"));
+        assertTrue(log.contains("validationStage=response"));
+        assertEquals(0, f.grants.size());
+    }
+
+    private void assertFailureDiagnostics(Frame frame, ApiException failure, String stage, String type) throws Exception {
+        assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", failure.problem().eventCode());
+        assertEquals("response", failure.problem().context().get("validationStage"));
+        assertEquals(stage, failure.problem().context().get("reviewStage"));
+        assertEquals(type, failure.problem().context().get("reviewFailureType"));
+        DeploymentDiagnostics.agentFailure(frame.context, frame.task, failure);
+        var event = frame.fixture.events.getLast();
+        assertEquals("DEPLOYMENT_AGENT_FAILURE", event.eventCode());
+        assertTrue(event.message().contains("reviewStage=" + stage) && event.message().contains("reviewFailureType=" + type));
+        String publicEvidence = JSON.writeValueAsString(failure.problem().context()) + event.message() + event.details().orElse("");
+        assertFalse(publicEvidence.contains("FAKE_PASSWORD_MARKER") || publicEvidence.contains("ATTACK_PAYLOAD"));
     }
 
     @Test
