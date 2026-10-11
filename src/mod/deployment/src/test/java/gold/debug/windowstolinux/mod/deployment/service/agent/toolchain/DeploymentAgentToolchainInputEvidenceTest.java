@@ -71,7 +71,8 @@ class DeploymentAgentToolchainInputEvidenceTest {
             assertFalse(String.join("\n", lines.subList(first, last)).contains("\ndef "));
         }
         assertTrue(names.containsAll(Set.of("resolution_validate", "download", "extract", "agent_sandbox_properties", "agent_worker",
-            "agent_vendor", "agent_execute", "agent_freeze", "agent_stopped", "agent_promote", "agent_installation_selection", "agent_record", "agent_cli")));
+            "agent_vendor", "agent_execute", "agent_freeze", "agent_stopped", "agent_promote", "agent_installation_selection", "agent_record",
+            "agent_identity_reject", "agent_exception_facts", "agent_lifecycle_cause", "agent_valid_lifecycle_cause", "agent_cli")));
         assertFalse(DeploymentAgentToolchainInputEvidence.select(current("resolve")).orElseThrow().facts().containsKey("locations"));
         assertFalse(prepared.containsKey("approved"));
         assertFalse(prepared.containsKey("safe"));

@@ -17,6 +17,25 @@ AGENT_MAX_MEMBERS = 200000
 AGENT_MAX_PROGRAM = 1024 * 1024
 AGENT_LIFECYCLE_PHASES = frozenset(('AGENT_SETUP_UNCONFIRMED', 'AGENT_EXECUTION_UNCONFIRMED',
     'AGENT_STOP_UNCONFIRMED', 'AGENT_FREEZE_UNCONFIRMED'))
+AGENT_LIFECYCLE_STAGES = frozenset(('LAUNCH', 'IDENTITY', 'SETUP', 'READY', 'RUN', 'STOP', 'FREEZE', 'INCOMPLETE'))
+AGENT_LIFECYCLE_CATEGORIES = frozenset(('unknown', 'isolation', 'installation', 'other', 'none'))
+AGENT_LIFECYCLE_EXCEPTIONS = frozenset(('PreparationFailure', 'OSError', 'ValueError', 'KeyError',
+    'StopIteration', 'TimeoutExpired', 'OTHER', 'NONE'))
+AGENT_IDENTITY_CHECKS = frozenset(('NONE', 'ID', 'PARSE', 'FIELDS', 'LOAD_STATE', 'ACTIVE_STATE',
+    'ACTIVE_STATE_INACTIVE', 'USER_MODE', 'ALLOCATION', 'INVOCATION', 'CGROUP'))
+AGENT_LIFECYCLE_CODES = frozenset(('UNCLASSIFIED', 'SETUP_NOT_COMPLETED', 'UNIT_IDENTITY', 'UNIT_IDENTITY_CHANGED',
+    'SETUP_REQUIRES_ROOT', 'DYNAMIC_IDENTITY', 'SETUP_REQUIRES_ORIGINAL_EMPTY_DIRECTORY',
+    'IDENTITY_ALREADY_ASSIGNED', 'IDENTITY_SHORT_WRITE', 'READY_FILE', 'READY_ALREADY_PUBLISHED',
+    'READY_SHORT_WRITE', 'READY_FILE_CHANGED', 'PROTECTED_FILE', 'PROTECTED_FILE_CHANGED', 'PROTECTED_DIRECTORY',
+    'DUPLICATE_JSON_FIELD', 'JSON_LIMIT', 'JSON_CONSTANT', 'INVALID_JSON', 'MANIFEST_SCHEMA', 'MANIFEST_BINDING',
+    'PROGRAM_BINDING', 'CONTROLLER_BINDING', 'MANIFEST_DEADLINE', 'MANIFEST_ACTION', 'MANIFEST_LOOP',
+    'MANIFEST_INODE', 'MANIFEST_DIRECTORIES', 'MANIFEST_DIRECTORY_INODE', 'INSTALL_SCHEMA', 'INSTALL_LAYOUT',
+    'INSTALL_SOURCE', 'INSTALL_GEM', 'PROBE_SCHEMA', 'PROBE_COUNT', 'PROBE_RECORD', 'SELECTION',
+    'SELECTION_DIRECTORY', 'MANAGED_DIRECTORY', 'VOLUME_IMAGE', 'VOLUME_IMAGE_CHANGED', 'VOLUME_LOOP_OWNER',
+    'VOLUME_MOUNT', 'VOLUME_NOT_FROZEN', 'VOLUME_MOUNT_CHANGED', 'REQUIRED_SYSTEM_TOOL', 'SYSTEM_COMMAND_FAILED',
+    'SYSTEM_COMMAND_TIMEOUT', 'SYSTEM_COMMAND_OUTPUT_LIMIT', 'DEADLINE_EXHAUSTED', 'UNIT_STATE_UNCONFIRMED',
+    'UNIT_NOT_STOPPED', 'CGROUP_NOT_EMPTY', 'FREEZE_REQUIRES_ROOT', 'FREEZE_IDENTITY', 'FREEZE_DIRECTORY_CHANGED',
+    'FREEZE_RECEIPT'))
 AGENT_ALIAS = pathlib.Path('/run/wtl-agent-toolchain')
 AGENT_ECOSYSTEMS = ('JAVA', 'NODE', 'PYTHON', 'DOTNET', 'KOTLIN', 'GO', 'RUST', 'PHP', 'RUBY')
 AGENT_BINARIES = {
@@ -317,23 +336,40 @@ def agent_unit_identity(manifest):
     for line in output.decode('utf-8').splitlines():
         key, separator, value = line.partition('=')
         if not separator or key not in fields or key in values:
-            agent_reject('UNIT_IDENTITY', 'unknown')
+            agent_identity_reject('PARSE')
         values[key] = value
     if values.get('Id') != agent_unit(operation):
-        agent_reject('UNIT_IDENTITY', 'unknown')
+        agent_identity_reject('ID')
     if values.get('LoadState') == 'not-found' and values.get('ActiveState') == 'inactive':
         return None
-    if code or set(values) != set(fields) or values['LoadState'] != 'loaded' or values['ActiveState'] not in ('activating', 'active'):
-        agent_reject('UNIT_IDENTITY', 'unknown')
+    if code or set(values) != set(fields):
+        agent_identity_reject('FIELDS')
+    if values['LoadState'] != 'loaded':
+        agent_identity_reject('LOAD_STATE')
     if values['DynamicUser'] != 'yes' or values['User'] != agent_user(operation) or values['Group'] != agent_user(operation):
-        agent_reject('UNIT_IDENTITY', 'unknown')
-    if values['UID'] in ('', '4294967295') or values['GID'] in ('', '4294967295') or values['MainPID'] == '0':
+        agent_identity_reject('USER_MODE')
+    unallocated = ('', '4294967295', '[not set]')
+    if values['ActiveState'] == 'inactive':
+        if values['UID'] in unallocated and values['GID'] in unallocated and values['MainPID'] == '0' and values['InvocationID'] == '' and values['ControlGroup'] == '':
+            return None
+        agent_identity_reject('ACTIVE_STATE_INACTIVE')
+    if values['ActiveState'] not in ('activating', 'active'):
+        agent_identity_reject('ACTIVE_STATE')
+    if values['UID'] in unallocated or values['GID'] in unallocated or values['MainPID'] == '0':
         return None
     if any(not re.fullmatch('[1-9][0-9]{0,9}', values[key]) for key in ('UID', 'GID', 'MainPID')) or any(int(values[key]) >= 4294967295 for key in ('UID', 'GID', 'MainPID')):
-        agent_reject('UNIT_IDENTITY', 'unknown')
-    if not re.fullmatch('[a-f0-9]{32}', values['InvocationID']) or values['InvocationID'] == '0' * 32 or values['ControlGroup'] != '/system.slice/' + agent_unit(operation):
-        agent_reject('UNIT_IDENTITY', 'unknown')
+        agent_identity_reject('ALLOCATION')
+    if not re.fullmatch('[a-f0-9]{32}', values['InvocationID']) or values['InvocationID'] == '0' * 32:
+        agent_identity_reject('INVOCATION')
+    if values['ControlGroup'] != '/system.slice/' + agent_unit(operation):
+        agent_identity_reject('CGROUP')
     return {'uid': int(values['UID']), 'gid': int(values['GID']), 'invocationId': values['InvocationID']}
+
+
+def agent_identity_reject(check):
+    error = PreparationFailure('unknown', 'UNIT_IDENTITY')
+    error.identity_check = check if check in AGENT_IDENTITY_CHECKS else 'NONE'
+    raise error
 
 
 def agent_ready_file(manifest, value=None, alias=False):
@@ -510,16 +546,21 @@ def agent_execute(manifest):
              'TMPDIR=' + str(AGENT_ALIAS / 'tmp'), 'XDG_CACHE_HOME=' + str(AGENT_ALIAS / 'home/.cache'),
              '/usr/bin/python3', '-I', '-S', '-c', AGENT_BOOTSTRAP, str(AGENT_ALIAS / 'controller.py'), 'worker', manifest['operation']]
     code, output, execution_error, setup_complete = None, b'', None, False
+    stage, execution_cause = 'LAUNCH', None
     observation = {'exitCode': None, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}
     def setup():
-        nonlocal setup_complete
+        nonlocal setup_complete, stage
         if setup_complete:
             return
+        stage = 'IDENTITY'
         identity = agent_unit_identity(manifest)
         if identity is not None:
+            stage = 'SETUP'
             agent_setup(manifest['operation'], identity)
+            stage = 'READY'
             agent_publish_ready(manifest, identity)
             setup_complete = True
+        stage = 'RUN'
     agent_write(agent_operation(manifest['operation']) / 'start-intent.json', agent_encode({
         'operation': manifest['operation'], 'programSha256': manifest['programSha256']}))
     try:
@@ -527,30 +568,36 @@ def agent_execute(manifest):
         observation = {'exitCode': code, 'outputBytes': len(output), 'outputSha256': hashlib.sha256(output).hexdigest()}
     except Exception as error:
         execution_error = error
+        execution_cause = agent_lifecycle_cause(stage, error)
         observation = getattr(error, 'run_observation', observation)
     finally:
         try:
             agent_os([agent_tool('systemctl'), 'stop', agent_unit(manifest['operation'])], allow_failure=True, timeout=30)
             agent_unit_stopped(manifest)
-        except Exception:
-            raise agent_lifecycle_failure(manifest, 'AGENT_STOP_UNCONFIRMED', observation) from None
+        except Exception as error:
+            raise agent_lifecycle_failure(manifest, 'AGENT_STOP_UNCONFIRMED', observation,
+                agent_lifecycle_cause('STOP', error)) from None
         if not setup_complete:
-            raise agent_lifecycle_failure(manifest, 'AGENT_SETUP_UNCONFIRMED', observation) from None
+            raise agent_lifecycle_failure(manifest, 'AGENT_SETUP_UNCONFIRMED', observation,
+                execution_cause or agent_lifecycle_cause('INCOMPLETE')) from None
         try:
             agent_freeze(manifest['operation'])
             agent_stopped(manifest)
-        except Exception:
-            raise agent_lifecycle_failure(manifest, 'AGENT_FREEZE_UNCONFIRMED', observation) from None
+        except Exception as error:
+            raise agent_lifecycle_failure(manifest, 'AGENT_FREEZE_UNCONFIRMED', observation,
+                agent_lifecycle_cause('FREEZE', error)) from None
     if execution_error is not None:
-        raise agent_lifecycle_failure(manifest, 'AGENT_EXECUTION_UNCONFIRMED', observation) from None
+        raise agent_lifecycle_failure(manifest, 'AGENT_EXECUTION_UNCONFIRMED', observation, execution_cause) from None
     if code or output != ('WORKER_OK=' + manifest['programSha256'] + '\n').encode():
         agent_reject('NONROOT_WORKER_FAILED', 'installation')
 
 
-def agent_lifecycle_failure(manifest, phase, observation):
+def agent_lifecycle_failure(manifest, phase, observation, cause=None):
     error = PreparationFailure('unknown', phase)
     error.lifecycle_diagnostic = {'operation': manifest['operation'], 'phase': phase,
         'command': 'systemd-run', **observation}
+    if cause is not None:
+        error.lifecycle_diagnostic['cause'] = cause
     return error
 
 
@@ -1265,15 +1312,10 @@ def agent_diagnostic_operation(args):
     return operation if isinstance(operation, str) and re.fullmatch('[a-f0-9]{32}', operation) else None
 
 
-def agent_exception_diagnostic(error, args):
-    operation = agent_diagnostic_operation(args)
-    if operation is None:
-        return None
-    families = ((OSError, 'OSError'), (ValueError, 'ValueError'), (KeyError, 'KeyError'),
+def agent_exception_facts(error):
+    families = ((PreparationFailure, 'PreparationFailure'), (OSError, 'OSError'), (ValueError, 'ValueError'), (KeyError, 'KeyError'),
                 (StopIteration, 'StopIteration'), (subprocess.TimeoutExpired, 'TimeoutExpired'))
-    family = next((name for kind, name in families if isinstance(error, kind)), None)
-    if family is None:
-        return None
+    family = next((name for kind, name in families if isinstance(error, kind)), 'OTHER')
     function, line = 'entry', 0
     frame = error.__traceback__
     while frame is not None:
@@ -1282,8 +1324,62 @@ def agent_exception_diagnostic(error, args):
             function, line = name, frame.tb_lineno
         frame = frame.tb_next
     number = error.errno if isinstance(error, OSError) and type(error.errno) is int and 1 <= error.errno <= 4095 else None
+    return {'function': function, 'exception': family, 'errno': number, 'line': line}
+
+
+def agent_exception_diagnostic(error, args):
+    operation = agent_diagnostic_operation(args)
+    if operation is None:
+        return None
+    facts = agent_exception_facts(error)
+    if facts['exception'] in ('PreparationFailure', 'OTHER'):
+        return None
     return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps({'operation': operation, 'phase': 'AGENT_TOOLCHAIN_STATE_UNCONFIRMED',
-        'function': function, 'exception': family, 'errno': number, 'line': line}, sort_keys=True, separators=(',', ':'))
+        **facts}, sort_keys=True, separators=(',', ':'))
+
+
+def agent_lifecycle_cause(stage, error=None):
+    if error is None:
+        return {'stage': 'INCOMPLETE', 'category': 'none', 'code': 'SETUP_NOT_COMPLETED',
+            'exception': 'NONE', 'errno': None, 'function': 'entry', 'line': 0, 'check': 'NONE'}
+    facts = agent_exception_facts(error)
+    category, code, check = 'other', 'UNCLASSIFIED', 'NONE'
+    if isinstance(error, PreparationFailure):
+        if isinstance(error.category, str) and error.category in AGENT_LIFECYCLE_CATEGORIES - {'none'}:
+            category = error.category
+        if isinstance(error.detail, str) and error.detail in AGENT_LIFECYCLE_CODES - {'SETUP_NOT_COMPLETED'}:
+            code = error.detail
+        identity_check = getattr(error, 'identity_check', None)
+        if code == 'UNIT_IDENTITY' and isinstance(identity_check, str) and identity_check in AGENT_IDENTITY_CHECKS:
+            check = identity_check
+    return {'stage': stage, 'category': category, 'code': code, **facts, 'check': check}
+
+
+def agent_valid_lifecycle_cause(value):
+    fields = {'stage', 'category', 'code', 'exception', 'errno', 'function', 'line', 'check'}
+    if not isinstance(value, dict) or set(value) != fields:
+        return False
+    for key, allowed in (('stage', AGENT_LIFECYCLE_STAGES), ('category', AGENT_LIFECYCLE_CATEGORIES),
+                         ('code', AGENT_LIFECYCLE_CODES), ('exception', AGENT_LIFECYCLE_EXCEPTIONS),
+                         ('check', AGENT_IDENTITY_CHECKS)):
+        if not isinstance(value[key], str) or value[key] not in allowed:
+            return False
+    if not isinstance(value['function'], str) or value['function'] not in AGENT_DIAGNOSTIC_FUNCTIONS | {'entry'}:
+        return False
+    if type(value['line']) is not int or (value['line'] != 0 if value['function'] == 'entry' else not 1 <= value['line'] <= 16384):
+        return False
+    number = value['errno']
+    if number is not None and (type(number) is not int or not 1 <= number <= 4095 or value['exception'] != 'OSError'):
+        return False
+    if value['exception'] == 'NONE':
+        return value == agent_lifecycle_cause('INCOMPLETE')
+    if value['stage'] == 'INCOMPLETE' or value['category'] == 'none' or value['code'] == 'SETUP_NOT_COMPLETED':
+        return False
+    if value['exception'] != 'PreparationFailure' and (value['category'] != 'other' or value['code'] != 'UNCLASSIFIED' or value['check'] != 'NONE'):
+        return False
+    if value['check'] != 'NONE' and (value['exception'] != 'PreparationFailure' or value['code'] != 'UNIT_IDENTITY'):
+        return False
+    return True
 
 
 def agent_space_diagnostic(error, args):
@@ -1328,13 +1424,15 @@ def agent_lifecycle_diagnostic(error, args):
     operation = agent_diagnostic_operation(args)
     value = getattr(error, 'lifecycle_diagnostic', None)
     fields = {'operation', 'phase', 'command', 'exitCode', 'outputBytes', 'outputSha256'}
-    if operation is None or not isinstance(value, dict) or set(value) != fields:
+    if operation is None or not isinstance(value, dict) or set(value) not in (fields, fields | {'cause'}):
         return None
     if error.category != 'unknown' or value['operation'] != operation or value['phase'] not in AGENT_LIFECYCLE_PHASES or value['phase'] != error.detail or value['command'] != 'systemd-run':
         return None
     if value['exitCode'] is not None and (type(value['exitCode']) is not int or not -255 <= value['exitCode'] <= 255):
         return None
     if type(value['outputBytes']) is not int or not 0 <= value['outputBytes'] <= 65536 or not agent_hash(value['outputSha256']):
+        return None
+    if 'cause' in value and not agent_valid_lifecycle_cause(value['cause']):
         return None
     return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps(value, sort_keys=True, separators=(',', ':'))
 

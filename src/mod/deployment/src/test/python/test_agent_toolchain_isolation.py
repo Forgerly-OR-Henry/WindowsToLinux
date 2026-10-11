@@ -909,6 +909,127 @@ class AgentToolchainIsolationTest(unittest.TestCase):
             with mock.patch.object(self.c, 'agent_tool', lambda n: '/usr/bin/' + n), mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output(**values))):
                 self.assertIsNone(self.c.agent_unit_identity(self.manifest()))
 
+    def test_identity_guard_cause_classifies_fixed_checks_without_query_values(self):
+        cases = [('ID', self.unit_output(Id='private-other.service')),
+            ('PARSE', self.unit_output() + b'private-extra=secret\n'),
+            ('FIELDS', self.unit_output().replace(b'UID=1234\n', b'')),
+            ('LOAD_STATE', self.unit_output(LoadState='error')),
+            ('ACTIVE_STATE', self.unit_output(ActiveState='failed')),
+            ('USER_MODE', self.unit_output(User='private-user')),
+            ('ALLOCATION', self.unit_output(UID='0')),
+            ('INVOCATION', self.unit_output(InvocationID='0' * 32)),
+            ('CGROUP', self.unit_output(ControlGroup='/private/group'))]
+        args = ['prepare', 'GO', '1.24', '1.24.0', '60', '-', OPERATION, 'private-release']
+        observation = {'exitCode': None, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}
+        for check, query in cases:
+            with self.subTest(check=check), mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                 mock.patch.object(self.c, 'agent_os', return_value=(0, query)):
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    try:
+                        self.c.agent_unit_identity(self.manifest())
+                    except self.c.PreparationFailure as original:
+                        cause = self.c.agent_lifecycle_cause('IDENTITY', original)
+                        raise
+                original = failure.exception
+                self.assertEqual(('unknown', 'UNIT_IDENTITY'), (original.category, original.detail))
+                self.assertEqual(check, cause['check'])
+                self.assertEqual(('agent_unit_identity', 'PreparationFailure', None),
+                    (cause['function'], cause['exception'], cause['errno']))
+                self.assertTrue(1 <= cause['line'] <= 16384)
+                wrapped = self.c.agent_lifecycle_failure(self.manifest(), 'AGENT_SETUP_UNCONFIRMED', observation, cause)
+                projected = self.c.agent_lifecycle_diagnostic(wrapped, args)
+                self.assertIsNotNone(projected)
+                self.assertNotIn('private', projected)
+                self.assertNotIn('"uid"', projected)
+                self.assertNotIn('"gid"', projected)
+
+    def test_loaded_inactive_identity_keeps_rejection_with_specific_fixed_check(self):
+        with mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+             mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output(ActiveState='inactive'))):
+            with self.assertRaises(self.c.PreparationFailure) as failure:
+                self.c.agent_unit_identity(self.manifest())
+            self.assertEqual(('unknown', 'UNIT_IDENTITY'), (failure.exception.category, failure.exception.detail))
+            cause = self.c.agent_lifecycle_cause('IDENTITY', failure.exception)
+            self.assertEqual('ACTIVE_STATE_INACTIVE', cause['check'])
+            self.assertTrue(self.c.agent_valid_lifecycle_cause(cause))
+
+    def test_not_set_identity_with_live_pid_waits_then_returns_current_assigned_identity(self):
+        expected = {'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        for state in ('activating', 'active'):
+            for values in ({'UID': '[not set]', 'GID': '[not set]'}, {'UID': '[not set]'}, {'GID': '[not set]'}):
+                pending = self.unit_output(ActiveState=state, **values)
+                with self.subTest(state=state, values=values), \
+                     mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                     mock.patch.object(self.c, 'agent_os', side_effect=[(0, pending), (0, self.unit_output())]) as query:
+                    self.assertIsNone(self.c.agent_unit_identity(self.manifest()))
+                    self.assertEqual(expected, self.c.agent_unit_identity(self.manifest()))
+                    self.assertEqual(2, query.call_count)
+        for invalid in ('0', 'not set', '[not set] ', '-1', 'private-unassigned'):
+            with self.subTest(invalid=invalid), mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                 mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output(UID=invalid))):
+                self.rejected('UNIT_IDENTITY', lambda: self.c.agent_unit_identity(self.manifest()))
+
+    def test_strict_loaded_inactive_snapshot_waits_then_rechecks_and_never_publishes_early(self):
+        expected = {'uid': 1234, 'gid': 1234, 'invocationId': 'e' * 32}
+        for uid in ('', '4294967295', '[not set]'):
+            for gid in ('', '4294967295', '[not set]'):
+                pending = self.unit_output(ActiveState='inactive', UID=uid, GID=gid, MainPID='0', InvocationID='', ControlGroup='')
+                with self.subTest(uid=uid, gid=gid), mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                     mock.patch.object(self.c, 'agent_os', side_effect=[(0, pending), (0, self.unit_output())]):
+                    self.assertIsNone(self.c.agent_unit_identity(self.manifest()))
+                    self.assertEqual(expected, self.c.agent_unit_identity(self.manifest()))
+        pending = self.unit_output(ActiveState='inactive', UID='[not set]', GID='[not set]', MainPID='0', InvocationID='', ControlGroup='')
+        for expires in (False, True):
+            def command(arguments, **kwargs):
+                if arguments[0].endswith('/systemd-run'):
+                    kwargs['on_poll']()
+                    kwargs['on_poll']()
+                    if expires:
+                        raise self.c.PreparationFailure('timeout', 'DEADLINE_EXHAUSTED')
+                    return 0, b''
+                return (0, pending) if 'show' in arguments else (0, b'')
+            with self.subTest(expires=expires), mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                 mock.patch.object(self.c, 'agent_os', side_effect=command), mock.patch.object(self.c, 'agent_write'), \
+                 mock.patch.object(self.c, 'agent_setup') as setup, mock.patch.object(self.c, 'agent_publish_ready') as ready, \
+                 mock.patch.object(self.c, 'agent_unit_stopped'), mock.patch.object(self.c, 'agent_freeze') as freeze:
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_execute(self.manifest())
+                self.assertEqual(('unknown', 'AGENT_SETUP_UNCONFIRMED'), (failure.exception.category, failure.exception.detail))
+                self.assertEqual('DEADLINE_EXHAUSTED' if expires else 'SETUP_NOT_COMPLETED',
+                    failure.exception.lifecycle_diagnostic['cause']['code'])
+                setup.assert_not_called()
+                ready.assert_not_called()
+                freeze.assert_not_called()
+
+    def test_inactive_snapshot_with_any_assigned_or_foreign_state_remains_unknown(self):
+        pending = {'ActiveState': 'inactive', 'UID': '[not set]', 'GID': '[not set]', 'MainPID': '0',
+            'InvocationID': '', 'ControlGroup': ''}
+        cases = [({'UID': '1234'}, 'ACTIVE_STATE_INACTIVE'), ({'GID': '1234'}, 'ACTIVE_STATE_INACTIVE'),
+            ({'UID': '0'}, 'ACTIVE_STATE_INACTIVE'), ({'GID': '0'}, 'ACTIVE_STATE_INACTIVE'),
+            ({'UID': 'not set'}, 'ACTIVE_STATE_INACTIVE'), ({'GID': '[not set] '}, 'ACTIVE_STATE_INACTIVE'),
+            ({'MainPID': '4567'}, 'ACTIVE_STATE_INACTIVE'), ({'MainPID': '00'}, 'ACTIVE_STATE_INACTIVE'),
+            ({'InvocationID': 'e' * 32}, 'ACTIVE_STATE_INACTIVE'), ({'InvocationID': '0' * 32}, 'ACTIVE_STATE_INACTIVE'),
+            ({'ControlGroup': '/system.slice/' + self.c.agent_unit(OPERATION)}, 'ACTIVE_STATE_INACTIVE'),
+            ({'User': 'root'}, 'USER_MODE'), ({'Group': 'root'}, 'USER_MODE'), ({'DynamicUser': 'no'}, 'USER_MODE'),
+            ({'Id': 'foreign.service'}, 'ID'), ({'LoadState': 'error'}, 'LOAD_STATE')]
+        for changes, check in cases:
+            values = dict(pending, **changes)
+            with self.subTest(changes=changes), mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                 mock.patch.object(self.c, 'agent_os', return_value=(0, self.unit_output(**values))):
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_unit_identity(self.manifest())
+                self.assertEqual(('unknown', 'UNIT_IDENTITY', check),
+                    (failure.exception.category, failure.exception.detail, failure.exception.identity_check))
+        complete = self.unit_output(**pending)
+        for code, output, check in ((1, complete, 'FIELDS'),
+                (0, complete.replace(b'UID=[not set]\n', b''), 'FIELDS'), (0, complete + b'UID=[not set]\n', 'PARSE')):
+            with self.subTest(code=code, check=check), mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+                 mock.patch.object(self.c, 'agent_os', return_value=(code, output)):
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_unit_identity(self.manifest())
+                self.assertEqual(('unknown', 'UNIT_IDENTITY', check),
+                    (failure.exception.category, failure.exception.detail, failure.exception.identity_check))
+
     def test_ready_file_locks_single_publication_and_rejects_links_replacement_and_short_write(self):
         manifest = self.manifest()
         with self.ready_storage(manifest) as (state, locks, actions, _):
@@ -989,8 +1110,12 @@ class AgentToolchainIsolationTest(unittest.TestCase):
                 with self.assertRaises(self.c.PreparationFailure) as failed:
                     self.c.agent_execute(self.manifest())
             self.assertEqual('AGENT_STOP_UNCONFIRMED', failed.exception.detail)
+            diagnostic = failed.exception.lifecycle_diagnostic
             self.assertEqual({'operation': OPERATION, 'phase': 'AGENT_STOP_UNCONFIRMED', 'command': 'systemd-run',
-                'exitCode': code, 'outputBytes': len(private), 'outputSha256': hashlib.sha256(private).hexdigest()}, failed.exception.lifecycle_diagnostic)
+                'exitCode': code, 'outputBytes': len(private), 'outputSha256': hashlib.sha256(private).hexdigest()},
+                {key: value for key, value in diagnostic.items() if key != 'cause'})
+            self.assertEqual(('STOP', 'OSError', 2),
+                (diagnostic['cause']['stage'], diagnostic['cause']['exception'], diagnostic['cause']['errno']))
             self.assertNotIn('freeze', events)
 
     def test_unknown_execution_and_known_worker_failure_keep_distinct_outcomes(self):
@@ -1001,6 +1126,8 @@ class AgentToolchainIsolationTest(unittest.TestCase):
                 self.c.agent_execute(self.manifest())
         self.assertEqual('AGENT_EXECUTION_UNCONFIRMED', failed.exception.detail)
         self.assertIsNone(failed.exception.lifecycle_diagnostic['exitCode'])
+        self.assertEqual(('RUN', 'OSError', 2), tuple(failed.exception.lifecycle_diagnostic['cause'][key]
+            for key in ('stage', 'exception', 'errno')))
         self.assertEqual('frozen-proof', events[-1])
         with self.execution(self.manifest(), code=2, output=b'actual failure'):
             with self.assertRaises(self.c.PreparationFailure) as failed:
@@ -1029,6 +1156,123 @@ class AgentToolchainIsolationTest(unittest.TestCase):
         error.category = 'isolation'
         self.assertIsNone(self.c.agent_lifecycle_diagnostic(error, args))
 
+    def test_setup_guard_causes_retain_stage_category_and_code_without_secret_messages(self):
+        cases = [('IDENTITY', 'agent_unit_identity', 'unknown', 'UNIT_IDENTITY'),
+            ('SETUP', 'agent_setup', 'isolation', 'SETUP_REQUIRES_ORIGINAL_EMPTY_DIRECTORY'),
+            ('READY', 'agent_publish_ready', 'unknown', 'UNIT_IDENTITY_CHANGED'),
+            ('SETUP', 'agent_setup', 'installation', 'private-secret-code'),
+            ('SETUP', 'agent_setup', 'private-secret-category', 'DYNAMIC_IDENTITY')]
+        args = ['prepare', 'GO', '1.24', '1.24.0', '60', '-', OPERATION, 'private-release']
+        for stage, function, category, code in cases:
+            original = self.c.PreparationFailure(category, code)
+            original.identity_check = 'private-check'
+            with self.subTest(stage=stage, code=code), self.execution(self.manifest()) as events, \
+                 mock.patch.object(self.c, function, side_effect=original):
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_execute(self.manifest())
+            wrapped = failure.exception
+            self.assertEqual(('unknown', 'AGENT_SETUP_UNCONFIRMED'), (wrapped.category, wrapped.detail))
+            cause = wrapped.lifecycle_diagnostic['cause']
+            self.assertEqual(stage, cause['stage'])
+            self.assertEqual(category if category in ('unknown', 'isolation', 'installation') else 'other', cause['category'])
+            self.assertEqual(code if code in self.c.AGENT_LIFECYCLE_CODES else 'UNCLASSIFIED', cause['code'])
+            self.assertEqual(('PreparationFailure', None, 'NONE'), (cause['exception'], cause['errno'], cause['check']))
+            self.assertTrue(self.c.agent_valid_lifecycle_cause(cause))
+            self.assertIn('empty', events)
+            self.assertNotIn('freeze', events)
+            self.assertNotIn('worker', events)
+            projected = self.c.agent_lifecycle_diagnostic(wrapped, args)
+            self.assertNotIn('private', projected)
+
+    def test_launch_exception_families_keep_only_bounded_cause_metadata(self):
+        cases = [(OSError(13, '/private/path'), 'OSError', 13), (ValueError('private-value'), 'ValueError', None),
+            (KeyError('private-key'), 'KeyError', None), (StopIteration('private-stop'), 'StopIteration', None),
+            (self.c.subprocess.TimeoutExpired('private-command', 5, output=b'private-output'), 'TimeoutExpired', None),
+            (RuntimeError('private-other'), 'OTHER', None)]
+        args = ['bind', 'private-binding', '60', OPERATION]
+        for original, family, number in cases:
+            def command(arguments, **kwargs):
+                if arguments[0].endswith('/systemd-run'):
+                    raise original
+                return 0, b''
+            with self.subTest(family=family), self.execution(self.manifest()) as events, \
+                 mock.patch.object(self.c, 'agent_os', side_effect=command):
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_execute(self.manifest())
+            wrapped = failure.exception
+            self.assertEqual('AGENT_SETUP_UNCONFIRMED', wrapped.detail)
+            cause = wrapped.lifecycle_diagnostic['cause']
+            self.assertEqual(('LAUNCH', 'other', 'UNCLASSIFIED', family, number, 'NONE'),
+                tuple(cause[key] for key in ('stage', 'category', 'code', 'exception', 'errno', 'check')))
+            self.assertEqual('agent_execute', cause['function'])
+            self.assertTrue(1 <= cause['line'] <= 16384)
+            self.assertNotIn('private', self.c.agent_lifecycle_diagnostic(wrapped, args))
+            self.assertNotIn('freeze', events)
+
+    def test_cause_schema_rejects_malformed_and_inconsistent_metadata(self):
+        args = ['bind', 'private-binding', '60', OPERATION]
+        good = self.c.agent_lifecycle_cause('SETUP', OSError(2, '/private/path'))
+        observation = {'exitCode': None, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}
+        invalid = [dict(good, **{key: value}) for key, value in (
+            ('stage', 'private'), ('stage', []), ('category', 'none'), ('code', 'SETUP_NOT_COMPLETED'),
+            ('exception', 'private'), ('errno', True), ('errno', 0), ('errno', 4096),
+            ('function', 'private'), ('function', 'agent_setup'), ('line', True), ('line', -1), ('line', 16385),
+            ('check', 'ID'), ('extra', 'private'))]
+        invalid += [dict(good, stage='INCOMPLETE'), dict(good, exception='ValueError', errno=2),
+            dict(good, exception='PreparationFailure', code='READY_FILE', check='ID'),
+            dict(good, exception='PreparationFailure', category='none'),
+            {key: value for key, value in good.items() if key != 'check'}, None]
+        incomplete = self.c.agent_lifecycle_cause('INCOMPLETE')
+        invalid += [dict(incomplete, stage='LAUNCH'), dict(incomplete, exception='OSError'),
+            dict(incomplete, errno=2), dict(incomplete, check='ID')]
+        for value in invalid:
+            with self.subTest(value=value):
+                wrapped = self.c.agent_lifecycle_failure(self.manifest(), 'AGENT_SETUP_UNCONFIRMED', observation)
+                wrapped.lifecycle_diagnostic['cause'] = value
+                self.assertIsNone(self.c.agent_lifecycle_diagnostic(wrapped, args))
+        for value in (good, incomplete):
+            wrapped = self.c.agent_lifecycle_failure(self.manifest(), 'AGENT_SETUP_UNCONFIRMED', observation, value)
+            self.assertIsNotNone(self.c.agent_lifecycle_diagnostic(wrapped, args))
+
+    def test_stop_cause_supersedes_setup_error_without_changing_run_observation(self):
+        original = self.c.PreparationFailure('unknown', 'UNIT_IDENTITY')
+        original.run_observation = {'exitCode': None, 'outputBytes': 5, 'outputSha256': hashlib.sha256(b'prior').hexdigest()}
+        with self.execution(self.manifest()) as events, \
+             mock.patch.object(self.c, 'agent_unit_identity', side_effect=original), \
+             mock.patch.object(self.c, 'agent_unit_stopped', side_effect=self.c.PreparationFailure('unknown', 'CGROUP_NOT_EMPTY')):
+            with self.assertRaises(self.c.PreparationFailure) as failure:
+                self.c.agent_execute(self.manifest())
+        diagnostic = failure.exception.lifecycle_diagnostic
+        self.assertEqual('AGENT_STOP_UNCONFIRMED', failure.exception.detail)
+        self.assertEqual(('STOP', 'CGROUP_NOT_EMPTY'), (diagnostic['cause']['stage'], diagnostic['cause']['code']))
+        self.assertEqual(original.run_observation, {key: diagnostic[key] for key in original.run_observation})
+        self.assertNotIn('freeze', events)
+
+    def test_actual_poll_guard_cause_keeps_outer_run_observation_and_never_assigns_identity(self):
+        manifest = self.manifest()
+        native_os = self.c.agent_os
+        def command(arguments, **kwargs):
+            if arguments[0].endswith('/systemd-run'):
+                return native_os(arguments, **kwargs)
+            return (0, b'private-query=private-secret\n') if 'show' in arguments else (0, b'')
+        with self.system_process(b'private-run-output', 70) as (process, _, _), \
+             mock.patch.object(self.c, 'agent_tool', lambda name: '/usr/bin/' + name), \
+             mock.patch.object(self.c, 'agent_write'), mock.patch.object(self.c, 'agent_os', side_effect=command), \
+             mock.patch.object(self.c, 'agent_setup') as setup, mock.patch.object(self.c, 'agent_publish_ready') as ready, \
+             mock.patch.object(self.c, 'agent_unit_stopped'), mock.patch.object(self.c, 'agent_freeze') as freeze:
+            process.poll.side_effect = [None, None, 70]
+            with self.assertRaises(self.c.PreparationFailure) as failure:
+                self.c.agent_execute(manifest)
+            diagnostic = failure.exception.lifecycle_diagnostic
+            self.assertEqual('AGENT_SETUP_UNCONFIRMED', failure.exception.detail)
+            self.assertEqual((None, 0, hashlib.sha256(b'').hexdigest()),
+                tuple(diagnostic[key] for key in ('exitCode', 'outputBytes', 'outputSha256')))
+            self.assertEqual(('IDENTITY', 'UNIT_IDENTITY', 'PARSE', 'agent_unit_identity'),
+                tuple(diagnostic['cause'][key] for key in ('stage', 'code', 'check', 'function')))
+            setup.assert_not_called()
+            ready.assert_not_called()
+            freeze.assert_not_called()
+
     def test_nonempty_cgroup_never_reaches_host_freeze_or_frozen_receipt(self):
         class Group(pathlib.PurePosixPath):
             def exists(self): return True
@@ -1054,6 +1298,9 @@ class AgentToolchainIsolationTest(unittest.TestCase):
             self.assertEqual('AGENT_SETUP_UNCONFIRMED', failed.exception.detail)
             self.assertEqual(code, failed.exception.lifecycle_diagnostic['exitCode'])
             self.assertEqual(hashlib.sha256(output).hexdigest(), failed.exception.lifecycle_diagnostic['outputSha256'])
+            self.assertEqual({'stage': 'INCOMPLETE', 'category': 'none', 'code': 'SETUP_NOT_COMPLETED',
+                'exception': 'NONE', 'errno': None, 'function': 'entry', 'line': 0, 'check': 'NONE'},
+                failed.exception.lifecycle_diagnostic['cause'])
             self.assertEqual(['intent', 'empty'], events)
 
     def test_empty_ready_until_deadline_never_reaches_vendor_or_identity_reads(self):

@@ -76,6 +76,85 @@ class DeploymentAgentToolchainFailureEvidenceTest {
     }
 
     @Test
+    void lifecycleCauseRetainsOriginalGuardAndDoesNotInventAnExceptionForIncompleteSetup() throws Exception {
+        var original = lifecycleCause();
+        var inactive = new LinkedHashMap<String, Object>(original);
+        inactive.put("check", "ACTIVE_STATE_INACTIVE");
+        var io = new LinkedHashMap<String, Object>(original);
+        io.put("stage", "READY");
+        io.put("category", "other");
+        io.put("code", "UNCLASSIFIED");
+        io.put("exception", "OSError");
+        io.put("errno", 5);
+        io.put("check", "NONE");
+        var incomplete = new LinkedHashMap<String, Object>(original);
+        incomplete.put("stage", "INCOMPLETE");
+        incomplete.put("category", "none");
+        incomplete.put("code", "SETUP_NOT_COMPLETED");
+        incomplete.put("exception", "NONE");
+        incomplete.put("function", "entry");
+        incomplete.put("line", 0);
+        incomplete.put("check", "NONE");
+        for (var cause : List.of(original, inactive, io, incomplete)) {
+            var result = lifecycleResult(cause);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            var diagnostic = new ObjectMapper().readTree(result.problem().orElseThrow().context().get("agentToolchainFailure")).path("reportedDiagnostic");
+            assertEquals(new ObjectMapper().valueToTree(cause), diagnostic.path("cause"));
+            assertEquals(0, diagnostic.path("exitCode").intValue());
+        }
+    }
+
+    @Test
+    void lifecycleCauseRejectsPrivateFieldsInvalidFamiliesAndInventedGuardState() throws Exception {
+        var original = lifecycleCause();
+        var invalid = new ArrayList<Object>();
+        for (var change : List.of(Map.<String, Object>entry("stage", "private-body"), Map.<String, Object>entry("category", "private-body"),
+            Map.<String, Object>entry("code", "private-body"), Map.<String, Object>entry("exception", "private-body"),
+            Map.<String, Object>entry("errno", 0), Map.<String, Object>entry("errno", 4096), Map.<String, Object>entry("errno", true),
+            Map.<String, Object>entry("errno", 5), Map.<String, Object>entry("function", "private-body"),
+            Map.<String, Object>entry("line", 0), Map.<String, Object>entry("line", 16385), Map.<String, Object>entry("line", true),
+            Map.<String, Object>entry("check", "private-body"), Map.<String, Object>entry("exception", "NONE"),
+            Map.<String, Object>entry("exception", "OSError"), Map.<String, Object>entry("stage", "INCOMPLETE"),
+            Map.<String, Object>entry("code", "SETUP_NOT_COMPLETED"), Map.<String, Object>entry("category", "none"),
+            Map.<String, Object>entry("code", "READY_FILE"), Map.<String, Object>entry("exceptionMessage", "private-body"))) {
+            var changed = new LinkedHashMap<String, Object>(original);
+            changed.put(change.getKey(), change.getValue());
+            invalid.add(changed);
+        }
+        for (var field : original.keySet()) {
+            var missing = new LinkedHashMap<String, Object>(original);
+            missing.remove(field);
+            invalid.add(missing);
+        }
+        invalid.add("private-body");
+        invalid.add(List.of(original));
+        invalid.add(null);
+        for (var cause : invalid) {
+            var result = lifecycleResult(cause);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            String evidence = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertFalse(evidence.contains("reportedDiagnostic"));
+            assertFalse(evidence.contains("private-body"));
+        }
+    }
+
+    private static Map<String, Object> lifecycleCause() {
+        var cause = new LinkedHashMap<String, Object>(Map.of("stage", "IDENTITY", "category", "unknown", "code", "UNIT_IDENTITY",
+            "exception", "PreparationFailure", "function", "agent_unit_identity", "line", 1401, "check", "ACTIVE_STATE"));
+        cause.put("errno", null);
+        return cause;
+    }
+
+    private static OperationResult<CommandResult> lifecycleResult(Object cause) throws Exception {
+        String phase = "AGENT_SETUP_UNCONFIRMED";
+        var fields = new LinkedHashMap<String, Object>(Map.of("operation", OPERATION, "phase", phase, "command", "systemd-run",
+            "exitCode", 0, "outputBytes", 0, "outputSha256", "d".repeat(64)));
+        fields.put("cause", cause);
+        return retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:" + phase + "\nTOOLCHAIN_DIAGNOSTIC="
+            + new ObjectMapper().writeValueAsString(fields) + "\n", false);
+    }
+
+    @Test
     void systemCommandFailurePreservesCurrentFixedToolExitAndHashWithoutExecutableEvidence() throws Exception {
         for (String command : List.of("fallocate", "mke2fs", "mount", "systemd-run", "UNCLASSIFIED")) {
             String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "SYSTEM_COMMAND_FAILED",

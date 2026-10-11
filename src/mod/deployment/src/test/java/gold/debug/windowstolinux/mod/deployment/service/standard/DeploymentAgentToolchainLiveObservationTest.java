@@ -26,7 +26,7 @@ class DeploymentAgentToolchainLiveObservationTest extends DeploymentStaticLiveAc
         assertTrue(operations.length >= 1 && operations.length <= 4);
         for (String operation : operations) assertTrue(operation.matches("[a-f0-9]{32}"));
         String selected = System.getProperty("managed.live.observedToolchainDirectory", "");
-        assertTrue(selected.matches("/usr/local/lib/windowstolinux/toolchains/versions/rust-[a-f0-9]{64}"));
+        assertTrue(selected.matches("/usr/local/lib/windowstolinux/toolchains/versions/(java|node|python|dotnet|kotlin|go|rust|php|ruby)-[a-f0-9]{64}"));
         var server = new ServerId("static-live");
         enable();
         try (var runtime = open()) {
@@ -52,6 +52,25 @@ class DeploymentAgentToolchainLiveObservationTest extends DeploymentStaticLiveAc
                     var entries = queries.list(base, 32, task);
                     var names = entries.stream().map(entry -> entry.requested().path().substring(base.path().length() + 1)).sorted().toList();
                     System.out.println("AGENT_TOOLCHAIN_FILE_OBSERVATION operation=" + operation + " entries=" + names);
+                    if (Boolean.getBoolean("managed.live.observedToolchainLifecycle")) {
+                        var identity = json.readTree(queries.readFile(base.child("identity.json"), 4096, task));
+                        assertEquals(operation, identity.path("operation").asText());
+                        assertTrue(identity.path("programSha256").asText().matches("[a-f0-9]{64}"));
+                        for (String key : List.of("uid", "gid"))
+                            assertTrue(identity.path(key).isIntegralNumber() && identity.path(key).longValue() >= 0 && identity.path(key).longValue() < 4294967295L);
+                        boolean assigned = identity.path("uid").longValue() > 0 && identity.path("gid").longValue() > 0;
+                        byte[] ready = queries.readFile(base.child("ready.json"), 1024, task);
+                        if (ready.length > 0) {
+                            var value = json.readTree(ready);
+                            assertEquals(operation, value.path("operation").asText());
+                            assertEquals(identity.path("programSha256"), value.path("programSha256"));
+                            assertEquals(identity.path("uid"), value.path("uid"));
+                            assertEquals(identity.path("gid"), value.path("gid"));
+                            assertTrue(assigned && value.path("invocationId").asText().matches("[a-f0-9]{32}"));
+                        }
+                        System.out.println("AGENT_TOOLCHAIN_LIFECYCLE_OBSERVATION operation=" + operation + " identityAssigned=" + assigned
+                            + " ready=" + (ready.length == 0 ? "EMPTY" : "BOUND") + " startIntent=" + names.contains("start-intent.json"));
+                    }
                     if (names.contains("placeholder.json")) {
                         var data = json.readTree(queries.readFile(base.child("placeholder.json"), 4096, task));
                         assertEquals(operation, data.path("operation").asText());

@@ -33,7 +33,7 @@ public final class DeploymentAgentToolchainInputEvidence {
     private static final List<String> CONTROLLER_LOCATIONS = List.of("resolution_validate", "resolution_decode", "official_url", "download", "extract",
         "agent_regular", "agent_tool", "agent_os", "agent_require_space", "agent_create", "agent_release_source", "agent_sandbox_properties", "agent_setup",
         "agent_unit_identity", "agent_ready_file", "agent_publish_ready", "agent_wait_ready", "agent_unit_stopped",
-        "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
+        "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "agent_identity_reject", "agent_exception_facts", "agent_lifecycle_cause", "agent_valid_lifecycle_cause", "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
         "agent_detach", "agent_installation_selection", "agent_record", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 
     private static final List<String> DEPENDENCY_LOCATIONS = List.of("dependency_protected", "dependency_bytes", "dependency_profile",

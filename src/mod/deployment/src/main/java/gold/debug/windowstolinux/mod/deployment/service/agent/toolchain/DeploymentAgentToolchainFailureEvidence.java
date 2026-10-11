@@ -23,6 +23,45 @@ public final class DeploymentAgentToolchainFailureEvidence {
     private static final Set<String> LIFECYCLE_PHASES = Set.of("AGENT_SETUP_UNCONFIRMED", "AGENT_EXECUTION_UNCONFIRMED",
         "AGENT_STOP_UNCONFIRMED", "AGENT_FREEZE_UNCONFIRMED");
 
+    private static final Set<String> CONTROLLER_FUNCTIONS = Set.of(
+        "agent_bind", "agent_cleanup_before_start", "agent_cleanup_placeholder", "agent_copy_tree", "agent_create",
+        "agent_detach", "agent_execute", "agent_freeze", "agent_identity", "agent_installation_selection",
+        "agent_main", "agent_manifest", "agent_os", "agent_prepare", "agent_prepare_selected",
+        "agent_probe_records", "agent_promote", "agent_publish_ready", "agent_ready_file", "agent_record",
+        "agent_regular", "agent_release_source", "agent_require_space", "agent_scan", "agent_setup",
+        "agent_stopped", "agent_tool", "agent_unit_identity", "agent_unit_stopped", "agent_wait_ready",
+        "agent_worker", "agent_write", "entry");
+
+    private static final Set<String> LIFECYCLE_STAGES = Set.of(
+        "FREEZE", "IDENTITY", "INCOMPLETE", "LAUNCH", "READY",
+        "RUN", "SETUP", "STOP");
+
+    private static final Set<String> LIFECYCLE_CATEGORIES = Set.of(
+        "installation", "isolation", "none", "other", "unknown");
+
+    private static final Set<String> LIFECYCLE_CODES = Set.of(
+        "CGROUP_NOT_EMPTY", "CONTROLLER_BINDING", "DEADLINE_EXHAUSTED", "DUPLICATE_JSON_FIELD", "DYNAMIC_IDENTITY",
+        "FREEZE_DIRECTORY_CHANGED", "FREEZE_IDENTITY", "FREEZE_RECEIPT", "FREEZE_REQUIRES_ROOT", "IDENTITY_ALREADY_ASSIGNED",
+        "IDENTITY_SHORT_WRITE", "INSTALL_GEM", "INSTALL_LAYOUT", "INSTALL_SCHEMA", "INSTALL_SOURCE",
+        "INVALID_JSON", "JSON_CONSTANT", "JSON_LIMIT", "MANAGED_DIRECTORY", "MANIFEST_ACTION",
+        "MANIFEST_BINDING", "MANIFEST_DEADLINE", "MANIFEST_DIRECTORIES", "MANIFEST_DIRECTORY_INODE", "MANIFEST_INODE",
+        "MANIFEST_LOOP", "MANIFEST_SCHEMA", "PROBE_COUNT", "PROBE_RECORD", "PROBE_SCHEMA",
+        "PROGRAM_BINDING", "PROTECTED_DIRECTORY", "PROTECTED_FILE", "PROTECTED_FILE_CHANGED", "READY_ALREADY_PUBLISHED",
+        "READY_FILE", "READY_FILE_CHANGED", "READY_SHORT_WRITE", "REQUIRED_SYSTEM_TOOL", "SELECTION",
+        "SELECTION_DIRECTORY", "SETUP_NOT_COMPLETED", "SETUP_REQUIRES_ORIGINAL_EMPTY_DIRECTORY", "SETUP_REQUIRES_ROOT", "SYSTEM_COMMAND_FAILED",
+        "SYSTEM_COMMAND_OUTPUT_LIMIT", "SYSTEM_COMMAND_TIMEOUT", "UNCLASSIFIED", "UNIT_IDENTITY", "UNIT_IDENTITY_CHANGED",
+        "UNIT_NOT_STOPPED", "UNIT_STATE_UNCONFIRMED", "VOLUME_IMAGE", "VOLUME_IMAGE_CHANGED", "VOLUME_LOOP_OWNER",
+        "VOLUME_MOUNT", "VOLUME_MOUNT_CHANGED", "VOLUME_NOT_FROZEN");
+
+    private static final Set<String> LIFECYCLE_EXCEPTIONS = Set.of(
+        "KeyError", "NONE", "OSError", "OTHER", "PreparationFailure",
+        "StopIteration", "TimeoutExpired", "ValueError");
+
+    private static final Set<String> LIFECYCLE_CHECKS = Set.of(
+        "ACTIVE_STATE", "ACTIVE_STATE_INACTIVE", "ALLOCATION", "CGROUP", "FIELDS",
+        "ID", "INVOCATION", "LOAD_STATE", "NONE", "PARSE",
+        "USER_MODE");
+
     private DeploymentAgentToolchainFailureEvidence() {
     }
 
@@ -87,7 +126,7 @@ public final class DeploymentAgentToolchainFailureEvidence {
         if (!line.startsWith(prefix) || line.length() > 2048) return Optional.empty();
         try {
             var value = JSON.readTree(line.substring(prefix.length()));
-            if (value == null || !value.isObject() || value.size() != 6 || !value.path("operation").isTextual()
+            if (value == null || !value.isObject() || value.size() != (LIFECYCLE_PHASES.contains(code) && value.has("cause") ? 7 : 6) || !value.path("operation").isTextual()
                 || !identity.equals(value.path("operation").asText()) || !value.path("phase").isTextual()
                 || !code.equals(value.path("phase").asText()))
                 return Optional.empty();
@@ -118,6 +157,7 @@ public final class DeploymentAgentToolchainFailureEvidence {
                     || value.path("outputBytes").intValue() < 0 || value.path("outputBytes").intValue() > 65536
                     || !value.path("outputSha256").isTextual() || !value.path("outputSha256").asText().matches("[a-f0-9]{64}"))
                     return Optional.empty();
+                if (value.has("cause") && !validLifecycleCause(value.path("cause"))) return Optional.empty();
                 return Optional.of(value);
             }
             if (code.equals("HOST_SPACE_REQUIRED")) {
@@ -134,12 +174,7 @@ public final class DeploymentAgentToolchainFailureEvidence {
                 return Optional.of(value);
             }
             if (code.equals("AGENT_TOOLCHAIN_STATE_UNCONFIRMED")) {
-                if (!value.path("function").isTextual() || !Set.of("agent_main", "agent_prepare", "agent_create", "agent_prepare_selected", "agent_installation_selection",
-                    "agent_execute", "agent_bind", "agent_setup", "agent_worker", "agent_freeze", "agent_release_source", "agent_probe_records",
-                    "agent_promote", "agent_detach", "agent_cleanup_before_start", "agent_cleanup_placeholder", "agent_os", "agent_tool",
-                    "agent_regular", "agent_write", "agent_record", "agent_identity", "agent_scan", "agent_copy_tree", "agent_require_space",
-                    "agent_unit_identity", "agent_ready_file", "agent_publish_ready", "agent_wait_ready", "agent_unit_stopped",
-                    "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "entry").contains(value.path("function").asText())
+                if (!value.path("function").isTextual() || !CONTROLLER_FUNCTIONS.contains(value.path("function").asText())
                     || !value.path("exception").isTextual() || !Set.of("OSError", "ValueError", "KeyError", "StopIteration", "TimeoutExpired").contains(value.path("exception").asText())
                     || !(value.path("errno").isNull() || value.path("errno").isIntegralNumber() && value.path("errno").canConvertToInt()
                     && value.path("errno").intValue() >= 1 && value.path("errno").intValue() <= 4095)
@@ -174,6 +209,32 @@ public final class DeploymentAgentToolchainFailureEvidence {
         } catch (java.io.IOException invalid) {
             return Optional.empty();
         }
+    }
+
+    private static boolean validLifecycleCause(com.fasterxml.jackson.databind.JsonNode value) {
+        if (!value.isObject() || value.size() != 8) return false;
+        for (var name : List.of("stage", "category", "code", "exception", "function", "check"))
+            if (!value.path(name).isTextual()) return false;
+        if (!LIFECYCLE_STAGES.contains(value.path("stage").asText()) || !LIFECYCLE_CATEGORIES.contains(value.path("category").asText())
+            || !LIFECYCLE_CODES.contains(value.path("code").asText()) || !LIFECYCLE_EXCEPTIONS.contains(value.path("exception").asText())
+            || !CONTROLLER_FUNCTIONS.contains(value.path("function").asText()) || !LIFECYCLE_CHECKS.contains(value.path("check").asText())
+            || !(value.path("errno").isNull() || value.path("errno").isIntegralNumber() && value.path("errno").canConvertToInt()
+            && value.path("errno").intValue() >= 1 && value.path("errno").intValue() <= 4095)
+            || !value.path("line").isIntegralNumber() || !value.path("line").canConvertToInt()
+            || (value.path("function").asText().equals("entry") ? value.path("line").intValue() != 0
+            : value.path("line").intValue() < 1 || value.path("line").intValue() > 16384)) return false;
+        String family = value.path("exception").asText();
+        if (family.equals("NONE"))
+            return value.path("stage").asText().equals("INCOMPLETE") && value.path("category").asText().equals("none")
+                && value.path("code").asText().equals("SETUP_NOT_COMPLETED") && value.path("errno").isNull()
+                && value.path("function").asText().equals("entry") && value.path("line").intValue() == 0 && value.path("check").asText().equals("NONE");
+        if (value.path("stage").asText().equals("INCOMPLETE") || value.path("category").asText().equals("none")
+            || value.path("code").asText().equals("SETUP_NOT_COMPLETED") || !family.equals("OSError") && !value.path("errno").isNull())
+            return false;
+        if (!family.equals("PreparationFailure") && (!value.path("category").asText().equals("other")
+            || !value.path("code").asText().equals("UNCLASSIFIED") || !value.path("check").asText().equals("NONE")))
+            return false;
+        return value.path("check").asText().equals("NONE") || family.equals("PreparationFailure") && value.path("code").asText().equals("UNIT_IDENTITY");
     }
 
     /** Projects the attachment only for its dedicated Agent failure event. / 仅为专用 Agent 失败事件投影附件。 */
