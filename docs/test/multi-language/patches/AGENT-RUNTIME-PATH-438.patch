@@ -1,0 +1,38 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/ToolchainBuildEnvironment.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/ToolchainBuildEnvironment.java
+@@ -31 +30,0 @@
+-        List<String> paths = new ArrayList<>();
+@@ -35 +33,0 @@
+-            paths.add(path + (s.version().ecosystem() == DeploymentToolchainType.DOTNET ? "" : "/bin"));
+@@ -60,0 +59,15 @@
++        variable(script, "PATH", path(tools));
++        for (var selection : tools.selections())
++            verifyExecutables(script, selection);
++        return script.toString();
++    }
++
++    /** Returns the executable search path for an already resolved binding, without selecting tools.
++     * <p>返回已解析绑定的可执行搜索路径，不重新选择工具。
++     * @param tools actual resolved binding / 实际已解析绑定
++     * @return ordered tool directories followed by the existing system directories / 有序工具目录及既有系统目录
++     */
++    public static String path(DeploymentResolvedToolchains tools) {
++        List<String> paths = new ArrayList<>();
++        for (var selection : tools.selections())
++            paths.add(selection.directory() + (selection.version().ecosystem() == DeploymentToolchainType.DOTNET ? "" : "/bin"));
+@@ -64,4 +77 @@
+-        variable(script, "PATH", String.join(":", paths));
+-        for (var selection : tools.selections())
+-            verifyExecutables(script, selection);
+-        return script.toString();
++        return String.join(":", paths);
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -607 +607 @@
+-                "agent", now, component.configuration());
++                "agent", now, DeploymentAgentRuntimeEnvironment.entries(runtime, component.configuration(), buildTools.executed(id)));
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+@@ -93 +93 @@
+-                "Declare the initial component graph and intended artifact layout after identification. Assess this proposed source-backed declaration, not completion of later preparation, build or runtime admission. Unobserved tools, not-yet-built planned outputs and initially unknown database bindings are later verification obligations; they are blocking discrepancies only if they prevent this declaration or its next action. Actual source conflicts and failed pending results still require assessment and resolution. Derive runtime behavior from current READ facts; declare literal artifact-relative paths for outputs and launchers to be built after this plan. Their existence and behavior must be verified before seal and publication. Use verified sourceSha256 for configuration. Unknown database bindings are null initially; prepare them after this plan and revise from real bindings. Assess every pending observation.";
++                "Declare the initial component graph and intended artifact layout after identification. Assess this proposed source-backed declaration, not completion of later preparation, build or runtime admission. Unobserved tools, not-yet-built planned outputs and initially unknown database bindings are later verification obligations; they are blocking discrepancies only if they prevent this declaration or its next action. Actual source conflicts and failed pending results still require assessment and resolution. Derive runtime behavior from current READ facts; read the actual entrypoint, HTTP route definition and storage consumer before declaring health URL paths, ports, bind addresses or data environment names. Match directory versus file semantics; conventional defaults and recognition suggestions do not replace these source facts. Declare literal artifact-relative paths for outputs and launchers to be built after this plan. Their existence and behavior must be verified before seal and publication. Use verified sourceSha256 for configuration. Unknown database bindings are null initially; prepare them after this plan and revise from real bindings. Assess every pending observation.";

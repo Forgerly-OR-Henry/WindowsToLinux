@@ -1,6 +1,6 @@
 # Agent 八项目验收状态
 
-记录时间：2026-10-11。用户已提供再次重装后的服务器并唤醒，当前仅推进原 file-transfer 完整项目；实时执行进度以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+记录时间：2026-10-11。原 file-transfer 的部署、64KiB 上传下载和重启持久化已通过，原产品恢复收尾完成；425 整条测试仍保留 FAIL。当前仅串行推进原 task-board，实时执行进度以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 400 起的新服务器单项目复验
 
@@ -111,3 +111,17 @@ file-transfer 业务及原产品恢复收尾完成后，仅串行测试原 task-
 Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin 长度/摘要、真实 output/timeout 边界及唯一当前 deployment-host 目标匹配时生成。脚本仍完整保留在 exactAction；导航 SHA 和范围仅绑定显示的脚本字节，不伪造远端工具已验证结论。apt-get/dnf/systemctl 仅检查存在性。facts 拒绝注入导航，messages 重算并核对导航及原会话绑定；任意同标签脚本继续独立完整审查，不借用信任。当前每条命令仍独立审批，原有效 DENY 不重审、不取得宿主许可或 dispatch。
 
 432 明确筛选的 14 项 Java 定点全 PASS/0 SKIP，四个自有 Java 文件按项目 IDEA formatter 处理；没有调用真实 API/SSH，没有运行全套，所有验证进程退出。两个已有混合迁移文件仅保留 [本任务增量](patches/AGENT-HOST-BASELINE-431.patch)，before/after/SHA 与原用量单列保留。该补丁以零上下文记录自有增量，使用 `git apply --unidiff-zero`，当前反向检查通过。下一步仅 fresh 复验 task-board，不能由本地通过推断真实部署或审批通过。
+
+## 433–437 task-board 发布失败与原任务核查
+
+433 原 task-board 使用 MANUAL_REVIEW、remember=false，Java、Node、Python 的受管工具链准备成功，源码构建和制品封存完成。发布返回 `application-health-timeout`；随后模型提议删除和重建发布目录，完整独立审批发现路径归属守卫缺失，且正文没有其理由承诺的服务安装、启动和健康核验，正确 DENY，命令未发送。原任务 `49f9dd9a-2857-440c-836c-f708ba2ef3c5` 保持 UNKNOWN，两份 FILE 资源保留；不重审拒绝或重放原命令。Maven 退出 1、本地 Java 0，2,045 源码及原八样例 203 文件字节未变。
+
+87 次请求均返回用量，共 1,364,509 Token：部署 709,630、审批 654,879；供应商输入缓存命中率 51.2%，审批占总 48.0%。51 条已审阅动作对应 51 次模拟人工确认，未启用记忆授权。另 4 项配置探测用量未知。400 起服务器调试累计已知 5,218,451，24 项配置探测未知；仍未满足正式同版八项目验收标准。
+
+434 通过已有产品只读观察入口读取原服务 journal，1 PASS/0 SKIP，没有模型请求：`run-backend.sh` 第 7 行执行 `java`，命令不存在，进程退出 127。源码确认临时 application-job 设置已核验工具链 PATH，永久 PROCESS unit 没有该设置；绑定本身已随候选传递，JAVA 安装并未失败。此证据不能证明修复 PATH 后其他启动、健康路由或数据库配置都正确。
+
+435 使用现有产品原任务恢复入口，确认原服务器及 helper 身份后仍为 UNKNOWN，1 FAIL；公开结果是 `DEPLOYMENT_AGENT_FINAL_ASSESSMENT_MISSING`，原发布开始但没有最终评估记录。436 本地元数据检查因参数名误用单数失败，未连接服务器或调用模型；437 更正为现有入口的复数参数后 1 PASS。命令检查点为 ENDED 3、INTENT 1，没有 DISPATCHED；原回滚记录、拒绝、来源和任务身份均保留。这三项检查没有新增模型请求，不能把恢复失败记成完成。
+
+438 选择 Agent 独立配置修复：在新发布提案及不可变配置创建前，从当前来源绑定、实际已执行的工具集合派生缺省运行 PATH。显式 RUNTIME Text PATH 不被覆盖，BUILD-only 或非文本声明拒绝，原 64 条目及 1,024 字符限制保留；共享路径计算只提取原有逻辑，helper 字节、摘要及旧 unit renderer 保持不变。通用计划提示要求读取实际 HTTP 路由和存储消费者，区分目录与文件配置语义，不引入模型或样例特化。
+
+439 的 12 个明确筛选场景中 11 PASS，1 个 Git Bash 夹具因临时目录权限失败；440 改为 JUnit 所有的临时目录后，仅复验失败场景，1 PASS。最终 12 个不同场景全 PASS/0 SKIP：覆盖构建及运行路径一致、显式配置和预算边界、真实隔离环境下的可执行文件查找、配置摘要变化，以及直接受影响的构建、helper 完整字节和 HTTP 工具合同。受控启动包含未提供路径时退出 127 的对照，但没有运行真实 systemd、模型或服务器，也不等于发布健康验证。两份新 Java 文件完成 IDEA formatter；所有验证进程退出，首次失败留下的空测试目录已限定路径清理。三个已有混合迁移文件只记录 [本任务增量](patches/AGENT-RUNTIME-PATH-438.patch)，完整 before/after/SHA 单独保留，补丁反向检查通过；未整体提交其他任务迁移。下一步只 fresh 复验 task-board。
