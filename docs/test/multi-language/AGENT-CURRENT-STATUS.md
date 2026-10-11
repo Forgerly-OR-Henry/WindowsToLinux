@@ -183,3 +183,11 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 457 绑定在 APP 后、宿主授权后及实际发送前重新校验，缺失、变化或合法 DENY 都保留 UNKNOWN。新增 38 个受控健康证据场景及一个理由提示场景，39 PASS、无跳过，Maven 0、Java 0，没有真实 AI/SSH 请求。成功场景经真实 `GraphPublisher.verifyPublished` 验证两个不同组件，保持原有两次状态查询；本地 fixture 不能证明服务器已恢复。原外层 DELIVERY 不合成结果。
 
 审批理由软性目标为一句、160 字以内；Agent 公开结论软性目标为 200 字以内。完整命令、源码、typed 参数、审批规则、输出上限及校验器不变，必要事实仍应完整提供，不能截断证据。两份正式补丁保存已有混合文件自有增量：[恢复健康证据接入](patches/AGENT-HEALTH-EVIDENCE-457.patch)、[简短模型理由](patches/AI-CONCISE-REASONS-457.patch)，反向检查通过。下一步只通过原产品入口恢复旧 task-board，再开始新的完整 task-board；原端口错误提案仅用于结清，不计业务成功。
+
+457 已限定提交五个自有文件，提交 `345feb77`，无推送。458 原产品恢复已结束：Maven 1、Java 0，2056 个源码摘要零变化。两个组件健康检查通过，backend 的 inspect/observe 和 frontend 的 inspect 也通过；frontend 的 observe-deployment 在独立 APP 获合法 DENY，未发送。实际第二个参数是 ownership manifest SHA，审批将其误认为资源 ID；此时补充器仅为健康检查提供对应事实，运行观察仍缺少可直接核验的参数映射。没有进入清理或停止/禁自启，原 UNKNOWN 保留。
+
+458 九次新增 APP 实际用量 45,216，输入 43,957、输出 1,259、命中 23,296、未命中 20,661，缓存率 53.0%。新服务器跨版本调试累计 2,431,901；不作正式批次指标，也不把健康通过写成部署业务成功。下一项修复覆盖原图验证已有的 canonical inspect-runtime/native observe-deployment，复用同一批当前状态查询；不加查询、不改 helper、逐命令审批与发送前绑定校验保持。
+
+459 已补齐 canonical inspect-runtime 与原生 observe-deployment：第二个位置参数明确是归属 manifest SHA，应用 ID、manifest、releaseRoot、原系统单元和当前原发布逐组件绑定。APP、宿主授权后及实际发送前重新核对；取得许可后替换 helper 或内联命令同样拒绝。容器内联观察仍走原完整独立审批，默认无补充证据，其业务和命令未复制或修改。运行观察 DENY 保存理由、完整动作和证据摘要并终止本次验证。
+
+459 只运行新增 13 个及直接受影响 6 个场景，共 19 PASS、无跳过，Maven 0、Java 0，无真实模型/SSH 请求。没有重跑整个测试类或全项目。两个 Java 文件的精确 IDEA 格式化与差异检查通过，原字节、格式化后 SHA 和定点日志保留；当前原任务仍 UNKNOWN，真实原恢复 460 和新的完整 task-board 461 尚待执行。

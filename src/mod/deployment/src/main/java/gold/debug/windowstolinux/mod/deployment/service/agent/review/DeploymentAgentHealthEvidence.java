@@ -30,11 +30,15 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.build.Deploym
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.*;
 import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
 
-/** Invocation-local Agent health bindings and receipts from the graph's existing original-status queries. */
+/** Invocation-local Agent graph verification bindings and receipts from its existing original-status queries. */
 public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCommandEvidence, RemoteSession {
     private static final String HEALTH = "deployment.publication.health.v1";
 
     private static final String STATUS = "deployment.publication.original-status.v1";
+
+    private static final String INSPECT = "deployment.publication.inspect.v1";
+
+    private static final String OBSERVE = "deployment.publication.observe.v1";
 
     private final DeploymentCommandReviewScope original;
 
@@ -91,10 +95,14 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     private record Health(Selection selected, DeploymentHealthCheck check, List<String> policySources) {
     }
 
-    private record Pending(ActionIntent intent, Health health, String evidenceDigest, String reviewDigest,
+    private record RuntimeQuery(Selection selected, String verb) {
+    }
+
+    private record Pending(ActionIntent intent, Health health, RuntimeQuery runtime, String evidenceDigest,
+                           String reviewDigest,
                            Set<Long> queryEvents, boolean approved) {
         Pending approve() {
-            return new Pending(intent, health, evidenceDigest, reviewDigest, queryEvents, true);
+            return new Pending(intent, health, runtime, evidenceDigest, reviewDigest, queryEvents, true);
         }
     }
 
@@ -127,7 +135,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     @Override
     public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
         String operation = operation(intent);
-        if (!Set.of(HEALTH, STATUS).contains(operation)) return Map.of();
+        if (!covered(operation, request)) return Map.of();
         try {
             if (stopped || supplied != task || query != null || pending != null)
                 throw new IllegalStateException("Original health review cannot be replayed or replaced");
@@ -139,16 +147,17 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 query = new Query(intent, requestFacts(intent, request), selected, false);
                 return Map.of();
             }
-            var health = selectHealth(intent, request);
+            var health = operation.equals(HEALTH) ? selectHealth(intent, request) : null;
+            var runtime = health == null ? selectRuntime(intent, request) : null;
             requireObservations();
-            var selected = health.selected();
+            var selected = health != null ? health.selected() : runtime.selected();
             var events = journal.events(task);
             var facts = new LinkedHashMap<String, Object>();
-            facts.put("schema", "agent-current-health-evidence.v1");
+            facts.put("schema", health != null ? "agent-current-health-evidence.v1" : "agent-current-runtime-evidence.v1");
             facts.put("scope", "THIS_GRAPH_VERIFICATION_ONLY; retained events are references, never current receipts or execution permission");
             facts.put("currentTask", task.id().toString());
             facts.put("originalTask", task.id().toString());
-            facts.put("healthExactActionSha256", DeploymentAgentInputs.hash(intent.exactAction()));
+            facts.put(health != null ? "healthExactActionSha256" : "runtimeExactActionSha256", DeploymentAgentInputs.hash(intent.exactAction()));
             facts.put("server", server.id());
             facts.put("targetProfileSha256", profile);
             facts.put("authenticatedTargetSha256", snapshot.identity().targetDigest());
@@ -162,19 +171,35 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             facts.put("application", proposal.graph().applicationId());
             facts.put("healthOwner", proposal.graph().healthComponentId());
             facts.put("unitBinding", unitFacts(selected));
-            facts.put("healthPolicySources", health.policySources());
-            facts.put("typedHealthPolicy", healthFacts(health.check()));
-            facts.put("argumentBinding", Map.of("verb", "application-health", "applicationIdArgument", selected.part().unit().id(),
-                "ownershipManifestArgument", selected.part().unit().ownershipManifestSha256(),
-                "healthPayloadArgument", DeploymentWorkloadArguments.healthPayload(health.check()),
-                "healthPayloadMeaning", "Canonical Base64 NUL-framed health-v1 policy; not an application id, resource id or permission"));
+            if (health != null) {
+                facts.put("healthPolicySources", health.policySources());
+                facts.put("typedHealthPolicy", healthFacts(health.check()));
+                facts.put("argumentBinding", Map.of("verb", "application-health", "applicationIdArgument", selected.part().unit().id(),
+                    "ownershipManifestArgument", selected.part().unit().ownershipManifestSha256(),
+                    "healthPayloadArgument", DeploymentWorkloadArguments.healthPayload(health.check()),
+                    "healthPayloadMeaning", "Canonical Base64 NUL-framed health-v1 policy; not an application id, resource id or permission"));
+            } else {
+                var unit = selected.part().unit();
+                facts.put("argumentBinding", Map.of("verb", runtime.verb(), "argumentCount", 2,
+                    "applicationIdArgument", unit.id(), "applicationIdMeaning", "Argument 1 is the original managed unit's application id",
+                    "ownershipManifestArgument", unit.ownershipManifestSha256(),
+                    "ownershipManifestMeaning", "Argument 2 is the original ownership manifest SHA256 checked against CURRENT/.windowstolinux-owner; not a deployment id or resource id",
+                    "resourceTargetKind", "deployment-release", "resourceTargetId", unit.releaseRoot(),
+                    "resourceTargetMeaning", "The unchanged resource target is this unit's managed release root; it is not either positional argument"));
+                facts.put("runtimeBinding", Map.of("kind", backend(selected).equals("native") ? "deployment" : "container",
+                    "engine", engine(selected), "mode", selected.part().reviewedRuntime().workload().mode().name(),
+                    "currentReleaseSha256", selected.commit().release().sha256(), "systemdUnit", unit.systemdUnit()));
+            }
             facts.put("originalGraphBindings", selections.values().stream().map(DeploymentAgentHealthEvidence::unitFacts).toList());
             facts.put("currentGraphQueries", observations.values().stream().map(value -> Map.of("event", value.event(),
                 "component", value.query().selected().part().componentId(), "request", value.query().request(), "result", value.result(),
                 "parsedStatus", statusFacts(value.status()), "resultSha256", value.resultDigest())).toList());
             facts.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
             facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-            facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses the typed health-v1 payload. Native HTTP/TCP/UDP checks listener PID membership in the managed systemd cgroup; container probes check the bound container ports and namespace. HTTP requires the loopback response and unchanged process identity. COMMAND or on-demand verification executes the original typed entry/argv under the application identity and must also be reviewed as execution.");
+            if (health != null)
+                facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses the typed health-v1 payload. Native HTTP/TCP/UDP checks listener PID membership in the managed systemd cgroup; container probes check the bound container ports and namespace. HTTP requires the loopback response and unchanged process identity. COMMAND or on-demand verification executes the original typed entry/argv under the application identity and must also be reviewed as execution.");
+            else
+                facts.put("enforcedRuntimeBoundary", "The pinned inspect-runtime and native observe-deployment implementations validate the application id and ownership digest, resolve CURRENT strictly inside this application's managed releases directory and check CURRENT/.windowstolinux-owner. Native checks also verify the original derived systemd unit fragment path, absence of foreign drop-ins and expected unit bytes before reading runtime mode/state. These are helper execution-time guards; the captured original-status receipt is the earlier current-release observation and does not prove present listener ownership. The container inline observation retains its existing independent command review without this supplement.");
             facts.put("observationLimits", "The captured status proves owned CURRENT and original candidate ownership/build state at this invocation's query. It does not prove listener ownership or health; the subsequent helper enforces those checks at execution. Sealed source/artifact and configuration identities are retained original facts, not freshly rehashed remote content. Artifact SHA and release SHA identify different objects. No historical approval is reused and no unresolved outer delivery is declared settled.");
             facts.put("originalEventReferences", eventReferences(events));
             facts.put("priorDiagnosticLocator", Map.of("task", task.id().toString(), "eventCode", "DEPLOYMENT_AGENT_COMMAND_REVIEW_DENIED",
@@ -185,8 +210,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             String reviewDigest = digest(Map.of("command", requestFacts(intent, request), "currentEvidenceSha256", evidenceDigest));
             facts.put("evidenceSha256", evidenceDigest);
             facts.put("reviewRequestSha256", reviewDigest);
-            pending = new Pending(intent, health, evidenceDigest, reviewDigest, queryEvents(), false);
-            journal.event(task, "HEALTH_REVIEW_REQUEST", reviewDigest,
+            pending = new Pending(intent, health, runtime, evidenceDigest, reviewDigest, queryEvents(), false);
+            journal.event(task, health != null ? "HEALTH_REVIEW_REQUEST" : "RUNTIME_REVIEW_REQUEST", reviewDigest,
                 "exactAction=" + DeploymentAgentInputs.hash(intent.exactAction()) + ";evidence=" + evidenceDigest);
             return Collections.unmodifiableMap(facts);
         } catch (Exception unavailable) {
@@ -201,21 +226,21 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     public void reviewed(ActionIntent intent, CommandRequest request, TaskContext supplied,
                          DeploymentReviewDecision decision) throws ApiException {
         String operation = operation(intent);
-        if (!Set.of(HEALTH, STATUS).contains(operation)) return;
+        if (!covered(operation, request)) return;
         boolean denial = decision.decision().equals("DENY");
         if (denial) stopped = true;
         try {
-            String reviewDigest = operation.equals(HEALTH) && pending != null ? pending.reviewDigest() : digest(requestFacts(intent, request));
-            String evidenceDigest = operation.equals(HEALTH) && pending != null ? pending.evidenceDigest() : "none";
-            journal.event(task, operation.equals(HEALTH)
-                    ? denial ? "HEALTH_REVIEW_DENIED" : "HEALTH_REVIEW_APPROVED"
-                    : denial ? "HEALTH_STATUS_QUERY_DENIED" : "HEALTH_STATUS_QUERY_APPROVED",
+            String reviewDigest = !operation.equals(STATUS) && pending != null ? pending.reviewDigest() : digest(requestFacts(intent, request));
+            String evidenceDigest = !operation.equals(STATUS) && pending != null ? pending.evidenceDigest() : "none";
+            journal.event(task, operation.equals(STATUS) ? denial ? "HEALTH_STATUS_QUERY_DENIED" : "HEALTH_STATUS_QUERY_APPROVED"
+                    : operation.equals(HEALTH) ? denial ? "HEALTH_REVIEW_DENIED" : "HEALTH_REVIEW_APPROVED"
+                    : denial ? "RUNTIME_REVIEW_DENIED" : "RUNTIME_REVIEW_APPROVED",
                 reviewDigest, "exactAction=" + DeploymentAgentInputs.hash(intent.exactAction()) + ";evidence=" + evidenceDigest
                     + ";reasonSha256=" + DeploymentAgentInputs.hash(decision.reason()));
             if (!denial) {
                 verify(intent, request, supplied);
-                if (operation.equals(HEALTH)) pending = pending.approve();
-                else query = query.approve();
+                if (operation.equals(STATUS)) query = query.approve();
+                else pending = pending.approve();
             }
         } catch (Exception unavailable) {
             stopped = true;
@@ -231,7 +256,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     @Override
     public void verify(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
         String operation = operation(intent);
-        if (!Set.of(HEALTH, STATUS).contains(operation)) return;
+        if (!covered(operation, request) && (pending == null || !pending.intent().equals(intent))) return;
         try {
             if (stopped || supplied != task) throw new IllegalStateException("Original health review is stopped");
             requireBinding();
@@ -240,7 +265,9 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     throw new IllegalStateException("Original query changed");
             } else {
                 requireObservations();
-                if (pending == null || !pending.intent().equals(intent) || !pending.health().equals(selectHealth(intent, request))
+                if (pending == null || !pending.intent().equals(intent)
+                    || (operation.equals(HEALTH) ? !Objects.equals(pending.health(), selectHealth(intent, request))
+                    : !Objects.equals(pending.runtime(), selectRuntime(intent, request)))
                     || !pending.queryEvents().equals(queryEvents()))
                     throw new IllegalStateException("Original health request or query binding changed");
             }
@@ -298,6 +325,24 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             }
         }
         throw new IllegalArgumentException("Health is not an original unit-bound policy request");
+    }
+
+    private RuntimeQuery selectRuntime(ActionIntent intent, CommandRequest request) {
+        String operation = operation(intent);
+        String verb = operation.equals(INSPECT) ? "inspect-runtime" : "observe-deployment";
+        for (var selected : selections.values()) {
+            if (operation.equals(OBSERVE) && !backend(selected).equals("native")) continue;
+            var unit = selected.part().unit();
+            try (var expected = command(verb, List.of(unit.id(), unit.ownershipManifestSha256()), 20)) {
+                if (matches(intent, request, expected, selected, operation)) return new RuntimeQuery(selected, verb);
+            }
+        }
+        throw new IllegalArgumentException("Runtime query is not an original canonical helper request");
+    }
+
+    private static boolean covered(String operation, CommandRequest request) {
+        return Set.of(HEALTH, STATUS, INSPECT).contains(operation)
+            || operation.equals(OBSERVE) && request.script().contains(DeploymentManagedHelperBundle.PATH);
     }
 
     private CommandRequest command(String verb, List<String> arguments, long timeout) {
@@ -428,12 +473,14 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         if (stopped) throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_REVIEW_STOPPED", null);
         requireBinding();
         var selectedQuery = query;
-        var selectedHealth = pending;
+        var selectedCommand = pending;
         boolean statusCall = request.script().contains("'publication-original-status'");
         boolean healthCall = request.script().contains("'application-health'");
-        if (statusCall || healthCall) {
-            var intent = statusCall ? selectedQuery == null ? null : selectedQuery.intent() : selectedHealth == null ? null : selectedHealth.intent();
-            if (intent == null || (statusCall ? !selectedQuery.approved() : !selectedHealth.approved()))
+        boolean runtimeCall = request.script().contains(DeploymentManagedHelperBundle.PATH)
+            && (request.script().contains("inspect-runtime") || request.script().contains("observe-deployment"));
+        if (statusCall || healthCall || runtimeCall || selectedQuery != null || selectedCommand != null) {
+            var intent = statusCall ? selectedQuery == null ? null : selectedQuery.intent() : selectedCommand == null ? null : selectedCommand.intent();
+            if (intent == null || (statusCall ? !selectedQuery.approved() : !selectedCommand.approved()))
                 throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_REVIEW_MISSING", null);
             verify(intent, request, task);
             if (statusCall) query = null;
@@ -457,6 +504,9 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             }
         } else if (healthCall && (result.outcome() != TaskResult.SUCCEEDED || result.value().filter(value -> !value.truncated()
             && value.exitCode().equals(Optional.of(0)) && value.stdout().equals("HEALTHY=1\n")).isEmpty())) {
+            stopped = true;
+        } else if (runtimeCall && (result.outcome() != TaskResult.SUCCEEDED || result.value().filter(value -> !value.truncated()
+            && value.exitCode().equals(Optional.of(0))).isEmpty())) {
             stopped = true;
         }
         return result;
@@ -519,7 +569,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     private List<Map<String, Object>> eventReferences(List<DeploymentAgentActionLog.Event> events) {
         var types = Set.of("TARGET_PROFILE", "REMOTE_TARGET", "SOURCE", "CANDIDATE", "CURRENT_SOURCE", "SEALED_ARTIFACT", "SEALED_TOOLS",
             "AI_PUBLICATION", "AI_PUBLICATION_VERIFIED", "AI_PUBLICATION_FINISHED", "DELIVERY_EXECUTING", "DELIVERY_RESULT", "RECOVERY_REVIEW_BOUND",
-            "HEALTH_REVIEW_DENIED", "HEALTH_REVIEW_REQUEST", "HEALTH_STATUS_QUERY_DENIED");
+            "HEALTH_REVIEW_DENIED", "HEALTH_REVIEW_REQUEST", "HEALTH_STATUS_QUERY_DENIED", "RUNTIME_REVIEW_DENIED", "RUNTIME_REVIEW_REQUEST");
         return events.stream().filter(value -> types.contains(value.type())).map(value -> Map.<String, Object>of("id", value.id(),
             "type", value.type(), "action", value.action(), "detail", value.detail())).toList();
     }

@@ -119,6 +119,30 @@ class DeploymentAgentHealthEvidenceTest {
             for (var actual : frame.healthActions)
                 assertEquals(actual.expectedAction(), actual.actualAction());
             assertEquals(3, frame.events("HEALTH_REVIEW_APPROVED"));
+            var runtimeReviews = frame.reviewFacts.stream().filter(value -> Set.of("deployment.publication.inspect.v1",
+                "deployment.publication.observe.v1").contains(value.path("operation").asText())).toList();
+            assertEquals(4, runtimeReviews.size());
+            for (var review : runtimeReviews) {
+                var runtimeEvidence = review.path("currentCommandEvidence");
+                String component = runtimeEvidence.at("/unitBinding/component").asText();
+                var unit = frame.part(component).unit();
+                assertEquals("agent-current-runtime-evidence.v1", runtimeEvidence.path("schema").asText());
+                assertEquals(unit.id(), runtimeEvidence.at("/argumentBinding/applicationIdArgument").asText());
+                assertEquals(unit.ownershipManifestSha256(), runtimeEvidence.at("/argumentBinding/ownershipManifestArgument").asText());
+                assertEquals(unit.releaseRoot(), runtimeEvidence.at("/argumentBinding/resourceTargetId").asText());
+                assertEquals(unit.systemdUnit(), runtimeEvidence.at("/runtimeBinding/systemdUnit").asText());
+                assertEquals(frame.release(component), runtimeEvidence.at("/runtimeBinding/currentReleaseSha256").asText());
+                assertEquals(2, runtimeEvidence.at("/argumentBinding/argumentCount").asInt());
+                assertTrue(runtimeEvidence.at("/argumentBinding/ownershipManifestMeaning").asText().contains("not a deployment id or resource id"));
+                assertTrue(runtimeEvidence.path("enforcedRuntimeBoundary").asText().contains("execution-time guards"));
+                assertFalse(runtimeEvidence.has("typedHealthPolicy"));
+                assertEquals(2, runtimeEvidence.path("currentGraphQueries").size());
+                for (var observed : runtimeEvidence.path("currentGraphQueries"))
+                    assertEquals(frame.release(observed.path("component").asText()), observed.at("/parsedStatus/current").asText());
+            }
+            for (var actual : frame.runtimeActions)
+                assertEquals(actual.expectedAction(), actual.actualAction());
+            assertEquals(4, frame.events("RUNTIME_REVIEW_APPROVED"));
         }
     }
 
@@ -299,6 +323,122 @@ class DeploymentAgentHealthEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"unit", "manifest", "operation", "timeout", "stdin", "output"})
+    void alteredCanonicalRuntimeRequestsCannotReceiveEvidenceOrExecute(String change) throws Exception {
+        for (String verb : List.of("inspect-runtime", "observe-deployment")) {
+            try (var frame = new Frame(); var request = frame.runtimeRequest(verb, change)) {
+                var evidence = frame.evidence();
+                assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+                int reviews = frame.reviewFacts.size();
+                var review = (DeploymentCommandReview) evidence.context().interaction();
+                assertThrows(ApiException.class, () -> review.approveCommand(frame.runtimeIntent(request, verb, change), request, frame.task));
+                assertThrows(ApiException.class, () -> evidence.execute(request, new ApprovalGrant(UUID.randomUUID())));
+                assertEquals(reviews, frame.reviewFacts.size());
+                assertEquals(0, frame.runtimeInspections + frame.runtimeObservations);
+                assertEquals(2, frame.statusQueries);
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"APP", "HOST", "SEND"})
+    void runtimeBindingChangesStopAtEveryApprovalAndSendBoundary(String boundary) throws Exception {
+        for (String verb : List.of("inspect-runtime", "observe-deployment")) {
+            try (var frame = new Frame(); var request = frame.runtimeRequest(verb, "none")) {
+                var evidence = frame.evidence();
+                assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+                int grants = frame.hostAuthorizations;
+                var review = (DeploymentCommandReview) evidence.context().interaction();
+                var intent = frame.runtimeIntent(request, verb, "none");
+                if (boundary.equals("APP")) frame.onRuntimeReview = ignored -> frame.changeBinding("CURRENT_SOURCE");
+                if (boundary.equals("HOST")) frame.onRuntimeHost = () -> frame.changeBinding("profile");
+                if (boundary.equals("SEND")) {
+                    var grant = review.approveCommand(intent, request, frame.task);
+                    assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+                    frame.changeBinding("SEALED_ARTIFACT");
+                    assertThrows(ApiException.class, () -> evidence.execute(request, grant.value().orElseThrow()));
+                } else {
+                    assertThrows(ApiException.class, () -> review.approveCommand(intent, request, frame.task));
+                    if (boundary.equals("APP")) assertEquals(grants, frame.hostAuthorizations);
+                }
+                assertEquals(0, frame.runtimeInspections + frame.runtimeObservations);
+                assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+            }
+        }
+    }
+
+    @Test
+    void approvedRuntimeCannotDispatchDifferentHelperOrInlineCommandBytes() throws Exception {
+        for (String verb : List.of("inspect-runtime", "observe-deployment")) {
+            for (boolean inline : List.of(false, true)) {
+                try (var frame = new Frame(); var request = frame.runtimeRequest(verb, "none")) {
+                    var evidence = frame.evidence();
+                    assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+                    var review = (DeploymentCommandReview) evidence.context().interaction();
+                    var grant = review.approveCommand(frame.runtimeIntent(request, verb, "none"), request, frame.task);
+                    assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+                    try (var changed = inline ? new CommandRequest("/bin/bash -lc 'printf changed'", new byte[0], Duration.ofSeconds(20), 4096)
+                        : frame.runtimeRequest(verb.equals("inspect-runtime") ? "observe-deployment" : "inspect-runtime", "none")) {
+                        assertThrows(ApiException.class, () -> evidence.execute(changed, grant.value().orElseThrow()));
+                    }
+                    assertEquals(0, frame.runtimeInspections + frame.runtimeObservations + frame.containerObservations);
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"inspect-runtime", "observe-deployment"})
+    void runtimeDenialRetainsTheExactReasonAndStopsThisVerification(String verb) throws Exception {
+        try (var frame = new Frame(); var request = frame.runtimeRequest(verb, "none")) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            var intent = frame.runtimeIntent(request, verb, "none");
+            frame.deniedOperation = intent.semantics().orElseThrow().operation();
+            int grants = frame.hostAuthorizations;
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            var refusal = assertThrows(ApiException.class, () -> review.approveCommand(intent, request, frame.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", refusal.problem().eventCode());
+            assertEquals(DENIAL, refusal.problem().context().get("reviewReason"));
+            assertEquals(1, frame.events("RUNTIME_REVIEW_DENIED"));
+            var event = frame.journal.events(frame.task).getLast();
+            assertTrue(event.detail().contains("reasonSha256=" + DeploymentAgentInputs.hash(DENIAL)));
+            assertTrue(event.detail().contains("exactAction=" + DeploymentAgentInputs.hash(intent.exactAction())));
+            assertTrue(event.detail().contains("evidence=" + frame.reviewFacts.getLast().at("/currentCommandEvidence/evidenceSha256").asText()));
+            int reviews = frame.reviewFacts.size();
+            frame.deniedOperation = "none";
+            assertThrows(ApiException.class, () -> review.approveCommand(intent, request, frame.task));
+            assertThrows(ApiException.class, () -> evidence.execute(request, new ApprovalGrant(UUID.randomUUID())));
+            assertEquals(reviews, frame.reviewFacts.size());
+            assertEquals(grants, frame.hostAuthorizations);
+            assertEquals(0, frame.runtimeInspections + frame.runtimeObservations);
+        }
+    }
+
+    @Test
+    void containerInlineObservationKeepsItsExistingDefaultApprovalFactsAndBytes() throws Exception {
+        try (var frame = new Frame("CONTAINER")) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            var part = frame.part("backend");
+            var channel = new DeploymentPublishChannel(evidence, evidence.context().interaction(), frame.server, frame.task,
+                frame.candidates.get("backend").artifactSha256());
+            assertEquals(TaskResult.SUCCEEDED, channel.observe(part.unit(), part.reviewedRuntime()).outcome());
+            assertEquals("container", frame.reviewFacts.get(2).at("/currentCommandEvidence/runtimeBinding/kind").asText());
+            assertEquals("inspect-runtime", frame.reviewFacts.get(2).at("/currentCommandEvidence/argumentBinding/verb").asText());
+            assertEquals("deployment.publication.observe.v1", frame.reviewFacts.getLast().path("operation").asText());
+            assertFalse(frame.reviewFacts.getLast().has("currentCommandEvidence"));
+            assertEquals(1, frame.containerObservations);
+            assertEquals(0, frame.runtimeObservations);
+            assertEquals(2, frame.statusQueries);
+            for (var actual : frame.runtimeActions) assertEquals(actual.expectedAction(), actual.actualAction());
+            try (var nativeRequest = frame.runtimeRequest("observe-deployment", "none")) {
+                assertThrows(ApiException.class, () -> evidence.facts(frame.runtimeIntent(nativeRequest, "observe-deployment", "none"), nativeRequest, frame.task));
+            }
+        }
+    }
+
     private record ActionCheck(String expectedAction, String actualAction) {
     }
 
@@ -338,6 +478,8 @@ class DeploymentAgentHealthEvidenceTest {
 
         private final List<ActionCheck> healthActions = new ArrayList<>();
 
+        private final List<ActionCheck> runtimeActions = new ArrayList<>();
+
         private String statusFailure = "none";
 
         private String deniedOperation = "none";
@@ -350,6 +492,12 @@ class DeploymentAgentHealthEvidenceTest {
         private Runnable onHealthHost = () -> {
         };
 
+        private Consumer<JsonNode> onRuntimeReview = ignored -> {
+        };
+
+        private Runnable onRuntimeHost = () -> {
+        };
+
         private int statusQueries;
 
         private int healthDispatches;
@@ -357,6 +505,8 @@ class DeploymentAgentHealthEvidenceTest {
         private int runtimeInspections;
 
         private int runtimeObservations;
+
+        private int containerObservations;
 
         private int hostAuthorizations;
 
@@ -401,11 +551,23 @@ class DeploymentAgentHealthEvidenceTest {
                 }
                 if (request.script().contains("'inspect-runtime'")) {
                     runtimeInspections++;
-                    return success(new CommandResult(Optional.of(0), "KIND=deployment\nMODE=DAEMON\n", "", false));
+                    runtimeActions.add(new ActionCheck(reviewFacts.getLast().path("exactAction").asText(),
+                        RemoteActions.command(server, candidates.get(component).artifactSha256(), request).exactAction()));
+                    String identity = part.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container
+                        ? "KIND=container\nENGINE=docker\nMODE=DAEMON\n" : "KIND=deployment\nMODE=DAEMON\n";
+                    return success(new CommandResult(Optional.of(0), identity, "", false));
                 }
                 if (request.script().contains("'observe-deployment'")) {
                     runtimeObservations++;
+                    runtimeActions.add(new ActionCheck(reviewFacts.getLast().path("exactAction").asText(),
+                        RemoteActions.command(server, candidates.get(component).artifactSha256(), request).exactAction()));
                     return success(new CommandResult(Optional.of(0), "OWNER=1\nRUNNING=1\nENABLED=enabled\nQUERY_OK=1\nActiveState=active\nSubState=running\nResult=success\nExecMainCode=0\nExecMainStatus=0\nMainPID=34205\n", "", false));
+                }
+                if (request.script().contains("docker inspect --format")) {
+                    containerObservations++;
+                    runtimeActions.add(new ActionCheck(reviewFacts.getLast().path("exactAction").asText(),
+                        RemoteActions.command(server, candidates.get(component).artifactSha256(), request).exactAction()));
+                    return success(new CommandResult(Optional.of(0), "OWNER=1\nRUNNING=true\nENABLED=always\n", "", false));
                 }
                 throw new AssertionError(request.script());
             });
@@ -418,6 +580,8 @@ class DeploymentAgentHealthEvidenceTest {
                 reviewFacts.add(facts);
                 String operation = facts.path("operation").asText();
                 if (operation.equals("deployment.publication.health.v1")) onHealthReview.accept(facts);
+                if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(operation))
+                    onRuntimeReview.accept(facts);
                 boolean deny = operation.equals(deniedOperation);
                 return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
                     List.of(new AiToolCall("review-" + reviewFacts.size(), "submit_result", JSON.writeValueAsString(Map.of("decision", deny ? "DENY" : "APPROVE",
@@ -428,6 +592,8 @@ class DeploymentAgentHealthEvidenceTest {
                 hostAuthorizations++;
                 if (reviewFacts.getLast().path("operation").asText().equals("deployment.publication.health.v1"))
                     onHealthHost.run();
+                if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(
+                    reviewFacts.getLast().path("operation").asText())) onRuntimeHost.run();
                 return success(new ApprovalGrant(UUID.randomUUID()));
             });
             var tasks = proxy(TaskService.class, (name, args) -> {
@@ -466,8 +632,11 @@ class DeploymentAgentHealthEvidenceTest {
                 } : new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18100/healthz"), 200, 120);
                 var workload = new DeploymentWorkload(DeploymentWorkload.ExecutionMode.DAEMON, true, new DeploymentCommand("run.sh", List.of()),
                     "", List.of(), Optional.empty(), "", Optional.empty(), List.of(), List.of());
-                var runtime = new DeploymentRuntimeDefinition.ManagedProcess(health, DeploymentIdentityMode.SYSTEMD_STATIC, workload);
-                var config = new DeploymentUnitRuntimeConfig(health, Optional.empty(), DeploymentIdentityMode.SYSTEMD_STATIC, workload);
+                var policy = healthKind.equals("CONTAINER") && backend ? DeploymentIdentityMode.CONTAINER_NON_ROOT : DeploymentIdentityMode.SYSTEMD_STATIC;
+                DeploymentRuntimeDefinition runtime = policy == DeploymentIdentityMode.CONTAINER_NON_ROOT
+                    ? new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.DOCKER, Map.of(18101, 18101), List.of(), health, policy, workload)
+                    : new DeploymentRuntimeDefinition.ManagedProcess(health, policy, workload);
+                var config = new DeploymentUnitRuntimeConfig(health, Optional.empty(), policy, workload);
                 parts.add(new DeploymentApplicationGraph.Part(component, unit, config, List.of(), runtime, List.of(),
                     new DeploymentResourceBindings(List.of(), Optional.of(List.of()))));
                 units.add(new DeploymentUnitCommit(unit, config, new DeploymentCurrentRelease(unit.id(), backend ? RELEASE : "7".repeat(64), Instant.EPOCH),
@@ -533,7 +702,8 @@ class DeploymentAgentHealthEvidenceTest {
 
         DeploymentApplicationGraph.Part requestPart(CommandRequest request) {
             return proposal.graph().components().stream().filter(value -> request.script()
-                .contains(DeploymentBuildCommandChannel.shellQuote(value.unit().id()))).findFirst().orElseThrow();
+                    .contains(DeploymentBuildCommandChannel.shellQuote(value.unit().id())) || request.script().contains(value.unit().releaseRoot()))
+                .findFirst().orElseThrow();
         }
 
         String release(String component) {
@@ -542,7 +712,27 @@ class DeploymentAgentHealthEvidenceTest {
         }
 
         String status(String component) {
-            return "PUBLICATION_STATUS=1\nCURRENT=" + release(component) + "\nCURRENT_KIND=deployment\nCURRENT_MODE=DAEMON\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
+            boolean container = part(component).reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container;
+            return "PUBLICATION_STATUS=1\nCURRENT=" + release(component) + "\nCURRENT_KIND=" + (container ? "container" : "deployment")
+                + "\nCURRENT_MODE=DAEMON\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT="
+                + (container ? "yes" : "not-applicable") + "\nRETAINED_COUNT=1\n";
+        }
+
+        CommandRequest runtimeRequest(String verb, String change) {
+            var unit = part("backend").unit();
+            String script = List.of(DeploymentManagedHelperBundle.PATH, verb,
+                    change.equals("unit") ? "controlled-foreign" : unit.id(),
+                    change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256()).stream()
+                .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), change.equals("stdin") ? new byte[]{1} : new byte[0],
+                Duration.ofSeconds(change.equals("timeout") ? 21 : 20), change.equals("output") ? 8192 : 4096);
+        }
+
+        ActionIntent runtimeIntent(CommandRequest request, String verb, String change) {
+            String operation = change.equals("operation") ? "deployment.publication.health.v1"
+                : verb.equals("inspect-runtime") ? "deployment.publication.inspect.v1" : "deployment.publication.observe.v1";
+            return RemoteActions.command(server, ARTIFACT, request).withSemantics(new ActionSemantics(operation,
+                Set.of(new ActionTarget(server.id(), "deployment-release", part("backend").unit().releaseRoot()))));
         }
 
         CommandRequest healthRequest(String change) {
