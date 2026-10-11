@@ -1,0 +1,247 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
+@@ -2,0 +3 @@
++import java.util.List;
+@@ -3,0 +5 @@
++import java.util.Set;
+@@ -5,0 +8 @@
++import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation;
+@@ -12,3 +15,4 @@
+- * @param ai requested output budgets / 申请输出额度 */
+-public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai) {
+-    /** Requires all five configuration groups. / 要求五组配置齐全。
++ * @param ai requested output budgets / 申请输出额度
++ * @param paths remote layout settings awaiting runtime wiring / 待运行时接线的远端布局配置 */
++public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai, Paths paths) {
++    /** Requires all six configuration groups. / 要求六组配置齐全。
+@@ -19 +23,2 @@
+-     * @param ai output budgets / 输出额度 */
++     * @param ai output budgets / 输出额度
++     * @param paths remote layout settings / 远端布局配置 */
+@@ -25,0 +31,59 @@
++        Objects.requireNonNull(paths);
++    }
++
++    /** Remote layout configuration; execution still uses the existing fixed layout. / 远端布局配置；执行仍使用既有固定布局。
++     * @param remote dedicated managed remote roots / 专用受管远端根 */
++    public record Paths(RemotePaths remote) {
++        public Paths {
++            Objects.requireNonNull(remote, "remote");
++        }
++    }
++
++    /** Literal, separate remote roots without filesystem normalization. / 不做文件系统归一化的字面独立远端根。
++     * @param helperDirectory helper and toolchain directory / helper 与工具链目录
++     * @param applicationsRoot managed applications root / 受管应用根
++     * @param stateRoot operation evidence and workspace root / 操作依据与工作区根
++     * @param configurationRoot configuration and secret root / 配置与秘密根
++     * @param dataRoot mutable application data root / 应用可变数据根 */
++    public record RemotePaths(String helperDirectory, String applicationsRoot, String stateRoot,
++                              String configurationRoot, String dataRoot) {
++        private static final Set<String> SYSTEM_DIRECTORIES = Set.of("/bin", "/boot", "/etc", "/etc/opt",
++            "/home", "/lib", "/lib64", "/media", "/mnt", "/opt", "/root", "/sbin", "/srv", "/usr",
++            "/usr/bin", "/usr/lib", "/usr/lib64", "/usr/local", "/usr/local/bin", "/usr/local/lib",
++            "/usr/local/sbin", "/usr/sbin", "/usr/share", "/var", "/var/cache", "/var/lib", "/var/log",
++            "/var/opt");
++        private static final List<String> CONTROL_TREES = List.of("/proc", "/sys", "/dev", "/run", "/tmp",
++            "/var/tmp", "/etc/systemd", "/etc/containers");
++
++        public RemotePaths {
++            requireRoot(helperDirectory);
++            requireRoot(applicationsRoot);
++            requireRoot(stateRoot);
++            requireRoot(configurationRoot);
++            requireRoot(dataRoot);
++            String[] roots = {helperDirectory, applicationsRoot, stateRoot, configurationRoot, dataRoot};
++            for (int first = 0; first < roots.length; first++) {
++                for (int second = first + 1; second < roots.length; second++) {
++                    if (within(roots[first], roots[second]) || within(roots[second], roots[first]))
++                        throw new IllegalArgumentException("Remote deployment roots must not overlap");
++                }
++            }
++        }
++
++        /** Original fixed layout values, never a loader fallback. / 原固定布局值，绝非加载回退。
++         * @return immutable original remote roots / 不可变原远端根 */
++        public static RemotePaths original() {
++            return new RemotePaths("/usr/local/lib/windowstolinux", "/opt/windowstolinux/apps",
++                "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps", "/var/opt/windowstolinux/apps");
++        }
++
++        private static void requireRoot(String path) {
++            Objects.requireNonNull(path, "remote root");
++            if (!path.startsWith("/") || !path.equals(DeploymentStorageLocation.validatedPath(path))
++                || SYSTEM_DIRECTORIES.contains(path) || CONTROL_TREES.stream().anyMatch(tree -> within(path, tree)))
++                throw new IllegalArgumentException("Remote deployment root must be a dedicated canonical literal Linux path");
++        }
++
++        private static boolean within(String path, String root) {
++            return path.equals(root) || path.startsWith(root + "/");
++        }
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
+@@ -52 +52 @@
+-        fields(root, Set.of("source", "build", "environment", "view", "ai"));
++        fields(root, Set.of("source", "build", "environment", "view", "ai", "paths"));
+@@ -62,0 +63,4 @@
++        var paths = root.path("paths");
++        fields(paths, Set.of("remote"));
++        var remote = paths.path("remote");
++        fields(remote, Set.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root"));
+@@ -72 +76,4 @@
+-                    integer(ai, "approval-max-output-tokens")));
++                    integer(ai, "approval-max-output-tokens")),
++                new DeploymentConfig.Paths(new DeploymentConfig.RemotePaths(text(remote, "helper-directory"),
++                    text(remote, "applications-root"), text(remote, "state-root"), text(remote, "configuration-root"),
++                    text(remote, "data-root"))));
+@@ -112,0 +120,12 @@
++
++    /** Reads literal text without YAML number, boolean or collection coercion. / 不转换 YAML 数字、布尔或集合地读取字面文本。
++     * @param group configuration group / 配置分组
++     * @param name field name / 字段名
++     * @return exact string / 精确字符串
++     * @throws IOException if the field is not text / 字段不是文本时 */
++    private static String text(JsonNode group, String name) throws IOException {
++        var value = group.path(name);
++        if (!value.isTextual())
++            throw new IOException("Deployment configuration field must be a string: " + name);
++        return value.textValue();
++    }
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
+@@ -22,0 +23,7 @@
++paths:
++  remote:
++    helper-directory: /usr/local/lib/windowstolinux
++    applications-root: /opt/windowstolinux/apps
++    state-root: /var/lib/windowstolinux
++    configuration-root: /etc/opt/windowstolinux/apps
++    data-root: /var/opt/windowstolinux/apps
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
+@@ -33,0 +34,4 @@
++        assertEquals(new DeploymentConfig.Paths(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
++            "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
++            "/var/opt/windowstolinux/apps")), config.paths());
++        assertEquals(DeploymentConfig.RemotePaths.original(), config.paths().remote());
+@@ -51,0 +56,45 @@
++    }
++
++    @Test
++    void nonDefaultRemotePathsAreKeptAsLiteralValues() throws Exception {
++        String yaml = bundledYaml().replace("helper-directory: /usr/local/lib/windowstolinux", "helper-directory: /srv/WTL-helper_1")
++            .replace("applications-root: /opt/windowstolinux/apps", "applications-root: /srv/WTL-apps_1")
++            .replace("state-root: /var/lib/windowstolinux", "state-root: /srv/WTL-state_1")
++            .replace("configuration-root: /etc/opt/windowstolinux/apps", "configuration-root: /srv/WTL-config_1")
++            .replace("data-root: /var/opt/windowstolinux/apps", "data-root: /srv/WTL-data_1");
++        assertEquals(new DeploymentConfig.RemotePaths("/srv/WTL-helper_1", "/srv/WTL-apps_1",
++            "/srv/WTL-state_1", "/srv/WTL-config_1", "/srv/WTL-data_1"), parse(yaml).paths().remote());
++    }
++
++    @Test
++    void remotePathsRequireTheExactNestedFieldsAndStringTypes() throws Exception {
++        String yaml = bundledYaml();
++        String paths = yaml.substring(yaml.indexOf("paths:\n"));
++        String withoutPaths = yaml.replace(paths, "");
++        for (String invalid : java.util.List.of(withoutPaths, withoutPaths + "paths: null\n", withoutPaths + "paths: []\n",
++            withoutPaths + "paths: {}\n", withoutPaths + "paths:\n  remote: null\n",
++            withoutPaths + "paths:\n  remote: []\n", withoutPaths + "paths:\n  remote: /srv/wtl\n",
++            yaml.replace("  remote:\n", "  local:\n"), yaml + "  local: {}\n",
++            yaml.replace("  remote:\n", "  remote:\n    extra: /srv/extra\n"), yaml + "paths: {}\n"))
++            assertThrows(IOException.class, () -> parse(invalid));
++        for (String field : java.util.List.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root")) {
++            String line = paths.lines().filter(value -> value.startsWith("    " + field + ": ")).findFirst().orElseThrow();
++            assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
++            for (String value : java.util.List.of("null", "12", "true", "[]", "{}"))
++                assertThrows(IOException.class, () -> parse(yaml.replace(line, "    " + field + ": " + value)), field + "=" + value);
++            assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)), field);
++        }
++    }
++
++    @Test
++    void invalidRemotePathValuesAreReportedAsConfigurationErrors() throws Exception {
++        String yaml = bundledYaml();
++        for (String invalid : java.util.List.of(
++            yaml.replace("helper-directory: /usr/local/lib/windowstolinux", "helper-directory: '/srv/helper/'"),
++            yaml.replace("state-root: /var/lib/windowstolinux", "state-root: '/srv/${HOME}'"),
++            yaml.replace("configuration-root: /etc/opt/windowstolinux/apps", "configuration-root: /opt/windowstolinux/apps"),
++            yaml.replace("data-root: /var/opt/windowstolinux/apps", "data-root: /etc/opt/windowstolinux/apps/data"),
++            yaml.replace("helper-directory: /usr/local/lib/windowstolinux", "helper-directory: /var/lib"))) {
++            var failure = assertThrows(IOException.class, () -> parse(invalid));
++            assertInstanceOf(IllegalArgumentException.class, failure.getCause());
++        }
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigPathsTest.java
+@@ -0,0 +1,72 @@
++package gold.debug.windowstolinux.mod.deployment.config;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.util.List;
++
++import org.junit.jupiter.api.Test;
++
++class DeploymentConfigPathsTest {
++    @Test
++    void acceptsDedicatedRootsAndSharedPrefixesWithoutChangingInput() {
++        var remote = new DeploymentConfig.RemotePaths("/srv/WTL-layout_A", "/srv/WTL-layout_A-apps",
++            "/srv/WTL-layout_A-state", "/srv/WTL-layout_A-config", "/srv/WTL-layout_A-data");
++        assertEquals("/srv/WTL-layout_A", remote.helperDirectory());
++        assertEquals("/srv/WTL-layout_A-apps", remote.applicationsRoot());
++        assertEquals("/srv/WTL-layout_A-state", remote.stateRoot());
++        assertEquals("/srv/WTL-layout_A-config", remote.configurationRoot());
++        assertEquals("/srv/WTL-layout_A-data", remote.dataRoot());
++        assertSame(remote, new DeploymentConfig.Paths(remote).remote());
++    }
++
++    @Test
++    void rejectsNonCanonicalAndExecutablePathSyntax() {
++        for (String path : List.of("", "/", "relative/path", "./srv/helper", " /srv/helper", "/srv/helper ",
++            "/srv/helper/", "//srv/helper", "/srv//helper", "/srv/./helper", "/srv/../helper", "/srv/helper/..",
++            "/srv/helper/.", "C:/helper", "/srv\\helper", "/srv/helper dir", "/srv/${HOME}", "/srv/$HOME",
++            "/srv/$(id)", "/srv/`id`", "/srv/helper;id", "/srv/helper|id", "/srv/helper\nnext", "/srv/helper\0",
++            "/srv/" + "a".repeat(508)))
++            assertThrows(IllegalArgumentException.class, () -> withHelper(path), path);
++    }
++
++    @Test
++    void rejectsSystemDirectoriesAndControlTrees() {
++        for (String path : List.of("/etc", "/etc/opt", "/usr", "/usr/local", "/usr/local/lib", "/var", "/var/lib",
++            "/var/opt", "/opt", "/srv", "/proc", "/proc/wtl", "/sys/wtl", "/dev/wtl", "/run/credentials/wtl",
++            "/tmp/wtl", "/var/tmp/wtl", "/etc/systemd/system/wtl", "/etc/containers/systemd/wtl"))
++            assertThrows(IllegalArgumentException.class, () -> withHelper(path), path);
++        assertEquals("/srv/proc-data", withHelper("/srv/proc-data").helperDirectory());
++    }
++
++    @Test
++    void rejectsEqualOrNestedRootsInEitherDirection() {
++        assertThrows(IllegalArgumentException.class, () -> new DeploymentConfig.RemotePaths("/srv/shared", "/srv/shared",
++            "/srv/state", "/srv/config", "/srv/data"));
++        assertThrows(IllegalArgumentException.class, () -> new DeploymentConfig.RemotePaths("/srv/shared", "/srv/shared/apps",
++            "/srv/state", "/srv/config", "/srv/data"));
++        assertThrows(IllegalArgumentException.class, () -> new DeploymentConfig.RemotePaths("/srv/shared/helper", "/srv/shared",
++            "/srv/state", "/srv/config", "/srv/data"));
++        assertThrows(IllegalArgumentException.class, () -> new DeploymentConfig.RemotePaths("/srv/helper", "/srv/apps",
++            "/srv/shared", "/srv/shared/config", "/srv/data"));
++        assertThrows(IllegalArgumentException.class, () -> new DeploymentConfig.RemotePaths("/srv/helper", "/srv/apps",
++            "/srv/state", "/srv/shared/config", "/srv/shared"));
++    }
++
++    @Test
++    void requiresTheRemoteGroupAndEveryRoot() {
++        assertThrows(NullPointerException.class, () -> new DeploymentConfig.Paths(null));
++        var remote = DeploymentConfig.RemotePaths.original();
++        for (int missing = 0; missing < 5; missing++) {
++            String[] roots = {remote.helperDirectory(), remote.applicationsRoot(), remote.stateRoot(), remote.configurationRoot(), remote.dataRoot()};
++            roots[missing] = null;
++            assertThrows(NullPointerException.class,
++                () -> new DeploymentConfig.RemotePaths(roots[0], roots[1], roots[2], roots[3], roots[4]));
++        }
++    }
++
++    private static DeploymentConfig.RemotePaths withHelper(String path) {
++        var original = DeploymentConfig.RemotePaths.original();
++        return new DeploymentConfig.RemotePaths(path, original.applicationsRoot(), original.stateRoot(),
++            original.configurationRoot(), original.dataRoot());
++    }
++}

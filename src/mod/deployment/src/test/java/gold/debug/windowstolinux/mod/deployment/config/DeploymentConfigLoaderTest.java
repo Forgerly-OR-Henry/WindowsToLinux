@@ -31,6 +31,10 @@ class DeploymentConfigLoaderTest {
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
         assertEquals(new DeploymentConfig.Ai(8192, 65536, 8192), config.ai());
+        assertEquals(new DeploymentConfig.Paths(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
+            "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
+            "/var/opt/windowstolinux/apps")), config.paths());
+        assertEquals(DeploymentConfig.RemotePaths.original(), config.paths().remote());
         assertEquals(config, DeploymentConfigLoader.current());
         assertSame(DeploymentConfigLoader.current(), DeploymentConfigLoader.current());
     }
@@ -49,6 +53,51 @@ class DeploymentConfigLoaderTest {
         assertEquals(134217728, limits.maxWorkspaceBytes());
         assertFalse(limits.runAsRoot());
         assertEquals(new DeploymentConfig.View(1200, 17), config.view());
+    }
+
+    @Test
+    void nonDefaultRemotePathsAreKeptAsLiteralValues() throws Exception {
+        String yaml = bundledYaml().replace("helper-directory: /usr/local/lib/windowstolinux", "helper-directory: /srv/WTL-helper_1")
+            .replace("applications-root: /opt/windowstolinux/apps", "applications-root: /srv/WTL-apps_1")
+            .replace("state-root: /var/lib/windowstolinux", "state-root: /srv/WTL-state_1")
+            .replace("configuration-root: /etc/opt/windowstolinux/apps", "configuration-root: /srv/WTL-config_1")
+            .replace("data-root: /var/opt/windowstolinux/apps", "data-root: /srv/WTL-data_1");
+        assertEquals(new DeploymentConfig.RemotePaths("/srv/WTL-helper_1", "/srv/WTL-apps_1",
+            "/srv/WTL-state_1", "/srv/WTL-config_1", "/srv/WTL-data_1"), parse(yaml).paths().remote());
+    }
+
+    @Test
+    void remotePathsRequireTheExactNestedFieldsAndStringTypes() throws Exception {
+        String yaml = bundledYaml();
+        String paths = yaml.substring(yaml.indexOf("paths:\n"));
+        String withoutPaths = yaml.replace(paths, "");
+        for (String invalid : java.util.List.of(withoutPaths, withoutPaths + "paths: null\n", withoutPaths + "paths: []\n",
+            withoutPaths + "paths: {}\n", withoutPaths + "paths:\n  remote: null\n",
+            withoutPaths + "paths:\n  remote: []\n", withoutPaths + "paths:\n  remote: /srv/wtl\n",
+            yaml.replace("  remote:\n", "  local:\n"), yaml + "  local: {}\n",
+            yaml.replace("  remote:\n", "  remote:\n    extra: /srv/extra\n"), yaml + "paths: {}\n"))
+            assertThrows(IOException.class, () -> parse(invalid));
+        for (String field : java.util.List.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root")) {
+            String line = paths.lines().filter(value -> value.startsWith("    " + field + ": ")).findFirst().orElseThrow();
+            assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
+            for (String value : java.util.List.of("null", "12", "true", "[]", "{}"))
+                assertThrows(IOException.class, () -> parse(yaml.replace(line, "    " + field + ": " + value)), field + "=" + value);
+            assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)), field);
+        }
+    }
+
+    @Test
+    void invalidRemotePathValuesAreReportedAsConfigurationErrors() throws Exception {
+        String yaml = bundledYaml();
+        for (String invalid : java.util.List.of(
+            yaml.replace("helper-directory: /usr/local/lib/windowstolinux", "helper-directory: '/srv/helper/'"),
+            yaml.replace("state-root: /var/lib/windowstolinux", "state-root: '/srv/${HOME}'"),
+            yaml.replace("configuration-root: /etc/opt/windowstolinux/apps", "configuration-root: /opt/windowstolinux/apps"),
+            yaml.replace("data-root: /var/opt/windowstolinux/apps", "data-root: /etc/opt/windowstolinux/apps/data"),
+            yaml.replace("helper-directory: /usr/local/lib/windowstolinux", "helper-directory: /var/lib"))) {
+            var failure = assertThrows(IOException.class, () -> parse(invalid));
+            assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+        }
     }
 
     static Stream<String> invalidYaml() throws IOException {

@@ -49,7 +49,7 @@ public final class DeploymentConfigLoader {
         var factory = YAMLFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build();
         var mapper = new ObjectMapper(factory).enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
         var root = mapper.readTree(bytes);
-        fields(root, Set.of("source", "build", "environment", "view", "ai"));
+        fields(root, Set.of("source", "build", "environment", "view", "ai", "paths"));
         var ai = root.path("ai");
         fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens"));
         var source = root.path("source");
@@ -60,6 +60,10 @@ public final class DeploymentConfigLoader {
         fields(environment, Set.of("install-seconds", "check-seconds", "reboot-seconds", "poll-seconds"));
         var view = root.path("view");
         fields(view, Set.of("refresh-ms", "page-size"));
+        var paths = root.path("paths");
+        fields(paths, Set.of("remote"));
+        var remote = paths.path("remote");
+        fields(remote, Set.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root"));
         try {
             return new DeploymentConfig(
                 new DeploymentConfig.Source(number(source, "bytes"), integer(source, "entries"), number(source, "archive-bytes")),
@@ -69,7 +73,10 @@ public final class DeploymentConfigLoader {
                     integer(environment, "reboot-seconds"), integer(environment, "poll-seconds")),
                 new DeploymentConfig.View(integer(view, "refresh-ms"), integer(view, "page-size")),
                 new DeploymentConfig.Ai(integer(ai, "deployment-max-output-tokens"), integer(ai, "extended-deployment-max-output-tokens"),
-                    integer(ai, "approval-max-output-tokens")));
+                    integer(ai, "approval-max-output-tokens")),
+                new DeploymentConfig.Paths(new DeploymentConfig.RemotePaths(text(remote, "helper-directory"),
+                    text(remote, "applications-root"), text(remote, "state-root"), text(remote, "configuration-root"),
+                    text(remote, "data-root"))));
         } catch (IllegalArgumentException invalid) {
             throw new IOException("Deployment configuration value is outside its supported range", invalid);
         }
@@ -109,5 +116,17 @@ public final class DeploymentConfigLoader {
         if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE)
             throw new IOException("Deployment configuration integer is out of range: " + name);
         return (int) value;
+    }
+
+    /** Reads literal text without YAML number, boolean or collection coercion. / 不转换 YAML 数字、布尔或集合地读取字面文本。
+     * @param group configuration group / 配置分组
+     * @param name field name / 字段名
+     * @return exact string / 精确字符串
+     * @throws IOException if the field is not text / 字段不是文本时 */
+    private static String text(JsonNode group, String name) throws IOException {
+        var value = group.path(name);
+        if (!value.isTextual())
+            throw new IOException("Deployment configuration field must be a string: " + name);
+        return value.textValue();
     }
 }

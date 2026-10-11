@@ -1,28 +1,92 @@
 package gold.debug.windowstolinux.mod.deployment.config;
 
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 import gold.debug.windowstolinux.mod.deployment.service.core.model.DeploymentBuildLimits;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation;
 
 /** Immutable fixed settings for one deployment Mod activation. / 一次部署 Mod 启用的不可变固定配置。
  * @param source initial source admission limits / 初始来源准入限额
  * @param build initial reviewed build limits / 初始构建审阅限额
  * @param environment environment preparation timing / 环境准备时序
  * @param view feedback and pagination settings / 反馈与分页配置
- * @param ai requested output budgets / 申请输出额度 */
-public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai) {
-    /** Requires all five configuration groups. / 要求五组配置齐全。
+ * @param ai requested output budgets / 申请输出额度
+ * @param paths remote layout settings awaiting runtime wiring / 待运行时接线的远端布局配置 */
+public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai, Paths paths) {
+    /** Requires all six configuration groups. / 要求六组配置齐全。
      * @param source source limits / 来源限额
      * @param build build defaults / 构建默认值
      * @param environment environment timing / 环境时序
      * @param view presentation settings / 展示配置
-     * @param ai output budgets / 输出额度 */
+     * @param ai output budgets / 输出额度
+     * @param paths remote layout settings / 远端布局配置 */
     public DeploymentConfig {
         Objects.requireNonNull(source);
         Objects.requireNonNull(build);
         Objects.requireNonNull(environment);
         Objects.requireNonNull(view);
         Objects.requireNonNull(ai);
+        Objects.requireNonNull(paths);
+    }
+
+    /** Remote layout configuration; execution still uses the existing fixed layout. / 远端布局配置；执行仍使用既有固定布局。
+     * @param remote dedicated managed remote roots / 专用受管远端根 */
+    public record Paths(RemotePaths remote) {
+        public Paths {
+            Objects.requireNonNull(remote, "remote");
+        }
+    }
+
+    /** Literal, separate remote roots without filesystem normalization. / 不做文件系统归一化的字面独立远端根。
+     * @param helperDirectory helper and toolchain directory / helper 与工具链目录
+     * @param applicationsRoot managed applications root / 受管应用根
+     * @param stateRoot operation evidence and workspace root / 操作依据与工作区根
+     * @param configurationRoot configuration and secret root / 配置与秘密根
+     * @param dataRoot mutable application data root / 应用可变数据根 */
+    public record RemotePaths(String helperDirectory, String applicationsRoot, String stateRoot,
+                              String configurationRoot, String dataRoot) {
+        private static final Set<String> SYSTEM_DIRECTORIES = Set.of("/bin", "/boot", "/etc", "/etc/opt",
+            "/home", "/lib", "/lib64", "/media", "/mnt", "/opt", "/root", "/sbin", "/srv", "/usr",
+            "/usr/bin", "/usr/lib", "/usr/lib64", "/usr/local", "/usr/local/bin", "/usr/local/lib",
+            "/usr/local/sbin", "/usr/sbin", "/usr/share", "/var", "/var/cache", "/var/lib", "/var/log",
+            "/var/opt");
+        private static final List<String> CONTROL_TREES = List.of("/proc", "/sys", "/dev", "/run", "/tmp",
+            "/var/tmp", "/etc/systemd", "/etc/containers");
+
+        public RemotePaths {
+            requireRoot(helperDirectory);
+            requireRoot(applicationsRoot);
+            requireRoot(stateRoot);
+            requireRoot(configurationRoot);
+            requireRoot(dataRoot);
+            String[] roots = {helperDirectory, applicationsRoot, stateRoot, configurationRoot, dataRoot};
+            for (int first = 0; first < roots.length; first++) {
+                for (int second = first + 1; second < roots.length; second++) {
+                    if (within(roots[first], roots[second]) || within(roots[second], roots[first]))
+                        throw new IllegalArgumentException("Remote deployment roots must not overlap");
+                }
+            }
+        }
+
+        /** Original fixed layout values, never a loader fallback. / 原固定布局值，绝非加载回退。
+         * @return immutable original remote roots / 不可变原远端根 */
+        public static RemotePaths original() {
+            return new RemotePaths("/usr/local/lib/windowstolinux", "/opt/windowstolinux/apps",
+                "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps", "/var/opt/windowstolinux/apps");
+        }
+
+        private static void requireRoot(String path) {
+            Objects.requireNonNull(path, "remote root");
+            if (!path.startsWith("/") || !path.equals(DeploymentStorageLocation.validatedPath(path))
+                || SYSTEM_DIRECTORIES.contains(path) || CONTROL_TREES.stream().anyMatch(tree -> within(path, tree)))
+                throw new IllegalArgumentException("Remote deployment root must be a dedicated canonical literal Linux path");
+        }
+
+        private static boolean within(String path, String root) {
+            return path.equals(root) || path.startsWith(root + "/");
+        }
     }
 
     /** Requested budgets; the APP's output policy determines the actual provider limit. */
