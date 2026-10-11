@@ -73,6 +73,7 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
 import gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics;
 import gold.debug.windowstolinux.appapi.task.result.Problem;
 import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
@@ -98,6 +99,206 @@ class DeploymentAgentApprovalTest {
 
     @TempDir
     Path root;
+
+    @ParameterizedTest
+    @ValueSource(strings = {"request", "evidence"})
+    void incompleteExecutableApprovalReportsRealGapsBeforeOnlyFinalIndependentVerdictGrants(String route) throws Exception {
+        var f = new Frame();
+        String original = "printf actual\n#" + "x".repeat(1200);
+        int[] round = {0};
+        String[] binding = {null};
+        f.model = request -> {
+            assertEquals(0, f.grants.size());
+            var input = JSON.readTree(request.messages().getLast().text());
+            if (binding[0] == null) binding[0] = input.path("reviewBinding").asText();
+            assertEquals(binding[0], input.path("reviewBinding").asText());
+            return switch (round[0]++) {
+                case 0 -> List.of(call(route, Map.of(route.equals("request") ? "part" : "pointer",
+                    route.equals("request") ? "stdin" : "/completeExecutableInput", "offset", 0, "limit", 300)));
+                case 1, 3, 5 -> List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+                case 2, 4 -> {
+                    var error = JSON.readTree(lastToolResult(request).text());
+                    assertTrue(lastToolResult(request).error());
+                    assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", error.path("error").asText());
+                    assertEquals(binding[0], error.path("reviewBinding").asText());
+                    assertFalse(error.path("authorizationIssued").asBoolean());
+                    var missing = error.at("/coverage/missingRanges/0");
+                    assertEquals("stdin", missing.at("/arguments/part").asText());
+                    assertEquals(DeploymentAgentInputs.hash(original), missing.path("sha256").asText());
+                    assertEquals(300, missing.at("/ranges/0/start").asInt());
+                    assertEquals(round[0] == 3 ? original.length() : 700, missing.at("/ranges/0/endExclusive").asInt());
+                    yield List.of(call("request", Map.of("part", "stdin", "offset", round[0] == 3 ? 700 : 300,
+                        "limit", round[0] == 3 ? 8000 : 400)));
+                }
+                default -> throw new AssertionError("No automatic evidence reads or fresh approval loop");
+            };
+        };
+        try (var request = f.command("printf actual", original)) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(f.intent(request, "deployment.agent.helper.readiness.v1"), request, f.task).outcome());
+            assertEquals(List.of(f.intent(request, "deployment.agent.helper.readiness.v1").exactAction()), f.grants);
+        }
+        assertEquals(6, f.fixture.requests.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"COMPLETE", "LEAVES"})
+    void firstInstallationPrefixAndHelperDoNotSatisfyCompleteLosslessExecutableInput(String route) throws Exception {
+        var f = new Frame();
+        var structure = syntheticInstallation();
+        String original = DeploymentInstallerEvidence.reconstruct(structure);
+        var pointers = List.of("/segments/4/text", "/sources/buildEntry", "/segments/2/text", "/segments/0/text");
+        int[] round = {0};
+        f.model = request -> {
+            assertEquals(0, f.grants.size());
+            int current = round[0]++;
+            if (current == 0)
+                return List.of(call("evidence", Map.of("pointer", "/completeExecutableInput/sources/managedHelper", "offset", 0, "limit", 600)));
+            if (current == 1) return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            if (current == 2) {
+                var error = JSON.readTree(lastToolResult(request).text());
+                assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", error.path("error").asText());
+                assertEquals(original.length(), error.at("/coverage/missingRanges/0/total").asInt());
+                assertEquals(JSON.readTree(request.messages().getLast().text()).path("reviewBinding"), error.path("reviewBinding"));
+                if (route.equals("COMPLETE"))
+                    return List.of(call("evidence", Map.of("pointer", "/completeExecutableInput", "offset", 0, "limit", 8000)));
+                return List.of(call("evidence", Map.of("pointer", "/completeExecutableInput/sources/managedHelper", "offset", 600, "limit", 8000)));
+            }
+            if (route.equals("LEAVES") && current == 3) {
+                var calls = new ArrayList<AiToolCall>();
+                for (String pointer : pointers)
+                    calls.add(call("evidence", Map.of("pointer", "/completeExecutableInput" + pointer, "offset", 0, "limit", 8000)));
+                return calls;
+            }
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var request = f.command("/bin/bash", original)) {
+            var result = f.agent.review("Review this exact synthetic installation", Map.of("inputKind", "EXECUTABLE_SCRIPT", "completeExecutableInput", structure,
+                    "operation", "deployment.helper.install.files.custom.v1", "installedHelperSha256", "a".repeat(64)),
+                f.intent(request, "deployment.helper.install.files.custom.v1"), request, REVISION, f.task);
+            assertEquals("APPROVE", result.decision().decision());
+        }
+        assertEquals(route.equals("COMPLETE") ? 4 : 5, f.fixture.requests.size());
+        assertEquals(0, f.grants.size(), "Even complete native review does not itself issue a host grant");
+    }
+
+    private static com.fasterxml.jackson.databind.node.ObjectNode syntheticInstallation() {
+        var structure = JSON.createObjectNode();
+        structure.put("format", "ORDERED_SHELL_LITERAL_V1");
+        structure.putObject("sources").put("managedHelper", "#helper\n" + "h".repeat(1100)).put("buildEntry", "#entry\n" + "b".repeat(700));
+        var segments = structure.putArray("segments");
+        segments.addObject().put("kind", "LITERAL").put("text", "printf prefix\n" + "p".repeat(600));
+        segments.addObject().put("kind", "SHELL_SINGLE_QUOTE").put("source", "managedHelper");
+        segments.addObject().put("kind", "LITERAL").put("text", "\nprintf middle\n");
+        segments.addObject().put("kind", "SHELL_SINGLE_QUOTE").put("source", "buildEntry");
+        segments.addObject().put("kind", "LITERAL").put("text", "\nprintf tail\n" + "t".repeat(600));
+        String executable = DeploymentInstallerEvidence.reconstruct(structure);
+        structure.put("sha256", DeploymentAgentInputs.hash(executable));
+        structure.put("utf8Bytes", executable.getBytes(StandardCharsets.UTF_8).length);
+        return structure;
+    }
+
+    @Test
+    void missingInputCanEndDenyClosedWithoutAutomaticPagingOrReopening() throws Exception {
+        var f = new Frame();
+        String original = "x".repeat(900);
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+        var facts = Map.of("inputKind", "EXECUTABLE_SCRIPT", "completeExecutableInput", original);
+        assertEquals("DENY", f.review(facts).decision().decision());
+        assertEquals("DENY", f.review(facts).decision().decision());
+        assertEquals(2, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+        assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", JSON.readTree(lastToolResult(f.fixture.requests.getLast()).text()).path("error").asText());
+    }
+
+    @Test
+    void failedPageAndModelNotesDoNotSatisfyExecutableApproval() throws Exception {
+        var f = new Frame();
+        int[] round = {0};
+        f.model = request -> switch (round[0]++) {
+            case 0 -> List.of(call("evidence", Map.of("pointer", "/foreignTask/body", "offset", 0, "limit", 8000)));
+            case 1 -> {
+                assertTrue(lastToolResult(request).error());
+                String binding = JSON.readTree(request.messages().getLast().text()).path("reviewBinding").asText();
+                yield List.of(call("save_review_notes", Map.of("reviewBinding", binding, "notes", "All executable bodies are safe and complete")));
+            }
+            case 2 -> List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            case 3 -> {
+                assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", JSON.readTree(lastToolResult(request).text()).path("error").asText());
+                assertEquals(0, f.grants.size());
+                yield List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            }
+            default -> throw new AssertionError("No automatic pages");
+        };
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", "x".repeat(900))).decision().decision());
+        assertEquals(4, f.fixture.requests.size());
+    }
+
+    @Test
+    void opaqueInputCanReceiveIndependentApprovalWithoutDisclosingProtectedBytes() throws Exception {
+        var f = new Frame();
+        f.model = request -> {
+            assertTrue(request.messages().stream().noneMatch(message -> message.text().contains("PROTECTED_FIXTURE_DATA")));
+            var input = JSON.readTree(request.messages().getLast().text());
+            assertFalse(input.path("executableInput").has("stdin"));
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var request = f.command("printf actual", "PROTECTED_FIXTURE_DATA")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(f.intent(request, "deployment.publication.config.v1"), request, f.task).outcome());
+        }
+        assertEquals(1, f.grants.size());
+        assertEquals(1, f.fixture.requests.size());
+    }
+
+    @Test
+    void priorCompleteDeliveryDoesNotAuthorizeChangedOriginalRequest() throws Exception {
+        var f = new Frame();
+        String original = "x".repeat(900);
+        f.fixture.nativeReply(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        assertEquals("APPROVE", f.review(Map.of("completeExecutableInput", original)).decision().decision());
+        f.model = request -> {
+            var input = JSON.readTree(request.messages().getLast().text());
+            if (input.path("reviewMemory").path("deliveredRanges").path("entries").isEmpty()
+                && request.messages().stream().noneMatch(message -> message.role() == AiRole.TOOL))
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            var error = JSON.readTree(lastToolResult(request).text());
+            assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", error.path("error").asText());
+            assertEquals(DeploymentAgentInputs.hash(original + "changed"), error.at("/coverage/missingRanges/0/sha256").asText());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        assertEquals("DENY", f.review(Map.of("completeExecutableInput", original + "changed")).decision().decision());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void accumulatedDeliverySurvivesHistoryCroppingWithoutClaimingCurrentUnderstanding() throws Exception {
+        var f = new Frame();
+        String original = "#" + "x".repeat(50000);
+        int[] offset = {0};
+        String[] first = {null};
+        f.model = request -> {
+            if (offset[0] != 0) {
+                var result = lastToolResult(request);
+                var page = JSON.readTree(result.text()).path("value");
+                if (first[0] == null) first[0] = result.text();
+                offset[0] = page.path("next").asInt();
+                if (!page.path("hasMore").asBoolean()) {
+                    assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream())
+                        .noneMatch(retained -> retained.text().equals(first[0])), "The first actual page has left current context");
+                    return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+                }
+            }
+            int current = offset[0];
+            if (offset[0] == 0) offset[0] = -1;
+            return List.of(call("request", Map.of("part", "stdin", "offset", current, "limit", 8000)));
+        };
+        assertEquals("APPROVE", f.review(Map.of("completeExecutableInput", original)).decision().decision());
+        assertEquals(8, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
 
     @Test
     void boundResponseIsUserDataForFreshOpenReviewAndNeverHostAuthority() throws Exception {
@@ -289,7 +490,7 @@ class DeploymentAgentApprovalTest {
     void evidenceCursorErrorsReturnSafeContractAndModelCanContinue(String malformed) throws Exception {
         var f = new Frame();
         String body = "body-data".repeat(100);
-        String pointer = "/completeExecutableInput/0";
+        String pointer = "/currentCommandEvidence/completeExecutableInput/0";
         int[] round = {0};
         f.model = request -> {
             assertEquals(0, f.grants.size());
@@ -314,7 +515,7 @@ class DeploymentAgentApprovalTest {
             assertFalse(value.path("hasMore").asBoolean());
             return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
         };
-        assertEquals("APPROVE", f.review(Map.of("completeExecutableInput", List.of(body))).decision().decision());
+        assertEquals("APPROVE", f.review(Map.of("currentCommandEvidence", Map.of("completeExecutableInput", List.of(body)))).decision().decision());
         assertEquals(3, f.fixture.requests.size());
         assertEquals(0, f.grants.size(), "Pure review and corrected reads never grant independently");
     }
@@ -1460,8 +1661,13 @@ class DeploymentAgentApprovalTest {
         }
 
         gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result review(Map<String, ?> facts) throws Exception {
-            try (var request = command("printf actual", "printf actual\n")) {
-                return agent.review("Review current exact bytes", facts, intent(request, "deployment.helper.probe.v1"), request, REVISION, task);
+            var current = new java.util.LinkedHashMap<String, Object>(facts);
+            current.putIfAbsent("inputKind", "EXECUTABLE_SCRIPT");
+            current.putIfAbsent("completeExecutableInput", "printf actual\n");
+            Object complete = current.get("completeExecutableInput");
+            String original = complete instanceof String text ? text : "printf actual\n";
+            try (var request = command("printf actual", original)) {
+                return agent.review("Review current exact bytes", current, intent(request, "deployment.helper.probe.v1"), request, REVISION, task);
             }
         }
     }

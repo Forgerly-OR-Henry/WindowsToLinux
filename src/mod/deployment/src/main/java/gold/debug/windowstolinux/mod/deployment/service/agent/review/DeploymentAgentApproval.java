@@ -203,10 +203,12 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 "message", discussion == null ? "" : discussion.response()));
             var descriptors = new LinkedHashMap<String, Object>();
             JsonNode compact = compact(current, "", descriptors);
-            var initial = Map.of("task", task.id().toString(), "binding", binding, "reviewBinding", bound,
-                "currentRequest", compact, "evidencePages", descriptors, "sourceRevisions", sourceRevisions,
-                "remainingTaskTools", DeploymentToolBudget.remaining(), "receiptSha256", sha(JSON.writeValueAsString(receipts)),
-                "discussion", discussionMetadata, "skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.APPROVAL));
+            var coverage = new DeploymentAgentInputCoverage(request, current);
+            var initial = Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("binding", binding), Map.entry("reviewBinding", bound),
+                Map.entry("currentRequest", compact), Map.entry("evidencePages", descriptors), Map.entry("sourceRevisions", sourceRevisions),
+                Map.entry("remainingTaskTools", DeploymentToolBudget.remaining()), Map.entry("receiptSha256", sha(JSON.writeValueAsString(receipts))),
+                Map.entry("discussion", discussionMetadata), Map.entry("skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.APPROVAL)),
+                Map.entry("executableInput", coverage.inlineInput()));
             String input = JSON.writeValueAsString(initial);
             String policy = POLICY + "\n" + instructions + "\n" + DeploymentHelperReviewContract.text(
                 DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
@@ -235,6 +237,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                 check(binding, revision, sources, receipts);
+                coverage.delivered(currentInput, history::visibleToolResult);
                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
                 if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
                     throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_BATCH_INCOMPLETE", new IOException("Incomplete native batch"));
@@ -278,6 +281,14 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                     stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                     check(binding, revision, sources, receipts);
                     for (var source : sources.values()) source.verify();
+                    if (result.decision().decision().equals("APPROVE") && !coverage.complete()) {
+                        String feedback = JSON.writeValueAsString(Map.of("error", "EXECUTABLE_INPUT_NOT_DELIVERED",
+                            "reviewBinding", bound, "coverage", coverage.missing(), "authorizationIssued", false));
+                        stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
+                        history.retain(input, response, List.of(new AiToolResult(response.toolCalls().getFirst().id(), feedback, true)));
+                        pendingBatchFeedback = feedback;
+                        continue;
+                    }
                     rememberDiscussion(requestIdentity, retryBinding, result, bound);
                     if (result.decision().decision().equals("DENY") && "CLOSED".equals(result.refusalData().get("discussionStatus")))
                         refused.put(retryBinding, result);
@@ -307,6 +318,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                             throw new IllegalArgumentException("Evidence page exceeds its bound");
                         results.add(new AiToolResult(call.id(), text, false));
                         memory.delivered(call.name(), args, value);
+                        coverage.returned(call.name(), args, value, text);
                     } catch (IllegalArgumentException | DeploymentSourceBrowser.MissingMemberException rejected) {
                         Object feedback = Set.of("request", "evidence").contains(call.name())
                             ? pageRejection(call.name(), rejected)

@@ -1,6 +1,6 @@
 # Agent 自主审批与按需 Skill
 
-2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 与 task-board-06 已通过产品恢复结清为 ENDED/FAILED。最新 09 在候选创建、上传后因 agent-open 独立拒绝而结束为 UNKNOWN，2337 条平台资源记录未结清，正式 App 仍为空。该轮还暴露安装 APPROVE 缺少完整执行正文投递的必要条件检查，正在修复；不能把此次安装批准算作完整独立审批通过。准备拒绝、绑定回应 25 场景及此前相关证据复用。业务自主闭环仍待实际证明，本文不将历史部署、本地通过或连接成功算作新业务验收。
+2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 与 task-board-06 已通过产品恢复结清为 ENDED/FAILED。最新 09 在候选创建、上传后因 agent-open 独立拒绝而结束为 UNKNOWN，平台保留 2337 条资源记录，其中 5 条未释放，正式 App 仍为空。该轮暴露的完整执行正文投递审批门已修复并通过 58 个不同本地定点场景，真实模型复验尚未启动；不能回填此前安装批准为完整独立审批通过。原 09 部分准备的窄补偿正在实施。业务自主闭环仍待实际证明，本文不将历史部署、本地通过或连接成功算作新业务验收。
 
 ## 目标与职责
 
@@ -213,6 +213,18 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 独立只读复核确认一个具体 P1：安装审批窗口为原日志 873–1108 行，没有安装 stdin 或完整 completeExecutableInput 的读取请求，managedHelper 506667 字符只请求了 `[0,8000)`；初始长正文仅为 descriptor。安装器写出 helper 后立即调用 probe，installation 也明确不属于 installed-call trust，不能以契约摘要免除正文审阅。日志 1111 行真实授权、1113 行执行成功，说明缺口已经进入产品执行路径。请求元数据不证明成功返回或模型理解，但结合实际正文投递入口可以排除其余安装 helper 已完整投递；故该 APPROVE 不满足现行完整独立审批要求。这不表明 helper 恶意或服务器受损。六个核心审批、契约和 observer 文件与该轮冻结摘要吻合，复核没有代码、API 或 SSH 操作。后续修复仅把真实正文投递作为 APPROVE 的必要条件，安全判断仍由独立审批模型完成。
 
+补充只读源码与原库核对证实摘要对象刻意不同：SOURCE.action 是实际压缩归档 SHA，SOURCE.detail 是平台快照清单 SHA，成功 agent-open 才产生第三种保护树 revision；request.businessRevision 来自模型路由配置摘要，与 BUSINESS.md 的数字版本没有等值关系。原 SOURCE 事件 4、PLAN_APPLICATION 事件 98 和 PREPARE_EXECUTING 事件 118 各唯一、先后次序符合原绑定；SHA256(task:component:snapshot) 与原 action 完全匹配，产品推导的候选也与实际创建、上传回执相同。该验证没有证明当前远端仍存在或可删除，仅补上安全原身份实证。实际保留 2337 行中仅 5 行未释放：两个原 source-snapshot、MOD、SCHEMA、SERVER；两个快照均只有原 task 一个引用，已释放 CONNECTION 1149 行和 CUSTOM 1181 行不能当作当前占用。第一次辅助投影把合法 static-live 资料标识误当 UUID 而失败，原库字节保持；仅校准辅助标识后第二次只读投影通过，失败文件保留，没有 Runtime、API、SSH 或数据库修改。
+
 106 项已捕获 provider 响应：input 1553404、output 51844、合计 1605248，hit 942464、miss 610940，捕获输入命中率 60.67%。审批 81 项共 1081362，占捕获总量 67.36%；部署 25 项共 523886。reasoning 已知 22429，另 81 项审批 UNKNOWN；四项配置探测用量及传输调用数 UNKNOWN。原生调用包含被拒调用，没有预算耗尽。用量、原报告、源码冻结和只读审计保留；这是开发失败轮，不混入最终冻结八项目，也没有浏览器业务成功证据。
+
+完整正文投递门仅在 AGENT 原生 APPROVE 前生效。每次 review 从实际 request 构造独立正文身份，经既有 InstallerEvidence.verify 无损验证的结构化 literals/sources 与原 stdin 为等价路线；相同原文的 textual evidence/request 分页共享范围。短原文确实内联时计入，descriptor 不计。成功工具结果只有真实进入成功模型请求后才累计；错误、裁掉的尚未投递页、模型笔记或摘要不能填补缺口。范围容量不足只可能保留缺页，不能制造完整覆盖。保护输入继续保持 opaque，不解码给模型；非空 stdin 缺分类或原文重建矛盾闭合。
+
+缺口返回同 reviewBinding 的 EXECUTABLE_INPUT_NOT_DELIVERED、真实范围和等价证据路线，零授权；模型可自行选择继续取证或 DENY，不自动读页、不规定步骤或讨论轮数。完整投递只是必要条件，不证明当前理解、安全结论或权限。最后仍要独立 APPROVE，并通过原来源、请求、回执、路由及取消检查；CLOSED 及默认三字段审批边界保持。审批基础策略说明这一门槛，按需 Skill 的发现和调用机制不改。
+
+`approval-complete-input-01` 于 2026-10-12 07:35:28+08 完成，按测试类/参数化场景去重 58 项全部通过，零失败/错误/跳过。覆盖长安装只读前缀/单 helper 不够、真实完整分页后独立授权、混合等价路线、短内联、间隙/容量/错误页/笔记/历史裁剪、opaque、来源和回执变化、默认/共享预算，以及真实本地 H2 Session 的 OPEN 绑定回应与 CLOSED、原安装 guard/execute/probe/错误身份边界。六个 Java 限定格式检查通过，五轮测试及终态冻结各 3268 项、零变化；未运行模块或全项目测试、真实 API、Runtime 或 SSH。
+
+中间记录全部保留：01 因新测试 lambda 的 checked exception 编译失败，零用例执行；02 为 36/37 通过，修复同原文等价路由的范围合并后仅复验失败及直接受影响组，03 为 23/23；04 为 20/21，OPEN 夹具把安装前零 grant 断言误用到安装成功后的 probe 分页，只校准该断言窗口，05 仅此场景 1/1 通过。不能把重跑次数相加。默认 CIM 拒绝保留为未知，实际正常用户只读核对 queryStatus=OK、相关进程 0，用户原有 IDEA 保留。
+
+七项自有增量见 [完整正文投递精确补丁](patches/DEPLOYMENT-AGENT-APPROVAL-COMPLETE-INPUT.patch)，SHA256 `f41fdfe1303257c9821277c8566170f64539184dd4573b44cb258113ee3adbbd`，已有 raw 前像均匹配 09 冻结，两项新文件原不存在；反向及缓存应用检查通过。六项可独立暂存，一个原安装边界测试的混合迁移只交付精确自有补丁，旧证据及补丁保持。09 的 UNKNOWN 和未释放资源仍保留；修复没有替代原候选的实际恢复。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

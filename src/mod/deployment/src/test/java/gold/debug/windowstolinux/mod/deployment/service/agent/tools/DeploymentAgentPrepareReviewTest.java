@@ -148,6 +148,14 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
 
         String deniedBinding = "";
 
+        String pageBinding = "";
+
+        final Map<String, Integer> pageOffsets = new java.util.HashMap<>();
+
+        final Map<String, String> pageParts = new java.util.HashMap<>();
+
+        int bodyPageCalls;
+
         Frame(ModContext actual, TaskContext task, DeploymentSourceMaterial material, DeploymentSourceArchive archive, boolean closed) {
             this.task = task;
             this.material = material;
@@ -242,10 +250,14 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
 
         AiResponse approve(AiRequest request) throws Exception {
             approvalCalls++;
-            var input = JSON.readTree(request.messages().stream().filter(m -> m.role() == AiRole.USER).findFirst().orElseThrow().text());
+            var input = JSON.readTree(request.messages().getLast().text());
             var facts = input.path("currentRequest");
             assertFalse(facts.isMissingNode(), "The actual native approval Agent supplies a fresh complete currentRequest");
             boolean install = facts.path("operation").asText().equals("deployment.helper.install.files.custom.v1");
+            if (!install || installReviews > 0) {
+                var page = executablePage(request, input);
+                if (page != null) return page;
+            }
             if (install) {
                 installReviews++;
                 assertEquals(0, installGrants);
@@ -268,6 +280,40 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             }
             return nativeCall("a" + approvalCalls, "submit_result", JSON.createObjectNode().put("decision", "APPROVE")
                 .put("requiresUserConfirmation", false).put("reason", "Exact original locally controlled request"));
+        }
+
+        private AiResponse executablePage(AiRequest request, com.fasterxml.jackson.databind.JsonNode input) throws Exception {
+            String binding = input.path("reviewBinding").asText();
+            if (!binding.equals(pageBinding)) {
+                pageBinding = binding;
+                pageOffsets.clear();
+                pageParts.clear();
+            }
+            var prior = request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((a, b) -> b);
+            if (prior.isPresent() && pageParts.containsKey(prior.orElseThrow().callId())) {
+                var result = prior.orElseThrow();
+                assertFalse(result.error());
+                var envelope = JSON.readTree(result.text());
+                assertEquals(binding, envelope.path("reviewBinding").asText());
+                String part = pageParts.get(result.callId());
+                var original = input.path("executableInput").path(part);
+                assertEquals(original.path("sha256"), envelope.at("/value/sha256"));
+                assertEquals(original.path("total"), envelope.at("/value/total"));
+                pageOffsets.put(part, envelope.at("/value/next").asInt());
+            }
+            for (String part : List.of("script", "stdin")) {
+                var original = input.path("executableInput").path(part);
+                int offset = pageOffsets.getOrDefault(part, 0);
+                if (original.has("text") || offset >= original.path("total").asInt()) continue;
+                if (input.at("/currentRequest/operation").asText().equals("deployment.helper.install.files.custom.v1")) {
+                    assertEquals(0, installGrants);
+                    assertEquals(0, installSends);
+                }
+                String id = "body_" + ++bodyPageCalls;
+                pageParts.put(id, part);
+                return nativeCall(id, "request", JSON.createObjectNode().put("part", part).put("offset", offset).put("limit", 8000));
+            }
+            return null;
         }
 
         AiResponse decide(AiRequest request) throws Exception {
