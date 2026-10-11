@@ -1,0 +1,13 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
+@@ -162 +162 @@
+-        if (purpose == AiPurpose.APPROVAL && approvalConversation != null
++        if (purpose == AiPurpose.APPROVAL
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
+@@ -342 +342 @@
+-    void onlyAgentApprovalSelectsTheNativeSubmissionAndKeepsDenialFinal() throws Exception {
++    void everyApprovalSelectsTheNativeSubmissionAndKeepsDenialFinal() throws Exception {
+@@ -353 +353 @@
+-            assertEquals(ai == agent ? Optional.of("submit_result") : Optional.empty(), request.requiredToolName());
++            assertEquals(Optional.of("submit_result"), request.requiredToolName());

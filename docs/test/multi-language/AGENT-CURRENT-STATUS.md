@@ -167,3 +167,11 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 454 通过已有产品本地元数据投影，确认原不可变端点实际是 backend `46101→18101`、frontend `46100→18100`，两组件都是 PROCESS；1 PASS，Maven 0、Java 0，无 API/SSH。这是实际保存的提案证据，已不只是模型自述推断。当前新网络守卫会拒绝此形状；原 446 恢复只用于技术发布结清和清理，不能算业务通过。
 
 三个正式零上下文补丁记录本次八个已有混合文件的自有增量：[清理证据](patches/AGENT-CLEANUP-EVIDENCE-452.patch)、[网络计划](patches/AGENT-PLAN-NETWORK-453.patch)、[Agent 浏览器验收](patches/AGENT-BROWSER-ACCEPTANCE-454.patch)。before/after 原字节与 SHA 单列保留，反向检查通过；原 203 样例及 70 个 helper 冻结文件字节未变。混合迁移不整体提交，提交不能代表完整工作树。
+
+454 原产品恢复已结束：Maven 1、Java 0，2053 个源码文件摘要零变化。原任务仍 UNKNOWN，恢复在候选清理前停于 `DEPLOYMENT_GRAPH_HEALTH_UNAVAILABLE`，没有执行新清理或停止/禁自启。新增四次 APP 实际用量 17,337（输入 14,257、输出 3,080、缓存命中 11,264，缓存率 79.0%），没有部署模型请求；当前新服务器调试累计 2,371,198，不计正式同版八项目验收。
+
+454 的直接原因已经从真实响应元数据和调用链确认：第四次 APP 返回 `finishReason=stop`，结构化提交器在解析决定和宿主授权之前拒绝纯文本；恢复 scope 没有持续审批会话，旧条件因而未设置 `requiredTool=submit_result`。这次失败不能称为审批 DENY 或服务器不健康。
+
+455 已统一 APP 的单工具结构化提交约束；语言部署、空工具、其他工具及多个工具的原选择保留，不做模型或供应商特化。单轮和持续审批仍逐条判断，纯文本、无效形状和合法 DENY 均不能取得执行许可。共享健康查询增加可选诊断观察器，默认调用保留原 UNKNOWN；只有 Agent 恢复接入既有脱敏诊断，诊断失败也不改变结果。19 个不同定点场景全部 PASS、无跳过：新增提交场景 13、原持续审批 1、健康异常/拒绝/诊断失败/默认结果 4、三种 API 协议工具选择 1；Maven 0、Java 0，没有真实 AI/SSH 请求。
+
+455 两份正式补丁只保存四个已有混合文件的自有增量：[统一审批提交](patches/APP-REQUIRED-SUBMISSION-455.patch)、[Agent 健康诊断](patches/AGENT-HEALTH-DIAGNOSTICS-455.patch)，反向检查通过。两个已跟踪源码的增量无法直接应用至较旧 HEAD，未整体暂存迁移内容；原字节备份及 SHA 保留。真实恢复和新任务看板部署仍待验证。

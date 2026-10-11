@@ -1,0 +1,27 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/delivery/DeploymentGraphPublisher.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/delivery/DeploymentGraphPublisher.java
+@@ -305,0 +306,12 @@
++        return verifyPublished(proposal, candidates, ignored -> {
++        });
++    }
++
++    /** Keeps the original health outcome while exposing a caught failure to its mode-owned diagnostics.
++     * @param proposal original immutable proposal
++     * @param candidates original candidate identities
++     * @param diagnostics caller-owned failure observer, never an execution permission
++     * @return confirmed health or retained uncertainty */
++    public OperationResult<Void> verifyPublished(DeploymentPublishResult proposal, Map<String, Candidate> candidates,
++                                                 java.util.function.Consumer<Exception> diagnostics) {
++        Objects.requireNonNull(diagnostics);
+@@ -326,0 +339,5 @@
++            try {
++                diagnostics.accept(unavailable);
++            } catch (RuntimeException diagnosticFailure) {
++                unavailable.addSuppressed(diagnosticFailure);
++            }
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -125 +125,2 @@
+-                var verified = publisher.verifyPublished(proposal, candidates.orElseThrow());
++                var verified = publisher.verifyPublished(proposal, candidates.orElseThrow(), unavailable ->
++                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, unavailable));

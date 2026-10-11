@@ -51,12 +51,81 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Actual review/channel/graph path with local persisted UNKNOWN evidence and controlled capabilities. */
 class DeploymentAgentCleanupEvidenceTest {
     private static final ObjectMapper JSON = new ObjectMapper();
+
     private static final String REVISION = "a".repeat(64);
+
     private static final String ARCHIVE = "0123456789abcdef" + "b".repeat(48);
+
     private static final String SOURCE = "c".repeat(64);
+
     private static final String ARTIFACT = "d".repeat(64);
+
     private static final String RELEASE = "e".repeat(64);
+
     private static final String DENIAL = "Current candidate cleanup lacks an authorized deletion boundary.";
+
+    @Test
+    void recoveryHealthReportsTheActualMissingSubmissionWithoutDispatch() throws Exception {
+        try (var frame = new Frame()) {
+            frame.healthReviewFailure = "text";
+            var failures = new ArrayList<Exception>();
+            var result = frame.verifyPublished(failures::add);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals("DEPLOYMENT_GRAPH_HEALTH_UNAVAILABLE", result.problem().orElseThrow().eventCode());
+            var actual = assertInstanceOf(ApiException.class, failures.getFirst());
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", actual.problem().eventCode());
+            assertEquals("A complete native result submission is required", actual.getCause().getMessage());
+            assertEquals(List.of("deployment.publication.original-status.v1", "deployment.publication.health.v1"), frame.approvalOperations());
+            assertEquals(1, frame.statusQueries);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
+
+    @Test
+    void recoveryHealthReportsTheActualDenialWithoutDispatch() throws Exception {
+        try (var frame = new Frame()) {
+            frame.healthReviewFailure = "denied";
+            var failures = new ArrayList<Exception>();
+            var result = frame.verifyPublished(failures::add);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            var actual = assertInstanceOf(ApiException.class, failures.getFirst());
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", actual.problem().eventCode());
+            assertEquals(DENIAL, actual.problem().context().get("reviewReason"));
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
+
+    @Test
+    void recoveryDiagnosticFailureCannotReplaceTheUnknownHealthOutcome() throws Exception {
+        try (var frame = new Frame()) {
+            frame.healthReviewFailure = "text";
+            var failures = new ArrayList<Exception>();
+            var diagnostic = new IllegalStateException("Controlled unavailable diagnostic sink");
+            var result = frame.verifyPublished(actual -> {
+                failures.add(actual);
+                throw diagnostic;
+            });
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals("DEPLOYMENT_GRAPH_HEALTH_UNAVAILABLE", result.problem().orElseThrow().eventCode());
+            assertSame(diagnostic, failures.getFirst().getSuppressed()[0]);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
+
+    @Test
+    void defaultHealthVerificationRetainsItsExistingUnknownResult() throws Exception {
+        try (var frame = new Frame()) {
+            frame.healthReviewFailure = "text";
+            var result = frame.publisher().verifyPublished(frame.proposal, Map.of("component", frame.candidate));
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals("DEPLOYMENT_GRAPH_HEALTH_UNAVAILABLE", result.problem().orElseThrow().eventCode());
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
 
     @Test
     void liveReceiptAndOriginalUnknownDeliveryReachOnlyTheNewCleanupReview() throws Exception {
@@ -251,32 +320,59 @@ class DeploymentAgentCleanupEvidenceTest {
 
     private static final class Frame implements AutoCloseable {
         private final String jdbc = "jdbc:h2:mem:cleanup-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+
         private final Connection retained = DriverManager.getConnection(jdbc);
+
         private final UUID taskId = UUID.randomUUID();
+
         private final TaskContext task = proxy(TaskContext.class, (name, args) -> switch (name) {
             case "id" -> taskId;
             case "cancelToken" -> (CancelToken) () -> false;
             case "progress" -> null;
             default -> throw new AssertionError(name);
         });
+
         private final ServerId server = new ServerId("controlled");
+
         private ServerInfo profile = new ServerInfo(server, "controlled", "controlled-host", 22, "root", Optional.empty(), Optional.empty());
+
         private final RemoteFacts remoteFacts = new RemoteFacts("Linux", "amd64", "controlled-fingerprint");
+
         private final DeploymentUnitIdentity unit = DeploymentUnitIdentity.forManaged("controlled", server, "b".repeat(64));
+
         private final DeploymentGraphPublisher.Candidate candidate = new DeploymentGraphPublisher.Candidate("controlled-0123456789abcdef", ARTIFACT, SOURCE, "0".repeat(64), false, Map.of());
+
         private final DeploymentPublishResult proposal;
+
         private final ModContext context;
+
         private final RemoteSession remote;
+
         private final DeploymentAgentActionLog journal;
+
         private final List<JsonNode> reviewFacts = new ArrayList<>();
+
         private String failure = "none";
+
         private String absenceFailure = "none";
+
+        private String healthReviewFailure = "none";
+
+        private int healthDispatches;
+
         private boolean denyCleanup;
-        private Consumer<JsonNode> onCleanupReview = ignored -> { };
+
+        private Consumer<JsonNode> onCleanupReview = ignored -> {
+        };
+
         private int statusQueries;
+
         private int deletions;
+
         private int absenceQueries;
+
         private String lastStatusAction;
+
         private String originalCleanupAction;
 
         Frame() throws Exception {
@@ -290,6 +386,10 @@ class DeploymentAgentCleanupEvidenceTest {
                 if (name.equals("facts")) return remoteFacts;
                 assertEquals("execute", name);
                 var request = (CommandRequest) args[0];
+                if (request.script().contains("'application-health'")) {
+                    healthDispatches++;
+                    throw new AssertionError("Rejected or malformed health review must not dispatch");
+                }
                 if (request.script().contains("'publication-original-status'")) {
                     lastStatusAction = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, ARTIFACT, request).exactAction();
                     statusQueries++;
@@ -321,10 +421,14 @@ class DeploymentAgentCleanupEvidenceTest {
                 var facts = JSON.readTree(request.messages().getLast().text());
                 reviewFacts.add(facts);
                 String operation = facts.path("operation").asText();
+                if (operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("text"))
+                    return success(new AiResponse("Controlled text without native submission", "controlled", "stop",
+                        new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
                 boolean cleanup = operation.equals("deployment.publication.candidate-cleanup.v1");
                 if (cleanup) onCleanupReview.accept(facts);
                 boolean deny = cleanup && denyCleanup || operation.equals("deployment.publication.original-status.v1")
-                    && failure.equals("query-denied") && statusQueries == 1 || operation.equals("deployment.agent.helper.v1") && absenceFailure.equals("denied");
+                    && failure.equals("query-denied") && statusQueries == 1 || operation.equals("deployment.agent.helper.v1") && absenceFailure.equals("denied")
+                    || operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("denied");
                 return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
                     List.of(new AiToolCall("review-" + reviewFacts.size(), "submit_result", JSON.writeValueAsString(Map.of("decision", deny ? "DENY" : "APPROVE",
                         "requiresUserConfirmation", deny, "reason", deny ? DENIAL : "Controlled current boundary")))), Optional.empty()));
@@ -333,8 +437,14 @@ class DeploymentAgentCleanupEvidenceTest {
                 assertTrue(Set.of("approve", "approveReviewedAction").contains(name), name);
                 return success(new ApprovalGrant(UUID.randomUUID()));
             });
-            var tasks = proxy(TaskService.class, (name, args) -> { assertEquals("findCheckpoint", name); return Optional.empty(); });
-            var servers = proxy(ServerService.class, (name, args) -> { assertEquals("get", name); return profile; });
+            var tasks = proxy(TaskService.class, (name, args) -> {
+                assertEquals("findCheckpoint", name);
+                return Optional.empty();
+            });
+            var servers = proxy(ServerService.class, (name, args) -> {
+                assertEquals("get", name);
+                return profile;
+            });
             var logs = proxy(LogService.class, (name, args) -> name.equals("register") ? new LogTarget(UUID.randomUUID()) : null);
             var ui = proxy(UiService.class, (name, args) -> new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             context = proxy(ModContext.class, (name, args) -> switch (name) {
@@ -372,7 +482,8 @@ class DeploymentAgentCleanupEvidenceTest {
             var id = new DeploymentExecutionIdentity(UUID.randomUUID(), taskId, Optional.empty(), "controlled", server, DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, SOURCE);
             var references = gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit.references(server, proposal, Map.of());
             executions.begin(task, id, "deployment-agent", references, Optional.empty(), Instant.EPOCH);
-            for (var reference : references) executions.recordReference(task, id.executionId(), reference, UUID.randomUUID(), Instant.EPOCH);
+            for (var reference : references)
+                executions.recordReference(task, id.executionId(), reference, UUID.randomUUID(), Instant.EPOCH);
             executions.startEffects(task, id.executionId(), Instant.EPOCH.plusSeconds(1));
             executions.recordPublicationTemplate(task, id.executionId(), new DeploymentPublishProposal(proposal.graph(), proposal.units()), Instant.EPOCH.plusSeconds(2));
             executions.recordUncommittedOutcome(task, id.executionId(), TaskResult.UNKNOWN, new Problem(ProblemCode.UNKNOWN, "CLEANUP_UNCONFIRMED", "Retained original cleanup", Map.of(), Optional.empty()), Instant.EPOCH.plusSeconds(3));
@@ -382,6 +493,15 @@ class DeploymentAgentCleanupEvidenceTest {
         DeploymentAgentCleanupEvidence evidence() throws Exception {
             var scope = new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
             return new DeploymentAgentCleanupEvidence(scope, remote, server, task, REVISION, proposal, Map.of("component", candidate), journal, DeploymentSendGuard.NONE, true);
+        }
+
+        DeploymentGraphPublisher publisher() throws Exception {
+            var scope = new DeploymentCommandReviewScope(context, context.interaction(), task, "FULL_CONTROL", true, () -> REVISION);
+            return new DeploymentGraphPublisher(scope, remote, server, task, (type, action, detail) -> journal.event(task, type, action, detail));
+        }
+
+        OperationResult<Void> verifyPublished(Consumer<Exception> diagnostics) throws Exception {
+            return publisher().verifyPublished(proposal, Map.of("component", candidate), diagnostics);
         }
 
         OperationResult<Void> cleanup() throws Exception {
@@ -397,13 +517,16 @@ class DeploymentAgentCleanupEvidenceTest {
 
         CommandRequest cleanupRequest(String change) {
             String script = List.of(DeploymentManagedHelperBundle.PATH, "candidate-cleanup-task", unit.id(), candidate.candidateId(),
-                change.equals("task") ? UUID.randomUUID().toString() : taskId.toString()).stream().map(DeploymentBuildCommandChannel::shellQuote)
+                    change.equals("task") ? UUID.randomUUID().toString() : taskId.toString()).stream().map(DeploymentBuildCommandChannel::shellQuote)
                 .collect(java.util.stream.Collectors.joining(" "));
             return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), change.equals("stdin") ? new byte[]{1} : new byte[0],
                 Duration.ofSeconds(change.equals("timeout") ? 45 : 90), 4096);
         }
 
-        long events(String type) throws Exception { return journal.events(task).stream().filter(value -> value.type().equals(type)).count(); }
+        long events(String type) throws Exception {
+            return journal.events(task).stream().filter(value -> value.type().equals(type)).count();
+        }
+
         void changeBinding(String type) throws Exception {
             String changed = switch (type) {
                 case "CANDIDATE" -> "controlled-fedcba9876543210";
@@ -412,13 +535,30 @@ class DeploymentAgentCleanupEvidenceTest {
             };
             journal.event(task, type, "component", changed);
         }
-        List<String> approvalOperations() { return reviewFacts.stream().map(value -> value.path("operation").asText()).toList(); }
-        @Override public void close() throws SQLException { retained.close(); }
+
+        List<String> approvalOperations() {
+            return reviewFacts.stream().map(value -> value.path("operation").asText()).toList();
+        }
+
+        @Override
+        public void close() throws SQLException {
+            retained.close();
+        }
     }
 
-    private static <T> OperationResult<T> success(T value) { return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty()); }
-    private static OperationResult<CommandResult> unknown() { return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty()); }
-    @FunctionalInterface private interface Invocation { Object call(String method, Object[] args) throws Throwable; }
+    private static <T> OperationResult<T> success(T value) {
+        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
+    }
+
+    private static OperationResult<CommandResult> unknown() {
+        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty());
+    }
+
+    @FunctionalInterface
+    private interface Invocation {
+        Object call(String method, Object[] args) throws Throwable;
+    }
+
     private static <T> T proxy(Class<T> type, Invocation callback) {
         return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (self, method, args) -> callback.call(method.getName(), args)));
     }
