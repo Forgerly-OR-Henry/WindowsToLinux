@@ -1,0 +1,35 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -732,0 +733,28 @@
++        }
++    }
++
++    @Test
++    void observesCandidateCapacityThroughProduct() throws Exception {
++        connectionOnly = false;
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            completed(runtime.servers().check(saveServer(runtime)), 2);
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            completed(context.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "static-live-capacity-observation", "Read-only candidate capacity observation", List.of(SERVER), false), task -> {
++                try (var session = context.linux().connect(new ServerId(SERVER), task)) {
++                    String identity = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
++                        .digest(("read-only-capacity:" + task.id()).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
++                    var candidates = new gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel(
++                        session, context.interaction(), new ServerId(SERVER), task, identity,
++                        new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(120));
++                    var observed = candidates.availableBytes();
++                    assertEquals(TaskResult.SUCCEEDED, observed.outcome());
++                    long workspace = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().workspaceBytes();
++                    long required = Math.addExact(Math.multiplyExact(workspace, 3), 1024L * 1024 * 1024);
++                    System.out.println("AGENT_LIVE_CAPACITY availableBytes=" + observed.value().orElseThrow()
++                        + " workspaceBytes=" + workspace + " requiredBeforeTwo=" + required);
++                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                }
++            }), 2);
+@@ -931,0 +960,3 @@
++                            if (event.type().equals("GRAPH_ROLLBACK_RESULT"))
++                                System.out.println("AGENT_LIVE_ORIGINAL_GRAPH_ROLLBACK id=" + event.id()
++                                    + " result=" + (event.detail().equals("RESTORED") ? "RESTORED" : "OTHER"));
