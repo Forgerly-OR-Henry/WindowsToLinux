@@ -8,15 +8,17 @@ selinux_observe() {
   for unit in windowstolinux-selinux-reboot.timer windowstolinux-selinux-rollback.timer; do
     [ "$(systemctl show "$unit" -p LoadState --value)" = not-found ] || fail foreign-security-timer
   done
-  if [ -e /var/lib/windowstolinux/environment-operations ] || [ -L /var/lib/windowstolinux/environment-operations ]; then
-    directory /var/lib/windowstolinux; directory /var/lib/windowstolinux/environment-operations
-    for other in /var/lib/windowstolinux/environment-operations/*/selinux-phase; do
+  for foreign_operations in /var/lib/windowstolinux/environment-operations @wtl:state-root@/environment-operations; do
+  if [ -e "$foreign_operations" ] || [ -L "$foreign_operations" ]; then
+    directory "${foreign_operations%/*}"; directory "$foreign_operations"
+    for other in "$foreign_operations"/*/selinux-phase; do
       [ -e "$other" ] || [ -L "$other" ] || continue
       [ "$other" = "$state/selinux-phase" ] && continue
       directory "${other%/*}"; regular "$other"
       [ "$(cat "$other")" = complete ] || fail foreign-security-operation
     done
   fi
+  done
   selinux_phase=UNPREPARED
   if existing && [ -e "$state/selinux-phase" ]; then
     for item in config.before boot-id selinux-phase permissive-sha256 prepare-request; do regular "$state/$item"; done

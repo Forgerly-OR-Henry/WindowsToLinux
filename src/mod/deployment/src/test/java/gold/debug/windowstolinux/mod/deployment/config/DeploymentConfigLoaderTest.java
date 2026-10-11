@@ -31,10 +31,10 @@ class DeploymentConfigLoaderTest {
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
         assertEquals(new DeploymentConfig.Ai(8192, 65536, 8192), config.ai());
-        assertEquals(new DeploymentConfig.Paths(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
+        assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
-            "/var/opt/windowstolinux/apps")), config.paths());
-        assertEquals(DeploymentConfig.RemotePaths.original(), config.paths().remote());
+            "/var/opt/windowstolinux/apps"), config.paths());
+        assertEquals(DeploymentConfig.RemotePaths.original(), config.paths());
         assertEquals(config, DeploymentConfigLoader.current());
         assertSame(DeploymentConfigLoader.current(), DeploymentConfigLoader.current());
     }
@@ -63,25 +63,23 @@ class DeploymentConfigLoaderTest {
             .replace("configuration-root: /etc/opt/windowstolinux/apps", "configuration-root: /srv/WTL-config_1")
             .replace("data-root: /var/opt/windowstolinux/apps", "data-root: /srv/WTL-data_1");
         assertEquals(new DeploymentConfig.RemotePaths("/srv/WTL-helper_1", "/srv/WTL-apps_1",
-            "/srv/WTL-state_1", "/srv/WTL-config_1", "/srv/WTL-data_1"), parse(yaml).paths().remote());
+            "/srv/WTL-state_1", "/srv/WTL-config_1", "/srv/WTL-data_1"), parse(yaml).paths());
     }
 
     @Test
-    void remotePathsRequireTheExactNestedFieldsAndStringTypes() throws Exception {
+    void pathsRequireExactlyFiveDirectFieldsAndStringTypes() throws Exception {
         String yaml = bundledYaml();
         String paths = yaml.substring(yaml.indexOf("paths:\n"));
         String withoutPaths = yaml.replace(paths, "");
         for (String invalid : java.util.List.of(withoutPaths, withoutPaths + "paths: null\n", withoutPaths + "paths: []\n",
-            withoutPaths + "paths: {}\n", withoutPaths + "paths:\n  remote: null\n",
-            withoutPaths + "paths:\n  remote: []\n", withoutPaths + "paths:\n  remote: /srv/wtl\n",
-            yaml.replace("  remote:\n", "  local:\n"), yaml + "  local: {}\n",
-            yaml.replace("  remote:\n", "  remote:\n    extra: /srv/extra\n"), yaml + "paths: {}\n"))
+            withoutPaths + "paths: {}\n", withoutPaths + "paths:\n  remote: {}\n",
+            yaml + "  local: {}\n", yaml + "  extra: /srv/extra\n", yaml + "paths: {}\n"))
             assertThrows(IOException.class, () -> parse(invalid));
         for (String field : java.util.List.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root")) {
-            String line = paths.lines().filter(value -> value.startsWith("    " + field + ": ")).findFirst().orElseThrow();
+            String line = paths.lines().filter(value -> value.startsWith("  " + field + ": ")).findFirst().orElseThrow();
             assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
             for (String value : java.util.List.of("null", "12", "true", "[]", "{}"))
-                assertThrows(IOException.class, () -> parse(yaml.replace(line, "    " + field + ": " + value)), field + "=" + value);
+                assertThrows(IOException.class, () -> parse(yaml.replace(line, "  " + field + ": " + value)), field + "=" + value);
             assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)), field);
         }
     }

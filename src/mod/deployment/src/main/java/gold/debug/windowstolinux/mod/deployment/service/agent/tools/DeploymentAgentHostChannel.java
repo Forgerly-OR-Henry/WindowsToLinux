@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
@@ -28,13 +29,18 @@ public final class DeploymentAgentHostChannel {
 
     public DeploymentAgentHostChannel(RemoteSession session, InteractionService interaction, ServerId server, TaskContext task,
                                       String revision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend) {
+        this(session, interaction, server, task, revision, budget, beforeSend, DeploymentRemoteLayout.original());
+    }
+
+    public DeploymentAgentHostChannel(RemoteSession session, InteractionService interaction, ServerId server, TaskContext task,
+                                      String revision, DeploymentBuildBudget budget, DeploymentSendGuard beforeSend, DeploymentRemoteLayout layout) {
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server).id();
         this.beforeSend = Objects.requireNonNull(beforeSend);
         commands = new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, () -> {
             if (task.cancelToken().requested()) throw cancelled();
             beforeSend.verify();
-        });
+        }, layout);
     }
 
     /** Observes the baseline without invoking any container or ecosystem tools. / 观测基线，不调用容器或生态工具。 */

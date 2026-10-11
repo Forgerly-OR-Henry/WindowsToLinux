@@ -73,10 +73,10 @@ final class DeploymentAgentPublicationReceipts implements RemoteSession {
     }
 
     static CommandRequest healthRequest(DeploymentUnitIdentity unit, DeploymentHealthCheck check) {
-        String script = String.join(" ", List.of(DeploymentManagedHelperBundle.PATH, "application-health", unit.id(),
+        String script = String.join(" ", List.of(unit.layout().helperPath(), "application-health", unit.id(),
                 unit.ownershipManifestSha256(), DeploymentWorkloadArguments.healthPayload(check)).stream()
             .map(DeploymentBuildCommandChannel::shellQuote).toList());
-        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), new byte[0],
+        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, unit.layout()), new byte[0],
             Duration.ofSeconds(check.timeoutSeconds() + 45L), 4096);
     }
 

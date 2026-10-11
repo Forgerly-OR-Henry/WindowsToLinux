@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -36,7 +37,7 @@ import gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.Deploym
 
 /** Keeps Agent preparation effects separate while retaining the original approvals, grants and cumulative deadline. / 独立承载 Agent 准备副作用，保留原审批、许可及累计期限。 */
 public final class DeploymentAgentToolchainCommands implements DeploymentToolchainSetup.Commands {
-    private static final String ROOT = "/usr/local/lib/windowstolinux/toolchains";
+    private final DeploymentRemoteLayout layout;
 
     private final DeploymentBuildCommandChannel commands;
 
@@ -45,10 +46,19 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     private final Supplier<String> operations;
 
     public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server) {
-        this(commands, server, () -> UUID.randomUUID().toString().replace("-", ""));
+        this(commands, server, DeploymentRemoteLayout.original());
+    }
+
+    public DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, DeploymentRemoteLayout layout) {
+        this(commands, server, () -> UUID.randomUUID().toString().replace("-", ""), layout);
     }
 
     DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, Supplier<String> operations) {
+        this(commands, server, operations, DeploymentRemoteLayout.original());
+    }
+
+    DeploymentAgentToolchainCommands(DeploymentBuildCommandChannel commands, ServerId server, Supplier<String> operations, DeploymentRemoteLayout layout) {
+        this.layout = Objects.requireNonNull(layout);
         this.commands = Objects.requireNonNull(commands);
         this.server = Objects.requireNonNull(server);
         this.operations = Objects.requireNonNull(operations);
@@ -57,7 +67,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     @Override
     public OperationResult<CommandResult> prepare(DeploymentToolchainType ecosystem, String branch, String exact,
                                                   int seconds, String javaHome) throws ApiException {
-        requirePreparation(ecosystem, branch, exact, seconds, javaHome);
+        requirePreparation(ecosystem, branch, exact, seconds, javaHome, layout);
         if (commands.remainingSeconds() < 45)
             return budgetExhausted();
         if (Set.of(DeploymentToolchainType.PYTHON, DeploymentToolchainType.PHP, DeploymentToolchainType.RUBY).contains(ecosystem)) {
@@ -70,7 +80,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         String operation = operation();
         long lookupSeconds = Math.min(180, commands.remainingSeconds() - 15);
         var resolved = send("deployment.agent.toolchain.resolve.v1", resolverTargets(server, ecosystem, branch, exact),
-            DeploymentAgentToolchainPrograms.resolver(), List.of("resolve", ecosystem.name(), branch, exact,
+            DeploymentAgentToolchainPrograms.resolver(layout), List.of("resolve", ecosystem.name(), branch, exact,
                 Long.toString(lookupSeconds), operation), lookupSeconds + 15);
         if (!complete(resolved))
             return resolved;
@@ -87,20 +97,20 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
         seconds = (int) Math.min(seconds, commands.remainingSeconds() - 15);
         if (seconds < 30)
             return budgetExhausted();
-        return send("deployment.agent.toolchain.prepare.v1", controllerTargets(server, operation),
-            DeploymentAgentToolchainPrograms.controller(), List.of("prepare", ecosystem.name(), branch, exact,
+        return send("deployment.agent.toolchain.prepare.v1", controllerTargets(server, operation, layout),
+            DeploymentAgentToolchainPrograms.controller(layout), List.of("prepare", ecosystem.name(), branch, exact,
                 Integer.toString(seconds), javaHome, operation, encoded), seconds + 15L);
     }
 
     @Override
     public OperationResult<CommandResult> bind(String encoded) throws ApiException {
-        requireBinding(encoded);
+        requireBinding(encoded, layout);
         long seconds = Math.min(180, commands.remainingSeconds() - 15);
         if (seconds < 30)
             return budgetExhausted();
         String operation = operation();
-        return send("deployment.agent.toolchain.bind.v1", controllerTargets(server, operation),
-            DeploymentAgentToolchainPrograms.controller(), List.of("bind", encoded, Long.toString(seconds), operation),
+        return send("deployment.agent.toolchain.bind.v1", controllerTargets(server, operation, layout),
+            DeploymentAgentToolchainPrograms.controller(layout), List.of("bind", encoded, Long.toString(seconds), operation),
             seconds + 15);
     }
 
@@ -114,7 +124,7 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
             return budgetExhausted();
         String operation = operation();
         var result = send("deployment.agent.toolchain.dependencies.v1", dependencyTargets(server, profile),
-            DeploymentAgentToolchainPrograms.dependencies(), List.of(profile, operation), Math.min(7200, commands.remainingSeconds()));
+            DeploymentAgentToolchainPrograms.dependencies(layout), List.of(profile, operation), Math.min(7200, commands.remainingSeconds()));
         if (!complete(result))
             return result;
         return dependencyReceipt(result.value().orElseThrow().stdout(), profile, operation)
@@ -143,6 +153,11 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
     }
 
     static Set<ActionTarget> controllerTargets(ServerId server, String operation) {
+        return controllerTargets(server, operation, DeploymentRemoteLayout.original());
+    }
+
+    static Set<ActionTarget> controllerTargets(ServerId server, String operation, DeploymentRemoteLayout layout) {
+        String ROOT = layout.toolchains();
         return Set.of(target(server, "deployment-build", ROOT), target(server, "deployment-build", ROOT + "/versions"), target(server, "deployment-build", ROOT + "/bindings"),
             target(server, "deployment-build", ROOT + "/work/agent-" + operation), target(server, "deployment-build", ROOT + "/.prepare.lock"),
             target(server, "systemd-unit", "windowstolinux-toolchain-" + operation + ".service"));
@@ -178,17 +193,26 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
 
     static void requirePreparation(DeploymentToolchainType ecosystem, String branch, String exact,
                                    int seconds, String javaHome) {
+        requirePreparation(ecosystem, branch, exact, seconds, javaHome, DeploymentRemoteLayout.original());
+    }
+
+    static void requirePreparation(DeploymentToolchainType ecosystem, String branch, String exact,
+                                   int seconds, String javaHome, DeploymentRemoteLayout layout) {
         Objects.requireNonNull(ecosystem);
         if (seconds < 30 || seconds > 7200 || branch == null || !branch.matches("[0-9]{1,3}(?:\\.[0-9]{1,3})?")
             || DeploymentToolchainCatalog.defaults().branches(ecosystem).stream().noneMatch(candidate -> candidate.version().equals(branch)
             && candidate.installation() != DeploymentToolchainCatalog.InstallationType.SYSTEM_COMPILER)
             || !("-".equals(exact) || exact != null && DeploymentToolchainVersion.parse(ecosystem, exact)
             .filter(version -> version.text().equals(exact) && !version.preview() && version.branch().equals(branch)).isPresent())
-            || javaHome == null || !(javaHome.equals("-") || javaHome.matches(ROOT + "/versions/java-[0-9a-f]{64}")))
+            || javaHome == null || !(javaHome.equals("-") || javaHome.matches(java.util.regex.Pattern.quote(layout.toolchains()) + "/versions/java-[0-9a-f]{64}")))
             throw new IllegalArgumentException("Invalid Agent toolchain preparation");
     }
 
     static DeploymentResolvedToolchains requireBinding(String encoded) {
+        return requireBinding(encoded, DeploymentRemoteLayout.original());
+    }
+
+    static DeploymentResolvedToolchains requireBinding(String encoded, DeploymentRemoteLayout layout) {
         byte[] bytes = null;
         try {
             if (encoded == null || encoded.length() > 87384)
@@ -201,6 +225,9 @@ public final class DeploymentAgentToolchainCommands implements DeploymentToolcha
                 || !Base64.getEncoder().encodeToString(bytes).equals(encoded)
                 || !DeploymentToolchainBindingCodec.encode(binding).equals(text))
                 throw new IllegalArgumentException("Noncanonical Agent binding");
+            if (binding.selections().stream().anyMatch(selection -> selection.origin() == DeploymentResolvedToolchains.OriginType.MANAGED
+                && !selection.directory().matches(java.util.regex.Pattern.quote(layout.toolchains()) + "/versions/[a-z_]+-[0-9a-f]{64}")))
+                throw new IllegalArgumentException("Agent managed toolchain belongs to another layout");
             return binding;
         } catch (java.nio.charset.CharacterCodingException malformed) {
             throw new IllegalArgumentException("Invalid Agent binding encoding", malformed);

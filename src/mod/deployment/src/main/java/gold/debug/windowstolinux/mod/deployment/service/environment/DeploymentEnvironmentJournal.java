@@ -31,11 +31,14 @@ final class DeploymentEnvironmentJournal {
 
     /** Original authenticated task identity. / 原已认证任务身份。 */
     private final UUID taskId;
+    private final gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout;
 
     /** Binds an original retained row. / 绑定原保留行。
      * @param checkpoint authentic original row / 真实原行
      * @param taskId original task UUID / 原任务 UUID */
-    private DeploymentEnvironmentJournal(TaskCheckpoint checkpoint, UUID taskId) {
+    private DeploymentEnvironmentJournal(TaskCheckpoint checkpoint, UUID taskId,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        this.layout = java.util.Objects.requireNonNull(layout);
         this.checkpoint = checkpoint;
         this.taskId = taskId;
     }
@@ -47,9 +50,10 @@ final class DeploymentEnvironmentJournal {
      * @return retained original journal / 保留原日志
      * @throws ApiException if original persistence fails / 原持久化失败时 */
     static DeploymentEnvironmentJournal begin(TaskService tasks, TaskContext task, RemoteTarget target) throws ApiException {
-        var state = new DeploymentEnvironmentState(1, target, UUID.randomUUID(), DeploymentEnvironmentScripts.bodyDigest(),
-            "INTENT", "none", Optional.empty());
-        return new DeploymentEnvironmentJournal(tasks.beginCheckpoint(task, KEY, encode(state)), task.id());
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(tasks, task);
+        var state = new DeploymentEnvironmentState(1, target, UUID.randomUUID(), DeploymentEnvironmentScripts.bodyDigest(layout),
+            "INTENT", "none", Optional.empty(), layout);
+        return new DeploymentEnvironmentJournal(tasks.beginCheckpoint(task, KEY, encode(state)), task.id(), layout);
     }
 
     /** Finds original evidence without manufacturing a replacement operation. / 查找原依据，不制造替代操作。
@@ -60,7 +64,8 @@ final class DeploymentEnvironmentJournal {
     static Optional<DeploymentEnvironmentJournal> find(TaskService tasks, TaskContext task) throws ApiException {
         var found = tasks.findCheckpoint(task, KEY);
         if (found.isEmpty()) return Optional.empty();
-        var journal = new DeploymentEnvironmentJournal(found.orElseThrow(), task.id());
+        var journal = new DeploymentEnvironmentJournal(found.orElseThrow(), task.id(),
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(tasks, task));
         journal.read();
         return Optional.of(journal);
     }
@@ -69,7 +74,7 @@ final class DeploymentEnvironmentJournal {
      * @return validated original state / 已核原状态
      * @throws ApiException if original row is unavailable / 原行不可用时 */
     DeploymentEnvironmentState read() throws ApiException {
-        return decode(checkpoint.snapshot().payload(), taskId);
+        return decode(checkpoint.snapshot().payload(), taskId, layout);
     }
 
     /** Performs exact CAS advancement without replacing another writer's facts. / 精确 CAS 推进，不覆盖另一写入方事实。
@@ -78,8 +83,8 @@ final class DeploymentEnvironmentJournal {
      * @throws ApiException if original persistence or CAS fails / 原持久化或 CAS 失败时 */
     void advance(DeploymentEnvironmentState before, DeploymentEnvironmentState next) throws ApiException {
         var snapshot = checkpoint.snapshot();
-        if (!before.equals(decode(snapshot.payload(), taskId)) || !before.operation().equals(next.operation())
-            || !before.bodySha().equals(next.bodySha()) || !before.target().server().equals(next.target().server())
+        if (!before.equals(decode(snapshot.payload(), taskId, layout)) || !before.operation().equals(next.operation())
+            || !before.layout().equals(next.layout()) || !before.bodySha().equals(next.bodySha()) || !before.target().server().equals(next.target().server())
             || !before.target().taskId().equals(next.target().taskId()) || !before.target().host().equals(next.target().host())
             || before.target().port() != next.target().port() || !before.target().username().equals(next.target().username())
             || before.target().fingerprint().isPresent() && !before.target().fingerprint().equals(next.target().fingerprint()))
@@ -149,7 +154,8 @@ final class DeploymentEnvironmentJournal {
      * @param payload original JSON / 原 JSON
      * @param taskId authenticated original task / 已认证原任务
      * @return exact decoded original state / 精确解码原状态 */
-    private static DeploymentEnvironmentState decode(String payload, UUID taskId) {
+    private static DeploymentEnvironmentState decode(String payload, UUID taskId,
+        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
         try {
             var root = JSON.readTree(payload);
             keys(root, Set.of("formatVersion", "target", "operation", "bodySha", "stage", "requestSha", "observation"));
@@ -159,7 +165,7 @@ final class DeploymentEnvironmentJournal {
                 || root.path("formatVersion").intValue() != 1
                 || !target.path("port").isIntegralNumber() || !target.path("port").canConvertToInt()
                 || !taskId.toString().equals(text(target, "task"))
-                || !DeploymentEnvironmentScripts.bodyDigest().equals(text(root, "bodySha")))
+                || !DeploymentEnvironmentScripts.bodyDigest(layout).equals(text(root, "bodySha")))
                 throw new IllegalArgumentException("Original environment task or implementation differs");
             var endpoint = new RemoteTarget(new ServerId(text(target, "server")), taskId, text(target, "host"),
                 target.path("port").intValue(), text(target, "username"), target.path("fingerprint").isNull()
@@ -167,7 +173,7 @@ final class DeploymentEnvironmentJournal {
             var observation = root.path("observation").isNull() ? Optional.<DeploymentEnvironmentObservation>empty()
                 : Optional.of(JSON.treeToValue(root.path("observation"), DeploymentEnvironmentObservation.class));
             return new DeploymentEnvironmentState(1, endpoint, UUID.fromString(text(root, "operation")),
-                text(root, "bodySha"), text(root, "stage"), text(root, "requestSha"), observation);
+                text(root, "bodySha"), text(root, "stage"), text(root, "requestSha"), observation, layout);
         } catch (IOException invalid) {
             throw new IllegalArgumentException("Invalid original environment JSON", invalid);
         }

@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 
 /** Fixed implementation semantics for Agent status/runtime observation; never current state or permission. */
@@ -28,6 +29,20 @@ public final class DeploymentAgentObservationReviewContract {
         requireIdentity(DeploymentManagedHelperBundle.PROTOCOL_VERSION, DeploymentManagedHelperBundle.EXPECTED_SHA256);
         DeploymentManagedHelperBundle.renderScript();
         return TEXT;
+    }
+
+    public static String text(DeploymentRemoteLayout layout) {
+        String original = text();
+        if (layout.equals(DeploymentRemoteLayout.original()))
+            return original;
+        String template = original.replace("/usr/local/lib/windowstolinux", "@wtl:helper-directory@")
+            .replace("/etc/opt/windowstolinux/apps", "@wtl:configuration-root@")
+            .replace("/var/opt/windowstolinux/apps", "@wtl:data-root@")
+            .replace("/opt/windowstolinux/apps", "@wtl:applications-root@")
+            .replace("/var/lib/windowstolinux", "@wtl:state-root@");
+        DeploymentManagedHelperBundle.renderScript(layout);
+        return gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate.render(template, layout)
+            .replace(HELPER_SHA256, DeploymentManagedHelperBundle.helperSha256(layout));
     }
 
     static void requireIdentity(int protocol, String helperSha256) {

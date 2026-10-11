@@ -10,9 +10,12 @@ import java.util.regex.Pattern;
 
 /** Checks the Agent invocation's exact input binding before model review. / 模型审批前核验Agent调用的精确输入绑定。 */
 public final class DeploymentAgentCommandInputBinding {
-    private static final Pattern FRAME = Pattern.compile(Pattern.quote("'" + DeploymentManagedHelperBundle.PATH + "' 'agent-run' ")
+    private static Pattern frame(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        return Pattern.compile(Pattern.quote("'" + layout.helperPath() + "' 'agent-run' ")
         + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' '[0-9a-f]{64}' '[0-9]+' '[0-9]+' "
         + "'(?:ordinary|docker|podman)' '([0-9a-f]{64})' '(?:-|[A-Za-z0-9+/=]+)'");
+
+    }
 
     private DeploymentAgentCommandInputBinding() {
     }
@@ -23,7 +26,12 @@ public final class DeploymentAgentCommandInputBinding {
      * @param executable complete displayed executable body / 完整展示的可执行正文
      * @return product-measured byte consistency facts only / 仅产品实测的字节一致性事实 */
     public static Map<String, Object> facts(String invocation, byte[] input, String executable) {
-        var frame = FRAME.matcher(invocation);
+        return facts(invocation, input, executable, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+    }
+
+    public static Map<String, Object> facts(String invocation, byte[] input, String executable,
+                                            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var frame = frame(layout).matcher(invocation);
         if (!frame.matches())
             throw new IllegalArgumentException("Agent command must use the exact literal input protocol");
         byte[] displayed = executable.getBytes(StandardCharsets.UTF_8);

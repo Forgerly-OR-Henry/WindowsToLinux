@@ -104,7 +104,7 @@ class DeploymentAgentHelperReadinessTest {
             + DeploymentManagedHelperBundle.buildEntrySha256() + "'"));
         assertTrue(script.contains("for dependency in " + String.join(" ", DeploymentHelperInstallerScript.RUNTIME_COMMANDS) + "; do"));
         assertTrue(script.contains("builtin command -v \"$dependency\""));
-        for (String forbidden : new String[]{"--version", "workspace-recover", "systemctl start", "systemctl enable",
+        for (String forbidden : new String[]{"--version", "managed-helper workspace-recover", "systemctl start", "systemctl enable",
             "systemd-run --", "apt-get", "dnf install", "eval ", "source ", "\"$executable\" --"})
             assertFalse(script.contains(forbidden), forbidden);
         assertFalse(script.contains("OBSERVED_PROTOCOL="));

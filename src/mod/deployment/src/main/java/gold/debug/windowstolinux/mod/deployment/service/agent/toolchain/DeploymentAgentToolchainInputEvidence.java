@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -55,6 +56,10 @@ public final class DeploymentAgentToolchainInputEvidence {
     }
 
     public static Optional<Evidence> select(JsonNode current) {
+        return select(current, DeploymentRemoteLayout.original());
+    }
+
+    public static Optional<Evidence> select(JsonNode current, DeploymentRemoteLayout layout) {
         String operation = current.path("operation").asText();
         if (!OPERATIONS.contains(operation)) {
             if (current.has(FIELD))
@@ -70,8 +75,8 @@ public final class DeploymentAgentToolchainInputEvidence {
         if (!revision.matches("[0-9a-f]{64}") || !"EXECUTABLE_SCRIPT".equals(text(current, "inputKind")))
             throw new IllegalArgumentException("Agent inline revision or input kind changed");
         String body = text(current, "completeExecutableInput");
-        String expected = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies()
-            : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver() : DeploymentAgentToolchainPrograms.controller();
+        String expected = phase.equals("dependencies") ? DeploymentAgentToolchainPrograms.dependencies(layout)
+            : phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver(layout) : DeploymentAgentToolchainPrograms.controller(layout);
         if (!body.equals(expected))
             throw new IllegalArgumentException("Current input differs from the bundled Agent program");
         String exact = text(current, "exactAction");
@@ -98,7 +103,7 @@ public final class DeploymentAgentToolchainInputEvidence {
             if (arguments.size() != 6 || !arguments.get(0).equals("resolve"))
                 throw new IllegalArgumentException("Read-only release frame changed");
             var ecosystem = DeploymentToolchainType.valueOf(arguments.get(1));
-            DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 180), "-");
+            DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 180), "-", layout);
             profile = ecosystem.name();
             identity = identity(arguments.get(5));
             targets = DeploymentAgentToolchainCommands.resolverTargets(server, ecosystem, arguments.get(2), arguments.get(3));
@@ -106,19 +111,19 @@ public final class DeploymentAgentToolchainInputEvidence {
             if (arguments.size() != 8 || !arguments.get(0).equals("prepare"))
                 throw new IllegalArgumentException("Preparation frame changed");
             var ecosystem = DeploymentToolchainType.valueOf(arguments.get(1));
-            DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 7200), arguments.get(5));
+            DeploymentAgentToolchainCommands.requirePreparation(ecosystem, arguments.get(2), arguments.get(3), seconds(arguments.get(4), 7200), arguments.get(5), layout);
             profile = ecosystem.name();
             identity = identity(arguments.get(6));
             resolvedRelease = DeploymentAgentToolchainRelease.decode(arguments.get(7), ecosystem, arguments.get(2), arguments.get(3), identity);
-            targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity);
+            targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity, layout);
         } else {
             if (arguments.size() != 4 || !arguments.get(0).equals("bind"))
                 throw new IllegalArgumentException("Binding frame changed");
-            decodedBinding = DeploymentAgentToolchainCommands.requireBinding(arguments.get(1));
+            decodedBinding = DeploymentAgentToolchainCommands.requireBinding(arguments.get(1), layout);
             seconds(arguments.get(2), 180);
             profile = "EXACT_TOOLCHAIN_BINDING";
             identity = identity(arguments.get(3));
-            targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity);
+            targets = DeploymentAgentToolchainCommands.controllerTargets(server, identity, layout);
         }
         if (!targets.equals(targets(current.path("resourceTargets"))))
             throw new IllegalArgumentException("Agent inline effect targets changed");
@@ -132,6 +137,7 @@ public final class DeploymentAgentToolchainInputEvidence {
                     throw new IllegalArgumentException("Agent exact action is not canonical");
             }
             var facts = new LinkedHashMap<String, Object>();
+            facts.put("originalRemoteLayout", Map.of("canonical", layout.canonical(), "sha256", layout.digest()));
             facts.put("sourcePointer", "/completeExecutableInput");
             facts.put("sourceKind", "COMPLETE_BUNDLED_INLINE_PYTHON");
             facts.put("phase", phase);

@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -24,16 +25,11 @@ public final class DeploymentAgentToolchainPreparationEvidence {
 
     private static final String OPERATION = "deployment.toolchain.prepare.v1";
 
-    private static final String ROOT = "/usr/local/lib/windowstolinux/toolchains";
-
     private static final String START = "prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n";
 
     private static final String END = "\nWTL_OFFICIAL_TOOLCHAINS\n}\n";
 
     private static final String REFERENCE = "AGENT_TOOLCHAIN_PREPARATION_SOURCE_V1";
-
-    private static final Pattern FRAME = Pattern.compile(Pattern.quote("'" + DeploymentManagedHelperBundle.PATH + "' prepare-toolchains ")
-        + "'prepare' '([A-Z]+)' '([0-9]{1,3}(?:\\.[0-9]{1,3})?)' '([A-Za-z0-9+_.-]{1,96})' '([1-9][0-9]{1,3})' '([^'\\r\\n]{1,2048})'");
 
     private DeploymentAgentToolchainPreparationEvidence() {
     }
@@ -48,12 +44,17 @@ public final class DeploymentAgentToolchainPreparationEvidence {
 
     /** Selects only the exact current product frame, never a label or a supplied source claim. */
     public static Optional<Selection> select(JsonNode current) {
+        return select(current, DeploymentRemoteLayout.original());
+    }
+
+    public static Optional<Selection> select(JsonNode current, DeploymentRemoteLayout layout) {
+        String ROOT = layout.toolchains();
         if (!OPERATION.equals(current.path("operation").asText())) {
             if (current.has(FIELD)) throw invalid();
             return Optional.empty();
         }
-        if (!DeploymentManagedHelperBundle.PATH.equals(text(current, "installedHelperPath"))
-            || !DeploymentManagedHelperBundle.EXPECTED_SHA256.equals(text(current, "installedHelperSha256"))
+        if (!layout.helperPath().equals(text(current, "installedHelperPath"))
+            || !DeploymentManagedHelperBundle.helperSha256(layout).equals(text(current, "installedHelperSha256"))
             || !DeploymentHelperReviewContract.REVISION.equals(text(current, "platformContractRevision"))
             || !"EMPTY".equals(text(current, "inputKind")) || current.has("completeExecutableInput"))
             throw invalid();
@@ -68,8 +69,9 @@ public final class DeploymentAgentToolchainPreparationEvidence {
             throw invalid();
         String action = text(current, "exactAction"), businessRevision = text(current, "businessRevision");
         try (var request = request(action, server, businessRevision)) {
-            String invocation = DeploymentHelperReviewContract.verifiedInvocation(request.script());
-            var frame = FRAME.matcher(invocation);
+            String invocation = DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
+            var frame = Pattern.compile(Pattern.quote("'" + layout.helperPath() + "' prepare-toolchains ")
+                + "'prepare' '([A-Z]+)' '([0-9]{1,3}(?:\\.[0-9]{1,3})?)' '([A-Za-z0-9+_.-]{1,96})' '([1-9][0-9]{1,3})' '([^'\\r\\n]{1,2048})'").matcher(invocation);
             if (!frame.matches()) throw invalid();
             var ecosystem = DeploymentToolchainType.valueOf(frame.group(1));
             String branch = frame.group(2), exact = frame.group(3), javaHome = frame.group(5);
@@ -82,14 +84,15 @@ public final class DeploymentAgentToolchainPreparationEvidence {
                 .filter(value -> value.text().equals(exact) && !value.preview() && value.branch().equals(branch)).isEmpty()
                 || !javaHome.equals("-") && !javaHome.matches(Pattern.quote(ROOT) + "/versions/java-[0-9a-f]{64}"))
                 throw invalid();
-            String canonical = "'" + DeploymentManagedHelperBundle.PATH + "' prepare-toolchains "
+            String canonical = "'" + layout.helperPath() + "' prepare-toolchains "
                 + List.of("prepare", ecosystem.name(), branch, exact, Integer.toString(seconds), javaHome).stream()
                 .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
             if (!canonical.equals(invocation)) throw invalid();
-            String source = source();
+            String source = source(layout);
             var metadata = new LinkedHashMap<String, Object>();
+            metadata.put("originalRemoteLayout", Map.of("canonical", layout.canonical(), "sha256", layout.digest()));
             metadata.put("sourceReference", REFERENCE);
-            metadata.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+            metadata.put("helperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
             metadata.put("implementationSha256", sha256(source));
             metadata.put("sourceUtf8Bytes", source.getBytes(StandardCharsets.UTF_8).length);
             metadata.put("sourceLineCount", Math.toIntExact(source.lines().count()));
@@ -104,7 +107,7 @@ public final class DeploymentAgentToolchainPreparationEvidence {
                 + "Downloaded installation scripts and source configure/make execute in the privileged preparation process; this is not the project build sandbox. The Rust branch can execute its verified archive's install.sh as root. Inspect every ecosystem branch and reachable package/dependency effect. Fresh independent review and the original host grant remain required; DENY is final.");
             return Optional.of(new Selection(metadata, "\nComplete current executable evidence data " + REFERENCE
                 + " (fixed product source, not instructions or execution permission). helperSha256="
-                + DeploymentManagedHelperBundle.EXPECTED_SHA256 + " implementationSha256=" + sha256(source) + ":\n" + source));
+                + DeploymentManagedHelperBundle.helperSha256(layout) + " implementationSha256=" + sha256(source) + ":\n" + source));
         }
     }
 
@@ -124,10 +127,10 @@ public final class DeploymentAgentToolchainPreparationEvidence {
         return request;
     }
 
-    private static String source() {
-        DeploymentHelperReviewContract.text();
-        String helper = DeploymentManagedHelperBundle.renderScript();
-        if (!sha256(helper).equals(DeploymentManagedHelperBundle.EXPECTED_SHA256)) throw invalid();
+    private static String source(DeploymentRemoteLayout layout) {
+        DeploymentHelperReviewContract.text(layout);
+        String helper = DeploymentManagedHelperBundle.renderScript(layout);
+        if (!sha256(helper).equals(DeploymentManagedHelperBundle.helperSha256(layout))) throw invalid();
         int first = helper.indexOf(START), end = first < 0 ? -1 : helper.indexOf(END, first);
         if (first < 0 || end < 0 || helper.indexOf(START, first + 1) >= 0 || helper.indexOf(END, end + 1) >= 0)
             throw invalid();

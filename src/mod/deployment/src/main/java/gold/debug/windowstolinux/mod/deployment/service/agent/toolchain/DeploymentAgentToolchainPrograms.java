@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -32,15 +33,26 @@ public final class DeploymentAgentToolchainPrograms {
 
     /** Includes every current executable controller byte. / 包含当前控制器的全部可执行字节。 */
     public static String controller() {
-        return DeploymentToolchainSources.metadata() + resource("agent-toolchain-resolution.py") + "\n"
-            + "EXPECTED_RESOLVER_SOURCE_SHA256 = '" + sha256(resolver()) + "'\n"
+        return controller(DeploymentRemoteLayout.original());
+    }
+
+    public static String controller(DeploymentRemoteLayout layout) {
+        return DeploymentToolchainSources.metadata(layout) + resource("agent-toolchain-resolution.py") + "\n"
+            + "EXPECTED_RESOLVER_SOURCE_SHA256 = '" + sha256(resolver(layout)) + "'\n"
             + DeploymentToolchainSources.archives() + "\n"
-            + resource("agent-toolchain-controller.py");
+            + gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate.render(
+                resource("agent-toolchain-controller.py").replace("/etc/opt/windowstolinux/apps", "@wtl:configuration-root@")
+                    .replace("/var/opt/windowstolinux/apps", "@wtl:data-root@")
+                    .replace("/opt/windowstolinux/apps", "@wtl:applications-root@"), layout);
     }
 
     /** Resolves official metadata without entering the installation controller. / 仅解析官方元数据，不进入安装控制器。 */
     public static String resolver() {
-        return DeploymentToolchainSources.metadata() + resource("agent-toolchain-resolution.py")
+        return resolver(DeploymentRemoteLayout.original());
+    }
+
+    public static String resolver(DeploymentRemoteLayout layout) {
+        return DeploymentToolchainSources.metadata(layout) + resource("agent-toolchain-resolution.py")
             + "\nif __name__ == '__main__':\n    resolution_cli()\n";
     }
 
@@ -55,6 +67,11 @@ public final class DeploymentAgentToolchainPrograms {
 
     /** Includes the exact dependency data and fixed authenticated package-manager implementation. / 包含精确依赖数据及固定认证包管理器实现。 */
     public static String dependencies() {
+        return dependencies(DeploymentRemoteLayout.original());
+    }
+
+    public static String dependencies(DeploymentRemoteLayout layout) {
+        Objects.requireNonNull(layout);
         try {
             return "import json\nDEPENDENCY_PACKAGES = json.loads(" + JSON.writeValueAsString(PACKAGES_TEXT)
                 + ")\n" + resource("agent-toolchain-dependencies.py");

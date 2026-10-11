@@ -16,7 +16,13 @@ import gold.debug.windowstolinux.appapi.linux.session.RemoteTarget;
  * @param observation original latest verified observation / 原最近已核观测 */
 record DeploymentEnvironmentState(int formatVersion, RemoteTarget target, UUID operation, String bodySha,
                                   String stage, String requestSha,
-                                  Optional<DeploymentEnvironmentObservation> observation) {
+                                  Optional<DeploymentEnvironmentObservation> observation,
+                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+    DeploymentEnvironmentState(int formatVersion, RemoteTarget target, UUID operation, String bodySha,
+                               String stage, String requestSha, Optional<DeploymentEnvironmentObservation> observation) {
+        this(formatVersion, target, operation, bodySha, stage, requestSha, observation,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original());
+    }
     /** Validates strict fixed identity before any recovery connection. / 任何恢复连接前校验严格固定身份。
      * @param formatVersion checkpoint version / 检查点版本
      * @param target fixed target / 固定目标
@@ -26,6 +32,7 @@ record DeploymentEnvironmentState(int formatVersion, RemoteTarget target, UUID o
      * @param requestSha original request digest / 原请求摘要
      * @param observation original observation / 原观测 */
     DeploymentEnvironmentState {
+        java.util.Objects.requireNonNull(layout);
         java.util.Objects.requireNonNull(target);
         java.util.Objects.requireNonNull(operation);
         java.util.Objects.requireNonNull(observation);
@@ -47,6 +54,6 @@ record DeploymentEnvironmentState(int formatVersion, RemoteTarget target, UUID o
      * @param observed verified new observation / 已核新观测
      * @return exact next state / 精确后续状态 */
     DeploymentEnvironmentState next(String next, String request, DeploymentEnvironmentObservation observed) {
-        return new DeploymentEnvironmentState(1, target, operation, bodySha, next, request, Optional.of(observed));
+        return new DeploymentEnvironmentState(1, target, operation, bodySha, next, request, Optional.of(observed), layout);
     }
 }

@@ -47,10 +47,20 @@ public final class NativeAiFixture {
             return null;
         });
 
+    private final gold.debug.windowstolinux.appapi.task.TaskService tasks =
+        (gold.debug.windowstolinux.appapi.task.TaskService) Proxy.newProxyInstance(
+            gold.debug.windowstolinux.appapi.task.TaskService.class.getClassLoader(),
+            new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (p, m, a) -> {
+                if (m.getName().equals("findCheckpoint") && a[0] == task
+                    && "deployment.config.remote-layout.v1".equals(a[1])) return Optional.empty();
+                throw new AssertionError("Unexpected task operation in legacy native fixture: " + m.getName());
+            });
+
     public final ModContext context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
         (p, m, a) -> switch (m.getName()) {
             case "ai" -> ai;
             case "logs" -> logs;
+            case "tasks" -> tasks;
             default -> throw new AssertionError("No execution capability in native protocol fixture: " + m.getName());
         });
 

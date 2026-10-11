@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.util.regex.Pattern;
 
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
@@ -19,26 +20,38 @@ public final class DeploymentAgentHelperInstallerScript {
 
     /** Renders only current fixed prerequisite bytes for one original operation, never model input. */
     public static String prerequisites(String operation) {
+        return prerequisites(operation, DeploymentRemoteLayout.original());
+    }
+
+    public static String prerequisites(String operation, DeploymentRemoteLayout layout) {
         requireOperation(operation);
         return "  files_trusted_runtime_path /usr/bin/python3 || { printf 'PREPARE_REJECT=agent-bootstrap-python-required\\n'; exit 64; }\n"
             + "  /usr/bin/python3 -I -S - 'HELPER_RUNTIME' '" + operation + "' <<'" + DELIMITER + "'\n"
-            + DeploymentAgentToolchainPrograms.dependencies() + "\n" + DELIMITER + "\n";
+            + DeploymentAgentToolchainPrograms.dependencies(layout) + "\n" + DELIMITER + "\n";
     }
 
     /** Reuses the complete shared installation and checks with fixed guarded Agent prerequisites. */
     public static String render(String operation) {
-        return DeploymentHelperInstallerScript.renderFiles(prerequisites(operation));
+        return render(operation, DeploymentRemoteLayout.original());
+    }
+
+    public static String render(String operation, DeploymentRemoteLayout layout) {
+        return DeploymentHelperInstallerScript.renderFiles(prerequisites(operation, layout), layout);
     }
 
     /** Accepts an operation only when every supplied installer byte matches its canonical rendering. */
     public static String parseOperation(String script) {
+        return parseOperation(script, DeploymentRemoteLayout.original());
+    }
+
+    public static String parseOperation(String script, DeploymentRemoteLayout layout) {
         if (script == null || script.length() > 2 * 1024 * 1024)
             throw new IllegalArgumentException("Agent helper installer frame changed");
         var matcher = FRAME.matcher(script);
         if (!matcher.find())
             throw new IllegalArgumentException("Agent helper installer operation missing");
         String operation = matcher.group(1);
-        if (matcher.find() || !render(operation).equals(script))
+        if (matcher.find() || !render(operation, layout).equals(script))
             throw new IllegalArgumentException("Noncanonical Agent helper installer");
         return operation;
     }

@@ -61,9 +61,7 @@ public final class DeploymentConfigLoader {
         var view = root.path("view");
         fields(view, Set.of("refresh-ms", "page-size"));
         var paths = root.path("paths");
-        fields(paths, Set.of("remote"));
-        var remote = paths.path("remote");
-        fields(remote, Set.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root"));
+        fields(paths, Set.of("helper-directory", "applications-root", "state-root", "configuration-root", "data-root"));
         try {
             return new DeploymentConfig(
                 new DeploymentConfig.Source(number(source, "bytes"), integer(source, "entries"), number(source, "archive-bytes")),
@@ -74,9 +72,9 @@ public final class DeploymentConfigLoader {
                 new DeploymentConfig.View(integer(view, "refresh-ms"), integer(view, "page-size")),
                 new DeploymentConfig.Ai(integer(ai, "deployment-max-output-tokens"), integer(ai, "extended-deployment-max-output-tokens"),
                     integer(ai, "approval-max-output-tokens")),
-                new DeploymentConfig.Paths(new DeploymentConfig.RemotePaths(text(remote, "helper-directory"),
-                    text(remote, "applications-root"), text(remote, "state-root"), text(remote, "configuration-root"),
-                    text(remote, "data-root"))));
+                new DeploymentConfig.RemotePaths(text(paths, "helper-directory"),
+                    text(paths, "applications-root"), text(paths, "state-root"), text(paths, "configuration-root"),
+                    text(paths, "data-root")));
         } catch (IllegalArgumentException invalid) {
             throw new IOException("Deployment configuration value is outside its supported range", invalid);
         }

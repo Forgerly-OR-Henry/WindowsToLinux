@@ -13,8 +13,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path
  * @param environment environment preparation timing / 环境准备时序
  * @param view feedback and pagination settings / 反馈与分页配置
  * @param ai requested output budgets / 申请输出额度
- * @param paths remote layout settings awaiting runtime wiring / 待运行时接线的远端布局配置 */
-public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai, Paths paths) {
+ * @param paths remote layout captured by deployments and retained operations / 部署及保留操作捕获的远端布局配置 */
+public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai, RemotePaths paths) {
     /** Requires all six configuration groups. / 要求六组配置齐全。
      * @param source source limits / 来源限额
      * @param build build defaults / 构建默认值
@@ -29,14 +29,6 @@ public record DeploymentConfig(Source source, Build build, Environment environme
         Objects.requireNonNull(view);
         Objects.requireNonNull(ai);
         Objects.requireNonNull(paths);
-    }
-
-    /** Remote layout configuration; execution still uses the existing fixed layout. / 远端布局配置；执行仍使用既有固定布局。
-     * @param remote dedicated managed remote roots / 专用受管远端根 */
-    public record Paths(RemotePaths remote) {
-        public Paths {
-            Objects.requireNonNull(remote, "remote");
-        }
     }
 
     /** Literal, separate remote roots without filesystem normalization. / 不做文件系统归一化的字面独立远端根。

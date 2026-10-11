@@ -125,7 +125,7 @@ public final class DeploymentGraphPublisher {
             for (String id : order) {
                 var unit = component(graph, id).unit();
                 channels.put(id, new DeploymentPublishChannel(session, context.interaction(), server, task,
-                    candidates.get(id).artifactSha256(), beforeSend));
+                    candidates.get(id).artifactSha256(), beforeSend, unit.layout()));
                 if (!unit.server().equals(server))
                     throw new IllegalArgumentException("Graph target changed");
             }
@@ -217,7 +217,7 @@ public final class DeploymentGraphPublisher {
             for (String id : order) {
                 var component = component(proposal.graph(), id);
                 var channel = channels.computeIfAbsent(id, ignored -> new DeploymentPublishChannel(session,
-                    context.interaction(), server, task, candidates.get(id).artifactSha256(), beforeSend));
+                    context.interaction(), server, task, candidates.get(id).artifactSha256(), beforeSend, component.unit().layout()));
                 var status = observed.value().orElseThrow().get(id);
                 var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit()))
                     .findFirst().orElseThrow();
@@ -269,7 +269,7 @@ public final class DeploymentGraphPublisher {
                 var commit = proposal.units().stream().filter(value -> value.unit().equals(component.unit()))
                     .findFirst().orElseThrow();
                 var channel = channels.computeIfAbsent(id, ignored -> new DeploymentPublishChannel(session,
-                    context.interaction(), server, task, candidate.artifactSha256(), beforeSend));
+                    context.interaction(), server, task, candidate.artifactSha256(), beforeSend, component.unit().layout()));
                 String backend = component.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container
                     ? "container"
                     : "native";

@@ -73,7 +73,7 @@ final class DeploymentEnvironmentHelper {
             var helper = helper(session, state);
             var observed = helper.installationStatus(state.operation());
             String receipt = DeploymentHelperInstallerScript.receipt(task.id(), state.operation(), serverDigest(state),
-                helperDigest(), "SUCCEEDED");
+                helperDigest(state), "SUCCEEDED", state.layout());
             if (observed.outcome() != TaskResult.SUCCEEDED || observed.value().isEmpty()
                 || !observed.value().orElseThrow().exitCode().equals(Optional.of(0)) || observed.value().orElseThrow().truncated()
                 || !receipt.equals(observed.value().orElseThrow().stdout()) || helper.probe().outcome() != TaskResult.SUCCEEDED)
@@ -89,20 +89,20 @@ final class DeploymentEnvironmentHelper {
     private DeploymentManagedHelper helper(RemoteSession session, DeploymentEnvironmentState state) {
         return new DeploymentManagedHelper(session, context.interaction(), state.target().server(), task,
             state.operation() + ":" + state.bodySha(), DeploymentSendGuard.NONE,
-            (intent, request, original) -> review.approve(state.target(), intent.revision(), request, original));
+            (intent, request, original) -> review.approve(state.target(), intent.revision(), request, original), state.layout());
     }
 
     /** Renders the exact original installer without creating an operation UUID. / 不创建操作 UUID 地渲染精确原安装程序。
      * @param state original facts / 原事实
      * @return fixed tracked installer / 固定留痕安装程序 */
     private String installer(DeploymentEnvironmentState state) {
-        return DeploymentHelperInstallerScript.renderTracked(task.id(), state.operation(), serverDigest(state), helperDigest());
+        return DeploymentHelperInstallerScript.renderTracked(task.id(), state.operation(), serverDigest(state), helperDigest(state), state.layout());
     }
 
     /** Identifies the original helper body. / 标识原 helper 主体。
      * @return exact body digest / 精确主体摘要 */
-    private static String helperDigest() {
-        return DeploymentEnvironmentScripts.digest(DeploymentHelperInstallerScript.render());
+    private static String helperDigest(DeploymentEnvironmentState state) {
+        return DeploymentEnvironmentScripts.digest(DeploymentHelperInstallerScript.render(state.layout()));
     }
 
     /** Preserves the existing installer server identity contract. / 保留既有安装程序服务器身份合同。

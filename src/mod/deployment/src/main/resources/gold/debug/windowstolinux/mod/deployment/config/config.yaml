@@ -21,9 +21,8 @@ view:
   refresh-ms: 750
   page-size: 200
 paths:
-  remote:
-    helper-directory: /usr/local/lib/windowstolinux
-    applications-root: /opt/windowstolinux/apps
-    state-root: /var/lib/windowstolinux
-    configuration-root: /etc/opt/windowstolinux/apps
-    data-root: /var/opt/windowstolinux/apps
+  helper-directory: /usr/local/lib/windowstolinux
+  applications-root: /opt/windowstolinux/apps
+  state-root: /var/lib/windowstolinux
+  configuration-root: /etc/opt/windowstolinux/apps
+  data-root: /var/opt/windowstolinux/apps

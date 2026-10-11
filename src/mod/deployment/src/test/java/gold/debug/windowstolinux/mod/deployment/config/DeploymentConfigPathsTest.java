@@ -16,7 +16,6 @@ class DeploymentConfigPathsTest {
         assertEquals("/srv/WTL-layout_A-state", remote.stateRoot());
         assertEquals("/srv/WTL-layout_A-config", remote.configurationRoot());
         assertEquals("/srv/WTL-layout_A-data", remote.dataRoot());
-        assertSame(remote, new DeploymentConfig.Paths(remote).remote());
     }
 
     @Test
@@ -53,8 +52,10 @@ class DeploymentConfigPathsTest {
     }
 
     @Test
-    void requiresTheRemoteGroupAndEveryRoot() {
-        assertThrows(NullPointerException.class, () -> new DeploymentConfig.Paths(null));
+    void requiresThePathsGroupAndEveryRoot() throws Exception {
+        var config = DeploymentConfigLoader.current();
+        assertThrows(NullPointerException.class, () -> new DeploymentConfig(config.source(), config.build(),
+            config.environment(), config.view(), config.ai(), null));
         var remote = DeploymentConfig.RemotePaths.original();
         for (int missing = 0; missing < 5; missing++) {
             String[] roots = {remote.helperDirectory(), remote.applicationsRoot(), remote.stateRoot(), remote.configurationRoot(), remote.dataRoot()};

@@ -107,7 +107,9 @@ class DeploymentAgentPublishRunnerTest {
                     else {
                         try (var input = DeploymentAgentPublishRunner.class.getResourceAsStream(HELPER + selected.get(file.get()))) {
                             assertNotNull(input);
-                            var expected = new String(input.readAllBytes(), StandardCharsets.UTF_8).lines().toList();
+                            var expected = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate.render(
+                                new String(input.readAllBytes(), StandardCharsets.UTF_8),
+                                gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).lines().toList();
                             assertEquals(expected, actualLines, selected.get(file.get()));
                             assertEquals(expected.size(), page.path("totalLines").asInt());
                         }

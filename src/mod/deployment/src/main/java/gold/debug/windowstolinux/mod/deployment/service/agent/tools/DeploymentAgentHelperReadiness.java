@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.util.*;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
@@ -32,7 +33,11 @@ public final class DeploymentAgentHelperReadiness {
 
     /** No helper, recovery, package-manager or ecosystem executable is invoked. */
     public static String script() {
-        return """
+        return script(DeploymentRemoteLayout.original());
+    }
+
+    public static String script(DeploymentRemoteLayout layout) {
+        String template = """
             set -uo pipefail
             export LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin
             unset BASH_ENV ENV CDPATH
@@ -263,9 +268,56 @@ public final class DeploymentAgentHelperReadiness {
             fi
             emit
             """.formatted(FORMAT, DeploymentManagedHelperBundle.PROTOCOL_VERSION,
-            DeploymentManagedHelperBundle.PATH, DeploymentManagedHelperBundle.EXPECTED_SHA256,
-            DeploymentManagedHelperBundle.BUILD_ENTRY_PATH, DeploymentManagedHelperBundle.buildEntrySha256(),
+            layout.helperPath(), DeploymentManagedHelperBundle.helperSha256(layout),
+            layout.buildEntry(), DeploymentManagedHelperBundle.buildEntrySha256(layout),
             String.join(" ", DeploymentHelperInstallerScript.RUNTIME_COMMANDS));
+        template = template.replace("/etc/opt/windowstolinux/apps", "@wtl:configuration-root@")
+            .replace("/var/opt/windowstolinux/apps", "@wtl:data-root@")
+            .replace("/opt/windowstolinux/apps", "@wtl:applications-root@")
+            .replace("/var/lib/windowstolinux", "@wtl:state-root@");
+        template = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate.render(template, layout);
+        return template.replace("receipt_directory=" + layout.helperInstallOperationsRoot(),
+            layoutAnchor(layout) + "receipt_directory=" + layout.helperInstallOperationsRoot());
+    }
+
+    private static String layoutAnchor(DeploymentRemoteLayout layout) {
+        String expected = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.unit(layout);
+        String legacy = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission.originalUnit();
+        return """
+            layout_unit=/etc/systemd/system/windowstolinux-workspace-recovery.service
+            managed_parents "$layout_unit"
+            if [ "$checked" != SAFE ]; then roots=UNSAFE
+            elif [ -e "$layout_unit" ] || [ -L "$layout_unit" ]; then
+              path_metadata "$layout_unit" file
+              if [ "$checked" != SAFE ] || [ "$mode" != 644 ]; then roots=UNSAFE
+              else
+                layout_digest=$(/usr/bin/sha256sum -- "$layout_unit") || layout_digest=
+                layout_digest="${layout_digest%%%% *}"
+                if [ "$layout_digest" != '%s' ] && ! { [ '%s' = 1 ] && [ "$layout_digest" = '%s' ]; }; then roots=UNSAFE; fi
+              fi
+            elif [ '%s' != 1 ] && [ "$helper" = MATCH ]; then roots=UNSAFE
+            fi
+            for layout_tool in /usr/bin/systemctl; do
+              trusted_executable "$layout_tool"
+              [ "$checked" = SAFE ] || roots=UNOBSERVED
+            done
+            if [ "$roots" != UNOBSERVED ]; then
+              layout_fragment=$(/usr/bin/systemctl show windowstolinux-workspace-recovery.service --property=FragmentPath --value) || roots=UNOBSERVED
+              layout_dropins=$(/usr/bin/systemctl show windowstolinux-workspace-recovery.service --property=DropInPaths --value) || roots=UNOBSERVED
+              [ -z "$layout_fragment" ] || [ "$layout_fragment" = "$layout_unit" ] || roots=UNSAFE
+              [ -z "$layout_dropins" ] || roots=UNSAFE
+            fi
+            """.formatted(sha256(expected), layout.equals(DeploymentRemoteLayout.original()) ? "1" : "0", sha256(legacy),
+            layout.equals(DeploymentRemoteLayout.original()) ? "1" : "0");
+    }
+
+    private static String sha256(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
     }
 
     /** Malformed or incomplete observations never establish absence or permit installation. */

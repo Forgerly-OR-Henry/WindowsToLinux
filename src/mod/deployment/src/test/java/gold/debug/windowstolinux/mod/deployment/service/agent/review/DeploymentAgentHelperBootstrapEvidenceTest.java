@@ -40,7 +40,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
 
     private ActionIntent original(CommandRequest request) {
         return RemoteActions.command(server, REVISION, request).withSemantics(new ActionSemantics(DeploymentAgentHelperBootstrapEvidence.OPERATION,
-            Set.of(new ActionTarget(server.id(), "deployment-helper", DeploymentManagedHelperBundle.PATH))));
+            gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper.installationTargets(server, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())));
     }
 
     @Test
@@ -53,7 +53,12 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             assertEquals(DeploymentAgentHelperBootstrapEvidence.targets(server), expanded.semantics().orElseThrow().targets());
             assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "system-package-transaction",
                 "APT:authenticated-dependency-closure:HELPER_RUNTIME")));
-            assertFalse(expanded.semantics().orElseThrow().targets().stream().anyMatch(t -> t.kind().equals("systemd-service") || t.id().contains("crb")));
+            assertFalse(expanded.semantics().orElseThrow().targets().stream().anyMatch(t -> t.id().contains("crb")));
+            assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "file", DeploymentRemoteLayoutAdmission.UNIT_PATH)));
+            assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "systemd-service", DeploymentRemoteLayoutAdmission.UNIT_NAME)));
+            assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "service-manager", "systemd")));
+            for (String root : List.of("/usr/local/lib/windowstolinux", "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps", "/var/opt/windowstolinux/apps"))
+                assertTrue(expanded.semantics().orElseThrow().targets().contains(new ActionTarget(server.id(), "directory", root)));
             var evidence = new ObjectMapper().valueToTree(DeploymentAgentHelperBootstrapEvidence.describe(DeploymentAgentHelperInstallerScript.render(OPERATION)));
             assertEquals(DeploymentAgentHelperInstallerScript.render(OPERATION), DeploymentInstallerEvidence.reconstruct(evidence));
             assertArrayEquals(DeploymentAgentHelperInstallerScript.render(OPERATION).getBytes(StandardCharsets.UTF_8), request.stdin());

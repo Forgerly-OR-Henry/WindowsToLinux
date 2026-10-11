@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -56,6 +57,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     private final TaskContext task;
 
     private final String revision;
+
+    private final DeploymentRemoteLayout layout;
 
     private final DeploymentPublishResult proposal;
 
@@ -131,6 +134,9 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         this.task = Objects.requireNonNull(task);
         this.revision = Objects.requireNonNull(revision);
         this.proposal = Objects.requireNonNull(proposal);
+        this.layout = proposal.graph().components().getFirst().unit().layout();
+        if (proposal.graph().components().stream().anyMatch(part -> !layout.equals(part.unit().layout())))
+            throw new IllegalArgumentException("Original Agent graph has conflicting directory identities");
         this.journal = Objects.requireNonNull(journal);
         snapshot = journal.find(task).orElseThrow();
         profile = unique(journal.events(task), "TARGET_PROFILE");
@@ -152,10 +158,10 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         if (stopped) throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_REVIEW_STOPPED", null);
         requireBinding();
         if (query != null && query.intent().equals(verifiedReviewIntent))
-            return DeploymentAgentObservationReviewContract.text();
+            return DeploymentAgentObservationReviewContract.text(layout);
         if (pending != null && pending.intent().equals(verifiedReviewIntent))
-            return pending.health() != null ? DeploymentAgentHealthReviewContract.text()
-                : DeploymentAgentObservationReviewContract.text();
+            return pending.health() != null ? DeploymentAgentHealthReviewContract.text(layout)
+                : DeploymentAgentObservationReviewContract.text(layout);
         return "";
     }
 
@@ -207,7 +213,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     Map.entry("resourceTargetMeaning", "The unchanged resource target is this unit's managed release root, separate from all three positional arguments")));
                 facts.put("commandBinding", Map.of("exactCommand", request.script(), "expectedCanonicalCommand", health.canonicalCommand(),
                     "matchesCanonicalCommand", request.script().equals(health.canonicalCommand()),
-                    "unwrappedCanonicalInvocation", DeploymentManagedHelperBundle.verifiedBody(health.canonicalCommand()),
+                    "unwrappedCanonicalInvocation", DeploymentManagedHelperBundle.verifiedBody(health.canonicalCommand(), layout),
                     "meaning", "selectHealth matched the actual complete guarded request script, timeout, output limit, empty stdin and intent against the generated canonical CommandRequest. The unwrapped invocation is its fixed helper path, verb and three ordered shell-quoted literal arguments, extracted by the existing integrity-guard contract; no shell token guessing, execution or permission is implied."));
             } else {
                 var unit = selected.part().unit();
@@ -224,12 +230,13 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             }
             facts.put("originalGraphBindings", selections.values().stream().map(DeploymentAgentHealthEvidence::unitFacts).toList());
             facts.put("currentGraphQueries", observations.values().stream().map(DeploymentAgentHealthEvidence::observationFacts).toList());
-            facts.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+            facts.put("originalRemoteLayout", Map.of("canonical", layout.canonical(), "sha256", layout.digest()));
+            facts.put("helperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
             facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
             if (health != null) {
                 facts.put("healthReviewContract", Map.of("revision", DeploymentAgentHealthReviewContract.REVISION,
-                    "textSha256", DeploymentAgentInputs.hash(DeploymentAgentHealthReviewContract.text()),
-                    "helperSha256", DeploymentAgentHealthReviewContract.HELPER_SHA256,
+                    "textSha256", DeploymentAgentInputs.hash(DeploymentAgentHealthReviewContract.text(layout)),
+                    "helperSha256", DeploymentManagedHelperBundle.helperSha256(layout),
                     "helperProtocol", DeploymentAgentHealthReviewContract.HELPER_PROTOCOL,
                     "meaning", "Reference to the independently pinned fixed SYSTEM implementation contract; not current remote state, approval or host permission"));
                 facts.put("selectedHealthExecutionPath", healthExecutionPath(intent, health));
@@ -307,7 +314,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     throw new IllegalStateException("Original query changed");
             } else {
                 requireObservations();
-                if (operation.equals(HEALTH)) DeploymentAgentHealthReviewContract.text();
+                if (operation.equals(HEALTH)) DeploymentAgentHealthReviewContract.text(layout);
                 if (pending == null || !pending.intent().equals(intent)
                     || (operation.equals(HEALTH) ? !Objects.equals(pending.health(), selectHealth(intent, request))
                     : !Objects.equals(pending.runtime(), selectRuntime(intent, request)))
@@ -331,9 +338,9 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         for (var part : proposal.graph().components()) {
             var candidate = Objects.requireNonNull(candidates.get(part.componentId()));
             var commits = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).toList();
-            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive);
+            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive, layout);
             if (commits.size() != 1 || !part.unit().server().equals(server) || !workspace.candidateId().equals(candidate.candidateId())
-                || !part.unit().equals(DeploymentUnitIdentity.forManaged(part.unit().id(), server, part.unit().ownershipManifestSha256())))
+                || !part.unit().equals(DeploymentUnitIdentity.forManaged(part.unit().id(), server, part.unit().ownershipManifestSha256(), layout)))
                 throw new IllegalStateException("Original unit identity is inconsistent");
             result.put(part.componentId(), new Selection(part, commits.getFirst(), candidate, workspace));
         }
@@ -380,7 +387,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             "Original source archive and latest selected candidate/source/artifact/tool seals",
             "Current authenticated target and saved server profile; frozen current review route",
             "Original publication FINISHED/VERIFIED evidence and modifying-effect boundary; unresolved outer delivery is not declared settled"));
-        facts.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        facts.put("originalRemoteLayout", Map.of("canonical", layout.canonical(), "sha256", layout.digest()));
+            facts.put("helperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
         facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
         facts.put("enforcedQueryBoundary", "When executed, the pinned publication-original-status helper validates all seven literal arguments. If CURRENT exists it must resolve exactly inside this application's managed releases directory with the original ownership manifest. Existing snapshots and candidate .agent-task markers must belong to the original task; the build unit is queried independently. Retained releases must carry the same ownership manifest. The expected release constrains maintenance ownership; actual CURRENT is read and returned independently. These are execution-time guards, not facts already observed by this pending request.");
         facts.put("receiptState", "NO_RESULT_FOR_THIS_PENDING_REQUEST");
@@ -460,8 +468,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     private void observationReviewFacts(Map<String, Object> facts, Selection selected, boolean status) {
         facts.put("observationReviewContract", Map.of("revision", DeploymentAgentObservationReviewContract.REVISION,
-            "textSha256", DeploymentAgentInputs.hash(DeploymentAgentObservationReviewContract.text()),
-            "helperSha256", DeploymentAgentObservationReviewContract.HELPER_SHA256,
+            "textSha256", DeploymentAgentInputs.hash(DeploymentAgentObservationReviewContract.text(layout)),
+            "helperSha256", DeploymentManagedHelperBundle.helperSha256(layout),
             "helperProtocol", DeploymentAgentObservationReviewContract.HELPER_PROTOCOL,
             "meaning", "Reference to fixed SYSTEM observation semantics; no remote execution-time guard is asserted passed and no result or grant is synthesized. completedLocalChecks separately reports the checks already performed locally in this pending request's facts assembly"));
         var unit = selected.part().unit();
@@ -543,16 +551,16 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         throw new IllegalArgumentException("Runtime query is not an original canonical helper request");
     }
 
-    private static boolean covered(String operation, CommandRequest request) {
+    private boolean covered(String operation, CommandRequest request) {
         return Set.of(HEALTH, STATUS, INSPECT).contains(operation)
-            || operation.equals(OBSERVE) && request.script().contains(DeploymentManagedHelperBundle.PATH);
+            || operation.equals(OBSERVE) && request.script().contains(layout.helperPath());
     }
 
     private CommandRequest command(String verb, List<String> arguments, long timeout) {
-        var values = new ArrayList<>(List.of(DeploymentManagedHelperBundle.PATH, verb));
+        var values = new ArrayList<>(List.of(layout.helperPath(), verb));
         values.addAll(arguments);
         String script = values.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
-        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), new byte[0], Duration.ofSeconds(timeout), 4096);
+        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0], Duration.ofSeconds(timeout), 4096);
     }
 
     private boolean matches(ActionIntent intent, CommandRequest request, CommandRequest expected, Selection selected, String operation) {
@@ -564,9 +572,11 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     private void requireBinding() throws ApiException {
         try {
-            DeploymentAgentHealthReviewContract.text();
-            DeploymentAgentObservationReviewContract.text();
+            DeploymentAgentHealthReviewContract.text(layout);
+            DeploymentAgentObservationReviewContract.text(layout);
             var saved = journal.find(task).orElseThrow();
+            if (!gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(original, task, saved.identity(), journal.events(task)).equals(layout))
+                throw new IllegalStateException("Original Agent health layout changed");
             var current = executions.findForTask(task).orElseThrow();
             var template = executions.publicationTemplate(current).orElseThrow();
             if (!snapshot.equals(saved) || saved.executionSemantics() != 4 || !saved.identity().server().equals(server.id())
@@ -598,7 +608,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     || !latest(events, "CURRENT_SOURCE", component).equals(selected.candidate().sourceRevision())
                     || !latest(events, "SEALED_ARTIFACT", component).equals(selected.candidate().artifactSha256())
                     || !latest(events, "SEALED_TOOLS", component).equals(selected.candidate().toolchainBindingSha256() + ":" + selected.candidate().hasTools())
-                    || !new DeploymentRemoteWorkspace(selected.part().unit().id(), originalArchive(events)).equals(selected.workspace()))
+                    || !new DeploymentRemoteWorkspace(selected.part().unit().id(), originalArchive(events), layout).equals(selected.workspace()))
                     throw new IllegalStateException("Original sealed candidate changed");
             }
             originalLedger = ledger;
@@ -688,7 +698,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         var selectedCommand = pending;
         boolean statusCall = request.script().contains("'publication-original-status'");
         boolean healthCall = request.script().contains("'application-health'");
-        boolean runtimeCall = request.script().contains(DeploymentManagedHelperBundle.PATH)
+        boolean runtimeCall = request.script().contains(layout.helperPath())
             && (request.script().contains("inspect-runtime") || request.script().contains("observe-deployment"));
         if (statusCall || healthCall || runtimeCall || selectedQuery != null || selectedCommand != null) {
             var intent = statusCall ? selectedQuery == null ? null : selectedQuery.intent() : selectedCommand == null ? null : selectedCommand.intent();

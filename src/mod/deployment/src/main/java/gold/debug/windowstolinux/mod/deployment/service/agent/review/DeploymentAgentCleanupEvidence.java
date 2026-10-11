@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import java.time.Duration;
 import java.util.*;
 
@@ -37,6 +38,8 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
     private final ServerId server;
     private final TaskContext task;
     private final String revision;
+    private final DeploymentRemoteLayout layout;
+
     private final DeploymentPublishResult proposal;
     private final Map<String, DeploymentGraphPublisher.Candidate> candidates;
     private final DeploymentAgentActionLog journal;
@@ -76,6 +79,9 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
         this.task = Objects.requireNonNull(task);
         this.revision = Objects.requireNonNull(revision);
         this.proposal = Objects.requireNonNull(proposal);
+        this.layout = proposal.graph().components().getFirst().unit().layout();
+        if (proposal.graph().components().stream().anyMatch(part -> !layout.equals(part.unit().layout())))
+            throw new IllegalArgumentException("Original Agent graph has conflicting directory identities");
         this.candidates = Map.copyOf(candidates);
         this.journal = Objects.requireNonNull(journal);
         this.guard = Objects.requireNonNull(guard);
@@ -107,7 +113,7 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             String engine = part.reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container container
                 ? container.engine().name().toLowerCase(Locale.ROOT) : "none";
             var channel = new DeploymentPublishChannel(this, reviewed.interaction(), server, task,
-                selected.candidate().artifactSha256(), this::requireBinding);
+                selected.candidate().artifactSha256(), this::requireBinding, layout);
             observing = selected;
             observingCleanupAction = DeploymentAgentInputs.hash(intent.exactAction());
             var observed = channel.originalStatus(part.unit(), selected.candidate().candidateId(),
@@ -146,7 +152,7 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             evidence.put("releaseRoot", part.unit().releaseRoot());
             evidence.put("ownershipManifestSha256", part.unit().ownershipManifestSha256());
             evidence.put("candidate", selected.candidate().candidateId());
-            evidence.put("candidateRoot", "/var/lib/windowstolinux/work/" + selected.candidate().candidateId());
+            evidence.put("candidateRoot", layout.candidateRoot(selected.candidate().candidateId()));
             evidence.put("sourceArchiveSha256", selected.workspace().archiveSha256());
             evidence.put("originalSourceRevision", unique(events, "SOURCE", null));
             evidence.put("sealedSourceRevision", selected.candidate().sourceRevision());
@@ -156,7 +162,8 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             evidence.put("proposalSha256", DeploymentAgentInputs.hash(proposal.toString()));
             evidence.put("originalExecution", executionIdentity.executionId().toString());
             evidence.put("originalReviewedRevision", executionIdentity.reviewedRevision());
-            evidence.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+            evidence.put("originalRemoteLayout", Map.of("canonical", layout.canonical(), "sha256", layout.digest()));
+            evidence.put("helperSha256", DeploymentManagedHelperBundle.helperSha256(layout));
             evidence.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
             evidence.put("publicationVerified", successful);
             evidence.put("outerDeliveryOutcome", DeploymentAgentActionLog.effectsSettled(events) ? "SETTLED" : "UNCONFIRMED_WRAPPER_RESULT; no delivery result is synthesized");
@@ -244,11 +251,11 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             var commit = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
             String archive = events.stream().filter(value -> value.type().equals("SOURCE")).map(DeploymentAgentActionLog.Event::action).distinct()
                 .reduce((left, right) -> { throw new IllegalStateException("Conflicting source archives"); }).orElseThrow();
-            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive);
-            String script = List.of(DeploymentManagedHelperBundle.PATH, "candidate-cleanup-task", part.unit().id(),
+            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive, layout);
+            String script = List.of(layout.helperPath(), "candidate-cleanup-task", part.unit().id(),
                 candidate.candidateId(), task.id().toString()).stream().map(DeploymentBuildCommandChannel::shellQuote)
                 .collect(java.util.stream.Collectors.joining(" "));
-            try (var expected = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), new byte[0], Duration.ofSeconds(90), 4096)) {
+            try (var expected = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0], Duration.ofSeconds(90), 4096)) {
                 var actual = RemoteActions.command(server, candidate.artifactSha256(), expected).withSemantics(new ActionSemantics(OPERATION,
                     Set.of(new ActionTarget(server.id(), "deployment-release", part.unit().releaseRoot()))));
                 if (!actual.equals(intent) || !request.script().equals(expected.script())
@@ -269,6 +276,8 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
         try {
             guard.verify();
             var saved = journal.find(task).orElseThrow();
+            if (!gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(original, task, saved.identity(), journal.events(task)).equals(layout))
+                throw new IllegalStateException("Original Agent cleanup layout changed");
             if (!identity.equals(saved.identity()) || saved.executionSemantics() != 4 || !identity.server().equals(server.id())
                 || !profile.equals(DeploymentAgentInputs.targetProfile(original.servers().get(server, task)))
                 || !identity.targetDigest().equals(DeploymentAgentInputs.targetDigest(server, borrowed)))
@@ -389,7 +398,7 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
                 && value.exitCode().filter(code -> code == 0).isPresent() && value.stdout().equals("CANDIDATE_CLEANED=1\n")).isEmpty())
                 return result;
             requireBinding();
-            var projects = new DeploymentAgentProjectChannel(this, reviewed.interaction(), server, task, revision, () -> revision);
+            var projects = new DeploymentAgentProjectChannel(this, reviewed.interaction(), server, task, revision, () -> revision, layout);
             var absent = projects.candidateStatus(selected.selected().workspace());
             if (absent.present() || absent.buildActive()) throw new IllegalStateException("Deleted candidate absence is unconfirmed");
             journal.event(task, "CLEANUP_ABSENCE_VERIFIED", selected.reviewDigest(), selected.selected().candidate().candidateId());

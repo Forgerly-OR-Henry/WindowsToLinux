@@ -26,7 +26,7 @@ binding() {
   printf 'TASK=%s\nOPERATION=%s\nTARGET_SHA256=%s\nBODY_SHA256=%s\nPROFILE=%s\n' "$task" "$operation" "$target_sha" "$body_sha" "$profile"
 }
 existing() {
-  for parent in /var /var/lib /var/lib/windowstolinux /var/lib/windowstolinux/environment-operations; do
+  for parent in @STATE_ANCESTORS@ @wtl:state-root@/environment-operations; do
     if [ -e "$parent" ] || [ -L "$parent" ]; then directory "$parent"; fi
   done
   if [ -e "$state" ] || [ -L "$state" ]; then
@@ -38,8 +38,7 @@ existing() {
 }
 create() {
   if existing; then return; fi
-  directory /var; directory /var/lib
-  for parent in /var/lib/windowstolinux /var/lib/windowstolinux/environment-operations; do
+  for parent in @STATE_ANCESTORS@ @wtl:state-root@/environment-operations; do
     [ -d "$parent" ] || install -d -o root -g root -m 700 "$parent"
     directory "$parent"
   done
@@ -175,7 +174,7 @@ packages_install() {
   observe
 }
 environment() {
-  state="/var/lib/windowstolinux/environment-operations/$task-$operation"
+  state="@wtl:state-root@/environment-operations/$task-$operation"
   reboot_unit="wtl-selinux-reboot-$task-$operation"
   rollback_unit="wtl-selinux-rollback-$task-$operation"
   case "$stage" in

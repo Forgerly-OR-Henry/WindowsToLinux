@@ -1,5 +1,6 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
+import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.InputStreamReader;
@@ -1423,7 +1424,56 @@ class DeploymentAgentHealthEvidenceTest {
     private record ActionCheck(String expectedAction, String actualAction) {
     }
 
+    @Test
+    void originalCustomGraphUsesCapturedLayoutForEveryStatusHealthAndRuntimeRequest() throws Exception {
+        var layout = new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data"));
+        try (var frame = new Frame("HTTP", null, layout)) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.verify(evidence).outcome());
+            assertEquals(2, frame.statusQueries);
+            assertEquals(3, frame.healthDispatches);
+            assertEquals(2, frame.runtimeInspections);
+            assertEquals(2, frame.runtimeObservations);
+            assertEquals(9, frame.reviewFacts.size());
+            for (var review : frame.reviewFacts) {
+                var current = review.path("currentCommandEvidence");
+                assertEquals(layout.canonical(), current.at("/originalRemoteLayout/canonical").asText());
+                assertEquals(layout.digest(), current.at("/originalRemoteLayout/sha256").asText());
+                assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), current.path("helperSha256").asText());
+                assertTrue(review.path("exactAction").asText().contains(layout.helperPath()));
+                assertFalse(current.has("permission"));
+            }
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @Test
+    void customGraphCannotBorrowDefaultHealthCommandOrChangedCapturedLayout() throws Exception {
+        var layout = new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
+            "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data"));
+        try (var frame = new Frame("HTTP", null, layout); var actual = frame.healthRequest("none")) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            String body = DeploymentManagedHelperBundle.verifiedBody(actual.script(), layout);
+            String foreign = body.replace(layout.helperPath(), DeploymentRemoteLayout.original().helperPath());
+            try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(foreign), new byte[0], actual.timeout(), actual.outputLimitBytes())) {
+                assertThrows(ApiException.class, () -> evidence.facts(frame.healthIntent(request, "none"), request, frame.task));
+            }
+            assertEquals(2, frame.reviewFacts.size());
+            assertEquals(0, frame.healthDispatches);
+        }
+        try (var frame = new Frame("HTTP", null, layout)) {
+            frame.capturedLayout = DeploymentRemoteLayout.original();
+            assertThrows(ApiException.class, frame::evidence);
+            assertEquals(0, frame.reviewFacts.size());
+            assertEquals(0, frame.remoteExecutions);
+        }
+    }
+
     private static final class Frame implements AutoCloseable {
+        private final DeploymentRemoteLayout layout;
+        private DeploymentRemoteLayout capturedLayout;
         private final String jdbc = "jdbc:h2:mem:health-evidence-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
 
         private final Connection retained = DriverManager.getConnection(jdbc);
@@ -1539,6 +1589,12 @@ class DeploymentAgentHealthEvidenceTest {
         }
 
         Frame(String healthKind, DeploymentHealthCheck selectedHealth) throws Exception {
+            this(healthKind, selectedHealth, DeploymentRemoteLayout.original());
+        }
+
+        Frame(String healthKind, DeploymentHealthCheck selectedHealth, DeploymentRemoteLayout layout) throws Exception {
+            this.layout = layout;
+            this.capturedLayout = layout;
             try (var source = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
                 org.h2.tools.RunScript.execute(retained, source);
             }
@@ -1645,6 +1701,15 @@ class DeploymentAgentHealthEvidenceTest {
             });
             var tasks = proxy(TaskService.class, (name, args) -> {
                 assertEquals("findCheckpoint", name);
+                if (args[1].equals("deployment.config.remote-layout.v1") && !layout.equals(DeploymentRemoteLayout.original())) {
+                    var node = JSON.createObjectNode().put("formatVersion", 1).put("task", taskId.toString());
+                    node.set("layout", JSON.readTree(capturedLayout.canonical()));
+                    node.put("layoutSha256", capturedLayout.digest());
+                    return Optional.of(proxy(TaskCheckpoint.class, (method, arguments) -> {
+                        assertEquals("snapshot", method);
+                        return new TaskCheckpoint.Snapshot(0, node.toString(), true);
+                    }));
+                }
                 return checkpointActive ? Optional.of(proxy(TaskCheckpoint.class, (method, arguments) -> {
                     assertEquals("snapshot", method);
                     return new TaskCheckpoint.Snapshot(0, "{}", false);
@@ -1682,7 +1747,7 @@ class DeploymentAgentHealthEvidenceTest {
             var units = new ArrayList<DeploymentUnitCommit>();
             for (String component : List.of("backend", "frontend")) {
                 boolean backend = component.equals("backend");
-                var unit = DeploymentUnitIdentity.forManaged("controlled-" + component, server, (backend ? "b" : "9").repeat(64));
+                var unit = DeploymentUnitIdentity.forManaged("controlled-" + component, server, (backend ? "b" : "9").repeat(64), layout);
                 DeploymentHealthCheck health = component.equals("backend") ? switch (healthKind) {
                     case "TCP" -> new DeploymentHealthCheck.Tcp(18101, 120, 1);
                     case "PROCESS" -> new DeploymentHealthCheck.Process(120, 1);
@@ -1709,6 +1774,8 @@ class DeploymentAgentHealthEvidenceTest {
             var whole = new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18100/"), 200, 120);
             proposal = new DeploymentPublishResult(new DeploymentApplicationGraph("controlled", "frontend", whole, parts), units);
             journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), DeploymentAgentInputs.targetDigest(server, remote), REVISION, "FULL_CONTROL", true));
+            if (!layout.equals(DeploymentRemoteLayout.original()))
+                gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.record(journal, task, server, layout);
             journal.event(task, "TARGET_PROFILE", "", DeploymentAgentInputs.targetProfile(profile));
             journal.event(task, "SOURCE", ARCHIVE, SOURCE);
             for (String component : candidates.keySet()) {
@@ -1784,11 +1851,11 @@ class DeploymentAgentHealthEvidenceTest {
 
         CommandRequest runtimeRequest(String verb, String change) {
             var unit = part("backend").unit();
-            String script = List.of(DeploymentManagedHelperBundle.PATH, verb,
+            String script = List.of(layout.helperPath(), verb,
                     change.equals("unit") ? "controlled-foreign" : unit.id(),
                     change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256()).stream()
                 .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
-            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), change.equals("stdin") ? new byte[]{1} : new byte[0],
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), change.equals("stdin") ? new byte[]{1} : new byte[0],
                 Duration.ofSeconds(change.equals("timeout") ? 21 : 20), change.equals("output") ? 8192 : 4096);
         }
 
@@ -1805,35 +1872,35 @@ class DeploymentAgentHealthEvidenceTest {
                 ? new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:9999/foreign"), 200, 120)
                 : change.equals("kind") ? new DeploymentHealthCheck.Command(new DeploymentCommand("verify.sh", List.of()), "foreign", 120)
                 : part("backend").reviewedRuntime().healthCheck());
-            var arguments = new ArrayList<>(List.of(DeploymentManagedHelperBundle.PATH, "application-health",
+            var arguments = new ArrayList<>(List.of(layout.helperPath(), "application-health",
                 change.equals("unit") ? "controlled-foreign" : unit.id(),
                 change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256()));
             if (!change.equals("missing-payload")) arguments.add(payload);
             String script = arguments.stream()
                 .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
-            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), change.equals("stdin") ? new byte[]{1} : new byte[0],
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), change.equals("stdin") ? new byte[]{1} : new byte[0],
                 Duration.ofSeconds(change.equals("timeout") ? 90 : 165), change.equals("output") ? 8192 : 4096);
         }
 
         CommandRequest healthRequestWithPayload(String payload) {
             var unit = part("backend").unit();
-            String script = List.of(DeploymentManagedHelperBundle.PATH, "application-health", unit.id(), unit.ownershipManifestSha256(), payload)
+            String script = List.of(layout.helperPath(), "application-health", unit.id(), unit.ownershipManifestSha256(), payload)
                 .stream().map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
-            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), new byte[0],
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0],
                 Duration.ofSeconds(part("backend").reviewedRuntime().healthCheck().timeoutSeconds() + 45L), 4096);
         }
 
         CommandRequest queryRequest(String change) {
             var unit = part("backend").unit();
             boolean container = part("backend").reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container;
-            String script = List.of(DeploymentManagedHelperBundle.PATH, "publication-original-status", unit.id(),
+            String script = List.of(layout.helperPath(), "publication-original-status", unit.id(),
                     change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256(),
                     change.equals("task") ? UUID.randomUUID().toString() : task.id().toString(),
                     change.equals("candidate") ? unit.id() + "-fedcba9876543210" : candidates.get("backend").candidateId(),
                     change.equals("release") ? SOURCE : RELEASE, change.equals("backend") || container ? "container" : "native",
                     change.equals("engine") || container ? "docker" : "none").stream().map(DeploymentBuildCommandChannel::shellQuote)
                 .collect(java.util.stream.Collectors.joining(" "));
-            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), new byte[0], Duration.ofSeconds(30), 4096);
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), new byte[0], Duration.ofSeconds(30), 4096);
         }
 
         ActionIntent queryIntent(CommandRequest request) {
