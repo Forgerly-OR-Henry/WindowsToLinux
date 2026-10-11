@@ -438,7 +438,7 @@ class DeploymentAgentCleanupEvidenceTest {
                 org.h2.tools.RunScript.execute(retained, source);
             }
             var db = proxy(ModDatabase.class, (name, args) -> name.equals("identity")
-                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, "1", taskId) : DriverManager.getConnection(jdbc));
+                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, taskId) : DriverManager.getConnection(jdbc));
             journal = new DeploymentAgentActionLog(db);
             remote = proxy(RemoteSession.class, (name, args) -> {
                 if (name.equals("facts")) return remoteFacts;

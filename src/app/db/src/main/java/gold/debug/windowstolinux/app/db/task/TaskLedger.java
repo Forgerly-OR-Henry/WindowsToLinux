@@ -1460,11 +1460,27 @@ public final class TaskLedger {
             });
         }
 
-        /** Reads the actual persisted state and outstanding explicit resource descriptions. / 读取实际持久化状态及尚未释放的显式资源描述。
-         * @param taskId task identity / 任务身份
-         * @return immutable public snapshot / 不可变公开快照
-         * @throws SQLException if the task does not exist or cannot be read / 任务不存在或无法读取时
-         */
+        /** Reads a same-owner retained conclusion only after complete execution cleanup. / 仅在执行完全清理后读取同归属保留结论。
+         * @param taskId original ended UUID / 原已结束UUID
+         * @param owner exact caller owner / 精确调用方归属
+         * @param version exact caller release / 精确调用方发布
+         * @return known archive or absence of complete proof / 已知归档或无完整证明
+         * @throws SQLException if stored proof or observation is invalid / 存储证明或观察无效时 */
+        public Optional<TaskSnapshot> archived(UUID taskId, String owner, String version) throws SQLException {
+            Objects.requireNonNull(taskId);
+            Objects.requireNonNull(owner);
+            Objects.requireNonNull(version);
+            return locked(() -> {
+                try (var connection = connections.open()) {
+                    return TaskArchiveReader.read(connection, taskId, owner, version);
+                }
+            });
+        }
+
+        /** Reads the actual persisted state and outstanding explicit resources. / 读取实际持久状态及未结显式资源。
+         * @param taskId original task identity / 原任务身份
+         * @return immutable original snapshot / 不可变原快照
+         * @throws SQLException if the original task is absent or unreadable / 原任务不存在或不可读时 */
         public TaskSnapshot snapshot(UUID taskId) throws SQLException {
             return locked(() -> {
                 try (var c = connections.open();

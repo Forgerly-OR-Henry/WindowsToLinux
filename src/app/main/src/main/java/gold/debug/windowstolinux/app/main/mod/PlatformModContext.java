@@ -322,6 +322,16 @@ public final class PlatformModContext implements ContextLease {
             return delegate.inspect(task);
         }
 
+        /** Reads only an authenticated retained original conclusion. / 仅读取已认证的保留原结论。
+         * @param originalTask original ended identity / 原已结束身份
+         * @param currentTask authentic current caller task / 真实当前调用方任务
+         * @return original bounded archive if available / 可用时返回原有界归档
+         * @throws ApiException if access or observation fails / 访问或观察失败时 */
+        @Override
+        public Optional<TaskSnapshot> findArchived(java.util.UUID originalTask, TaskContext currentTask) throws ApiException {
+            return delegate.findArchived(originalTask, currentTask);
+        }
+
         /** Delegates authoritative resource observation. / 委托权威资源观察。
          * @param task original context / 原上下文
          * @return actual explicit-resource release / 实际显式资源释放

@@ -40,8 +40,11 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Controlled local route adoption only; no model, SSH or workflow execution. */
 class DeploymentAgentRecoveryReviewTest {
     private static final String ORIGINAL = "a".repeat(64);
+
     private static final String FIRST = "b".repeat(64);
+
     private static final String SECOND = "c".repeat(64);
+
     private static final String THIRD = "e".repeat(64);
 
     @Test
@@ -204,13 +207,16 @@ class DeploymentAgentRecoveryReviewTest {
                 case "duplicate-bound" -> frame.bound(SECOND);
                 case "missing-bound" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL,
                     "previousEventId=1\npreviousReviewRevision=" + FIRST + "\nreviewRevision=" + SECOND);
-                case "foreign-rebound" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", THIRD, rebound(first.orElseThrow(), FIRST, SECOND));
+                case "foreign-rebound" ->
+                    frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", THIRD, rebound(first.orElseThrow(), FIRST, SECOND));
                 case "previous-id" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL,
                     rebound(first.orElseThrow(), FIRST, SECOND).replace("previousEventId=" + first.orElseThrow().id(), "previousEventId=999999"));
                 case "previous-revision" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL,
                     rebound(first.orElseThrow(), FIRST, SECOND).replace("previousReviewRevision=" + FIRST, "previousReviewRevision=" + THIRD));
-                case "same-revision" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL, rebound(first.orElseThrow(), FIRST, FIRST));
-                case "extra-field" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL, rebound(first.orElseThrow(), FIRST, SECOND) + "\npermission=APPROVED");
+                case "same-revision" ->
+                    frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL, rebound(first.orElseThrow(), FIRST, FIRST));
+                case "extra-field" ->
+                    frame.journal.event(frame.task, "RECOVERY_REVIEW_REBOUND", ORIGINAL, rebound(first.orElseThrow(), FIRST, SECOND) + "\npermission=APPROVED");
                 case "unknown-event" -> frame.journal.event(frame.task, "RECOVERY_REVIEW_UNKNOWN", ORIGINAL, SECOND);
                 default -> {
                 }
@@ -260,22 +266,36 @@ class DeploymentAgentRecoveryReviewTest {
 
     private static final class Frame implements AutoCloseable {
         private final UUID taskId = UUID.randomUUID();
+
         private final String jdbc = "jdbc:h2:mem:recovery-review-" + taskId;
+
         private final Connection retained = DriverManager.getConnection(jdbc);
+
         private final TaskContext task = proxy(TaskContext.class, (name, args) -> {
             assertEquals("id", name);
             return taskId;
         });
+
         private final DeploymentAgentActionLog journal;
+
         private final DeploymentAgentActionLog.Snapshot saved;
+
         private final List<ActionIntent> questions = new ArrayList<>();
+
         private final InteractionService host;
+
         private final ModContext context;
+
         private String language = ORIGINAL;
+
         private String approval = ORIGINAL;
+
         private String checkpointRevision = ORIGINAL;
+
         private TaskResult outcome = TaskResult.SUCCEEDED;
+
         private boolean emptyGrant;
+
         private Hook onAuthorize = () -> {
         };
 
@@ -285,7 +305,7 @@ class DeploymentAgentRecoveryReviewTest {
                 org.h2.tools.RunScript.execute(retained, source);
             }
             var db = proxy(ModDatabase.class, (name, args) -> name.equals("identity")
-                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, "1", taskId) : DriverManager.getConnection(jdbc));
+                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, taskId) : DriverManager.getConnection(jdbc));
             journal = new DeploymentAgentActionLog(db);
             journal.create(task, new DeploymentAgentActionLog.Identity("original-server", "d".repeat(64), ORIGINAL, "MANUAL_REVIEW", false));
             journal.state(task, "UNKNOWN");
@@ -316,7 +336,7 @@ class DeploymentAgentRecoveryReviewTest {
                 return new OperationResult<>(outcome, outcome == TaskResult.SUCCEEDED && !emptyGrant
                     ? Optional.of(new ApprovalGrant(UUID.randomUUID())) : Optional.empty(), outcome == TaskResult.SUCCEEDED
                     ? Optional.empty() : Optional.of(new Problem(outcome == TaskResult.UNKNOWN ? ProblemCode.UNKNOWN : ProblemCode.ACCESS_DENIED,
-                        "CONTROLLED_RECOVERY_REBIND_REFUSAL", "Controlled route authorization was not granted", Map.of(), Optional.of(taskId))));
+                    "CONTROLLED_RECOVERY_REBIND_REFUSAL", "Controlled route authorization was not granted", Map.of(), Optional.of(taskId))));
             });
             context = proxy(ModContext.class, (name, args) -> switch (name) {
                 case "db" -> db;

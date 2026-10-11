@@ -1416,6 +1416,34 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
+        /** Observes a same-release archive without creating an ended context or replay authority. / 观察同发布归档，不创建已结束上下文或重放权限。
+         * @param originalTask selected original ended task / 所选原已结束任务
+         * @param currentTask authentic current read or maintenance task / 真实当前读取或维护任务
+         * @return exact retained conclusion or absence / 精确保留结论或不存在
+         * @throws ApiException if ownership, callback or storage fails / 归属、回调或存储失败时 */
+        @Override
+        public Optional<TaskSnapshot> findArchived(UUID originalTask, TaskContext currentTask) throws ApiException {
+            Objects.requireNonNull(originalTask);
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER",
+                    "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                if (revoked)
+                    throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                        "The owning Mod activation has closed");
+                var current = requireCleanup(currentTask, owner, version);
+                if (!current.ownerId().equals(owner) || !current.ownerVersion().equals(version))
+                    throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_CALLER",
+                        "The task belongs to another Mod release");
+                try {
+                    return ledger.queries().archived(originalTask, owner, version);
+                } catch (SQLException failure) {
+                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_ARCHIVE_OBSERVATION",
+                        "Original task archive could not be confirmed");
+                }
+            }
+        }
+
         /** Observes original explicit leases without releasing them. / 只观察原任务显式占用，不执行释放。
          * @param task authentic running or reconciling task / 真实执行或核对任务
          * @return whether the finalization predicate sees no explicit lease / 收尾判据是否未见显式占用

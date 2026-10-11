@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.InputStreamReader;
@@ -686,7 +687,8 @@ class DeploymentAgentHealthEvidenceTest {
                 yield List.copyOf(values);
             }
             case "UDP_REPLY" -> List.of("health-v1", "UDP", "120", "18101", "0a00", "ff01", "0");
-            case "UDP_CUSTOM" -> List.of("health-v1", "UDP", "120", "18101", "", "", "1", "probe.sh", "2", "literal probe", "报文");
+            case "UDP_CUSTOM" ->
+                List.of("health-v1", "UDP", "120", "18101", "", "", "1", "probe.sh", "2", "literal probe", "报文");
             default -> throw new AssertionError(variant);
         };
         byte[] expectedBytes = (String.join("\0", expected) + "\0").getBytes(StandardCharsets.UTF_8);
@@ -695,7 +697,8 @@ class DeploymentAgentHealthEvidenceTest {
         try (var frame = new Frame(check); var request = frame.healthRequest("none")) {
             var evidence = frame.evidence();
             assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
-            for (var earlier : frame.reviewFacts) assertFalse(earlier.path("currentCommandEvidence").has("healthPayloadByteView"));
+            for (var earlier : frame.reviewFacts)
+                assertFalse(earlier.path("currentCommandEvidence").has("healthPayloadByteView"));
             var review = (DeploymentCommandReview) evidence.context().interaction();
             var grant = review.approveCommand(frame.healthIntent(request, "none"), request, frame.task);
             assertEquals(TaskResult.SUCCEEDED, grant.outcome());
@@ -786,7 +789,8 @@ class DeploymentAgentHealthEvidenceTest {
                         assertEquals(2, frame.aiRequests.size());
                         assertEquals(2, frame.hostAuthorizations);
                         assertEquals(0, frame.events("HEALTH_REVIEW_REQUEST"));
-                        for (var facts : frame.reviewFacts) assertFalse(facts.path("currentCommandEvidence").has("healthPayloadByteView"));
+                        for (var facts : frame.reviewFacts)
+                            assertFalse(facts.path("currentCommandEvidence").has("healthPayloadByteView"));
                     } else {
                         var grant = review.approveCommand(frame.healthIntent(original, "none"), original, frame.task);
                         assertEquals(TaskResult.SUCCEEDED, grant.outcome());
@@ -1235,7 +1239,8 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals("inspect-runtime", frame.reviewFacts.get(2).at("/currentCommandEvidence/argumentBinding/verb").asText());
             assertEquals("deployment.publication.observe.v1", frame.reviewFacts.getLast().path("operation").asText());
             assertFalse(frame.reviewFacts.getLast().has("currentCommandEvidence"));
-            for (var facts : frame.reviewFacts) assertFalse(facts.path("currentCommandEvidence").has("healthPayloadByteView"));
+            for (var facts : frame.reviewFacts)
+                assertFalse(facts.path("currentCommandEvidence").has("healthPayloadByteView"));
             for (var request : frame.aiRequests)
                 for (var message : request.messages())
                     assertFalse(message.text().contains(DeploymentAgentHealthReviewContract.text()));
@@ -1473,7 +1478,9 @@ class DeploymentAgentHealthEvidenceTest {
 
     private static final class Frame implements AutoCloseable {
         private final DeploymentRemoteLayout layout;
+
         private DeploymentRemoteLayout capturedLayout;
+
         private final String jdbc = "jdbc:h2:mem:health-evidence-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
 
         private final Connection retained = DriverManager.getConnection(jdbc);
@@ -1599,7 +1606,7 @@ class DeploymentAgentHealthEvidenceTest {
                 org.h2.tools.RunScript.execute(retained, source);
             }
             var db = proxy(ModDatabase.class, (name, args) -> name.equals("identity")
-                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, "1", taskId) : DriverManager.getConnection(jdbc));
+                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, taskId) : DriverManager.getConnection(jdbc));
             journal = new DeploymentAgentActionLog(db);
             remote = proxy(RemoteSession.class, (name, args) -> {
                 if (name.equals("facts")) return remoteFacts;
@@ -1683,7 +1690,9 @@ class DeploymentAgentHealthEvidenceTest {
                     assertEquals(true, args[3]);
                     assertSame(task, args[4]);
                     workflowOpens++;
-                    return success((WorkflowGrant) () -> { workflowCloses++; });
+                    return success((WorkflowGrant) () -> {
+                        workflowCloses++;
+                    });
                 }
                 assertTrue(Set.of("approve", "approveReviewedAction").contains(name), name);
                 hostAuthorizations++;

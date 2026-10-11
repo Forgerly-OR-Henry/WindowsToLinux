@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent;
 
 import java.util.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
@@ -8,12 +9,15 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class DeploymentAgentLayoutsTest {
     private static final UUID TASK = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef");
+
     private static final DeploymentAgentActionLog.Identity IDENTITY = new DeploymentAgentActionLog.Identity(
         "original-server", "a".repeat(64), "b".repeat(64), "FULL_CONTROL", true);
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
@@ -70,10 +74,12 @@ class DeploymentAgentLayoutsTest {
             case "task" -> object.put("task", UUID.randomUUID().toString());
             case "server" -> object.put("server", "foreign-server");
             case "digest" -> object.put("layoutSha256", "f".repeat(64));
-            case "root" -> ((com.fasterxml.jackson.databind.node.ObjectNode) object.get("layout").get("remote")).put("helperDirectory", "/foreign/helper");
+            case "root" ->
+                ((com.fasterxml.jackson.databind.node.ObjectNode) object.get("layout").get("remote")).put("helperDirectory", "/foreign/helper");
             case "version" -> object.put("formatVersion", 2);
             case "extra" -> object.put("permission", "APPROVED");
-            default -> { }
+            default -> {
+            }
         }
         String text = change.equals("null") ? "null" : change.equals("noncanonical") ? original.detail() + " " : object.toString();
         var changed = new DeploymentAgentActionLog.Event(1, "REMOTE_LAYOUT", TASK.toString(), text);
@@ -96,13 +102,20 @@ class DeploymentAgentLayoutsTest {
 
     private static final class Frame implements AutoCloseable {
         private final String jdbc = "jdbc:h2:mem:agent-layout-" + UUID.randomUUID();
+
         private final java.sql.Connection retained = java.sql.DriverManager.getConnection(jdbc);
+
         private final gold.debug.windowstolinux.appapi.task.run.TaskContext task = proxy(
             gold.debug.windowstolinux.appapi.task.run.TaskContext.class, (method, arguments) -> TASK);
+
         private final gold.debug.windowstolinux.appapi.task.TaskService tasks;
+
         private final gold.debug.windowstolinux.appapi.mod.ModContext context;
+
         private final DeploymentAgentActionLog journal;
+
         private String payload;
+
         private boolean released;
 
         Frame() throws Exception {
@@ -137,16 +150,24 @@ class DeploymentAgentLayoutsTest {
 
         private gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint checkpoint() {
             return proxy(gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.class, (method, arguments) -> {
-                if (method.equals("close")) { released = true; return null; }
+                if (method.equals("close")) {
+                    released = true;
+                    return null;
+                }
                 assertEquals("snapshot", method);
                 return new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(0, payload, released);
             });
         }
 
-        public void close() throws Exception { retained.close(); }
+        public void close() throws Exception {
+            retained.close();
+        }
     }
 
-    private interface Invocation { Object call(String method, Object[] arguments) throws Exception; }
+    private interface Invocation {
+        Object call(String method, Object[] arguments) throws Exception;
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T proxy(Class<T> type, Invocation callback) {
         return (T) java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},

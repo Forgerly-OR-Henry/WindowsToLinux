@@ -96,7 +96,7 @@ class ModTest extends DeploymentRuntimeFixture {
                         "deployment_unit_release_secret_reference", "deployment_agent_task",
                         "deployment_agent_event", "deployment_project", "deployment_execution",
                         "deployment_release", "deployment_handoff", "preference", "deployment_log",
-                        "deployment_management_operation"), actual);
+                        "deployment_management_operation", "deployment_operation_receipt"), actual);
                 }
             }
         }

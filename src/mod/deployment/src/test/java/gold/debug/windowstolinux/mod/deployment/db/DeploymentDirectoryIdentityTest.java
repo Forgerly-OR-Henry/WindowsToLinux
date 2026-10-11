@@ -42,6 +42,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 /** Only local H2 persistence and canonical bytes; no server or provider. */
 class DeploymentDirectoryIdentityTest {
     private static final Instant NOW = Instant.parse("2026-10-11T00:00:00Z");
+
     private static final ServerId SERVER = new ServerId("original-server");
 
     @Test
@@ -137,7 +138,8 @@ class DeploymentDirectoryIdentityTest {
         switch (fault) {
             case "missingLayout" -> runtime.remove("remoteLayout");
             case "missingRoot" -> ((ObjectNode) runtime.path("remoteLayout").path("remote")).remove("dataRoot");
-            case "extraRoot" -> ((ObjectNode) runtime.path("remoteLayout").path("remote")).put("otherRoot", "/srv/extra");
+            case "extraRoot" ->
+                ((ObjectNode) runtime.path("remoteLayout").path("remote")).put("otherRoot", "/srv/extra");
             case "unknownLayoutVersion" -> ((ObjectNode) runtime.path("remoteLayout")).put("formatVersion", 2);
             case "extraTop" -> runtime.put("extra", true);
             case "defaultV2" -> {
@@ -150,7 +152,8 @@ class DeploymentDirectoryIdentityTest {
                 runtime.put("formatVersion", 1);
                 runtime.remove("remoteLayout");
             }
-            case "duplicateField" -> { }
+            case "duplicateField" -> {
+            }
             default -> throw new AssertionError(fault);
         }
         String encoded = runtime.toString();
@@ -216,7 +219,7 @@ class DeploymentDirectoryIdentityTest {
             assertEquals(graph, new DeploymentGraphStore(frame.database).find(frame.task, "application").orElseThrow());
             assertEquals(customLayout(), new DeploymentPublishStore(frame.database).findUnit(frame.task, "backend-unit").orElseThrow().layout());
             assertEquals(customLayout(), new DeploymentReleaseStore(frame.database).snapshot(
-                new DeploymentReleaseStore(frame.database).find(frame.task, "application", first.identity().id()).orElseThrow())
+                    new DeploymentReleaseStore(frame.database).find(frame.task, "application", first.identity().id()).orElseThrow())
                 .graph().components().getFirst().unit().layout());
         }
     }
@@ -341,11 +344,16 @@ class DeploymentDirectoryIdentityTest {
 
     private static final class Frame implements AutoCloseable {
         private final UUID generation = UUID.randomUUID();
+
         private final String jdbc = "jdbc:h2:mem:directory-identity-" + generation;
+
         private final Connection retained = DriverManager.getConnection(jdbc);
+
         private final TaskContext task = task(UUID.randomUUID());
+
         private final ModDatabase database = (ModDatabase) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ModDatabase.class}, (proxy, method, args) -> switch (method.getName()) {
-            case "identity" -> new SchemaIdentity(DeploymentSchemaIdentity.OWNER, "1", generation);
+            case "identity" ->
+                new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, generation);
             case "openConnection" -> connection();
             default -> throw new AssertionError("Unexpected public schema access: " + method.getName());
         });
@@ -416,11 +424,15 @@ class DeploymentDirectoryIdentityTest {
                         statement.executeUpdate();
                     }
                 }
-                case "unit" -> update("UPDATE deployment_unit SET ownership_manifest_sha256='" + "e".repeat(64) + "' WHERE deployment_unit_id='frontend-unit'");
+                case "unit" ->
+                    update("UPDATE deployment_unit SET ownership_manifest_sha256='" + "e".repeat(64) + "' WHERE deployment_unit_id='frontend-unit'");
                 case "application" -> update("UPDATE managed_application SET server_profile_id='foreign-server'");
-                case "component" -> update("UPDATE managed_application_component SET reviewed_runtime_payload=X'00' WHERE deployment_unit_id='frontend-unit'");
-                case "componentRelease" -> update("UPDATE deployment_unit SET current_release_sha256='" + active.identity().sha256() + "' WHERE deployment_unit_id='frontend-unit'");
-                case "configuration" -> update("UPDATE deployment_unit_release_binding SET configuration_sha256='" + "0".repeat(64) + "' WHERE deployment_unit_id='frontend-unit'");
+                case "component" ->
+                    update("UPDATE managed_application_component SET reviewed_runtime_payload=X'00' WHERE deployment_unit_id='frontend-unit'");
+                case "componentRelease" ->
+                    update("UPDATE deployment_unit SET current_release_sha256='" + active.identity().sha256() + "' WHERE deployment_unit_id='frontend-unit'");
+                case "configuration" ->
+                    update("UPDATE deployment_unit_release_binding SET configuration_sha256='" + "0".repeat(64) + "' WHERE deployment_unit_id='frontend-unit'");
                 default -> throw new AssertionError(fault);
             }
         }

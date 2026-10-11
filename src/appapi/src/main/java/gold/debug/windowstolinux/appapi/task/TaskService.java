@@ -56,6 +56,13 @@ public interface TaskService {
      * @throws ApiException if the caller or current callback scope cannot be verified / 调用方或当前回调作用域无法核实时 */
     TaskSnapshot inspect(TaskContext task) throws ApiException;
 
+    /** Reads a retained platform archive only for this exact owner and version, after its original execution and leases are gone. / 仅在原执行及占用已清除后读取本精确所有者版本的保留平台归档。
+     * @param originalTask selected ended task UUID, without authority to replay it / 所选已结束任务UUID，不授予重放权
+     * @param currentTask authentic current caller-owned read or maintenance task / 真实当前所属读取或维护任务
+     * @return bounded known conclusion, or empty for absent, expired or incomplete proof / 有界已知结论，证明不存在、过期或不完整时为空
+     * @throws ApiException if current scope or durable observation cannot be authenticated / 无法认证当前作用域或持久观测时 */
+    Optional<TaskSnapshot> findArchived(java.util.UUID originalTask, TaskContext currentTask) throws ApiException;
+
     /**
      * Observes whether every explicit resource of the original running or reconciling task was actually released.
      * / 观察原执行或核对任务的全部显式资源是否确已释放。
