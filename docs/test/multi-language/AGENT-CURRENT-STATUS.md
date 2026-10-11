@@ -251,3 +251,15 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 486–488 Agent观察合同与阶段事实修正已验证：STATUS/native runtime按当前严格核验的请求提供独立固定SYSTEM合同；HEALTH合同仍限HEALTH。原UNKNOWN/EXECUTING、DENY及未结算外层delivery保留，同一原门禁导出ledger分类，不放宽执行权限。错误CURRENT/BUILD_ACTIVE保留真实RESULT但不晋升健康观察。67定点PASS（新增25/直接旧42）/0SKIP/Maven0/Java0/noAPI/noSSH；五源码冻结零变，原203fixture/59helper及477其他七源码零变。包含十个本地Bash分支及一个锁验证源码场景，OS/renderer/verify/systemd为明确fixture，Linux共享锁与完整硬编码binding parser未实际执行；不宣称远端guard或模型批准。formatter未应用，人工风格/diff检查，不虚报format PASS。writer全部STOP；限定本地提交后才原产品恢复489，ENDED/STOP-DISABLE及当前容量>=13GiB后才483单task-board，旧UNKNOWN不通过新DB绕开。
 
 STATUS不被描述为验证FragmentPath/drop-ins/unit字节；native inspect/observe有各自实际守卫。工具链verify读取既有锁并取得共享锁，不能描述为完全不取锁，也不等于prepare许可。受控验证只支持接口、阶段、绑定与分支行为；原任务仍UNKNOWN，实际部署及正式同版八项目批次未完成。
+
+## 489 原观察推进与健康载荷核对
+
+489 原产品恢复结束：两个原STATUS已推进至backend HEALTH，独立APP合法DENY指向第三参数解码状态码并要求expectedStatus=200；HEALTH未发，cleanup/STOP-DISABLE未进入，原UNKNOWN及拒绝保留。2064source freeze零变/Maven1/Java0；新增4APP50701(input50119/output582/cache12288/miss37831，24.5%)，fresh445跨版本调试累计2746774/4probe未知。486–488六路径已提交40742d89/no push/index0，67定点与源码/原测试资源核对通过。490 Astra只读核对实际producer/helper parser/动态证据是否遗漏机械解码字段；不依据拒绝改原200策略、不重复相同证据付费。484capacity/483fresh task-board仍未运行，不新DB绕原SERVER lease。
+
+模型API的SUCCEEDED只是响应传输成功；HEALTH本次决定为DENY，不能当作部署成功。当前源码producer为HTTP序列追加endpoint与expectedStatus，再统一逐字段NUL分隔及末NUL编码；helper读取HTTP的timeout、endpoint、status。具体当前证据与字段视图仍在核对，旧业务目标及实际健康状态均未完成。
+
+## 490–492 通用健康载荷字节视图
+
+490–492 Agent-only健康payload字节视图完成：无producer/helper丢字段确证，HTTP支持200–399；URI脱敏不能用于断言APP具体漏字段。仅strict selectHealth后对实际canonical第三参数机械解码，完整有序字段/空字段、strict UTF8/末NUL/65536-byte界限、decoded bytes SHA和encoded文本SHA、字段重拼及规范Base64往返；不复制kind parser、不改原policy/实际命令/固定合同/APP-host-send/DENY。41定点PASS（新增21/直接旧20）/0SKIP/Maven0/Java0/noAPI/noSSH，两个源码冻结零变，原203fixture59helper及其他十源码未改。HTTP200与204、TCP/PROCESS、COMMAND空白引号Unicode/空expectedOutput、UDP_REPLY/CUSTOM空字段、八framing负例及六APP/SEND改变payload反例均覆盖。formatter未应用，仅人工风格/diff检查。全部writer STOP；限定三文件本地提交后才493原恢复，旧UNKNOWN保留，484容量/483fresh尚未执行。
+
+视图只证明所审请求的输入字节及表示一致，不能证明HTTP响应、远端guard、监听归属或授权。合法UTF8/NUL的缺状态或额外字段可以被纯framing如实显示，但完整请求必须与原typed policy产生的canonical请求相同才能进入APP。未修改日志脱敏或旧DENY；模型最终是否批准、原任务结清及task-board完整部署仍待真实验证。

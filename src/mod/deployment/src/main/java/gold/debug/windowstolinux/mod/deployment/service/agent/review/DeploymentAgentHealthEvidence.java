@@ -1,6 +1,11 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.*;
 
@@ -189,6 +194,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 facts.put("typedHealthPolicy", healthFacts(health.check()));
                 var unit = selected.part().unit();
                 String payload = DeploymentWorkloadArguments.healthPayload(health.check());
+                facts.put("healthPayloadByteView", healthPayloadByteView(payload));
                 facts.put("argumentBinding", Map.ofEntries(Map.entry("verb", "application-health"), Map.entry("argumentCount", 3),
                     Map.entry("applicationIdArgument", unit.id()), Map.entry("ownershipManifestArgument", unit.ownershipManifestSha256()),
                     Map.entry("healthPayloadArgument", payload),
@@ -461,6 +467,34 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     private static Map<String, Object> argument(int position, String role, String value, String meaning) {
         return Map.of("position", position, "role", role, "value", value, "meaning", meaning);
+    }
+
+    static Map<String, Object> healthPayloadByteView(String payload) {
+        if (payload == null || payload.length() > ((65536 + 2) / 3) * 4)
+            throw new IllegalArgumentException("Health payload text exceeds its framing bound");
+        byte[] decoded = Base64.getDecoder().decode(payload);
+        if (decoded.length == 0 || decoded.length > 65536 || decoded[decoded.length - 1] != 0)
+            throw new IllegalArgumentException("Health payload must have bounded bytes and a terminal framing NUL");
+        if (!Base64.getEncoder().encodeToString(decoded).equals(payload))
+            throw new IllegalArgumentException("Health payload Base64 is not canonical");
+        try {
+            String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(decoded)).toString();
+            var fields = List.of(text.substring(0, text.length() - 1).split("\0", -1));
+            byte[] rebuilt = (String.join("\0", fields) + "\0").getBytes(StandardCharsets.UTF_8);
+            if (!Arrays.equals(decoded, rebuilt)) throw new IllegalArgumentException("Health payload fields do not reconstruct its bytes");
+            return Map.ofEntries(Map.entry("source", "CURRENT_CANONICAL_THIRD_LITERAL_ARGUMENT"), Map.entry("fields", fields),
+                Map.entry("fieldCount", fields.size()), Map.entry("decodedByteLength", decoded.length),
+                Map.entry("terminalNulPresent", true), Map.entry("strictUtf8", true), Map.entry("reconstructedBytesEqual", true),
+                Map.entry("canonicalBase64ReencodingEqual", true),
+                Map.entry("encodedArgumentTextSha256", DeploymentAgentInputs.hash(payload)),
+                Map.entry("decodedBytesSha256", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(decoded))),
+                Map.entry("meaning", "Byte representation of the actual third literal argument matched by selectHealth to the complete canonical request. Only one terminal framing NUL is removed; every ordered field, including empty fields, is preserved. encodedArgumentTextSha256 hashes the original Base64 text; decodedBytesSha256 hashes its decoded UTF-8/NUL bytes. This view does not parse health-kind semantics, prove an executed remote guard or health result, or grant permission."));
+        } catch (CharacterCodingException invalid) {
+            throw new IllegalArgumentException("Health payload is not strict UTF-8", invalid);
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("SHA-256 unavailable", unavailable);
+        }
     }
 
     private Health selectHealth(ActionIntent intent, CommandRequest request) {

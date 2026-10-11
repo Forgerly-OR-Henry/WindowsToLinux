@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.*;
 import java.time.*;
 import java.util.*;
@@ -100,6 +101,7 @@ class DeploymentAgentHealthEvidenceTest {
                 assertFalse(contract.contains(frame.task.id().toString()));
                 assertFalse(contract.contains(frame.part("backend").unit().ownershipManifestSha256()));
                 if (current.path("schema").asText().equals("agent-current-health-evidence.v1")) {
+                    assertTrue(current.has("healthPayloadByteView"));
                     assertFalse(system.contains(DeploymentAgentObservationReviewContract.text()));
                     assertTrue(system.contains(contract));
                     assertEquals(system.indexOf(contract), system.lastIndexOf(contract));
@@ -110,6 +112,7 @@ class DeploymentAgentHealthEvidenceTest {
                         assertEquals(kind, current.at("/typedHealthPolicy/kind").asText());
                     assertEquals(3, current.at("/argumentBinding/argumentCount").asInt());
                 } else {
+                    assertFalse(current.has("healthPayloadByteView"));
                     assertFalse(system.contains(contract));
                     assertFalse(current.has("healthReviewContract"));
                     String observation = DeploymentAgentObservationReviewContract.text();
@@ -505,6 +508,154 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(1, frame.healthDispatches);
             assertEquals(intent.exactAction(), frame.healthActions.getFirst().actualAction());
             assertEquals("", evidence.reviewInstructions());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HTTP_200", "HTTP_204", "TCP", "PROCESS", "COMMAND", "UDP_REPLY", "UDP_CUSTOM"})
+    @SuppressWarnings("unchecked")
+    void canonicalHealthPayloadViewsPreserveEveryOrderedFieldAndActualArgumentByte(String variant) throws Exception {
+        var argv = List.of("  two words  ", "single'quote", "double\"quote", "汉字🙂", "");
+        var command = new DeploymentCommand("检查/verify.sh", argv);
+        DeploymentHealthCheck check = switch (variant) {
+            case "HTTP_200", "HTTP_204" -> new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18101/healthz"),
+                variant.equals("HTTP_200") ? 200 : 204, 120);
+            case "TCP" -> new DeploymentHealthCheck.Tcp(18101, 120, 3);
+            case "PROCESS" -> new DeploymentHealthCheck.Process(120, 4);
+            case "COMMAND" -> new DeploymentHealthCheck.Command(command, "", 120);
+            case "UDP_REPLY" -> new DeploymentHealthCheck.Udp(18101, "0a00", "ff01", Optional.empty(), 120);
+            case "UDP_CUSTOM" -> new DeploymentHealthCheck.Udp(18101, "", "",
+                Optional.of(new DeploymentCommand("probe.sh", List.of("literal probe", "报文"))), 120);
+            default -> throw new AssertionError(variant);
+        };
+        List<String> expected = switch (variant) {
+            case "HTTP_200", "HTTP_204" -> List.of("health-v1", "HTTP", "120", "http://127.0.0.1:18101/healthz",
+                variant.equals("HTTP_200") ? "200" : "204");
+            case "TCP" -> List.of("health-v1", "TCP", "120", "18101", "3");
+            case "PROCESS" -> List.of("health-v1", "PROCESS", "120", "4");
+            case "COMMAND" -> {
+                var values = new ArrayList<>(List.of("health-v1", "COMMAND", "120", "检查/verify.sh", "5"));
+                values.addAll(argv);
+                values.add("");
+                yield List.copyOf(values);
+            }
+            case "UDP_REPLY" -> List.of("health-v1", "UDP", "120", "18101", "0a00", "ff01", "0");
+            case "UDP_CUSTOM" -> List.of("health-v1", "UDP", "120", "18101", "", "", "1", "probe.sh", "2", "literal probe", "报文");
+            default -> throw new AssertionError(variant);
+        };
+        byte[] expectedBytes = (String.join("\0", expected) + "\0").getBytes(StandardCharsets.UTF_8);
+        String payload = Base64.getEncoder().encodeToString(expectedBytes);
+        assertEquals(payload, DeploymentWorkloadArguments.healthPayload(check));
+        try (var frame = new Frame(check); var request = frame.healthRequest("none")) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            for (var earlier : frame.reviewFacts) assertFalse(earlier.path("currentCommandEvidence").has("healthPayloadByteView"));
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            var grant = review.approveCommand(frame.healthIntent(request, "none"), request, frame.task);
+            assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+            var current = frame.reviewFacts.getLast().path("currentCommandEvidence");
+            var view = current.path("healthPayloadByteView");
+            assertEquals(JSON.valueToTree(expected), view.path("fields"));
+            assertEquals(expected.size(), view.path("fieldCount").asInt());
+            assertEquals(expectedBytes.length, view.path("decodedByteLength").asInt());
+            for (String flag : List.of("terminalNulPresent", "strictUtf8", "reconstructedBytesEqual", "canonicalBase64ReencodingEqual"))
+                assertTrue(view.path(flag).asBoolean(), flag);
+            assertEquals("CURRENT_CANONICAL_THIRD_LITERAL_ARGUMENT", view.path("source").asText());
+            assertEquals(DeploymentAgentInputs.hash(payload), view.path("encodedArgumentTextSha256").asText());
+            assertEquals(current.at("/selectedHealthExecutionPath/canonicalHealthPayloadSha256").asText(),
+                view.path("encodedArgumentTextSha256").asText());
+            String byteSha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(expectedBytes));
+            assertEquals(byteSha, view.path("decodedBytesSha256").asText());
+            assertNotEquals(byteSha, view.path("encodedArgumentTextSha256").asText());
+            assertTrue(view.path("meaning").asText().contains("does not parse health-kind semantics"));
+            assertEquals(payload, current.at("/argumentBinding/healthPayloadArgument").asText());
+            assertEquals(payload, current.at("/argumentBinding/literalArguments/2/value").asText());
+            assertEquals(request.script(), current.at("/commandBinding/exactCommand").asText());
+            assertEquals(check, frame.part("backend").reviewedRuntime().healthCheck());
+            if (check instanceof DeploymentHealthCheck.Http http)
+                assertEquals(http.expectedStatus(), current.at("/typedHealthPolicy/expectedStatus").asInt());
+            if (check instanceof DeploymentHealthCheck.Command) {
+                assertEquals("", current.at("/typedHealthPolicy/expectedOutput").asText());
+                assertEquals("", view.path("fields").get(expected.size() - 1).asText());
+                assertEquals(JSON.valueToTree(argv), current.at("/typedHealthPolicy/command/arguments"));
+            }
+            if (variant.equals("UDP_CUSTOM")) {
+                assertEquals("", view.path("fields").get(4).asText());
+                assertEquals("", view.path("fields").get(5).asText());
+            }
+            Map<String, Object> hashed = JSON.convertValue(current, Map.class);
+            String digest = (String) hashed.remove("evidenceSha256");
+            hashed.remove("reviewRequestSha256");
+            assertEquals(digest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashed, 1048576)));
+            hashed.remove("healthPayloadByteView");
+            assertNotEquals(digest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashed, 1048576)));
+            assertEquals(TaskResult.SUCCEEDED, evidence.execute(request, grant.value().orElseThrow()).outcome());
+            assertEquals(1, frame.healthDispatches);
+            assertEquals(3, frame.aiRequests.size());
+            assertEquals(frame.healthIntent(request, "none").exactAction(), frame.healthActions.getFirst().actualAction());
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"empty", "missing-terminal", "invalid-utf8", "invalid-base64", "missing-padding", "noncanonical-pad-bits", "oversize-text", "oversize-bytes"})
+    void strictHealthPayloadFramingRejectsMalformedOrNonCanonicalBytes(String failure) {
+        String payload = switch (failure) {
+            case "empty" -> "";
+            case "missing-terminal" -> Base64.getEncoder().encodeToString("health-v1".getBytes(StandardCharsets.UTF_8));
+            case "invalid-utf8" -> Base64.getEncoder().encodeToString(new byte[]{(byte) 0xc3, 0x28, 0});
+            case "invalid-base64" -> "%%=";
+            case "missing-padding" -> "YQA";
+            case "noncanonical-pad-bits" -> "YQB=";
+            case "oversize-text" -> "A".repeat(87388);
+            case "oversize-bytes" -> Base64.getEncoder().encodeToString(new byte[65537]);
+            default -> throw new AssertionError(failure);
+        };
+        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHealthEvidence.healthPayloadByteView(payload));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-status", "extra-field", "altered-status", "missing-terminal", "invalid-utf8", "noncanonical-base64"})
+    void alteredHealthPayloadCannotReachAppOrReuseAnApprovedGrantWithTheOriginalTypedPolicy(String change) throws Exception {
+        for (String boundary : List.of("APP", "SEND")) {
+            try (var frame = new Frame(); var original = frame.healthRequest("none")) {
+                var fields = new ArrayList<>(List.of("health-v1", "HTTP", "120", "http://127.0.0.1:18101/healthz", "200"));
+                if (change.equals("missing-status")) fields.removeLast();
+                if (change.equals("extra-field")) fields.add("foreign-extra");
+                if (change.equals("altered-status")) fields.set(4, "204");
+                byte[] bytes = (String.join("\0", fields) + (change.equals("missing-terminal") ? "" : "\0")).getBytes(StandardCharsets.UTF_8);
+                String payload = change.equals("invalid-utf8") ? Base64.getEncoder().encodeToString(new byte[]{(byte) 0xc3, 0x28, 0})
+                    : change.equals("noncanonical-base64") ? "YQA" : Base64.getEncoder().encodeToString(bytes);
+                if (Set.of("missing-status", "extra-field", "altered-status").contains(change)) {
+                    var view = DeploymentAgentHealthEvidence.healthPayloadByteView(payload);
+                    assertEquals(fields, view.get("fields")); // Framing reports bytes; canonical selection supplies policy semantics.
+                }
+                try (var altered = frame.healthRequestWithPayload(payload)) {
+                    var check = frame.part("backend").reviewedRuntime().healthCheck();
+                    var evidence = frame.evidence();
+                    assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+                    var review = (DeploymentCommandReview) evidence.context().interaction();
+                    if (boundary.equals("APP")) {
+                        assertThrows(ApiException.class, () -> review.approveCommand(frame.healthIntent(altered, "none"), altered, frame.task));
+                        assertEquals(2, frame.aiRequests.size());
+                        assertEquals(2, frame.hostAuthorizations);
+                        assertEquals(0, frame.events("HEALTH_REVIEW_REQUEST"));
+                        for (var facts : frame.reviewFacts) assertFalse(facts.path("currentCommandEvidence").has("healthPayloadByteView"));
+                    } else {
+                        var grant = review.approveCommand(frame.healthIntent(original, "none"), original, frame.task);
+                        assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+                        assertTrue(frame.reviewFacts.getLast().path("currentCommandEvidence").has("healthPayloadByteView"));
+                        assertThrows(ApiException.class, () -> evidence.execute(altered, grant.value().orElseThrow()));
+                        assertThrows(ApiException.class, () -> evidence.execute(original, grant.value().orElseThrow()));
+                        assertEquals(3, frame.aiRequests.size());
+                        assertEquals(3, frame.hostAuthorizations);
+                    }
+                    assertEquals(check, frame.part("backend").reviewedRuntime().healthCheck());
+                    assertEquals(200, ((DeploymentHealthCheck.Http) check).expectedStatus());
+                    assertEquals(0, frame.healthDispatches);
+                    assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+                }
+            }
         }
     }
 
@@ -938,6 +1089,7 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals("inspect-runtime", frame.reviewFacts.get(2).at("/currentCommandEvidence/argumentBinding/verb").asText());
             assertEquals("deployment.publication.observe.v1", frame.reviewFacts.getLast().path("operation").asText());
             assertFalse(frame.reviewFacts.getLast().has("currentCommandEvidence"));
+            for (var facts : frame.reviewFacts) assertFalse(facts.path("currentCommandEvidence").has("healthPayloadByteView"));
             for (var request : frame.aiRequests)
                 for (var message : request.messages())
                     assertFalse(message.text().contains(DeploymentAgentHealthReviewContract.text()));
@@ -1215,6 +1367,14 @@ class DeploymentAgentHealthEvidenceTest {
         }
 
         Frame(String healthKind) throws Exception {
+            this(healthKind, null);
+        }
+
+        Frame(DeploymentHealthCheck health) throws Exception {
+            this("HTTP", health);
+        }
+
+        Frame(String healthKind, DeploymentHealthCheck selectedHealth) throws Exception {
             try (var source = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
                 org.h2.tools.RunScript.execute(retained, source);
             }
@@ -1343,6 +1503,7 @@ class DeploymentAgentHealthEvidenceTest {
                         new DeploymentHealthCheck.Udp(18101, "", "", Optional.of(new DeploymentCommand("probe.sh", List.of("complete-probe-input"))), 120);
                     default -> new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18101/healthz"), 200, 120);
                 } : new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18100/healthz"), 200, 120);
+                if (backend && selectedHealth != null) health = selectedHealth;
                 var workload = new DeploymentWorkload(DeploymentWorkload.ExecutionMode.DAEMON, true, new DeploymentCommand("run.sh", List.of()),
                     "", List.of(), Optional.empty(), "", Optional.empty(), List.of(), List.of());
                 var policy = healthKind.equals("CONTAINER") && backend ? DeploymentIdentityMode.CONTAINER_NON_ROOT : DeploymentIdentityMode.SYSTEMD_STATIC;
@@ -1463,6 +1624,14 @@ class DeploymentAgentHealthEvidenceTest {
                 .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
             return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), change.equals("stdin") ? new byte[]{1} : new byte[0],
                 Duration.ofSeconds(change.equals("timeout") ? 90 : 165), change.equals("output") ? 8192 : 4096);
+        }
+
+        CommandRequest healthRequestWithPayload(String payload) {
+            var unit = part("backend").unit();
+            String script = List.of(DeploymentManagedHelperBundle.PATH, "application-health", unit.id(), unit.ownershipManifestSha256(), payload)
+                .stream().map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
+            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), new byte[0],
+                Duration.ofSeconds(part("backend").reviewedRuntime().healthCheck().timeoutSeconds() + 45L), 4096);
         }
 
         CommandRequest queryRequest(String change) {
