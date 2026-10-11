@@ -1,0 +1,12 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -112,2 +111,0 @@
+-            var publisher = new DeploymentGraphPublisher(reviewed, session, server, task,
+-                (type, action, detail) -> journal.event(task, type, action, detail));
+@@ -125 +123,5 @@
+-                var verified = publisher.verifyPublished(proposal, candidates.orElseThrow(), unavailable ->
++                var healthEvidence = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHealthEvidence(
++                    reviewed, session, server, task, reviewRevision, proposal, candidates.orElseThrow(), journal);
++                var healthPublisher = new DeploymentGraphPublisher(healthEvidence.context(), healthEvidence, server, task,
++                    (type, action, detail) -> journal.event(task, type, action, detail));
++                var verified = healthPublisher.verifyPublished(proposal, candidates.orElseThrow(), unavailable ->
