@@ -182,14 +182,16 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     "currentReleaseSha256", selected.commit().release().sha256(), "systemdUnit", unit.systemdUnit()));
             }
             facts.put("originalGraphBindings", selections.values().stream().map(DeploymentAgentHealthEvidence::unitFacts).toList());
-            facts.put("currentGraphQueries", observations.values().stream().map(value -> Map.of("event", value.event(),
-                "component", value.query().selected().part().componentId(), "request", value.query().request(), "result", value.result(),
-                "parsedStatus", statusFacts(value.status()), "resultSha256", value.resultDigest())).toList());
+            facts.put("currentGraphQueries", observations.values().stream().map(DeploymentAgentHealthEvidence::observationFacts).toList());
             facts.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
             facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
-            if (health != null)
-                facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses the typed health-v1 payload. Native HTTP/TCP/UDP checks listener PID membership in the managed systemd cgroup; container probes check the bound container ports and namespace. HTTP requires the loopback response and unchanged process identity. COMMAND or on-demand verification executes the original typed entry/argv under the application identity and must also be reviewed as execution.");
-            else
+            if (health != null) {
+                facts.put("helperSourceEvidence", DeploymentAgentHelperSourceEvidence.facts());
+                facts.put("healthMaintenanceScope", Map.of("applicationId", selected.part().unit().id(),
+                    "markerPathExpression", maintenanceMarkerPath(selected),
+                    "meaning", "This canonical health entry admits only this application's run. Its local validation flag skips only its own marker-existence rejection while keeping its own admission/run locks and orphan checks. Other components' markers are separate observations, not this application's systemd state or permission; no maintenance completion is inferred."));
+                facts.put("enforcedHealthBoundary", "The pinned application-health implementation loads this application's CURRENT under its managed release root, checks its ownership manifest and native unit/container binding, then parses the typed health-v1 payload. The attached selected assembled source shows its locks, orphan checks, same-port listener PID/cgroup guard and probes. HTTP curls the loopback URL and rechecks process identity but does not bind that particular response socket to the owned PID or prove the exact release loaded. Health admission can create lock directories/files or remove a verified inactive old job/container; COMMAND/on-demand/custom-probe branches execute the original typed programs. These effects require review and are not authorized by this evidence.");
+            } else
                 facts.put("enforcedRuntimeBoundary", "The pinned inspect-runtime and native observe-deployment implementations validate the application id and ownership digest, resolve CURRENT strictly inside this application's managed releases directory and check CURRENT/.windowstolinux-owner. Native checks also verify the original derived systemd unit fragment path, absence of foreign drop-ins and expected unit bytes before reading runtime mode/state. These are helper execution-time guards; the captured original-status receipt is the earlier current-release observation and does not prove present listener ownership. The container inline observation retains its existing independent command review without this supplement.");
             facts.put("observationLimits", "The captured status proves owned CURRENT and original candidate ownership/build state at this invocation's query. It does not prove listener ownership or health; the subsequent helper enforces those checks at execution. Sealed source/artifact and configuration identities are retained original facts, not freshly rehashed remote content. Artifact SHA and release SHA identify different objects. No historical approval is reused and no unresolved outer delivery is declared settled.");
             facts.put("originalEventReferences", eventReferences(events));
@@ -258,6 +260,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     throw new IllegalStateException("Original query changed");
             } else {
                 requireObservations();
+                if (operation.equals(HEALTH)) DeploymentAgentHelperSourceEvidence.facts();
                 if (pending == null || !pending.intent().equals(intent)
                     || (operation.equals(HEALTH) ? !Objects.equals(pending.health(), selectHealth(intent, request))
                     : !Objects.equals(pending.runtime(), selectRuntime(intent, request)))
@@ -616,6 +619,28 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             }
         }
         return Collections.unmodifiableMap(facts);
+    }
+
+    private static Map<String, Object> observationFacts(Observation observed) {
+        var selected = observed.query().selected();
+        String expectedMarker = "deployment-" + selected.commit().release().sha256();
+        var markers = ((String) observed.result().get("stdout")).lines().filter(line -> line.startsWith("MAINTENANCE="))
+            .map(line -> line.substring("MAINTENANCE=".length())).toList();
+        if (markers.size() != 1 || !Set.of("none", expectedMarker).contains(markers.getFirst())
+            || observed.status().maintenance() != !markers.getFirst().equals("none"))
+            throw new IllegalStateException("Current maintenance marker is not bound to its observed application");
+        String marker = markers.getFirst();
+        return Map.ofEntries(Map.entry("event", observed.event()), Map.entry("component", selected.part().componentId()),
+            Map.entry("request", observed.query().request()), Map.entry("result", observed.result()),
+            Map.entry("parsedStatus", statusFacts(observed.status())), Map.entry("resultSha256", observed.resultDigest()),
+            Map.entry("maintenanceMarker", marker), Map.entry("expectedMarker", expectedMarker),
+            Map.entry("matchesOwnExpectedRelease", marker.equals(expectedMarker)),
+            Map.entry("markerPathExpression", maintenanceMarkerPath(selected)),
+            Map.entry("maintenanceMeaning", "MAINTENANCE is this application's persistent publication marker from this complete current receipt. none means absent at that query; a matching deployment token refers only to this unit's expected release. It is not systemd state, another application's marker or permission, and does not establish that maintenance ended."));
+    }
+
+    private static String maintenanceMarkerPath(Selection selected) {
+        return "$base_root/application-locks/" + selected.part().unit().id() + "/maintenance";
     }
 
     private static Map<String, Object> statusFacts(DeploymentOriginalPublishStatus status) {

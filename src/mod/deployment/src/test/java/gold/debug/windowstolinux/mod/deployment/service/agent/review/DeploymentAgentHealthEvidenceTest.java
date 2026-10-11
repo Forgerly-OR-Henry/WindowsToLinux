@@ -29,6 +29,7 @@ import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.*;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
 import gold.debug.windowstolinux.mod.deployment.db.execution.*;
 import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal;
@@ -144,6 +145,80 @@ class DeploymentAgentHealthEvidenceTest {
             for (var actual : frame.runtimeActions)
                 assertEquals(actual.expectedAction(), actual.actualAction());
             assertEquals(4, frame.events("RUNTIME_REVIEW_APPROVED"));
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void frontendOwnMaintenanceMarkerUsesItsActualReceiptWithoutChangingBackendHealthOrPermissions() throws Exception {
+        try (var frame = new Frame()) {
+            String frontendMarker = "deployment-" + frame.release("frontend");
+            frame.maintenanceMarkers.put("frontend", frontendMarker);
+            var originalEvents = frame.journal.events(frame.task);
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.verify(evidence).outcome());
+            assertEquals(2, frame.statusQueries);
+            assertEquals(3, frame.healthDispatches);
+            assertEquals(9, frame.reviewFacts.size());
+            var backendReview = frame.reviewFacts.get(2);
+            var current = backendReview.path("currentCommandEvidence");
+            var backend = frame.part("backend").unit();
+            assertEquals(backend.id(), current.at("/argumentBinding/applicationIdArgument").asText());
+            assertEquals(backend.ownershipManifestSha256(), current.at("/argumentBinding/ownershipManifestArgument").asText());
+            assertEquals(backend.releaseRoot(), current.at("/unitBinding/releaseRoot").asText());
+            assertEquals("http://127.0.0.1:18101/healthz", current.at("/typedHealthPolicy/endpoint").asText());
+            assertEquals(DeploymentWorkloadArguments.healthPayload(frame.part("backend").reviewedRuntime().healthCheck()),
+                current.at("/argumentBinding/healthPayloadArgument").asText());
+            assertEquals(backend.id(), current.at("/healthMaintenanceScope/applicationId").asText());
+            for (var query : current.path("currentGraphQueries")) {
+                String component = query.path("component").asText();
+                String actualMarker = component.equals("frontend") ? frontendMarker : "none";
+                assertEquals(frame.status(component), query.at("/result/stdout").asText());
+                assertTrue(query.at("/result/stdout").asText().contains("\nMAINTENANCE=" + actualMarker + "\n"));
+                assertEquals(actualMarker, query.path("maintenanceMarker").asText());
+                assertEquals("deployment-" + frame.release(component), query.path("expectedMarker").asText());
+                assertEquals(component.equals("frontend"), query.path("matchesOwnExpectedRelease").asBoolean());
+                assertEquals(component.equals("frontend"), query.at("/parsedStatus/maintenance").asBoolean());
+                assertEquals("$base_root/application-locks/" + frame.part(component).unit().id() + "/maintenance",
+                    query.path("markerPathExpression").asText());
+                assertTrue(query.path("maintenanceMeaning").asText().contains("not systemd state"));
+                assertTrue(query.path("maintenanceMeaning").asText().contains("does not establish that maintenance ended"));
+            }
+            assertEquals("agent-assembled-helper-source-evidence.v1", current.at("/helperSourceEvidence/schema").asText());
+            assertEquals(DeploymentManagedHelperBundle.EXPECTED_SHA256, current.at("/helperSourceEvidence/helperSha256").asText());
+            assertTrue(current.at("/helperSourceEvidence/sideEffects").asText().contains("not strictly read-only"));
+            assertTrue(current.at("/helperSourceEvidence/listenerLimits").asText().contains("does not bind the particular HTTP"));
+            Map<String, Object> hashedFacts = JSON.convertValue(current, Map.class);
+            String evidenceDigest = (String) hashedFacts.remove("evidenceSha256");
+            hashedFacts.remove("reviewRequestSha256");
+            assertEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
+            hashedFacts.remove("helperSourceEvidence");
+            assertNotEquals(evidenceDigest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
+            for (var review : frame.reviewFacts) {
+                String operation = review.path("operation").asText();
+                assertEquals(operation.equals("deployment.publication.health.v1"), review.path("currentCommandEvidence").has("helperSourceEvidence"));
+            }
+            for (var actual : frame.healthActions) assertEquals(actual.expectedAction(), actual.actualAction());
+            for (var actual : frame.runtimeActions) assertEquals(actual.expectedAction(), actual.actualAction());
+            assertEquals(originalEvents, frame.journal.events(frame.task).subList(0, originalEvents.size()));
+            assertFalse(DeploymentAgentActionLog.effectsSettled(frame.journal.events(frame.task)));
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @Test
+    void anotherComponentsMaintenanceTokenCannotBeTreatedAsTheObservedUnitsOwnMarker() throws Exception {
+        try (var frame = new Frame()) {
+            frame.maintenanceMarkers.put("frontend", "deployment-" + frame.release("backend"));
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.UNKNOWN, frame.observe(evidence).outcome());
+            assertEquals(2, frame.statusQueries);
+            assertThrows(ApiException.class,
+                () -> frame.health(evidence, frame.part("backend"), frame.part("backend").reviewedRuntime().healthCheck()));
+            assertEquals(0, frame.healthReviews());
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(1, frame.events("HEALTH_STATUS_QUERY_RESULT"));
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
         }
     }
 
@@ -622,6 +697,8 @@ class DeploymentAgentHealthEvidenceTest {
 
         private final List<ActionCheck> runtimeActions = new ArrayList<>();
 
+        private final Map<String, String> maintenanceMarkers = new LinkedHashMap<>();
+
         private String statusFailure = "none";
 
         private String deniedOperation = "none";
@@ -865,7 +942,8 @@ class DeploymentAgentHealthEvidenceTest {
         String status(String component) {
             boolean container = part(component).reviewedRuntime() instanceof DeploymentRuntimeDefinition.Container;
             return "PUBLICATION_STATUS=1\nCURRENT=" + release(component) + "\nCURRENT_KIND=" + (container ? "container" : "deployment")
-                + "\nCURRENT_MODE=DAEMON\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT="
+                + "\nCURRENT_MODE=DAEMON\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE="
+                + maintenanceMarkers.getOrDefault(component, "none") + "\nCANDIDATE=owned\nBUILD_ACTIVE=no\nUNIT_PRESENT=yes\nCONTAINER_PRESENT="
                 + (container ? "yes" : "not-applicable") + "\nRETAINED_COUNT=1\n";
         }
 
