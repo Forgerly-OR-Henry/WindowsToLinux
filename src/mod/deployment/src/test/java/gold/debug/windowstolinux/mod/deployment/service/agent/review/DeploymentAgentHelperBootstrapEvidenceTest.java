@@ -35,7 +35,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
     }
 
     private CommandRequest request() {
-        return request(DeploymentAgentHelperInstallerScript.render(OPERATION), "exec /bin/bash --noprofile --norc -s", Duration.ofHours(2), 131072);
+        return request(DeploymentAgentHelperInstallerScript.render(OPERATION), DeploymentAgentHelperInstallerScript.LAUNCHER, Duration.ofHours(2), 131072);
     }
 
     private ActionIntent original(CommandRequest request) {
@@ -65,7 +65,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
         String source = DeploymentAgentHelperInstallerScript.render(OPERATION);
         for (String fault : List.of("source", "operation", "launcher", "timeout", "output", "server", "revision", "semantics", "targets", "expanded")) {
             try (var request = request(fault.equals("source") ? source + "echo changed\n" : source,
-                fault.equals("launcher") ? "exec /bin/bash -s" : "exec /bin/bash --noprofile --norc -s",
+                fault.equals("launcher") ? "exec /bin/bash --noprofile --norc -s" : DeploymentAgentHelperInstallerScript.LAUNCHER,
                 fault.equals("timeout") ? Duration.ofMinutes(1) : Duration.ofHours(2), fault.equals("output") ? 1 : 131072)) {
                 ActionIntent initial = switch (fault) {
                     case "server" ->
@@ -94,6 +94,42 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
         current.put("exactAction", expanded.exactAction());
         current.put("resourceTargets", expanded.semantics().orElseThrow().targets().stream().toList());
         return current;
+    }
+
+    @Test
+    void bootstrapNavigationLocatesActualGuardsAndFullDependencyProgramWithoutDuplicatingSource() throws Exception {
+        String script = DeploymentAgentHelperInstallerScript.render(OPERATION);
+        var json = new ObjectMapper();
+        var evidence = json.valueToTree(DeploymentAgentHelperBootstrapEvidence.describe(script));
+        var navigation = json.valueToTree(DeploymentAgentHelperBootstrapEvidence.navigation(script));
+        assertEquals(DeploymentAgentHelperInstallerScript.LAUNCHER, navigation.path("launcher").asText());
+        assertEquals("HELPER_RUNTIME", navigation.path("profile").asText());
+        assertEquals(5, navigation.path("wrapperLocations").size());
+        assertTrue(navigation.path("dependencyLocations").size() >= 20);
+        var locations = new ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+        locations.add(navigation.path("prefixSource"));
+        locations.add(navigation.path("dependencyProgram"));
+        navigation.path("wrapperLocations").forEach(locations::add);
+        navigation.path("invocations").forEach(locations::add);
+        for (var location : locations) {
+            String source = evidence.at(location.path("sourcePointer").asText().substring("/completeExecutableInput".length())).textValue();
+            int first = location.path("startCharacter").asInt();
+            String fragment = source.substring(first, first + location.path("characters").asInt());
+            assertEquals(location.path("utf8Bytes").asInt(), fragment.getBytes(StandardCharsets.UTF_8).length);
+            assertEquals(location.path("sha256").asText(), HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(fragment.getBytes(StandardCharsets.UTF_8))));
+            assertEquals(location.path("startLine").asInt(), 1 + source.substring(0, first).chars().filter(value -> value == '\n').count());
+            assertFalse(location.has("excerpt"), "Navigation cannot repeat a complete executable prefix");
+        }
+        String prefix = evidence.at("/segments/0/text").asText();
+        for (var location : navigation.path("dependencyLocations")) {
+            assertEquals("/completeExecutableInput/segments/0/text", location.path("sourcePointer").asText());
+            String line = prefix.lines().skip(location.path("startLine").asLong() - 1).findFirst().orElseThrow();
+            assertTrue(line.startsWith("def " + location.path("function").asText() + "("));
+        }
+        assertTrue(navigation.toString().getBytes(StandardCharsets.UTF_8).length < 16000);
+        assertFalse(navigation.toString().contains("DEPENDENCY_PACKAGES = json.loads("));
+        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentHelperBootstrapEvidence.navigation(script + "echo changed\n"));
     }
 
     @Test
@@ -136,7 +172,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
             DeploymentAgentHelperBootstrapEvidence.upgrade(intent, request, server, REVISION, OPERATION);
             return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(problem));
         });
-        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.prerequisites(OPERATION));
+        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.prerequisites(OPERATION));
         assertEquals(TaskResult.FAILED, result.outcome());
         assertSame(problem, result.problem().orElseThrow());
         assertEquals(1, reviews.get());
@@ -156,7 +192,7 @@ class DeploymentAgentHelperBootstrapEvidenceTest {
                 DeploymentAgentHelperBootstrapEvidence.upgrade(intent, request, server, REVISION, OPERATION);
                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
             });
-        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.prerequisites(OPERATION));
+        var result = helper.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER, DeploymentAgentHelperInstallerScript.prerequisites(OPERATION));
         assertEquals(TaskResult.UNKNOWN, result.outcome());
         assertEquals(1, calls.get());
         assertTrue(replies.isEmpty());

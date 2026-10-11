@@ -7,6 +7,8 @@ import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.Deployme
 
 /** Fixed Agent bootstrap prerequisites inside the unchanged shared files-installation envelope. */
 public final class DeploymentAgentHelperInstallerScript {
+    public static final String LAUNCHER = "exec /usr/bin/env -i LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin /bin/bash --noprofile --norc -p -s";
+
     private static final String DELIMITER = "WTL_AGENT_HELPER_DEPENDENCIES";
 
     private static final Pattern FRAME = Pattern.compile("(?m)^  /usr/bin/python3 -I -S - 'HELPER_RUNTIME' '([a-f0-9]{32})' <<'"

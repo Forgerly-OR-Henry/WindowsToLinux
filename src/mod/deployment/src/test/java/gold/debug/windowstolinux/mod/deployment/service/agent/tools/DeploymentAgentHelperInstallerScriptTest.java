@@ -91,4 +91,64 @@ class DeploymentAgentHelperInstallerScriptTest {
             }
         }
     }
+
+    @Test
+    void isolatedLauncherRejectsInheritedStartupCodeFunctionsAndOptions() throws Exception {
+        Path startup = temporary.resolve("malicious-bash-env.sh");
+        Files.writeString(startup, "printf startup > bash-env-marker\n");
+        String inherited = runStartupProbe("exec /bin/bash --noprofile --norc -s", startup);
+        assertTrue(Files.exists(temporary.resolve("bash-env-marker")), inherited);
+        assertTrue(Files.exists(temporary.resolve("function-marker")), inherited);
+        assertTrue(inherited.contains("EXTGLOB=on\n"), inherited);
+        assertTrue(inherited.contains("XTRACE=on\n"), inherited);
+        assertTrue(inherited.contains("LC_ALL=POSIX\n"), inherited);
+        assertTrue(inherited.contains("PATH=/startup-untrusted:/usr/bin:/bin\n"), inherited);
+        Files.delete(temporary.resolve("bash-env-marker"));
+        Files.delete(temporary.resolve("function-marker"));
+
+        String isolated = runStartupProbe(DeploymentAgentHelperInstallerScript.LAUNCHER, startup);
+        assertFalse(Files.exists(temporary.resolve("bash-env-marker")), isolated);
+        assertFalse(Files.exists(temporary.resolve("function-marker")), isolated);
+        assertEquals("LC_ALL=C\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\nEXTGLOB=off\nXTRACE=off\nLD_LIBRARY_PATH=unset\n",
+            isolated);
+    }
+
+    private String runStartupProbe(String launcher, Path startup) throws Exception {
+        Path bash = Path.of(System.getProperty("managed.test.bash", "E:/Program/Git/bin/bash.exe"));
+        assertTrue(Files.isExecutable(bash), "The controlled startup fixture requires Bash");
+        String inheritedStartup = "set +p\nexport BASH_ENV=\"$PWD/" + startup.getFileName() + "\"\n"
+            + "startup_probe() { printf function > function-marker; }; export -f startup_probe\n"
+            + "shopt -s extglob; export BASHOPTS\n"
+            + "export LC_ALL=POSIX PATH=/startup-untrusted:/usr/bin:/bin LD_LIBRARY_PATH=/startup-untrusted\n"
+            + "set -x; export SHELLOPTS\n";
+        var builder = new ProcessBuilder(bash.toString(), "--noprofile", "--norc", "-p", "-c", inheritedStartup + launcher)
+            .directory(temporary.toFile()).redirectError(temporary.resolve("startup-trace.log").toFile());
+        var environment = builder.environment();
+        environment.put("BASH_ENV", startup.toString().replace('\\', '/'));
+        environment.put("BASH_FUNC_startup_probe%%", "() { printf function > function-marker; }");
+        environment.put("BASHOPTS", "extglob");
+        environment.put("SHELLOPTS", "xtrace");
+        environment.put("LC_ALL", "POSIX");
+        environment.put("PATH", "/startup-untrusted:/usr/bin:/bin");
+        environment.put("LD_LIBRARY_PATH", "/startup-untrusted");
+        var process = builder.start();
+        try {
+            try (var input = process.getOutputStream()) {
+                input.write(("printf 'LC_ALL=%s\\nPATH=%s\\n' \"$LC_ALL\" \"$PATH\"\n"
+                    + "if declare -F startup_probe >/dev/null; then startup_probe; fi\n"
+                    + "if shopt -q extglob; then printf 'EXTGLOB=on\\n'; else printf 'EXTGLOB=off\\n'; fi\n"
+                    + "case $- in *x*) printf 'XTRACE=on\\n';; *) printf 'XTRACE=off\\n';; esac\n"
+                    + "printf 'LD_LIBRARY_PATH=%s\\n' \"${LD_LIBRARY_PATH-unset}\"\n").getBytes(StandardCharsets.UTF_8));
+            }
+            assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Controlled startup check must terminate");
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertEquals(0, process.exitValue(), output);
+            return output;
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                assertTrue(process.waitFor(5, TimeUnit.SECONDS), "Controlled Bash process must exit");
+            }
+        }
+    }
 }

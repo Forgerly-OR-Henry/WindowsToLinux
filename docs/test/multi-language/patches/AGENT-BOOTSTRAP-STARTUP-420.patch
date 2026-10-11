@@ -1,0 +1,55 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelper.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelper.java
+@@ -147 +147,6 @@
+-        return install(DeploymentHelperInstallerScript.renderFiles(prerequisitesScript), "deployment.helper.install.files.custom.v1");
++        return installFilesWithPrerequisites("exec /bin/bash --noprofile --norc -s", prerequisitesScript);
++    }
++
++    /** Installs caller-owned prerequisites with an exact caller-owned launcher and independent review. */
++    public OperationResult<Identity> installFilesWithPrerequisites(String launcher, String prerequisitesScript) throws ApiException {
++        return install(DeploymentHelperInstallerScript.renderFiles(prerequisitesScript), "deployment.helper.install.files.custom.v1", launcher);
+@@ -150,0 +156,4 @@
++        return install(script, operation, "exec /bin/bash --noprofile --norc -s");
++    }
++
++    private OperationResult<Identity> install(String script, String operation, String launcher) throws ApiException {
+@@ -152 +161 @@
+-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofHours(2),
++        try (var request = new CommandRequest(launcher, body, Duration.ofHours(2),
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -275 +275 @@
+-        try (var request = new CommandRequest("exec /bin/bash --noprofile --norc -s", body, Duration.ofSeconds(30), 4096)) {
++        try (var request = new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, body, Duration.ofSeconds(30), 4096)) {
+@@ -304 +304,2 @@
+-            value(installer.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.prerequisites(attempt.bootstrapOperation)));
++            value(installer.installFilesWithPrerequisites(DeploymentAgentHelperInstallerScript.LAUNCHER,
++                DeploymentAgentHelperInstallerScript.prerequisites(attempt.bootstrapOperation)));
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentApprovalConversation.java
+@@ -140 +140 @@
+-        var installerLocations = filesOnly ? List.of(
++        var installerLocations = customPrerequisites ? List.of() : filesOnly ? List.of(
+@@ -191 +191 @@
+-        return Map.of("helperPath", DeploymentManagedHelperBundle.PATH,
++        var result = new LinkedHashMap<String, Object>(Map.of("helperPath", DeploymentManagedHelperBundle.PATH,
+@@ -203 +203,4 @@
+-            "locations", locations);
++            "locations", locations));
++        if (customPrerequisites)
++            result.put("agentBootstrap", gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.navigation(installer));
++        return Collections.unmodifiableMap(result);
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentApprovalConversationTest.java
+@@ -182 +182 @@
+-        try (var command = new CommandRequest("exec /bin/bash --noprofile --norc -s", script.getBytes(StandardCharsets.UTF_8),
++        try (var command = new CommandRequest(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript.LAUNCHER, script.getBytes(StandardCharsets.UTF_8),
+@@ -199 +199,2 @@
+-        assertEquals(2, submitted.at("/helperInstallationSourceEvidence/installerLocations").size());
++        assertEquals(0, submitted.at("/helperInstallationSourceEvidence/installerLocations").size());
++        assertEquals(5, submitted.at("/helperInstallationSourceEvidence/agentBootstrap/wrapperLocations").size());
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
+@@ -692 +692 @@
+-            if (boundary.install() && script.equals("exec /bin/bash --noprofile --norc -s")) {
++            if (boundary.install() && script.equals(DeploymentAgentHelperInstallerScript.LAUNCHER)) {

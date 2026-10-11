@@ -172,6 +172,15 @@ public final class DeploymentAgentToolchainInputEvidence {
     }
 
     private static List<Map<String, Object>> sourceLocations(String body, List<String> required) {
+        return sourceLocations(body, required, "/completeExecutableInput");
+    }
+
+    /** Function navigation in the complete current dependency source, including a canonical installer literal. */
+    public static List<Map<String, Object>> dependencySourceLocations(String body, String sourcePointer) {
+        return sourceLocations(body, DEPENDENCY_LOCATIONS, sourcePointer);
+    }
+
+    private static List<Map<String, Object>> sourceLocations(String body, List<String> required, String sourcePointer) {
         var definitions = Pattern.compile("(?m)^def ([A-Za-z_][A-Za-z0-9_]*)\\(").matcher(body);
         var offsets = new ArrayList<Integer>();
         var names = new ArrayList<String>();
@@ -190,7 +199,7 @@ public final class DeploymentAgentToolchainInputEvidence {
             if (entry >= 0 && entry < end) end = entry + 1;
             int first = Math.toIntExact(1 + body.substring(0, start).chars().filter(value -> value == '\n').count());
             int last = Math.toIntExact(first + body.substring(start, end).stripTrailing().chars().filter(value -> value == '\n').count());
-            locations.add(Map.of("function", name, "sourcePointer", "/completeExecutableInput", "startLine", first, "endLine", last));
+            locations.add(Map.of("function", name, "sourcePointer", sourcePointer, "startLine", first, "endLine", last));
         }
         return List.copyOf(locations);
     }
