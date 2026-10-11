@@ -1,0 +1,10 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1176,0 +1177,4 @@
++            String credentialReference = runtime.models().listAiConfigurations().stream()
++                .filter(value -> value.profile().id().equals(profileId)).findFirst()
++                .map(value -> value.profile().credentialKey())
++                .orElse("ai/live/" + purpose.name().toLowerCase(java.util.Locale.ROOT));
+@@ -1178 +1182 @@
+-                "ai/live/" + purpose.name().toLowerCase(java.util.Locale.ROOT), null, null, selectedEffort);
++                credentialReference, null, null, selectedEffort);

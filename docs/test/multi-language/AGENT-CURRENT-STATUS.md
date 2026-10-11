@@ -275,3 +275,9 @@ STATUS不被描述为验证FragmentPath/drop-ins/unit字节；native inspect/obs
 494只读审计确认facts/verify/reviewInstructions在APP前已执行本地requireBinding及canonical匹配，之后APP/host/send是重检；未发现门禁漏执行，localBindingChecks名称列表缺明确完成状态，但不能确定NONE是拒绝原因。495仅原恢复test harness四行默认关闭、显式Agent原state限定的configureAgentRecoveryModel入口，复用产品模型配置保存/验证以部署NONE、审批LOW对照，核心facts/合同/helper/permission不改。496限定test-compile PASS/Maven0/Java0/no业务test/noAPI/noSSH；该源冻结0，其他十二Agent证据源码/原203fixture59helper零变，四行自有增量patch隔离反向检查PASS并清理mirror。source混合未跟踪基线只提交formal增量patch与状态，不纳入他人全fixture；原恢复495wrapper仅prepare/parse，真实配置/provider接受及恢复未执行，不虚报LOW已生效或provider确实思考。
 
 [原恢复harness增量](patches/AGENT-RECOVERY-REASONING-PROBE-495.patch)是零上下文补丁；复现需要当前混合fixture基线，应用需git apply --unidiff-zero。默认行为与STATIC/ASSISTED恢复保持；显式开启时非Agent state在配置前拒绝。此次只验证编译与四行增量，尚不支持任何部署、恢复或用量结论。
+
+## 495、497–498 复用现有模型凭据引用
+
+495实际原恢复对照在首次DEPLOYMENT配置save处被产品credential-reference并发守卫拒绝（SQL40001），无AI_LIVE_MODEL、未进入verify/原任务恢复，0模型/0SSH，原UNKNOWN和配置保留；2064source冻结0/Maven1/Java0。497仅test helper通过public listAiConfigurations读取现有非敏感credentialKey引用，现有配置以该原引用保存；fresh仍原默认alias，不读/打印密钥，不放宽产品并发守卫或改生产逻辑。498限定test-compile PASS/Maven0/Java0/no业务test/noAPI/noSSH，该源冻结0，十二Agent证据源码/原203fixture59helper零变；5加1删自有增量patch反向检查PASS且mirror已清理。仅提交formal增量与状态保留混合fixture基线；499原APP LOW/部署NONE恢复wrapper已prepare/parse尚未跑，实际provider接受与原恢复未验证。
+
+[凭据引用增量](patches/AGENT-RECOVERY-MODEL-REFERENCE-497.patch)是零上下文补丁；复现需要当前混合fixture基线，应用需git apply --unidiff-zero。默认行为与STATIC/ASSISTED恢复保持；显式开启时非Agent state在配置前拒绝。此次只验证编译与凭据引用增量，尚不支持任何部署、恢复或用量结论。
