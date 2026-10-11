@@ -426,6 +426,21 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         facts.put("application", proposal.graph().applicationId());
         facts.put("healthOwner", proposal.graph().healthComponentId());
         facts.put("unitBinding", unitFacts(selected));
+        facts.put("completedLocalChecks", Map.ofEntries(Map.entry("status", "COMPLETED"),
+            Map.entry("phase", "THIS_FACTS_ASSEMBLY_BEFORE_INDEPENDENT_APP_REVIEW"),
+            Map.entry("exactActionSha256", DeploymentAgentInputs.hash(intent.exactAction())),
+            Map.entry("currentTask", task.id().toString()), Map.entry("server", server.id()),
+            Map.entry("currentReviewConfigurationRevision", revision), Map.entry("component", selected.part().componentId()),
+            Map.entry("checks", List.of("originalImmutableProposalFormalExecutionAndReferences",
+                "originalTaskServerProfileBorrowedSessionIdentityAndFrozenReviewRoute",
+                "latestSelectedCandidateSourceArtifactToolsAndOriginalArchive",
+                "publicationVerifiedFinishedAndExistingModifyingEffectBoundary",
+                "originalModelCheckpointReleasedOrAbsent",
+                "canonicalCurrentUnitActionScriptTimeoutEmptyStdinAndOutputLimit")),
+            Map.entry("independentAppReview", "NOT_YET_DECIDED"), Map.entry("hostSingleUseGrant", "NOT_YET_OBTAINED"),
+            Map.entry("pendingRequestSend", "NOT_OCCURRED"), Map.entry("pendingRemoteGuards", "NOT_EXECUTED_FOR_THIS_REQUEST"),
+            Map.entry("laterRequiredChecks", List.of("sameBindingsAfterAppReview", "sameBindingsAfterHostAuthorization", "sameBindingsImmediatelyBeforeActualSend")),
+            Map.entry("meaning", "Completed only in this facts() call: the existing requireBinding gate and canonical selection already passed before this map was assembled for this exact action and component. No subsequent verify call is counted here. These local comparisons are not a new remote helper/code/content hash, owner/listener check, pending command receipt, APP decision or host permission. Earlier status receipts are separate evidence; the pending remote guards/result have not run. The same bindings must still be rechecked after APP, after host authorization and before send; this result is never cached across requests.")));
         return facts;
     }
 
@@ -448,7 +463,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             "textSha256", DeploymentAgentInputs.hash(DeploymentAgentObservationReviewContract.text()),
             "helperSha256", DeploymentAgentObservationReviewContract.HELPER_SHA256,
             "helperProtocol", DeploymentAgentObservationReviewContract.HELPER_PROTOCOL,
-            "meaning", "Reference to fixed SYSTEM observation semantics; no guard is asserted passed and no result or grant is synthesized"));
+            "meaning", "Reference to fixed SYSTEM observation semantics; no remote execution-time guard is asserted passed and no result or grant is synthesized. completedLocalChecks separately reports the checks already performed locally in this pending request's facts assembly"));
         var unit = selected.part().unit();
         facts.put("originalExpectedBinding", Map.of("applicationId", unit.id(), "ownershipManifestSha256", unit.ownershipManifestSha256(),
             "releaseRoot", unit.releaseRoot(), "expectedReleaseSha256", selected.commit().release().sha256(), "systemdUnit", unit.systemdUnit(),
@@ -457,7 +472,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             "description", status
                 ? "Validate seven literal identities and managed CURRENT/owner, snapshot/task, candidate/task, maintenance/expected release, build and retained-release state under the fixed observation contract. STATUS unit-presence queries do not themselves establish unit-byte/FragmentPath/drop-in equivalence."
                 : "Validate the managed CURRENT/owner and selected native/container runtime. Native inspect/observe also check derived unit bytes/FragmentPath/drop-ins; any required typed toolchain binding is verified through its existing shared read lock.",
-            "limit", "Execution-time predicates only, not already observed facts, health admission effects or permission"));
+            "limit", "Remote helper execution-time predicates only, not already observed remote facts, health admission effects or permission; completedLocalChecks describes the separate local checks already performed"));
         facts.put("currentResultAcceptance", Map.of("phase", "AFTER_ACTUAL_SEND_ONLY", "outcome", "SUCCEEDED", "exitCode", 0,
             "truncated", false, "outputLimitBytes", 4096, "description", status
                 ? "Require complete bounded exact status protocol with unique fields and original ownership tokens; retain only accepted per-unit CURRENT/backend/mode and inactive-build bindings as graph observations. Expected release remains separate until checked against the returned CURRENT."

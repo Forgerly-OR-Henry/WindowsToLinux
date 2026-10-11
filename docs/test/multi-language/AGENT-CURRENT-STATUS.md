@@ -281,3 +281,31 @@ STATUS不被描述为验证FragmentPath/drop-ins/unit字节；native inspect/obs
 495实际原恢复对照在首次DEPLOYMENT配置save处被产品credential-reference并发守卫拒绝（SQL40001），无AI_LIVE_MODEL、未进入verify/原任务恢复，0模型/0SSH，原UNKNOWN和配置保留；2064source冻结0/Maven1/Java0。497仅test helper通过public listAiConfigurations读取现有非敏感credentialKey引用，现有配置以该原引用保存；fresh仍原默认alias，不读/打印密钥，不放宽产品并发守卫或改生产逻辑。498限定test-compile PASS/Maven0/Java0/no业务test/noAPI/noSSH，该源冻结0，十二Agent证据源码/原203fixture59helper零变；5加1删自有增量patch反向检查PASS且mirror已清理。仅提交formal增量与状态保留混合fixture基线；499原APP LOW/部署NONE恢复wrapper已prepare/parse尚未跑，实际provider接受与原恢复未验证。
 
 [凭据引用增量](patches/AGENT-RECOVERY-MODEL-REFERENCE-497.patch)是零上下文补丁；复现需要当前混合fixture基线，应用需git apply --unidiff-zero。默认行为与STATIC/ASSISTED恢复保持；显式开启时非Agent state在配置前拒绝。此次只验证编译与凭据引用增量，尚不支持任何部署、恢复或用量结论。
+
+## 499 审批 LOW 配置对照结果
+
+499 原产品恢复配置对照结束：DEPLOYMENT NONE、APPROVAL LOW 均经产品保存并完成两项验证，首个 helper native_tools APP 请求FAILED且无verdict，usage全部UNKNOWN；不属于DENY，不计为实际零消耗。原任务仍UNKNOWN/AI_RECOVERY_ORIGINAL_EVIDENCE，STATUS/HEALTH/cleanup/STOP-DISABLE未进入；Maven1/2064源码冻结零变/Java0。实际transport/protocol原因尚未取出，不据LOW配置推断provider内部思考。monitor已修复UNKNOWN数值转换，499保留1未知请求、actualTotal/cache rate=null；fresh445已知小计仍2780528，已知174请求另1未知审批请求，配置验证操作共8项用量未知。484容量/483fresh部署未启动，仍先结清原任务且只处理task-board。
+
+源码字节视图未被本次请求触达，不能据此评价其审批效果。下一步只读定位底层失败，不重复相同配置付费重试。
+
+## 通用模型接入核查（2026-10-11）
+
+依用户最新要求，先核查官方文档及公开源码，不加入 DeepSeek 或模型名称条件。使用 OpenAI Docs 核对 Codex 配置与官方 GitHub 源码，另查 Claude Code 官方网关协议文档。
+
+- [Codex 当前请求构建源码](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs#L1015) 使用 `tool_choice=auto`，并从模型信息决定可选请求能力；[自定义 provider 配置](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers) 分离 endpoint、协议、认证及可选能力。此源码使用 Responses，不能直接当作本项目 Chat Completions 验收。
+- [Claude Code 网关协议](https://code.claude.com/docs/en/llm-gateway-protocol) 明确区分所发送的 API 格式、连接方式、能力配置和网关上游转换职责；[网关说明](https://code.claude.com/docs/en/llm-gateway) 不承诺官方支持非 Claude 模型。其他模型接入依赖兼容协议或网关，不能据此假定不存在适配工作。
+- [DeepSeek Chat Completions 文档](https://api-docs.deepseek.com/api/create-chat-completion/) 明示思考模式不支持 required/named 工具选择。本项目当前普通工具验证发送 auto，而审批发送指定 submit_result；因此验证通过不证明两种请求组合都支持。499原失败HTTP状态未保留，仍不能补写成实际400。
+
+后续通用候选方向：将期望返回哪个工具的本地严格校验，与上游强制选择该工具的能力分开；优先评估 auto 加完整结果校验，以及可配置的协议能力。不得将任意文本当审批许可，不静默改推理参数，不在无证据时循环重试。尚未修改共享 adapter 或工具选择合同；当前先完成 Agent 事实与诊断修正并通过原任务恢复，真实部署继续保持单项目。
+
+## 500–501 当前请求的本地完成事实
+
+500/501 Agent-only本地完成事实及失败类别诊断：23定点PASS（新增7/直接旧16）、0失败/错误/跳过，Maven0/Java0/noAPI/noSSH。COMPLETED只由本次facts中实际requireBinding与canonical select成功产生，绑定当前action/task/server/reviewrevision/component；APP/hostgrant/send/remote guards仍待执行，既有重检不变。正式Recovery仅增加原eventCode/outcome记录后保持UNKNOWN，不宣称完整Problem/httpStatus留存。三源码冻结零变，203fixture59helper、九其他Java与当前live harness零变，无formatter；Recovery混合未跟踪基线只保存自有formal增量，reverse --check PASS/no源码写入。writer全部STOP；502原恢复NONE/NONE仅prepare，尚未执行。
+
+[Recovery 自有增量](patches/AGENT-RECOVERY-HELPER-FAILURE-CATEGORY-500.patch)仅保留底层失败类别。旧DENY、UNKNOWN和不可变提案不改，定点通过不代表真实部署成功。
+
+## Agent 自主性评估（504，只读）
+
+用户明确定位：通用目标驱动Agent，领域能力由部署工具和Skill提供；启动输入目标、源码索引、目标服务器与授权操作能力，持续自主选工具或CLI，执行结果和审批反馈回到原循环。工具能力独立定点验证，项目验收不强制选结构化工具或CLI。
+
+源码已确认主循环本来由模型自主选工具，有command、host_command及自定义发布路径，也未直接复用ASSISTED编排。可优化的具体限制是Evidence.assess要求覆盖全局pending（Session在选择component前调用）以及PublishRunner新建历史且缺少原构建证据查询。推荐按组件、依赖和资源限定相关pending，同时保留其他未解决记录；发布阶段增加有界可追溯真实证据交接。已审发布请求不可变、UNKNOWN结算、独立审批和发送绑定仍需保留。此为只读评估，尚未实施；近期恢复失败位于APP/协议层，不能归因于这两处业务约束，先完成500/501/502闭环。

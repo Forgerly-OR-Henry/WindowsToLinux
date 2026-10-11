@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.db.ModDatabase;
 import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+import gold.debug.windowstolinux.appapi.linux.LinuxService;
 import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
 import gold.debug.windowstolinux.appapi.linux.command.*;
 import gold.debug.windowstolinux.appapi.linux.session.*;
@@ -46,6 +47,7 @@ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHe
 import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel;
 import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentWorkloadArguments;
 import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
 import gold.debug.windowstolinux.mod.deployment.service.core.delivery.*;
@@ -71,6 +73,149 @@ class DeploymentAgentHealthEvidenceTest {
     private static final String RELEASE = "e".repeat(64);
 
     private static final String DENIAL = "Controlled original health target denial";
+
+    @Test
+    void localCompletionIsProducedByFactsBeforeAnyVerificationOrIndependentReview() throws Exception {
+        try (var frame = new Frame(); var request = frame.queryRequest("none")) {
+            var evidence = frame.evidence();
+            var intent = frame.queryIntent(request);
+            var current = JSON.valueToTree(evidence.facts(intent, request, frame.task));
+            assertEquals("COMPLETED", current.at("/completedLocalChecks/status").asText());
+            assertEquals(DeploymentAgentInputs.hash(intent.exactAction()), current.at("/completedLocalChecks/exactActionSha256").asText());
+            assertEquals("backend", current.at("/completedLocalChecks/component").asText());
+            assertEquals("NOT_YET_DECIDED", current.at("/completedLocalChecks/independentAppReview").asText());
+            assertEquals("NOT_YET_OBTAINED", current.at("/completedLocalChecks/hostSingleUseGrant").asText());
+            assertEquals("NO_RESULT_FOR_THIS_PENDING_REQUEST", current.path("receiptState").asText());
+            assertEquals("", evidence.reviewInstructions(), "No canonical verify call has exposed SYSTEM instructions yet");
+            assertTrue(frame.aiRequests.isEmpty());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.remoteExecutions);
+            evidence.verify(intent, request, frame.task);
+            assertEquals(DeploymentAgentObservationReviewContract.text(), evidence.reviewInstructions());
+            assertTrue(frame.aiRequests.isEmpty());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.remoteExecutions);
+        }
+    }
+
+    @Test
+    void completedLocalChecksBindEachCurrentGraphRequestWithoutClaimingItsPermissionOrRemoteGuards() throws Exception {
+        try (var frame = new Frame()) {
+            var evidence = frame.evidence();
+            var assemblies = new ArrayList<JsonNode>();
+            Consumer<JsonNode> inspect = envelope -> {
+                var current = envelope.path("currentCommandEvidence");
+                var completed = current.path("completedLocalChecks");
+                assertEquals("COMPLETED", completed.path("status").asText());
+                assertEquals("THIS_FACTS_ASSEMBLY_BEFORE_INDEPENDENT_APP_REVIEW", completed.path("phase").asText());
+                assertEquals(DeploymentAgentInputs.hash(envelope.path("exactAction").asText()), completed.path("exactActionSha256").asText());
+                assertEquals(frame.task.id().toString(), completed.path("currentTask").asText());
+                assertEquals(frame.server.id(), completed.path("server").asText());
+                assertEquals(REVISION, completed.path("currentReviewConfigurationRevision").asText());
+                String component = completed.path("component").asText();
+                assertEquals(component, current.at("/unitBinding/component").asText());
+                assertEquals(frame.part(component).unit().id(), current.at("/unitBinding/applicationId").asText());
+                assertEquals(frame.part(component).unit().ownershipManifestSha256(), current.at("/unitBinding/ownershipManifestSha256").asText());
+                assertEquals(6, completed.path("checks").size());
+                assertEquals("NOT_YET_DECIDED", completed.path("independentAppReview").asText());
+                assertEquals("NOT_YET_OBTAINED", completed.path("hostSingleUseGrant").asText());
+                assertEquals("NOT_OCCURRED", completed.path("pendingRequestSend").asText());
+                assertEquals("NOT_EXECUTED_FOR_THIS_REQUEST", completed.path("pendingRemoteGuards").asText());
+                assertEquals(3, completed.path("laterRequiredChecks").size());
+                assertTrue(completed.path("meaning").asText().contains("No subsequent verify call is counted here"));
+                assertEquals(frame.aiRequests.size() - 1, frame.hostAuthorizations, "This request has not obtained its own host grant at APP input assembly");
+                if (envelope.path("operation").asText().equals("deployment.publication.original-status.v1")) {
+                    assertEquals("NO_RESULT_FOR_THIS_PENDING_REQUEST", current.path("receiptState").asText());
+                    assertFalse(current.has("currentGraphQueries"));
+                    assertFalse(current.has("result"));
+                }
+                if (current.has("observationReviewContract"))
+                    assertTrue(current.at("/observationReviewContract/meaning").asText().contains("no remote execution-time guard is asserted passed"));
+                assemblies.add(current.deepCopy());
+            };
+            frame.onStatusReview = inspect;
+            frame.onHealthReview = inspect;
+            frame.onRuntimeReview = inspect;
+            assertEquals(TaskResult.SUCCEEDED, frame.verify(evidence).outcome());
+            assertEquals(9, assemblies.size());
+            var status = assemblies.stream().filter(value -> value.path("schema").asText().equals("agent-current-original-status-evidence.v1")).toList();
+            assertEquals(2, status.size());
+            assertEquals(Set.of("backend", "frontend"), Set.copyOf(status.stream().map(value -> value.at("/completedLocalChecks/component").asText()).toList()));
+            assertNotEquals(status.get(0).at("/completedLocalChecks/exactActionSha256"), status.get(1).at("/completedLocalChecks/exactActionSha256"));
+            assertNotEquals(status.get(0).path("completedLocalChecks"), status.get(1).path("completedLocalChecks"));
+            assertEquals(2, frame.statusQueries);
+            assertEquals(3, frame.healthDispatches);
+            assertEquals(2, frame.runtimeInspections);
+            assertEquals(2, frame.runtimeObservations);
+            assertEquals("", evidence.reviewInstructions());
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"request", "task", "profile", "CURRENT_SOURCE"})
+    void failedLocalIdentityOrCanonicalSelectionCannotLeakCompletedFactsToApp(String change) throws Exception {
+        try (var frame = new Frame(); var request = frame.queryRequest(change.equals("request") ? "candidate" : "none")) {
+            var evidence = frame.evidence();
+            if (Set.of("profile", "CURRENT_SOURCE").contains(change)) frame.changeBinding(change);
+            var supplied = change.equals("task") ? proxy(TaskContext.class, (name, args) -> {
+                throw new AssertionError("An unrelated TaskContext must be rejected by identity before it is used");
+            }) : frame.task;
+            var before = frame.journal.events(frame.task);
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            if (change.equals("task"))
+                assertThrows(IllegalArgumentException.class, () -> review.approveCommand(frame.queryIntent(request), request, supplied));
+            var rejection = change.equals("task")
+                ? assertThrows(ApiException.class, () -> evidence.facts(frame.queryIntent(request), request, supplied))
+                : assertThrows(ApiException.class, () -> review.approveCommand(frame.queryIntent(request), request, supplied));
+            assertFalse(rejection.problem().context().containsKey("completedLocalChecks"));
+            assertTrue(frame.aiRequests.isEmpty());
+            assertTrue(frame.reviewFacts.isEmpty());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.remoteExecutions);
+            assertEquals(before, frame.journal.events(frame.task));
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @Test
+    void formalRecoveryRetainsTheFailedHelperReviewCategoryAndStaysUnknownWithoutSendingOrRetrying() throws Exception {
+        try (var frame = new Frame()) {
+            var failure = new Problem(ProblemCode.IO_FAILURE, "CONTROLLED_PROVIDER_NATIVE_FAILURE", "Controlled provider failure",
+                Map.of("diagnosticId", "controlled-original-diagnostic"), Optional.of(frame.task.id()));
+            frame.reviewCallFailure = new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(failure));
+            var before = frame.journal.events(frame.task);
+            var saved = frame.journal.find(frame.task).orElseThrow();
+            var executions = new DeploymentExecutionStore(frame.context.db());
+            var formal = executions.findForTask(frame.task).orElseThrow();
+            assertTrue(executions.publicationTemplate(formal).isPresent());
+            var recovered = new DeploymentAgentRecovery(frame.context, frame.journal).reconcile(frame.task, saved);
+            assertEquals(TaskResult.UNKNOWN, recovered.outcome());
+            assertEquals("DEPLOYMENT_AGENT_HELPER_CHANGED", recovered.problem().orElseThrow().eventCode());
+            assertEquals(1, frame.aiRequests.size());
+            assertEquals("deployment.helper.probe.v1", frame.reviewFacts.getFirst().path("operation").asText());
+            assertFalse(frame.reviewFacts.getFirst().has("currentCommandEvidence"));
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.remoteExecutions);
+            assertEquals(0, frame.statusQueries);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(1, frame.workflowOpens);
+            assertEquals(1, frame.workflowCloses);
+            assertEquals(1, frame.linuxConnections);
+            assertEquals(1, frame.remoteCloses);
+            assertFalse(frame.progressStages.contains("AI_RECOVERY_ORIGINAL_HOST_VERIFIED"));
+            var effects = frame.diagnosticEvents.stream().filter(event -> event.eventCode().equals("DEPLOYMENT_EFFECT_OUTCOME")).toList();
+            assertEquals(1, effects.size());
+            assertEquals(failure.eventCode(), effects.getFirst().message());
+            assertEquals(Optional.of(TaskResult.FAILED), effects.getFirst().outcome());
+            assertEquals(Optional.of(frame.task.id()), effects.getFirst().taskId());
+            assertTrue(effects.getFirst().details().isEmpty(), "Existing diagnostics retain only the original failure category/outcome, not full provider context");
+            assertFalse(effects.getFirst().message().contains("controlled-original-diagnostic"));
+            assertEquals(before, frame.journal.events(frame.task));
+            assertEquals(saved, frame.journal.find(frame.task).orElseThrow());
+            assertEquals(formal, executions.findForTask(frame.task).orElseThrow());
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"HTTP", "COMMAND"})
@@ -1285,10 +1430,15 @@ class DeploymentAgentHealthEvidenceTest {
 
         private final UUID taskId = UUID.randomUUID();
 
+        private final List<String> progressStages = new ArrayList<>();
+
         private final TaskContext task = proxy(TaskContext.class, (name, args) -> switch (name) {
             case "id" -> taskId;
             case "cancelToken" -> (CancelToken) () -> false;
-            case "progress" -> null;
+            case "progress" -> {
+                progressStages.add((String) args[0]);
+                yield null;
+            }
             default -> throw new AssertionError(name);
         });
 
@@ -1311,6 +1461,10 @@ class DeploymentAgentHealthEvidenceTest {
         private final List<JsonNode> reviewFacts = new ArrayList<>();
 
         private final List<AiRequest> aiRequests = new ArrayList<>();
+
+        private OperationResult<AiResponse> reviewCallFailure;
+
+        private final List<LogEvent> diagnosticEvents = new ArrayList<>();
 
         private final List<String> statusActions = new ArrayList<>();
 
@@ -1362,6 +1516,16 @@ class DeploymentAgentHealthEvidenceTest {
 
         private int hostAuthorizations;
 
+        private int workflowOpens;
+
+        private int workflowCloses;
+
+        private int linuxConnections;
+
+        private int remoteCloses;
+
+        private int remoteExecutions;
+
         Frame() throws Exception {
             this("HTTP");
         }
@@ -1383,7 +1547,12 @@ class DeploymentAgentHealthEvidenceTest {
             journal = new DeploymentAgentActionLog(db);
             remote = proxy(RemoteSession.class, (name, args) -> {
                 if (name.equals("facts")) return remoteFacts;
+                if (name.equals("close")) {
+                    remoteCloses++;
+                    return null;
+                }
                 assertEquals("execute", name);
+                remoteExecutions++;
                 var request = (CommandRequest) args[0];
                 var part = requestPart(request);
                 String component = part.componentId();
@@ -1446,12 +1615,20 @@ class DeploymentAgentHealthEvidenceTest {
                 if (operation.equals("deployment.publication.health.v1")) onHealthReview.accept(facts);
                 if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(operation))
                     onRuntimeReview.accept(facts);
+                if (reviewCallFailure != null) return reviewCallFailure;
                 boolean deny = operation.equals(deniedOperation);
                 return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
                     List.of(new AiToolCall("review-" + reviewFacts.size(), "submit_result", JSON.writeValueAsString(Map.of("decision", deny ? "DENY" : "APPROVE",
                         "requiresUserConfirmation", deny, "reason", deny ? DENIAL : "Controlled original health binding")))), Optional.empty()));
             });
             var host = proxy(InteractionService.class, (name, args) -> {
+                if (name.equals("openReviewedWorkflow")) {
+                    assertEquals("deployment.workflow.authority", ((ActionIntent) args[0]).type());
+                    assertEquals(true, args[3]);
+                    assertSame(task, args[4]);
+                    workflowOpens++;
+                    return success((WorkflowGrant) () -> { workflowCloses++; });
+                }
                 assertTrue(Set.of("approve", "approveReviewedAction").contains(name), name);
                 hostAuthorizations++;
                 if (reviewFacts.getLast().path("operation").asText().equals("deployment.publication.original-status.v1"))
@@ -1477,7 +1654,18 @@ class DeploymentAgentHealthEvidenceTest {
                 assertEquals("get", name);
                 return profile;
             });
-            var logs = proxy(LogService.class, (name, args) -> name.equals("register") ? new LogTarget(UUID.randomUUID()) : null);
+            var logs = proxy(LogService.class, (name, args) -> {
+                if (name.equals("register")) return new LogTarget(UUID.randomUUID());
+                if (name.equals("write")) diagnosticEvents.add((LogEvent) args[1]);
+                return null;
+            });
+            var linux = proxy(LinuxService.class, (name, args) -> {
+                assertEquals("connect", name);
+                assertEquals(server, args[0]);
+                assertSame(task, args[1]);
+                linuxConnections++;
+                return remote;
+            });
             var ui = proxy(UiService.class, (name, args) -> new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             context = proxy(ModContext.class, (name, args) -> switch (name) {
                 case "db" -> db;
@@ -1487,6 +1675,7 @@ class DeploymentAgentHealthEvidenceTest {
                 case "servers" -> servers;
                 case "ui" -> ui;
                 case "logs" -> logs;
+                case "linux" -> linux;
                 default -> throw new AssertionError(name);
             });
             var parts = new ArrayList<DeploymentApplicationGraph.Part>();

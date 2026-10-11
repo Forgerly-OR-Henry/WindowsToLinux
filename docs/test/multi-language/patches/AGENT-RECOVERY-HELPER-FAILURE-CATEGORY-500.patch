@@ -1,0 +1,13 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -111,3 +111,5 @@
+-            if (new gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper(session,
+-                reviewed.interaction(), server, task, saved.identity().configurationDigest()).probe()
+-                .outcome() != TaskResult.SUCCEEDED)
++            var helper = new gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelper(session,
++                reviewed.interaction(), server, task, saved.identity().configurationDigest()).probe();
++            if (helper.outcome() != TaskResult.SUCCEEDED) {
++                new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context)
++                    .effectResult(task.id(), helper);
+@@ -114,0 +117 @@
++            }
