@@ -59,6 +59,7 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentComma
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget;
+import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
@@ -256,6 +257,161 @@ class DeploymentAgentApprovalTest {
         }
         assertEquals(2, f.fixture.requests.size());
         assertEquals(0, f.grants.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DOT", "PARENT", "ABSOLUTE", "SLASH", "BACKSLASH", "COLON", "CONTROL", "EMPTY_SEGMENT", "FINAL_PARENT", "LONG"})
+    void sourcePathRejectionsReturnSafeContractForAutonomousCorrectionWithoutGrant(String malformed) throws Exception {
+        Files.writeString(root.resolve("entry.sh"), "printf 'owned source'\n");
+        String subject = switch (malformed) {
+            case "DOT" -> ".";
+            case "PARENT" -> "../FAKE_PASSWORD_MARKER";
+            case "ABSOLUTE" -> "/FAKE_PASSWORD_MARKER";
+            case "SLASH" -> "/";
+            case "BACKSLASH" -> "dir\\FAKE_PASSWORD_MARKER";
+            case "COLON" -> "file:FAKE_PASSWORD_MARKER";
+            case "CONTROL" -> "FAKE_PASSWORD_MARKER\n";
+            case "EMPTY_SEGMENT" -> "dir//FAKE_PASSWORD_MARKER";
+            case "FINAL_PARENT" -> "dir/../";
+            default -> "FAKE_PASSWORD_MARKER" + "x".repeat(501 - "FAKE_PASSWORD_MARKER".length());
+        };
+        for (String tool : List.of("source_list", "source_read")) {
+            var f = new Frame();
+            f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+            String script = "printf exact script\n", stdin = "printf exact stdin\n";
+            int[] round = {0};
+            f.model = request -> {
+                assertEquals(0, f.grants.size(), "No evidence page or failed path can grant execution");
+                int selected = round[0]++;
+                if (selected == 0)
+                    return List.of(call(tool, Map.of("component", "api", "sourceRevision", REVISION, "subject", subject, "offset", 0, "limit", 10)));
+                var result = lastToolResult(request);
+                var envelope = JSON.readTree(result.text());
+                if (selected == 1) {
+                    assertTrue(result.error());
+                    assertEquals("SOURCE_PATH_REJECTED", envelope.path("code").asText());
+                    assertEquals("subject", envelope.path("field").asText());
+                    assertEquals(tool, envelope.path("tool").asText());
+                    assertFalse(result.text().contains("FAKE_PASSWORD_MARKER"));
+                    assertEquals(JSON.readTree(request.tools().stream().filter(definition -> definition.name().equals(tool)).findFirst().orElseThrow().inputSchema()),
+                        envelope.path("contract"));
+                    assertEquals(100, envelope.at("/contract/properties/limit/maximum").asInt());
+                    var contract = envelope.path("contract");
+                    int minimumSubject = contract.at("/properties/subject/minLength").asInt();
+                    assertEquals(tool.equals("source_list") ? 0 : 1, minimumSubject);
+                    String correctedSubject = minimumSubject == 0 ? "" : "entry.sh";
+                    var corrected = Map.of("component", "api", "sourceRevision", REVISION,
+                        "subject", correctedSubject, "offset", 0, "limit", 10);
+                    DeploymentToolSchemas.validate(contract, JSON.valueToTree(corrected));
+                    if (tool.equals("source_read"))
+                        assertThrows(IllegalArgumentException.class, () -> DeploymentToolSchemas.validate(contract,
+                            JSON.valueToTree(Map.of("component", "api", "sourceRevision", REVISION, "subject", "", "offset", 0, "limit", 10))));
+                    var memory = JSON.readTree(request.messages().getLast().text()).at("/reviewMemory/deliveredRanges/entries");
+                    assertTrue(memory.isEmpty(), "Failed path contributes no delivered evidence");
+                    return List.of(call(tool, corrected));
+                }
+                assertFalse(result.error());
+                assertEquals("UNTRUSTED_DATA", envelope.path("trust").asText());
+                if (selected == 2) {
+                    assertTrue(result.text().contains(tool.equals("source_list") ? "entry.sh" : "owned source"));
+                    return List.of(call("request", Map.of("part", "script", "offset", 0, "limit", 8000)));
+                }
+                if (selected == 3) {
+                    assertEquals(script, envelope.at("/value/text").asText());
+                    return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+                }
+                assertEquals(stdin, envelope.at("/value/text").asText());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            try (var request = f.command(script, stdin)) {
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+                var intent = f.intent(request, "deployment.agent.helper.readiness.v1");
+                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
+                assertEquals(List.of(intent.exactAction()), f.grants, "Only final independent review grants the complete original command");
+            }
+            assertEquals(5, f.fixture.requests.size());
+            assertTrue(f.fixture.events.stream().noneMatch(event -> event.message().contains("FAKE_PASSWORD_MARKER")
+                || event.details().orElse("").contains("FAKE_PASSWORD_MARKER")));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"COMPONENT", "REVISION", "OFFSET", "LIMIT", "MISSING", "SEARCH"})
+    void sourceIdentityCursorAndMissingMemberRejectionsExposeOnlyOriginalContract(String malformed) throws Exception {
+        var f = new Frame();
+        Files.writeString(root.resolve("entry.sh"), "private owned source\n");
+        f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+        String tool = malformed.equals("SEARCH") ? "source_search" : "source_read";
+        f.fixture.nativeReply(call(tool, Map.of("component", malformed.equals("COMPONENT") ? "FAKE_PASSWORD_MARKER" : "api",
+            "sourceRevision", malformed.equals("REVISION") ? "b".repeat(64) : REVISION,
+            "subject", malformed.equals("MISSING") ? "FAKE_PASSWORD_MARKER" : malformed.equals("SEARCH") ? "" : "entry.sh",
+            "offset", malformed.equals("OFFSET") ? 1000001 : 0, "limit", malformed.equals("LIMIT") ? 101 : 10)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+        assertEquals("DENY", f.review(Map.of()).decision().decision());
+        var result = lastToolResult(f.fixture.requests.getLast());
+        var feedback = JSON.readTree(result.text());
+        assertTrue(result.error());
+        assertEquals("EVIDENCE_REQUEST_REJECTED", feedback.path("error").asText());
+        assertEquals(tool, feedback.path("tool").asText());
+        assertEquals(1000000, feedback.at("/contract/properties/offset/maximum").asInt());
+        assertEquals(100, feedback.at("/contract/properties/limit/maximum").asInt());
+        assertEquals(1, feedback.at("/contract/properties/subject/minLength").asInt());
+        assertThrows(IllegalArgumentException.class, () -> DeploymentToolSchemas.validate(feedback.path("contract"),
+            JSON.valueToTree(Map.of("component", "api", "sourceRevision", REVISION, "subject", "", "offset", 0, "limit", 10))));
+        assertFalse(result.text().contains("FAKE_PASSWORD_MARKER") || result.text().contains("private owned source"));
+        assertEquals(0, f.grants.size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"CONTENT", "ADD", "REMOVE", "LIST_CONTENT"})
+    void sourceIntegrityFailureStillClosesReviewWithoutCorrectableFeedback(String changed) throws Exception {
+        var f = new Frame();
+        Path member = root.resolve("entry.sh");
+        Files.writeString(member, "original source\n");
+        f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+        String tool = changed.equals("CONTENT") ? "source_read" : "source_list";
+        f.fixture.nativeReply(call(tool, Map.of("component", "api", "sourceRevision", REVISION,
+            "subject", tool.equals("source_read") ? "entry.sh" : "", "offset", 0, "limit", 10)));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        f.afterCall = () -> {
+            try {
+                if (changed.equals("ADD")) Files.writeString(root.resolve("new.txt"), "changed boundary\n");
+                else if (changed.equals("REMOVE")) Files.delete(member);
+                else Files.writeString(member, "FAKE_PASSWORD_MARKER changed source\n");
+            } catch (IOException failure) {
+                throw new AssertionError(failure);
+            }
+        };
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+            assertFailureDiagnostics(f, rejected, changed.equals("CONTENT") ? "EVIDENCE_READ" : "BINDING_SNAPSHOT", "SecurityException");
+            if (changed.equals("CONTENT")) assertEquals("source_read", rejected.problem().context().get("reviewTool"));
+        }
+        assertEquals(changed.equals("LIST_CONTENT") ? 2 : 1, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void sourcePathRejectionConsumesBudgetAndCannotBypassCancellation() throws Exception {
+        Files.writeString(root.resolve("entry.sh"), "owned source\n");
+        for (boolean cancel : List.of(false, true)) {
+            var f = new Frame();
+            f.sources.put("api", new DeploymentSourceBrowser(root, REVISION));
+            for (int index = 0; index < 3; index++)
+                f.fixture.nativeReply(call("source_list", Map.of("component", "api", "sourceRevision", REVISION, "subject", ".", "offset", 0, "limit", 10)));
+            f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            if (cancel) f.afterCall = () -> f.cancelled.set(f.fixture.requests.size() == 2);
+            try (var budget = DeploymentToolBudget.open(3); var request = f.command("printf actual", "")) {
+                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+                var rejected = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
+                assertFailureDiagnostics(f, rejected, cancel ? "BINDING_SNAPSHOT" : "RESPONSE_CHECK", "IOException");
+                assertEquals(cancel ? 2 : 3, f.fixture.requests.size());
+                assertEquals(cancel ? 2 : 0, DeploymentToolBudget.remaining());
+            }
+            assertTrue(f.grants.isEmpty());
+            assertFalse(f.fixture.replies.isEmpty(), "Queued verdict is never allowed past cancellation or the finite budget");
+        }
     }
 
     private static AiToolResult lastToolResult(AiRequest request) {

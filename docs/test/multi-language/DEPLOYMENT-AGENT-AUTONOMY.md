@@ -1,6 +1,6 @@
 # Agent 自主审批与按需 Skill
 
-2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 已通过产品恢复结清为 ENDED/FAILED；最新 task-board-05 因独立审批拒绝结束，正式 App 仍为空。实际暴露的审批上下文问题已修复，通过 25 个直接场景，待新独立任务验证真实闭环。本文不将历史部署、本地通过或连接成功算作新业务验收。
+2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 已通过产品恢复结清为 ENDED/FAILED；task-board-05 因独立审批拒绝结束，task-board-06 因 source_list 的 SecurityException 终止为 UNKNOWN，正式 App 仍为空。审批上下文修复通过 25 个直接场景并已提交；源码工具的输入拒绝反馈和根目录契约修复通过 35 个不同直接场景，待产品恢复及新任务验证。本文不将历史部署、本地通过或连接成功算作新业务验收。
 
 ## 目标与职责
 
@@ -152,5 +152,19 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 `approval-context-focused-01` 于 2026-10-12 05:15:09+08 通过 25 个不同直接场景，零失败/错误/跳过，十个 Java 文件的限定格式检查通过。覆盖裁剪后范围及笔记保留、间隙/原文身份/容量边界、笔记原子拒绝与清空、跨会话隔离、保护输入、职责及伪 Skill、CLOSED/新事实、完整提交和授权、默认/共享预算、快照变化、原生历史及安全监控。3265 项源码运行期间零变化，验证进程全部退出，没有 API 或 SSH。独立只读复核的十二个文件 SHA256 前后一致，未见已证实的 P1/P2；本地受控模型通过不证明真实模型会选用笔记，也不证明成本下降。
 
 十二个自有增量见 [审批上下文精确补丁](patches/DEPLOYMENT-AGENT-APPROVAL-CONTEXT.patch)，原始 SHA256 为 `c9d3ef59a7e131bd5691aab8ac350e7c9a35e62ee32deb0d0cd175361fdae391`，全部前像核对、反向检查及可独立增量的缓存应用检查通过。九个路径可独立暂存，另外三个已有混合迁移文件仅交付精确增量，不整体暂存原基线；所有旧补丁保留。新独立 task-board 完整部署、真实浏览器业务、非默认目录的真实服务器部署与重启恢复、其余七项目及全新服务器的冻结八项目批次均未验证。缓存及审批比例必须按对应轮次实际 provider usage 计算，未知值不得补零；历史调试用量不能混入冻结八项目批次。
+
+审批上下文修复的十一项自有路径已本地提交 `ddd281304f2597919c4ab2fd6923f61db4c8ec76`，未推送；补丁入库 48979 字节，与工作副本原始 SHA256 一致，索引为空后才启动新任务。
+
+`task-board-06` 于 2026-10-12 05:25:21+08 结束为 UNKNOWN，一项入口失败、零跳过，3265 项源码零变化，验证进程退出、临时凭据环境清除。新任务 `b1b0150b-3fd4-4e43-9fed-20de025fe0bd`、库 `agent-live-task-board-3oe9pway8g`、App 意图 `wtl-agent-task-board-3oe9pxuwfk`。部署模型自行读源码、提交计划并纠正数据库 assessment 参数，审批先放行宿主检查；数据库 readiness 审阅读完 script/stdin 后，两次源码分页上限拒绝已自行修正，随后 source_list 抛出 SecurityException，产品记录 EVIDENCE_READ/REVIEW_EXCEPTION，未返回可纠正工具反馈而终止整轮。没有耗尽预算，也没有进入长安装或正式发布。日志未保存该原始 subject，尚不能确定异常属于输入路径拒绝还是冻结来源边界变化；不得笼统吞掉安全异常。
+
+只读 H2 核对原平台及 Agent 都仍 UNKNOWN，平台资源总行 389、原语义版本 4、唯一 PREPARE_EXECUTING，没有 readiness/完成/NOT_SENT 或结清回执，effectsSettled=false。正式 execution 及十张业务表均 0，模型 2、服务器 1 保持，审计前后数据库字节一致；未删除未结资源。原日志、报告、源码冻结、用量和只读审计保留，待产品入口完成真实恢复后再结清。
+
+21 项已捕获 provider 响应：input 319557、output 14987、合计 334544，hit 214272、miss 105285；捕获输入命中率 67.05%。审批 8 项共 77098，占捕获总量 23.05%；部署 13 项共 257446。reasoning 已知 7881，另 8 项审批 UNKNOWN；四项配置探测的用量及传输调用数 UNKNOWN。39 次原生调用包含被拒调用。这是开发失败轮，比例没有作为中断原因，不混入最终冻结八项目；本轮未完成真实长请求上下文闭环或业务验收。
+
+源码工具边界修复仅涉及三个文件。共享 `DeploymentSourceBrowser.relative` 保留唯一原路径准入规则，只把明确输入拒绝标记为固定消息的 `InputPathRejectedException`；审批仅在 source_list/source_read 原调用边界将该专用型转换为固定字段及契约反馈。通用 SecurityException、冻结成员/目录/内容变化仍终止，不捕获或替读；来源身份、分页、不存在成员及搜索参数反馈也不回显模型输入。STATIC/ASSISTED 所依赖的底层准入与完整性规则保持。原工具 schema 的空根目录说明另与默认 minLength=1 冲突，现仅 source_list.subject 设 minLength=0，source_read/search 仍为 1；模型可从实际契约自行选根目录。
+
+源码反馈首轮 35 用例通过，零失败/错误/跳过，包括 20 次 list/read 路径纠错、原完整命令授权、来源权限、内容与目录变化闭合、取消/预算/快照和五个共享 Browser 反例。父复核发现根目录 schema 冲突后，只重跑受影响的两个方法、16 个参数化用例，全部通过；模型替身从反馈中实际 schema 的 minLength 选择空根，并用现有严格 validator 验证整组参数，read/search 空输入继续被拒。按场景去重仍为 35，不能相加为 51。三文件格式 write/check 均通过，后续两文件格式亦通过。第一轮没有紧邻 Maven 开始的完整冻结快照，只证明与 3265 原基线相比仅三项归属变更；后续 16 用例紧邻前后 3265 项零变化，格式 check 区间也零变化。全部验证进程退出，没有 API、Runtime 或服务器调用。
+
+三份原始前像及全部中间证据保留，精确增量见 [源码反馈补丁](patches/DEPLOYMENT-AGENT-SOURCE-FEEDBACK.patch)，SHA256 `29babbea647da3bc94c4c2d09abdf9616f625298dc67c76adce61312d0f73b12`，前像、反向及缓存应用检查通过。两项可独立暂存；共享 Browser 已有迁移基线只交付精确增量，不整体暂存。06 的真实 subject 仍未知，不能把本地路径反例当作远端根因确认；原 UNKNOWN 须由产品实际恢复结清。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
