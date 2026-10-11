@@ -1,0 +1,88 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecoveryReview.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecoveryReview.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecoveryReview.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecoveryReview.java
+@@ -20,0 +21 @@
++    private static final String REBOUND = "RECOVERY_REVIEW_REBOUND";
+@@ -25 +26 @@
+-    /** Adopts the current route once, solely for original queries, settlement and cleanup. / 仅为原查询、结清及清理一次采用当前路由。 */
++    /** Freezes an explicitly authorized route for this recovery, retaining prior bindings. / 冻结本次明确授权的恢复路由，保留既有绑定。 */
+@@ -33,9 +34,2 @@
+-        var bindings = journal.events(task).stream().filter(event -> event.type().equals(EVENT)).toList();
+-        if (!bindings.isEmpty()) {
+-            if (bindings.size() != 1 || !bindings.getFirst().action().equals(original)
+-                || !bindings.getFirst().detail().matches("[0-9a-f]{64}"))
+-                throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
+-            String selected = bindings.getFirst().detail();
+-            DeploymentFixedCommandApproval.requireRoute(context, task, selected);
+-            return selected;
+-        }
++        var bindings = bindings(journal.events(task), task);
++        var previous = lastBinding(bindings, original, task);
+@@ -42,0 +37,2 @@
++        if (!selected.matches("[0-9a-f]{64}"))
++            throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
+@@ -44 +40 @@
+-        if (original.equals(selected)) return original;
++        if (previous.map(value -> value.revision().equals(selected)).orElse(original.equals(selected))) return selected;
+@@ -48,0 +45,2 @@
++                + "\npreviousBindingEvent=" + previous.map(value -> Long.toString(value.id())).orElse("none")
++                + "\npreviousReviewRevision=" + previous.map(Binding::revision).orElse(original)
+@@ -59 +57,6 @@
+-        journal.event(task, EVENT, original, selected);
++        gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.requireRecoveryIdentity(
++            context, task, new gold.debug.windowstolinux.appapi.server.model.ServerId(saved.identity().server()), original);
++        if (!bindings(journal.events(task), task).equals(bindings))
++            throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_CHANGED");
++        if (previous.isEmpty()) journal.event(task, EVENT, original, selected);
++        else journal.event(task, REBOUND, original, rebound(previous.orElseThrow(), selected));
+@@ -60,0 +64,38 @@
++    }
++
++    private record Binding(long id, String revision) {
++    }
++
++    private static List<DeploymentAgentActionLog.Event> bindings(List<DeploymentAgentActionLog.Event> events,
++                                                                TaskContext task) throws ApiException {
++        var selected = events.stream().filter(event -> event.type().startsWith("RECOVERY_REVIEW_")).toList();
++        if (selected.stream().anyMatch(event -> !event.type().equals(EVENT) && !event.type().equals(REBOUND)))
++            throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
++        return selected;
++    }
++
++    private static Optional<Binding> lastBinding(List<DeploymentAgentActionLog.Event> events, String original,
++                                               TaskContext task) throws ApiException {
++        Binding previous = null;
++        for (var event : events) {
++            if (!event.action().equals(original) || event.id() <= (previous == null ? 0 : previous.id()))
++                throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
++            if (previous == null) {
++                if (!event.type().equals(EVENT) || !event.detail().matches("[0-9a-f]{64}"))
++                    throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
++                previous = new Binding(event.id(), event.detail());
++            } else {
++                String prefix = "previousEventId=" + previous.id() + "\npreviousReviewRevision=" + previous.revision() + "\nreviewRevision=";
++                if (!event.type().equals(REBOUND) || !event.detail().startsWith(prefix))
++                    throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
++                String revision = event.detail().substring(prefix.length());
++                if (!revision.matches("[0-9a-f]{64}") || revision.equals(previous.revision()))
++                    throw denied(task, "DEPLOYMENT_AGENT_RECOVERY_BINDING_INVALID");
++                previous = new Binding(event.id(), revision);
++            }
++        }
++        return Optional.ofNullable(previous);
++    }
++
++    private static String rebound(Binding previous, String selected) {
++        return "previousEventId=" + previous.id() + "\npreviousReviewRevision=" + previous.revision() + "\nreviewRevision=" + selected;
+
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentRecoveryRestartTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentRecoveryRestartTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentRecoveryRestartTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentRecoveryRestartTest.java
+@@ -219,0 +220 @@
++                allowRecoveryBinding.set(false);
+@@ -223 +224,2 @@
+-                assertEquals(2, bindingQuestions.get(), "A persisted binding must not silently adopt another route");
++                assertEquals(3, bindingQuestions.get(), "A changed route requires a new explicit authorization");
++                assertEquals(1, bindingCount(runtime), "Refusing reauthorization retains the original binding");
+@@ -225,0 +228 @@
++                allowRecoveryBinding.set(true);

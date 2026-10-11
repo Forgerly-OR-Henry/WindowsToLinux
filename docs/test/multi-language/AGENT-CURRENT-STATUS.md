@@ -309,3 +309,27 @@ STATUS不被描述为验证FragmentPath/drop-ins/unit字节；native inspect/obs
 用户明确定位：通用目标驱动Agent，领域能力由部署工具和Skill提供；启动输入目标、源码索引、目标服务器与授权操作能力，持续自主选工具或CLI，执行结果和审批反馈回到原循环。工具能力独立定点验证，项目验收不强制选结构化工具或CLI。
 
 源码已确认主循环本来由模型自主选工具，有command、host_command及自定义发布路径，也未直接复用ASSISTED编排。可优化的具体限制是Evidence.assess要求覆盖全局pending（Session在选择component前调用）以及PublishRunner新建历史且缺少原构建证据查询。推荐按组件、依赖和资源限定相关pending，同时保留其他未解决记录；发布阶段增加有界可追溯真实证据交接。已审发布请求不可变、UNKNOWN结算、独立审批和发送绑定仍需保留。此为只读评估，尚未实施；近期恢复失败位于APP/协议层，不能归因于这两处业务约束，先完成500/501/502闭环。
+
+## 502 恢复路由变更后的原任务核对
+
+DEPLOYMENT/APPROVAL 均经产品保存为 NONE，四项配置验证完成。原任务仍 UNKNOWN/AI_RECOVERY_ORIGINAL_EVIDENCE，公开结果 TASK_RECOVERY_FAILED；新增公开失败 6a2e235e-5ede-4fc1-8117-ba61a43d4d22（1791720767394）明确为 ACCESS_DENIED/DEPLOYMENT_COMMAND_CONFIGURATION_CHANGED。这是绑定检查拒绝，不能当作 APP verdict，也不能归因于异常没有被记录。505 正在核对已获准的当前恢复审批路由与历史冻结绑定。
+
+Maven1，2064源码冻结零变，Java0。没有新增原任务用量行；四项配置验证用量未知，缺失记录不代表零消耗。fresh445已知调试小计仍为2780528，已知174请求另有499的一项未知审批请求，配置验证累计12项未知。旧 UNKNOWN、拒绝和原任务身份保留；484容量及483新部署尚未执行。
+
+## 506 受管目录配置盘点（进行中）
+
+目录配置提取仍未完成。范围包括既有受管安装、helper、配置与 secrets、持久化状态和数据，以及已有派生工作、缓存和日志目录；不凭空新增当前未使用的独立目录。APP本地 data-directory 与远端部署Mod路径分别处理。实施时机为原任务结清后、下一轮真实部署前，保留默认路径及旧任务布局；模型路由 configurationDigest 不作为路径配置摘要。当前只读核对实际消费者、默认值、独立布局捕获合同和定点验证范围。
+
+建议 `paths.remote` 的默认字段为 `helper-directory=/usr/local/lib/windowstolinux`、`applications-root=/opt/windowstolinux/apps`、`state-root=/var/lib/windowstolinux`、`configuration-root=/etc/opt/windowstolinux/apps`、`data-root=/var/opt/windowstolinux/apps`。现有 toolchains、work、snapshots、backups、锁与回执从这些根派生；secrets 使用 configuration 根，候选内缓存和日志保持相对布局。没有独立受管 `/var/log/windowstolinux` 或 `/var/cache/windowstolinux`，不新增目录或改变日志后端。systemd/Quadlet 的系统发现目录不能当普通应用目录任意移动。
+
+实施必须贯穿 Java 计算、helper Shell/Python、安装器、审批 targets、恢复和证据合同；仅加入未接线字段不算完成。新任务冻结独立 path-layout，旧任务无布局快照时保留原固定布局。另已确认 RestoreSteps 使用 candidates 而 helper candidate_root 使用 work，尚未判定运行影响；接线前核对 handoff 合同，不改旧回执。STATIC/ASSISTED/AGENT只共享窄层路径解析和渲染，不合并业务编排。
+
+## 505–507 恢复审批路由重新授权
+
+502 的 LOW→NONE 是实际参数变化，不是重复保存造成的版本噪声；模型配置仅在 profile 内容变化时增加 revision。旧恢复入口在唯一历史 BOUND 上先检查旧路由，因此走不到当前路由的重新授权。507 仅修改 Agent RecoveryReview，保留原唯一 `RECOVERY_REVIEW_BOUND`；路由改变时通过本轮 `approveRequired` 明确重新授权，追加 `RECOVERY_REVIEW_REBOUND`，完整关联前一事件 ID、前一摘要与当前摘要。当前路由与最后绑定相同则不重复询问。
+
+未知、重复、分叉、同值及外来原身份绑定链拒绝；授权后再次核验路由、原快照、恢复 checkpoint 与原绑定链后才追加。本记录只授权恢复审批路由，不是任何命令许可；独立APP、宿主grant及发送前绑定重检保留，旧部署不续接、不重放。未宣称跨模型配置库与事件插入的原子性；后续路由变化仍由现有冻结检查阻止远端影响。共享 APP、helper 和 STATIC/ASSISTED 不改。
+
+[自有增量](patches/AGENT-RECOVERY-REVIEW-REBIND-507.patch)保存混合基线上的生产修改和直接旧测试同步；反向 `--check --unidiff-zero` 已通过，无源码写入。28个定点场景最终均有通过证据：508b执行28项，26通过、两项夹具状态错误；仅两处测试夹具改为真实合法状态后，508c重跑直接受影响的两方法，共7项全通过、0跳过。508初次编译的两处测试导入错误也已修正。未重复已通过的旧恢复及其他方法，不属于全量测试。
+
+三个自有源码冻结零变，原203fixture及59helper零变，500已验证三源码不变，Java0；未应用formatter。无真实provider或服务器调用；旧恢复测试使用明确的本地HTTP/SSH fixture。509原任务恢复尚未执行，关闭重复配置保存及验证，复用已保存NONE/NONE。
