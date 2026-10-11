@@ -1,5 +1,6 @@
 # WindowsToLinux 源码模块与包结构
 
+测试过程文档统一位于 [docs/test](test/README.md)，根目录 test 保存测试集。样例内部文档属于部署输入；当前 Agent 验收状态见 [暂停记录](test/multi-language/AGENT-CURRENT-STATUS.md)。
 > **阅读入口：** [当前源码树](#current-source-tree) · [命名与归包](#package-rules) · [Mod 源码规范](#mod-source-layout) · [依赖方向](#module-dependencies) · [结构检查](#structure-checks) · [规划边界](#planned-boundaries)。
 
 ## 文档信息
@@ -325,9 +326,9 @@ ModDev 的定向构建、验证与移入调试流程见 [独立开发入口](../
 
 ### 1.2 独立验收夹具
 
-根目录 `test` 保存不参与 WindowsToLinux Maven reactor 的独立验收夹具，分为 `single-language` 和 `multi-language`。单语言场景以 `success-` 或 `failure-` 标明预期部署结果，后接功能名称；多语言每种组合只保留一个完整成功样例。完整场景及用途见 [测试夹具说明](../test/README.md)。
+根目录 `test` 保存不参与 WindowsToLinux Maven reactor 的独立验收夹具，分为 `single-language` 和 `multi-language`。单语言场景以 `success-` 或 `failure-` 标明预期部署结果，后接功能名称；多语言每种组合只保留一个完整成功样例。完整场景及用途见 [测试夹具说明](test/README.md)。
 
-125 组源码项目均通过入口、配置、请求处理、业务和模型协作。C/C++ 的 `include` 放自定义头文件，`src` 的多个编译单元链接成一个目标；其余语言采用自身包/模块机制。包管理器样例的运行依赖和真实锁文件放在各自项目内。`src/app/main/src/test/python` 保存跨语言 HTTP、破坏输入和原生组件检查脚本；逐组合证据见 [验证记录](../test/single-language/VERIFICATION.md)。
+125 组源码项目均通过入口、配置、请求处理、业务和模型协作。C/C++ 的 `include` 放自定义头文件，`src` 的多个编译单元链接成一个目标；其余语言采用自身包/模块机制。包管理器样例的运行依赖和真实锁文件放在各自项目内。`src/app/main/src/test/python` 保存跨语言 HTTP、破坏输入和原生组件检查脚本；逐组合证据见 [验证记录](test/single-language/VERIFICATION.md)。
 
 ```text
 test/                                                                                # [目录]   独立验收夹具，不参与 Maven reactor
@@ -340,7 +341,7 @@ test/                                                                           
    └─ success-<function>/                                                            # [目录]   各项目的源码、依赖锁、样本及运行说明
 ```
 
-多语言项目包括五个网页和三个控制台工具。Java、Go、C#、PHP、Kotlin、Python 分别拥有项目内 SQLite，Rust/C/C++ 工具通过子进程 JSON 协议协作；不引入数据库服务。`src/app/main/src/test/python/polyglot_runner.py` 在隔离副本构建、分配回环端口并执行验收，`src/app/main/src/test/browser` 独立管理与仓库同版本的 Playwright 依赖。源码覆盖由 `MultiLanguageFixtureMatrixTest` 门禁检查；本地行为与 Linux 产品部署证据分开维护，见 [多语言验证记录](../test/multi-language/VERIFICATION.md)。
+多语言项目包括五个网页和三个控制台工具。Java、Go、C#、PHP、Kotlin、Python 分别拥有项目内 SQLite，Rust/C/C++ 工具通过子进程 JSON 协议协作；不引入数据库服务。`src/app/main/src/test/python/polyglot_runner.py` 在隔离副本构建、分配回环端口并执行验收，`src/app/main/src/test/browser` 独立管理与仓库同版本的 Playwright 依赖。源码覆盖由 `MultiLanguageFixtureMatrixTest` 门禁检查；本地行为与 Linux 产品部署证据分开维护，见 [多语言验证记录](test/multi-language/VERIFICATION.md)。
 
 ## 2. 命名规范
 

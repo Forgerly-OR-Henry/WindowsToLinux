@@ -93,7 +93,7 @@ Mod 主模块可继承 [.mvn/wtlmod-author-parent/pom.xml](.mvn/wtlmod-author-pa
 
 旧 `shared/web` 和旧部署、备份实现已冻结在 [history-src](history-src/ARCHIVE.md)，不参与当前根构建，不在冻结目录执行构建或修改。旧 Web 服务台的 Spring Boot/SQLite、前端构建链和运行命令属于历史版本；原配置仅可从[冻结的 application.yml](history-src/src/web/main/src/main/resources/application.yml)查阅，不能作为当前 APP 配置。
 
-helper v9 曾在 Ubuntu 24 上完成八个多语言原生项目的代表性部署及业务验收，见[多语言记录](test/multi-language/VERIFICATION.md)；其他历史工具链证据见 [0.4 期验收](docs/development/PHASE-0.4.md#acceptance)和 [0.5 期 Web 文档](docs/development/PHASE-0.5.md)。这些记录只证明当时的精确夹具与环境，不替代 1.2 期真实远端、回收条件或语音提供方验收。
+helper v9 曾在 Ubuntu 24 上完成八个多语言原生项目的代表性部署及业务验收，见[多语言记录](docs/test/multi-language/VERIFICATION.md)；其他历史工具链证据见 [0.4 期验收](docs/development/PHASE-0.4.md#acceptance)和 [0.5 期 Web 文档](docs/development/PHASE-0.5.md)。这些记录只证明当时的精确夹具与环境，不替代 1.2 期真实远端、回收条件或语音提供方验收。
 
 ## 文档与贡献
 

@@ -1,17 +1,18 @@
 # 多语言业务验收项目
 
+测试过程文档位于本目录；原八项目源码位于 [多语言测试集](../../../test/multi-language/)。当前 Agent 结果与恢复待办见 [暂停记录](AGENT-CURRENT-STATUS.md)：完整成功 0/8，395 轮已构建发布，但外部 HTTP 业务未通过，按用户要求暂停等待重装。
 八个独立项目覆盖 12 种源码语言；每种组合仅一个成功样例。所有数据库均为嵌入式 SQLite，不安装数据库服务。Node.js 是 JavaScript/TypeScript 的运行时，不另外计作源码语言。
 
 | 项目                                                     | 协作链                     | SQLite 写入者 |
 | -------------------------------------------------------- | -------------------------- | ------------- |
-| [任务看板](success-task-board/README.md)                 | TYPESCRIPT + JAVA          | backend       |
-| [文件收发站](success-file-transfer/README.md)            | TYPESCRIPT + GO            | backend       |
-| [资产借还网站](success-asset-lending/README.md)          | JAVASCRIPT + CSHARP        | backend       |
-| [CSV 数据检查网站](success-csv-inspector/README.md)      | JAVASCRIPT + PHP + PYTHON  | web           |
-| [问卷评分网站](success-survey-scoring/README.md)         | TYPESCRIPT + KOTLIN + RUBY | backend       |
-| [日志统计工具](success-log-analyzer/README.md)           | RUST + CPP                 | 无            |
-| [目录差异工具](success-directory-diff/README.md)         | PYTHON + CPP               | cli           |
-| [二进制数据检查工具](success-binary-inspector/README.md) | RUST + C                   | 无            |
+| [任务看板](../../../test/multi-language/success-task-board/README.md)                 | TYPESCRIPT + JAVA          | backend       |
+| [文件收发站](../../../test/multi-language/success-file-transfer/README.md)            | TYPESCRIPT + GO            | backend       |
+| [资产借还网站](../../../test/multi-language/success-asset-lending/README.md)          | JAVASCRIPT + CSHARP        | backend       |
+| [CSV 数据检查网站](../../../test/multi-language/success-csv-inspector/README.md)      | JAVASCRIPT + PHP + PYTHON  | web           |
+| [问卷评分网站](../../../test/multi-language/success-survey-scoring/README.md)         | TYPESCRIPT + KOTLIN + RUBY | backend       |
+| [日志统计工具](../../../test/multi-language/success-log-analyzer/README.md)           | RUST + CPP                 | 无            |
+| [目录差异工具](../../../test/multi-language/success-directory-diff/README.md)         | PYTHON + CPP               | cli           |
+| [二进制数据检查工具](../../../test/multi-language/success-binary-inspector/README.md) | RUST + C                   | 无            |
 
 当前为 v2 中型业务样例，每个目录包含业务说明 `BUSINESS.md`、完整源码、真实依赖声明与锁文件、固定样本、规模数据生成器及独立操作步骤。网页按列表、详情、编辑和历史拆分交互；业务状态、版本冲突、事务和持久化由服务端处理。身份为固定演示选择，不属于认证。控制台通过实际 C/C++ 子程序处理文件；移除关键协作模块会使对应验收失败。
 

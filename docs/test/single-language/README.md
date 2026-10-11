@@ -1,5 +1,6 @@
 # 部署测试夹具
 
+测试过程文档位于本目录；源码与矩阵位于 [单语言测试集](../../../test/single-language/)。
 源码服务按 **12 种语言、26 个语言/构建工具组合**组织，每个组合固定 **3 组正常部署 + 2 组失败部署**，共 130 组。这里是独立的示例项目，不属于根 Maven reactor；自动化验收代码位于各模块的 `src/test`。
 
 ## 多文件与库协作约定
@@ -49,35 +50,35 @@ Java 的 Maven/Spring Boot 从原来的 24 个顶层夹具收敛为 5 组；Mave
 
 ## 每个组合的配置失败点
 
-每条路径下都包含上述五组，路径中的语言、工具和服务类型共同确定一个组合。[matrix.json](matrix.json) 是自动化覆盖清单。
+每条路径下都包含上述五组，路径中的语言、工具和服务类型共同确定一个组合。[matrix.json](../../../test/single-language/matrix.json) 是自动化覆盖清单。
 
 | 组合路径                                                         | 配置错误组的失败点                       |
 | ---------------------------------------------------------------- | ---------------------------------------- |
-| [c/cmake/cpp-service](c/cmake/cpp-service)                       | 缺少 `CMakePresets.json`                 |
-| [c/cmake/http-service](c/cmake/http-service)                     | 缺少 `CMakePresets.json`                 |
-| [csharp/dotnetsdk/http-service](csharp/dotnetsdk/http-service)   | 缺少 `packages.lock.json`                |
-| [go/gomodule/http-service](go/gomodule/http-service)             | 缺少 `go.sum`                            |
-| [java/gradle/spring-boot](java/gradle/spring-boot)               | 缺少 `gradle/wrapper/gradle-wrapper.jar` |
-| [java/jdk/http-service](java/jdk/http-service)                   | Java 版本声明无效                        |
-| [java/maven-wrapper/spring-boot](java/maven-wrapper/spring-boot) | 使用不支持的 WAR 打包                    |
-| [java/maven/spring-boot](java/maven/spring-boot)                 | 使用不支持的 WAR 打包                    |
-| [kotlin/gradle/http-service](kotlin/gradle/http-service)         | 缺少 `gradle.lockfile`                   |
-| [kotlin/kotlinc/http-service](kotlin/kotlinc/http-service)       | Kotlin 编译器版本声明无效                |
-| [node/npm/http-service](node/npm/http-service)                   | 缺少 `package-lock.json`                 |
-| [node/npm/typescript-service](node/npm/typescript-service)       | 缺少 `package-lock.json`                 |
-| [node/pnpm/http-service](node/pnpm/http-service)                 | 缺少 `pnpm-lock.yaml`                    |
-| [node/pnpm/typescript-service](node/pnpm/typescript-service)     | 缺少 `pnpm-lock.yaml`                    |
-| [node/yarn/http-service](node/yarn/http-service)                 | 缺少 `yarn.lock`                         |
-| [node/yarn/typescript-service](node/yarn/typescript-service)     | 缺少 `yarn.lock`                         |
-| [php/composer/http-service](php/composer/http-service)           | 缺少 `composer.lock`                     |
-| [php/phpcli/http-service](php/phpcli/http-service)               | PHP 版本声明无效                         |
-| [python/pip/http-service](python/pip/http-service)               | 缺少 `requirements.lock`                 |
-| [python/pipenv/http-service](python/pipenv/http-service)         | 缺少 `Pipfile.lock`                      |
-| [python/poetry/http-service](python/poetry/http-service)         | 缺少 `poetry.lock`                       |
-| [python/uv/http-service](python/uv/http-service)                 | 缺少 `uv.lock`                           |
-| [ruby/bundler/http-service](ruby/bundler/http-service)           | 缺少 `Gemfile.lock`                      |
-| [ruby/rubycli/http-service](ruby/rubycli/http-service)           | Ruby 版本声明无效                        |
-| [rust/cargo/http-service](rust/cargo/http-service)               | 缺少 `Cargo.lock`                        |
+| [c/cmake/cpp-service](../../../test/single-language/c/cmake/cpp-service)                       | 缺少 `CMakePresets.json`                 |
+| [c/cmake/http-service](../../../test/single-language/c/cmake/http-service)                     | 缺少 `CMakePresets.json`                 |
+| [csharp/dotnetsdk/http-service](../../../test/single-language/csharp/dotnetsdk/http-service)   | 缺少 `packages.lock.json`                |
+| [go/gomodule/http-service](../../../test/single-language/go/gomodule/http-service)             | 缺少 `go.sum`                            |
+| [java/gradle/spring-boot](../../../test/single-language/java/gradle/spring-boot)               | 缺少 `gradle/wrapper/gradle-wrapper.jar` |
+| [java/jdk/http-service](../../../test/single-language/java/jdk/http-service)                   | Java 版本声明无效                        |
+| [java/maven-wrapper/spring-boot](../../../test/single-language/java/maven-wrapper/spring-boot) | 使用不支持的 WAR 打包                    |
+| [java/maven/spring-boot](../../../test/single-language/java/maven/spring-boot)                 | 使用不支持的 WAR 打包                    |
+| [kotlin/gradle/http-service](../../../test/single-language/kotlin/gradle/http-service)         | 缺少 `gradle.lockfile`                   |
+| [kotlin/kotlinc/http-service](../../../test/single-language/kotlin/kotlinc/http-service)       | Kotlin 编译器版本声明无效                |
+| [node/npm/http-service](../../../test/single-language/node/npm/http-service)                   | 缺少 `package-lock.json`                 |
+| [node/npm/typescript-service](../../../test/single-language/node/npm/typescript-service)       | 缺少 `package-lock.json`                 |
+| [node/pnpm/http-service](../../../test/single-language/node/pnpm/http-service)                 | 缺少 `pnpm-lock.yaml`                    |
+| [node/pnpm/typescript-service](../../../test/single-language/node/pnpm/typescript-service)     | 缺少 `pnpm-lock.yaml`                    |
+| [node/yarn/http-service](../../../test/single-language/node/yarn/http-service)                 | 缺少 `yarn.lock`                         |
+| [node/yarn/typescript-service](../../../test/single-language/node/yarn/typescript-service)     | 缺少 `yarn.lock`                         |
+| [php/composer/http-service](../../../test/single-language/php/composer/http-service)           | 缺少 `composer.lock`                     |
+| [php/phpcli/http-service](../../../test/single-language/php/phpcli/http-service)               | PHP 版本声明无效                         |
+| [python/pip/http-service](../../../test/single-language/python/pip/http-service)               | 缺少 `requirements.lock`                 |
+| [python/pipenv/http-service](../../../test/single-language/python/pipenv/http-service)         | 缺少 `Pipfile.lock`                      |
+| [python/poetry/http-service](../../../test/single-language/python/poetry/http-service)         | 缺少 `poetry.lock`                       |
+| [python/uv/http-service](../../../test/single-language/python/uv/http-service)                 | 缺少 `uv.lock`                           |
+| [ruby/bundler/http-service](../../../test/single-language/ruby/bundler/http-service)           | 缺少 `Gemfile.lock`                      |
+| [ruby/rubycli/http-service](../../../test/single-language/ruby/rubycli/http-service)           | Ruby 版本声明无效                        |
+| [rust/cargo/http-service](../../../test/single-language/rust/cargo/http-service)               | 缺少 `Cargo.lock`                        |
 
 ## 使用与验证
 
@@ -112,7 +113,7 @@ JDK 21 下的聚焦验证命令：
 mvn -B -ntp -o -pl :windowstolinux-app-main -am -Dtest=NativeArchitectureInspectionTest,PythonBuildInspectorTest,DeploymentBuildRendererTest,EcosystemExtensionFixtureMatrixTest,EcosystemExtensionAcceptanceFixtureTest,EcosystemServiceAcceptanceFixtureTest,RepositoryHttpFixtureTest,PackageStructureArchitectureTest -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
-PowerShell 中将完整的每个 `-D...` 参数放进单引号，避免参数被拆分。实机验收范围和连接参数见 [0.4 期验收](../../docs/development/PHASE-0.4.md#acceptance-methods)。25 种源码代表组合已有各自的真实成功记录，具体管理和回滚范围见[实际覆盖](../../docs/development/PHASE-0.4.md#acceptance-matrix)；125 个场景没有全部执行，不能以代表组合或历史 helper v5 的 17 条路径推定完成。
+PowerShell 中将完整的每个 `-D...` 参数放进单引号，避免参数被拆分。实机验收范围和连接参数见 [0.4 期验收](../../development/PHASE-0.4.md#acceptance-methods)。25 种源码代表组合已有各自的真实成功记录，具体管理和回滚范围见[实际覆盖](../../development/PHASE-0.4.md#acceptance-matrix)；125 个场景没有全部执行，不能以代表组合或历史 helper v5 的 17 条路径推定完成。
 
 ### Python 标准库构建补充
 

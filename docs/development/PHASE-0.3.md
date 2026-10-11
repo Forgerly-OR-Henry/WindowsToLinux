@@ -362,7 +362,7 @@
 - 能力探测：缺失工具、错误版本、命令失败、APT/DNF 选择与发行版正交性。
 - 事务：上传、构建、发布、健康失败、候选清理、旧版本恢复和生命周期。
 - 结构：包深度、架构名、文件与类型同名、顶级类型唯一、旧 FQCN、包环和反向依赖。
-- 测试夹具：`test/single-language/<language>/<build-tool>/<framework-or-function>/<expected-result>-<function>`，场景目录以 `success-` / `failure-` 标明预期部署结果，每个源码语言/工具组合三组正常、两组失败，覆盖清单由 `test/single-language/matrix.json` 与真实分析器核对；具体用途及失败分配见 [测试夹具说明](../../test/README.md)。不得用一个夹具替代多个架构的实机证据。
+- 测试夹具：`test/single-language/<language>/<build-tool>/<framework-or-function>/<expected-result>-<function>`，场景目录以 `success-` / `failure-` 标明预期部署结果，每个源码语言/工具组合三组正常、两组失败，覆盖清单由 `test/single-language/matrix.json` 与真实分析器核对；具体用途及失败分配见 [测试夹具说明](../test/README.md)。不得用一个夹具替代多个架构的实机证据。
 
 #### 本地门禁
 
@@ -456,10 +456,10 @@ helper v5/v7 的部署覆盖见[0.4 期部署验收](PHASE-0.4.md#acceptance-liv
 
 已批准范围：现有125个单语言样例迁入 test/single-language；新增 test/multi-language 下8个独立复杂成功项目。组合为 TS/Java、TS/Node/Go、JS/Node/C#、JS/PHP/Python、TS/Kotlin/Ruby、Rust/C++、Python/C++、Rust/C。需要持久化时统一SQLite。仅实现样例、测试和文档；Windows真实构建、浏览器及控制台业务验证，Linux实机和产品控制台部署另行安排。每个混合项目只保留一份成功源码，故障在临时副本中注入。实施及证据见测试目录说明。
 
-本地交付：八项目通过独立构建与统一业务验收，五个网页通过浏览器流程，三个控制台通过真实文件与子进程故障检查；迁移相关及混合矩阵共 139 项 JUnit 测试通过。入口见 [多语言样例](../../test/multi-language/README.md)，工具版本、结果与未验证范围见 [验证记录](../../test/multi-language/VERIFICATION.md)。该记录仅属于样例与测试基础设施，不扩展产品部署支持结论。
+本地交付：八项目通过独立构建与统一业务验收，五个网页通过浏览器流程，三个控制台通过真实文件与子进程故障检查；迁移相关及混合矩阵共 139 项 JUnit 测试通过。入口见 [多语言样例](../test/multi-language/README.md)，工具版本、结果与未验证范围见 [验证记录](../test/multi-language/VERIFICATION.md)。该记录仅属于样例与测试基础设施，不扩展产品部署支持结论。
 
 ### 中型业务验收升级（2026-09-19）
 
 已批准直接升级原八项目，业务规范先行；新增多实体状态流、并发竞争、规模数据及中断恢复验收。保持 SQLite 与现有语言组合，不兼容旧样例数据、不变更产品部署能力。最终以八项目 Windows 标准验收和五个浏览器流程为准，旧通过记录不能代替新版验证。
 
-2026-09-20：八项目连续 Windows 标准验收及五个浏览器流程通过，原 125 个场景内文件与锁文件摘要保留一致。规模、故障、分次回归结果及并行产品编译阻断见[新版验证记录](../../test/multi-language/VERIFICATION.md)；不推定 Linux 或产品部署通过。
+2026-09-20：八项目连续 Windows 标准验收及五个浏览器流程通过，原 125 个场景内文件与锁文件摘要保留一致。规模、故障、分次回归结果及并行产品编译阻断见[新版验证记录](../test/multi-language/VERIFICATION.md)；不推定 Linux 或产品部署通过。
