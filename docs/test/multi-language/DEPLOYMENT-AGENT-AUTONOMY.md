@@ -1,6 +1,6 @@
 # Agent 自主审批与按需 Skill
 
-2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 与 task-board-06 已通过产品恢复结清为 ENDED/FAILED；05 因独立审批拒绝结束，最新 07 因完整五调用批次被当作不完整而 FAILED，正式 App 仍为空。审批上下文修复通过 25 个直接场景；源码工具反馈及根目录契约修复通过 35 个不同直接场景，均已本地提交。当前修技术批次反馈，业务自主闭环仍待实际证明。本文不将历史部署、本地通过或连接成功算作新业务验收。
+2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 与 task-board-06 已通过产品恢复结清为 ENDED/FAILED；完整批次反馈修复通过 25 个直接场景并提交。最新 08 因长安装独立审批 DENY/OPEN 结束为 FAILED，正式 App 仍为空；正在核对准备拒绝向主模型反馈的闭环及请求身份。审批上下文 25 场景、源码工具反馈及根目录契约 35 场景证据复用。业务自主闭环仍待实际证明，本文不将历史部署、本地通过或连接成功算作新业务验收。
 
 ## 目标与职责
 
@@ -184,5 +184,13 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 `approval-batch-feedback-focused-01/02` 最终覆盖 25 个不同直接场景，全部通过，无未结失败或跳过。首轮 25 项中 19 通过、6 断言失败；五项正确闭合但夹具误预期不在现有白名单的新诊断码，一项 length 正确返回 FAILED 而夹具误预期异常。保留原诊断白名单及 capability 分类，仅修夹具并复验两个失败方法的 12 个场景，不能把两轮相加。验证涵盖模型从超额反馈自主拆批后只授权原完整命令、混合 verdict/笔记/Skill/读取原子拒绝、独立与共享预算、取消/额度不足、原生身份/截断、字符/UTF-8/continuation/大量调用/可见性边界以及 CLOSED/快照/原始绑定。两轮紧邻 Maven 前后 3265 项冻结均零变化，两文件限定格式及差异检查通过，所有验证进程退出，没有 API 或服务器调用。
 
 两份原始前像匹配当前 HEAD，精确增量见 [批次反馈补丁](patches/DEPLOYMENT-AGENT-BATCH-FEEDBACK.patch)，原始 SHA256 为 `152ab64817784a1a2c0378f720cf97b516b89b844ce424d8faa19ced1a0f8cf5`；前像、反向与缓存应用检查通过。首轮失败报告、全部中间证据、旧补丁和迁移改动保留。下一独立 task-board 产品部署尚未验证，本地受控模型通过不能表述为真实闭环成功。
+
+批次反馈修复四项自有路径已本地提交 `31b9255cec403aa2b24380cc5c4c17822e259e4b`，未推送、提交后索引为空。`task-board-08` 于 2026-10-12 06:11:28+08 结束为 FAILED，一项入口失败、零跳过、3265 项源码零变化，验证进程退出、临时凭据环境清除。新任务 `52a974db-6dd7-4bb3-a689-050d1420a9fd`、库 `agent-live-task-board-3pa4slvwis`、App 意图 `wtl-agent-task-board-3pa4snee0o`。主模型自行识别、提交 plan 并选择数据库准备；只读复核发现本段重复 observation 与完整历史批次裁剪存在合理解释，实际已进入 PLANNED，未发现已证实的死循环，因此没有修改主流程。审批独立放行宿主/readiness，长安装审阅自主取证并保存两次笔记后，正式 DENY、discussionStatus=OPEN：段 0 与 506667 字符 managedHelper 的剩余可达效果尚未审完。没有预算耗尽，没有安装 dispatch 或正式发布；本轮未触发超额批次反馈，不能声称该修复已有真实超额调用复验。
+
+准备阶段的实际未发送拒绝被包装为 `DeploymentAgentPrepareNotSentException`，Session 写未发送证明后还原原 ACCESS_DENIED，主模型没有收到 native `ALTERNATIVE_REQUIRED` 或后续讨论机会。已有原生自主拒绝反馈机制在命令等路径使用，目前正核对该准备路径与请求身份；不能通过新 operation 绕过 CLOSED 拒绝，也不能以不足证据替代完整独立审批。模型本次拒绝理由本身不是已证实错误，不能因拒绝直接放行。
+
+只读库确认平台已归档、资源 0；Agent FAILED、语义版本 4、readiness 一次、PREPARE_DISPATCH_NOT_SENT 一次，原准备 action `3dada8396c80723b70453efd82e3b38248d0184d7da947ec817b54b4e9017895` 与 PREPARE_NOT_SENT 对应，effectsSettled=true。没有结清摘要或 formal execution，十张正式业务表仍 0，模型 2、服务器 1 保持，审计字节未变。失败账本、原报告及调查证据保留，没有手工删除记录或服务器文件。
+
+63 项已捕获 provider 响应：input 1001358、output 42170、合计 1043528，hit 558848、miss 442510，捕获输入命中率 55.81%；审批 38 项共 534289，占捕获总量 51.20%，部署 25 项共 509239。reasoning 已知 24256，另 38 项审批 UNKNOWN；四项配置探测用量及传输调用数 UNKNOWN。原生调用含拒绝；本轮比例未作为中断理由，不并入最终冻结八项目。本地现有浏览器验收依赖准备的默认 npm 缓存 EPERM 失败及工作区缓存重试通过、隔离 Chromium runtime 安装通过均已保留；并未访问正式应用页面，没有浏览器业务验收通过证据。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
