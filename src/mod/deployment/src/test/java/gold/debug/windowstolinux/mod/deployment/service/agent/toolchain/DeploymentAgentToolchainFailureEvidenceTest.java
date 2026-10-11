@@ -16,6 +16,44 @@ class DeploymentAgentToolchainFailureEvidenceTest {
     private static final ServerId SERVER = new ServerId("original-server");
 
     @Test
+    void systemCommandFailurePreservesCurrentFixedToolExitAndHashWithoutExecutableEvidence() throws Exception {
+        for (String command : List.of("fallocate", "mke2fs", "mount", "systemd-run", "UNCLASSIFIED")) {
+            String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "SYSTEM_COMMAND_FAILED",
+                "command", command, "exitCode", -9, "outputBytes", 0, "outputSha256", "b".repeat(64)));
+            var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=isolation:SYSTEM_COMMAND_FAILED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+            String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertTrue(observation.contains("reportedDiagnostic"));
+            assertTrue(observation.contains("\"command\":\"" + command + "\""));
+            assertTrue(observation.contains("\"exitCode\":-9"));
+            assertFalse(observation.contains("approved"));
+            assertFalse(observation.contains("retrySafe"));
+            assertEquals(TaskResult.FAILED, result.outcome());
+        }
+    }
+
+    @Test
+    void systemCommandProjectionRejectsRawOutputForeignIdentityAndMalformedNumbers() throws Exception {
+        var fields = Map.<String, Object>of("operation", OPERATION, "phase", "SYSTEM_COMMAND_FAILED", "command", "fallocate",
+            "exitCode", 1, "outputBytes", 10, "outputSha256", "b".repeat(64));
+        for (var change : List.of(Map.<String, Object>entry("operation", "c".repeat(32)), Map.<String, Object>entry("phase", "HOST_SPACE_REQUIRED"),
+            Map.<String, Object>entry("command", "/private/path"), Map.<String, Object>entry("exitCode", true),
+            Map.<String, Object>entry("exitCode", 0), Map.<String, Object>entry("exitCode", 256),
+            Map.<String, Object>entry("outputBytes", -1), Map.<String, Object>entry("outputBytes", 65537),
+            Map.<String, Object>entry("outputSha256", "private-body"), Map.<String, Object>entry("rawOutput", "private-body"))) {
+            var invalid = new LinkedHashMap<>(fields);
+            invalid.put(change.getKey(), change.getValue());
+            String diagnostic = new ObjectMapper().writeValueAsString(invalid);
+            var result = retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=isolation:SYSTEM_COMMAND_FAILED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+            String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertFalse(observation.contains("reportedDiagnostic"));
+            assertFalse(observation.contains("private-body"));
+            assertFalse(observation.contains("/private/path"));
+        }
+        String diagnostic = new ObjectMapper().writeValueAsString(fields);
+        assertEquals(TaskResult.UNKNOWN, retain(TaskResult.UNKNOWN, 70, "TOOLCHAIN_FAILURE=unknown:SYSTEM_COMMAND_FAILED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false).outcome());
+    }
+
+    @Test
     void currentSpaceDiagnosticRetainsOnlyActualNumericShortfallWithoutPermission() throws Exception {
         long gib = 1024L * 1024 * 1024;
         for (String stage : List.of("VOLUME", "PROMOTION")) {

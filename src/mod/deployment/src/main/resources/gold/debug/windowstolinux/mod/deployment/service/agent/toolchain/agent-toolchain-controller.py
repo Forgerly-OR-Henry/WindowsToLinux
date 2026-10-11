@@ -11,6 +11,8 @@ import stat
 
 AGENT_VOLUME_BYTES = 8 * 1024 * 1024 * 1024
 AGENT_HOST_RESERVE_BYTES = 1024 * 1024 * 1024
+AGENT_SYSTEM_COMMANDS = frozenset(('fallocate', 'findmnt', 'losetup', 'mkfs.ext4', 'mke2fs',
+    'mount', 'systemctl', 'systemd-run', 'umount', 'UNCLASSIFIED'))
 AGENT_MAX_MEMBERS = 200000
 AGENT_MAX_PROGRAM = 1024 * 1024
 AGENT_ALIAS = pathlib.Path('/run/wtl-agent-toolchain')
@@ -170,7 +172,11 @@ def agent_os(command, allow_failure=False, timeout=None):
                             agent_reject('SYSTEM_COMMAND_OUTPUT_LIMIT', 'unknown')
             code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
         if code and not allow_failure:
-            agent_reject('SYSTEM_COMMAND_FAILED')
+            name = pathlib.PurePosixPath(command[0]).name
+            error = PreparationFailure('isolation', 'SYSTEM_COMMAND_FAILED')
+            error.command_diagnostic = {'command': name if name in AGENT_SYSTEM_COMMANDS else 'UNCLASSIFIED',
+                'exitCode': code, 'outputBytes': len(output), 'outputSha256': hashlib.sha256(output).hexdigest()}
+            raise error
         return code, bytes(output)
     finally:
         if process.poll() is None:
@@ -1104,14 +1110,21 @@ def agent_main(args):
         os.close(fd)
 
 
-def agent_exception_diagnostic(error, args):
+def agent_diagnostic_operation(args):
     if len(args) == 8 and args[0] == 'prepare':
         operation = args[6]
-    elif len(args) == 4 and args[0] == 'bind' or len(args) == 2 and args[0] in ('setup', 'freeze', 'worker'):
+    elif len(args) == 4 and args[0] == 'bind':
+        operation = args[3]
+    elif len(args) == 2 and args[0] in ('setup', 'freeze', 'worker'):
         operation = args[1]
     else:
         return None
-    if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation):
+    return operation if isinstance(operation, str) and re.fullmatch('[a-f0-9]{32}', operation) else None
+
+
+def agent_exception_diagnostic(error, args):
+    operation = agent_diagnostic_operation(args)
+    if operation is None:
         return None
     families = ((OSError, 'OSError'), (ValueError, 'ValueError'), (KeyError, 'KeyError'),
                 (StopIteration, 'StopIteration'), (subprocess.TimeoutExpired, 'TimeoutExpired'))
@@ -1131,14 +1144,11 @@ def agent_exception_diagnostic(error, args):
 
 
 def agent_space_diagnostic(error, args):
-    if len(args) == 8 and args[0] == 'prepare':
-        operation = args[6]
-    elif len(args) == 4 and args[0] == 'bind':
-        operation = args[3]
-    else:
+    if not (len(args) == 8 and args[0] == 'prepare' or len(args) == 4 and args[0] == 'bind'):
         return None
+    operation = agent_diagnostic_operation(args)
     value = getattr(error, 'diagnostic', None)
-    if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation) or not isinstance(value, dict):
+    if operation is None or not isinstance(value, dict):
         return None
     if set(value) != {'operation', 'phase', 'stage', 'availableBytes', 'requiredBytes', 'reserveBytes'}:
         return None
@@ -1153,6 +1163,22 @@ def agent_space_diagnostic(error, args):
     return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps(value, sort_keys=True, separators=(',', ':'))
 
 
+def agent_command_diagnostic(error, args):
+    operation = agent_diagnostic_operation(args)
+    value = getattr(error, 'command_diagnostic', None)
+    if operation is None or not isinstance(value, dict) or set(value) != {'command', 'exitCode', 'outputBytes', 'outputSha256'}:
+        return None
+    if not isinstance(value['command'], str) or value['command'] not in AGENT_SYSTEM_COMMANDS:
+        return None
+    if type(value['exitCode']) is not int or not -255 <= value['exitCode'] <= 255 or value['exitCode'] == 0:
+        return None
+    if type(value['outputBytes']) is not int or not 0 <= value['outputBytes'] <= 65536:
+        return None
+    if not isinstance(value['outputSha256'], str) or not re.fullmatch('[a-f0-9]{64}', value['outputSha256']):
+        return None
+    return 'TOOLCHAIN_DIAGNOSTIC=' + json.dumps({'operation': operation, 'phase': 'SYSTEM_COMMAND_FAILED', **value}, sort_keys=True, separators=(',', ':'))
+
+
 def agent_cli(args):
     try:
         agent_main(args)
@@ -1163,6 +1189,10 @@ def agent_cli(args):
         print('TOOLCHAIN_FAILURE=' + category + ':' + detail)
         if detail == 'HOST_SPACE_REQUIRED':
             diagnostic = agent_space_diagnostic(error, args)
+            if diagnostic is not None:
+                print(diagnostic)
+        elif detail == 'SYSTEM_COMMAND_FAILED':
+            diagnostic = agent_command_diagnostic(error, args)
             if diagnostic is not None:
                 print(diagnostic)
         return 70 if category == 'unknown' else 65

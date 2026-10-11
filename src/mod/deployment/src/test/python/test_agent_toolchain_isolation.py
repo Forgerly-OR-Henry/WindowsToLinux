@@ -56,6 +56,80 @@ class AgentToolchainIsolationTest(unittest.TestCase):
     def setUp(self):
         self.c = controller()
 
+    @contextlib.contextmanager
+    def system_process(self, output, exit_code):
+        process = mock.Mock()
+        process.wait.return_value = exit_code
+        process.poll.return_value = exit_code
+        process.stdout.fileno.return_value = 42
+        selector = mock.MagicMock()
+        selector.__enter__.return_value = selector
+        selector.get_map.side_effect = ({1: True}, {1: True}, {})
+        selector.select.return_value = [(types.SimpleNamespace(fileobj=process.stdout), 1)]
+        with mock.patch.object(self.c.subprocess, 'Popen', return_value=process) as popen, \
+             mock.patch.object(self.c.selectors, 'DefaultSelector', return_value=selector), \
+             mock.patch.object(self.c.os, 'read', side_effect=(output, b'')), \
+             mock.patch.object(self.c.os, 'killpg', create=True) as kill, \
+             mock.patch.object(self.c.time, 'monotonic', return_value=0):
+            yield process, popen, kill
+
+    def test_system_command_failure_reports_only_fixed_tool_exit_and_output_digest(self):
+        private = b'PRIVATE_CONFIG_BODY and root path /private/body\n'
+        args = ['prepare', 'RUST', '1.95', '1.95.0', '60', '-', OPERATION, 'fixture-release']
+        for path, command in (('/usr/bin/fallocate', 'fallocate'), ('/usr/sbin/mke2fs', 'mke2fs'),
+                ('/private/unknown-tool', 'UNCLASSIFIED')):
+            with self.subTest(path=path), self.system_process(private, 1) as (process, popen, kill):
+                with self.assertRaises(self.c.PreparationFailure) as rejected:
+                    self.c.agent_os([path, '--fixed-interface'])
+            self.assertEqual('SYSTEM_COMMAND_FAILED', rejected.exception.detail)
+            self.assertEqual('isolation', rejected.exception.category)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), mock.patch.object(self.c, 'agent_main', side_effect=rejected.exception):
+                self.assertEqual(65, self.c.agent_cli(args))
+            lines = output.getvalue().splitlines()
+            self.assertEqual('TOOLCHAIN_FAILURE=isolation:SYSTEM_COMMAND_FAILED', lines[0])
+            value = json.loads(lines[1].removeprefix('TOOLCHAIN_DIAGNOSTIC='))
+            self.assertEqual({'operation': OPERATION, 'phase': 'SYSTEM_COMMAND_FAILED', 'command': command,
+                'exitCode': 1, 'outputBytes': len(private), 'outputSha256': hashlib.sha256(private).hexdigest()}, value)
+            self.assertNotIn('PRIVATE_CONFIG_BODY', output.getvalue())
+            self.assertNotIn('/private/', output.getvalue())
+            self.assertNotIn('--fixed-interface', output.getvalue())
+            process.stdout.close.assert_called_once()
+            kill.assert_not_called()
+            popen.assert_called_once()
+
+    def test_allowed_system_nonzero_and_success_keep_original_result_without_diagnostic(self):
+        for code, allowed in ((2, True), (0, False)):
+            with self.subTest(code=code), self.system_process(b'current-native-output', code) as (process, _, kill):
+                self.assertEqual((code, b'current-native-output'), self.c.agent_os(['/usr/bin/systemctl', 'show'], allow_failure=allowed))
+            process.stdout.close.assert_called_once()
+            kill.assert_not_called()
+
+    def test_all_diagnostics_bind_canonical_operation_and_never_encoded_binding_text(self):
+        private = 'PRIVATE_ENCODED_BINDING'
+        frames = (['prepare', 'RUST', '1.95', '1.95.0', '60', '-', OPERATION, 'fixture-release'],
+                  ['bind', private, '60', OPERATION], ['setup', OPERATION], ['freeze', OPERATION], ['worker', OPERATION])
+        error = self.c.PreparationFailure('isolation', 'SYSTEM_COMMAND_FAILED')
+        error.command_diagnostic = {'command': 'mount', 'exitCode': -9, 'outputBytes': 0, 'outputSha256': hashlib.sha256(b'').hexdigest()}
+        for args in frames:
+            with self.subTest(frame=args[0]):
+                self.assertEqual(OPERATION, self.c.agent_diagnostic_operation(args))
+                line = self.c.agent_command_diagnostic(error, args)
+                self.assertEqual(OPERATION, json.loads(line.removeprefix('TOOLCHAIN_DIAGNOSTIC='))['operation'])
+                self.assertNotIn(private, line)
+                unknown = self.c.agent_exception_diagnostic(OSError(28, 'private-body'), args)
+                self.assertEqual(OPERATION, json.loads(unknown.removeprefix('TOOLCHAIN_DIAGNOSTIC='))['operation'])
+                self.assertNotIn('private-body', unknown)
+        args = frames[0]
+        original = dict(error.command_diagnostic)
+        for field, invalid in (('command', '/private/tool'), ('exitCode', True), ('exitCode', 0), ('exitCode', 256),
+                ('outputBytes', -1), ('outputBytes', 65537), ('outputSha256', 'private-body'), ('rawOutput', 'private-body')):
+            error.command_diagnostic = {**original, field: invalid}
+            self.assertIsNone(self.c.agent_command_diagnostic(error, args))
+        for args in (['bind', OPERATION, '60', private], ['prepare', 'RUST', '1.95', '1.95.0', '60', '-', private, OPERATION], ['cleanup', OPERATION]):
+            self.assertIsNone(self.c.agent_diagnostic_operation(args))
+            self.assertIsNone(self.c.agent_exception_diagnostic(OSError(28, 'private-body'), args))
+
     def test_controller_exception_diagnostic_keeps_unknown_without_paths_or_exception_text(self):
         args = ['prepare', 'RUST', '1.95', '-', '600', '-', OPERATION, 'descriptor']
         private = '/private/path-do-not-copy'

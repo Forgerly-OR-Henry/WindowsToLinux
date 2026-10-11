@@ -96,6 +96,16 @@ public final class DeploymentAgentToolchainFailureEvidence {
                     return Optional.empty();
                 return Optional.of(value);
             }
+            if (code.equals("SYSTEM_COMMAND_FAILED")) {
+                if (!value.path("command").isTextual() || !Set.of("fallocate", "findmnt", "losetup", "mkfs.ext4", "mke2fs", "mount", "systemctl", "systemd-run", "umount", "UNCLASSIFIED").contains(value.path("command").asText())
+                    || !value.path("exitCode").isIntegralNumber() || !value.path("exitCode").canConvertToInt()
+                    || value.path("exitCode").intValue() < -255 || value.path("exitCode").intValue() > 255 || value.path("exitCode").intValue() == 0
+                    || !value.path("outputBytes").isIntegralNumber() || !value.path("outputBytes").canConvertToInt()
+                    || value.path("outputBytes").intValue() < 0 || value.path("outputBytes").intValue() > 65536
+                    || !value.path("outputSha256").isTextual() || !value.path("outputSha256").asText().matches("[a-f0-9]{64}"))
+                    return Optional.empty();
+                return Optional.of(value);
+            }
             if (code.equals("HOST_SPACE_REQUIRED")) {
                 long reserve = 1024L * 1024 * 1024;
                 if (!value.path("stage").isTextual() || !Set.of("VOLUME", "PROMOTION").contains(value.path("stage").asText())
