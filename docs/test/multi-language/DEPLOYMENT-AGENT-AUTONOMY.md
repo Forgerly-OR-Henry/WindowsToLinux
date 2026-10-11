@@ -1,6 +1,6 @@
 # Agent 自主审批与按需 Skill
 
-2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 与 task-board-06 已通过产品恢复结清为 ENDED/FAILED；完整批次反馈修复通过 25 个直接场景并提交。最新 08 因长安装独立审批 DENY/OPEN 结束为 FAILED，正式 App 仍为空；正在核对准备拒绝向主模型反馈的闭环及请求身份。审批上下文 25 场景、源码工具反馈及根目录契约 35 场景证据复用。业务自主闭环仍待实际证明，本文不将历史部署、本地通过或连接成功算作新业务验收。
+2026-10-12。状态：自主审批与按需 Skill 已实现并完成分阶段本地定点验证。原 task-board-02 与 task-board-06 已通过产品恢复结清为 ENDED/FAILED。最新 08 因长安装独立审批 DENY/OPEN 结束为 FAILED，正式 App 仍为空；该准备拒绝反馈、稳定安装身份及绑定回应闭环现已通过 25 个不同本地定点场景，下一真实轮尚待启动。完整批次反馈 25 场景、审批上下文 25 场景、源码工具反馈及根目录契约 35 场景证据复用。业务自主闭环仍待实际证明，本文不将历史部署、本地通过或连接成功算作新业务验收。
 
 ## 目标与职责
 
@@ -192,5 +192,17 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 只读库确认平台已归档、资源 0；Agent FAILED、语义版本 4、readiness 一次、PREPARE_DISPATCH_NOT_SENT 一次，原准备 action `3dada8396c80723b70453efd82e3b38248d0184d7da947ec817b54b4e9017895` 与 PREPARE_NOT_SENT 对应，effectsSettled=true。没有结清摘要或 formal execution，十张正式业务表仍 0，模型 2、服务器 1 保持，审计字节未变。失败账本、原报告及调查证据保留，没有手工删除记录或服务器文件。
 
 63 项已捕获 provider 响应：input 1001358、output 42170、合计 1043528，hit 558848、miss 442510，捕获输入命中率 55.81%；审批 38 项共 534289，占捕获总量 51.20%，部署 25 项共 509239。reasoning 已知 24256，另 38 项审批 UNKNOWN；四项配置探测用量及传输调用数 UNKNOWN。原生调用含拒绝；本轮比例未作为中断理由，不并入最终冻结八项目。本地现有浏览器验收依赖准备的默认 npm 缓存 EPERM 失败及工作区缓存重试通过、隔离 Chromium runtime 安装通过均已保留；并未访问正式应用页面，没有浏览器业务验收通过证据。
+
+准备阶段现只在原安装审批捕获的同一失败对象、原任务/组件/来源匹配、严格未发送证明已经落账，且原 API 为绑定本任务的 native DENY 时，才把拒绝作为 `ALTERNATIVE_REQUIRED` 数据交还主模型。只有这条确认未发送的拒绝释放组件准备标记。INVALID、UNKNOWN、CANCELLED、发送 guard、执行和 postprobe 仍沿原错误路径；不能靠同名错误获得未发送证明。
+
+安装 bootstrap nonce 属于原 RemoteTools 的不可变身份，每次调用仍创建新的 mutable attempt，重新生成并完整审查当前实际请求。没有保存旧业务参数或 grant 供重放。主模型可选调用 EXCLUSIVE `review_response{reviewBinding,message}`，向原审批实例对应请求的最新 DENY/OPEN 保存一条有界、可替换或清空的回复。未知、外任务、已被替代及 CLOSED 绑定拒绝；超过 3000 UTF-16 字符单元或 6000 UTF-8 字节的替换整体拒绝。保存回复不触发审批或服务器动作，下一当前提案仍完整独立重审。
+
+回复仅以 USER `MODEL_AUTHORED_DATA`、authority NONE 进入后续 discussion；回复及 ACK 不改变 meaningful facts 或 progressRevision，同事实 CLOSED 不被重开。产品 Skill 明确区分审批模型已经能够读取但尚未审完的页面，与确实不可获得的证据；主模型没有审批专用取证工具，不能编造 helper 正文。模型自主选择取证、回应、调整当前提案或结束，不规定读序、讨论轮数或必然放行。
+
+`agent-prepare-review-01` 最终去重 25 个直接场景全部通过，无未结失败或跳过：审批 9、协议/请求呈现 2、新 H2 集成及原拒绝身份 3、原安装边界 11。受控 H2 场景验证 OPEN 回应后当前提案重新审批、完整 APPROVE 前零安装发送，以及 CLOSED 不因回复、相同计划、重复 readiness 或 nonce 重开。它们使用本地受控模型响应与传输，不是实际 API 模型部署成功。11 个生产/Skill 文件独立只读复核未见具体 P1/P2，读取前后摘要一致。
+
+全部中间失败保留：01 参数启动失败，02 测试编译缺导入；03 的 24 项为 11 通过/13 失败；04 的 15 项为 8 通过/7 失败；05 测试目标清单方法缺布局参数而编译失败；06 仅剩余 7 项中 5 通过/2 失败；07 仅最后 2 项全部通过。夹具依次校准保存服务器前提、native 六字段和 currentRequest、完整安装目标、任务体实际异常与授权代理；未弱化生产审批或证明。旧边界按原逻辑身份去重，不将拆分后的参数序号和重跑次数相加。每轮紧邻前后冻结 3266 项、零变化，12 个自有 Java 文件最终格式检查通过；未运行模块/全项目测试，没有新增 API 或 SSH 用量。
+
+15 文件自有增量见 [准备审批回应精确补丁](patches/DEPLOYMENT-AGENT-PREPARE-REVIEW.patch)，原始 SHA256 `05628cd72f000ece9e1451cb3efd348377c03eb67d1634f2eddfda1186f1828c`。全部前像与保留的 08 源码冻结匹配，反向及缓存应用检查通过；7 项可独立暂存、8 项混合原迁移仅交付自有补丁，旧补丁与证据不改写。原 08 FAILED 账本继续保留；下一新任务须独立证明实际模型闭环与业务成功。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

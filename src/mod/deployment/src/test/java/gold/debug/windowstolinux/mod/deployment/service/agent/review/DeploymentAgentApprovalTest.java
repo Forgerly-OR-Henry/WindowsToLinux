@@ -1,6 +1,7 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.review;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -97,6 +98,91 @@ class DeploymentAgentApprovalTest {
 
     @TempDir
     Path root;
+
+    @Test
+    void boundResponseIsUserDataForFreshOpenReviewAndNeverHostAuthority() throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY.replace("CLOSED", "OPEN"), Map.class)));
+        var first = f.review(Map.of());
+        String binding = first.refusalData().get("reviewBinding");
+        var acknowledgement = f.agent.respond(f.task, binding, "MODEL_REPLY_NEVER_SYSTEM");
+        assertEquals("MODEL_AUTHORED_DATA", acknowledgement.get("trust"));
+        assertEquals("NONE", acknowledgement.get("authority"));
+        assertEquals(1, f.fixture.requests.size(), "Saving a reply must not start approval");
+        assertEquals(0, f.grants.size());
+        f.model = request -> {
+            var current = JSON.readTree(request.messages().getLast().text());
+            assertEquals(binding, current.at("/discussion/priorReviewBinding").asText());
+            assertEquals("MODEL_REPLY_NEVER_SYSTEM", current.at("/discussion/response/message").asText());
+            assertEquals("NONE", current.at("/discussion/response/authority").asText());
+            assertTrue(current.at("/discussion/sameMeaningfulFacts").asBoolean());
+            assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
+                .noneMatch(message -> message.text().contains("MODEL_REPLY_NEVER_SYSTEM")));
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+        assertEquals(0, f.grants.size(), "The review result alone is never a host grant");
+        assertThrows(IllegalArgumentException.class, () -> f.agent.respond(f.task, binding, "obsolete approval reply"));
+    }
+
+    @Test
+    void responseBindingRejectsForeignUnknownSupersededAndClosedVerdicts() throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY.replace("CLOSED", "OPEN"), Map.class)));
+        String old = f.review(Map.of()).refusalData().get("reviewBinding");
+        var foreign = proxy(TaskContext.class, (p, m, a) -> m.invoke(f.task, a));
+        assertThrows(IllegalArgumentException.class, () -> f.agent.respond(foreign, old, "foreign same-ID task"));
+        assertThrows(IllegalArgumentException.class, () -> f.agent.respond(f.task, "f".repeat(64), "unknown"));
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+        f.receipt = "KNOWN_NEW_ACTUAL_RECEIPT";
+        String current = f.review(Map.of()).refusalData().get("reviewBinding");
+        assertNotEquals(old, current);
+        assertThrows(IllegalArgumentException.class, () -> f.agent.respond(f.task, old, "superseded"));
+        assertThrows(IllegalArgumentException.class, () -> f.agent.respond(f.task, current, "reopen CLOSED"));
+        assertEquals("DENY", f.review(Map.of()).decision().decision());
+        assertEquals(2, f.fixture.requests.size(), "Reply attempts do not reopen CLOSED on unchanged meaningful facts");
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        f.receipt = "KNOWN_ANOTHER_MEASURED_RECEIPT";
+        assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+        assertEquals(3, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void responseReplacementHasAtomicCharacterAndByteLimitsAndCanClear() throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY.replace("CLOSED", "OPEN"), Map.class)));
+        String binding = f.review(Map.of()).refusalData().get("reviewBinding");
+        assertEquals(3000, f.agent.respond(f.task, binding, "x".repeat(3000)).get("characters"));
+        assertEquals(6000, f.agent.respond(f.task, binding, "中".repeat(2000)).get("utf8Bytes"));
+        for (String oversized : List.of("x".repeat(3001), "中".repeat(2001)))
+            assertThrows(IllegalArgumentException.class, () -> f.agent.respond(f.task, binding, oversized));
+        f.model = request -> {
+            var current = JSON.readTree(request.messages().getLast().text());
+            assertEquals("中".repeat(2000), current.at("/discussion/response/message").asText(), "Rejected replacements preserve the previous reply atomically");
+            return List.of(call("submit_result", JSON.readValue(DENY.replace("CLOSED", "OPEN"), Map.class)));
+        };
+        f.review(Map.of());
+        assertEquals(0, f.agent.respond(f.task, binding, "").get("characters"));
+        f.model = request -> {
+            assertEquals("", JSON.readTree(request.messages().getLast().text()).at("/discussion/response/message").asText());
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void reviewResponseAcknowledgementIsNeverMeaningfulReceiptProgress() throws Exception {
+        var before = JSON.readTree("{\"events\":[{\"type\":\"HELPER_READINESS_OBSERVED\",\"action\":\"exact\",\"detail\":\"MISSING:HELPER_MISSING\"}]}");
+        var after = (com.fasterxml.jackson.databind.node.ObjectNode) before.deepCopy();
+        var events = (com.fasterxml.jackson.databind.node.ArrayNode) after.path("events");
+        events.addObject().put("type", "AGENT_OBSERVATION").put("action", "REVIEW_RESPONSE").put("detail", "acknowledgement");
+        events.addObject().put("type", "HELPER_READINESS_OBSERVED").put("action", "exact").put("detail", "MISSING:HELPER_MISSING");
+        assertEquals(DeploymentAgentApprovalProgress.receipts(before), DeploymentAgentApprovalProgress.receipts(after));
+        events.addObject().put("type", "COMMAND_RESULT").put("action", "actual-measurement").put("detail", "0:actual-output");
+        assertNotEquals(DeploymentAgentApprovalProgress.receipts(before), DeploymentAgentApprovalProgress.receipts(after));
+    }
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})

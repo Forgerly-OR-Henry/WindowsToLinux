@@ -80,10 +80,35 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
 
     private final Map<String, Result> refused = new HashMap<>();
 
-    private record Discussion(String progress, Result result) {
+    private record Discussion(String progress, Result result, String reviewBinding, String response) {
     }
 
-    private final Map<String, Discussion> discussions = new HashMap<>();
+    private final Map<String, Discussion> discussions = new LinkedHashMap<>();
+
+    /** Replaces one bounded reply to the most recent verdict for its original request identity. */
+    public Map<String, Object> respond(TaskContext supplied, String reviewBinding, String message) {
+        if (supplied != task) throw new IllegalArgumentException("Foreign review-response task");
+        if (reviewBinding == null || !reviewBinding.matches("[0-9a-f]{64}") || message == null
+            || message.length() > 3000 || message.getBytes(StandardCharsets.UTF_8).length > 6000)
+            throw new IllegalArgumentException("Review response requires an exact binding and at most 3000 UTF-16 code units or 6000 UTF-8 bytes");
+        for (var entry : discussions.entrySet()) {
+            var discussion = entry.getValue();
+            if (!discussion.reviewBinding().equals(reviewBinding)) continue;
+            if (!discussion.result().decision().decision().equals("DENY")
+                || !"OPEN".equals(discussion.result().refusalData().get("discussionStatus")))
+                throw new IllegalArgumentException("Review response requires the current OPEN refusal");
+            entry.setValue(new Discussion(discussion.progress(), discussion.result(), reviewBinding, message));
+            return Map.of("trust", "MODEL_AUTHORED_DATA", "authority", "NONE", "reviewBinding", reviewBinding,
+                "saved", true, "characters", message.length(), "utf8Bytes", message.getBytes(StandardCharsets.UTF_8).length);
+        }
+        throw new IllegalArgumentException("Unknown or superseded review-response binding");
+    }
+
+    private void rememberDiscussion(String identity, String progress, Result result, String binding) {
+        if (!discussions.containsKey(identity) && discussions.size() >= 512)
+            discussions.remove(discussions.keySet().iterator().next());
+        discussions.put(identity, new Discussion(progress, result, binding, ""));
+    }
 
     @Override
     public String responseInstructions() {
@@ -162,13 +187,20 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 "request", retryRequest, "revision", revision, "facts", DeploymentAgentApprovalProgress.facts(current),
                 "sources", sourceRevisions, "progress", DeploymentAgentApprovalProgress.receipts(receipts))));
             var previous = refused.get(retryBinding);
-            if (previous != null) return new Result(previous.decision(), withBinding(previous.refusalData(), bound));
+            if (previous != null) {
+                var result = new Result(previous.decision(), withBinding(previous.refusalData(), bound));
+                rememberDiscussion(requestIdentity, retryBinding, result, bound);
+                return result;
+            }
             var discussion = discussions.get(requestIdentity);
             var discussionMetadata = new LinkedHashMap<String, Object>();
             discussionMetadata.put("previouslyDiscussed", discussion != null);
             discussionMetadata.put("sameMeaningfulFacts", discussion != null && discussion.progress().equals(retryBinding));
             discussionMetadata.put("previousVerdict", discussion == null ? Map.of() : Map.of("decision", discussion.result().decision(),
                 "refusalData", discussion.result().refusalData()));
+            discussionMetadata.put("priorReviewBinding", discussion == null ? "" : discussion.reviewBinding());
+            discussionMetadata.put("response", Map.of("trust", "MODEL_AUTHORED_DATA", "authority", "NONE",
+                "message", discussion == null ? "" : discussion.response()));
             var descriptors = new LinkedHashMap<String, Object>();
             JsonNode compact = compact(current, "", descriptors);
             var initial = Map.of("task", task.id().toString(), "binding", binding, "reviewBinding", bound,
@@ -246,7 +278,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                     stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
                     check(binding, revision, sources, receipts);
                     for (var source : sources.values()) source.verify();
-                    discussions.put(requestIdentity, new Discussion(retryBinding, result));
+                    rememberDiscussion(requestIdentity, retryBinding, result, bound);
                     if (result.decision().decision().equals("DENY") && "CLOSED".equals(result.refusalData().get("discussionStatus")))
                         refused.put(retryBinding, result);
                     return result;

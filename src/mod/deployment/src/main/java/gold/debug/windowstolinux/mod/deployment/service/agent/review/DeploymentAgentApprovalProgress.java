@@ -16,7 +16,7 @@ final class DeploymentAgentApprovalProgress {
         "IDENTIFIED", "COMMAND_RESULT", "SEAL_RESULT", "SEALED_ARTIFACT", "HELPER_READINESS_OBSERVED", "AI_PUBLICATION_VERIFIED",
         "AI_PUBLICATION_CLEANED", "CAPABILITY_RESULT", "PATCH_RESULT");
 
-    private static final Set<String> MODEL_STATEMENTS = Set.of("ALTERNATIVE_REQUIRED", "PROPOSAL_REJECTED", "PLAN", "IDENTIFY", "HANDOFF");
+    private static final Set<String> MODEL_STATEMENTS = Set.of("ALTERNATIVE_REQUIRED", "PROPOSAL_REJECTED", "PLAN", "IDENTIFY", "HANDOFF", "REVIEW_RESPONSE");
 
     private DeploymentAgentApprovalProgress() {
     }
