@@ -1,0 +1,73 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -935,0 +936 @@
++                                            .put("endpoints", actual.workload().endpoints().toString())
+@@ -1526,0 +1528,5 @@
++            if (project.equals("task-board") || project.equals("survey-scoring"))
++                requirements.put("acceptance", requirements.get("acceptance")
++                    + " The acceptance client directly calls the business API at http://" + host + ":" + (port + 1)
++                    + ", including when the browser uses a frontend proxy. Verify the browser's runtime API configuration "
++                    + "and, for cross-origin requests, actual CORS preflight and response headers.");
+@@ -1732,0 +1739 @@
++            if (agentMode) browserApi(web, "/api/tasks?projectId=1", "/api/tasks");
+@@ -1738,0 +1746,2 @@
++            if (agentMode) assertTrue(browserApi(web, "/api/tasks/" + created.path("id").asLong() + "?projectId=1", "/api/tasks")
++                .toString().contains("静态真机持久化"));
+@@ -1768,0 +1778 @@
++            if (agentMode) browserApi(web, "/api/surveys", "/api/submissions");
+@@ -1774,0 +1785,2 @@
++            if (agentMode) assertTrue(browserApi(web, "/api/submissions/" + scored.path("id").asLong(), "/api/submissions")
++                .toString().contains("84.21"));
+@@ -1810,0 +1823,52 @@
++    }
++
++    private static com.fasterxml.jackson.databind.JsonNode browserApi(String web, String readPath, String writePath) throws Exception {
++        var configuration = get(web + "/runtime-config.json");
++        assertTrue(configuration.path("apiBase").isTextual(), "The real browser runtime API configuration is required");
++        String base = configuration.path("apiBase").asText();
++        var origin = java.net.URI.create(web);
++        var read = java.net.URI.create(web + "/").resolve(base + readPath);
++        var write = java.net.URI.create(web + "/").resolve(base + writePath);
++        assertEquals(origin.getHost(), read.getHost(), "Browser API must use this test server, not the user's loopback");
++        assertEquals(origin.getScheme(), read.getScheme());
++        boolean crossOrigin = origin.getPort() != read.getPort();
++        var direct = new java.net.ProxySelector() {
++            public List<java.net.Proxy> select(java.net.URI uri) { return List.of(java.net.Proxy.NO_PROXY); }
++            public void connectFailed(java.net.URI uri, java.net.SocketAddress address, java.io.IOException failure) { }
++        };
++        try (var client = java.net.http.HttpClient.newBuilder().proxy(direct)
++            .connectTimeout(java.time.Duration.ofSeconds(10)).build()) {
++            if (crossOrigin) {
++                for (String method : List.of("GET", "POST")) {
++                    var preflight = client.send(java.net.http.HttpRequest.newBuilder(method.equals("GET") ? read : write)
++                        .timeout(java.time.Duration.ofSeconds(20)).header("Origin", web)
++                        .header("Access-Control-Request-Method", method).header("Access-Control-Request-Headers", "content-type")
++                        .method("OPTIONS", java.net.http.HttpRequest.BodyPublishers.noBody()).build(),
++                        java.net.http.HttpResponse.BodyHandlers.ofString());
++                    assertTrue(preflight.statusCode() >= 200 && preflight.statusCode() < 300, preflight::toString);
++                    assertCorsOrigin(preflight, web);
++                    assertTrue(headerIncludes(preflight, "Access-Control-Allow-Methods", method));
++                    assertTrue(headerIncludes(preflight, "Access-Control-Allow-Headers", "content-type"));
++                }
++            }
++            var response = client.send(java.net.http.HttpRequest.newBuilder(read).timeout(java.time.Duration.ofSeconds(20))
++                .header("Origin", web).header("Content-Type", "application/json").GET().build(),
++                java.net.http.HttpResponse.BodyHandlers.ofString());
++            assertTrue(response.statusCode() >= 200 && response.statusCode() < 300, response::toString);
++            assertEquals("2", response.headers().firstValue("X-Sample-Protocol").orElse(""));
++            if (crossOrigin) {
++                assertCorsOrigin(response, web);
++                assertTrue(headerIncludes(response, "Access-Control-Expose-Headers", "X-Sample-Protocol"));
++            }
++            return JSON.readTree(response.body());
++        }
++    }
++
++    private static void assertCorsOrigin(java.net.http.HttpResponse<?> response, String origin) {
++        String allowed = response.headers().firstValue("Access-Control-Allow-Origin").orElse("");
++        assertTrue(allowed.equals(origin) || allowed.equals("*"), "Browser origin must be allowed");
++    }
++
++    private static boolean headerIncludes(java.net.http.HttpResponse<?> response, String name, String value) {
++        return response.headers().allValues(name).stream().flatMap(header -> Arrays.stream(header.split(",")))
++            .map(String::strip).anyMatch(entry -> entry.equalsIgnoreCase(value) || entry.equals("*"));

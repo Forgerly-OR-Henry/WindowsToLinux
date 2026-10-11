@@ -1,0 +1,92 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandReviewScope.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandReviewScope.java
+@@ -36,0 +37,7 @@
++    private final InteractionService host;
++    private final TaskContext task;
++    private final String policy;
++    private final boolean rememberAuthorization;
++    private final Supplier<String> revision;
++    private final Supplier<DeploymentApprovalConversation> conversation;
++
+@@ -52,0 +60,7 @@
++        this(original, host, task, policy, rememberAuthorization, revision, conversation, DeploymentCurrentCommandEvidence.NONE);
++    }
++
++    public DeploymentCommandReviewScope(ModContext original, InteractionService host, TaskContext task,
++                                        String policy, boolean rememberAuthorization, Supplier<String> revision,
++                                        Supplier<DeploymentApprovalConversation> conversation,
++                                        DeploymentCurrentCommandEvidence currentEvidence) throws ApiException {
+@@ -53,0 +68,7 @@
++        this.host = Objects.requireNonNull(host);
++        this.task = Objects.requireNonNull(task);
++        this.policy = policy;
++        this.rememberAuthorization = rememberAuthorization;
++        this.revision = Objects.requireNonNull(revision);
++        this.conversation = conversation;
++        Objects.requireNonNull(currentEvidence);
+@@ -71 +92,2 @@
+-                return DeploymentFixedCommandApproval.approve(original, host, intent, request, supplied, revision.get(), policy, rememberAuthorization, review);
++                return DeploymentFixedCommandApproval.approve(original, host, intent, request, supplied, revision.get(), policy,
++                    rememberAuthorization, review, currentEvidence);
+@@ -114,0 +137,6 @@
++    /** Reuses the original host and transcript without nesting another command reviewer. */
++    public DeploymentCommandReviewScope withCurrentEvidence(DeploymentCurrentCommandEvidence currentEvidence) throws ApiException {
++        return new DeploymentCommandReviewScope(original, host, task, policy, rememberAuthorization, revision,
++            conversation, currentEvidence);
++    }
++
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -70,0 +71,8 @@
++        return approve(context, host, intent, request, task, revision, policy, rememberAuthorization, ai,
++            DeploymentCurrentCommandEvidence.NONE);
++    }
++
++    static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent,
++                                                  CommandRequest request, TaskContext task, String revision, String policy,
++                                                  boolean rememberAuthorization, DeploymentAiJson ai,
++                                                  DeploymentCurrentCommandEvidence currentEvidence) throws ApiException {
+@@ -88,0 +97,6 @@
++            var current = currentEvidence.facts(intent, request, task);
++            if (!current.isEmpty()) {
++                facts.put("currentCommandEvidence", current);
++                requireRoute(context, task, revision);
++            }
++            currentEvidence.verify(intent, request, task);
+@@ -103,2 +117,2 @@
+-            if (!review.decision().equals("APPROVE"))
+-                throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED",
++            if (!review.decision().equals("APPROVE")) {
++                var refusal = new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED",
+@@ -106,0 +121,8 @@
++                try {
++                    currentEvidence.reviewed(intent, request, task, review);
++                } catch (ApiException unavailable) {
++                    refusal.addSuppressed(unavailable);
++                }
++                throw refusal;
++            }
++            currentEvidence.reviewed(intent, request, task, review);
+@@ -107,0 +130 @@
++            currentEvidence.verify(intent, request, task);
+@@ -110,0 +134 @@
++            currentEvidence.verify(intent, request, task);
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
+@@ -172 +172,5 @@
+-                    var cleaned = publisher.cleanup(proposal, candidates, true);
++                    var cleanupEvidence = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCleanupEvidence(
++                        context, receipts, server, task, revision, proposal, candidates, journal, guard, true);
++                    var cleanupPublisher = new DeploymentGraphPublisher(cleanupEvidence.context(), cleanupEvidence, server, task,
++                        (type, action, detail) -> journal.event(task, type, action, detail), guard);
++                    var cleaned = cleanupPublisher.cleanup(proposal, candidates, true);
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -141 +141,6 @@
+-            var cleaned = publisher.cleanup(proposal, candidates.orElseThrow(), publicationStarted);
++            var cleanupEvidence = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCleanupEvidence(
++                reviewed, session, server, task, reviewRevision, proposal, candidates.orElseThrow(), journal,
++                gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard.NONE, publicationStarted);
++            var cleanupPublisher = new DeploymentGraphPublisher(cleanupEvidence.context(), cleanupEvidence, server, task,
++                (type, action, detail) -> journal.event(task, type, action, detail));
++            var cleaned = cleanupPublisher.cleanup(proposal, candidates.orElseThrow(), publicationStarted);
