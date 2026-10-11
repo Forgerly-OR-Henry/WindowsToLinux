@@ -93,7 +93,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                                long event, String resultDigest) {
     }
 
-    private record Health(Selection selected, DeploymentHealthCheck check, List<String> policySources) {
+    private record Health(Selection selected, DeploymentHealthCheck check, List<String> policySources,
+                          String canonicalCommand) {
     }
 
     private record RuntimeQuery(Selection selected, String verb) {
@@ -165,10 +166,22 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             if (health != null) {
                 facts.put("healthPolicySources", health.policySources());
                 facts.put("typedHealthPolicy", healthFacts(health.check()));
-                facts.put("argumentBinding", Map.of("verb", "application-health", "applicationIdArgument", selected.part().unit().id(),
-                    "ownershipManifestArgument", selected.part().unit().ownershipManifestSha256(),
-                    "healthPayloadArgument", DeploymentWorkloadArguments.healthPayload(health.check()),
-                    "healthPayloadMeaning", "Canonical Base64 NUL-framed health-v1 policy; not an application id, resource id or permission"));
+                var unit = selected.part().unit();
+                String payload = DeploymentWorkloadArguments.healthPayload(health.check());
+                facts.put("argumentBinding", Map.ofEntries(Map.entry("verb", "application-health"), Map.entry("argumentCount", 3),
+                    Map.entry("applicationIdArgument", unit.id()), Map.entry("ownershipManifestArgument", unit.ownershipManifestSha256()),
+                    Map.entry("healthPayloadArgument", payload),
+                    Map.entry("healthPayloadMeaning", "Canonical Base64 NUL-framed health-v1 policy; not an application id, resource id or permission"),
+                    Map.entry("literalArguments", List.of(
+                        argument(1, "applicationId", unit.id(), "Original managed application's id; helper path and verb are not counted as positional arguments"),
+                        argument(2, "ownershipManifestSha256", unit.ownershipManifestSha256(), "Original ownership manifest SHA256; not the resource target id"),
+                        argument(3, "healthPayload", payload, "Complete current canonical Base64 NUL-framed health-v1 third argument; not omitted, decoded program bytes, a resource id or permission"))),
+                    Map.entry("resourceTargetKind", "deployment-release"), Map.entry("resourceTargetId", unit.releaseRoot()),
+                    Map.entry("resourceTargetMeaning", "The unchanged resource target is this unit's managed release root, separate from all three positional arguments")));
+                facts.put("commandBinding", Map.of("exactCommand", request.script(), "expectedCanonicalCommand", health.canonicalCommand(),
+                    "matchesCanonicalCommand", request.script().equals(health.canonicalCommand()),
+                    "unwrappedCanonicalInvocation", DeploymentManagedHelperBundle.verifiedBody(health.canonicalCommand()),
+                    "meaning", "selectHealth matched the actual complete guarded request script, timeout, output limit, empty stdin and intent against the generated canonical CommandRequest. The unwrapped invocation is its fixed helper path, verb and three ordered shell-quoted literal arguments, extracted by the existing integrity-guard contract; no shell token guessing, execution or permission is implied."));
             } else {
                 var unit = selected.part().unit();
                 facts.put("argumentBinding", Map.of("verb", runtime.verb(), "argumentCount", 2,
@@ -384,7 +397,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 try (var expected = command("application-health", List.of(unit.id(), unit.ownershipManifestSha256(),
                     DeploymentWorkloadArguments.healthPayload(policy.getKey())), policy.getKey().timeoutSeconds() + 45L)) {
                     if (matches(intent, request, expected, selected, HEALTH))
-                        return new Health(selected, policy.getKey(), List.copyOf(policy.getValue()));
+                        return new Health(selected, policy.getKey(), List.copyOf(policy.getValue()), expected.script());
                 }
             }
         }

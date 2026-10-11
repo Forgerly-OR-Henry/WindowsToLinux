@@ -150,6 +150,80 @@ class DeploymentAgentHealthEvidenceTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void canonicalHealthArgumentsAreCompleteOrderedAndMatchTheActualCommandBytes() throws Exception {
+        try (var frame = new Frame(); var request = frame.healthRequest("none")) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            var intent = frame.healthIntent(request, "none");
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            var approved = review.approveCommand(intent, request, frame.task);
+            assertEquals(TaskResult.SUCCEEDED, approved.outcome());
+            var current = frame.reviewFacts.getLast().path("currentCommandEvidence");
+            var binding = current.path("argumentBinding");
+            var unit = frame.part("backend").unit();
+            String payload = DeploymentWorkloadArguments.healthPayload(frame.part("backend").reviewedRuntime().healthCheck());
+            assertEquals("application-health", binding.path("verb").asText());
+            assertEquals(3, binding.path("argumentCount").asInt());
+            var arguments = binding.path("literalArguments");
+            assertEquals(3, arguments.size());
+            var roles = List.of("applicationId", "ownershipManifestSha256", "healthPayload");
+            var values = List.of(unit.id(), unit.ownershipManifestSha256(), payload);
+            for (int index = 0; index < 3; index++) {
+                assertEquals(index + 1, arguments.get(index).path("position").asInt());
+                assertEquals(roles.get(index), arguments.get(index).path("role").asText());
+                assertEquals(values.get(index), arguments.get(index).path("value").asText());
+                assertFalse(arguments.get(index).path("meaning").asText().isBlank());
+                assertNotEquals(unit.releaseRoot(), arguments.get(index).path("value").asText());
+            }
+            assertEquals("deployment-release", binding.path("resourceTargetKind").asText());
+            assertEquals(unit.releaseRoot(), binding.path("resourceTargetId").asText());
+            var invocationValues = new ArrayList<>(List.of(DeploymentManagedHelperBundle.PATH, "application-health"));
+            invocationValues.addAll(values);
+            String invocation = invocationValues.stream().map(DeploymentBuildCommandChannel::shellQuote)
+                .collect(java.util.stream.Collectors.joining(" "));
+            assertEquals(invocation, current.at("/commandBinding/unwrappedCanonicalInvocation").asText());
+            assertEquals(invocation, DeploymentManagedHelperBundle.verifiedBody(request.script()));
+            assertEquals(request.script(), current.at("/commandBinding/exactCommand").asText());
+            assertEquals(request.script(), current.at("/commandBinding/expectedCanonicalCommand").asText());
+            assertArrayEquals(request.script().getBytes(StandardCharsets.UTF_8),
+                current.at("/commandBinding/exactCommand").asText().getBytes(StandardCharsets.UTF_8));
+            assertArrayEquals(request.script().getBytes(StandardCharsets.UTF_8),
+                DeploymentManagedHelperBundle.verifiedCommand(invocation).getBytes(StandardCharsets.UTF_8));
+            assertTrue(current.at("/commandBinding/matchesCanonicalCommand").asBoolean());
+            Map<String, Object> hashedFacts = JSON.convertValue(current, Map.class);
+            String digest = (String) hashedFacts.remove("evidenceSha256");
+            hashedFacts.remove("reviewRequestSha256");
+            assertEquals(digest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
+            var changedBinding = new LinkedHashMap<>((Map<String, Object>) hashedFacts.get("argumentBinding"));
+            var literalArguments = (List<?>) changedBinding.get("literalArguments");
+            changedBinding.put("literalArguments", literalArguments.subList(0, 2));
+            hashedFacts.put("argumentBinding", changedBinding);
+            assertNotEquals(digest, DeploymentAgentInputs.hash(DeploymentAiJson.facts(hashedFacts, 1048576)));
+            assertEquals(TaskResult.SUCCEEDED, evidence.execute(request, approved.value().orElseThrow()).outcome());
+            assertEquals(2, frame.statusQueries);
+            assertEquals(1, frame.healthDispatches);
+            assertEquals(intent.exactAction(), frame.healthActions.getFirst().actualAction());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing-payload", "unit"})
+    void missingOrReplacedHealthArgumentsCannotAcquireEvidenceOrDispatch(String change) throws Exception {
+        try (var frame = new Frame(); var request = frame.healthRequest(change)) {
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
+            int reviews = frame.reviewFacts.size();
+            int authorizations = frame.hostAuthorizations;
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            assertThrows(ApiException.class, () -> review.approveCommand(frame.healthIntent(request, "none"), request, frame.task));
+            assertEquals(reviews, frame.reviewFacts.size());
+            assertEquals(authorizations, frame.hostAuthorizations);
+            assertEquals(0, frame.healthDispatches);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void frontendOwnMaintenanceMarkerUsesItsActualReceiptWithoutChangingBackendHealthOrPermissions() throws Exception {
         try (var frame = new Frame()) {
             String frontendMarker = "deployment-" + frame.release("frontend");
@@ -1024,8 +1098,11 @@ class DeploymentAgentHealthEvidenceTest {
                 ? new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:9999/foreign"), 200, 120)
                 : change.equals("kind") ? new DeploymentHealthCheck.Command(new DeploymentCommand("verify.sh", List.of()), "foreign", 120)
                 : part("backend").reviewedRuntime().healthCheck());
-            String script = List.of(DeploymentManagedHelperBundle.PATH, "application-health", unit.id(),
-                    change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256(), payload).stream()
+            var arguments = new ArrayList<>(List.of(DeploymentManagedHelperBundle.PATH, "application-health",
+                change.equals("unit") ? "controlled-foreign" : unit.id(),
+                change.equals("manifest") ? "f".repeat(64) : unit.ownershipManifestSha256()));
+            if (!change.equals("missing-payload")) arguments.add(payload);
+            String script = arguments.stream()
                 .map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
             return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script), change.equals("stdin") ? new byte[]{1} : new byte[0],
                 Duration.ofSeconds(change.equals("timeout") ? 90 : 165), change.equals("output") ? 8192 : 4096);

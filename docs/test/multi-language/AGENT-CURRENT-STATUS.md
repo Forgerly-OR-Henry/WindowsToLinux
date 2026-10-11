@@ -213,3 +213,9 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 469–471 已核对并补齐当前健康请求的实际路径证据：入口在 health_loaded 前解析当前 canonical payload，重设 kind；若实际 mode 变为 ON_DEMAND，非 COMMAND 会先拒绝，因此当前 HTTP 不会执行 verification 或 UDP custom probe。证据明确保留锁与 orphan 副作用、未展开依赖和 HTTP 响应归属限制，不授权执行。维护标记新增 ABSENT / OWN_EXPECTED_RELEASE 和是否存在等明确事实；旧 false 保留，但说明“无标记”不是外来身份冲突，foreign token 仍拒绝。
 
 471 仅新增 8 个及直接受影响既有 19 个场景，27 PASS、0 跳过，Maven 0、Java 0，无 API/SSH 请求。其中六个实际 Git Bash 场景运行完整 pinned 入口、解析器和健康分支，OS/加载/程序边界使用显式受控夹具，不能表述为完整 helper 或真实服务器验证。三 Java 精确格式化及运行前后 SHA 核对通过；467 的 HelperSourceEvidence 两文件、原203样例及59个冻结 helper 资源未改。接下来通过原产品恢复472；UNKNOWN 不会释放 TaskLedger 的 TASK_END 逻辑申请，公开 blockers 又省略这类申请，故不得以没有 SERVER blocker 或新数据库绕过原任务准入。待原恢复结清后，重新取得当次产品容量回执并明确检查至少13GiB，再仅复验任务看板。
+
+472 原恢复仍在 backend 健康审批停止：两个 original-status 查询通过，合法 DENY 认为三参数接口只提供两项输入。当前 selectHealth 实际严格匹配 applicationId、ownershipManifestSha256、canonical health payload 三个参数；完整补充证据已发出，健康请求 visible bytes 为113,583。命令未发送，没有清理或 STOP/DISABLE，原UNKNOWN及拒绝保留。2059源码冻结零变化、Maven1、Java0；新增4次APP为58,483 Token，输入57,870、输出613、命中14,720、未命中43,150，缓存率25.4%。445跨版本调试累计2,589,341，四项配置探测仍未知，不作为正式验收指标。下一小修复仅在Agent HEALTH证据补有序三个literalArguments与实际canonical request字节匹配事实，避免与runtime两参数展示混淆，不改变执行命令或审批权限。
+
+473/474 的补充仅作用于 Agent HEALTH：保留原字段，增加有序三个 literalArguments 和独立 resource target；展示实际与 expected canonical 完整脚本的机械匹配结果，并通过既有 verifiedBody 提取易读调用正文。该 expected 来自 selectHealth 已匹配的实际请求，全量纳入证据摘要；未增加 shell 解析器、改变命令、helper 或审批权限。
+
+474 只执行新增3场景和直接受影响20场景，23 PASS、0跳过，Maven0、Java0，无API/SSH。正例验证完整三实参、实际UTF-8字节与证据SHA；缺payload/替换unit均在证据或发送前拒绝；原APP、宿主授权、发送三处重校验与合法DENY终止保留。两Java精确格式化与运行前后SHA检查通过，203样例、59helper资源以及467 HelperSourceEvidence与470 Bash测试文件未变。接下来仅进行原产品恢复475，不能将本地通过或原恢复结清计为任务看板业务成功。
