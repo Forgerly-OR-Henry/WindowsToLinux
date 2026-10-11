@@ -82,9 +82,10 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                              DeploymentGraphPublisher.Candidate candidate, DeploymentRemoteWorkspace workspace) {
     }
 
-    private record Query(ActionIntent intent, Map<String, Object> request, Selection selected, boolean approved) {
+    private record Query(ActionIntent intent, Map<String, Object> request, Selection selected, String evidenceDigest,
+                         String reviewDigest, boolean approved) {
         Query approve() {
-            return new Query(intent, request, selected, true);
+            return new Query(intent, request, selected, evidenceDigest, reviewDigest, true);
         }
     }
 
@@ -144,33 +145,23 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 var selected = selectQuery(intent, request);
                 if (observations.containsKey(selected.part().componentId()))
                     throw new IllegalStateException("Original status was already observed in this verification");
-                query = new Query(intent, requestFacts(intent, request), selected, false);
-                return Map.of();
+                var facts = queryFacts(intent, request, selected);
+                String evidenceDigest = digest(facts);
+                String reviewDigest = digest(Map.of("command", requestFacts(intent, request), "currentEvidenceSha256", evidenceDigest));
+                facts.put("evidenceSha256", evidenceDigest);
+                facts.put("reviewRequestSha256", reviewDigest);
+                query = new Query(intent, requestFacts(intent, request), selected, evidenceDigest, reviewDigest, false);
+                journal.event(task, "HEALTH_STATUS_QUERY_REQUEST", reviewDigest,
+                    "exactAction=" + DeploymentAgentInputs.hash(intent.exactAction()) + ";evidence=" + evidenceDigest);
+                return Collections.unmodifiableMap(facts);
             }
             var health = operation.equals(HEALTH) ? selectHealth(intent, request) : null;
             var runtime = health == null ? selectRuntime(intent, request) : null;
             requireObservations();
             var selected = health != null ? health.selected() : runtime.selected();
             var events = journal.events(task);
-            var facts = new LinkedHashMap<String, Object>();
-            facts.put("schema", health != null ? "agent-current-health-evidence.v1" : "agent-current-runtime-evidence.v1");
-            facts.put("scope", "THIS_GRAPH_VERIFICATION_ONLY; retained events are references, never current receipts or execution permission");
-            facts.put("currentTask", task.id().toString());
-            facts.put("originalTask", task.id().toString());
-            facts.put(health != null ? "healthExactActionSha256" : "runtimeExactActionSha256", DeploymentAgentInputs.hash(intent.exactAction()));
-            facts.put("server", server.id());
-            facts.put("targetProfileSha256", profile);
-            facts.put("authenticatedTargetSha256", snapshot.identity().targetDigest());
-            facts.put("originalConfigurationRevision", snapshot.identity().configurationDigest());
-            facts.put("currentReviewConfigurationRevision", revision);
-            facts.put("originalExecution", execution.identity().executionId().toString());
-            facts.put("originalReviewedRevision", execution.identity().reviewedRevision());
-            facts.put("originalSourceRevision", originalSourceRevision);
-            facts.put("originalRequestSha256", DeploymentAgentInputs.hash(execution.requestJson()));
-            facts.put("proposalSha256", DeploymentAgentInputs.hash(proposal.toString()));
-            facts.put("application", proposal.graph().applicationId());
-            facts.put("healthOwner", proposal.graph().healthComponentId());
-            facts.put("unitBinding", unitFacts(selected));
+            var facts = baseFacts(intent, selected, health != null ? "agent-current-health-evidence.v1" : "agent-current-runtime-evidence.v1",
+                health != null ? "healthExactActionSha256" : "runtimeExactActionSha256");
             if (health != null) {
                 facts.put("healthPolicySources", health.policySources());
                 facts.put("typedHealthPolicy", healthFacts(health.check()));
@@ -230,8 +221,10 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         boolean denial = decision.decision().equals("DENY");
         if (denial) stopped = true;
         try {
-            String reviewDigest = !operation.equals(STATUS) && pending != null ? pending.reviewDigest() : digest(requestFacts(intent, request));
-            String evidenceDigest = !operation.equals(STATUS) && pending != null ? pending.evidenceDigest() : "none";
+            String reviewDigest = operation.equals(STATUS) && query != null ? query.reviewDigest()
+                : pending != null ? pending.reviewDigest() : digest(requestFacts(intent, request));
+            String evidenceDigest = operation.equals(STATUS) && query != null ? query.evidenceDigest()
+                : pending != null ? pending.evidenceDigest() : "none";
             journal.event(task, operation.equals(STATUS) ? denial ? "HEALTH_STATUS_QUERY_DENIED" : "HEALTH_STATUS_QUERY_APPROVED"
                     : operation.equals(HEALTH) ? denial ? "HEALTH_REVIEW_DENIED" : "HEALTH_REVIEW_APPROVED"
                     : denial ? "RUNTIME_REVIEW_DENIED" : "RUNTIME_REVIEW_APPROVED",
@@ -307,6 +300,73 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             }
         }
         throw new IllegalArgumentException("Query is not the complete original status request");
+    }
+
+    private LinkedHashMap<String, Object> queryFacts(ActionIntent intent, CommandRequest request, Selection selected) throws Exception {
+        var facts = baseFacts(intent, selected, "agent-current-original-status-evidence.v1", "statusExactActionSha256");
+        var unit = selected.part().unit();
+        facts.put("evidenceSource", "ORIGINAL_FORMAL_PROPOSAL_AND_CURRENT_LOCAL_BINDING_BEFORE_QUERY");
+        facts.put("argumentBinding", Map.of("verb", "publication-original-status", "argumentCount", 7,
+            "positionalArguments", List.of(
+                argument(1, "applicationId", unit.id(), "Original managed unit application id; determines its managed release root"),
+                argument(2, "ownershipManifestSha256", unit.ownershipManifestSha256(), "Original ownership digest to compare with remote owner markers; not a deployment id or resource id"),
+                argument(3, "originalTask", task.id().toString(), "Original root task; the helper checks original snapshot and candidate task ownership"),
+                argument(4, "candidateId", selected.candidate().candidateId(), "Original application-bound candidate derived from the retained source archive; not a release directory"),
+                argument(5, "expectedReleaseSha256", selected.commit().release().sha256(), "Expected original proposal release; not an observation or assertion of actual CURRENT"),
+                argument(6, "backend", backend(selected), "Original reviewed runtime backend: native or container"),
+                argument(7, "engine", engine(selected), "none for native; the original reviewed docker/podman engine for container"))));
+        facts.put("resourceBinding", Map.of("kind", "deployment-release", "id", unit.releaseRoot(),
+            "meaning", "The unchanged resource target is the selected unit's managed release root; no positional argument is the resource id"));
+        facts.put("pendingQuery", requestFacts(intent, request));
+        facts.put("originalGraphBindings", selections.values().stream().map(DeploymentAgentHealthEvidence::unitFacts).toList());
+        facts.put("formalReferences", references.entrySet().stream().sorted(Comparator.comparing(value -> value.getKey().toString()))
+            .map(value -> Map.of("kind", value.getKey().kind().name(), "resourceId", value.getKey().resourceId(),
+                "purpose", value.getKey().purpose().orElse("none"), "businessKey", value.getKey().businessKey(),
+                "referenceId", value.getValue().orElseThrow().toString())).toList());
+        facts.put("originalExecutionState", Map.of("phase", execution.phase(), "outcome", execution.outcome().map(value -> value.name()).orElse("UNRECORDED"),
+            "businessCommitted", execution.businessCommitted(), "cleanupComplete", execution.cleanupComplete()));
+        facts.put("localBindingChecks", List.of("Original immutable proposal, formal execution and reference reservations",
+            "Original source archive and latest selected candidate/source/artifact/tool seals",
+            "Current authenticated target and saved server profile; frozen current review route",
+            "Original publication FINISHED/VERIFIED evidence and modifying-effect boundary; unresolved outer delivery is not declared settled"));
+        facts.put("helperSha256", DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
+        facts.put("enforcedQueryBoundary", "When executed, the pinned publication-original-status helper validates all seven literal arguments. If CURRENT exists it must resolve exactly inside this application's managed releases directory with the original ownership manifest. Existing snapshots and candidate .agent-task markers must belong to the original task; the build unit is queried independently. Retained releases must carry the same ownership manifest. The expected release constrains maintenance ownership; actual CURRENT is read and returned independently. These are execution-time guards, not facts already observed by this pending request.");
+        facts.put("receiptState", "NO_RESULT_FOR_THIS_PENDING_REQUEST");
+        facts.put("observationLimits", "Only retained original proposal evidence and current local bindings are supplied before this query executes. No fresh remote receipt, remote ownership, build state, listener ownership or health is asserted. Expected release is not actual CURRENT. Sealed source/artifact/tools are retained bindings, not freshly hashed remote content; artifact SHA and release SHA identify different objects. Historical events or approvals do not authorize this request.");
+        facts.put("originalEventReferences", eventReferences(journal.events(task)));
+        facts.put("priorDiagnosticLocator", Map.of("task", task.id().toString(), "eventCode", "DEPLOYMENT_AGENT_COMMAND_REVIEW_DENIED",
+            "currentRequestExactActionSha256", DeploymentAgentInputs.hash(intent.exactAction()),
+            "priorExactActionBinding", "UNKNOWN unless a retained original ledger denial supplies its exact binding",
+            "limit", "Task diagnostic locator only; old ledger denials are retained as original references, never synthesized or reauthorized"));
+        return facts;
+    }
+
+    private LinkedHashMap<String, Object> baseFacts(ActionIntent intent, Selection selected, String schema, String exactActionKey) {
+        var facts = new LinkedHashMap<String, Object>();
+        facts.put("schema", schema);
+        facts.put("scope", "THIS_GRAPH_VERIFICATION_ONLY; retained events are references, never current receipts or execution permission");
+        facts.put("currentTask", task.id().toString());
+        facts.put("originalTask", task.id().toString());
+        facts.put(exactActionKey, DeploymentAgentInputs.hash(intent.exactAction()));
+        facts.put("server", server.id());
+        facts.put("targetProfileSha256", profile);
+        facts.put("authenticatedTargetSha256", snapshot.identity().targetDigest());
+        facts.put("originalConfigurationRevision", snapshot.identity().configurationDigest());
+        facts.put("currentReviewConfigurationRevision", revision);
+        facts.put("originalExecution", execution.identity().executionId().toString());
+        facts.put("originalReviewedRevision", execution.identity().reviewedRevision());
+        facts.put("originalSourceRevision", originalSourceRevision);
+        facts.put("originalRequestSha256", DeploymentAgentInputs.hash(execution.requestJson()));
+        facts.put("proposalSha256", DeploymentAgentInputs.hash(proposal.toString()));
+        facts.put("application", proposal.graph().applicationId());
+        facts.put("healthOwner", proposal.graph().healthComponentId());
+        facts.put("unitBinding", unitFacts(selected));
+        return facts;
+    }
+
+    private static Map<String, Object> argument(int position, String role, String value, String meaning) {
+        return Map.of("position", position, "role", role, "value", value, "meaning", meaning);
     }
 
     private Health selectHealth(ActionIntent intent, CommandRequest request) {
@@ -495,7 +555,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 var resultFacts = Map.<String, Object>of("outcome", result.outcome().name(), "exitCode", receipt.exitCode().orElseThrow(),
                     "stdout", receipt.stdout(), "stderr", receipt.stderr(), "truncated", receipt.truncated());
                 String resultDigest = digest(resultFacts);
-                journal.event(task, "HEALTH_STATUS_QUERY_RESULT", DeploymentAgentInputs.hash(selectedQuery.intent().exactAction()), resultDigest);
+                journal.event(task, "HEALTH_STATUS_QUERY_RESULT", DeploymentAgentInputs.hash(selectedQuery.intent().exactAction()),
+                    "resultSha256=" + resultDigest + ";review=" + selectedQuery.reviewDigest() + ";evidence=" + selectedQuery.evidenceDigest());
                 observations.put(selectedQuery.selected().part().componentId(), new Observation(selectedQuery, resultFacts, status,
                     journal.events(task).getLast().id(), resultDigest));
             } catch (Exception unavailable) {
@@ -569,7 +630,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     private List<Map<String, Object>> eventReferences(List<DeploymentAgentActionLog.Event> events) {
         var types = Set.of("TARGET_PROFILE", "REMOTE_TARGET", "SOURCE", "CANDIDATE", "CURRENT_SOURCE", "SEALED_ARTIFACT", "SEALED_TOOLS",
             "AI_PUBLICATION", "AI_PUBLICATION_VERIFIED", "AI_PUBLICATION_FINISHED", "DELIVERY_EXECUTING", "DELIVERY_RESULT", "RECOVERY_REVIEW_BOUND",
-            "HEALTH_REVIEW_DENIED", "HEALTH_REVIEW_REQUEST", "HEALTH_STATUS_QUERY_DENIED", "RUNTIME_REVIEW_DENIED", "RUNTIME_REVIEW_REQUEST");
+            "HEALTH_REVIEW_DENIED", "HEALTH_REVIEW_REQUEST", "HEALTH_STATUS_QUERY_DENIED", "HEALTH_STATUS_QUERY_REQUEST", "RUNTIME_REVIEW_DENIED", "RUNTIME_REVIEW_REQUEST");
         return events.stream().filter(value -> types.contains(value.type())).map(value -> Map.<String, Object>of("id", value.id(),
             "type", value.type(), "action", value.action(), "detail", value.detail())).toList();
     }

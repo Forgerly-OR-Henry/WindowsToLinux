@@ -1,0 +1,25 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/delivery/DeploymentGraphPublisher.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/delivery/DeploymentGraphPublisher.java
+@@ -271,0 +272,13 @@
++        return observeOriginal(proposal, candidates, ignored -> {
++        });
++    }
++
++    /** Preserves the original status outcome while reporting a caught failure to caller-owned diagnostics.
++     * @param proposal original immutable proposal
++     * @param candidates original candidate identities
++     * @param diagnostics failure observer, never an execution permission
++     * @return original observations or retained uncertainty */
++    public OperationResult<Map<String, DeploymentOriginalPublishStatus>> observeOriginal(
++        DeploymentPublishResult proposal, Map<String, Candidate> candidates,
++        java.util.function.Consumer<Exception> diagnostics) {
++        Objects.requireNonNull(diagnostics);
+@@ -295,0 +309,5 @@
++            try {
++                diagnostics.accept(unavailable);
++            } catch (RuntimeException diagnosticFailure) {
++                unavailable.addSuppressed(diagnosticFailure);
++            }
+@@ -319 +337 @@
+-            var statuses = observeOriginal(proposal, candidates);
++            var statuses = observeOriginal(proposal, candidates, diagnostics);

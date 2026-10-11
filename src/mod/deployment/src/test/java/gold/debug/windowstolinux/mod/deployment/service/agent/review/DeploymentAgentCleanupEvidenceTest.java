@@ -64,6 +64,62 @@ class DeploymentAgentCleanupEvidenceTest {
 
     private static final String DENIAL = "Current candidate cleanup lacks an authorized deletion boundary.";
 
+    @ParameterizedTest
+    @ValueSource(strings = {"text", "denied"})
+    void originalStatusFailureReachesRecoveryDiagnosticsWithoutDispatchOrChangingOutcome(String failure) throws Exception {
+        try (var frame = new Frame()) {
+            frame.statusReviewFailure = failure;
+            var failures = new ArrayList<Exception>();
+            var result = frame.verifyPublished(failures::add);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals("DEPLOYMENT_GRAPH_STATUS_UNCONFIRMED", result.problem().orElseThrow().eventCode());
+            assertEquals(1, failures.size());
+            var actual = assertInstanceOf(ApiException.class, failures.getFirst());
+            assertEquals(failure.equals("text") ? "DEPLOYMENT_COMMAND_REVIEW_INVALID" : "DEPLOYMENT_COMMAND_REVIEW_DENIED",
+                actual.problem().eventCode());
+            if (failure.equals("text"))
+                assertEquals("A complete native result submission is required", actual.getCause().getMessage());
+            else assertEquals(DENIAL, actual.problem().context().get("reviewReason"));
+            assertEquals(List.of("deployment.publication.original-status.v1"), frame.approvalOperations());
+            assertEquals(0, frame.statusQueries);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
+
+    @Test
+    void statusDiagnosticSinkFailureKeepsUnknownAndRetainsTheActualQueryFailure() throws Exception {
+        try (var frame = new Frame()) {
+            frame.statusReviewFailure = "denied";
+            var failures = new ArrayList<Exception>();
+            var unavailable = new IllegalStateException("Controlled unavailable original-status diagnostics");
+            var result = frame.verifyPublished(actual -> {
+                failures.add(actual);
+                throw unavailable;
+            });
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals("DEPLOYMENT_GRAPH_STATUS_UNCONFIRMED", result.problem().orElseThrow().eventCode());
+            assertEquals(1, failures.size());
+            assertSame(unavailable, failures.getFirst().getSuppressed()[0]);
+            assertEquals(0, frame.statusQueries);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
+
+    @Test
+    void defaultOriginalObservationRetainsItsExistingUnknownWithoutCallerDiagnostics() throws Exception {
+        try (var frame = new Frame()) {
+            frame.statusReviewFailure = "denied";
+            var result = frame.publisher().observeOriginal(frame.proposal, Map.of("component", frame.candidate));
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals("DEPLOYMENT_GRAPH_STATUS_UNAVAILABLE", result.problem().orElseThrow().eventCode());
+            assertEquals(0, frame.statusQueries);
+            assertEquals(0, frame.healthDispatches);
+            assertEquals(0, frame.deletions);
+        }
+    }
+
     @Test
     void recoveryHealthReportsTheActualMissingSubmissionWithoutDispatch() throws Exception {
         try (var frame = new Frame()) {
@@ -367,6 +423,8 @@ class DeploymentAgentCleanupEvidenceTest {
 
         private int statusQueries;
 
+        private String statusReviewFailure = "";
+
         private int deletions;
 
         private int absenceQueries;
@@ -421,7 +479,8 @@ class DeploymentAgentCleanupEvidenceTest {
                 var facts = JSON.readTree(request.messages().getLast().text());
                 reviewFacts.add(facts);
                 String operation = facts.path("operation").asText();
-                if (operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("text"))
+                if (operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("text")
+                    || operation.equals("deployment.publication.original-status.v1") && statusReviewFailure.equals("text"))
                     return success(new AiResponse("Controlled text without native submission", "controlled", "stop",
                         new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())));
                 boolean cleanup = operation.equals("deployment.publication.candidate-cleanup.v1");
@@ -429,6 +488,7 @@ class DeploymentAgentCleanupEvidenceTest {
                 boolean deny = cleanup && denyCleanup || operation.equals("deployment.publication.original-status.v1")
                     && failure.equals("query-denied") && statusQueries == 1 || operation.equals("deployment.agent.helper.v1") && absenceFailure.equals("denied")
                     || operation.equals("deployment.publication.health.v1") && healthReviewFailure.equals("denied");
+                deny |= operation.equals("deployment.publication.original-status.v1") && statusReviewFailure.equals("denied");
                 return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
                     List.of(new AiToolCall("review-" + reviewFacts.size(), "submit_result", JSON.writeValueAsString(Map.of("decision", deny ? "DENY" : "APPROVE",
                         "requiresUserConfirmation", deny, "reason", deny ? DENIAL : "Controlled current boundary")))), Optional.empty()));
