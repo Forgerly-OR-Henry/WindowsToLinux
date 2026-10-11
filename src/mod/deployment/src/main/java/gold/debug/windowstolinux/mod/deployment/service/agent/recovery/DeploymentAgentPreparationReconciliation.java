@@ -125,6 +125,11 @@ final class DeploymentAgentPreparationReconciliation {
         token(context, task, "value", value.isPresent() ? "PRESENT" : "ABSENT");
         token(context, task, "observedExit", value.flatMap(CommandResult::exitCode).map(String::valueOf).orElse("ABSENT"));
         token(context, task, "truncated", value.map(command -> Boolean.toString(command.truncated())).orElse("ABSENT"));
+        token(context, task, "stdoutCharacters", value.map(command -> Integer.toString(command.stdout().length())).orElse("ABSENT"));
+        token(context, task, "stderrCharacters", value.map(command -> Integer.toString(command.stderr().length())).orElse("ABSENT"));
+        var shape = value.map(command -> DeploymentAgentPreparationProbe.stdoutShape(captured, command.stdout()));
+        token(context, task, "stdoutShape", shape.map(observed -> observed.kind().name()).orElse("ABSENT"));
+        token(context, task, "stdoutMismatch", shape.map(observed -> observed.mismatch().name()).orElse("ABSENT"));
         var unknown = value.flatMap(command -> DeploymentAgentPreparationProbe.unknown(captured, command));
         token(context, task, "unknownStage", unknown.map(observation -> observation.stage().name()).orElse("UNCONFIRMED"));
         token(context, task, "unknownReason", unknown.map(observation -> observation.reason().name()).orElse("UNCONFIRMED"));

@@ -116,6 +116,16 @@ task-board-04 一项入口检查失败、零跳过，3257 项源码冻结零变�
 
 `observation-focused-01` 的 32 个不同直接场景通过、零失败/错误/跳过：实际 Git Bash 的 11 项阶段反例及成功路径、9 项完整协议反例、10 项传输/结果/恶意文本/截断/日志故障，以及一次真实本地事务结清和重复收尾。四文件限定格式通过；3262 项源码冻结零变化，全部本次验证进程已退出，没有 API 或 SSH。四份前像均匹配已提交基线，自有精确增量见 [DEPLOYMENT-AGENT-PREPARATION-OBSERVATION.patch](patches/DEPLOYMENT-AGENT-PREPARATION-OBSERVATION.patch)，SHA256 `aad14c776bba81875a943c159a9e6ef67966b1737d90cc2cd5f853edc0da8430`，反向及缓存应用检查通过。原恢复补丁保留；这不是全项目或真实服务器验收。下一轮须由产品入口取得实际结果后再决定修复。
 
+以上六个自有路径已本地提交 `dc27945d8fe3784034db86ff832c28a94f1e2d3a`，未推送。随后 `task-board-recovery02-02` 于 2026-10-12 04:16:40+08 结束，一项失败、零跳过，3262 项源码零变化，验证进程已退出。独立审批与命令执行已完成，安全诊断为 SUCCEEDED、exit 0、value PRESENT、truncated false、problemCode NONE，但结果既非严格 ABSENT，也未解析出完整 UNKNOWN 阶段。原任务仍 UNKNOWN，两个 FILE 阻塞保留。只读核对原 Agent 仍存在、无结清摘要或正式业务记录，平台资源总行数为 1052，配置计数保持；未删除未结数据。
+
+本轮新增 2 个审批 provider 响应：input 13727、output 1587、合计 15314，cache hit 7936、miss 5791，捕获输入命中率 57.81%，2 项 reasoning 未知，输出上限均为 8192，没有新的配置探测。前后 usage 窗口均为 38 条但淘汰 2 条旧记录，按日志 ID 去重保留新轮用量，没有混入旧轮。stdout 长度、stderr 是否存在及协议失配位置仍未知，不能将命令 exit 0 视为资源结清；先做本地封装及观察缺口调查，避免盲目重复付费。
+
+独立只读复核确认一处诊断盲点：固定系统工具失败可以同时输出完整绑定的 UNKNOWN stdout 和非空 stderr，旧 UNKNOWN 解析却要求 stderr 为空；本地 Bash 夹具也合并了两路输出。这不是第二轮远端原因的确认。已仅放开纯诊断 UNKNOWN 的 stderr 条件，仍要求 exit 0、未截断和完整绑定协议；ABSENT 方法原文未改，错误输出非空始终不能结清。新增双流字符长度、stdout 分类及固定失配枚举，共 11 项安全 token，未保存收到的字段值、正文或异常消息，也未改变原 journal 和正式业务记录。
+
+`observation-shape-focused-01` 于 2026-10-12 04:35:35+08 通过 54 个不同直接场景，零失败/错误/跳过：本地 Bash 语法及 11 项受控阶段、3 项退出/截断、23 项协议形状反例、2 项实际 `SshCommandFrame` 与原 launcher 的双流验证、13 项 JDBC 安全诊断及一次严格成功结清幂等。四文件限定格式通过；3262 项源码零变化，本次进程已退出，无 API/SSH。辅助 runner 最初读取旧 selectors 结构被拒，未进入 Maven，错误记录保留后按实际新结构修正。此轮验证覆盖本地双流与恢复保护，不证明服务器工具或业务成功。
+
+四份前像匹配 `dc27945d` 基线，新自有精确增量见 [DEPLOYMENT-AGENT-PREPARATION-OBSERVATION-SHAPE.patch](patches/DEPLOYMENT-AGENT-PREPARATION-OBSERVATION-SHAPE.patch)，SHA256 `a45601e867743f0ad3f0110820e0caf1cbef8f1d392b284ef11cba07a9e22f77`，反向及缓存应用检查通过。原观察、恢复及其他迁移补丁保留；真实第三轮尚未启动。
+
 新 task-board 独立部署、真实浏览器业务、非默认目录的真实服务器部署与重启恢复、其余七项目及全新服务器的冻结八项目批次均未验证。缓存及审批比例必须按对应轮次实际 provider usage 计算，未知值不得补零；历史调试用量不能混入冻结八项目批次。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

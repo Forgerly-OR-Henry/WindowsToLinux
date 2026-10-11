@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,9 +21,13 @@ import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Reason;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Stage;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Mismatch;
+import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.StdoutKind;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.UnknownObservation;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
+import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -83,7 +91,7 @@ class DeploymentAgentPreparationProbeTest {
         if (condition.equals("DANGLING_LINK"))
             Assumptions.assumeTrue(result.exitCode() != 70, "Local Bash cannot create and read its controlled emulated symbolic link");
         assertEquals(0, result.exitCode(), result.output());
-        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), "", false);
+        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
         if (condition.equals("ABSENT")) {
             assertTrue(DeploymentAgentPreparationProbe.absent(captured, observed), result.output());
             assertEquals(DeploymentAgentPreparationProbe.absentOutput(captured), result.output());
@@ -95,24 +103,115 @@ class DeploymentAgentPreparationProbeTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"STAGE", "REASON", "PAIR", "FOREIGN", "TRUNCATED", "NONZERO", "STDERR", "INCOMPLETE", "EXTRA"})
-    void unknownDiagnosticRequiresTheEntireBoundCleanProtocol(String change) throws Exception {
+    @ValueSource(strings = {"TRUNCATED", "NONZERO", "MISSING_EXIT"})
+    void unknownProjectionPreservesExitAndTruncationGates(String change) throws Exception {
         var captured = captured();
         String output = DeploymentAgentPreparationProbe.unknownOutput(captured, new UnknownObservation(Stage.MOUNTS, Reason.CANDIDATE_MOUNT_PRESENT));
-        output = switch (change) {
-            case "STAGE" -> output.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=FAKE_PASSWORD_MARKER");
-            case "REASON" ->
-                output.replace("UNKNOWN_REASON=CANDIDATE_MOUNT_PRESENT", "UNKNOWN_REASON=FAKE_PASSWORD_MARKER");
-            case "PAIR" -> output.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=TOOLS");
-            case "FOREIGN" -> output.replace(captured.task().toString(), UUID.randomUUID().toString());
-            case "INCOMPLETE" -> output.substring(0, output.indexOf("UNKNOWN_REASON="));
-            case "EXTRA" -> output + "SOURCE=FAKE_PASSWORD_MARKER\n";
-            default -> output;
-        };
-        var observed = new CommandResult(Optional.of(change.equals("NONZERO") ? 1 : 0), output,
-            change.equals("STDERR") ? "FAKE_PASSWORD_MARKER" : "", change.equals("TRUNCATED"));
+        var observed = new CommandResult(change.equals("MISSING_EXIT") ? Optional.empty() : Optional.of(change.equals("NONZERO") ? 1 : 0),
+            output, "password=FAKE_PASSWORD_MARKER", change.equals("TRUNCATED"));
+        assertEquals(StdoutKind.EXACT_UNKNOWN, DeploymentAgentPreparationProbe.stdoutShape(captured, output).kind());
         assertTrue(DeploymentAgentPreparationProbe.unknown(captured, observed).isEmpty());
         assertFalse(DeploymentAgentPreparationProbe.absent(captured, observed));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EMPTY", "FORMAT", "TASK", "PREPARE", "CANDIDATE", "LAYOUT", "EVENTS", "HEADER_FIELD", "HEADER_SHORT", "STATUS_FIELD", "STATUS_VALUE",
+        "TAIL_FIELD", "TAIL_SHORT", "NO_NEWLINE", "CRLF", "STAGE_ENUM", "REASON_ENUM", "PAIR", "PREFIX", "SUFFIX", "DUPLICATE", "BLANK", "OUTPUT_LIMIT"})
+    void stdoutShapeReportsOnlyFixedMismatchCategories(String change) throws Exception {
+        var captured = captured();
+        String original = DeploymentAgentPreparationProbe.unknownOutput(captured, new UnknownObservation(Stage.MOUNTS, Reason.CANDIDATE_MOUNT_PRESENT));
+        String output = switch (change) {
+            case "EMPTY" -> "";
+            case "FORMAT" -> original.replace("FORMAT=WTL_AGENT_PREPARATION_ABSENCE_1", "FORMAT=FAKE_PASSWORD_MARKER");
+            case "TASK" -> original.replace(captured.task().toString(), UUID.randomUUID().toString());
+            case "PREPARE" ->
+                original.replace("PREPARE_EVENT=" + captured.preparation().id(), "PREPARE_EVENT=FAKE_PASSWORD_MARKER");
+            case "CANDIDATE" ->
+                original.replace("CANDIDATE=" + captured.workspace().candidateId(), "CANDIDATE=FAKE_PASSWORD_MARKER");
+            case "LAYOUT" ->
+                original.replace("LAYOUT_SHA256=" + captured.layout().digest(), "LAYOUT_SHA256=FAKE_PASSWORD_MARKER");
+            case "EVENTS" ->
+                original.replace("EVENTS_SHA256=" + DeploymentAgentPreparationAbsence.digest(captured.events()), "EVENTS_SHA256=FAKE_PASSWORD_MARKER");
+            case "HEADER_FIELD" -> original.replace("TASK=", "TASK_REPEAT=");
+            case "HEADER_SHORT" -> original.substring(0, original.indexOf("TASK="));
+            case "STATUS_FIELD" -> original.replace("STATUS=UNKNOWN", "STATUS=FAKE_PASSWORD_MARKER");
+            case "STATUS_VALUE" -> original.replace("PATH=UNCONFIRMED", "PATH=ABSENT");
+            case "TAIL_FIELD" -> original.replace("UNKNOWN_REASON=", "UNKNOWN_STAGE=");
+            case "TAIL_SHORT" -> original.substring(0, original.indexOf("UNKNOWN_REASON="));
+            case "NO_NEWLINE" -> original.substring(0, original.length() - 1);
+            case "CRLF" -> original.replace("\n", "\r\n");
+            case "STAGE_ENUM" -> original.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=FAKE_PASSWORD_MARKER");
+            case "REASON_ENUM" ->
+                original.replace("UNKNOWN_REASON=CANDIDATE_MOUNT_PRESENT", "UNKNOWN_REASON=FAKE_PASSWORD_MARKER");
+            case "PAIR" -> original.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=TOOLS");
+            case "PREFIX" -> "FAKE_PASSWORD_MARKER\n" + original;
+            case "SUFFIX" -> original + "FAKE_PASSWORD_MARKER\n";
+            case "DUPLICATE" -> original + "UNKNOWN_STAGE=MOUNTS\n";
+            case "BLANK" -> original + "\n";
+            case "OUTPUT_LIMIT" -> original + "FAKE_PASSWORD_MARKER".repeat(4096);
+            default -> throw new AssertionError(change);
+        };
+        var shape = DeploymentAgentPreparationProbe.stdoutShape(captured, output);
+        assertEquals(change.equals("EMPTY") ? StdoutKind.EMPTY : StdoutKind.INVALID, shape.kind());
+        Mismatch mismatch = switch (change) {
+            case "EMPTY" -> Mismatch.NONE;
+            case "FORMAT", "TASK", "PREPARE", "CANDIDATE", "LAYOUT", "EVENTS" -> Mismatch.HEADER_BINDING;
+            case "HEADER_FIELD", "HEADER_SHORT" -> Mismatch.HEADER_FIELDS;
+            case "STATUS_FIELD", "STATUS_VALUE" -> Mismatch.STATUS_FIELDS;
+            case "TAIL_FIELD", "TAIL_SHORT" -> Mismatch.TAIL_FIELDS;
+            case "NO_NEWLINE", "CRLF" -> Mismatch.LINE_ENDING;
+            case "STAGE_ENUM", "REASON_ENUM" -> Mismatch.INVALID_ENUM;
+            case "PAIR" -> Mismatch.PAIR_MISMATCH;
+            case "PREFIX", "SUFFIX", "DUPLICATE", "BLANK" -> Mismatch.EXTRA_CONTENT;
+            case "OUTPUT_LIMIT" -> Mismatch.OUTPUT_LIMIT;
+            default -> throw new AssertionError(change);
+        };
+        assertEquals(mismatch, shape.mismatch());
+        assertFalse(shape.toString().contains("FAKE_PASSWORD_MARKER"));
+        var result = new CommandResult(Optional.of(0), output, "password=FAKE_PASSWORD_MARKER", false);
+        assertTrue(DeploymentAgentPreparationProbe.unknown(captured, result).isEmpty());
+        assertFalse(DeploymentAgentPreparationProbe.absent(captured, result));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNKNOWN", "ABSENT"})
+    void actualNativeFrameAndOriginalLauncherKeepSensitiveStderrSeparateWithoutSettling(String status) throws Exception {
+        var captured = captured();
+        String output = status.equals("UNKNOWN")
+            ? DeploymentAgentPreparationProbe.unknownOutput(captured, new UnknownObservation(Stage.PATH, Reason.PATH_ABSENCE_UNCONFIRMED))
+            : DeploymentAgentPreparationProbe.absentOutput(captured);
+        String error = "password=FAKE_PASSWORD_MARKER 源码";
+        String fixture = "builtin printf '%s' '" + output + "'\nbuiltin printf '%s' '" + error + "' >&2\n";
+        try (var request = new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, fixture.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(10), 4096)) {
+            var frameType = Class.forName("gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandFrame");
+            var constructor = frameType.getDeclaredConstructor(CommandRequest.class);
+            constructor.setAccessible(true);
+            var write = frameType.getDeclaredMethod("writeTo", OutputStream.class);
+            write.setAccessible(true);
+            var command = frameType.getDeclaredField("COMMAND");
+            command.setAccessible(true);
+            try (var frame = (AutoCloseable) constructor.newInstance(request); var wire = new ByteArrayOutputStream()) {
+                write.invoke(frame, wire);
+                byte[] bytes = wire.toByteArray();
+                Path entry = Files.createTempFile(root, "wire-command-", ".sh");
+                Result observed;
+                try {
+                    Files.writeString(entry, (String) command.get(null), StandardCharsets.UTF_8);
+                    observed = bash(List.of(bashExecutable(), "--noprofile", "--norc", entry.toString()), bytes, false);
+                } finally {
+                    Arrays.fill(bytes, (byte) 0);
+                    Files.deleteIfExists(entry);
+                }
+                assertEquals(0, observed.exitCode(), observed.error());
+                assertEquals(output, observed.output());
+                assertEquals(error, observed.error());
+                var result = new CommandResult(Optional.of(0), observed.output(), observed.error(), false);
+                assertEquals(status.equals("UNKNOWN") ? StdoutKind.EXACT_UNKNOWN : StdoutKind.EXACT_ABSENT,
+                    DeploymentAgentPreparationProbe.stdoutShape(captured, result.stdout()).kind());
+                assertEquals(status.equals("UNKNOWN"), DeploymentAgentPreparationProbe.unknown(captured, result).isPresent());
+                assertFalse(DeploymentAgentPreparationProbe.absent(captured, result), "Even exact ABSENT stdout cannot clear a nonempty stderr");
+            }
+        }
     }
 
     private static UnknownObservation expected(String condition) {
@@ -155,29 +254,41 @@ class DeploymentAgentPreparationProbeTest {
     }
 
     private Result bash(String input, boolean syntaxOnly, boolean emulatedLink) throws Exception {
+        var command = new java.util.ArrayList<>(List.of(bashExecutable(), "--noprofile", "--norc"));
+        if (syntaxOnly) command.add("-n");
+        command.add("-s");
+        return bash(command, input.getBytes(StandardCharsets.UTF_8), emulatedLink);
+    }
+
+    private static String bashExecutable() {
         String executable = System.getProperty("managed.test.bash", System.getProperty("os.name").startsWith("Windows")
             ? "C:\\Program Files\\Git\\bin\\bash.exe" : "/bin/bash");
         Assumptions.assumeTrue(Files.isExecutable(Path.of(executable)), "Configured local Bash is unavailable");
-        var command = new java.util.ArrayList<>(List.of(executable, "--noprofile", "--norc"));
-        if (syntaxOnly) command.add("-n");
-        command.add("-s");
+        return executable;
+    }
+
+    private Result bash(List<String> command, byte[] input, boolean emulatedLink) throws Exception {
         var script = Files.createTempFile(root, "probe-input-", ".sh");
-        Files.writeString(script, input, StandardCharsets.UTF_8);
-        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectInput(script.toFile()).redirectErrorStream(true);
+        var stdout = Files.createTempFile(root, "probe-stdout-", ".out");
+        var stderr = Files.createTempFile(root, "probe-stderr-", ".err");
+        Files.write(script, input);
+        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectInput(script.toFile()).redirectOutput(stdout.toFile()).redirectError(stderr.toFile());
         builder.environment().put("MSYS", emulatedLink ? "winsymlinks" : "winsymlinks:nativestrict");
         var process = builder.start();
         try {
             assertTrue(process.waitFor(15, TimeUnit.SECONDS), "Controlled local Bash must terminate");
-            return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+            return new Result(process.exitValue(), Files.readString(stdout, StandardCharsets.UTF_8), Files.readString(stderr, StandardCharsets.UTF_8));
         } finally {
             if (process.isAlive()) {
                 process.destroyForcibly();
                 assertTrue(process.waitFor(5, TimeUnit.SECONDS));
             }
             Files.deleteIfExists(script);
+            Files.deleteIfExists(stdout);
+            Files.deleteIfExists(stderr);
         }
     }
 
-    private record Result(int exitCode, String output) {
+    private record Result(int exitCode, String output, String error) {
     }
 }

@@ -154,7 +154,7 @@ class DeploymentAgentPreparationAbsenceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "FAILED_RESULT", "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT", "LOGGER_FAILURE"})
+    @ValueSource(strings = {"BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "ABSENT_STDERR", "EMPTY_STDOUT", "UNKNOWN_NONZERO", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "FAILED_RESULT", "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT", "LOGGER_FAILURE"})
     void unconfirmedObservationDiagnosticsRemainTypedAndNeverLeakProcessData(String obstacle) throws Exception {
         try (var frame = new Frame()) {
             frame.obstacle = obstacle;
@@ -171,19 +171,19 @@ class DeploymentAgentPreparationAbsenceTest {
             assertFalse(frame.nativeAi.events.toString().contains("FAKE_SOURCE_MARKER"));
             var tokens = frame.nativeAi.events.stream().filter(event -> event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION"))
                 .map(LogEvent::message).filter(message -> message.startsWith("preparation.")).toList();
-            assertEquals(7, frame.diagnosticAttempts);
+            assertEquals(11, frame.diagnosticAttempts);
             if (obstacle.equals("LOGGER_FAILURE")) {
                 assertTrue(tokens.isEmpty(), "Unavailable logging cannot change UNKNOWN or create a receipt");
             } else {
-                assertEquals(7, tokens.size());
+                assertEquals(11, tokens.size());
                 assertTrue(tokens.stream().allMatch(token -> token.matches("[A-Za-z0-9_.:-]{1,80}")));
                 String outcome = switch (obstacle) {
-                    case "FAILED_RESULT" -> "FAILED";
+                    case "FAILED_RESULT", "UNKNOWN_NONZERO" -> "FAILED";
                     case "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT" -> "UNKNOWN";
                     default -> "SUCCEEDED";
                 };
                 String code = switch (obstacle) {
-                    case "FAILED_RESULT", "TRANSPORT" -> "IO_FAILURE";
+                    case "FAILED_RESULT", "UNKNOWN_NONZERO", "TRANSPORT" -> "IO_FAILURE";
                     case "UNKNOWN_RESULT", "RUNTIME_TRANSPORT" -> "UNKNOWN";
                     default -> "NONE";
                 };
@@ -191,10 +191,27 @@ class DeploymentAgentPreparationAbsenceTest {
                 assertTrue(tokens.contains("preparation.outcome:" + outcome));
                 assertTrue(tokens.contains("preparation.problemCode:" + code));
                 assertTrue(tokens.contains("preparation.value:" + (missingValue ? "ABSENT" : "PRESENT")));
-                assertTrue(tokens.contains("preparation.observedExit:" + (missingValue ? "ABSENT" : obstacle.equals("FAILED_RESULT") ? "1" : "0")));
+                assertTrue(tokens.contains("preparation.observedExit:" + (missingValue ? "ABSENT" : List.of("FAILED_RESULT", "UNKNOWN_NONZERO").contains(obstacle) ? "1" : "0")));
                 assertTrue(tokens.contains("preparation.truncated:" + (missingValue ? "ABSENT" : Boolean.toString(obstacle.equals("DIAGNOSTIC_TRUNCATED")))));
-                assertTrue(tokens.contains("preparation.unknownStage:" + (obstacle.equals("BOUND_UNKNOWN") ? "BUILD_UNIT" : "UNCONFIRMED")));
-                assertTrue(tokens.contains("preparation.unknownReason:" + (obstacle.equals("BOUND_UNKNOWN") ? "BUILD_QUERY_UNCONFIRMED" : "UNCONFIRMED")));
+                assertTrue(tokens.contains("preparation.stdoutCharacters:" + (missingValue ? "ABSENT" : Integer.toString(frame.observedCommand.stdout().length()))));
+                assertTrue(tokens.contains("preparation.stderrCharacters:" + (missingValue ? "ABSENT" : Integer.toString(frame.observedCommand.stderr().length()))));
+                String shape = missingValue ? "ABSENT" : switch (obstacle) {
+                    case "MALICIOUS_STDOUT", "INCOMPLETE", "FAILED_RESULT" -> "INVALID";
+                    case "ABSENT_STDERR" -> "EXACT_ABSENT";
+                    case "EMPTY_STDOUT" -> "EMPTY";
+                    default -> "EXACT_UNKNOWN";
+                };
+                String mismatch = missingValue ? "ABSENT" : switch (obstacle) {
+                    case "MALICIOUS_STDOUT" -> "INVALID_ENUM";
+                    case "INCOMPLETE" -> "TAIL_FIELDS";
+                    case "FAILED_RESULT" -> "LINE_ENDING";
+                    default -> "NONE";
+                };
+                assertTrue(tokens.contains("preparation.stdoutShape:" + shape));
+                assertTrue(tokens.contains("preparation.stdoutMismatch:" + mismatch));
+                boolean boundUnknown = List.of("BOUND_UNKNOWN", "MALICIOUS_STDERR").contains(obstacle);
+                assertTrue(tokens.contains("preparation.unknownStage:" + (boundUnknown ? "BUILD_UNIT" : "UNCONFIRMED")));
+                assertTrue(tokens.contains("preparation.unknownReason:" + (boundUnknown ? "BUILD_QUERY_UNCONFIRMED" : "UNCONFIRMED")));
             }
         }
     }
@@ -344,6 +361,8 @@ class DeploymentAgentPreparationAbsenceTest {
 
         int diagnosticAttempts;
 
+        CommandResult observedCommand;
+
         int connected;
 
         int sent;
@@ -422,7 +441,7 @@ class DeploymentAgentPreparationAbsenceTest {
                         output = output.replace(obstacle + "=ABSENT", obstacle + "=PRESENT");
                     if (List.of("PERMISSION", "DANGLING_LINK").contains(obstacle))
                         output = output.replace("STATUS=ABSENT", "STATUS=UNKNOWN");
-                    if (List.of("BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "LOGGER_FAILURE").contains(obstacle)) {
+                    if (List.of("BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "UNKNOWN_NONZERO", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "LOGGER_FAILURE").contains(obstacle)) {
                         output = DeploymentAgentPreparationProbe.unknownOutput(captured,
                             new DeploymentAgentPreparationProbe.UnknownObservation(DeploymentAgentPreparationProbe.Stage.BUILD_UNIT,
                                 DeploymentAgentPreparationProbe.Reason.BUILD_QUERY_UNCONFIRMED));
@@ -431,14 +450,16 @@ class DeploymentAgentPreparationAbsenceTest {
                         if (obstacle.equals("INCOMPLETE"))
                             output = output.substring(0, output.indexOf("UNKNOWN_REASON="));
                     }
-                    boolean failed = List.of("FAILED_OBSERVATION", "FAILED_RESULT").contains(obstacle);
+                    boolean failed = List.of("FAILED_OBSERVATION", "FAILED_RESULT", "UNKNOWN_NONZERO").contains(obstacle);
                     if (obstacle.equals("FAILED_RESULT"))
                         output = "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER";
+                    if (obstacle.equals("EMPTY_STDOUT")) output = "";
                     var result = new CommandResult(Optional.of(failed ? 1 : 0), output,
-                        List.of("MALICIOUS_STDERR", "FAILED_RESULT").contains(obstacle) ? "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER" : "",
+                        List.of("MALICIOUS_STDERR", "ABSENT_STDERR", "FAILED_RESULT").contains(obstacle) ? "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER" : "",
                         List.of("TRUNCATED", "DIAGNOSTIC_TRUNCATED").contains(obstacle));
+                    observedCommand = result;
                     afterSend.run();
-                    if (obstacle.equals("FAILED_RESULT"))
+                    if (List.of("FAILED_RESULT", "UNKNOWN_NONZERO").contains(obstacle))
                         yield new OperationResult<>(TaskResult.FAILED, Optional.of(result), Optional.of(processProblem(ProblemCode.IO_FAILURE)));
                     yield success(result);
                 }

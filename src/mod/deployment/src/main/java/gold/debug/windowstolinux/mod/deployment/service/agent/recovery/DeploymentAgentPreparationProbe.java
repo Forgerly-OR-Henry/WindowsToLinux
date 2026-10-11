@@ -42,6 +42,18 @@ public final class DeploymentAgentPreparationProbe {
         }
     }
 
+    public enum StdoutKind {EMPTY, EXACT_ABSENT, EXACT_UNKNOWN, INVALID}
+
+    public enum Mismatch {NONE, OUTPUT_LIMIT, LINE_ENDING, HEADER_FIELDS, HEADER_BINDING, STATUS_FIELDS, TAIL_FIELDS, INVALID_ENUM, PAIR_MISMATCH, EXTRA_CONTENT}
+
+    public record StdoutShape(StdoutKind kind, Mismatch mismatch, Optional<UnknownObservation> unknown) {
+        public StdoutShape {
+            if (kind == null || mismatch == null || unknown == null || (kind == StdoutKind.EXACT_UNKNOWN) != unknown.isPresent()
+                || (kind == StdoutKind.INVALID) != (mismatch != Mismatch.NONE))
+                throw new IllegalArgumentException("Preparation stdout shape is inconsistent");
+        }
+    }
+
     private DeploymentAgentPreparationProbe() {
     }
 
@@ -74,22 +86,54 @@ public final class DeploymentAgentPreparationProbe {
         return header(captured) + UNKNOWN + "UNKNOWN_STAGE=" + observation.stage() + "\nUNKNOWN_REASON=" + observation.reason() + "\n";
     }
 
-    /** Projects only a complete bound UNKNOWN protocol, never arbitrary process text. */
+    /** Diagnostic-only UNKNOWN projection accepts stderr; absence authorization still requires an empty stderr. */
     public static Optional<UnknownObservation> unknown(DeploymentAgentPreparationAbsence.Captured captured, CommandResult result) {
-        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(0)) || !result.stderr().isEmpty()
-            || result.stdout().length() > 4096) return Optional.empty();
-        String prefix = header(captured) + UNKNOWN;
-        if (!result.stdout().startsWith(prefix)) return Optional.empty();
-        String[] fields = result.stdout().substring(prefix.length()).split("\n", -1);
-        if (fields.length != 3 || !fields[0].startsWith("UNKNOWN_STAGE=") || !fields[1].startsWith("UNKNOWN_REASON=") || !fields[2].isEmpty())
-            return Optional.empty();
-        try {
-            var observation = new UnknownObservation(Stage.valueOf(fields[0].substring("UNKNOWN_STAGE=".length())),
-                Reason.valueOf(fields[1].substring("UNKNOWN_REASON=".length())));
-            return unknownOutput(captured, observation).equals(result.stdout()) ? Optional.of(observation) : Optional.empty();
-        } catch (IllegalArgumentException invalid) {
-            return Optional.empty();
+        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(0))) return Optional.empty();
+        return stdoutShape(captured, result.stdout()).unknown();
+    }
+
+    /** Classifies only stdout bytes already decoded by the host, without projecting received field values. */
+    public static StdoutShape stdoutShape(DeploymentAgentPreparationAbsence.Captured captured, String stdout) {
+        if (stdout.isEmpty()) return new StdoutShape(StdoutKind.EMPTY, Mismatch.NONE, Optional.empty());
+        if (stdout.length() > 4096) return invalid(Mismatch.OUTPUT_LIMIT);
+        if (stdout.indexOf('\r') >= 0 || !stdout.endsWith("\n")) return invalid(Mismatch.LINE_ENDING);
+        String expectedHeader = header(captured);
+        String[] header = expectedHeader.split("\n");
+        String[] fields = stdout.split("\n", -1);
+        if (!stdout.startsWith("FORMAT=") && stdout.contains(expectedHeader)) return invalid(Mismatch.EXTRA_CONTENT);
+        if (fields.length < header.length + 1) return invalid(Mismatch.HEADER_FIELDS);
+        for (int index = 0; index < header.length; index++) {
+            String key = header[index].substring(0, header[index].indexOf('=') + 1);
+            if (!fields[index].startsWith(key)) return invalid(Mismatch.HEADER_FIELDS);
+            if (!fields[index].equals(header[index])) return invalid(Mismatch.HEADER_BINDING);
         }
+        if (fields.length < 12) return invalid(Mismatch.STATUS_FIELDS);
+        boolean absent = fields[6].equals("STATUS=ABSENT");
+        if (!absent && !fields[6].equals("STATUS=UNKNOWN")) return invalid(Mismatch.STATUS_FIELDS);
+        String status = absent ? "ABSENT" : "UNCONFIRMED";
+        if (!fields[7].equals("PATH=" + status) || !fields[8].equals("BUILD=" + status)
+            || !fields[9].equals("MOUNTS=" + status) || !fields[10].equals("LOOPS=" + status))
+            return invalid(Mismatch.STATUS_FIELDS);
+        if (absent)
+            return fields.length == 12 ? new StdoutShape(StdoutKind.EXACT_ABSENT, Mismatch.NONE, Optional.empty()) : invalid(Mismatch.EXTRA_CONTENT);
+        if (fields.length < 14) return invalid(Mismatch.TAIL_FIELDS);
+        if (fields.length > 14) return invalid(Mismatch.EXTRA_CONTENT);
+        if (!fields[11].startsWith("UNKNOWN_STAGE=") || !fields[12].startsWith("UNKNOWN_REASON="))
+            return invalid(Mismatch.TAIL_FIELDS);
+        Stage stage;
+        Reason reason;
+        try {
+            stage = Stage.valueOf(fields[11].substring("UNKNOWN_STAGE=".length()));
+            reason = Reason.valueOf(fields[12].substring("UNKNOWN_REASON=".length()));
+        } catch (IllegalArgumentException invalid) {
+            return invalid(Mismatch.INVALID_ENUM);
+        }
+        if (stage != reason.stage) return invalid(Mismatch.PAIR_MISMATCH);
+        return new StdoutShape(StdoutKind.EXACT_UNKNOWN, Mismatch.NONE, Optional.of(new UnknownObservation(stage, reason)));
+    }
+
+    private static StdoutShape invalid(Mismatch mismatch) {
+        return new StdoutShape(StdoutKind.INVALID, mismatch, Optional.empty());
     }
 
     private static String header(DeploymentAgentPreparationAbsence.Captured captured) {

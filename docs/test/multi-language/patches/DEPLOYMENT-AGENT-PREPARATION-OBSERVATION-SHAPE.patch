@@ -1,0 +1,429 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbe.java
+@@ -42,6 +42,18 @@
+         }
+     }
+ 
++    public enum StdoutKind {EMPTY, EXACT_ABSENT, EXACT_UNKNOWN, INVALID}
++
++    public enum Mismatch {NONE, OUTPUT_LIMIT, LINE_ENDING, HEADER_FIELDS, HEADER_BINDING, STATUS_FIELDS, TAIL_FIELDS, INVALID_ENUM, PAIR_MISMATCH, EXTRA_CONTENT}
++
++    public record StdoutShape(StdoutKind kind, Mismatch mismatch, Optional<UnknownObservation> unknown) {
++        public StdoutShape {
++            if (kind == null || mismatch == null || unknown == null || (kind == StdoutKind.EXACT_UNKNOWN) != unknown.isPresent()
++                || (kind == StdoutKind.INVALID) != (mismatch != Mismatch.NONE))
++                throw new IllegalArgumentException("Preparation stdout shape is inconsistent");
++        }
++    }
++
+     private DeploymentAgentPreparationProbe() {
+     }
+ 
+@@ -74,22 +86,54 @@
+         return header(captured) + UNKNOWN + "UNKNOWN_STAGE=" + observation.stage() + "\nUNKNOWN_REASON=" + observation.reason() + "\n";
+     }
+ 
+-    /** Projects only a complete bound UNKNOWN protocol, never arbitrary process text. */
++    /** Diagnostic-only UNKNOWN projection accepts stderr; absence authorization still requires an empty stderr. */
+     public static Optional<UnknownObservation> unknown(DeploymentAgentPreparationAbsence.Captured captured, CommandResult result) {
+-        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(0)) || !result.stderr().isEmpty()
+-            || result.stdout().length() > 4096) return Optional.empty();
+-        String prefix = header(captured) + UNKNOWN;
+-        if (!result.stdout().startsWith(prefix)) return Optional.empty();
+-        String[] fields = result.stdout().substring(prefix.length()).split("\n", -1);
+-        if (fields.length != 3 || !fields[0].startsWith("UNKNOWN_STAGE=") || !fields[1].startsWith("UNKNOWN_REASON=") || !fields[2].isEmpty())
+-            return Optional.empty();
++        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(0))) return Optional.empty();
++        return stdoutShape(captured, result.stdout()).unknown();
++    }
++
++    /** Classifies only stdout bytes already decoded by the host, without projecting received field values. */
++    public static StdoutShape stdoutShape(DeploymentAgentPreparationAbsence.Captured captured, String stdout) {
++        if (stdout.isEmpty()) return new StdoutShape(StdoutKind.EMPTY, Mismatch.NONE, Optional.empty());
++        if (stdout.length() > 4096) return invalid(Mismatch.OUTPUT_LIMIT);
++        if (stdout.indexOf('\r') >= 0 || !stdout.endsWith("\n")) return invalid(Mismatch.LINE_ENDING);
++        String expectedHeader = header(captured);
++        String[] header = expectedHeader.split("\n");
++        String[] fields = stdout.split("\n", -1);
++        if (!stdout.startsWith("FORMAT=") && stdout.contains(expectedHeader)) return invalid(Mismatch.EXTRA_CONTENT);
++        if (fields.length < header.length + 1) return invalid(Mismatch.HEADER_FIELDS);
++        for (int index = 0; index < header.length; index++) {
++            String key = header[index].substring(0, header[index].indexOf('=') + 1);
++            if (!fields[index].startsWith(key)) return invalid(Mismatch.HEADER_FIELDS);
++            if (!fields[index].equals(header[index])) return invalid(Mismatch.HEADER_BINDING);
++        }
++        if (fields.length < 12) return invalid(Mismatch.STATUS_FIELDS);
++        boolean absent = fields[6].equals("STATUS=ABSENT");
++        if (!absent && !fields[6].equals("STATUS=UNKNOWN")) return invalid(Mismatch.STATUS_FIELDS);
++        String status = absent ? "ABSENT" : "UNCONFIRMED";
++        if (!fields[7].equals("PATH=" + status) || !fields[8].equals("BUILD=" + status)
++            || !fields[9].equals("MOUNTS=" + status) || !fields[10].equals("LOOPS=" + status))
++            return invalid(Mismatch.STATUS_FIELDS);
++        if (absent)
++            return fields.length == 12 ? new StdoutShape(StdoutKind.EXACT_ABSENT, Mismatch.NONE, Optional.empty()) : invalid(Mismatch.EXTRA_CONTENT);
++        if (fields.length < 14) return invalid(Mismatch.TAIL_FIELDS);
++        if (fields.length > 14) return invalid(Mismatch.EXTRA_CONTENT);
++        if (!fields[11].startsWith("UNKNOWN_STAGE=") || !fields[12].startsWith("UNKNOWN_REASON="))
++            return invalid(Mismatch.TAIL_FIELDS);
++        Stage stage;
++        Reason reason;
+         try {
+-            var observation = new UnknownObservation(Stage.valueOf(fields[0].substring("UNKNOWN_STAGE=".length())),
+-                Reason.valueOf(fields[1].substring("UNKNOWN_REASON=".length())));
+-            return unknownOutput(captured, observation).equals(result.stdout()) ? Optional.of(observation) : Optional.empty();
++            stage = Stage.valueOf(fields[11].substring("UNKNOWN_STAGE=".length()));
++            reason = Reason.valueOf(fields[12].substring("UNKNOWN_REASON=".length()));
+         } catch (IllegalArgumentException invalid) {
+-            return Optional.empty();
+-        }
++            return invalid(Mismatch.INVALID_ENUM);
++        }
++        if (stage != reason.stage) return invalid(Mismatch.PAIR_MISMATCH);
++        return new StdoutShape(StdoutKind.EXACT_UNKNOWN, Mismatch.NONE, Optional.of(new UnknownObservation(stage, reason)));
++    }
++
++    private static StdoutShape invalid(Mismatch mismatch) {
++        return new StdoutShape(StdoutKind.INVALID, mismatch, Optional.empty());
+     }
+ 
+     private static String header(DeploymentAgentPreparationAbsence.Captured captured) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationReconciliation.java
+@@ -125,6 +125,11 @@
+         token(context, task, "value", value.isPresent() ? "PRESENT" : "ABSENT");
+         token(context, task, "observedExit", value.flatMap(CommandResult::exitCode).map(String::valueOf).orElse("ABSENT"));
+         token(context, task, "truncated", value.map(command -> Boolean.toString(command.truncated())).orElse("ABSENT"));
++        token(context, task, "stdoutCharacters", value.map(command -> Integer.toString(command.stdout().length())).orElse("ABSENT"));
++        token(context, task, "stderrCharacters", value.map(command -> Integer.toString(command.stderr().length())).orElse("ABSENT"));
++        var shape = value.map(command -> DeploymentAgentPreparationProbe.stdoutShape(captured, command.stdout()));
++        token(context, task, "stdoutShape", shape.map(observed -> observed.kind().name()).orElse("ABSENT"));
++        token(context, task, "stdoutMismatch", shape.map(observed -> observed.mismatch().name()).orElse("ABSENT"));
+         var unknown = value.flatMap(command -> DeploymentAgentPreparationProbe.unknown(captured, command));
+         token(context, task, "unknownStage", unknown.map(observation -> observation.stage().name()).orElse("UNCONFIRMED"));
+         token(context, task, "unknownReason", unknown.map(observation -> observation.reason().name()).orElse("UNCONFIRMED"));
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationProbeTest.java
+@@ -4,9 +4,13 @@
+ import static org.junit.jupiter.api.Assertions.assertFalse;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
+ 
++import java.io.ByteArrayOutputStream;
++import java.io.OutputStream;
+ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
++import java.time.Duration;
++import java.util.Arrays;
+ import java.util.List;
+ import java.util.Optional;
+ import java.util.UUID;
+@@ -17,9 +21,13 @@
+ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Reason;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Stage;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Mismatch;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.StdoutKind;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.UnknownObservation;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import org.junit.jupiter.api.Assumptions;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.io.TempDir;
+@@ -83,7 +91,7 @@
+         if (condition.equals("DANGLING_LINK"))
+             Assumptions.assumeTrue(result.exitCode() != 70, "Local Bash cannot create and read its controlled emulated symbolic link");
+         assertEquals(0, result.exitCode(), result.output());
+-        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), "", false);
++        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
+         if (condition.equals("ABSENT")) {
+             assertTrue(DeploymentAgentPreparationProbe.absent(captured, observed), result.output());
+             assertEquals(DeploymentAgentPreparationProbe.absentOutput(captured), result.output());
+@@ -95,24 +103,115 @@
+     }
+ 
+     @ParameterizedTest
+-    @ValueSource(strings = {"STAGE", "REASON", "PAIR", "FOREIGN", "TRUNCATED", "NONZERO", "STDERR", "INCOMPLETE", "EXTRA"})
+-    void unknownDiagnosticRequiresTheEntireBoundCleanProtocol(String change) throws Exception {
++    @ValueSource(strings = {"TRUNCATED", "NONZERO", "MISSING_EXIT"})
++    void unknownProjectionPreservesExitAndTruncationGates(String change) throws Exception {
+         var captured = captured();
+         String output = DeploymentAgentPreparationProbe.unknownOutput(captured, new UnknownObservation(Stage.MOUNTS, Reason.CANDIDATE_MOUNT_PRESENT));
+-        output = switch (change) {
+-            case "STAGE" -> output.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=FAKE_PASSWORD_MARKER");
+-            case "REASON" ->
+-                output.replace("UNKNOWN_REASON=CANDIDATE_MOUNT_PRESENT", "UNKNOWN_REASON=FAKE_PASSWORD_MARKER");
+-            case "PAIR" -> output.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=TOOLS");
+-            case "FOREIGN" -> output.replace(captured.task().toString(), UUID.randomUUID().toString());
+-            case "INCOMPLETE" -> output.substring(0, output.indexOf("UNKNOWN_REASON="));
+-            case "EXTRA" -> output + "SOURCE=FAKE_PASSWORD_MARKER\n";
+-            default -> output;
+-        };
+-        var observed = new CommandResult(Optional.of(change.equals("NONZERO") ? 1 : 0), output,
+-            change.equals("STDERR") ? "FAKE_PASSWORD_MARKER" : "", change.equals("TRUNCATED"));
++        var observed = new CommandResult(change.equals("MISSING_EXIT") ? Optional.empty() : Optional.of(change.equals("NONZERO") ? 1 : 0),
++            output, "password=FAKE_PASSWORD_MARKER", change.equals("TRUNCATED"));
++        assertEquals(StdoutKind.EXACT_UNKNOWN, DeploymentAgentPreparationProbe.stdoutShape(captured, output).kind());
+         assertTrue(DeploymentAgentPreparationProbe.unknown(captured, observed).isEmpty());
+         assertFalse(DeploymentAgentPreparationProbe.absent(captured, observed));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"EMPTY", "FORMAT", "TASK", "PREPARE", "CANDIDATE", "LAYOUT", "EVENTS", "HEADER_FIELD", "HEADER_SHORT", "STATUS_FIELD", "STATUS_VALUE",
++        "TAIL_FIELD", "TAIL_SHORT", "NO_NEWLINE", "CRLF", "STAGE_ENUM", "REASON_ENUM", "PAIR", "PREFIX", "SUFFIX", "DUPLICATE", "BLANK", "OUTPUT_LIMIT"})
++    void stdoutShapeReportsOnlyFixedMismatchCategories(String change) throws Exception {
++        var captured = captured();
++        String original = DeploymentAgentPreparationProbe.unknownOutput(captured, new UnknownObservation(Stage.MOUNTS, Reason.CANDIDATE_MOUNT_PRESENT));
++        String output = switch (change) {
++            case "EMPTY" -> "";
++            case "FORMAT" -> original.replace("FORMAT=WTL_AGENT_PREPARATION_ABSENCE_1", "FORMAT=FAKE_PASSWORD_MARKER");
++            case "TASK" -> original.replace(captured.task().toString(), UUID.randomUUID().toString());
++            case "PREPARE" ->
++                original.replace("PREPARE_EVENT=" + captured.preparation().id(), "PREPARE_EVENT=FAKE_PASSWORD_MARKER");
++            case "CANDIDATE" ->
++                original.replace("CANDIDATE=" + captured.workspace().candidateId(), "CANDIDATE=FAKE_PASSWORD_MARKER");
++            case "LAYOUT" ->
++                original.replace("LAYOUT_SHA256=" + captured.layout().digest(), "LAYOUT_SHA256=FAKE_PASSWORD_MARKER");
++            case "EVENTS" ->
++                original.replace("EVENTS_SHA256=" + DeploymentAgentPreparationAbsence.digest(captured.events()), "EVENTS_SHA256=FAKE_PASSWORD_MARKER");
++            case "HEADER_FIELD" -> original.replace("TASK=", "TASK_REPEAT=");
++            case "HEADER_SHORT" -> original.substring(0, original.indexOf("TASK="));
++            case "STATUS_FIELD" -> original.replace("STATUS=UNKNOWN", "STATUS=FAKE_PASSWORD_MARKER");
++            case "STATUS_VALUE" -> original.replace("PATH=UNCONFIRMED", "PATH=ABSENT");
++            case "TAIL_FIELD" -> original.replace("UNKNOWN_REASON=", "UNKNOWN_STAGE=");
++            case "TAIL_SHORT" -> original.substring(0, original.indexOf("UNKNOWN_REASON="));
++            case "NO_NEWLINE" -> original.substring(0, original.length() - 1);
++            case "CRLF" -> original.replace("\n", "\r\n");
++            case "STAGE_ENUM" -> original.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=FAKE_PASSWORD_MARKER");
++            case "REASON_ENUM" ->
++                original.replace("UNKNOWN_REASON=CANDIDATE_MOUNT_PRESENT", "UNKNOWN_REASON=FAKE_PASSWORD_MARKER");
++            case "PAIR" -> original.replace("UNKNOWN_STAGE=MOUNTS", "UNKNOWN_STAGE=TOOLS");
++            case "PREFIX" -> "FAKE_PASSWORD_MARKER\n" + original;
++            case "SUFFIX" -> original + "FAKE_PASSWORD_MARKER\n";
++            case "DUPLICATE" -> original + "UNKNOWN_STAGE=MOUNTS\n";
++            case "BLANK" -> original + "\n";
++            case "OUTPUT_LIMIT" -> original + "FAKE_PASSWORD_MARKER".repeat(4096);
++            default -> throw new AssertionError(change);
++        };
++        var shape = DeploymentAgentPreparationProbe.stdoutShape(captured, output);
++        assertEquals(change.equals("EMPTY") ? StdoutKind.EMPTY : StdoutKind.INVALID, shape.kind());
++        Mismatch mismatch = switch (change) {
++            case "EMPTY" -> Mismatch.NONE;
++            case "FORMAT", "TASK", "PREPARE", "CANDIDATE", "LAYOUT", "EVENTS" -> Mismatch.HEADER_BINDING;
++            case "HEADER_FIELD", "HEADER_SHORT" -> Mismatch.HEADER_FIELDS;
++            case "STATUS_FIELD", "STATUS_VALUE" -> Mismatch.STATUS_FIELDS;
++            case "TAIL_FIELD", "TAIL_SHORT" -> Mismatch.TAIL_FIELDS;
++            case "NO_NEWLINE", "CRLF" -> Mismatch.LINE_ENDING;
++            case "STAGE_ENUM", "REASON_ENUM" -> Mismatch.INVALID_ENUM;
++            case "PAIR" -> Mismatch.PAIR_MISMATCH;
++            case "PREFIX", "SUFFIX", "DUPLICATE", "BLANK" -> Mismatch.EXTRA_CONTENT;
++            case "OUTPUT_LIMIT" -> Mismatch.OUTPUT_LIMIT;
++            default -> throw new AssertionError(change);
++        };
++        assertEquals(mismatch, shape.mismatch());
++        assertFalse(shape.toString().contains("FAKE_PASSWORD_MARKER"));
++        var result = new CommandResult(Optional.of(0), output, "password=FAKE_PASSWORD_MARKER", false);
++        assertTrue(DeploymentAgentPreparationProbe.unknown(captured, result).isEmpty());
++        assertFalse(DeploymentAgentPreparationProbe.absent(captured, result));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"UNKNOWN", "ABSENT"})
++    void actualNativeFrameAndOriginalLauncherKeepSensitiveStderrSeparateWithoutSettling(String status) throws Exception {
++        var captured = captured();
++        String output = status.equals("UNKNOWN")
++            ? DeploymentAgentPreparationProbe.unknownOutput(captured, new UnknownObservation(Stage.PATH, Reason.PATH_ABSENCE_UNCONFIRMED))
++            : DeploymentAgentPreparationProbe.absentOutput(captured);
++        String error = "password=FAKE_PASSWORD_MARKER 源码";
++        String fixture = "builtin printf '%s' '" + output + "'\nbuiltin printf '%s' '" + error + "' >&2\n";
++        try (var request = new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, fixture.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(10), 4096)) {
++            var frameType = Class.forName("gold.debug.windowstolinux.app.linux.ssh.connect.SshCommandFrame");
++            var constructor = frameType.getDeclaredConstructor(CommandRequest.class);
++            constructor.setAccessible(true);
++            var write = frameType.getDeclaredMethod("writeTo", OutputStream.class);
++            write.setAccessible(true);
++            var command = frameType.getDeclaredField("COMMAND");
++            command.setAccessible(true);
++            try (var frame = (AutoCloseable) constructor.newInstance(request); var wire = new ByteArrayOutputStream()) {
++                write.invoke(frame, wire);
++                byte[] bytes = wire.toByteArray();
++                Path entry = Files.createTempFile(root, "wire-command-", ".sh");
++                Result observed;
++                try {
++                    Files.writeString(entry, (String) command.get(null), StandardCharsets.UTF_8);
++                    observed = bash(List.of(bashExecutable(), "--noprofile", "--norc", entry.toString()), bytes, false);
++                } finally {
++                    Arrays.fill(bytes, (byte) 0);
++                    Files.deleteIfExists(entry);
++                }
++                assertEquals(0, observed.exitCode(), observed.error());
++                assertEquals(output, observed.output());
++                assertEquals(error, observed.error());
++                var result = new CommandResult(Optional.of(0), observed.output(), observed.error(), false);
++                assertEquals(status.equals("UNKNOWN") ? StdoutKind.EXACT_UNKNOWN : StdoutKind.EXACT_ABSENT,
++                    DeploymentAgentPreparationProbe.stdoutShape(captured, result.stdout()).kind());
++                assertEquals(status.equals("UNKNOWN"), DeploymentAgentPreparationProbe.unknown(captured, result).isPresent());
++                assertFalse(DeploymentAgentPreparationProbe.absent(captured, result), "Even exact ABSENT stdout cannot clear a nonempty stderr");
++            }
++        }
+     }
+ 
+     private static UnknownObservation expected(String condition) {
+@@ -155,29 +254,41 @@
+     }
+ 
+     private Result bash(String input, boolean syntaxOnly, boolean emulatedLink) throws Exception {
++        var command = new java.util.ArrayList<>(List.of(bashExecutable(), "--noprofile", "--norc"));
++        if (syntaxOnly) command.add("-n");
++        command.add("-s");
++        return bash(command, input.getBytes(StandardCharsets.UTF_8), emulatedLink);
++    }
++
++    private static String bashExecutable() {
+         String executable = System.getProperty("managed.test.bash", System.getProperty("os.name").startsWith("Windows")
+             ? "C:\\Program Files\\Git\\bin\\bash.exe" : "/bin/bash");
+         Assumptions.assumeTrue(Files.isExecutable(Path.of(executable)), "Configured local Bash is unavailable");
+-        var command = new java.util.ArrayList<>(List.of(executable, "--noprofile", "--norc"));
+-        if (syntaxOnly) command.add("-n");
+-        command.add("-s");
++        return executable;
++    }
++
++    private Result bash(List<String> command, byte[] input, boolean emulatedLink) throws Exception {
+         var script = Files.createTempFile(root, "probe-input-", ".sh");
+-        Files.writeString(script, input, StandardCharsets.UTF_8);
+-        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectInput(script.toFile()).redirectErrorStream(true);
++        var stdout = Files.createTempFile(root, "probe-stdout-", ".out");
++        var stderr = Files.createTempFile(root, "probe-stderr-", ".err");
++        Files.write(script, input);
++        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectInput(script.toFile()).redirectOutput(stdout.toFile()).redirectError(stderr.toFile());
+         builder.environment().put("MSYS", emulatedLink ? "winsymlinks" : "winsymlinks:nativestrict");
+         var process = builder.start();
+         try {
+             assertTrue(process.waitFor(15, TimeUnit.SECONDS), "Controlled local Bash must terminate");
+-            return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
++            return new Result(process.exitValue(), Files.readString(stdout, StandardCharsets.UTF_8), Files.readString(stderr, StandardCharsets.UTF_8));
+         } finally {
+             if (process.isAlive()) {
+                 process.destroyForcibly();
+                 assertTrue(process.waitFor(5, TimeUnit.SECONDS));
+             }
+             Files.deleteIfExists(script);
++            Files.deleteIfExists(stdout);
++            Files.deleteIfExists(stderr);
+         }
+     }
+ 
+-    private record Result(int exitCode, String output) {
++    private record Result(int exitCode, String output, String error) {
+     }
+ }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
+@@ -154,7 +154,7 @@
+     }
+ 
+     @ParameterizedTest
+-    @ValueSource(strings = {"BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "FAILED_RESULT", "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT", "LOGGER_FAILURE"})
++    @ValueSource(strings = {"BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "ABSENT_STDERR", "EMPTY_STDOUT", "UNKNOWN_NONZERO", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "FAILED_RESULT", "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT", "LOGGER_FAILURE"})
+     void unconfirmedObservationDiagnosticsRemainTypedAndNeverLeakProcessData(String obstacle) throws Exception {
+         try (var frame = new Frame()) {
+             frame.obstacle = obstacle;
+@@ -171,19 +171,19 @@
+             assertFalse(frame.nativeAi.events.toString().contains("FAKE_SOURCE_MARKER"));
+             var tokens = frame.nativeAi.events.stream().filter(event -> event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION"))
+                 .map(LogEvent::message).filter(message -> message.startsWith("preparation.")).toList();
+-            assertEquals(7, frame.diagnosticAttempts);
++            assertEquals(11, frame.diagnosticAttempts);
+             if (obstacle.equals("LOGGER_FAILURE")) {
+                 assertTrue(tokens.isEmpty(), "Unavailable logging cannot change UNKNOWN or create a receipt");
+             } else {
+-                assertEquals(7, tokens.size());
++                assertEquals(11, tokens.size());
+                 assertTrue(tokens.stream().allMatch(token -> token.matches("[A-Za-z0-9_.:-]{1,80}")));
+                 String outcome = switch (obstacle) {
+-                    case "FAILED_RESULT" -> "FAILED";
++                    case "FAILED_RESULT", "UNKNOWN_NONZERO" -> "FAILED";
+                     case "UNKNOWN_RESULT", "TRANSPORT", "RUNTIME_TRANSPORT" -> "UNKNOWN";
+                     default -> "SUCCEEDED";
+                 };
+                 String code = switch (obstacle) {
+-                    case "FAILED_RESULT", "TRANSPORT" -> "IO_FAILURE";
++                    case "FAILED_RESULT", "UNKNOWN_NONZERO", "TRANSPORT" -> "IO_FAILURE";
+                     case "UNKNOWN_RESULT", "RUNTIME_TRANSPORT" -> "UNKNOWN";
+                     default -> "NONE";
+                 };
+@@ -191,10 +191,27 @@
+                 assertTrue(tokens.contains("preparation.outcome:" + outcome));
+                 assertTrue(tokens.contains("preparation.problemCode:" + code));
+                 assertTrue(tokens.contains("preparation.value:" + (missingValue ? "ABSENT" : "PRESENT")));
+-                assertTrue(tokens.contains("preparation.observedExit:" + (missingValue ? "ABSENT" : obstacle.equals("FAILED_RESULT") ? "1" : "0")));
++                assertTrue(tokens.contains("preparation.observedExit:" + (missingValue ? "ABSENT" : List.of("FAILED_RESULT", "UNKNOWN_NONZERO").contains(obstacle) ? "1" : "0")));
+                 assertTrue(tokens.contains("preparation.truncated:" + (missingValue ? "ABSENT" : Boolean.toString(obstacle.equals("DIAGNOSTIC_TRUNCATED")))));
+-                assertTrue(tokens.contains("preparation.unknownStage:" + (obstacle.equals("BOUND_UNKNOWN") ? "BUILD_UNIT" : "UNCONFIRMED")));
+-                assertTrue(tokens.contains("preparation.unknownReason:" + (obstacle.equals("BOUND_UNKNOWN") ? "BUILD_QUERY_UNCONFIRMED" : "UNCONFIRMED")));
++                assertTrue(tokens.contains("preparation.stdoutCharacters:" + (missingValue ? "ABSENT" : Integer.toString(frame.observedCommand.stdout().length()))));
++                assertTrue(tokens.contains("preparation.stderrCharacters:" + (missingValue ? "ABSENT" : Integer.toString(frame.observedCommand.stderr().length()))));
++                String shape = missingValue ? "ABSENT" : switch (obstacle) {
++                    case "MALICIOUS_STDOUT", "INCOMPLETE", "FAILED_RESULT" -> "INVALID";
++                    case "ABSENT_STDERR" -> "EXACT_ABSENT";
++                    case "EMPTY_STDOUT" -> "EMPTY";
++                    default -> "EXACT_UNKNOWN";
++                };
++                String mismatch = missingValue ? "ABSENT" : switch (obstacle) {
++                    case "MALICIOUS_STDOUT" -> "INVALID_ENUM";
++                    case "INCOMPLETE" -> "TAIL_FIELDS";
++                    case "FAILED_RESULT" -> "LINE_ENDING";
++                    default -> "NONE";
++                };
++                assertTrue(tokens.contains("preparation.stdoutShape:" + shape));
++                assertTrue(tokens.contains("preparation.stdoutMismatch:" + mismatch));
++                boolean boundUnknown = List.of("BOUND_UNKNOWN", "MALICIOUS_STDERR").contains(obstacle);
++                assertTrue(tokens.contains("preparation.unknownStage:" + (boundUnknown ? "BUILD_UNIT" : "UNCONFIRMED")));
++                assertTrue(tokens.contains("preparation.unknownReason:" + (boundUnknown ? "BUILD_QUERY_UNCONFIRMED" : "UNCONFIRMED")));
+             }
+         }
+     }
+@@ -343,6 +360,8 @@
+         final Map<String, TaskCheckpoint> checkpoints = new HashMap<>();
+ 
+         int diagnosticAttempts;
++
++        CommandResult observedCommand;
+ 
+         int connected;
+ 
+@@ -422,7 +441,7 @@
+                         output = output.replace(obstacle + "=ABSENT", obstacle + "=PRESENT");
+                     if (List.of("PERMISSION", "DANGLING_LINK").contains(obstacle))
+                         output = output.replace("STATUS=ABSENT", "STATUS=UNKNOWN");
+-                    if (List.of("BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "LOGGER_FAILURE").contains(obstacle)) {
++                    if (List.of("BOUND_UNKNOWN", "MALICIOUS_STDOUT", "MALICIOUS_STDERR", "UNKNOWN_NONZERO", "DIAGNOSTIC_TRUNCATED", "INCOMPLETE", "LOGGER_FAILURE").contains(obstacle)) {
+                         output = DeploymentAgentPreparationProbe.unknownOutput(captured,
+                             new DeploymentAgentPreparationProbe.UnknownObservation(DeploymentAgentPreparationProbe.Stage.BUILD_UNIT,
+                                 DeploymentAgentPreparationProbe.Reason.BUILD_QUERY_UNCONFIRMED));
+@@ -431,14 +450,16 @@
+                         if (obstacle.equals("INCOMPLETE"))
+                             output = output.substring(0, output.indexOf("UNKNOWN_REASON="));
+                     }
+-                    boolean failed = List.of("FAILED_OBSERVATION", "FAILED_RESULT").contains(obstacle);
++                    boolean failed = List.of("FAILED_OBSERVATION", "FAILED_RESULT", "UNKNOWN_NONZERO").contains(obstacle);
+                     if (obstacle.equals("FAILED_RESULT"))
+                         output = "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER";
++                    if (obstacle.equals("EMPTY_STDOUT")) output = "";
+                     var result = new CommandResult(Optional.of(failed ? 1 : 0), output,
+-                        List.of("MALICIOUS_STDERR", "FAILED_RESULT").contains(obstacle) ? "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER" : "",
++                        List.of("MALICIOUS_STDERR", "ABSENT_STDERR", "FAILED_RESULT").contains(obstacle) ? "password=FAKE_PASSWORD_MARKER source=FAKE_SOURCE_MARKER" : "",
+                         List.of("TRUNCATED", "DIAGNOSTIC_TRUNCATED").contains(obstacle));
++                    observedCommand = result;
+                     afterSend.run();
+-                    if (obstacle.equals("FAILED_RESULT"))
++                    if (List.of("FAILED_RESULT", "UNKNOWN_NONZERO").contains(obstacle))
+                         yield new OperationResult<>(TaskResult.FAILED, Optional.of(result), Optional.of(processProblem(ProblemCode.IO_FAILURE)));
+                     yield success(result);
+                 }
