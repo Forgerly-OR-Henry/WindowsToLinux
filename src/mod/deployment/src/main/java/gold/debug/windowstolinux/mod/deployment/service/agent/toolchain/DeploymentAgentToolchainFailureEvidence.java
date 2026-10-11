@@ -134,7 +134,7 @@ public final class DeploymentAgentToolchainFailureEvidence {
                 return Optional.of(value);
             }
             if (code.equals("AGENT_TOOLCHAIN_STATE_UNCONFIRMED")) {
-                if (!value.path("function").isTextual() || !Set.of("agent_main", "agent_prepare", "agent_create", "agent_prepare_selected",
+                if (!value.path("function").isTextual() || !Set.of("agent_main", "agent_prepare", "agent_create", "agent_prepare_selected", "agent_installation_selection",
                     "agent_execute", "agent_bind", "agent_setup", "agent_worker", "agent_freeze", "agent_release_source", "agent_probe_records",
                     "agent_promote", "agent_detach", "agent_cleanup_before_start", "agent_cleanup_placeholder", "agent_os", "agent_tool",
                     "agent_regular", "agent_write", "agent_record", "agent_identity", "agent_scan", "agent_copy_tree", "agent_require_space",

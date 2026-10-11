@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 import stat
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -445,6 +446,166 @@ class AgentToolchainIsolationTest(unittest.TestCase):
                 self.rejected('EXISTING_INSTALLATION_MISMATCH', lambda: self.c.agent_prepare_selected(
                     manifest, 'RUST', '1.95.0', record['source'], 'sha256', expected, 'rust', '-'))
                 probe.assert_not_called()
+
+    def installation(self, present=True):
+        class Directory(pathlib.PurePosixPath):
+            def exists(self): return present
+            def is_symlink(self): return False
+        root = Directory('/usr/local/lib/windowstolinux/toolchains')
+        expected = 'a' * 64
+        directory = root / 'versions' / ('rust-' + self.c.agent_installation_key('RUST', '1.95.0', expected))
+        record = {'ecosystem': 'RUST', 'version': '1.95.0', 'directory': str(directory), 'origin': 'MANAGED',
+            'source': 'https://static.rust-lang.org/archive', 'official_algorithm': 'sha256',
+            'official_digest': expected, 'sha256': expected}
+        release = {'version': record['version'], 'url': record['source'], 'algorithm': 'sha256',
+            'digest': expected, 'layout': 'rust'}
+        args = ['RUST', '1.95', '1.95.0', '60', '-', OPERATION, 'fixture-release']
+        return root, directory, record, release, args
+
+    def test_missing_installation_marker_is_unknown_before_allocation_and_leaves_old_state(self):
+        _, _, record, release, args = self.installation()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            directory = root / 'versions' / pathlib.PurePosixPath(record['directory']).name
+            directory.mkdir(parents=True)
+            old = root / 'work' / ('agent-' + 'f' * 32)
+            old.mkdir(parents=True)
+            for name in ('placeholder.json', 'start-intent.json', 'volume.ext4'):
+                (old / name).write_bytes(('old-' + name).encode())
+            before = {str(path.relative_to(root)): (path.stat().st_ino, path.stat().st_mtime_ns,
+                path.read_bytes() if path.is_file() else None) for path in root.rglob('*')}
+            with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'owned_directory'), \
+                 mock.patch.object(self.c, 'agent_regular', side_effect=lambda path: path.read_bytes()), \
+                 mock.patch.object(self.c, 'agent_system', return_value=None), \
+                 mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+                 mock.patch.object(self.c, 'agent_create') as create, mock.patch.object(self.c, 'agent_volume') as volume, \
+                 mock.patch.object(self.c, 'download') as download, mock.patch.object(self.c, 'agent_execute') as worker, \
+                 mock.patch.object(self.c, 'agent_cleanup_before_start') as cleanup:
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_prepare(args)
+                self.assertEqual(('unknown', 'INSTALLATION_RECORD_MISSING'),
+                    (failure.exception.category, failure.exception.detail))
+                for effect in (create, volume, download, worker, cleanup):
+                    effect.assert_not_called()
+            after = {str(path.relative_to(root)): (path.stat().st_ino, path.stat().st_mtime_ns,
+                path.read_bytes() if path.is_file() else None) for path in root.rglob('*')}
+            self.assertEqual(before, after)
+            self.assertEqual([], list(directory.iterdir()))
+
+    def test_record_only_missing_marker_read_is_reclassified(self):
+        _, directory, _, _, _ = self.installation()
+        for error in (PermissionError('private'), OSError(5, 'private')):
+            with self.subTest(error=type(error).__name__), mock.patch.object(self.c, 'owned_directory'), \
+                 mock.patch.object(self.c, 'agent_regular', side_effect=error):
+                with self.assertRaises(type(error)) as failure:
+                    self.c.agent_record(directory)
+                self.assertIs(error, failure.exception)
+        missing_parent = FileNotFoundError('parent')
+        with mock.patch.object(self.c, 'owned_directory', side_effect=missing_parent), \
+             mock.patch.object(self.c, 'agent_regular') as read:
+            with self.assertRaises(FileNotFoundError) as failure:
+                self.c.agent_record(directory)
+            self.assertIs(missing_parent, failure.exception)
+            read.assert_not_called()
+        with mock.patch.object(self.c, 'owned_directory'), \
+             mock.patch.object(self.c, 'agent_regular', side_effect=self.c.PreparationFailure('isolation', 'PROTECTED_FILE')):
+            self.rejected('PROTECTED_FILE', lambda: self.c.agent_record(directory))
+
+    def test_malformed_or_invalid_record_digest_is_not_missing_or_reinstalled(self):
+        root, directory, record, release, args = self.installation()
+        for payload, tag in ((b'{', 'INVALID_JSON'), (b'{}', 'INSTALLATION_RECORD'),
+                             (self.c.agent_encode(dict(record, sha256='invalid')), 'INSTALLATION_DIGEST')):
+            with self.subTest(tag=tag), mock.patch.object(self.c, 'ROOT', root), \
+                 mock.patch.object(self.c, 'pathlib', types.SimpleNamespace(Path=pathlib.PurePosixPath)), \
+                 mock.patch.object(self.c, 'owned_directory'), mock.patch.object(self.c, 'agent_regular', return_value=payload), \
+                 mock.patch.object(self.c, 'agent_system', return_value=None), \
+                 mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+                 mock.patch.object(self.c, 'agent_create') as create:
+                with self.assertRaises(self.c.PreparationFailure) as failure:
+                    self.c.agent_prepare(args)
+                self.assertEqual(('isolation', tag), (failure.exception.category, failure.exception.detail))
+                create.assert_not_called()
+
+    def test_absent_installation_uses_original_new_install_path(self):
+        _, _, record, release, args = self.installation(False)
+        manifest = self.manifest()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            (root / 'versions').mkdir()
+            with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=None) as system, \
+                 mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+                 mock.patch.object(self.c, 'agent_create', return_value=manifest) as create, \
+                 mock.patch.object(self.c, 'agent_release_source', return_value=record['sha256']) as download, \
+                 mock.patch.object(self.c, 'agent_identity', return_value=[5, 99]), mock.patch.object(self.c, 'agent_write'), \
+                 mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
+                 mock.patch.object(self.c, 'agent_execute') as execute, mock.patch.object(self.c, 'agent_promote') as promote, \
+                 mock.patch.object(self.c, 'agent_detach') as detach, contextlib.redirect_stdout(io.StringIO()):
+                self.c.agent_prepare(args)
+                self.assertEqual(2, system.call_count)
+                create.assert_called_once_with(OPERATION, 60)
+                download.assert_called_once_with(manifest, record['source'], 'sha256', record['sha256'], 'rust')
+                execute.assert_called_once_with(manifest)
+                self.assertEqual('INSTALL', manifest['action'])
+                target = promote.call_args.args[1]
+                self.assertTrue(target.is_dir())
+                self.assertEqual(pathlib.PurePosixPath(record['directory']).name, target.name)
+                promote.assert_called_once()
+                detach.assert_not_called()
+
+    def test_existing_managed_record_is_rechecked_and_still_uses_isolated_probe(self):
+        root, _, record, release, args = self.installation()
+        manifest = self.manifest()
+        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=None), \
+             mock.patch.object(self.c, 'agent_record', return_value=record) as read, \
+             mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+             mock.patch.object(self.c, 'agent_create', return_value=manifest) as create, \
+             mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
+             mock.patch.object(self.c, 'agent_execute') as execute, mock.patch.object(self.c, 'agent_release_source') as download, \
+             mock.patch.object(self.c, 'agent_detach') as detach, contextlib.redirect_stdout(io.StringIO()):
+            self.c.agent_prepare(args)
+            self.assertEqual(2, read.call_count)
+            create.assert_called_once()
+            execute.assert_called_once_with(manifest)
+            self.assertEqual('PROBE', manifest['action'])
+            self.assertEqual([{key: record[key] for key in ('ecosystem', 'version', 'directory')}], manifest['request']['probes'])
+            download.assert_not_called()
+            detach.assert_called_once_with(manifest)
+
+    def test_record_change_after_preflight_is_rejected_without_probe_or_download(self):
+        root, _, record, release, args = self.installation()
+        manifest = self.manifest()
+        changed = dict(record, official_digest='b' * 64)
+        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=None), \
+             mock.patch.object(self.c, 'agent_record', side_effect=[record, changed]) as read, \
+             mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+             mock.patch.object(self.c, 'agent_create', return_value=manifest), \
+             mock.patch.object(self.c, 'agent_probe_records') as probe, mock.patch.object(self.c, 'agent_release_source') as download, \
+             mock.patch.object(self.c, 'agent_cleanup_before_start', return_value=False), \
+             mock.patch.object(self.c, 'agent_detach') as detach, mock.patch.object(self.c, 'agent_cleanup_placeholder') as cleanup:
+            self.rejected('EXISTING_INSTALLATION_MISMATCH', lambda: self.c.agent_prepare(args))
+            self.assertEqual(2, read.call_count)
+            probe.assert_not_called()
+            download.assert_not_called()
+            detach.assert_called_once_with(manifest)
+            cleanup.assert_called_once_with(manifest)
+
+    def test_registered_system_is_preferred_over_unrelated_missing_managed_marker(self):
+        root, _, record, release, args = self.installation()
+        system_record = dict(record, origin='SYSTEM', source='system:/usr/bin/rustc')
+        manifest = self.manifest()
+        with mock.patch.object(self.c, 'ROOT', root), mock.patch.object(self.c, 'agent_system', return_value=system_record) as system, \
+             mock.patch.object(self.c, 'agent_record', side_effect=FileNotFoundError('unrelated')) as managed, \
+             mock.patch.object(self.c, 'resolution_decode', return_value=release), \
+             mock.patch.object(self.c, 'agent_create', return_value=manifest), \
+             mock.patch.object(self.c, 'agent_publish_manifest', side_effect=lambda value: value), \
+             mock.patch.object(self.c, 'agent_execute') as execute, mock.patch.object(self.c, 'agent_release_source') as download, \
+             mock.patch.object(self.c, 'agent_detach'), contextlib.redirect_stdout(io.StringIO()):
+            self.c.agent_prepare(args)
+            self.assertEqual(2, system.call_count)
+            managed.assert_not_called()
+            download.assert_not_called()
+            execute.assert_called_once_with(manifest)
+            self.assertEqual('PROBE', manifest['action'])
 
     def test_setup_only_chowns_four_original_empty_directories_to_positive_unit_identity(self):
         manifest = self.manifest()

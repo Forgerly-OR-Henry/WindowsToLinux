@@ -30,7 +30,7 @@ AGENT_BOOTSTRAP = (
     "exec(compile(code,p,'exec'),{'__name__':'__main__','__file__':p,'PROGRAM_SOURCE':code})"
 )
 DEADLINE = None
-AGENT_DIAGNOSTIC_FUNCTIONS = frozenset(('agent_main', 'agent_prepare', 'agent_create', 'agent_prepare_selected',
+AGENT_DIAGNOSTIC_FUNCTIONS = frozenset(('agent_main', 'agent_prepare', 'agent_create', 'agent_prepare_selected', 'agent_installation_selection',
     'agent_execute', 'agent_bind', 'agent_setup', 'agent_worker', 'agent_freeze', 'agent_release_source',
     'agent_probe_records', 'agent_promote', 'agent_detach', 'agent_cleanup_before_start',
     'agent_cleanup_placeholder', 'agent_os', 'agent_tool', 'agent_regular', 'agent_write',
@@ -928,7 +928,11 @@ def agent_promote(manifest, destination, original, record):
 
 def agent_record(directory):
     owned_directory(directory)
-    record = agent_json(agent_regular(directory / '.w2l-toolchain.json'))
+    try:
+        data = agent_regular(directory / '.w2l-toolchain.json')
+    except FileNotFoundError:
+        agent_reject('INSTALLATION_RECORD_MISSING', 'unknown')
+    record = agent_json(data)
     required = {'ecosystem', 'version', 'directory', 'origin', 'source', 'sha256'}
     allowed = required | {'system_files', 'official_algorithm', 'official_digest', 'dependencies', 'tree_sha256', 'agent_program_sha256'}
     if not isinstance(record, dict) or not required <= set(record) <= allowed or record['directory'] != str(directory) or record['origin'] not in ('MANAGED', 'SYSTEM') or not isinstance(record['source'], str) or not re.fullmatch('[!-~]{1,2048}', record['source']) or '|' in record['source']:
@@ -1105,6 +1109,7 @@ def agent_prepare(args):
         agent_reject('JAVA_HOME_RECORD')
     selected = resolution_decode(encoded_release, ecosystem, branch, exact, operation, EXPECTED_RESOLVER_SOURCE_SHA256)
     version, url, algorithm, expected, layout = (selected[key] for key in ('version', 'url', 'algorithm', 'digest', 'layout'))
+    agent_installation_selection(ecosystem, version, url, algorithm, expected)
     manifest = agent_create(operation, seconds)
     try:
         agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expected, layout, java_home)
@@ -1118,44 +1123,48 @@ def agent_prepare(args):
         raise
 
 
+def agent_installation_selection(ecosystem, version, url, algorithm, expected):
+    system = agent_system(ecosystem, version)
+    if system is not None:
+        return system, pathlib.Path(system['directory'])
+    key = agent_installation_key(ecosystem, version, expected)
+    directory = ROOT / 'versions' / (ecosystem.lower() + '-' + key)
+    if directory.exists() or directory.is_symlink():
+        record = agent_record(directory)
+        if record['ecosystem'] != ecosystem or record['version'] != version or record['origin'] != 'MANAGED' or record['source'] != url or record.get('official_algorithm') != algorithm or record.get('official_digest') != expected or record['directory'] != str(directory) or (algorithm == 'sha256' and record['sha256'] != expected):
+            agent_reject('EXISTING_INSTALLATION_MISMATCH')
+        return record, directory
+    return None, directory
+
+
 def agent_prepare_selected(manifest, ecosystem, version, url, algorithm, expected, layout, java_home):
     operation = manifest['operation']
     detached = False
-    system = agent_system(ecosystem, version)
-    if system is not None:
-        record = system
-        directory = pathlib.Path(record['directory'])
+    record, directory = agent_installation_selection(ecosystem, version, url, algorithm, expected)
+    if record is not None:
         agent_probe_records(manifest, [record], java_home)
     else:
-        key = agent_installation_key(ecosystem, version, expected)
-        directory = ROOT / 'versions' / (ecosystem.lower() + '-' + key)
-        if directory.exists() or directory.is_symlink():
-            record = agent_record(directory)
-            if record['ecosystem'] != ecosystem or record['version'] != version or record['origin'] != 'MANAGED' or record['source'] != url or record.get('official_algorithm') != algorithm or record.get('official_digest') != expected or record['directory'] != str(directory) or (algorithm == 'sha256' and record['sha256'] != expected):
-                agent_reject('EXISTING_INSTALLATION_MISMATCH')
-            agent_probe_records(manifest, [record], java_home)
-        else:
-            sha256 = agent_release_source(manifest, url, algorithm, expected, layout)
-            legacy = ecosystem == 'RUBY' and version_key(version)[:2] == (3, 0)
-            dependencies = {}
-            if legacy:
-                gem_digest = 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
-                gem_url = 'https://rubygems.org/downloads/openssl-3.0.3.gem'
-                download(gem_url, agent_operation(operation) / 'mutable/input/openssl-3.0.3.gem', 'sha256', gem_digest)
-                dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': gem_digest}
-            directory.mkdir(mode=0o755)
-            original = agent_identity(directory)
-            agent_write(agent_operation(operation) / 'placeholder.json', agent_encode({
-                'operation': operation, 'ecosystem': ecosystem, 'version': version,
-                'directory': str(directory), 'identity': original}))
-            manifest['action'] = 'INSTALL'
-            manifest['request'] = {'ecosystem': ecosystem, 'version': version, 'destination': str(directory), 'layout': layout,
-                                   'sourceName': 'release', 'javaHome': java_home, 'legacyGem': legacy}
-            agent_execute(agent_publish_manifest(manifest))
-            record = {'ecosystem': ecosystem, 'version': version, 'directory': str(directory), 'origin': 'MANAGED', 'source': url,
-                      'sha256': sha256, 'official_algorithm': algorithm, 'official_digest': expected, 'dependencies': dependencies}
-            agent_promote(manifest, directory, original, record)
-            detached = True
+        sha256 = agent_release_source(manifest, url, algorithm, expected, layout)
+        legacy = ecosystem == 'RUBY' and version_key(version)[:2] == (3, 0)
+        dependencies = {}
+        if legacy:
+            gem_digest = 'e24fcd69f6e0bac1e1c3cb8667d0ded5c1f6c59d010ecb5c857a771c9cb7565c'
+            gem_url = 'https://rubygems.org/downloads/openssl-3.0.3.gem'
+            download(gem_url, agent_operation(operation) / 'mutable/input/openssl-3.0.3.gem', 'sha256', gem_digest)
+            dependencies['openssl'] = {'version': '3.0.3', 'source': gem_url, 'sha256': gem_digest}
+        directory.mkdir(mode=0o755)
+        original = agent_identity(directory)
+        agent_write(agent_operation(operation) / 'placeholder.json', agent_encode({
+            'operation': operation, 'ecosystem': ecosystem, 'version': version,
+            'directory': str(directory), 'identity': original}))
+        manifest['action'] = 'INSTALL'
+        manifest['request'] = {'ecosystem': ecosystem, 'version': version, 'destination': str(directory), 'layout': layout,
+                               'sourceName': 'release', 'javaHome': java_home, 'legacyGem': legacy}
+        agent_execute(agent_publish_manifest(manifest))
+        record = {'ecosystem': ecosystem, 'version': version, 'directory': str(directory), 'origin': 'MANAGED', 'source': url,
+                  'sha256': sha256, 'official_algorithm': algorithm, 'official_digest': expected, 'dependencies': dependencies}
+        agent_promote(manifest, directory, original, record)
+        detached = True
     if not detached:
         agent_detach(manifest)
     print('TOOLCHAIN=' + '|'.join(record[key] for key in ('ecosystem', 'version', 'directory', 'origin', 'source', 'sha256')))

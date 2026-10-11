@@ -34,7 +34,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         "agent_regular", "agent_tool", "agent_os", "agent_require_space", "agent_create", "agent_release_source", "agent_sandbox_properties", "agent_setup",
         "agent_unit_identity", "agent_ready_file", "agent_publish_ready", "agent_wait_ready", "agent_unit_stopped",
         "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
-        "agent_detach", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
+        "agent_detach", "agent_installation_selection", "agent_record", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 
     private static final List<String> DEPENDENCY_LOCATIONS = List.of("dependency_protected", "dependency_bytes", "dependency_profile",
         "dependency_registered", "dependency_tool", "dependency_run", "dependency_packages", "dependency_url", "dependency_key",

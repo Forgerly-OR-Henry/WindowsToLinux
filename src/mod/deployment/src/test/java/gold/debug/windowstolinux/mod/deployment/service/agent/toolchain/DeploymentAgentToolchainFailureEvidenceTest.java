@@ -173,9 +173,11 @@ class DeploymentAgentToolchainFailureEvidenceTest {
 
     @Test
     void unknownProtocolAndTruncatedResultCannotBecomeRetryableKnownFailure() {
-        var unknown = retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:DEPENDENCY_STATE_UNCONFIRMED\n", false);
-        assertEquals(TaskResult.UNKNOWN, unknown.outcome());
-        assertTrue(DeploymentAgentToolchainFailureEvidence.observation(unknown.problem()).contains("\"productOutcome\":\"UNKNOWN\""));
+        for (var code : List.of("DEPENDENCY_STATE_UNCONFIRMED", "INSTALLATION_RECORD_MISSING")) {
+            var unknown = retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:" + code + "\n", false);
+            assertEquals(TaskResult.UNKNOWN, unknown.outcome());
+            assertTrue(DeploymentAgentToolchainFailureEvidence.observation(unknown.problem()).contains("\"productOutcome\":\"UNKNOWN\""));
+        }
         assertEquals(TaskResult.UNKNOWN, retain(TaskResult.FAILED, 65, "TOOLCHAIN_FAILURE=dependencies:OS_CONFIGURATION_OWNER\n", true).outcome());
         assertEquals(TaskResult.CANCELLED, retain(TaskResult.CANCELLED, 70, "TOOLCHAIN_FAILURE=unknown:DEPENDENCY_STATE_UNCONFIRMED\n", false).outcome());
     }
@@ -243,17 +245,19 @@ class DeploymentAgentToolchainFailureEvidenceTest {
 
     @Test
     void finalControllerExceptionDiagnosticRemainsUnknownAndUsesOnlyCurrentFixedClassification() throws Exception {
-        String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "AGENT_TOOLCHAIN_STATE_UNCONFIRMED",
-            "function", "agent_create", "exception", "OSError", "errno", 2, "line", 1401));
-        var result = retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:AGENT_TOOLCHAIN_STATE_UNCONFIRMED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
-        assertEquals(TaskResult.UNKNOWN, result.outcome());
-        String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
-        assertTrue(observation.contains("reportedDiagnostic"));
-        assertTrue(observation.contains("\"function\":\"agent_create\""));
-        assertTrue(observation.contains("\"errno\":2"));
-        assertTrue(observation.contains("\"line\":1401"));
-        assertFalse(observation.contains("exceptionMessage"));
-        assertFalse(observation.contains("filename"));
+        for (var function : List.of("agent_create", "agent_installation_selection", "agent_record")) {
+            String diagnostic = new ObjectMapper().writeValueAsString(Map.of("operation", OPERATION, "phase", "AGENT_TOOLCHAIN_STATE_UNCONFIRMED",
+                "function", function, "exception", "OSError", "errno", 2, "line", 1401));
+            var result = retain(TaskResult.FAILED, 70, "TOOLCHAIN_FAILURE=unknown:AGENT_TOOLCHAIN_STATE_UNCONFIRMED\nTOOLCHAIN_DIAGNOSTIC=" + diagnostic + "\n", false);
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            String observation = DeploymentAgentToolchainFailureEvidence.observation(result.problem());
+            assertTrue(observation.contains("reportedDiagnostic"));
+            assertTrue(observation.contains("\"function\":\"" + function + "\""));
+            assertTrue(observation.contains("\"errno\":2"));
+            assertTrue(observation.contains("\"line\":1401"));
+            assertFalse(observation.contains("exceptionMessage"));
+            assertFalse(observation.contains("filename"));
+        }
     }
 
     @Test
