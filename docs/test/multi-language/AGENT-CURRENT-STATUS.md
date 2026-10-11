@@ -1,6 +1,6 @@
 # Agent 八项目验收状态
 
-记录时间：2026-10-11。原 file-transfer 的部署、64KiB 上传下载和重启持久化已通过，原产品恢复收尾完成；425 整条测试仍保留 FAIL。当前仅串行推进原 task-board，实时执行进度以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
+记录时间：2026-10-11。原 file-transfer 的部署、64KiB 上传下载和重启持久化已通过，原产品恢复收尾完成；425 整条测试仍保留 FAIL。509已将原 task-board 经产品恢复结清并停止、禁用，尚未完成其业务验收。484容量足够；现处于新部署前的受管目录配置提取阶段，之后仍只串行复验 task-board。实时执行进度以 [CURRENT](../../../.ai-workspace/progress/CURRENT.md) 为准。
 
 ## 400 起的新服务器单项目复验
 
@@ -333,3 +333,17 @@ Maven1，2064源码冻结零变，Java0。没有新增原任务用量行；四�
 [自有增量](patches/AGENT-RECOVERY-REVIEW-REBIND-507.patch)保存混合基线上的生产修改和直接旧测试同步；反向 `--check --unidiff-zero` 已通过，无源码写入。28个定点场景最终均有通过证据：508b执行28项，26通过、两项夹具状态错误；仅两处测试夹具改为真实合法状态后，508c重跑直接受影响的两方法，共7项全通过、0跳过。508初次编译的两处测试导入错误也已修正。未重复已通过的旧恢复及其他方法，不属于全量测试。
 
 三个自有源码冻结零变，原203fixture及59helper零变，500已验证三源码不变，Java0；未应用formatter。无真实provider或服务器调用；旧恢复测试使用明确的本地HTTP/SSH fixture。509原任务恢复尚未执行，关闭重复配置保存及验证，复用已保存NONE/NONE。
+
+## 509 原任务恢复结清与停用闭环
+
+本地提交 `2a4655b5` 后，仅从产品入口恢复原 task-board。原任务实际 `ENDED / SUCCEEDED / AI_RECOVERY_COMMAND_RECEIPTS_SETTLED`，blockers为空；原状态和拒绝历史保留，未重放部署。产品停止、禁用并最终核查 `STOPPED / DISABLED`，出现 `STATIC_LIVE_RECOVERED_CLEAN`。Maven0，1test、0failure/error/skip；2065源码冻结零变，Java0。恢复成功不等于 task-board 的业务验收通过。
+
+新增19项已知审批请求，共209218 Token（input206606/output2612/cache79232/miss127374，输入缓存38.3%）。没有重复保存或验证模型配置。fresh445跨版本调试已知小计2989746；12项配置验证和499的一项审批用量仍未知，实际总量不能确定。当前恢复全为审批，不能用其占比评价正式八项目标准。
+
+外层启动命令返回1，但产品测试及Maven实际成功；原 wrapper 已清除凭据环境变量，外层finally再次删除缺失变量使PowerShell成功标志为false，直接无凭据夹具已确证。无需重跑产品业务；后续外层cleanup已先检查变量存在并保留真实退出码。
+
+## 484 当前容量与 510 目录合同准备
+
+原任务和产品停用闭环完成后，484仅通过产品入口只读观察空间：availableBytes=25817202688，两个组件准备要求13958643712。Maven0、1test、0failure/error/skip，2065源码冻结零变，Java0，无模型请求。容量满足当前复验，无需为此重装。
+
+510只读确证RestoreSteps.root固定`/candidates`而真实helper创建、文件及候选根为`/work`；严格回执比较会在已记录createAttempted、尚未上传时判UNKNOWN。ApiCrossModTest的7处假根遮蔽错误。此为源码合同缺陷，尚无该场景远端验收，不能归因509。目录接线时统一真实候选根并校正替身，不同时接受两根，不重写旧transfer目标。还须接线独立Environment/SELinux历史与foreign扫描、Agent工具链隔离三根；不得换根后忽略原宿主控制证据。511正在只读核对最小完整布局快照和渲染设计，目录实现尚未完成，新部署尚未启动。
