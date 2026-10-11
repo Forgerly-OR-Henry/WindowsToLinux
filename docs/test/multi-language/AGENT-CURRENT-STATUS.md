@@ -239,3 +239,15 @@ Agent 审批导航只有准确 operation、完整 canonical 脚本、空 stdin �
 480/481 完成Agent专用合同范围修正：facts/verify入口清空实际verifiedReviewIntent；仅完整canonical请求、原task/target/pending核验成功后填充，hook仅为该pending HEALTH提供固定SYSTEM文本。STATUS/runtime/无当前选择/未覆盖请求均空，旧pending不继承合同或旧grant，实际send前清空。33定点PASS（新增3/直接旧30）/0SKIP/Maven0/Java0/noAPI/noSSH；两源码SHA/原203fixture59helper零变，477其他七源码未改。IDEA formatter未应用（默认用户锁不可用，隔离bat profile不支持Java），源码字节未变，仅人工风格和diff检查，临时目录已清理；不虚报format通过。所有writer STOP；限定三自有文件提交后仅原恢复482。原任务ENDED和产品STOP-DISABLE成功、当前容量>=13GiB后才fresh task-board483；未开始其他付费项目。
 
 共享 hook 签名、固定默认审批和未知 persistent 合同的 SYSTEM 保护不改。先前477在所有当前上下文统一附合同的策略由本节取代；STATUS/runtime 不再携带健康专属合同。控制验证不能证明实际模型一定批准，所有旧有效 DENY 与原 UNKNOWN 保留。
+
+## 482 原查询执行前后阶段依赖
+
+482 原产品恢复结束：first original-status APP合法DENY，要求先提供待执行query结果回执NO_RESULT_FOR_THIS_PENDING_REQUEST且旧business仍UNKNOWN/EXECUTING。健康/cleanup/STOP-DISABLE均未进入，命令未发送，原UNKNOWN/拒绝保留。2061freeze零变/Maven1/Java0；新增2APP15576(input15337/output239/cache7168/miss8169，46.7%)，fresh445跨版本调试累计2696073/4probe未知，正式目标未完成。480修复已限定提交098dcbe5/no push/index0。485 Astra仅只读审核真实status/runtime效果与执行前审批、执行后取证阶段合同，需排除真正缺授权/源证据再提出Agent-only方案；当前不重复同证据付费，不新DB绕SERVERlease，483新task-board与484capacity仅prepare/parse未跑。
+
+待处理 query 没有执行结果是当前事实；旧部署业务 UNKNOWN 也不能被改写。审批拒绝引用这两个事实，表现为要求执行结果后才允许结果查询的依赖环。正在核查真实固定查询效果和阶段合同；尚不能仅凭拒绝理由证明没有其他授权或源码缺口，也不据此强制审批通过。
+
+## 486–488 观察合同与执行阶段
+
+486–488 Agent观察合同与阶段事实修正已验证：STATUS/native runtime按当前严格核验的请求提供独立固定SYSTEM合同；HEALTH合同仍限HEALTH。原UNKNOWN/EXECUTING、DENY及未结算外层delivery保留，同一原门禁导出ledger分类，不放宽执行权限。错误CURRENT/BUILD_ACTIVE保留真实RESULT但不晋升健康观察。67定点PASS（新增25/直接旧42）/0SKIP/Maven0/Java0/noAPI/noSSH；五源码冻结零变，原203fixture/59helper及477其他七源码零变。包含十个本地Bash分支及一个锁验证源码场景，OS/renderer/verify/systemd为明确fixture，Linux共享锁与完整硬编码binding parser未实际执行；不宣称远端guard或模型批准。formatter未应用，人工风格/diff检查，不虚报format PASS。writer全部STOP；限定本地提交后才原产品恢复489，ENDED/STOP-DISABLE及当前容量>=13GiB后才483单task-board，旧UNKNOWN不通过新DB绕开。
+
+STATUS不被描述为验证FragmentPath/drop-ins/unit字节；native inspect/observe有各自实际守卫。工具链verify读取既有锁并取得共享锁，不能描述为完全不取锁，也不等于prepare许可。受控验证只支持接口、阶段、绑定与分支行为；原任务仍UNKNOWN，实际部署及正式同版八项目批次未完成。

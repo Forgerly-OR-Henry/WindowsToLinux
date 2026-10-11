@@ -78,6 +78,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
 
     private ActionIntent verifiedReviewIntent;
 
+    private OriginalLedgerClassification originalLedger;
+
     private boolean stopped;
 
     private record Selection(DeploymentApplicationGraph.Part part, DeploymentUnitCommit commit,
@@ -100,6 +102,10 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     }
 
     private record RuntimeQuery(Selection selected, String verb) {
+    }
+
+    private record OriginalLedgerClassification(boolean allEffectsSettled, List<Long> publicationSequence,
+                                               Optional<DeploymentAgentActionLog.Event> unsettledOuterDelivery) {
     }
 
     private record Pending(ActionIntent intent, Health health, RuntimeQuery runtime, String evidenceDigest,
@@ -140,8 +146,12 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     public String reviewInstructions() throws ApiException {
         if (stopped) throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_REVIEW_STOPPED", null);
         requireBinding();
-        return pending != null && pending.health() != null && pending.intent().equals(verifiedReviewIntent)
-            ? DeploymentAgentHealthReviewContract.text() : "";
+        if (query != null && query.intent().equals(verifiedReviewIntent))
+            return DeploymentAgentObservationReviewContract.text();
+        if (pending != null && pending.intent().equals(verifiedReviewIntent))
+            return pending.health() != null ? DeploymentAgentHealthReviewContract.text()
+                : DeploymentAgentObservationReviewContract.text();
+        return "";
     }
 
     @Override
@@ -204,6 +214,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 facts.put("runtimeBinding", Map.of("kind", backend(selected).equals("native") ? "deployment" : "container",
                     "engine", engine(selected), "mode", selected.part().reviewedRuntime().workload().mode().name(),
                     "currentReleaseSha256", selected.commit().release().sha256(), "systemdUnit", unit.systemdUnit()));
+                observationReviewFacts(facts, selected, false);
             }
             facts.put("originalGraphBindings", selections.values().stream().map(DeploymentAgentHealthEvidence::unitFacts).toList());
             facts.put("currentGraphQueries", observations.values().stream().map(DeploymentAgentHealthEvidence::observationFacts).toList());
@@ -367,6 +378,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         facts.put("helperProtocol", DeploymentManagedHelperBundle.PROTOCOL_VERSION);
         facts.put("enforcedQueryBoundary", "When executed, the pinned publication-original-status helper validates all seven literal arguments. If CURRENT exists it must resolve exactly inside this application's managed releases directory with the original ownership manifest. Existing snapshots and candidate .agent-task markers must belong to the original task; the build unit is queried independently. Retained releases must carry the same ownership manifest. The expected release constrains maintenance ownership; actual CURRENT is read and returned independently. These are execution-time guards, not facts already observed by this pending request.");
         facts.put("receiptState", "NO_RESULT_FOR_THIS_PENDING_REQUEST");
+        facts.put("receiptStateMeaning", "PRE_EXECUTION: this exact invocation-local status request has not been sent. No result is expected yet; this is not a claim that an executed request lost its receipt. The separate original execution/outer delivery remains UNKNOWN or EXECUTING as recorded, not settled or authorized.");
+        observationReviewFacts(facts, selected, true);
         facts.put("observationLimits", "Only retained original proposal evidence and current local bindings are supplied before this query executes. No fresh remote receipt, remote ownership, build state, listener ownership or health is asserted. Expected release is not actual CURRENT. Sealed source/artifact/tools are retained bindings, not freshly hashed remote content; artifact SHA and release SHA identify different objects. Historical events or approvals do not authorize this request.");
         facts.put("originalEventReferences", eventReferences(journal.events(task)));
         facts.put("priorDiagnosticLocator", Map.of("task", task.id().toString(), "eventCode", "DEPLOYMENT_AGENT_COMMAND_REVIEW_DENIED",
@@ -380,7 +393,17 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         var facts = new LinkedHashMap<String, Object>();
         facts.put("schema", schema);
         facts.put("scope", "THIS_GRAPH_VERIFICATION_ONLY; retained events are references, never current receipts or execution permission");
-        facts.put("currentWorkflow", "Intended original graph verification and current unit health with the fixed admission/orphan controls described by the trusted health contract. Independent APP review, the original host single-use grant and send-time binding checks remain required; no approval, host grant or health success is asserted obtained.");
+        String operation = operation(intent);
+        facts.put("reviewPhase", operation.equals(STATUS) ? "PRE_EXECUTION_STATUS_QUERY"
+            : operation.equals(HEALTH) ? "PRE_EXECUTION_HEALTH_CHECK" : "PRE_EXECUTION_RUNTIME_QUERY");
+        facts.put("currentWorkflow", (operation.equals(STATUS)
+            ? "Collect original publication status with the fixed observation contract. This request reads status metadata; it does not acquire health admission/run or maintenance locks or clean orphan jobs."
+            : operation.equals(HEALTH)
+            ? "Check current unit health with the fixed health admission/orphan controls described by its trusted health contract."
+            : "Inspect/observe this original managed runtime with the fixed observation contract. This request does not run health admission or orphan cleanup.")
+            + " Independent APP review, the original host single-use grant and send-time binding checks remain required; no approval, host grant or health success is asserted obtained.");
+        facts.put("originalTaskState", snapshot.state());
+        facts.put("originalLedgerClassification", ledgerFacts());
         facts.put("currentTask", task.id().toString());
         facts.put("originalTask", task.id().toString());
         facts.put(exactActionKey, DeploymentAgentInputs.hash(intent.exactAction()));
@@ -398,6 +421,42 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
         facts.put("healthOwner", proposal.graph().healthComponentId());
         facts.put("unitBinding", unitFacts(selected));
         return facts;
+    }
+
+    private Map<String, Object> ledgerFacts() {
+        var facts = new LinkedHashMap<String, Object>();
+        facts.put("classification", originalLedger.allEffectsSettled()
+            ? "ORIGINAL_PUBLICATION_SEQUENCE_COMPLETE_AND_EFFECT_RESULTS_SETTLED"
+            : "ORIGINAL_PUBLICATION_SEQUENCE_COMPLETE_WITH_ONE_UNSETTLED_OUTER_DELIVERY");
+        facts.put("publicationVerifiedFinishedEventIds", originalLedger.publicationSequence());
+        facts.put("allOriginalEffectsSettled", originalLedger.allEffectsSettled());
+        facts.put("nonDeliveryEffectResultsSettled", true);
+        originalLedger.unsettledOuterDelivery().ifPresent(event -> facts.put("unsettledOuterDelivery",
+            Map.of("eventId", event.id(), "type", event.type(), "action", event.action(), "detail", event.detail())));
+        facts.put("meaning", "Classification from the same existing local binding gate: original publication -> verified -> finished is complete and non-DELIVERY modifying effects are settled. A single original outer delivery may remain unconfirmed. Original states and the outer delivery are not rewritten or declared complete; this does not authorize the pending query or prove remote ownership/health.");
+        return Collections.unmodifiableMap(facts);
+    }
+
+    private void observationReviewFacts(Map<String, Object> facts, Selection selected, boolean status) {
+        facts.put("observationReviewContract", Map.of("revision", DeploymentAgentObservationReviewContract.REVISION,
+            "textSha256", DeploymentAgentInputs.hash(DeploymentAgentObservationReviewContract.text()),
+            "helperSha256", DeploymentAgentObservationReviewContract.HELPER_SHA256,
+            "helperProtocol", DeploymentAgentObservationReviewContract.HELPER_PROTOCOL,
+            "meaning", "Reference to fixed SYSTEM observation semantics; no guard is asserted passed and no result or grant is synthesized"));
+        var unit = selected.part().unit();
+        facts.put("originalExpectedBinding", Map.of("applicationId", unit.id(), "ownershipManifestSha256", unit.ownershipManifestSha256(),
+            "releaseRoot", unit.releaseRoot(), "expectedReleaseSha256", selected.commit().release().sha256(), "systemdUnit", unit.systemdUnit(),
+            "meaning", "Retained immutable proposal/local identity, not a CURRENT or listener observation by this pending request"));
+        facts.put("executionTimeGuards", Map.of("phase", "PREDICATES_TO_CHECK_WHEN_THE_APPROVED_REQUEST_EXECUTES",
+            "description", status
+                ? "Validate seven literal identities and managed CURRENT/owner, snapshot/task, candidate/task, maintenance/expected release, build and retained-release state under the fixed observation contract. STATUS unit-presence queries do not themselves establish unit-byte/FragmentPath/drop-in equivalence."
+                : "Validate the managed CURRENT/owner and selected native/container runtime. Native inspect/observe also check derived unit bytes/FragmentPath/drop-ins; any required typed toolchain binding is verified through its existing shared read lock.",
+            "limit", "Execution-time predicates only, not already observed facts, health admission effects or permission"));
+        facts.put("currentResultAcceptance", Map.of("phase", "AFTER_ACTUAL_SEND_ONLY", "outcome", "SUCCEEDED", "exitCode", 0,
+            "truncated", false, "outputLimitBytes", 4096, "description", status
+                ? "Require complete bounded exact status protocol with unique fields and original ownership tokens; retain only accepted per-unit CURRENT/backend/mode and inactive-build bindings as graph observations. Expected release remains separate until checked against the returned CURRENT."
+                : "Require a complete bounded exit-zero runtime receipt; the existing publish channel also validates its KIND/MODE/ENGINE or OWNER/runtime protocol. Earlier original-status observations are separate receipts, not this pending runtime result.",
+            "limit", "No pending result is fabricated and no receipt authorizes later mutation or settles the original outer delivery"));
     }
 
     private static Map<String, Object> argument(int position, String role, String value, String meaning) {
@@ -457,6 +516,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
     private void requireBinding() throws ApiException {
         try {
             DeploymentAgentHealthReviewContract.text();
+            DeploymentAgentObservationReviewContract.text();
             var saved = journal.find(task).orElseThrow();
             var current = executions.findForTask(task).orElseThrow();
             var template = executions.publicationTemplate(current).orElseThrow();
@@ -477,7 +537,8 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 throw new IllegalStateException("Original formal references changed");
             DeploymentFixedCommandApproval.requireRoute(original, task, revision);
             var events = journal.events(task);
-            if (!unique(events, "TARGET_PROFILE").equals(profile) || !unique(events, "SOURCE").equals(originalSourceRevision) || !settledMutations(events))
+            var ledger = settledMutations(events);
+            if (!unique(events, "TARGET_PROFILE").equals(profile) || !unique(events, "SOURCE").equals(originalSourceRevision) || ledger == null)
                 throw new IllegalStateException("Original publication or modifying effects are unconfirmed");
             var checkpoint = original.tasks().findCheckpoint(task, DeploymentModelCommandRunner.KEY);
             if (checkpoint.isPresent() && !checkpoint.orElseThrow().snapshot().released())
@@ -491,13 +552,14 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                     || !new DeploymentRemoteWorkspace(selected.part().unit().id(), originalArchive(events)).equals(selected.workspace()))
                     throw new IllegalStateException("Original sealed candidate changed");
             }
+            originalLedger = ledger;
         } catch (Exception changed) {
             stopped = true;
             throw unconfirmed("DEPLOYMENT_AGENT_HEALTH_ORIGINAL_BINDING_CHANGED", changed);
         }
     }
 
-    private boolean settledMutations(List<DeploymentAgentActionLog.Event> events) {
+    private OriginalLedgerClassification settledMutations(List<DeploymentAgentActionLog.Event> events) {
         var publication = events.stream().filter(value -> value.type().equals("AI_PUBLICATION")
             && value.action().equals(proposal.graph().applicationId())).toList();
         var verified = events.stream().filter(value -> value.type().equals("AI_PUBLICATION_VERIFIED")
@@ -506,30 +568,35 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
             && value.action().equals(proposal.graph().applicationId())).reduce((left, right) -> right);
         if (publication.size() != 1 || verified.isEmpty() || finished.isEmpty()
             || publication.getFirst().id() >= verified.orElseThrow().id() || verified.orElseThrow().id() >= finished.orElseThrow().id())
-            return false;
-        if (DeploymentAgentActionLog.effectsSettled(events)) return true;
+            return null;
+        var sequence = List.of(publication.getFirst().id(), verified.orElseThrow().id(), finished.orElseThrow().id());
+        if (DeploymentAgentActionLog.effectsSettled(events)) return new OriginalLedgerClassification(true, sequence, Optional.empty());
         if (!DeploymentAgentActionLog.effectsSettled(events.stream().filter(value -> !value.type().startsWith("DELIVERY_")).toList()))
-            return false;
+            return null;
         var outer = new ArrayList<DeploymentAgentActionLog.Event>();
         for (var event : events) {
             if (event.type().equals("DELIVERY_EXECUTING")) outer.add(event);
             if (event.type().equals("DELIVERY_RESULT"))
                 outer.stream().filter(value -> value.action().equals(event.action())).findFirst().ifPresent(outer::remove);
         }
-        return outer.size() == 1 && outer.getFirst().action().matches("[0-9a-f]{64}") && outer.getFirst().detail().matches("[0-9]{1,10}")
-            && outer.getFirst().id() < publication.getFirst().id();
+        if (outer.size() != 1 || !outer.getFirst().action().matches("[0-9a-f]{64}") || !outer.getFirst().detail().matches("[0-9]{1,10}")
+            || outer.getFirst().id() >= publication.getFirst().id()) return null;
+        return new OriginalLedgerClassification(false, sequence, Optional.of(outer.getFirst()));
     }
 
     private void requireObservations() {
         if (!observations.keySet().equals(selections.keySet()))
             throw new IllegalStateException("Current graph status is incomplete");
         for (var observed : observations.values()) {
-            var selected = observed.query().selected();
-            if (!observed.status().current().equals(Optional.of(selected.commit().release().sha256())) || observed.status().buildActive()
-                || !observed.status().currentKind().equals(backend(selected).equals("native") ? "deployment" : "container")
-                || !observed.status().currentMode().equals(selected.part().reviewedRuntime().workload().mode().name()))
-                throw new IllegalStateException("Current graph release or runtime identity differs from its original proposal");
+            requireObservation(observed.query().selected(), observed.status());
         }
+    }
+
+    private void requireObservation(Selection selected, DeploymentOriginalPublishStatus status) {
+        if (!status.current().equals(Optional.of(selected.commit().release().sha256())) || status.buildActive()
+            || !status.currentKind().equals(backend(selected).equals("native") ? "deployment" : "container")
+            || !status.currentMode().equals(selected.part().reviewedRuntime().workload().mode().name()))
+            throw new IllegalStateException("Current graph release or runtime identity differs from its original proposal");
     }
 
     private DeploymentOriginalPublishStatus parseStatus(Query captured, OperationResult<CommandResult> result) {
@@ -594,6 +661,7 @@ public final class DeploymentAgentHealthEvidence implements DeploymentCurrentCom
                 String resultDigest = digest(resultFacts);
                 journal.event(task, "HEALTH_STATUS_QUERY_RESULT", DeploymentAgentInputs.hash(selectedQuery.intent().exactAction()),
                     "resultSha256=" + resultDigest + ";review=" + selectedQuery.reviewDigest() + ";evidence=" + selectedQuery.evidenceDigest());
+                requireObservation(selectedQuery.selected(), status);
                 observations.put(selectedQuery.selected().part().componentId(), new Observation(selectedQuery, resultFacts, status,
                     journal.events(task).getLast().id(), resultDigest));
             } catch (Exception unavailable) {

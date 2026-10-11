@@ -26,6 +26,7 @@ import gold.debug.windowstolinux.appapi.task.TaskService;
 import gold.debug.windowstolinux.appapi.task.action.*;
 import gold.debug.windowstolinux.appapi.task.log.*;
 import gold.debug.windowstolinux.appapi.task.result.*;
+import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
 import gold.debug.windowstolinux.appapi.task.run.*;
 import gold.debug.windowstolinux.appapi.ui.UiService;
 import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
@@ -82,6 +83,7 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals("", evidence.reviewInstructions());
             assertEquals(9, frame.aiRequests.size());
             int healthContracts = 0;
+            int observationContracts = 0;
             for (var request : frame.aiRequests) {
                 var systems = request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM).toList();
                 assertEquals(1, systems.size());
@@ -90,6 +92,7 @@ class DeploymentAgentHealthEvidenceTest {
                 assertEquals(1, users.size());
                 String user = users.getFirst().text();
                 assertFalse(user.contains(contract));
+                assertFalse(user.contains(DeploymentAgentObservationReviewContract.text()));
                 assertFalse(user.contains("helperSourceEvidence"));
                 assertFalse(user.contains("application_health() {"));
                 var current = JSON.readTree(user).path("currentCommandEvidence");
@@ -97,6 +100,7 @@ class DeploymentAgentHealthEvidenceTest {
                 assertFalse(contract.contains(frame.task.id().toString()));
                 assertFalse(contract.contains(frame.part("backend").unit().ownershipManifestSha256()));
                 if (current.path("schema").asText().equals("agent-current-health-evidence.v1")) {
+                    assertFalse(system.contains(DeploymentAgentObservationReviewContract.text()));
                     assertTrue(system.contains(contract));
                     assertEquals(system.indexOf(contract), system.lastIndexOf(contract));
                     healthContracts++;
@@ -108,9 +112,18 @@ class DeploymentAgentHealthEvidenceTest {
                 } else {
                     assertFalse(system.contains(contract));
                     assertFalse(current.has("healthReviewContract"));
+                    String observation = DeploymentAgentObservationReviewContract.text();
+                    assertTrue(system.contains(observation));
+                    assertEquals(system.indexOf(observation), system.lastIndexOf(observation));
+                    observationContracts++;
+                    assertEquals(DeploymentAgentObservationReviewContract.REVISION,
+                        current.at("/observationReviewContract/revision").asText());
+                    assertFalse(current.path("currentWorkflow").asText().contains("trusted health contract"));
+                    assertFalse(current.path("currentWorkflow").asText().contains("fixed health admission/orphan controls"));
                 }
             }
             assertEquals(3, healthContracts);
+            assertEquals(6, observationContracts);
             assertEquals(2, frame.statusQueries);
             assertEquals(3, frame.healthDispatches);
             for (var actual : frame.healthActions) assertEquals(actual.expectedAction(), actual.actualAction());
@@ -121,8 +134,8 @@ class DeploymentAgentHealthEvidenceTest {
     }
 
     @Test
-    void persistentApprovalConversationCannotDowngradeTrustedHealthInstructionsToUserFacts() throws Exception {
-        try (var frame = new Frame(); var request = frame.healthRequest("none")) {
+    void persistentApprovalConversationCannotDowngradeTrustedStatusInstructionsToUserFacts() throws Exception {
+        try (var frame = new Frame(); var request = frame.queryRequest("none")) {
             var conversation = new DeploymentApprovalConversation(frame.context, frame.task, frame.server,
                 "controlled-fingerprint", SOURCE, REVISION);
             var scope = new DeploymentCommandReviewScope(frame.context, frame.context.interaction(), frame.task,
@@ -130,20 +143,14 @@ class DeploymentAgentHealthEvidenceTest {
             var evidence = new DeploymentAgentHealthEvidence(scope, frame.remote, frame.server, frame.task,
                 REVISION, frame.proposal, frame.candidates, frame.journal);
             assertEquals("", evidence.reviewInstructions());
-            assertEquals(TaskResult.SUCCEEDED, frame.observe(evidence).outcome());
-            assertEquals(2, frame.aiRequests.size());
-            assertEquals(2, frame.hostAuthorizations);
-            for (var actual : frame.aiRequests)
-                for (var message : actual.messages())
-                    assertFalse(message.text().contains(DeploymentAgentHealthReviewContract.text()));
             var review = (DeploymentCommandReview) evidence.context().interaction();
-            var refusal = assertThrows(ApiException.class, () -> review.approveCommand(frame.healthIntent(request, "none"), request, frame.task));
+            var refusal = assertThrows(ApiException.class, () -> review.approveCommand(frame.queryIntent(request), request, frame.task));
             assertEquals("DEPLOYMENT_COMMAND_REVIEW_INVALID", refusal.problem().eventCode());
             assertTrue(refusal.getCause().getMessage().contains("SYSTEM delivery"));
-            assertEquals(2, frame.aiRequests.size());
-            assertEquals(2, frame.reviewFacts.size());
-            assertEquals(2, frame.hostAuthorizations);
-            assertEquals(2, frame.statusQueries);
+            assertEquals(0, frame.aiRequests.size());
+            assertEquals(0, frame.reviewFacts.size());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.statusQueries);
             assertEquals(0, frame.healthDispatches);
             assertEquals(0, frame.runtimeInspections);
             assertEquals(0, frame.runtimeObservations);
@@ -203,6 +210,160 @@ class DeploymentAgentHealthEvidenceTest {
             assertEquals(0, frame.healthDispatches);
             assertEquals(0, frame.containerObservations);
             assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"outer-unsettled", "outer-settled"})
+    void statusPreExecutionClassifiesTheOriginalLedgerWithoutInventingItsPendingReceipt(String ledgerState) throws Exception {
+        try (var frame = new Frame(); var request = frame.queryRequest("none")) {
+            if (ledgerState.equals("outer-settled"))
+                frame.journal.event(frame.task, "DELIVERY_RESULT", "f".repeat(64), "controlled original outer result");
+            var events = frame.journal.events(frame.task);
+            var evidence = frame.evidence();
+            frame.onStatusReview = facts -> {
+                assertEquals(0, frame.statusQueries);
+                assertEquals(0, frame.hostAuthorizations);
+                assertEquals("NO_RESULT_FOR_THIS_PENDING_REQUEST", facts.at("/currentCommandEvidence/receiptState").asText());
+            };
+            frame.onStatusHost = () -> {
+                assertEquals(1, frame.aiRequests.size());
+                assertEquals(0, frame.statusQueries);
+            };
+            var intent = frame.queryIntent(request);
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            var grant = review.approveCommand(intent, request, frame.task);
+            assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+            var current = frame.reviewFacts.getLast().path("currentCommandEvidence");
+            assertEquals("PRE_EXECUTION_STATUS_QUERY", current.path("reviewPhase").asText());
+            assertEquals("UNKNOWN", current.path("originalTaskState").asText());
+            assertEquals("UNKNOWN", current.at("/originalExecutionState/outcome").asText());
+            assertTrue(current.path("receiptStateMeaning").asText().contains("has not been sent"));
+            assertTrue(current.path("receiptStateMeaning").asText().contains("not a claim that an executed request lost its receipt"));
+            assertEquals(frame.release("backend"), current.at("/originalExpectedBinding/expectedReleaseSha256").asText());
+            assertEquals("PREDICATES_TO_CHECK_WHEN_THE_APPROVED_REQUEST_EXECUTES", current.at("/executionTimeGuards/phase").asText());
+            assertEquals("AFTER_ACTUAL_SEND_ONLY", current.at("/currentResultAcceptance/phase").asText());
+            assertFalse(current.has("result"));
+            assertFalse(current.has("parsedStatus"));
+            assertFalse(current.has("currentGraphQueries"));
+            var ledger = current.path("originalLedgerClassification");
+            boolean settled = ledgerState.equals("outer-settled");
+            assertEquals(settled, ledger.path("allOriginalEffectsSettled").asBoolean());
+            assertTrue(ledger.path("nonDeliveryEffectResultsSettled").asBoolean());
+            assertEquals(!settled, ledger.has("unsettledOuterDelivery"));
+            var sequence = events.stream().filter(event -> Set.of("AI_PUBLICATION", "AI_PUBLICATION_VERIFIED", "AI_PUBLICATION_FINISHED")
+                .contains(event.type())).map(DeploymentAgentActionLog.Event::id).toList();
+            assertEquals(sequence, JSON.convertValue(ledger.path("publicationVerifiedFinishedEventIds"), JSON.getTypeFactory()
+                .constructCollectionType(List.class, Long.class)));
+            if (!settled) {
+                var outer = events.stream().filter(event -> event.type().equals("DELIVERY_EXECUTING")).findFirst().orElseThrow();
+                assertEquals(outer.id(), ledger.at("/unsettledOuterDelivery/eventId").asLong());
+                assertEquals(outer.action(), ledger.at("/unsettledOuterDelivery/action").asText());
+                assertEquals(outer.detail(), ledger.at("/unsettledOuterDelivery/detail").asText());
+            }
+            assertEquals(TaskResult.SUCCEEDED, evidence.execute(request, grant.value().orElseThrow()).outcome());
+            assertEquals(1, frame.statusQueries);
+            assertEquals(1, frame.events("HEALTH_STATUS_QUERY_RESULT"));
+            assertEquals("", evidence.reviewInstructions());
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+            assertEquals(events, frame.journal.events(frame.task).subList(0, events.size()));
+            assertThrows(ApiException.class, () -> review.approveCommand(intent, request, frame.task));
+            assertEquals(1, frame.aiRequests.size());
+            assertEquals(1, frame.statusQueries);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DENY", "UNKNOWN"})
+    void hostRefusalCannotSendOrCreateAStatusObservationAfterIndependentApproval(String outcome) throws Exception {
+        try (var frame = new Frame(); var request = frame.queryRequest("none")) {
+            frame.hostOutcome = outcome.equals("DENY") ? TaskResult.FAILED : TaskResult.UNKNOWN;
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.UNKNOWN, frame.observe(evidence).outcome());
+            assertEquals(1, frame.aiRequests.size());
+            assertEquals(1, frame.hostAuthorizations);
+            assertEquals(1, frame.events("HEALTH_STATUS_QUERY_APPROVED"));
+            assertEquals(0, frame.events("HEALTH_STATUS_QUERY_RESULT"));
+            assertEquals(0, frame.statusQueries);
+            assertTrue(frame.statusResults.isEmpty());
+            assertEquals(0, frame.healthDispatches);
+            var review = (DeploymentCommandReview) evidence.context().interaction();
+            assertThrows(ApiException.class, () -> review.approveCommand(frame.queryIntent(request), request, frame.task));
+            assertEquals(1, frame.aiRequests.size());
+            assertEquals(0, frame.statusQueries);
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"wrong-current", "active"})
+    void nonMatchingRawStatusResultsAreRetainedWithoutBecomingVerifiedGraphObservations(String failure) throws Exception {
+        try (var frame = new Frame()) {
+            frame.statusFailure = failure;
+            var evidence = frame.evidence();
+            assertEquals(TaskResult.UNKNOWN, frame.observe(evidence).outcome());
+            assertEquals(1, frame.statusQueries);
+            assertEquals(1, frame.statusResults.size());
+            var raw = frame.statusResults.getFirst();
+            assertEquals(Optional.of(0), raw.exitCode());
+            assertFalse(raw.truncated());
+            assertTrue(raw.stdout().contains(failure.equals("wrong-current") ? "CURRENT=" + SOURCE + "\n" : "BUILD_ACTIVE=yes\n"));
+            var result = frame.journal.events(frame.task).getLast();
+            assertEquals("HEALTH_STATUS_QUERY_RESULT", result.type());
+            var rawFacts = Map.of("outcome", "SUCCEEDED", "exitCode", 0, "stdout", raw.stdout(), "stderr", raw.stderr(), "truncated", false);
+            assertTrue(result.detail().contains("resultSha256=" + DeploymentAgentInputs.hash(DeploymentAiJson.facts(rawFacts, 1048576))));
+            assertThrows(ApiException.class, () -> frame.health(evidence, frame.part("backend"), frame.part("backend").reviewedRuntime().healthCheck()));
+            assertEquals(1, frame.aiRequests.size());
+            assertEquals(0, frame.healthReviews());
+            assertEquals(0, frame.healthDispatches);
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @Test
+    void anUnreleasedOriginalModelCheckpointBlocksObservationBeforeAnyReview() throws Exception {
+        try (var frame = new Frame()) {
+            frame.checkpointActive = true;
+            assertThrows(ApiException.class, frame::evidence);
+            assertEquals(0, frame.aiRequests.size());
+            assertEquals(0, frame.hostAuthorizations);
+            assertEquals(0, frame.statusQueries);
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"task", "candidate", "target", "helper-guard"})
+    void originalStatusIdentityTargetAndGuardCannotChangeBeforeReviewOrBeforeSend(String change) throws Exception {
+        for (String boundary : List.of("APP", "SEND")) {
+            try (var frame = new Frame(); var original = frame.queryRequest("none");
+                 var changed = frame.queryRequest(change.equals("helper-guard") || change.equals("target") ? "none" : change);
+                 var guarded = new CommandRequest(change.equals("helper-guard")
+                     ? changed.script().replace(DeploymentManagedHelperBundle.EXPECTED_SHA256, "f".repeat(64)) : changed.script(),
+                     new byte[0], changed.timeout(), changed.outputLimitBytes())) {
+                var evidence = frame.evidence();
+                var changedIntent = frame.queryIntent(guarded);
+                if (change.equals("target")) changedIntent = changedIntent.withSemantics(new ActionSemantics(
+                    "deployment.publication.original-status.v1", Set.of(new ActionTarget(frame.server.id(), "deployment-release", "/foreign"))));
+                var rejectedIntent = changedIntent;
+                var review = (DeploymentCommandReview) evidence.context().interaction();
+                if (boundary.equals("APP")) {
+                    assertThrows(ApiException.class, () -> review.approveCommand(rejectedIntent, guarded, frame.task));
+                    assertEquals(0, frame.aiRequests.size());
+                    assertEquals(0, frame.hostAuthorizations);
+                } else {
+                    var grant = review.approveCommand(frame.queryIntent(original), original, frame.task);
+                    assertEquals(TaskResult.SUCCEEDED, grant.outcome());
+                    assertEquals(DeploymentAgentObservationReviewContract.text(), evidence.reviewInstructions());
+                    assertThrows(ApiException.class, () -> evidence.verify(rejectedIntent, guarded, frame.task));
+                    assertThrows(ApiException.class, () -> evidence.execute(guarded, grant.value().orElseThrow()));
+                    assertEquals(1, frame.aiRequests.size());
+                    assertEquals(1, frame.hostAuthorizations);
+                }
+                assertEquals(0, frame.statusQueries);
+                assertEquals(0, frame.events("HEALTH_STATUS_QUERY_RESULT"));
+                assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+            }
         }
     }
 
@@ -780,6 +941,11 @@ class DeploymentAgentHealthEvidenceTest {
             for (var request : frame.aiRequests)
                 for (var message : request.messages())
                     assertFalse(message.text().contains(DeploymentAgentHealthReviewContract.text()));
+            for (int index = 0; index < frame.aiRequests.size(); index++) {
+                boolean helperObservation = frame.reviewFacts.get(index).has("currentCommandEvidence");
+                String system = frame.aiRequests.get(index).messages().getFirst().text();
+                assertEquals(helperObservation, system.contains(DeploymentAgentObservationReviewContract.text()));
+            }
             assertEquals("", evidence.reviewInstructions());
             assertEquals(1, frame.containerObservations);
             assertEquals(0, frame.runtimeObservations);
@@ -800,7 +966,7 @@ class DeploymentAgentHealthEvidenceTest {
                 var review = (DeploymentCommandReview) evidence.context().interaction();
                 var grant = review.approveCommand(intent, request, frame.task);
                 assertEquals(TaskResult.SUCCEEDED, grant.outcome());
-                assertEquals("", evidence.reviewInstructions());
+                assertEquals(DeploymentAgentObservationReviewContract.text(), evidence.reviewInstructions());
                 var current = frame.reviewFacts.getLast().path("currentCommandEvidence");
                 var unit = frame.part("backend").unit();
                 var arguments = current.at("/argumentBinding/positionalArguments");
@@ -1006,6 +1172,12 @@ class DeploymentAgentHealthEvidenceTest {
 
         private String deniedOperation = "none";
 
+        private TaskResult hostOutcome = TaskResult.SUCCEEDED;
+
+        private boolean checkpointActive;
+
+        private final List<CommandResult> statusResults = new ArrayList<>();
+
         private String route = REVISION;
 
         private Consumer<JsonNode> onHealthReview = ignored -> {
@@ -1068,7 +1240,9 @@ class DeploymentAgentHealthEvidenceTest {
                     if (statusFailure.equals("duplicate")) output += "CURRENT=" + release(component) + "\n";
                     if (statusFailure.equals("foreign-snapshot"))
                         output = output.replace("SNAPSHOT=none", "SNAPSHOT=" + UUID.randomUUID());
-                    return success(new CommandResult(Optional.of(0), output, "", statusFailure.equals("truncated")));
+                    var result = new CommandResult(Optional.of(0), output, "", statusFailure.equals("truncated"));
+                    statusResults.add(result);
+                    return success(result);
                 }
                 if (request.script().contains("'application-health'")) {
                     healthDispatches++;
@@ -1126,11 +1300,18 @@ class DeploymentAgentHealthEvidenceTest {
                     onHealthHost.run();
                 if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(
                     reviewFacts.getLast().path("operation").asText())) onRuntimeHost.run();
+                if (hostOutcome != TaskResult.SUCCEEDED)
+                    return new OperationResult<>(hostOutcome, Optional.empty(), Optional.of(new Problem(
+                        hostOutcome == TaskResult.UNKNOWN ? ProblemCode.UNKNOWN : ProblemCode.ACCESS_DENIED,
+                        "CONTROLLED_HOST_REFUSAL", "Controlled host refused or could not confirm this request", Map.of(), Optional.empty())));
                 return success(new ApprovalGrant(UUID.randomUUID()));
             });
             var tasks = proxy(TaskService.class, (name, args) -> {
                 assertEquals("findCheckpoint", name);
-                return Optional.empty();
+                return checkpointActive ? Optional.of(proxy(TaskCheckpoint.class, (method, arguments) -> {
+                    assertEquals("snapshot", method);
+                    return new TaskCheckpoint.Snapshot(0, "{}", false);
+                })) : Optional.empty();
             });
             var servers = proxy(ServerService.class, (name, args) -> {
                 assertEquals("get", name);

@@ -1,0 +1,37 @@
+package gold.debug.windowstolinux.mod.deployment.service.agent.review;
+
+import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+
+/** Fixed implementation semantics for Agent status/runtime observation; never current state or permission. */
+public final class DeploymentAgentObservationReviewContract {
+    public static final String REVISION = "agent-observation-review.v1";
+
+    public static final int HELPER_PROTOCOL = 16;
+
+    public static final String HELPER_SHA256 = "90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d";
+
+    private static final String TEXT = """
+        Trusted Agent observation implementation contract agent-observation-review.v1, helper protocol 16.
+        Independently pinned helper /usr/local/lib/windowstolinux/managed-helper SHA256 90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d.
+        This fixed SYSTEM contract covers only literal publication-original-status, inspect-runtime and native observe-deployment of that exact integrity-guarded helper. Other verbs, container inline observation and application-health have separate review scope. Inspect the complete current command, actual literal arguments, time/output limits, resourceTargets and original task/server/profile/source/formal bindings. This is PRE_EXECUTION review of a proposed observation request; a request not yet sent has no result receipt. Remote guard predicates are implementation checks to run, not already observed facts. Retained UNKNOWN/EXECUTING and unfinished ledger entries remain unresolved; their validated local classification is not remote proof or authorization. Independent APP may still DENY; no verdict or host grant follows merely from this contract or a digest.
+        publication-original-status has exactly seven positional arguments after the verb, in order: APPLICATION_ID, OWNERSHIP_MANIFEST_SHA256, ORIGINAL_TASK, CANDIDATE_ID, EXPECTED_RELEASE_SHA256, BACKEND, ENGINE. The helper path and verb are not arguments. Argument 2 is the lowercase 64-hex ownership manifest digest, not a resource/deployment id. Argument 5 is the expected proposal release, never a claim about actual CURRENT; it constrains a present maintenance marker. The covered canonical request supplies the original release digest, native/none or container/docker|podman. The original task is the snapshot/candidate owner, not a fresh attempt id. Actual resourceTarget deployment-release is /opt/windowstolinux/apps/APPLICATION_ID, separate from all positional arguments.
+        publication_original_status validates typed application, manifest, original task, candidate, expected release and backend/engine. An existing app root must be guarded; an existing CURRENT must be a symlink resolving exactly to a digest-named root-owned releases directory under this app root, with root-owned .windowstolinux-owner equal to the manifest. It reads native/container runtime parameters, original snapshot /var/lib/windowstolinux/snapshots/APPLICATION_ID-ORIGINAL_TASK and its task/old-owner metadata, candidate /var/lib/windowstolinux/work/CANDIDATE_ID and .agent-task, build-unit ActiveState, managed unit presence/load/activity, retained release ownership/count and container engine ps metadata when selected. Every present maintenance file /var/lib/windowstolinux/application-locks/APPLICATION_ID/maintenance must be root-owned and contain deployment-EXPECTED_RELEASE_SHA256. Absence is returned as none; it does not prove maintenance completion. Foreign/unsafe paths or owners, invalid runtime/state, engine/query failures or more than 1000 retained releases reject. STATUS reads maintenance metadata: it does not take health admission/run or maintenance locks, truncate those files or clean orphan jobs. STATUS unit presence/state queries do not themselves perform the native FragmentPath/drop-in/unit-byte equivalence checks described below.
+        inspect-runtime and native observe-deployment each require exactly two positional arguments: APPLICATION_ID, OWNERSHIP_MANIFEST_SHA256. Again the second argument is a manifest digest, not the deployment-release resource id. inspect_managed_runtime requires owned CURRENT in the selected app releases root, matching owner and exactly one supported native/container parameter marker, then checks the selected runtime binding and reports KIND/MODE and ENGINE for containers. Native inspect/observe use assert_deployment_current_or_empty: existing CURRENT and manifest, managed data links, loaded deployment parameters, derived windowstolinux-APPLICATION_ID.service and /etc/systemd/system/windowstolinux-APPLICATION_ID.service, exact FragmentPath, no DropInPaths and expected unit bytes must match; unmanaged/absent runtime rejects. observe-deployment then reads managed running/enabled/unit state; admitted ON_DEMAND reports installed, inactive/no PID instead of a daemon check. These verbs do not run application_health, acquire/truncate its admission/run locks, start/stop applications, or invoke health orphan cleanup.
+        Native parameter loading/rendering may verify an existing typed toolchain binding. The checked verify path requires existing guarded /usr/local/lib/windowstolinux/toolchains and versions directories and an existing root-owned, non-symlink, non-group/world-writable .prepare.lock. It opens that file in read mode and takes a shared nonblocking flock (LOCK_SH | LOCK_NB), with bounded retry, then checks immutable binding digest, saved completion markers/source identities and rehashes pinned SYSTEM tool files. Verification returns before prepare/bind/restore branches: it does not create the lock/directories, download/prepare tools or rewrite binding markers. A missing/changed lock, binding, marker or SYSTEM tool fails. This is not the health admission lock or an implicit preparation permission. Container metadata calls use the selected checked engine/runtime binding; no claim is made that the engine's internal implementation has absolutely no writes.
+        Only after fresh independent APP review and an original host single-use grant can this exact unchanged bounded request be sent. The product must recheck task/server/profile/route/source/artifact/tool/formal/current-request bindings after APP, after host authorization and before send. A complete SUCCEEDED, exit-zero, untruncated bounded receipt with the exact protocol may then provide reported observations; original graph verification separately requires the reported CURRENT/backend/mode/build state to match its original expected binding. Unknown, failed, malformed or foreign results do not become verified observations. Neither these observation verbs nor their receipts prove current listener ownership, application health, exact loaded release contents, completion of the old outer delivery, or authorization for later mutation. Valid DENY remains final for this request; no historical approval or receipt is reused.
+        """;
+
+    private DeploymentAgentObservationReviewContract() {
+    }
+
+    public static String text() {
+        requireIdentity(DeploymentManagedHelperBundle.PROTOCOL_VERSION, DeploymentManagedHelperBundle.EXPECTED_SHA256);
+        DeploymentManagedHelperBundle.renderScript();
+        return TEXT;
+    }
+
+    static void requireIdentity(int protocol, String helperSha256) {
+        if (protocol != HELPER_PROTOCOL || !HELPER_SHA256.equals(helperSha256))
+            throw new IllegalArgumentException("Agent observation review contract identity changed");
+    }
+}
