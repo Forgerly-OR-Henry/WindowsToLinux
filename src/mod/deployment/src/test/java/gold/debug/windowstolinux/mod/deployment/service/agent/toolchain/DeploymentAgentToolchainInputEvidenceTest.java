@@ -72,11 +72,45 @@ class DeploymentAgentToolchainInputEvidenceTest {
         }
         assertTrue(names.containsAll(Set.of("resolution_validate", "download", "extract", "agent_sandbox_properties", "agent_worker",
             "agent_vendor", "agent_execute", "agent_freeze", "agent_stopped", "agent_promote", "agent_cli")));
-        for (String phase : List.of("resolve", "dependencies"))
-            assertFalse(DeploymentAgentToolchainInputEvidence.select(current(phase)).orElseThrow().facts().containsKey("locations"));
+        assertFalse(DeploymentAgentToolchainInputEvidence.select(current("resolve")).orElseThrow().facts().containsKey("locations"));
         assertFalse(prepared.containsKey("approved"));
         assertFalse(prepared.containsKey("safe"));
         assertFalse(prepared.containsKey("liveIsolationVerified"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dependencies", "native"})
+    void nativeNavigationUsesCompleteCurrentSourceAndActualClosureWithoutClaimingAuthentication(String phase) {
+        var current = current(phase);
+        var facts = DeploymentAgentToolchainInputEvidence.select(current).orElseThrow().facts();
+        var source = current.path("completeExecutableInput").asText();
+        var lines = source.lines().toList();
+        var names = new java.util.HashSet<String>();
+        for (var location : JSON.valueToTree(facts.get("locations"))) {
+            String name = location.path("function").asText();
+            int first = location.path("startLine").asInt();
+            int last = location.path("endLine").asInt();
+            assertTrue(names.add(name));
+            assertEquals("/completeExecutableInput", location.path("sourcePointer").asText());
+            assertTrue(first >= 1 && last >= first && last <= lines.size());
+            assertTrue(lines.get(first - 1).startsWith("def " + name + "("));
+            assertFalse(String.join("\n", lines.subList(first, last)).contains("\ndef "));
+        }
+        assertTrue(names.containsAll(Set.of("dependency_protected", "dependency_registered", "dependency_tool", "dependency_validate_dpkg",
+            "dependency_apt_source_authentication", "dependency_validate_apt", "dependency_validate_dnf", "dependency_main")));
+        var transaction = JSON.valueToTree(facts.get("nativeTransaction"));
+        String profile = phase.equals("native") ? "NATIVE_BUILD" : "PYTHON";
+        for (String manager : List.of("APT", "DNF")) {
+            assertEquals(JSON.valueToTree(DeploymentAgentToolchainPrograms.packages(manager, profile)),
+                transaction.path("requestedPackages").path(manager));
+            assertTrue(transaction.path("transactionTargets").toString().contains(manager + ":authenticated-dependency-closure:" + profile));
+        }
+        assertEquals("CURRENT_SOURCE_AND_DECLARED_SCOPE_ONLY", transaction.path("evidenceKind").asText());
+        assertTrue(transaction.path("osBaseline").asText().contains("no fixed OS binary SHA or observed download authentication result"));
+        assertFalse(transaction.has("approved"));
+        assertFalse(transaction.has("authenticated"));
+        assertFalse(transaction.has("installed"));
+        assertEquals(DeploymentAgentToolchainPrograms.dependencies(), source);
     }
 
     @Test

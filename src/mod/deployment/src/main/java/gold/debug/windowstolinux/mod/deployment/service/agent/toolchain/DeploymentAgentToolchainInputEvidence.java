@@ -36,6 +36,12 @@ public final class DeploymentAgentToolchainInputEvidence {
         "agent_lifecycle_failure", "agent_lifecycle_diagnostic", "agent_execute", "agent_worker", "agent_vendor", "agent_freeze", "agent_stopped", "agent_scan", "agent_copy_tree", "agent_promote",
         "agent_detach", "agent_prepare", "agent_prepare_selected", "agent_bind", "agent_main", "agent_cli");
 
+    private static final List<String> DEPENDENCY_LOCATIONS = List.of("dependency_protected", "dependency_bytes", "dependency_profile",
+        "dependency_registered", "dependency_tool", "dependency_run", "dependency_packages", "dependency_url", "dependency_key",
+        "dependency_apt_hook_owners", "dependency_apt_binaries", "dependency_apt_options", "dependency_validate_dpkg",
+        "dependency_apt_source_authentication", "dependency_apt_sources", "dependency_validate_apt", "dependency_dnf_config",
+        "dependency_validate_dnf", "dependency_versions", "dependency_main", "dependency_cli");
+
     private DeploymentAgentToolchainInputEvidence() {
     }
 
@@ -140,7 +146,19 @@ public final class DeploymentAgentToolchainInputEvidence {
             facts.put("utf8Bytes", bytes.length);
             facts.put("lineCount", Math.toIntExact(body.lines().count()));
             if (phase.equals("prepare") || phase.equals("bind"))
-                facts.put("locations", controllerLocations(body));
+                facts.put("locations", sourceLocations(body, CONTROLLER_LOCATIONS));
+            if (phase.equals("dependencies")) {
+                facts.put("locations", sourceLocations(body, DEPENDENCY_LOCATIONS));
+                facts.put("nativeTransaction", Map.of(
+                    "evidenceKind", "CURRENT_SOURCE_AND_DECLARED_SCOPE_ONLY",
+                    "requestedPackages", Map.of("APT", DeploymentAgentToolchainPrograms.packages("APT", profile),
+                        "DNF", DeploymentAgentToolchainPrograms.packages("DNF", profile)),
+                    "transactionTargets", targets.stream().filter(target -> target.kind().equals("system-package-transaction"))
+                        .map(ActionTarget::id).sorted().toList(),
+                    "effects", "Root package maintenance includes resolver-selected transitive dependencies, installation, upgrade, configuration, distribution maintainer scripts, triggers and registered OS hooks. Requested names are not the entire transaction.",
+                    "osBaseline", "Existing OS interpreter and protected package database are bootstrap trust assumptions. Source-level tool/configuration guards are evaluated during execution; this request supplies no fixed OS binary SHA or observed download authentication result.",
+                    "meaning", "Navigation and declared scope only. Inspect the current source and enforced authentication independently; these facts grant no permission and establish no execution result."));
+            }
             facts.put("bundledSourceSha256", digest);
             facts.put("stdinSha256", digest);
             facts.put("exactActionSha256", sha256(exact.getBytes(StandardCharsets.UTF_8)));
@@ -153,7 +171,7 @@ public final class DeploymentAgentToolchainInputEvidence {
         }
     }
 
-    private static List<Map<String, Object>> controllerLocations(String body) {
+    private static List<Map<String, Object>> sourceLocations(String body, List<String> required) {
         var definitions = Pattern.compile("(?m)^def ([A-Za-z_][A-Za-z0-9_]*)\\(").matcher(body);
         var offsets = new ArrayList<Integer>();
         var names = new ArrayList<String>();
@@ -162,7 +180,7 @@ public final class DeploymentAgentToolchainInputEvidence {
             names.add(definitions.group(1));
         }
         var locations = new ArrayList<Map<String, Object>>();
-        for (String name : CONTROLLER_LOCATIONS) {
+        for (String name : required) {
             int position = names.indexOf(name);
             if (position < 0 || position != names.lastIndexOf(name))
                 throw new IllegalArgumentException("Bundled Agent source location is missing or ambiguous: " + name);

@@ -19,6 +19,8 @@ import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -85,20 +87,63 @@ class DeploymentAgentInlineApprovalEvidenceTest {
         assertEquals(0, fixture.requests.size());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"PYTHON", "NATIVE_BUILD"})
+    void actualNativeApprovalKeepsFullSourceClosureAndBaselineWithFinalDenial(String profile) throws Exception {
+        var fixture = new NativeAiFixture();
+        fixture.configurationRevision = REVISION;
+        var conversation = conversation(fixture);
+        fixture.nativeReply(new AiToolCall("current-native-denial", "submit_result",
+            "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Independent current transaction refusal\"}"));
+        var verdict = new DeploymentAiJson(fixture.context, conversation).askCommand("Review the exact current OS dependency transaction",
+            facts(profile), REVISION, fixture.task, DeploymentReviewDecision::malformed);
+        assertEquals("DENY", verdict.path("decision").asText());
+        assertEquals(1, fixture.requests.size());
+        var current = JSON.readTree(fixture.requests.getFirst().messages().getLast().text());
+        assertEquals(DeploymentAgentToolchainPrograms.dependencies(), current.path("completeExecutableInput").asText());
+        var evidence = current.path(DeploymentAgentToolchainInputEvidence.FIELD);
+        assertEquals(JSON.valueToTree(DeploymentAgentToolchainInputEvidence.select(current).orElseThrow().facts()), evidence);
+        assertEquals(profile, evidence.path("profile").asText());
+        assertTrue(evidence.path("locations").size() >= 15);
+        assertEquals("CURRENT_SOURCE_AND_DECLARED_SCOPE_ONLY", evidence.path("nativeTransaction").path("evidenceKind").asText());
+        for (String mutation : List.of("location", "scope", "baseline", "claim")) {
+            var changed = (ObjectNode) current.deepCopy();
+            var binding = (ObjectNode) changed.path(DeploymentAgentToolchainInputEvidence.FIELD);
+            var transaction = (ObjectNode) binding.path("nativeTransaction");
+            switch (mutation) {
+                case "location" -> ((ObjectNode) binding.path("locations").get(0)).put("startLine", 100000);
+                case "scope" -> transaction.withArray("transactionTargets").remove(0);
+                case "baseline" -> transaction.put("osBaseline", "Fixed OS SHA already verified");
+                case "claim" -> transaction.put("approved", true);
+            }
+            assertThrows(IllegalArgumentException.class,
+                () -> conversation.messages(JSON.writeValueAsString(changed), REVISION, fixture.task), mutation);
+        }
+        assertEquals(1, fixture.requests.size(), "Changed evidence cannot create another approval request");
+    }
+
     private static DeploymentApprovalConversation conversation(NativeAiFixture fixture) {
         return new DeploymentApprovalConversation(fixture.context, fixture.task, SERVER, "verified-fingerprint", "a".repeat(64), REVISION);
     }
 
     private static Map<String, Object> facts() throws Exception {
+        return facts("prepare");
+    }
+
+    private static Map<String, Object> facts(String profile) throws Exception {
         var evidence = Class.forName("gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandEvidence")
             .getDeclaredMethod("facts", ActionIntent.class, CommandRequest.class);
         evidence.setAccessible(true);
-        String source = DeploymentAgentToolchainPrograms.controller();
-        var arguments = List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION,
+        boolean nativeTransaction = !profile.equals("prepare");
+        String source = nativeTransaction ? DeploymentAgentToolchainPrograms.dependencies() : DeploymentAgentToolchainPrograms.controller();
+        var arguments = nativeTransaction ? List.of(profile, OPERATION)
+            : List.of("prepare", "RUST", "1.95", "1.95.0", "60", "-", OPERATION,
             DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION));
         try (var request = new CommandRequest(DeploymentAgentToolchainPrograms.command(arguments), source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(60), 65536)) {
-            var intent = RemoteActions.command(SERVER, REVISION, request).withSemantics(new ActionSemantics("deployment.agent.toolchain.prepare.v1",
-                DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION)));
+            var intent = RemoteActions.command(SERVER, REVISION, request).withSemantics(new ActionSemantics(
+                "deployment.agent.toolchain." + (nativeTransaction ? "dependencies" : "prepare") + ".v1",
+                nativeTransaction ? DeploymentAgentToolchainCommands.dependencyTargets(SERVER, profile)
+                    : DeploymentAgentToolchainCommands.controllerTargets(SERVER, OPERATION)));
             var facts = new LinkedHashMap<String, Object>();
             ((Map<?, ?>) evidence.invoke(null, intent, request)).forEach((key, value) -> facts.put((String) key, value));
             return facts;
