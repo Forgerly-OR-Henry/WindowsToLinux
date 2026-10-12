@@ -1,0 +1,12 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1530,7 +1530,7 @@
+             case "survey-scoring" -> 46140;
+             default -> 0;
+         };
+-        if (mainOnlyDiagnostic && System.getProperty("managed.live.webPort") != null) {
++        if (selectedMode == Mode.AGENT && !cli && System.getProperty("managed.live.webPort") != null) {
+             webPort = Integer.parseInt(System.getProperty("managed.live.webPort"));
+             assertTrue(webPort >= 1 && webPort <= 65535, "The authorized public website port must be between 1 and 65535");
+         }
