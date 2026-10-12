@@ -295,4 +295,18 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 五 owner 自有增量见 [检查拒绝反馈精确补丁](patches/DEPLOYMENT-AGENT-INSPECT-REVIEW-FEEDBACK.patch)，原始 SHA256 `f448f2d5a125f0256d25049558b386a740671af7cbe22a6024ef0a156d0ba3be`；四项可独立暂存，混合迁移 ReviewStopTest 只交付精确增量补丁，原迁移和旧补丁保持。前像和反向检查通过。原10的 FAILED/DENY 保留，原09恢复03已结清无需重放；新 task-board 产品部署及非默认真机、主机重启和最终八项目仍未通过验收。
 
+检查反馈修复六项自有内容已本地提交 `ee8fae41f9316ef6270ac319f5fbff6c9c5519fb`，未推送、索引为空后，经安全双 OCR 凭据入口启动全新 `task-board-11`。于2026-10-12 11:02:04+08结束一项真实入口失败、零错误/跳过，275.533秒；源码冻结3272项零变化、验证会话17837退出，实际CIM11:04:07为OK/0，用户IDEA34300保持。原任务 `d0031662-a830-4b7c-84f2-75da23bd6e53`、库 `agent-live-task-board-3vibw6dius`、App意图 `wtl-agent-task-board-3vibw88iyw` 未正式发布。
+
+主模型自主完成 inspect、源码识别、计划与数据库检查，APP自行读取请求、来源/回执及Skill。实际有六次APPROVE提交和最终一次DENY提交；提交或理由自述均不等同于完整输入投递、授权或执行证据。最终在 `deployment.candidate.verify.v1` 原独立审核边界拒绝，原错误为 ACCESS_DENIED / DEPLOYMENT_COMMAND_REVIEW_DENIED，部署停止为 UNKNOWN。APP认为脚本只输出归档事实而非强制比较；这是其判断，须核对产品后续验证契约后再认定原因。没有真实浏览器、业务成功或可运行App验收。
+
+只读审计确认唯一 PREPARE_EXECUTING id49/action `a7a5d080b94cf15661b0e1f6f98ef0ed741cbd8cca44074f57fbd399fc2d89e6`，无CANDIDATE/PREPARE_RESULT，effectsSettled=false；平台UNKNOWN、1102资源行及原Agent52事件保留，没有formal execution或结清摘要。多条Transferred26283进度不证明多个PREPARE。正式十表0、模型2/服务器1保持，主库只读审计前后SHA256均 `DB601F7BE87DE88FA3D0AED2E985FAD8F79EA2CBCC5587DE3F8976C50AC14DD4`。复用审计辅助脚本的落盘后缀仍为after-deploy11-run10，但内容绑定原11，原文件保留；不是旧10验收。下一步先核原候选归属及产品恢复准入，保留UNKNOWN和调查，禁止手工清盘或重放原错误计划。
+
+本轮捕获40个provider响应：input525122/output20673/合计545795、hit343936/miss181186、命中65.50%；主12响应229139，APP28响应316656，占58.02%。reasoning7809已知、28项UNKNOWN；四项配置探测usage/transport仍UNKNOWN。40监控请求均捕获响应用量，没有预算耗尽或发送前拒绝，不把普通调试占比用于最终冻结八项目。实际日志、XML、原任务和资源、provider数值及进程退出记录保留；无额外API取证。
+
+原11的纯只读 capture 使用实际52项有序事件、原配置/布局与来源返回 ACCEPTED，SOURCE4、PLAN_APPLICATION38、PLAN39 均早于唯一 backend PREPARE49，两个原执行 checkpoint 为 ABSENT。该前门只证明本地原身份准入，不能证明当前远端可删。原3份数据库文件审计前后字节相同。独立源码复核证实 CandidateChannel 在执行成功、value存在、exit0、不截断后要求整段 stdout 精确匹配候选owned、build inactive、原 archive.byteCount、archive SHA 和 OWNER0，成功才允许 projects.open；此次缺少呈给APP的 observer/consumer 验收契约。已有 create/upload 副作用，因此不能将 verify 拒绝套为 inspect 的无副作用反馈或放宽 UNKNOWN。
+
+`task-board-recovery11-01` 于2026-10-12 11:12:11+08通过原产品恢复入口一项场景，零失败/错误/跳过，84.533秒；源码3272项零变化、会话36182退出、实际CIM11:13:18为OK/0。新PRE、POST均独立审核成功、有grant、执行SUCCEEDED/exit0/未截断/stderr0；PRE EXACT_PRESENT435 UTF8字节、POST EXACT_ABSENT389字节，分别request SHA256 `6264fff349ecca471e26374fbde2030a3b524006d3a2c0a8ef707b15aa542821`、`e8fd9823ec923776428ad08cba0b0d90746dc6fe20e799aa947433b3e1bf39b0`，原事件摘要 `93cef796a6869d9716fb95f46b4af213b623c55811cd1d0b627e036cfb4ca3e7`。产品补偿及严格后置观察完成，原 UNKNOWN 结清为 ENDED/FAILED，释放恢复并重开正常产品；不是 Linux 主机重启或业务部署成功。
+
+只读确认平台原任务归档/资源0、原Agent task/action event清除、formal execution0，仅保留原operation绑定447字节AGENT/FAILED摘要，无App/发布身份；正式十表0、模型2/服务器1保持，主库只读前后SHA256均 `6C2B9441DEE6E3D65E7D900A7D02F7DE6F71C560EC9D28CD9901697DC64C003C`。原失败与调查保留，未处理原373正式业务或其他未结状态，也不宣称释放了实测GB数。本轮数字基线40、之后55、窗口无淘汰，新增15个APP响应input164576/output6317/合计170893、hit102656/miss61920/命中62.38%；15项reasoning UNKNOWN，上限8192，无新配置探测，原11部署40响应费用排除，非最终八项目批次。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

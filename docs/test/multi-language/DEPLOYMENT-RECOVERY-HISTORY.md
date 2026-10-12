@@ -76,6 +76,8 @@ Agent 恢复最早先查结清凭证；原资源仍占用时返回 UNKNOWN。历
 
 2026-10-12 10:08:55+08，`task-board-recovery09-03` 通过一个真实产品恢复入口场景、零失败/错误/跳过。原 `191bab33-4c43-400a-816d-f4ba78f4b785` 由 UNKNOWN 结清为 ENDED/FAILED、无阻塞；PRE 新完整独立审批后严格证明原资源 PRESENT，产品补偿后 POST 新独立审批严格证明相关候选、构建及 mount/loop ABSENT。原 frozen prepare 未重放，未手工删除服务器目录。平台资源 2888→0、原 Agent task/action event 清除、formal execution 0，仅保留原 operation 的 447 字节 AGENT/FAILED 摘要，无 App/发布身份。十张正式业务表仍 0、模型 2/服务器 1 保持，审计字节相同；3272 源码运行期间零变化，验证进程退出。产品释放恢复模式并重新打开正常启动，未进行 Linux 主机重启。这轮实际覆盖存在原候选的失败补偿清理；原373、共享引用及已有正式业务身份的真实处理仍未执行，其他未结状态及所有调查证据保留。逐轮失败、最小 Agent 探针修复及本轮独立 provider 用量见 [Agent 自主验收记录](DEPLOYMENT-AGENT-AUTONOMY.md)。
 
+2026-10-12 11:12:11+08，`task-board-recovery11-01` 通过原 `d0031662-a830-4b7c-84f2-75da23bd6e53` 的真实产品恢复入口，零失败/错误/跳过、84.533秒。新独立审批后的PRE严格PRESENT，产品补偿后新独立POST严格ABSENT，原UNKNOWN结清为ENDED/FAILED，原平台资源归零、Agent task/action event清除，仅447字节原operation绑定AGENT/FAILED摘要，无App/发布身份或formal execution。正式十表0、模型2/服务器1保持；源码3272项运行期间零变化、验证进程退出，原冻结prepare未重放、没有手工服务器删除。产品释放恢复并重新打开正常启动，未进行Linux主机重启；原失败调查、其他未结状态和原373正式业务保留。这是原候选失败补偿及历史明细清理的另一轮实际证明，不能替代成功App、共享引用或非默认目录真机验收。15项新provider审批响应单独计量，原11部署消耗排除，见Agent自主验收记录。
+
 GPT-6.1-Sol 负责实现与定点修正，GPT-6-Astra 仅参与正式来源与窄结清凭证的依赖判断；其 v2 建议已按用户最新要求撤除。
 
 本轮 Maven、测试子进程与格式验证进程均已退出；用户原有 IDEA 进程保留。
