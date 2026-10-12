@@ -1,0 +1,835 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflow.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflow.java
+@@ -48,6 +48,8 @@
+     /** Original platform. / 原平台。 */
+     private final ModContext context;
+ 
++    private final gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource reviewSource;
++
+     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
+     private final DeploymentAgentActionLog journal;
+ 
+@@ -65,7 +67,13 @@
+     /** Binds an active Mod and its dedicated original-task journal. / 绑定活动 Mod 与专有原任务账本。
+      * @param context original activation / 原启用 */
+     public DeploymentAgentWorkflow(ModContext context) {
++        this(context, null);
++    }
++
++    DeploymentAgentWorkflow(ModContext context,
++                            gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource reviewSource) {
+         this.context = Objects.requireNonNull(context);
++        this.reviewSource = reviewSource;
+         this.journal = new DeploymentAgentActionLog(context.db());
+     }
+ 
+@@ -265,10 +273,12 @@
+                         throw new IllegalStateException("Agent configuration cannot be verified", failure);
+                     }
+                 };
++                var review = reviewSource == null ? null : Objects.requireNonNull(reviewSource.bind(context, task, server,
++                    material.snapshot().sha256(), configuration));
+                 try (var tools = new DeploymentAgentRemoteTools(context, remote, context.interaction(), server, task,
+-                    archive, material, configuration, current, journal, project, request.approvalMode(), request.rememberAuthorization(), layout)) {
++                    archive, material, configuration, current, journal, project, request.approvalMode(), request.rememberAuthorization(), layout, review)) {
+                     var session = new DeploymentAgentSession(context, task, server, request.requirements(), source,
+-                        tools, journal, request.approvalMode(), request.rememberAuthorization(), configuration, current, control);
++                        tools, journal, request.approvalMode(), request.rememberAuthorization(), configuration, current, control, review);
+                     var result = session.run();
+                     if (result.outcome() == TaskResult.FAILED)
+                         journal.state(task, "FAILED");
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -107,6 +107,8 @@
+ 
+     private gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval approvalAgent;
+ 
++    private final gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource.Bound reviewSource;
++
+     /** Read-only live observer of the task-authorized AI revision. / 任务授权 AI 修订的只读实时观察器。 */
+     private final Supplier<String> currentRevision;
+ 
+@@ -172,6 +174,16 @@
+                                       TaskContext task, DeploymentSourceArchive archive, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material, String configurationRevision,
+                                       Supplier<String> currentRevision, DeploymentAgentActionLog journal,
+                                       Optional<DeploymentProjectRecord> project, String approvalMode, boolean rememberAuthorization, DeploymentRemoteLayout layout) throws ApiException {
++        this(context, session, interaction, server, task, archive, material, configurationRevision, currentRevision, journal,
++            project, approvalMode, rememberAuthorization, layout, null);
++    }
++
++    public DeploymentAgentRemoteTools(ModContext context, RemoteSession session, InteractionService interaction, ServerId server,
++                                      TaskContext task, DeploymentSourceArchive archive, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material, String configurationRevision,
++                                      Supplier<String> currentRevision, DeploymentAgentActionLog journal,
++                                      Optional<DeploymentProjectRecord> project, String approvalMode, boolean rememberAuthorization, DeploymentRemoteLayout layout,
++                                      gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource.Bound reviewSource) throws ApiException {
++        this.reviewSource = reviewSource;
+         this.layout = Objects.requireNonNull(layout);
+         this.session = Objects.requireNonNull(session);
+         this.server = Objects.requireNonNull(server);
+@@ -209,7 +221,7 @@
+             browsers.put("original", sources.browser("original"));
+             for (String component : prepared) browsers.put(component, sources.browser(component));
+             return Map.copyOf(browsers);
+-        }, new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.OriginalSource(archive, material, configurationRevision));
++        }, new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.OriginalSource(archive, material, configurationRevision), reviewSource);
+         this.buildTools = new DeploymentAgentBuildTools(this.context, task, session, server, configurationRevision, beforeSend, sources, projects, layout);
+         this.resourceTools = new DeploymentAgentResourceTools(this.context, task, server, session, sources, journal, layout);
+     }
+@@ -377,12 +389,14 @@
+ 
+     @Override
+     public boolean reviewResponseAvailable() {
+-        return true;
++        return reviewSource == null;
+     }
+ 
+     @Override
+     public Map<String, Object> reviewResponse(TaskContext original, String reviewBinding, String message) {
+         sameTask(original);
++        if (reviewSource != null)
++            throw new IllegalStateException("The bound judgment source has no approval discussion");
+         return approvalAgent.respond(original, reviewBinding, message);
+     }
+ 
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -194,6 +194,15 @@
+                                   Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
+                                   DeploymentAgentActionLog journal, String approvalMode, boolean rememberAuthorization, String configurationRevision,
+                                   Supplier<String> currentConfigurationRevision, DeploymentAgentControl control) {
++        this(context, task, server, requirements, source, tools, journal, approvalMode, rememberAuthorization, configurationRevision,
++            currentConfigurationRevision, control, null);
++    }
++
++    public DeploymentAgentSession(ModContext context, TaskContext task, ServerId server,
++                                  Map<String, String> requirements, DeploymentSourceBrowser source, DeploymentAgentDeliveryPort tools,
++                                  DeploymentAgentActionLog journal, String approvalMode, boolean rememberAuthorization, String configurationRevision,
++                                  Supplier<String> currentConfigurationRevision, DeploymentAgentControl control,
++                                  gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource.Bound reviewSource) {
+         this.context = Objects.requireNonNull(context);
+         this.task = Objects.requireNonNull(task);
+         this.server = Objects.requireNonNull(server);
+@@ -206,7 +215,7 @@
+             throw new IllegalArgumentException("Agent requirements exceed nonsecret budget");
+         this.requirements = Map.copyOf(requirements);
+         this.models = new DeploymentAgentModelBinding(context, task, server, approvalMode, rememberAuthorization, configurationRevision,
+-            currentConfigurationRevision, journal, tools);
++            currentConfigurationRevision, journal, tools, reviewSource);
+     }
+ 
+     /** Runs until actual whole-application health succeeds or a bounded stop occurs. / 运行至真实整应用健康成功或有界停止。
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentModelBinding.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentModelBinding.java
+@@ -50,6 +50,8 @@
+     /** Fresh exact approvals using the adopted route. / 使用已采用路由的全新精确审批。 */
+     private DeploymentAgentReview reviewer;
+ 
++    private final DeploymentAgentReviewSource.Bound reviewSource;
++
+     /** Binds the original worker and immutable approval policy. / 绑定原工作线程及不可变审批策略。
+      * @param context actual platform / 实际平台
+      * @param task original task / 原任务
+@@ -62,6 +64,13 @@
+      * @param tools actual scoped tools / 实际限定工具 */
+     public DeploymentAgentModelBinding(ModContext context, TaskContext task, ServerId server, String mode, boolean rememberAuthorization, String revision,
+                                        Supplier<String> current, DeploymentAgentActionLog journal, DeploymentAgentDeliveryPort tools) {
++        this(context, task, server, mode, rememberAuthorization, revision, current, journal, tools, null);
++    }
++
++    public DeploymentAgentModelBinding(ModContext context, TaskContext task, ServerId server, String mode, boolean rememberAuthorization, String revision,
++                                       Supplier<String> current, DeploymentAgentActionLog journal, DeploymentAgentDeliveryPort tools,
++                                       DeploymentAgentReviewSource.Bound reviewSource) {
++        this.reviewSource = reviewSource;
+         this.context = Objects.requireNonNull(context);
+         this.task = Objects.requireNonNull(task);
+         this.server = Objects.requireNonNull(server);
+@@ -161,6 +170,6 @@
+         revision = selected;
+         model = new DeploymentAgentProtocol(context, selected);
+         reviewer = new DeploymentAgentReview(context, server, task, mode, rememberAuthorization, selected, current, journal,
+-            tools.approvalConversation().orElse(null));
++            tools.approvalConversation().orElse(null), reviewSource);
+     }
+ }
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -23,6 +23,7 @@
+ import gold.debug.windowstolinux.appapi.ai.model.AiToolResult;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+ import gold.debug.windowstolinux.appapi.task.result.ApiException;
+@@ -99,6 +100,8 @@
+ 
+     private final DeploymentAiJson ai;
+ 
++    private final DeploymentAgentReviewSource.Bound reviewSource;
++
+     private final Map<String, Result> refused = new HashMap<>();
+ 
+     private record Discussion(String progress, Result result, String reviewBinding, String response) {
+@@ -138,9 +141,14 @@
+     }
+ 
+     public DeploymentAgentApproval(ModContext context, TaskContext task, Evidence evidence) {
++        this(context, task, evidence, null);
++    }
++
++    public DeploymentAgentApproval(ModContext context, TaskContext task, Evidence evidence, DeploymentAgentReviewSource.Bound reviewSource) {
+         this.context = Objects.requireNonNull(context);
+         this.task = Objects.requireNonNull(task);
+         this.evidence = Objects.requireNonNull(evidence);
++        this.reviewSource = reviewSource;
+         this.ai = new DeploymentAiJson(context);
+     }
+ 
+@@ -161,6 +169,11 @@
+     }
+ 
+     public static DeploymentAgentApproval forTask(ModContext context, TaskContext task, Sources sources, OriginalSource original) {
++        return forTask(context, task, sources, original, null);
++    }
++
++    public static DeploymentAgentApproval forTask(ModContext context, TaskContext task, Sources sources, OriginalSource original,
++                                                  DeploymentAgentReviewSource.Bound reviewSource) {
+         var journal = new DeploymentAgentActionLog(context.db());
+         return new DeploymentAgentApproval(context, task, new Evidence() {
+             public Binding binding() throws Exception {
+@@ -210,7 +223,7 @@
+                 return Map.of("events", journal.events(task), "modelCommandReceipt", command.isEmpty() ? Map.of()
+                     : JSON.readTree(command.orElseThrow().snapshot().payload()));
+             }
+-        });
++        }, reviewSource);
+     }
+ 
+     private record SourceIdentity(DeploymentAgentActionLog.Identity identity, DeploymentAgentActionLog.Event original,
+@@ -301,6 +314,16 @@
+             var descriptors = new LinkedHashMap<String, Object>();
+             JsonNode compact = compact(current, "", descriptors);
+             var coverage = new DeploymentAgentInputCoverage(request, current);
++            if (reviewSource != null) {
++                reviewSource.verify(context, task, new ServerId(binding.server()), binding.sourceRevision(), revision);
++                check(binding, revision, sources, receipts, identities, intent);
++                for (var source : sources.values()) source.verify();
++                var result = Objects.requireNonNull(reviewSource.review(instructions, facts, intent, request, revision, task));
++                reviewSource.verify(context, task, new ServerId(binding.server()), binding.sourceRevision(), revision);
++                check(binding, revision, sources, receipts, identities, intent);
++                for (var source : sources.values()) source.verify();
++                return result;
++            }
+             var initial = Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("binding", binding), Map.entry("reviewBinding", bound),
+                 Map.entry("currentRequest", compact), Map.entry("evidencePages", descriptors), Map.entry("sourceRevisions", sourceRevisions),
+                 Map.entry("identityRoles", identities),
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentReview.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentReview.java
+@@ -51,6 +51,8 @@
+     /** Dedicated original task identity and action evidence ledger. / 专有原任务身份及动作依据账本。 */
+     private final DeploymentAgentActionLog journal;
+ 
++    private final DeploymentAgentReviewSource.Bound reviewSource;
++
+     /** Binds independent review to the exact original task and configuration. / 将独立审核绑定到精确原任务与配置。
+      * @param context active Mod / 活动 Mod
+      * @param server admitted server / 已准入服务器
+@@ -68,6 +70,14 @@
+     public DeploymentAgentReview(ModContext context, ServerId server, TaskContext task, String mode, boolean rememberAuthorization, String revision,
+                                  Supplier<String> currentRevision, DeploymentAgentActionLog journal,
+                                  gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation conversation) {
++        this(context, server, task, mode, rememberAuthorization, revision, currentRevision, journal, conversation, null);
++    }
++
++    public DeploymentAgentReview(ModContext context, ServerId server, TaskContext task, String mode, boolean rememberAuthorization, String revision,
++                                 Supplier<String> currentRevision, DeploymentAgentActionLog journal,
++                                 gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation conversation,
++                                 DeploymentAgentReviewSource.Bound reviewSource) {
++        this.reviewSource = reviewSource;
+         this.context = Objects.requireNonNull(context);
+         this.ai = conversation == null ? new DeploymentAiJson(context) : new DeploymentAiJson(context, conversation);
+         this.server = Objects.requireNonNull(server);
+@@ -111,9 +121,14 @@
+      * @throws Exception if reviewer denies or fails / 审核者拒绝或失败时 */
+     private DeploymentReviewDecision review(String type, String action, Map<String, ?> facts) throws Exception {
+         requireRevision();
+-        JsonNode answer = ai.ask(AiPurpose.APPROVAL, POLICY,
+-            Map.of("type", type, "action", action, "target", server.id(), "facts", facts), revision, task);
+-        var reviewed = DeploymentReviewDecision.parse(answer);
++        DeploymentReviewDecision reviewed;
++        if (reviewSource == null) {
++            JsonNode answer = ai.ask(AiPurpose.APPROVAL, POLICY,
++                Map.of("type", type, "action", action, "target", server.id(), "facts", facts), revision, task);
++            reviewed = DeploymentReviewDecision.parse(answer);
++        } else {
++            reviewed = Objects.requireNonNull(reviewSource.action(context, type, action, facts, server, revision, task));
++        }
+         requireRevision();
+         if (!reviewed.decision().equals("APPROVE")) {
+             gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentReviewDenied(
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentReviewSource.java
+@@ -0,0 +1,22 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.review;
++
++import java.util.Map;
++
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
++
++/** Supplies task-bound judgments while command validation and host authority retain their original owners. */
++@FunctionalInterface
++public interface DeploymentAgentReviewSource {
++    Bound bind(ModContext owner, TaskContext task, ServerId server, String sourceRevision, String configurationRevision);
++
++    interface Bound extends DeploymentCommandReviewModel {
++        void verify(ModContext owner, TaskContext task, ServerId server, String sourceRevision, String configurationRevision);
++
++        DeploymentReviewDecision action(ModContext owner, String type, String action, Map<String, ?> facts, ServerId server,
++                                        String configurationRevision, TaskContext task) throws Exception;
++    }
++}
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -84,6 +84,10 @@
+ 
+     private boolean agentMode;
+ 
++    private boolean mainOnlyDiagnostic;
++
++    private gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture diagnosticReview;
++
+     private final AtomicInteger requiredApprovals = new AtomicInteger();
+ 
+     private final Map<java.util.UUID, AtomicInteger> humanQuestions = new java.util.concurrent.ConcurrentHashMap<>();
+@@ -239,6 +243,10 @@
+                     .map(gold.debug.windowstolinux.appapi.ai.model.AiRequest.class::cast).findFirst();
+                 if (request.isPresent()) {
+                     var value = request.orElseThrow();
++                    if (mainOnlyDiagnostic) {
++                        if (diagnosticReview == null) throw new AssertionError("Diagnostic review permit is not bound");
++                        diagnosticReview.beforeRequest(value);
++                    }
+                     int outputReserve = policy.allowOutputTokenOverride() ? value.maxOutputTokens().orElse(policy.recommendedMaxOutputTokens()) : policy.recommendedMaxOutputTokens();
+                     long remaining = Long.getLong("managed.live.observedTokenLimit", 150000L) - observedTokens.get() - outputReserve;
+                     if (remaining < 1) {
+@@ -1195,6 +1203,14 @@
+         deploysWebsite(project, Mode.AGENT);
+     }
+ 
++    @Test
++    @EnabledIfSystemProperty(named = "managed.runtime.agentLive", matches = "true")
++    void deploysWebsiteThroughMainAgentDiagnostic() throws Exception {
++        assertEquals("task-board", System.getProperty("managed.live.projects", "task-board"));
++        mainOnlyDiagnostic = true;
++        deploysWebsite("task-board", Mode.AGENT);
++    }
++
+     @ParameterizedTest
+     @MethodSource("cliProjects")
+     @EnabledIfSystemProperty(named = "managed.runtime.agentLive", matches = "true")
+@@ -1221,8 +1237,10 @@
+         var approvalEffort = gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.valueOf(
+             System.getProperty("managed.live.approvalReasoningEffort", effort.name()));
+         settings.clear();
+-        for (var purpose : List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT,
+-            gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL)) {
++        var purposes = mainOnlyDiagnostic ? List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT)
++            : List.of(gold.debug.windowstolinux.app.ai.model.AiPurposeType.DEPLOYMENT,
++            gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL);
++        for (var purpose : purposes) {
+             boolean approval = purpose == gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL;
+             String profileId = approval ? "live-approval" : "live-deployment";
+             var selectedEffort = approval ? approvalEffort : effort;
+@@ -1247,6 +1265,11 @@
+                 completed(verification, 3);
+             }
+             runtime.models().saveAiPurpose(purpose, List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id(), true)));
++            if (mainOnlyDiagnostic) {
++                runtime.models().saveAiPurpose(gold.debug.windowstolinux.app.ai.model.AiPurposeType.APPROVAL,
++                    List.of(new gold.debug.windowstolinux.app.ai.model.AiPurposeAssignment(profile.id(), true)));
++                System.out.println("MAIN_AGENT_ONLY_DIAGNOSTIC_ROUTE approval=DORMANT_VERIFIED_PROFILE judgment=USER_AUTHORIZED_DIAGNOSTIC");
++            }
+             System.out.println("AI_LIVE_MODEL purpose=" + purpose + " endpoint=" + endpoint + " model=" + model
+                 + " reasoningEffort=" + selectedEffort);
+         }
+@@ -1473,7 +1496,7 @@
+         boolean cli = List.of("log-analyzer", "directory-diff", "binary-inspector").contains(project);
+         assertTrue(cli || List.of("task-board", "file-transfer", "asset-lending", "csv-inspector", "survey-scoring").contains(project));
+         connectionOnly = false;
+-        String mode = selectedMode.name().toLowerCase(java.util.Locale.ROOT);
++        String mode = mainOnlyDiagnostic ? "agent-main-only-diagnostic" : selectedMode.name().toLowerCase(java.util.Locale.ROOT);
+         root = workspace().resolve("src/app/db/data/" + mode + "-live-" + project + "-" + Long.toUnsignedString(System.nanoTime(), 36));
+         String id = "wtl-" + mode + "-" + project + "-" + Long.toUnsignedString(System.nanoTime(), 36);
+         System.out.println("LIVE_MODE " + mode + " project=" + project);
+@@ -1497,16 +1520,19 @@
+             completed(runtime.servers().check(saveServer(runtime)), 2);
+             if (aiEnabled) configureLiveModel(runtime);
+             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            if (mainOnlyDiagnostic)
++                diagnosticReview = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(context, new ServerId(SERVER));
+             var applications = new DeploymentApplicationsService(context);
+             java.util.UUID agentOriginalId = null;
+             try {
+                 if (selectedMode == Mode.AGENT) {
+-                    agentApproval = System.getProperty("managed.live.agentApproval", "AUTOMATIC");
+-                    agentRemember = Boolean.parseBoolean(System.getProperty("managed.live.rememberAuthorization", "true"));
++                    agentApproval = mainOnlyDiagnostic ? "MANUAL_REVIEW" : System.getProperty("managed.live.agentApproval", "AUTOMATIC");
++                    agentRemember = !mainOnlyDiagnostic && Boolean.parseBoolean(System.getProperty("managed.live.rememberAuthorization", "true"));
+                     System.out.println("AI_LIVE_PERMISSION_POLICY policy=" + agentApproval + " remember=" + agentRemember);
+                     var request = new DeploymentAgentInputs.Request(agentRequirements(project, id, host, webPort),
+                         agentApproval, agentRemember, 128L * 1024 * 1024, 10000, 64L * 1024 * 1024);
+-                    var agent = new DeploymentAgentWorkflow(context).submitLocal(new ServerId(SERVER), request);
++                    var workflow = mainOnlyDiagnostic ? diagnosticReview.workflow() : new DeploymentAgentWorkflow(context);
++                    var agent = workflow.submitLocal(new ServerId(SERVER), request);
+                     agentOriginalId = agent.id();
+                     completed(agent, deploymentWaitMinutes);
+                 } else {
+@@ -1528,10 +1554,17 @@
+                 }
+                 if (aiEnabled) {
+                     assertTrue(languageCalls.get() > 0, "Real source and deployment decisions must call the selected model");
+-                    assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
++                    if (mainOnlyDiagnostic) {
++                        assertEquals(0, approvalCalls.get());
++                        assertEquals(0, approvalTokens.get());
++                        assertEquals(0, diagnosticReview.approvalAttempts());
++                        assertTrue(diagnosticReview.decisions() > 0);
++                        assertTrue(reviewedActions.get() > 0, "Diagnostic decisions still require real platform grants");
++                    } else
++                        assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
+                     if (selectedMode != Mode.AGENT)
+                         assertTrue(approvalTokens.get() <= deploymentTokens.get(), "Actual cumulative approval tokens must not exceed deployment tokens for an accepted project");
+-                    System.out.println("AI_LIVE_PASS " + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
++                    System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
+                         + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
+                 } else
+                     assertEquals(0, modelCalls.get(), "Every static deployment and lifecycle path must avoid all AI capability calls");
+@@ -1548,6 +1581,12 @@
+                     System.out.println("AI_LIVE_PERMISSION_SUMMARY policy=" + agentApproval + " remember=" + agentRemember
+                         + " reviewedActions=" + reviewedActions.get() + " humanQuestions=" + reviewedQuestions.get()
+                         + " observedTokens=" + observedTokens.get() + " deploymentTokens=" + deploymentTokens.get() + " approvalTokens=" + approvalTokens.get());
++                if (mainOnlyDiagnostic) {
++                    System.out.println("MAIN_AGENT_ONLY_DIAGNOSTIC_SUMMARY decisions=" + diagnosticReview.decisions()
++                        + " approvalAttempts=" + diagnosticReview.approvalAttempts() + " approvalProviderCalls=" + approvalCalls.get());
++                    assertEquals(0, diagnosticReview.approvalAttempts());
++                    assertEquals(0, approvalCalls.get());
++                }
+                 var uncertain = runtime.tasks().snapshots().stream().filter(snapshot ->
+                     snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN).toList();
+                 if (!uncertain.isEmpty()) {
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -1876,6 +1876,183 @@
+         }
+     }
+ 
++    @Test
++    void diagnosticCommandStillObtainsExactHostGrantWithoutAnyApprovalModelRequest() throws Exception {
++        try (var ledger = new IdentityFrame(true)) {
++            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
++            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
++            assertEquals(TaskResult.SUCCEEDED, ledger.approve(ledger.agent(permit), REVISION, DeploymentCurrentCommandEvidence.NONE).outcome());
++            assertEquals(1, fixture.decisions());
++            assertEquals(1, ledger.f.grants.size());
++            assertEquals(0, ledger.f.fixture.requests.size());
++            assertEquals(0, ledger.sends);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"bytes", "membership", "receipts", "original", "language", "approval"})
++    void diagnosticDecisionCannotHideChangedSourcesReceiptsIdentityRolesOrConfiguration(String mutation) throws Exception {
++        try (var ledger = new IdentityFrame(true)) {
++            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
++            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
++            var changing = afterDecision(permit, () -> {
++                switch (mutation) {
++                    case "bytes" ->
++                        Files.writeString(ledger.sourceRoot.resolve("entry.sh"), "changed original source\n");
++                    case "membership" ->
++                        ledger.f.sources.put("other", new DeploymentSourceBrowser(ledger.sourceRoot, REVISION));
++                    case "receipts" ->
++                        ledger.journal.event(ledger.f.task, "COMMAND_RESULT", "actual", "1:known-failure");
++                    case "original" -> {
++                        try (var update = ledger.retained.prepareStatement("UPDATE deployment_agent_task SET configuration_digest=? WHERE task_id=?")) {
++                            update.setString(1, "e".repeat(64));
++                            update.setString(2, ledger.f.task.id().toString());
++                            assertEquals(1, update.executeUpdate());
++                        }
++                    }
++                    case "language" -> ledger.language = "e".repeat(64);
++                    case "approval" -> ledger.approval = "e".repeat(64);
++                    default -> throw new AssertionError(mutation);
++                }
++            });
++            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(changing), REVISION, DeploymentCurrentCommandEvidence.NONE));
++            assertEquals(1, fixture.decisions());
++            ledger.noAuthority(0);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"script", "target", "source", "cancel"})
++    void diagnosticStaticAndOriginalBindingGatesRejectBeforeDecisionOrGrant(String invalid) throws Exception {
++        try (var ledger = new IdentityFrame(true)) {
++            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
++            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
++            var agent = ledger.agent(permit);
++            if (invalid.equals("source")) ledger.materialDigest = "e".repeat(64);
++            if (invalid.equals("cancel")) ledger.f.cancelled.set(true);
++            var scope = new DeploymentCommandReviewScope(ledger.context, ledger.f.host, ledger.f.task, "MANUAL_REVIEW", false,
++                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
++            try (var request = ledger.f.command(invalid.equals("script") ? "mkfs.ext4 /dev/sda" : "printf actual", "")) {
++                var target = invalid.equals("target") ? new ServerId("foreign") : SERVER;
++                var intent = RemoteActions.command(target, REVISION, request).withSemantics(new ActionSemantics("deployment.helper.probe.v1",
++                    Set.of(new ActionTarget(target.id(), "task", ledger.f.task.id().toString()))));
++                assertThrows(ApiException.class, () -> ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview)
++                    scope.interaction()).approveCommand(intent, request, ledger.f.task));
++            }
++            assertEquals(0, fixture.decisions());
++            ledger.noAuthority(0);
++        }
++    }
++
++    @Test
++    void diagnosticDecisionCannotReplaceHostRefusal() throws Exception {
++        try (var ledger = new IdentityFrame(true)) {
++            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
++            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
++            var agent = ledger.agent(permit);
++            var refusingHost = proxy(InteractionService.class, (p, m, a) -> {
++                assertEquals("approveReviewedAction", m.getName());
++                assertEquals(true, a[2]);
++                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture.REASON, a[3]);
++                return new OperationResult<ApprovalGrant>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
++            });
++            var scope = new DeploymentCommandReviewScope(ledger.context, refusingHost, ledger.f.task, "MANUAL_REVIEW", false,
++                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
++            try (var request = ledger.f.command("printf actual", "")) {
++                assertEquals(TaskResult.CANCELLED, ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview)
++                    scope.interaction()).approveCommand(ledger.f.intent(request, "deployment.helper.probe.v1"), request, ledger.f.task).outcome());
++            }
++            assertEquals(1, fixture.decisions());
++            ledger.noAuthority(0);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"MISSING", "FAILED"})
++    void diagnosticGrantDoesNotSettleMissingOrFailedActualCommandReceipt(String result) throws Exception {
++        try (var ledger = new IdentityFrame(true)) {
++            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
++            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
++            var agent = ledger.agent(permit);
++            var scope = new DeploymentCommandReviewScope(ledger.context, ledger.f.host, ledger.f.task, "MANUAL_REVIEW", false,
++                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
++            var remote = proxy(RemoteSession.class, (p, m, a) -> {
++                if (m.getName().equals("facts")) return new RemoteFacts("linux", "x86_64", "SHA256:controlled");
++                assertEquals("execute", m.getName());
++                return new OperationResult<>(TaskResult.SUCCEEDED,
++                    Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
++                        result.equals("MISSING") ? Optional.empty() : Optional.of(1), "controlled failure", "", false)), Optional.empty());
++            });
++            if (result.equals("MISSING")) {
++                var failure = assertThrows(DeploymentAiJson.CapabilityOutcomeException.class, () -> DeploymentModelCommandRunner.execute(
++                    scope, remote, SERVER, ledger.f.task, REVISION, "printf actual", 5, "Bound controlled receipt test"));
++                assertEquals(TaskResult.UNKNOWN, failure.outcome());
++            } else assertThrows(IllegalStateException.class, () -> DeploymentModelCommandRunner.execute(
++                scope, remote, SERVER, ledger.f.task, REVISION, "printf actual", 5, "Bound controlled receipt test"));
++            assertEquals("DISPATCHED", JSON.readTree(ledger.f.checkpoint.snapshot().payload()).at("/commands/0/phase").asText());
++            assertTrue(DeploymentModelCommandRunner.unconfirmed(scope, ledger.f.task));
++            assertEquals(0, ledger.f.fixture.requests.size());
++        }
++    }
++
++    @Test
++    void diagnosticPatchJudgmentUsesOriginalReviewOwnerAndFrozenConfiguration() throws Exception {
++        try (var ledger = new IdentityFrame(true)) {
++            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
++            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
++            var reviewer = new DeploymentAgentReview(ledger.context, SERVER, ledger.f.task, "MANUAL_REVIEW", false,
++                REVISION, () -> ledger.language, ledger.journal, null, permit);
++            var patch = new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch("entry.sh", REVISION, REVISION,
++                List.of(new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch.Edit(1, List.of("printf actual"), List.of("printf revised"))));
++            reviewer.patch(patch);
++            assertEquals(1, fixture.decisions());
++            assertTrue(ledger.journal.events(ledger.f.task).stream().anyMatch(event -> event.type().equals("PATCH_APPROVED")));
++            ledger.language = "e".repeat(64);
++            assertThrows(SecurityException.class, () -> reviewer.patch(patch));
++            assertEquals(1, fixture.decisions());
++            ledger.noAuthority(0);
++        }
++    }
++
++    @Test
++    void diagnosticFieldsInModelFactsCannotEnableDefaultApproval() throws Exception {
++        var f = new Frame();
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        assertEquals("APPROVE", f.review(Map.of("USER_AUTHORIZED_DIAGNOSTIC", true, "mainOnlyDiagnostic", true)).decision().decision());
++        assertEquals(1, f.fixture.requests.size());
++        assertEquals(AiPurpose.APPROVAL, f.fixture.requests.getFirst().purpose());
++    }
++
++    @FunctionalInterface
++    private interface DiagnosticMutation {
++        void apply() throws Exception;
++    }
++
++    private DeploymentAgentReviewSource.Bound afterDecision(DeploymentAgentReviewSource.Bound original, DiagnosticMutation mutation) {
++        return new DeploymentAgentReviewSource.Bound() {
++            public void verify(ModContext owner, TaskContext task, ServerId server, String source, String revision) {
++                original.verify(owner, task, server, source, revision);
++            }
++
++            public DeploymentCommandReviewModel.Result review(String instructions, Map<String, ?> facts, ActionIntent intent,
++                                                              CommandRequest request, String revision, TaskContext task) throws ApiException, IOException, DeploymentAiJson.CapabilityOutcomeException {
++                var result = original.review(instructions, facts, intent, request, revision, task);
++                try {
++                    mutation.apply();
++                } catch (Exception failure) {
++                    throw new IOException("Controlled diagnostic mutation failed", failure);
++                }
++                return result;
++            }
++
++            public gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision action(ModContext owner, String type, String action,
++                                                                                                      Map<String, ?> facts, ServerId server,
++                                                                                                      String revision, TaskContext task) throws Exception {
++                return original.action(owner, type, action, facts, server, revision, task);
++            }
++        };
++    }
++
+     private final class IdentityFrame implements AutoCloseable {
+         static final String ARCHIVE = "b".repeat(64);
+ 
+@@ -1937,6 +2114,10 @@
+         }
+ 
+         DeploymentAgentApproval agent() {
++            return agent(null);
++        }
++
++        DeploymentAgentApproval agent(DeploymentAgentReviewSource.Bound reviewSource) {
+             var materialSnapshot = proxy(FileSnapshot.class, (p, m, a) -> switch (m.getName()) {
+                 case "id" -> sourceId;
+                 case "sha256" -> materialDigest;
+@@ -1952,7 +2133,7 @@
+             var archive = new DeploymentSourceArchive(archiveSnapshot, archiveDigest, 1, 1, archiveOrigin, archiveManifest, "");
+             var material = new DeploymentSourceMaterial("identity fixture", materialSnapshot, List.of("entry.sh"), List.of());
+             return DeploymentAgentApproval.forTask(context, f.task, () -> Map.copyOf(f.sources),
+-                new DeploymentAgentApproval.OriginalSource(archive, material, toolsConfig));
++                new DeploymentAgentApproval.OriginalSource(archive, material, toolsConfig), reviewSource);
+         }
+ 
+         OperationResult<ApprovalGrant> approve(DeploymentAgentApproval agent, String business, DeploymentCurrentCommandEvidence current) throws Exception {
+@@ -2066,6 +2247,8 @@
+         });
+ 
+         final ModContext context = proxy(ModContext.class, (p, m, a) -> switch (m.getName()) {
++            case "identity" ->
++                new gold.debug.windowstolinux.appapi.mod.model.ModIdentity("deployment", "1.0.0", Optional.of("1"));
+             case "ai" -> ai;
+             case "logs" -> fixture.context.logs();
+             case "tasks" -> tasks;
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentMainOnlyFixture.java
+@@ -0,0 +1,107 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent;
++
++import java.util.List;
++import java.util.Map;
++import java.util.Objects;
++import java.util.concurrent.atomic.AtomicInteger;
++
++import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
++import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
++import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource;
++
++/** Explicit test authorization, separate from model requests and production configuration. */
++public final class DeploymentAgentMainOnlyFixture implements DeploymentAgentReviewSource {
++    public static final String REASON = "USER_AUTHORIZED_DIAGNOSTIC: independent model judgment is suspended for this bound test task; exact platform authorization remains required";
++
++    private final ModContext owner;
++
++    private final ServerId server;
++
++    private final AtomicInteger decisions = new AtomicInteger();
++
++    private final AtomicInteger approvalAttempts = new AtomicInteger();
++
++    public DeploymentAgentMainOnlyFixture(ModContext owner, ServerId server) {
++        this.owner = Objects.requireNonNull(owner);
++        this.server = Objects.requireNonNull(server);
++    }
++
++    public DeploymentAgentWorkflow workflow() {
++        return new DeploymentAgentWorkflow(owner, this);
++    }
++
++    public int decisions() {
++        return decisions.get();
++    }
++
++    public int approvalAttempts() {
++        return approvalAttempts.get();
++    }
++
++    public void beforeRequest(AiRequest request) {
++        if (request.purpose() == AiPurpose.APPROVAL) {
++            approvalAttempts.incrementAndGet();
++            throw new AssertionError("Main-only diagnostic forbids every APPROVAL request before provider transport");
++        }
++    }
++
++    @Override
++    public Bound bind(ModContext actualOwner, TaskContext task, ServerId actualServer, String sourceRevision, String configurationRevision) {
++        if (actualOwner != owner || !server.equals(actualServer) || !sourceRevision.matches("[0-9a-f]{64}")
++            || !configurationRevision.matches("[0-9a-f]{64}"))
++            throw new SecurityException("Unapproved diagnostic binding");
++        var identity = Objects.requireNonNull(owner.identity());
++        Objects.requireNonNull(task);
++        var taskId = Objects.requireNonNull(task.id());
++        return new Bound() {
++            private void sameOwnerTask(ModContext actual, TaskContext supplied, ServerId target, String revision) {
++                if (actual != owner || supplied != task || !taskId.equals(supplied.id()) || !identity.equals(owner.identity())
++                    || !server.equals(target) || !configurationRevision.equals(revision) || task.cancelToken().requested())
++                    throw new SecurityException("Diagnostic permit differs from its original owner, task, target or configuration");
++                try {
++                    if (!revision.equals(owner.ai().configurationRevision(AiPurpose.LANGUAGE, task))
++                        || !revision.equals(owner.ai().configurationRevision(AiPurpose.APPROVAL, task)))
++                        throw new SecurityException("Diagnostic model configuration changed");
++                } catch (gold.debug.windowstolinux.appapi.task.result.ApiException failure) {
++                    throw new SecurityException("Diagnostic model configuration is unavailable", failure);
++                }
++            }
++
++            @Override
++            public void verify(ModContext actual, TaskContext supplied, ServerId target, String source, String revision) {
++                sameOwnerTask(actual, supplied, target, revision);
++                if (!sourceRevision.equals(source)) throw new SecurityException("Diagnostic source binding changed");
++            }
++
++            @Override
++            public DeploymentCommandReviewModel.Result review(String instructions, Map<String, ?> facts, ActionIntent intent,
++                                                              CommandRequest request, String revision, TaskContext supplied) {
++                sameOwnerTask(owner, supplied, server, revision);
++                if (!intent.serverIds().equals(List.of(server.id())))
++                    throw new SecurityException("Foreign diagnostic command target");
++                decisions.incrementAndGet();
++                System.out.println("USER_AUTHORIZED_DIAGNOSTIC_COMMAND task=" + taskId + " operation="
++                    + intent.semantics().orElseThrow().operation());
++                return new DeploymentCommandReviewModel.Result(new DeploymentReviewDecision("APPROVE", true, REASON), Map.of());
++            }
++
++            @Override
++            public DeploymentReviewDecision action(ModContext actual, String type, String action, Map<String, ?> facts,
++                                                   ServerId target, String revision, TaskContext supplied) {
++                sameOwnerTask(actual, supplied, target, revision);
++                if (!List.of("COMMAND", "PATCH").contains(type) || !action.matches("[0-9a-f]{64}"))
++                    throw new SecurityException("Invalid diagnostic action binding");
++                decisions.incrementAndGet();
++                System.out.println("USER_AUTHORIZED_DIAGNOSTIC_ACTION task=" + taskId + " type=" + type);
++                return new DeploymentReviewDecision("APPROVE", true, REASON);
++            }
++        };
++    }
++}
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentMainOnlyFixtureTest.java
+@@ -0,0 +1,84 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent;
++
++import java.lang.reflect.Proxy;
++import java.time.Duration;
++import java.util.List;
++import java.util.Optional;
++import java.util.UUID;
++import java.util.concurrent.atomic.AtomicBoolean;
++
++import gold.debug.windowstolinux.appapi.ai.AiService;
++import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
++import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.mod.model.ModIdentity;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.run.CancelToken;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import org.junit.jupiter.api.Test;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++
++class DeploymentAgentMainOnlyFixtureTest {
++    private static final String REVISION = "a".repeat(64);
++
++    private static final ServerId SERVER = new ServerId("diagnostic-host");
++
++    private final AtomicBoolean cancelled = new AtomicBoolean();
++
++    private String current = REVISION;
++
++    private final UUID taskId = UUID.randomUUID();
++
++    private final TaskContext task = proxy(TaskContext.class, (p, m, a) -> switch (m.getName()) {
++        case "id" -> taskId;
++        case "cancelToken" -> (CancelToken) cancelled::get;
++        default -> throw new AssertionError(m.getName());
++    });
++
++    private final AiService ai = proxy(AiService.class, (p, m, a) -> {
++        if (m.getName().equals("configurationRevision")) return current;
++        throw new AssertionError("Diagnostic permit cannot call a model");
++    });
++
++    private final ModContext owner = proxy(ModContext.class, (p, m, a) -> switch (m.getName()) {
++        case "identity" -> new ModIdentity("deployment", "1.0.0", Optional.of("1"));
++        case "ai" -> ai;
++        default -> throw new AssertionError("Diagnostic permit has no host authority: " + m.getName());
++    });
++
++    @Test
++    void explicitPermitRejectsForeignOwnerTaskTargetSourceAndConfiguration() {
++        var fixture = new DeploymentAgentMainOnlyFixture(owner, SERVER);
++        var permit = fixture.bind(owner, task, SERVER, REVISION, REVISION);
++        var foreignOwner = proxy(ModContext.class, (p, m, a) -> owner.identity());
++        var replacementTask = proxy(TaskContext.class, (p, m, a) -> taskId);
++        assertThrows(SecurityException.class, () -> fixture.bind(foreignOwner, task, SERVER, REVISION, REVISION));
++        assertThrows(SecurityException.class, () -> permit.verify(foreignOwner, task, SERVER, REVISION, REVISION));
++        assertThrows(SecurityException.class, () -> permit.verify(owner, replacementTask, SERVER, REVISION, REVISION));
++        assertThrows(SecurityException.class, () -> permit.verify(owner, task, new ServerId("other"), REVISION, REVISION));
++        assertThrows(SecurityException.class, () -> permit.verify(owner, task, SERVER, "b".repeat(64), REVISION));
++        assertThrows(SecurityException.class, () -> permit.verify(owner, task, SERVER, REVISION, "b".repeat(64)));
++        current = "b".repeat(64);
++        assertThrows(SecurityException.class, () -> permit.verify(owner, task, SERVER, REVISION, REVISION));
++        current = REVISION;
++        cancelled.set(true);
++        assertThrows(SecurityException.class, () -> permit.verify(owner, task, SERVER, REVISION, REVISION));
++        assertEquals(0, fixture.decisions());
++    }
++
++    @Test
++    void approvalRequestFailsBeforeTransportWhileLanguageRequestContinues() {
++        var fixture = new DeploymentAgentMainOnlyFixture(owner, SERVER);
++        fixture.beforeRequest(new AiRequest(AiPurpose.LANGUAGE, List.of(), Duration.ofSeconds(1), false));
++        assertEquals(0, fixture.approvalAttempts());
++        assertThrows(AssertionError.class, () -> fixture.beforeRequest(new AiRequest(AiPurpose.APPROVAL, List.of(), Duration.ofSeconds(1), false)));
++        assertEquals(1, fixture.approvalAttempts());
++        assertEquals(0, fixture.decisions());
++    }
++
++    private static <T> T proxy(Class<T> type, java.lang.reflect.InvocationHandler handler) {
++        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, handler));
++    }
++}

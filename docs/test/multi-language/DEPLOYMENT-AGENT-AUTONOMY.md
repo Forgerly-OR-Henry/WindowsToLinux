@@ -344,3 +344,23 @@ Agent 仅在上传后的本次 verify 局部附加 currentCommandEvidence，保�
 运行预算配置化已完成本地验证：native每任务4096状态/64MiB总载荷，单值1MiB公共界保留；请求时限120/120/600s、工具尝试和主响应、历史窗口、审批会话身份留存及观察容量均接入实际consumer。平台与Mod两份YAML全部字段补齐注释，严格必填及关系校验生效，主管自主判断讨论是否继续；身份留存数不规定讨论轮数。provider成功后本地retain失败返回FAILED纯计量响应，清空可执行内容并封闭该purpose，包括首次尚无binding的情况，不重付费或回填旧13未知用量。
 
 99个不同定点场景最新全部通过，五轮108次执行和编译/夹具失败记录保留；只重跑失败与直接受影响组。512轮协调夹具完成2048个不同真实本地源码页READ、账本与预算收尾，不创建服务器权限。35个Java格式检查通过，测试及格式3272冻结零变化，其他3235源文件保持，原13数据库三文件SHA未变。实际provider/SSH/原任务恢复调用0，不产生新缓存或审批占比验收批次。当前仅通过本地运行预算与失败处理验证，真实部署仍按用户要求暂停。字段、默认值、结构上界、失败轮及精确增量提交隔离见[Agent运行预算配置](DEPLOYMENT-AGENT-RUNTIME-LIMITS.md)，共享[配置填写说明](../../Config.md)已同步；原13 UNKNOWN及4439资源继续保留。
+
+用户完成设置后恢复推进，`task-board-14` 使用新任务 `783198e1-12c0-492c-9c0a-374b5bec130e`、新库 `agent-live-task-board-43rlpupziw` 和 App 意图 `wtl-agent-task-board-43rlpw7i80`，于2026-10-12 17:37:59+08结束真实产品入口失败：一项FAIL、零错误/跳过、735.77秒，3272源码与Skill冻结零变化。会话95037退出；实际CIM17:41:20相关验证进程0，原IDEA保持。没有发布App或浏览器checkpoint。观察器本轮只记录实际用量，不以普通调试Token取消；产品有限运行预算与独立审批权限继续生效。
+
+82次部署/审批请求均有捕获响应：input1758112、output53851、合计1811963，hit1276928、miss481184，捕获输入命中率72.63%；主模型16次共740110，审批66次共1071853，占已知I/O的59.15%。reasoning主模型24300已知、审批66项未知；4项配置能力探测的provider usage与transport次数未知。原日志、实际XML及一次保存的usage完整保留，属于开发失败轮，不混入最终冻结八项目统计。
+
+最后 `deployment.agent.toolchain.bind.v1` 的独立审批返回DENY：该次仅读取101904字节内联程序的首段，其理由还把执行路径套入managed-helper的prepare-toolchains/bind契约。只读源码诊断确认，显式AgentApproval路线无条件给出helper契约且未接入已有Agentinline绑定证据；但新绑定请求没有完整正文投递也是事实，不能把这次DENY整体说成审批错误。原内联Python启动器没有helper磁盘守卫，不据此推断宿主被破坏。拒绝异常逃出prepare_tools，而此前prepare已真实执行，外层CAP66无RESULT；不能把整次能力改写为NOT_SENT或假成功。
+
+父只读H2审计确认原platform与Agent均UNKNOWN、2239资源、effectsSettled=false、operation摘要与formal execution均0，正式十表0、模型2/服务器1保持。主DB SHA256 `48a117c5b93836506aaf99d34867c6acc9347964b0bb5e2208e8bf7ade0d0515` 前后相同，锁已释放。没有清理候选、共享工具链或未结账本；原13及其他保留身份不变。已有调查报告与原证据保留。
+
+用户随后指定先做主Agent独立部署对照，临时停用审批模型。此对照只用于诊断主模型、工具和审批链的责任，不能当作完整独立审批或正式八项目验收；成功不直接证明审批过严，失败仍需区分模型、产品工具和服务器。暂不同时修复已确认的契约问题，使用独立任务/DB/App，保留实际来源、目标、配置与宿主授权门；父不接手服务器部署或提供步骤答案。新增显式测试注入的诊断判断来源，默认公开入口继续使用正式双模型路线。第14轮之后服务器已有工具链准备效果，因此后续对照不能表述为相同初始服务器状态的严格A/B。
+
+`task-board-main-only-15` 于2026-10-12 18:38:41+08结束真实产品对照，一项FAIL、零错误/跳过、217.8秒。新task `f5b542be-650e-4fea-bf69-ec4e17b58c2d`、新库 `agent-main-only-diagnostic-live-task-board-458om5t3cs`、App意图 `wtl-agent-main-only-diagnostic-task-board-458om7d3v8`；平台与Agent保留UNKNOWN，没有正式App、浏览器业务或部署成功标识。实际诊断14次domain判断，approvalAttempts与approvalProviderCalls均0；17次业务请求均为LANGUAGE。诊断返回明确的USER_AUTHORIZED_DIAGNOSTIC测试判断，宿主单次授权及原身份/来源/配置/回执检查保持，不制造模型意见、AiResponse、分页阅读证据或grant。任何APP业务请求在发送前拒绝；主profile真实验证两项能力后仅登记休眠APP路由以维持原完整配置修订合同，主模型没有兼任审批模型。
+
+第一轮工具链准备实际exit65、未截断，日志记录HOST_SPACE_REQUIRED / VOLUME：available9485029376、required9663676416、reserve1073741824 bytes；CAP59→60记录FAILED。投影字段形状与范围符合codec分支，但原request operation对应及完整codec接受仍UNKNOWN。主模型收到反馈后自行调用Skill、尝试host_command、执行两次check并再次prepare_tools，监督代理没有接手或给部署步骤。host_command没有成功执行证明，具体拒绝字段未知，不能当作已释放空间。最终第二次准备在host probe和capacity命令均exit0之后，候选容量检查抛出 `Insufficient verified agent candidate space`：实际门为availableBytes小于2×workspaceBytes+1GiB，本次比较的三个容量数值和物理空间原因未知。原PREPARE70/action `83aa302b3693b1db9b831c8303a1d5027378395c75f7edef13e87eca0a835a54` 无RESULT，外层异常终止，保留UNKNOWN；不是第一SSH非零直接终止，也不是审批拒绝。这个产品错误边界没有给主模型再次处理的机会，本轮不足以证明主模型无法自主闭环。
+
+17个捕获响应input577243、output18034、合计595277，hit419456、miss157787，捕获输入命中72.67%；reasoning12460为已知输出子集，不额外相加。两项能力探测的provider usage与transport次数UNKNOWN，不能把它们计为零。审批业务调用为0属于显式诊断条件，不计完整审批成本达标；本轮全部排除最终冻结八项目统计，保留独立usage、原日志和真实XML。
+
+只读H2审计确认原任务734资源、Agent语义版本4、effectsSettled=false、operation摘要与formal execution均0、正式十表0，模型1/服务器1保持。主库SHA256 `e50085b90b5c8f3bd8ffd339fa1417425147791c81d555239e852385d4ff4df5` 前后相同，锁已释放。第一轮FAILED回执已落账，第二PREPARE无回执不能用前次结果结清；没有恢复、清理或重放原13/14/15，未删除共享工具链和候选，原373业务及其他持久身份保持。
+
+诊断实现27个直接定点场景全部通过，首轮缺import导致编译失败、0测试的记录保留；11项Java限定格式检查通过。真实对照期间3275源码与Skill零变化，会话25903 exit1；18:42:41实际CIM相关验证进程0，原IDEA34300及其既有Java50092保留。实现、验证、提交隔离及对照限制见[主Agent独立诊断15](DEPLOYMENT-AGENT-MAIN-ONLY-DIAGNOSTIC-15.md)。遵照用户要求，本轮完成后暂停，未修候选容量反馈或14审批契约，未启动下一轮API/SSH测试；完整双Agent成功部署、真实浏览器业务、非默认目录真机与Linux重启及最终八项目仍待验收。

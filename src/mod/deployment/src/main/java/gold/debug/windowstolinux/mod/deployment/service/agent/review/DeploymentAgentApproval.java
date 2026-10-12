@@ -23,6 +23,7 @@ import gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition;
 import gold.debug.windowstolinux.appapi.ai.model.AiToolResult;
 import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
+import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.appapi.task.result.ApiException;
@@ -99,6 +100,8 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
 
     private final DeploymentAiJson ai;
 
+    private final DeploymentAgentReviewSource.Bound reviewSource;
+
     private final Map<String, Result> refused = new HashMap<>();
 
     private record Discussion(String progress, Result result, String reviewBinding, String response) {
@@ -138,9 +141,14 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     }
 
     public DeploymentAgentApproval(ModContext context, TaskContext task, Evidence evidence) {
+        this(context, task, evidence, null);
+    }
+
+    public DeploymentAgentApproval(ModContext context, TaskContext task, Evidence evidence, DeploymentAgentReviewSource.Bound reviewSource) {
         this.context = Objects.requireNonNull(context);
         this.task = Objects.requireNonNull(task);
         this.evidence = Objects.requireNonNull(evidence);
+        this.reviewSource = reviewSource;
         this.ai = new DeploymentAiJson(context);
     }
 
@@ -161,6 +169,11 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     }
 
     public static DeploymentAgentApproval forTask(ModContext context, TaskContext task, Sources sources, OriginalSource original) {
+        return forTask(context, task, sources, original, null);
+    }
+
+    public static DeploymentAgentApproval forTask(ModContext context, TaskContext task, Sources sources, OriginalSource original,
+                                                  DeploymentAgentReviewSource.Bound reviewSource) {
         var journal = new DeploymentAgentActionLog(context.db());
         return new DeploymentAgentApproval(context, task, new Evidence() {
             public Binding binding() throws Exception {
@@ -210,7 +223,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 return Map.of("events", journal.events(task), "modelCommandReceipt", command.isEmpty() ? Map.of()
                     : JSON.readTree(command.orElseThrow().snapshot().payload()));
             }
-        });
+        }, reviewSource);
     }
 
     private record SourceIdentity(DeploymentAgentActionLog.Identity identity, DeploymentAgentActionLog.Event original,
@@ -301,6 +314,16 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             var descriptors = new LinkedHashMap<String, Object>();
             JsonNode compact = compact(current, "", descriptors);
             var coverage = new DeploymentAgentInputCoverage(request, current);
+            if (reviewSource != null) {
+                reviewSource.verify(context, task, new ServerId(binding.server()), binding.sourceRevision(), revision);
+                check(binding, revision, sources, receipts, identities, intent);
+                for (var source : sources.values()) source.verify();
+                var result = Objects.requireNonNull(reviewSource.review(instructions, facts, intent, request, revision, task));
+                reviewSource.verify(context, task, new ServerId(binding.server()), binding.sourceRevision(), revision);
+                check(binding, revision, sources, receipts, identities, intent);
+                for (var source : sources.values()) source.verify();
+                return result;
+            }
             var initial = Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("binding", binding), Map.entry("reviewBinding", bound),
                 Map.entry("currentRequest", compact), Map.entry("evidencePages", descriptors), Map.entry("sourceRevisions", sourceRevisions),
                 Map.entry("identityRoles", identities),

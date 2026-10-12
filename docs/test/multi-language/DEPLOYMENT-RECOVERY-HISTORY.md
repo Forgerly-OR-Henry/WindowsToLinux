@@ -87,3 +87,9 @@ GPT-6.1-Sol 负责实现与定点修正，GPT-6-Astra 仅参与正式来源、�
 本轮 Maven、测试子进程与格式验证进程均已退出；用户原有 IDEA 进程保留。
 
 2026-10-12第13轮新部署的原task `bb9ce013-263d-45d3-aded-8cc3ee54357d` 因平台native状态保存上限终止，仍为UNKNOWN。两份完整候选及databases结果不能结清prepare_tools的CAPABILITY_EXECUTING191：此前resolve已有真实执行结果，最后审批中断仅证明最后请求未获授权，不能证明整个capability未发送。原effectsSettled=false、4439资源及全部Agent明细保留，无正式App、无结清摘要。现有恢复缺少该capability内原toolchain操作及可信回执/status的整体结清依据；本阶段没有调用恢复或清理，也没有补造RESULT/NOT_SENT/COMPENSATED。两次有界只读诊断的原3个数据库文件SHA均未变化，锁已释放。第13轮实际用量、终因和暂停范围见[Agent自主验收记录](DEPLOYMENT-AGENT-AUTONOMY.md)，不作为恢复成功证据。数据库保持v1，原373正式业务及其他未结记录继续保留。
+
+2026-10-12第14轮新task `783198e1-12c0-492c-9c0a-374b5bec130e` 仍UNKNOWN、2239资源、effectsSettled=false、正式十表与formal execution均0。已有工具链prepare成功回执，但后续bind审批拒绝，外层CAP66/action `b21f955379741e67c48318d3bc5acfb2f865767b5669d044e2787bbdca6f9f39` 无RESULT；不能将最后未获授权扩张为整次能力NOT_SENT。只读主库SHA256 `48a117c5b93836506aaf99d34867c6acc9347964b0bb5e2208e8bf7ade0d0515` 前后相同、锁释放，没有运行恢复或清理。原13日志中找回的NODE resolver身份不足以证明CAP191全部子操作及依赖已经结清，原13继续保留4439资源和账本。
+
+第15轮仅主Agent诊断task `f5b542be-650e-4fea-bf69-ec4e17b58c2d` 于18:38:41+08结束UNKNOWN、734资源、effectsSettled=false，正式十表与formal execution均0、无operation结果摘要。第一prepare_tools CAP59→60已有FAILED回执，模型自行尝试后第二PREPARE70/action `83aa302b3693b1db9b831c8303a1d5027378395c75f7edef13e87eca0a835a54` 在候选容量异常后无RESULT；第一轮回执不能结清第二操作。只读主库SHA256 `e50085b90b5c8f3bd8ffd339fa1417425147791c81d555239e852385d4ff4df5` 前后相同，模型1/服务器1保持，锁释放。此轮暂停审批模型只是独立诊断条件，没有取得原操作真实恢复成功、全部资源/回执结清或业务身份承接证明，不删除任何原13/14/15明细、候选和共享引用。
+
+遵照用户完成本轮后暂停的要求，不继续恢复、清理或付费重试；调查文件、UNKNOWN及失败/拒绝证据保留，已结清旧任务不重放，原373正式App/发布及持久数据未操作。数据库仍v1，没有版号迁移。旧373真实历史清理、非默认目录真机部署与Linux重启恢复仍待验证；本轮失败或只读审计不替代该验收。主Agent对照细节见[诊断15记录](DEPLOYMENT-AGENT-MAIN-ONLY-DIAGNOSTIC-15.md)，验证进程已退出，原用户IDE进程保留。

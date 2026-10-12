@@ -1876,6 +1876,183 @@ class DeploymentAgentApprovalTest {
         }
     }
 
+    @Test
+    void diagnosticCommandStillObtainsExactHostGrantWithoutAnyApprovalModelRequest() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+            assertEquals(TaskResult.SUCCEEDED, ledger.approve(ledger.agent(permit), REVISION, DeploymentCurrentCommandEvidence.NONE).outcome());
+            assertEquals(1, fixture.decisions());
+            assertEquals(1, ledger.f.grants.size());
+            assertEquals(0, ledger.f.fixture.requests.size());
+            assertEquals(0, ledger.sends);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"bytes", "membership", "receipts", "original", "language", "approval"})
+    void diagnosticDecisionCannotHideChangedSourcesReceiptsIdentityRolesOrConfiguration(String mutation) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+            var changing = afterDecision(permit, () -> {
+                switch (mutation) {
+                    case "bytes" ->
+                        Files.writeString(ledger.sourceRoot.resolve("entry.sh"), "changed original source\n");
+                    case "membership" ->
+                        ledger.f.sources.put("other", new DeploymentSourceBrowser(ledger.sourceRoot, REVISION));
+                    case "receipts" ->
+                        ledger.journal.event(ledger.f.task, "COMMAND_RESULT", "actual", "1:known-failure");
+                    case "original" -> {
+                        try (var update = ledger.retained.prepareStatement("UPDATE deployment_agent_task SET configuration_digest=? WHERE task_id=?")) {
+                            update.setString(1, "e".repeat(64));
+                            update.setString(2, ledger.f.task.id().toString());
+                            assertEquals(1, update.executeUpdate());
+                        }
+                    }
+                    case "language" -> ledger.language = "e".repeat(64);
+                    case "approval" -> ledger.approval = "e".repeat(64);
+                    default -> throw new AssertionError(mutation);
+                }
+            });
+            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(changing), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            assertEquals(1, fixture.decisions());
+            ledger.noAuthority(0);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"script", "target", "source", "cancel"})
+    void diagnosticStaticAndOriginalBindingGatesRejectBeforeDecisionOrGrant(String invalid) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+            var agent = ledger.agent(permit);
+            if (invalid.equals("source")) ledger.materialDigest = "e".repeat(64);
+            if (invalid.equals("cancel")) ledger.f.cancelled.set(true);
+            var scope = new DeploymentCommandReviewScope(ledger.context, ledger.f.host, ledger.f.task, "MANUAL_REVIEW", false,
+                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+            try (var request = ledger.f.command(invalid.equals("script") ? "mkfs.ext4 /dev/sda" : "printf actual", "")) {
+                var target = invalid.equals("target") ? new ServerId("foreign") : SERVER;
+                var intent = RemoteActions.command(target, REVISION, request).withSemantics(new ActionSemantics("deployment.helper.probe.v1",
+                    Set.of(new ActionTarget(target.id(), "task", ledger.f.task.id().toString()))));
+                assertThrows(ApiException.class, () -> ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview)
+                    scope.interaction()).approveCommand(intent, request, ledger.f.task));
+            }
+            assertEquals(0, fixture.decisions());
+            ledger.noAuthority(0);
+        }
+    }
+
+    @Test
+    void diagnosticDecisionCannotReplaceHostRefusal() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+            var agent = ledger.agent(permit);
+            var refusingHost = proxy(InteractionService.class, (p, m, a) -> {
+                assertEquals("approveReviewedAction", m.getName());
+                assertEquals(true, a[2]);
+                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture.REASON, a[3]);
+                return new OperationResult<ApprovalGrant>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
+            });
+            var scope = new DeploymentCommandReviewScope(ledger.context, refusingHost, ledger.f.task, "MANUAL_REVIEW", false,
+                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+            try (var request = ledger.f.command("printf actual", "")) {
+                assertEquals(TaskResult.CANCELLED, ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview)
+                    scope.interaction()).approveCommand(ledger.f.intent(request, "deployment.helper.probe.v1"), request, ledger.f.task).outcome());
+            }
+            assertEquals(1, fixture.decisions());
+            ledger.noAuthority(0);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MISSING", "FAILED"})
+    void diagnosticGrantDoesNotSettleMissingOrFailedActualCommandReceipt(String result) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+            var agent = ledger.agent(permit);
+            var scope = new DeploymentCommandReviewScope(ledger.context, ledger.f.host, ledger.f.task, "MANUAL_REVIEW", false,
+                () -> REVISION, null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
+            var remote = proxy(RemoteSession.class, (p, m, a) -> {
+                if (m.getName().equals("facts")) return new RemoteFacts("linux", "x86_64", "SHA256:controlled");
+                assertEquals("execute", m.getName());
+                return new OperationResult<>(TaskResult.SUCCEEDED,
+                    Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
+                        result.equals("MISSING") ? Optional.empty() : Optional.of(1), "controlled failure", "", false)), Optional.empty());
+            });
+            if (result.equals("MISSING")) {
+                var failure = assertThrows(DeploymentAiJson.CapabilityOutcomeException.class, () -> DeploymentModelCommandRunner.execute(
+                    scope, remote, SERVER, ledger.f.task, REVISION, "printf actual", 5, "Bound controlled receipt test"));
+                assertEquals(TaskResult.UNKNOWN, failure.outcome());
+            } else assertThrows(IllegalStateException.class, () -> DeploymentModelCommandRunner.execute(
+                scope, remote, SERVER, ledger.f.task, REVISION, "printf actual", 5, "Bound controlled receipt test"));
+            assertEquals("DISPATCHED", JSON.readTree(ledger.f.checkpoint.snapshot().payload()).at("/commands/0/phase").asText());
+            assertTrue(DeploymentModelCommandRunner.unconfirmed(scope, ledger.f.task));
+            assertEquals(0, ledger.f.fixture.requests.size());
+        }
+    }
+
+    @Test
+    void diagnosticPatchJudgmentUsesOriginalReviewOwnerAndFrozenConfiguration() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            var fixture = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentMainOnlyFixture(ledger.context, SERVER);
+            var permit = fixture.bind(ledger.context, ledger.f.task, SERVER, REVISION, REVISION);
+            var reviewer = new DeploymentAgentReview(ledger.context, SERVER, ledger.f.task, "MANUAL_REVIEW", false,
+                REVISION, () -> ledger.language, ledger.journal, null, permit);
+            var patch = new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch("entry.sh", REVISION, REVISION,
+                List.of(new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPatch.Edit(1, List.of("printf actual"), List.of("printf revised"))));
+            reviewer.patch(patch);
+            assertEquals(1, fixture.decisions());
+            assertTrue(ledger.journal.events(ledger.f.task).stream().anyMatch(event -> event.type().equals("PATCH_APPROVED")));
+            ledger.language = "e".repeat(64);
+            assertThrows(SecurityException.class, () -> reviewer.patch(patch));
+            assertEquals(1, fixture.decisions());
+            ledger.noAuthority(0);
+        }
+    }
+
+    @Test
+    void diagnosticFieldsInModelFactsCannotEnableDefaultApproval() throws Exception {
+        var f = new Frame();
+        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        assertEquals("APPROVE", f.review(Map.of("USER_AUTHORIZED_DIAGNOSTIC", true, "mainOnlyDiagnostic", true)).decision().decision());
+        assertEquals(1, f.fixture.requests.size());
+        assertEquals(AiPurpose.APPROVAL, f.fixture.requests.getFirst().purpose());
+    }
+
+    @FunctionalInterface
+    private interface DiagnosticMutation {
+        void apply() throws Exception;
+    }
+
+    private DeploymentAgentReviewSource.Bound afterDecision(DeploymentAgentReviewSource.Bound original, DiagnosticMutation mutation) {
+        return new DeploymentAgentReviewSource.Bound() {
+            public void verify(ModContext owner, TaskContext task, ServerId server, String source, String revision) {
+                original.verify(owner, task, server, source, revision);
+            }
+
+            public DeploymentCommandReviewModel.Result review(String instructions, Map<String, ?> facts, ActionIntent intent,
+                                                              CommandRequest request, String revision, TaskContext task) throws ApiException, IOException, DeploymentAiJson.CapabilityOutcomeException {
+                var result = original.review(instructions, facts, intent, request, revision, task);
+                try {
+                    mutation.apply();
+                } catch (Exception failure) {
+                    throw new IOException("Controlled diagnostic mutation failed", failure);
+                }
+                return result;
+            }
+
+            public gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision action(ModContext owner, String type, String action,
+                                                                                                      Map<String, ?> facts, ServerId server,
+                                                                                                      String revision, TaskContext task) throws Exception {
+                return original.action(owner, type, action, facts, server, revision, task);
+            }
+        };
+    }
+
     private final class IdentityFrame implements AutoCloseable {
         static final String ARCHIVE = "b".repeat(64);
 
@@ -1937,6 +2114,10 @@ class DeploymentAgentApprovalTest {
         }
 
         DeploymentAgentApproval agent() {
+            return agent(null);
+        }
+
+        DeploymentAgentApproval agent(DeploymentAgentReviewSource.Bound reviewSource) {
             var materialSnapshot = proxy(FileSnapshot.class, (p, m, a) -> switch (m.getName()) {
                 case "id" -> sourceId;
                 case "sha256" -> materialDigest;
@@ -1952,7 +2133,7 @@ class DeploymentAgentApprovalTest {
             var archive = new DeploymentSourceArchive(archiveSnapshot, archiveDigest, 1, 1, archiveOrigin, archiveManifest, "");
             var material = new DeploymentSourceMaterial("identity fixture", materialSnapshot, List.of("entry.sh"), List.of());
             return DeploymentAgentApproval.forTask(context, f.task, () -> Map.copyOf(f.sources),
-                new DeploymentAgentApproval.OriginalSource(archive, material, toolsConfig));
+                new DeploymentAgentApproval.OriginalSource(archive, material, toolsConfig), reviewSource);
         }
 
         OperationResult<ApprovalGrant> approve(DeploymentAgentApproval agent, String business, DeploymentCurrentCommandEvidence current) throws Exception {
@@ -2066,6 +2247,8 @@ class DeploymentAgentApprovalTest {
         });
 
         final ModContext context = proxy(ModContext.class, (p, m, a) -> switch (m.getName()) {
+            case "identity" ->
+                new gold.debug.windowstolinux.appapi.mod.model.ModIdentity("deployment", "1.0.0", Optional.of("1"));
             case "ai" -> ai;
             case "logs" -> fixture.context.logs();
             case "tasks" -> tasks;
