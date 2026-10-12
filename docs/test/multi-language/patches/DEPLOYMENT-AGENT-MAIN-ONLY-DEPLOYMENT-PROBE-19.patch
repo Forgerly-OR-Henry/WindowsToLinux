@@ -1,0 +1,208 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1504,6 +1504,8 @@
+     }
+ 
+     private void deploysWebsite(String project, Mode selectedMode) throws Exception {
++        boolean deploymentOnly = Boolean.getBoolean("managed.live.mainOnlyDeploymentOnly");
++        assertTrue(!deploymentOnly || mainOnlyDiagnostic, "Deployment-only acceptance is limited to the explicit main-only diagnostic");
+         int deploymentWaitMinutes = Integer.parseInt(System.getProperty("managed.live.deploymentWaitMinutes", "60"));
+         if (deploymentWaitMinutes < 1 || deploymentWaitMinutes > 180)
+             throw new IllegalArgumentException("Live deployment wait must be between 1 and 180 minutes");
+@@ -1528,9 +1530,17 @@
+             case "survey-scoring" -> 46140;
+             default -> 0;
+         };
++        if (mainOnlyDiagnostic && System.getProperty("managed.live.webPort") != null) {
++            webPort = Integer.parseInt(System.getProperty("managed.live.webPort"));
++            assertTrue(webPort >= 1 && webPort <= 65535, "The authorized public website port must be between 1 and 65535");
++        }
+         Map<String, Map<String, String>> values = selectedMode == Mode.AGENT ? Map.of()
+             : runtimeInputs(project, source, host, webPort);
+         enable();
++        String phase = "DEPLOYMENT";
++        boolean deploymentVerified = false;
++        boolean managementComplete = false;
++        boolean phaseFailureRecorded = false;
+         try (var runtime = open()) {
+             start(runtime, true);
+             completed(runtime.servers().check(saveServer(runtime)), 2);
+@@ -1550,7 +1560,11 @@
+                     var workflow = mainOnlyDiagnostic ? diagnosticReview.workflow() : new DeploymentAgentWorkflow(context);
+                     var agent = workflow.submitLocal(new ServerId(SERVER), request);
+                     agentOriginalId = agent.id();
+-                    completed(agent, deploymentWaitMinutes);
++                    var published = completed(agent, deploymentWaitMinutes);
++                    if (mainOnlyDiagnostic) {
++                        verifyMainOnlyDeployment(runtime, applications, agent, published.healthy(), id, "http://" + host + ":" + webPort);
++                        deploymentVerified = true;
++                    }
+                 } else {
+                     var workflow = new DeploymentStandardEntryFixture(context, new DeploymentRefFlow(context));
+                     var draft = new DeploymentStandardInputs.Draft(id, 128L * 1024 * 1024, 10000, 64L * 1024 * 1024,
+@@ -1561,10 +1575,11 @@
+                 var current = completed(applications.list(), 2).stream().filter(app -> app.application().id().equals(id))
+                     .findFirst().orElseThrow();
+                 System.out.println("STATIC_LIVE_PUBLISHED " + project + " " + current.application());
+-                if (cli) {
++                if (!deploymentOnly && cli) {
+                     if (selectedMode == Mode.AGENT) verifyAgentCli(project, context, current.application());
+                     System.out.println("AI_LIVE_CLI_BUSINESS " + project + " verified by the original COMMAND health probe and expected business output");
+-                } else {
++                } else if (!deploymentOnly) {
++                    phase = "BUSINESS_QA";
+                     String web = "http://" + host + ":" + webPort;
+                     business(project, web, applications, current.application());
+                     awaitBrowserAcceptance(project, web, current.application());
+@@ -1572,20 +1587,26 @@
+                 if (aiEnabled) {
+                     assertTrue(languageCalls.get() > 0, "Real source and deployment decisions must call the selected model");
+                     if (mainOnlyDiagnostic) {
+-                        assertEquals(0, approvalCalls.get());
+-                        assertEquals(0, approvalTokens.get());
+-                        assertEquals(0, diagnosticReview.approvalAttempts());
++                        assertMainOnlyApprovalAbsent();
+                         assertTrue(diagnosticReview.decisions() > 0);
+                         assertTrue(reviewedActions.get() > 0, "Diagnostic decisions still require real platform grants");
+                     } else
+                         assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
+                     if (selectedMode != Mode.AGENT)
+                         assertTrue(approvalTokens.get() <= deploymentTokens.get(), "Actual cumulative approval tokens must not exceed deployment tokens for an accepted project");
+-                    System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
+-                        + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
++                    if (!deploymentOnly)
++                        System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
++                            + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
+                 } else
+                     assertEquals(0, modelCalls.get(), "Every static deployment and lifecycle path must avoid all AI capability calls");
+-                System.out.println("STATIC_LIVE_PASS " + project + " modelCalls=" + modelCalls.get());
++                if (!deploymentOnly)
++                    System.out.println("STATIC_LIVE_PASS " + project + " modelCalls=" + modelCalls.get());
++            } catch (Exception | AssertionError failure) {
++                phaseFailureRecorded = true;
++                if (mainOnlyDiagnostic)
++                    System.out.println("MAIN_AGENT_ONLY_PHASE_FAILED phase=" + phase + " deploymentVerified=" + deploymentVerified
++                        + " cause=" + failure.getClass().getSimpleName());
++                throw failure;
+             } finally {
+                 if (agentOriginalId != null) {
+                     try {
+@@ -1601,33 +1622,95 @@
+                 if (mainOnlyDiagnostic) {
+                     System.out.println("MAIN_AGENT_ONLY_DIAGNOSTIC_SUMMARY decisions=" + diagnosticReview.decisions()
+                         + " approvalAttempts=" + diagnosticReview.approvalAttempts() + " approvalProviderCalls=" + approvalCalls.get());
+-                    assertEquals(0, diagnosticReview.approvalAttempts());
+-                    assertEquals(0, approvalCalls.get());
+-                }
++                }
++                phase = "MANAGEMENT";
+                 var uncertain = runtime.tasks().snapshots().stream().filter(snapshot ->
+                     snapshot.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN).toList();
+                 if (!uncertain.isEmpty()) {
+                     System.out.println("AI_LIVE_RETAINED_UNCERTAINTY " + uncertain);
+-                } else for (var current : completed(applications.list(), 2)) {
+-                    if (!current.application().id().equals(id)) continue;
+-                    var selected = completed(applications.inspect(current.application()), 2);
+-                    if (cli) {
+-                        assertEquals(ApplicationRunState.INSTALLED, selected.state());
+-                        assertEquals(ApplicationAutostartState.NOT_APPLICABLE, selected.autostart());
+-                        System.out.println("AI_LIVE_CLI_CLEAN " + project + " " + selected.state() + " " + selected.autostart());
+-                        continue;
++                } else {
++                    try {
++                        for (var current : completed(applications.list(), 2)) {
++                            if (!current.application().id().equals(id)) continue;
++                            var selected = completed(applications.inspect(current.application()), 2);
++                            if (cli) {
++                                assertEquals(ApplicationRunState.INSTALLED, selected.state());
++                                assertEquals(ApplicationAutostartState.NOT_APPLICABLE, selected.autostart());
++                                System.out.println("AI_LIVE_CLI_CLEAN " + project + " " + selected.state() + " " + selected.autostart());
++                                continue;
++                            }
++                            completed(applications.lifecycle(selected, DeploymentLifecycleAction.STOP), 5);
++                            selected = completed(applications.inspect(current.application()), 2);
++                            if (selected.autostart() != ApplicationAutostartState.DISABLED)
++                                completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
++                            selected = completed(applications.inspect(current.application()), 2);
++                            assertEquals(ApplicationRunState.STOPPED, selected.state());
++                            assertEquals(ApplicationAutostartState.DISABLED, selected.autostart());
++                            System.out.println("STATIC_LIVE_CLEAN " + project + " " + selected.application() + " stopped/disabled");
++                            managementComplete = true;
++                        }
++                    } catch (Exception | AssertionError failure) {
++                        phaseFailureRecorded = true;
++                        if (mainOnlyDiagnostic)
++                            System.out.println("MAIN_AGENT_ONLY_PHASE_FAILED phase=MANAGEMENT deploymentVerified=" + deploymentVerified
++                                + " cause=" + failure.getClass().getSimpleName());
++                        throw failure;
+                     }
+-                    completed(applications.lifecycle(selected, DeploymentLifecycleAction.STOP), 5);
+-                    selected = completed(applications.inspect(current.application()), 2);
+-                    if (selected.autostart() != ApplicationAutostartState.DISABLED)
+-                        completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
+-                    selected = completed(applications.inspect(current.application()), 2);
+-                    assertEquals(ApplicationRunState.STOPPED, selected.state());
+-                    assertEquals(ApplicationAutostartState.DISABLED, selected.autostart());
+-                    System.out.println("STATIC_LIVE_CLEAN " + project + " " + selected.application() + " stopped/disabled");
+-                }
+-            }
+-        }
++                }
++            }
++            if (deploymentOnly)
++                assertTrue(managementComplete, "Retain an unconfirmed management result separately from deployment");
++            phase = "SCOPES_CLOSING";
++        } catch (Exception | AssertionError failure) {
++            if (mainOnlyDiagnostic && !phaseFailureRecorded) {
++                phaseFailureRecorded = true;
++                System.out.println("MAIN_AGENT_ONLY_PHASE_FAILED phase=" + phase + " deploymentVerified=" + deploymentVerified
++                    + " cause=" + failure.getClass().getSimpleName());
++            }
++            throw failure;
++        } finally {
++            if (mainOnlyDiagnostic) {
++                System.out.println("MAIN_AGENT_ONLY_FINAL_COUNTERS scope=AFTER_RUNTIME_CLOSE approvalAttempts="
++                    + (diagnosticReview == null ? 0 : diagnosticReview.approvalAttempts()) + " approvalProviderCalls="
++                    + approvalCalls.get() + " approvalTokens=" + approvalTokens.get());
++                assertMainOnlyApprovalAbsent();
++                if (deploymentOnly && deploymentVerified && managementComplete && !phaseFailureRecorded)
++                    System.out.println("MAIN_AGENT_ONLY_DEPLOYMENT_ONLY_COMPLETE application=" + id + " management=STOPPED_DISABLED APP0=true");
++            }
++        }
++    }
++
++    private void assertMainOnlyApprovalAbsent() {
++        if (diagnosticReview != null) assertEquals(0, diagnosticReview.approvalAttempts());
++        assertEquals(0, approvalCalls.get());
++        assertEquals(0, approvalTokens.get());
++    }
++
++    private void verifyMainOnlyDeployment(PlatformRuntime runtime, DeploymentApplicationsService applications,
++                                          TaskHandle<?> agent, Set<String> healthy, String application, String publicUrl) throws Exception {
++        assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, agent.snapshot().state());
++        assertFalse(healthy.isEmpty());
++        var usage = completed(applications.usageForCompletedTask(agent.id()), 2).orElseThrow();
++        assertEquals(application, usage.application().id());
++        assertEquals(new ServerId(SERVER), usage.application().server());
++        assertEquals(healthy, usage.components().stream().map(value -> value.id()).collect(java.util.stream.Collectors.toSet()));
++        assertTrue(usage.components().stream().flatMap(value -> value.endpoints().stream()).flatMap(value -> value.browser().stream())
++            .anyMatch(java.net.URI.create(publicUrl)::equals), "The original complete application must expose the authorized publicUrl");
++        var logs = new gold.debug.windowstolinux.app.db.log.LogStore(runtime.persistence().database());
++        var history = logs.targets().stream().filter(value -> value.owner().equals("app") && value.category().equals("platform_task"))
++            .findFirst().orElseThrow();
++        var archived = logs.read(history).stream().filter(value -> agent.id().equals(value.taskId())).findFirst().orElseThrow();
++        assertEquals(TaskResult.SUCCEEDED, archived.outcome(), archived::toString);
++        assertEquals("PLATFORM_TASK_SUCCEEDED", archived.eventCode());
++        assertEquals(OWNER, archived.subjectMod());
++        assertEquals(DeploymentAgentWorkflow.TASK_TYPE, JSON.readTree(archived.details()).path("taskType").asText());
++        assertMainOnlyApprovalAbsent();
++        System.out.println("MAIN_AGENT_ONLY_DEPLOYMENT_PASS " + JSON.writeValueAsString(Map.ofEntries(
++            Map.entry("task", agent.id().toString()), Map.entry("application", usage.application().id()),
++            Map.entry("server", usage.application().server().id()), Map.entry("revisionSha256", usage.revisionSha256()),
++            Map.entry("ownershipSha256", usage.ownershipSha256()), Map.entry("healthyComponents", healthy),
++            Map.entry("publicUrl", publicUrl), Map.entry("platformState", agent.snapshot().state().name()),
++            Map.entry("archiveOutcome", archived.outcome().name()), Map.entry("APP0", true))));
+     }
+ 
+     @Override
