@@ -62,7 +62,7 @@ public final class DeploymentConfigLoader {
         var source = root.path("source");
         fields(source, Set.of("bytes", "entries", "archive-bytes"));
         var build = root.path("build");
-        fields(build, Set.of("timeout-seconds", "processes", "memory-mib", "output-bytes", "workspace-bytes"));
+        fields(build, Set.of("timeout-seconds", "processes", "memory-mib", "output-bytes", "workspace-bytes", "workspace-max-bytes", "workspace-host-reserve-bytes"));
         var environment = root.path("environment");
         fields(environment, Set.of("install-seconds", "check-seconds", "reboot-seconds", "poll-seconds"));
         var view = root.path("view");
@@ -73,7 +73,8 @@ public final class DeploymentConfigLoader {
             return new DeploymentConfig(
                 new DeploymentConfig.Source(number(source, "bytes"), integer(source, "entries"), number(source, "archive-bytes")),
                 new DeploymentConfig.Build(integer(build, "timeout-seconds"), integer(build, "processes"),
-                    integer(build, "memory-mib"), number(build, "output-bytes"), number(build, "workspace-bytes")),
+                    integer(build, "memory-mib"), number(build, "output-bytes"), number(build, "workspace-bytes"),
+                    number(build, "workspace-max-bytes"), number(build, "workspace-host-reserve-bytes")),
                 new DeploymentConfig.Environment(integer(environment, "install-seconds"), integer(environment, "check-seconds"),
                     integer(environment, "reboot-seconds"), integer(environment, "poll-seconds")),
                 new DeploymentConfig.View(integer(view, "refresh-ms"), integer(view, "page-size")),

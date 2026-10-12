@@ -48,11 +48,35 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    enum VerificationMode {APPROVE, DENY, INCOMPLETE_BODY, CONFIGURATION_CHANGED}
+    enum VerificationMode {
+        APPROVE, DENY, INCOMPLETE_BODY, CONFIGURATION_CHANGED, CAPACITY_LOW, CAPACITY_TRUNCATED, CAPACITY_CANCELLED, CAPACITY_MISSING, CAPACITY_UNSETTLED, BUILD_SMALL, BUILD_LARGE, CAPACITY_AFTER_INSTALL, CAPACITY_INSTALL_UNKNOWN;
+
+        boolean confirmedRefusal() {
+            return this == CAPACITY_LOW || this == CAPACITY_AFTER_INSTALL;
+        }
+    }
 
     @ParameterizedTest
-    @EnumSource(VerificationMode.class)
+    @EnumSource(value = VerificationMode.class, names = {"APPROVE", "DENY", "INCOMPLETE_BODY", "CONFIGURATION_CHANGED"})
     void uploadedArchiveConsumerEvidenceReachesNativeReviewBeforeVerifyAndOpen(VerificationMode mode) throws Exception {
+        runVerification(mode, false);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VerificationMode.class, names = {"CAPACITY_LOW", "CAPACITY_TRUNCATED", "CAPACITY_CANCELLED", "CAPACITY_MISSING", "CAPACITY_UNSETTLED"})
+    void confirmedCapacityRefusalReturnsToMainButUnknownObservationDoesNot(VerificationMode mode) throws Exception {
+        runVerification(mode, false);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VerificationMode.class, names = {"BUILD_SMALL", "BUILD_LARGE"})
+    void actualAgentRecipeUsesItsAcceptedQuotaInCreateBuildAndBusinessReplan(VerificationMode mode) throws Exception {
+        runVerification(mode, false);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VerificationMode.class, names = {"CAPACITY_AFTER_INSTALL", "CAPACITY_INSTALL_UNKNOWN"})
+    void capacityAfterConfirmedOrUnknownInstallMaintainsOriginalEffectBoundary(VerificationMode mode) throws Exception {
         runVerification(mode, false);
     }
 
@@ -64,6 +88,8 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
     private void runVerification(VerificationMode mode, boolean unbound) throws Exception {
         var source = Files.createDirectories(root.resolve("verification-source"));
         Files.writeString(source.resolve("index.html"), "<html>actual controlled source</html>\n");
+        if (mode.name().startsWith("BUILD_"))
+            Files.writeString(Files.createDirectories(source.resolve("public")).resolve("index.html"), "<html>actual output</html>\n");
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -133,7 +159,11 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
 
         String pageBinding = "";
 
-        int decisions, approvalCalls, pages, creates, uploads, verifyGrants, verifySends, opens, verifyVerdicts;
+        int decisions, approvalCalls, pages, creates, uploads, verifyGrants, verifySends, opens, verifyVerdicts, capacityReads, readinessReads, installs;
+
+        long selectedQuota;
+
+        String buildScript = "";
 
         boolean incompleteRejected;
 
@@ -171,7 +201,7 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
                 if (m.getName().equals("approveReviewedAction")) {
                     var intent = (ActionIntent) a[0];
                     if (intent.semantics().orElseThrow().operation().equals("deployment.candidate.verify.v1")) {
-                        assertEquals(VerificationMode.APPROVE, mode);
+                        assertTrue(mode == VerificationMode.APPROVE || mode.name().startsWith("BUILD_"));
                         assertEquals(1, verifyVerdicts);
                         assertEquals(1, creates);
                         assertEquals(1, uploads);
@@ -210,21 +240,104 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
                 var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Observe actual source"),
                     new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256()), tools, journal,
                     "FULL_CONTROL", true, REVISION, () -> revision.get());
+                if (mode == VerificationMode.CAPACITY_UNSETTLED)
+                    journal.event(task, "CAPABILITY_EXECUTING", "c".repeat(64), "earlier-unconfirmed");
                 var error = assertThrows(Exception.class, session::run);
+                if (mode.name().startsWith("CAPACITY_")) {
+                    assertEquals(0, creates + uploads + opens);
+                    assertEquals(mode == VerificationMode.CAPACITY_AFTER_INSTALL || mode == VerificationMode.CAPACITY_INSTALL_UNKNOWN ? 1 : 0, installs);
+                    var events = journal.events(task);
+                    assertFalse(events.stream().anyMatch(event -> Set.of("PREPARE_RESULT", "CANDIDATE", "PREPARE_NOT_SENT").contains(event.type())));
+                    if (mode.confirmedRefusal()) {
+                        assertSame(stop, error);
+                        assertEquals(5, decisions, "The main model independently received refusal and selected its next tool");
+                        var rejection = events.stream().filter(event -> event.type().equals(DeploymentAgentCandidateCapacityException.EVENT)).findFirst().orElseThrow();
+                        selectedQuota = JSON.readTree(rejection.detail()).path("workspaceBytes").longValue();
+                        assertTrue(DeploymentAgentCandidateCapacityException.matches(rejection, events));
+                        assertTrue(DeploymentAgentActionLog.effectsSettled(events));
+                        var changed = new DeploymentAgentActionLog.Event(rejection.id(), rejection.type(), rejection.action(), rejection.detail().replace("\"workspaceBytes\":" + selectedQuota, "\"workspaceBytes\":" + (selectedQuota + 1)));
+                        assertFalse(DeploymentAgentCandidateCapacityException.matches(changed, events));
+                        for (String key : List.of("task", "component", "source", "configuration", "plan", "prepareAction", "capacityRequest")) {
+                            var altered = (ObjectNode) JSON.readTree(rejection.detail());
+                            altered.put(key, "foreign");
+                            assertFalse(DeploymentAgentCandidateCapacityException.matches(new DeploymentAgentActionLog.Event(rejection.id(), rejection.type(), rejection.action(), altered.toString()), events));
+                        }
+                        var oldAttempt = new ArrayList<>(events);
+                        oldAttempt.add(new DeploymentAgentActionLog.Event(rejection.id() + 100, "PREPARE_EXECUTING", rejection.action(), "api"));
+                        var stale = new DeploymentAgentActionLog.Event(rejection.id() + 101, rejection.type(), rejection.action(), rejection.detail());
+                        oldAttempt.add(stale);
+                        assertFalse(DeploymentAgentCandidateCapacityException.matches(stale, oldAttempt));
+                        var duplicate = new ArrayList<>(events);
+                        duplicate.add(new DeploymentAgentActionLog.Event(rejection.id() + 1000, rejection.type(), rejection.action(), rejection.detail()));
+                        assertFalse(DeploymentAgentActionLog.effectsSettled(duplicate));
+                    } else {
+                        assertEquals(4, decisions);
+                        assertEquals(mode == VerificationMode.CAPACITY_UNSETTLED, events.stream().anyMatch(event -> event.type().equals(DeploymentAgentCandidateCapacityException.EVENT)));
+                        assertFalse(DeploymentAgentActionLog.effectsSettled(events));
+                    }
+                    return;
+                }
                 if (creates != 1) throw new AssertionError("Original prepare did not reach candidate creation", error);
                 assertEquals(1, creates);
                 assertEquals(1, uploads);
-                assertEquals(mode == VerificationMode.APPROVE ? 1 : 0, verifyGrants);
+                assertEquals(mode == VerificationMode.APPROVE || mode.name().startsWith("BUILD_") ? 1 : 0, verifyGrants);
                 assertEquals(verifyGrants, verifySends);
                 assertEquals(verifySends, opens);
                 assertTrue(pages > 0, "Actual native review receives complete executable pages");
                 var events = journal.events(task);
                 assertEquals(1, events.stream().filter(e -> e.type().equals("PREPARE_EXECUTING")).count());
                 assertFalse(events.stream().anyMatch(e -> Set.of("PREPARE_NOT_SENT", "PREPARE_DISPATCH_NOT_SENT").contains(e.type())));
-                if (mode == VerificationMode.APPROVE) {
+                if (mode == VerificationMode.APPROVE || mode.name().startsWith("BUILD_")) {
                     assertSame(stop, error);
                     assertTrue(events.stream().anyMatch(e -> e.type().equals("PREPARE_RESULT")));
                     assertTrue(events.stream().anyMatch(e -> e.type().equals("CURRENT_SOURCE")));
+                    if (mode.name().startsWith("BUILD_")) {
+                        assertTrue(buildScript.contains(Long.toString(selectedQuota)), "Actual recipe build uses the accepted candidate quota");
+                        var field = DeploymentAgentSession.class.getDeclaredField("candidates");
+                        field.setAccessible(true);
+                        @SuppressWarnings("unchecked") var owned = (Map<String, DeploymentAgentDeliveryPort.Prepared>) field.get(session);
+                        var candidate = owned.get("api");
+                        assertEquals(selectedQuota, candidate.quota().bytes());
+                        var query = DeploymentAgentSession.class.getDeclaredMethod("planPage", gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProposal.PlanState.class);
+                        query.setAccessible(true);
+                        Object page = query.invoke(session, new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProposal.PlanState("api", 0, 4000));
+                        var output = page.getClass().getDeclaredMethod("output");
+                        output.setAccessible(true);
+                        assertEquals(selectedQuota, JSON.readTree((String) output.invoke(page)).at("/workspace/bytes").longValue());
+                        var planField = DeploymentAgentSession.class.getDeclaredField("plan");
+                        planField.setAccessible(true);
+                        var accepted = (DeploymentAgentPlan) planField.get(session);
+                        assertEquals(selectedQuota, tools.selectWorkspaces(accepted, owned).getFirst().workspaceSelection().orElseThrow().bytes(), "Same demand business replan preserves quota at lower available capacity");
+                        var component = accepted.components().getFirst();
+                        var sameBytes = new DeploymentAgentPlan.Part(component.id(), component.sourceRoot(), component.dependencies(), component.evidence(), component.runtime(), component.resources(),
+                            component.configuration(), component.databaseIds(), component.secretReferences(), Optional.of(gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.automatic(0, 1073741824)), Optional.empty());
+                        assertEquals(selectedQuota, tools.selectWorkspaces(new DeploymentAgentPlan(accepted.applicationId(), accepted.healthComponentId(), accepted.health(), List.of(sameBytes)), owned)
+                            .getFirst().workspaceSelection().orElseThrow().bytes(), "Revised preferred headroom cannot resize an existing candidate or consume its quota twice");
+                        var different = new DeploymentAgentPlan.Part(component.id(), component.sourceRoot(), component.dependencies(), component.evidence(), component.runtime(), component.resources(),
+                            component.configuration(), component.databaseIds(), component.secretReferences(), Optional.of(gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.explicit(selectedQuota + 67108864)), Optional.empty());
+                        assertThrows(IllegalArgumentException.class, () -> tools.selectWorkspaces(new DeploymentAgentPlan(accepted.applicationId(), accepted.healthComponentId(), accepted.health(), List.of(different)), owned));
+                        var recover = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery.class.getDeclaredMethod("originalWorkspaces", UUID.class, DeploymentAgentActionLog.Identity.class,
+                            List.class, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.class);
+                        recover.setAccessible(true);
+                        var identity = journal.find(task).orElseThrow().identity();
+                        assertTrue(((Optional<?>) recover.invoke(null, task.id(), identity, events, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())).isPresent());
+                        var missing = events.stream().filter(event -> !event.type().equals("CANDIDATE_QUOTA")).toList();
+                        assertTrue(((Optional<?>) recover.invoke(null, task.id(), identity, missing, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())).isEmpty());
+                        var changed = events.stream().map(event -> event.type().equals("CANDIDATE_QUOTA") ? new DeploymentAgentActionLog.Event(event.id(), event.type(), event.action(), event.detail().replace("\"workspaceBytes\":" + selectedQuota, "\"workspaceBytes\":" + (selectedQuota + 1))) : event).toList();
+                        assertTrue(((Optional<?>) recover.invoke(null, task.id(), identity, changed, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())).isEmpty());
+                        for (String key : List.of("source", "plan", "reserveBytes")) {
+                            var damaged = new ArrayList<DeploymentAgentActionLog.Event>();
+                            for (var event : events) {
+                                if (Set.of("CANDIDATE_QUOTA", "WORKSPACE_QUOTA").contains(event.type())) {
+                                    var data = (ObjectNode) JSON.readTree(event.detail());
+                                    if (key.equals("reserveBytes")) data.remove(key);
+                                    else data.put(key, "f".repeat(64));
+                                    damaged.add(new DeploymentAgentActionLog.Event(event.id(), event.type(), event.action(), data.toString()));
+                                } else damaged.add(event);
+                            }
+                            assertTrue(((Optional<?>) recover.invoke(null, task.id(), identity, damaged, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())).isEmpty(), key);
+                        }
+                    }
                 } else {
                     var api = assertInstanceOf(ApiException.class, error);
                     assertEquals(mode == VerificationMode.CONFIGURATION_CHANGED ? "DEPLOYMENT_COMMAND_CONFIGURATION_CHANGED" : "DEPLOYMENT_COMMAND_REVIEW_DENIED", api.problem().eventCode());
@@ -359,8 +472,16 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
 
         AiResponse decide(AiRequest request) throws Exception {
             request.messages().stream().flatMap(m -> m.toolResult().stream()).reduce((a, b) -> b)
-                .ifPresent(result -> assertFalse(result.error(), result.text()));
+                .ifPresent(result -> {
+                    if (mode.confirmedRefusal() && decisions == 4) {
+                        assertTrue(result.error());
+                        assertTrue(result.text().contains("WORKSPACE_HOST_INSUFFICIENT"));
+                        assertTrue(result.text().contains("availableBytes"));
+                        assertTrue(result.text().contains("requiredBytes"));
+                    } else assertFalse(result.error(), result.text());
+                });
             int turn = decisions++;
+            if (mode.confirmedRefusal() && turn == 4) throw stop;
             String tool;
             ObjectNode args;
             if (turn == 0) {
@@ -372,12 +493,26 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             } else if (turn == 2) {
                 tool = "plan";
                 args = (ObjectNode) JSON.readTree("{\"applicationId\":\"demo\",\"explanation\":\"Plan the read source\",\"components\":[{\"id\":\"api\",\"sourceRoot\":\".\",\"dependencies\":[],\"evidence\":[\"o1\"],\"backend\":\"PROCESS\",\"mode\":\"DAEMON\",\"entrypoint\":\"current.sh\",\"arguments\":[],\"workingDirectory\":\"\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10},\"ports\":[],\"resources\":[],\"configuration\":[],\"databases\":[],\"secretReferences\":[]}],\"applicationHealth\":{\"component\":\"api\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10}}}");
+            } else if (mode.name().startsWith("BUILD_") && turn == 3) {
+                tool = "analyze";
+                args = JSON.createObjectNode().put("component", "api").put("type", "STATIC_SITE");
+            } else if (mode.name().startsWith("BUILD_") && turn == 4) {
+                tool = "prepare_tools";
+                args = JSON.createObjectNode().put("component", "api");
+                args.putObject("recipe").put("version", "").put("primary", "public").put("secondary", "").put("jvmTarget", "").put("servicePort", 8080);
+            } else if (mode.name().startsWith("BUILD_") && turn == 5) {
+                tool = "build";
+                args = JSON.createObjectNode().put("component", "api").put("seconds", 60);
             } else {
-                assertEquals(3, turn);
+                assertEquals(mode.name().startsWith("BUILD_") ? 6 : 3, turn);
                 tool = "remote_read";
                 args = JSON.createObjectNode().put("component", "api").put("path", "index.html").put("offset", 0).put("limit", 1);
             }
             if (tool.equals("plan")) {
+                ((ObjectNode) args.path("components").get(0)).putObject("workspace").put("mode", "AUTO")
+                    .put("minimumBuildBytes", 0).put("preferredBuildBytes", mode == VerificationMode.BUILD_LARGE ? 536870912 : 134217728).put("explicitBytes", 0);
+            }
+            if (Set.of("plan", "prepare_tools", "build").contains(tool)) {
                 var assessment = args.putObject("assessment");
                 var basis = assessment.putArray("basis");
                 var pending = JSON.readTree(request.messages().getLast().text()).at("/state/judgement/pending");
@@ -392,12 +527,36 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             return "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archive.byteCount() + "\nSHA256=" + archive.sha256() + "\nOWNER=0\n";
         }
 
-        OperationResult<CommandResult> transport(CommandRequest request) {
-            if (new String(request.stdin(), StandardCharsets.UTF_8).equals(DeploymentAgentHelperReadiness.script()))
+        OperationResult<CommandResult> transport(CommandRequest request) throws Exception {
+            if (new String(request.stdin(), StandardCharsets.UTF_8).equals(DeploymentAgentHelperReadiness.script())) {
+                readinessReads++;
+                if (readinessReads == 1 && (mode == VerificationMode.CAPACITY_AFTER_INSTALL || mode == VerificationMode.CAPACITY_INSTALL_UNKNOWN))
+                    return reply("FORMAT=WTL_AGENT_HELPER_READINESS_1\nSTATUS=MISSING\nREASON=HELPER_MISSING\nPACKAGED_PROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nHELPER=ABSENT\nBUILD_ENTRY=ABSENT\nDEPENDENCIES=ABSENT\nROOTS=VALID_OR_ABSENT\nRECEIPTS=ABSENT\n");
                 return reply("FORMAT=WTL_AGENT_HELPER_READINESS_1\nSTATUS=READY\nREASON=CURRENT_TASK_READY\nPACKAGED_PROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nHELPER=MATCH\nBUILD_ENTRY=MATCH\nDEPENDENCIES=MATCH\nROOTS=VALID_OR_ABSENT\nRECEIPTS=SETTLED\n");
+            }
+            if (request.script().equals(DeploymentAgentHelperInstallerScript.LAUNCHER)) {
+                installs++;
+                if (mode == VerificationMode.CAPACITY_INSTALL_UNKNOWN)
+                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_INSTALL_UNKNOWN", "Controlled installation receipt is unknown", Map.of(), Optional.of(task.id()))));
+                return reply("HELPER_INSTALL=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
+            }
+            if (request.script().contains("managed-helper' probe"))
+                return reply("HELPER=1\nPROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nSHA256=" + DeploymentManagedHelperBundle.EXPECTED_SHA256 + "\n");
             if (request.script().equals(DeploymentAgentHostProbe.baseline()))
                 return reply("FORMAT=WTL_AGENT_BASELINE_1\nDISTRO_ID=ubuntu\nDISTRO_VARIANT=\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\n");
-            if (request.script().contains("stat -f -c '%a %S'")) return reply("1000000000 4096\n");
+            if (request.script().contains("stat -f -c '%a %S'")) {
+                capacityReads++;
+                if (capacityReads == 2 && mode.name().startsWith("CAPACITY_")) {
+                    if (mode == VerificationMode.CAPACITY_TRUNCATED)
+                        return succeeded(new CommandResult(Optional.of(0), "1 4096\n", "", true));
+                    if (mode == VerificationMode.CAPACITY_CANCELLED)
+                        return new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
+                    if (mode == VerificationMode.CAPACITY_MISSING)
+                        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                    return reply("1 4096\n");
+                }
+                return reply(mode.name().startsWith("BUILD_") && capacityReads > 2 ? "1 4096\n" : "1000000000 4096\n");
+            }
             if (request.script().contains("printf 'BYTES='")) {
                 verifySends++;
                 assertEquals(1, verifyGrants);
@@ -406,6 +565,10 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
             }
             if (request.script().contains(" candidate-create-task ")) {
                 creates++;
+                var quota = java.util.regex.Pattern.compile("candidate-create-task '[^']+' '[^']+' ([0-9]+)").matcher(request.script());
+                assertTrue(quota.find());
+                selectedQuota = Long.parseLong(quota.group(1));
+                assertEquals(mode == VerificationMode.BUILD_LARGE ? 671088640L : 268435456L, selectedQuota);
                 return reply("CANDIDATE=" + workspace.candidateRoot() + "\n");
             }
             if (request.script().contains(" candidate-query-task "))
@@ -414,6 +577,47 @@ class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
                 opens++;
                 assertEquals(1, verifySends);
                 return reply("SOURCE_REVISION=" + material.snapshot().sha256() + "\n");
+            }
+            if (request.script().contains("'agent-run'")) {
+                buildScript = new String(request.stdin(), StandardCharsets.UTF_8);
+                return reply("BUILD=completed\n");
+            }
+            String script = request.script();
+            String program = new String(request.stdin(), StandardCharsets.UTF_8);
+            if (program.equals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.dependencies())) {
+                var match = java.util.regex.Pattern.compile("'PYTHON' '([0-9a-f]{32})'$").matcher(script);
+                assertTrue(match.find());
+                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.command(List.of("PYTHON", match.group(1))), script);
+                var packages = new TreeMap<String, String>();
+                gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.packages("APT", "PYTHON").forEach(name -> packages.put(name, "controlled-version"));
+                return reply("TOOLCHAIN_DEPENDENCIES=" + JSON.writeValueAsString(Map.of("operation", match.group(1),
+                    "ecosystem", "PYTHON", "manager", "APT", "packages", packages)) + "\n");
+            }
+            if (program.equals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.resolver())) {
+                var match = java.util.regex.Pattern.compile("'resolve' 'PYTHON' '([^']+)' '([^']+)' '([0-9]+)' '([0-9a-f]{32})'$").matcher(script);
+                assertTrue(match.find());
+                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.command(List.of("resolve", "PYTHON", match.group(1),
+                    match.group(2), match.group(3), match.group(4))), script);
+                return reply("TOOLCHAIN_RELEASE=" + gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainReleaseTest.encoded("PYTHON", match.group(1),
+                    match.group(2), match.group(4)) + "\n");
+            }
+            if (program.equals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.controller()) && script.contains("'prepare' 'PYTHON'")) {
+                var match = java.util.regex.Pattern.compile("'prepare' 'PYTHON' '([^']+)' '([^']+)' '([0-9]+)' '-' '([0-9a-f]{32})' '([A-Za-z0-9+/=]+)'$").matcher(script);
+                assertTrue(match.find());
+                assertEquals(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms.command(List.of("prepare", "PYTHON", match.group(1),
+                    match.group(2), match.group(3), "-", match.group(4), match.group(5))), script);
+                var release = JSON.readTree(Base64.getDecoder().decode(match.group(5)));
+                assertEquals(match.group(4), release.path("operation").asText());
+                return reply("TOOLCHAIN=PYTHON|" + release.path("version").asText()
+                    + "|/usr/local/lib/windowstolinux/toolchains/versions/python-" + release.path("digest").asText()
+                    + "|MANAGED|" + release.path("url").asText() + "|" + release.path("digest").asText() + "\n");
+            }
+            if (request.script().contains("'bind'")) {
+                var binding = java.util.regex.Pattern.compile("'bind' '([^']+)'").matcher(request.script());
+                assertTrue(binding.find());
+                var tools = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.decode(
+                    new String(Base64.getDecoder().decode(binding.group(1)), StandardCharsets.UTF_8));
+                return reply("TOOLCHAIN_BINDING=" + gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.identity(tools) + "\n");
             }
             if (request.script().contains("'agent-read'")) {
                 assertEquals(1, opens);
