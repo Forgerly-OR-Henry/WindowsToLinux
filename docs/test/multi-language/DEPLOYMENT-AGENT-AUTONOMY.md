@@ -366,3 +366,14 @@ Agent 仅在上传后的本次 verify 局部附加 currentCommandEvidence，保�
 诊断实现27个直接定点场景全部通过，首轮缺import导致编译失败、0测试的记录保留；11项Java限定格式检查通过。真实对照期间3275源码与Skill零变化，会话25903 exit1；18:42:41实际CIM相关验证进程0，原IDEA34300及其既有Java50092保留。实现、验证、提交隔离及对照限制见[主Agent独立诊断15](DEPLOYMENT-AGENT-MAIN-ONLY-DIAGNOSTIC-15.md)。遵照用户要求，本轮完成后暂停，未修候选容量反馈或14审批契约，未启动下一轮API/SSH测试；完整双Agent成功部署、真实浏览器业务、非默认目录真机与Linux重启及最终八项目仍待验收。
 
 2026-10-12恢复后，三模式动态工作区选额及Agent容量拒绝反馈已完成本地定点验证：68个去重业务逻辑场景最新PASS，35个Java限定格式check通过，3275→3279源码/Skill前后原像保留，非owner差异/删除0，自有验证进程0。原始71个class/method/parameter项包含3个拆名前STATIC错误，精确参数对应到实际通过XML；17轮失败及编译日志保留，不称原始71全部通过。STATIC、独立ASSISTED实际create/build请求随来源、需求或host变化，EXPLICIT4GiB保持；Agent接受计划的Q贯穿创建、构建、Prepared、业务replan和恢复绑定，不回读全局4GiB。现有卷不在线扩缩，独立toolchain8GiB未改。候选容量拒绝只在前置效果真实确认、create未调用时结清该attempt，不写whole NOT_SENT或虚假PREPARE_RESULT。原13/14/15 UNKNOWN及资源仍保留。此处没有新provider/SSH或原DB调用，未构成真机部署成功；本地提交后立即续推新的task-board主Agent对照，不暂停。范围、实际额度、失败轮及混合增量见[动态工作区16记录](DEPLOYMENT-DYNAMIC-WORKSPACE-QUOTA-16.md)。
+
+
+## 2026-10-13 原主 Agent 对照16与收尾修复17
+
+真实 task-board-main-only-16-03 的主模型自主完成发布、verify 和 finish 请求；工具链与命令错误由主模型自行排查，监督代理未操作服务器或提供步骤答案。产品入口最终 FAIL/UNKNOWN，3279 源码运行期间零变化；原 task dc79c361-80f1-467a-8d36-4935ff4c8355 的正式 execution 已保存，但业务未提交，正式应用/发布等十表仍为空，不能作为部署成功。
+
+33 个 LANGUAGE 捕获响应的实际合计1679174 Token，输入1611665、输出67509、cache hit850176/miss761489，已知输入命中率52.75%；两个配置探测 usage/transport 未知。审批业务为0属于显式 main-only 诊断，不能计正式审批比例；本轮排除最终冻结八项目。前两次16入口的安全配置副本问题发生在 SSH/模型配置之前，原失败日志保留；本轮两个临时凭据副本已安全清理，原调查库和旧未结资源保留。
+
+只读原账本确认两个宿主命令已 ENDED/exit0，但检查点在 FINISHED 后的 ERROR 之后7毫秒才释放。严格 cleanup binding 要求此前已释放；定点直接再现旧顺序失败。修复17只在 verified finish 创建 cleanupEvidence 前调用既有 strict releaseKnown，保留 finally 与 DISPATCHED/外来/损坏拒绝。7 个不同直接逻辑场景与两个 Java 格式检查通过，父核源码范围、XML及补丁正反向字节；不是全模块或真机恢复验收。
+
+详见[动态配额与真实16记录](DEPLOYMENT-DYNAMIC-WORKSPACE-QUOTA-16.md)及[收尾修复17](DEPLOYMENT-AGENT-COMMAND-FINISH-17.md)。下一步从原产品 reconcile 入口重新验证同一发布、独立审批与严格清理；尚未恢复，不回填旧 UNKNOWN，不重放原部署或删除历史业务身份。

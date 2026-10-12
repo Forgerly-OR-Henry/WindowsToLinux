@@ -95,3 +95,14 @@ GPT-6.1-Sol 负责实现与定点修正，GPT-6-Astra 仅参与正式来源、�
 遵照用户完成本轮后暂停的要求，不继续恢复、清理或付费重试；调查文件、UNKNOWN及失败/拒绝证据保留，已结清旧任务不重放，原373正式App/发布及持久数据未操作。数据库仍v1，没有版号迁移。旧373真实历史清理、非默认目录真机部署与Linux重启恢复仍待验证；本轮失败或只读审计不替代该验收。主Agent对照细节见[诊断15记录](DEPLOYMENT-AGENT-MAIN-ONLY-DIAGNOSTIC-15.md)，验证进程已退出，原用户IDE进程保留。
 
 2026-10-12动态工作区16本地定点验证补充：新WORKSPACE_QUOTA/CANDIDATE_QUOTA绑定原task/server/source/config/layout/plan/Q/reserve，实际恢复重建只认原额度，缺失或错配拒绝，数据库仍v1无版号迁移。新PREPARE_CAPACITY_REJECTED窄事件要求helper/host/capacity真实确认、候选create未发送及原attempt完整绑定，只结清当前候选容量拒绝，不伪造准备结果或历史恢复成功。取消、UNKNOWN、缺值、截断、篡改、重复证明或其他未结效果保留安全停止。68个业务逻辑case最新PASS是本地受控证明，没有运行原13/14/15 Runtime、恢复或清理，旧UNKNOWN及共享资源不回填或删除；原373正式业务、持久数据和调查文件未操作。非默认目录真机/Linux重启及旧373成功历史清理仍待实际验收，详见[动态工作区16记录](DEPLOYMENT-DYNAMIC-WORKSPACE-QUOTA-16.md)。
+
+
+## 2026-10-13 原主 Agent 对照16与收尾修复17
+
+真实 task-board-main-only-16-03 的主模型自主完成发布、verify 和 finish 请求；工具链与命令错误由主模型自行排查，监督代理未操作服务器或提供步骤答案。产品入口最终 FAIL/UNKNOWN，3279 源码运行期间零变化；原 task dc79c361-80f1-467a-8d36-4935ff4c8355 的正式 execution 已保存，但业务未提交，正式应用/发布等十表仍为空，不能作为部署成功。
+
+33 个 LANGUAGE 捕获响应的实际合计1679174 Token，输入1611665、输出67509、cache hit850176/miss761489，已知输入命中率52.75%；两个配置探测 usage/transport 未知。审批业务为0属于显式 main-only 诊断，不能计正式审批比例；本轮排除最终冻结八项目。前两次16入口的安全配置副本问题发生在 SSH/模型配置之前，原失败日志保留；本轮两个临时凭据副本已安全清理，原调查库和旧未结资源保留。
+
+只读原账本确认两个宿主命令已 ENDED/exit0，但检查点在 FINISHED 后的 ERROR 之后7毫秒才释放。严格 cleanup binding 要求此前已释放；定点直接再现旧顺序失败。修复17只在 verified finish 创建 cleanupEvidence 前调用既有 strict releaseKnown，保留 finally 与 DISPATCHED/外来/损坏拒绝。7 个不同直接逻辑场景与两个 Java 格式检查通过，父核源码范围、XML及补丁正反向字节；不是全模块或真机恢复验收。
+
+详见[动态配额与真实16记录](DEPLOYMENT-DYNAMIC-WORKSPACE-QUOTA-16.md)及[收尾修复17](DEPLOYMENT-AGENT-COMMAND-FINISH-17.md)。下一步从原产品 reconcile 入口重新验证同一发布、独立审批与严格清理；尚未恢复，不回填旧 UNKNOWN，不重放原部署或删除历史业务身份。

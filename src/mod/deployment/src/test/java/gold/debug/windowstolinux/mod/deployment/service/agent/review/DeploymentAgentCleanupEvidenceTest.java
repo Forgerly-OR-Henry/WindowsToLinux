@@ -402,6 +402,44 @@ class DeploymentAgentCleanupEvidenceTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"ENDED", "ABSENT", "RELEASED"})
+    void verifiedFinishSettlesKnownHostCommandBeforeCurrentCleanup(String mode) throws Exception {
+        try (var budget = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(78); var frame = new Frame(true)) {
+            frame.prepareCommand(mode);
+            frame.onCleanupReview = ignored -> assertTrue(frame.modelCheckpoint == null || frame.modelCheckpoint.snapshot().released(),
+                "The original known command checkpoint closes before independent cleanup approval");
+            var result = frame.finishPublication();
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals(frame.proposal, result.value().orElseThrow());
+            assertEquals(2, frame.deploymentDecisions);
+            assertEquals(1, frame.deletions);
+            assertEquals(1, frame.absenceQueries);
+            assertEquals(1, frame.events("AI_PUBLICATION_CLEANED"));
+            assertEquals(0, frame.events("AI_PUBLICATION_ERROR"));
+            assertEquals(mode.equals("ABSENT") ? 0 : 1, frame.commandCloses);
+            gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.releaseKnown(frame.context, frame.task);
+            assertEquals(mode.equals("ABSENT") ? 0 : 1, frame.commandCloses, "Repeated release remains idempotent");
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state(), "The runner cannot rewrite prior original business state");
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DISPATCHED", "FOREIGN_TASK", "INVALID"})
+    void verifiedFinishKeepsUnknownForeignAndInvalidHostCommandUnreleased(String mode) throws Exception {
+        try (var budget = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(78); var frame = new Frame(true)) {
+            frame.prepareCommand(mode);
+            assertThrows(Exception.class, frame::finishPublication);
+            assertFalse(frame.modelCheckpoint.snapshot().released());
+            assertEquals(0, frame.commandCloses);
+            assertEquals(0, frame.deletions + frame.absenceQueries);
+            assertEquals(0, frame.events("AI_PUBLICATION_CLEANED"));
+            assertEquals(0, frame.events("DELIVERY_RESULT"));
+            assertFalse(frame.approvalOperations().contains("deployment.publication.candidate-cleanup.v1"));
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
     private static final class Frame implements AutoCloseable {
         private final String jdbc = "jdbc:h2:mem:cleanup-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
 
@@ -467,7 +505,45 @@ class DeploymentAgentCleanupEvidenceTest {
 
         private String originalCleanupAction;
 
+        private final boolean finishMode;
+
+        private int deploymentDecisions, commandSends, commandCloses;
+
+        private boolean unconfirmedCommand;
+
+        private ModelCheckpoint modelCheckpoint;
+
+        private final class ModelCheckpoint implements gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint {
+            private Snapshot current;
+
+            private ModelCheckpoint(String payload) {
+                current = new Snapshot(0, payload, false);
+            }
+
+            public Snapshot snapshot() {
+                return current;
+            }
+
+            public Snapshot advance(Snapshot expected, String payload) {
+                assertEquals(current, expected);
+                assertFalse(current.released());
+                current = new Snapshot(current.revision() + 1, payload, false);
+                return current;
+            }
+
+            public void close() {
+                assertFalse(current.released());
+                commandCloses++;
+                current = new Snapshot(current.revision(), current.payload(), true);
+            }
+        }
+
         Frame() throws Exception {
+            this(false);
+        }
+
+        Frame(boolean finishMode) throws Exception {
+            this.finishMode = finishMode;
             try (var source = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
                 org.h2.tools.RunScript.execute(retained, source);
             }
@@ -478,10 +554,25 @@ class DeploymentAgentCleanupEvidenceTest {
                 if (name.equals("facts")) return remoteFacts;
                 assertEquals("execute", name);
                 var request = (CommandRequest) args[0];
+                if (finishMode && request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER)) {
+                    commandSends++;
+                    return unconfirmedCommand ? unknown() : success(new CommandResult(Optional.of(0), "Controlled original prerequisite\n", "", false));
+                }
+                if (finishMode && request.script().contains(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original().modelCommandOperationsRoot())) {
+                    var command = JSON.readTree(modelCheckpoint.snapshot().payload()).path("commands").get(0);
+                    String receipt = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.header(
+                        taskId, UUID.fromString(command.path("operation").asText()), command.path("body").asText()) + "EXIT=0\n";
+                    return success(new CommandResult(Optional.of(0), receipt, "", false));
+                }
                 if (request.script().contains("'application-health'")) {
                     healthDispatches++;
+                    if (finishMode) return success(new CommandResult(Optional.of(0), "HEALTHY=1\n", "", false));
                     throw new AssertionError("Rejected or malformed health review must not dispatch");
                 }
+                if (finishMode && request.script().contains("'inspect-runtime'"))
+                    return success(new CommandResult(Optional.of(0), "KIND=deployment\nMODE=DAEMON\n", "", false));
+                if (finishMode && request.script().contains("'observe-deployment'"))
+                    return success(new CommandResult(Optional.of(0), "OWNER=1\nRUNNING=1\nENABLED=disabled\nQUERY_OK=1\nMainPID=42\nResult=success\nExecMainCode=0\nExecMainStatus=0\nActiveState=active\nSubState=running\n", "", false));
                 if (request.script().contains("'publication-original-status'")) {
                     lastStatusAction = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, ARTIFACT, request).exactAction();
                     statusQueries++;
@@ -509,6 +600,17 @@ class DeploymentAgentCleanupEvidenceTest {
                 if (name.equals("configurationRevision")) return REVISION;
                 assertEquals("call", name);
                 var request = (AiRequest) args[0];
+                if (finishMode && request.purpose() == AiPurpose.LANGUAGE) {
+                    String toolName = deploymentDecisions++ == 0 ? "verify" : "finish";
+                    var state = JSON.readTree(request.messages().getLast().text()).path("state");
+                    var basis = new ArrayList<String>();
+                    state.path("judgement").path("pending").forEach(value -> basis.add(value.asText()));
+                    assertFalse(basis.isEmpty());
+                    var argsValue = Map.of("assessment", Map.of("basis", basis, "suitability", "Current original verified graph",
+                        "differences", "No unresolved differences", "resolution", "CONSISTENT", "decision", "Controlled original finish"));
+                    return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                        List.of(new AiToolCall("deployment-" + deploymentDecisions, toolName, JSON.writeValueAsString(argsValue))), Optional.empty()));
+                }
                 assertEquals(AiPurpose.APPROVAL, request.purpose());
                 var facts = JSON.readTree(request.messages().getLast().text());
                 if (nativeAgent) {
@@ -546,8 +648,15 @@ class DeploymentAgentCleanupEvidenceTest {
                 return success(new ApprovalGrant(UUID.randomUUID()));
             });
             var tasks = proxy(TaskService.class, (name, args) -> {
+                if (finishMode && name.equals("beginCheckpoint")) {
+                    assertEquals(gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY, args[1]);
+                    assertNull(modelCheckpoint);
+                    modelCheckpoint = new ModelCheckpoint((String) args[2]);
+                    return modelCheckpoint;
+                }
                 assertEquals("findCheckpoint", name);
-                return Optional.empty();
+                return finishMode && args[1].equals(gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY)
+                    ? Optional.ofNullable(modelCheckpoint) : Optional.empty();
             });
             var servers = proxy(ServerService.class, (name, args) -> {
                 assertEquals("get", name);
@@ -582,10 +691,12 @@ class DeploymentAgentCleanupEvidenceTest {
             journal.event(task, "SEALED_ARTIFACT", "component", ARTIFACT);
             journal.event(task, "SEALED_TOOLS", "component", "0".repeat(64) + ":false");
             journal.event(task, "DELIVERY_EXECUTING", "f".repeat(64), "1");
-            journal.event(task, "AI_PUBLICATION", "controlled", "MODEL_GENERATED_COMMANDS");
-            journal.event(task, "AI_PUBLICATION_VERIFIED", "controlled", "HEALTHY");
-            journal.event(task, "AI_PUBLICATION_FINISHED", "controlled", "MODEL_ACCEPTED_VERIFIED_RESULT");
-            journal.event(task, "CANDIDATE_CLEANUP_EXECUTING", "component", candidate.candidateId());
+            if (!finishMode) {
+                journal.event(task, "AI_PUBLICATION", "controlled", "MODEL_GENERATED_COMMANDS");
+                journal.event(task, "AI_PUBLICATION_VERIFIED", "controlled", "HEALTHY");
+                journal.event(task, "AI_PUBLICATION_FINISHED", "controlled", "MODEL_ACCEPTED_VERIFIED_RESULT");
+                journal.event(task, "CANDIDATE_CLEANUP_EXECUTING", "component", candidate.candidateId());
+            }
             var executions = new DeploymentExecutionStore(db);
             var id = new DeploymentExecutionIdentity(UUID.randomUUID(), taskId, Optional.empty(), "controlled", server, DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, SOURCE);
             var references = gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit.references(server, proposal, Map.of());
@@ -596,6 +707,33 @@ class DeploymentAgentCleanupEvidenceTest {
             executions.recordPublicationTemplate(task, id.executionId(), new DeploymentPublishProposal(proposal.graph(), proposal.units()), Instant.EPOCH.plusSeconds(2));
             executions.recordUncommittedOutcome(task, id.executionId(), TaskResult.UNKNOWN, new Problem(ProblemCode.UNKNOWN, "CLEANUP_UNCONFIRMED", "Retained original cleanup", Map.of(), Optional.empty()), Instant.EPOCH.plusSeconds(3));
             journal.state(task, "UNKNOWN");
+        }
+
+        void prepareCommand(String mode) throws Exception {
+            nativeAgent = true;
+            if (mode.equals("ABSENT")) return;
+            unconfirmedCommand = mode.equals("DISPATCHED");
+            var work = (java.util.concurrent.Callable<String>) () -> gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.execute(
+                context, remote, server, task, REVISION, "printf controlled-prerequisite", 30, "Controlled current host prerequisite");
+            if (unconfirmedCommand) assertThrows(Exception.class, work::call);
+            else assertTrue(work.call().contains("EXIT=0"));
+            assertEquals(1, commandSends);
+            assertFalse(modelCheckpoint.snapshot().released());
+            if (mode.equals("RELEASED"))
+                gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.releaseKnown(context, task);
+            if (Set.of("FOREIGN_TASK", "INVALID").contains(mode)) {
+                var data = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(modelCheckpoint.snapshot().payload());
+                if (mode.equals("FOREIGN_TASK")) data.put("task", UUID.randomUUID().toString());
+                else data.put("version", 2);
+                modelCheckpoint.advance(modelCheckpoint.snapshot(), data.toString());
+            }
+        }
+
+        OperationResult<DeploymentPublishResult> finishPublication() throws Exception {
+            var original = scope();
+            return gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentPublishRunner.run(
+                original, remote, server, task, REVISION, proposal, Map.of("component", candidate), journal, DeploymentSendGuard.NONE, 8, () -> {
+                });
         }
 
         DeploymentAgentCleanupEvidence evidence() throws Exception {

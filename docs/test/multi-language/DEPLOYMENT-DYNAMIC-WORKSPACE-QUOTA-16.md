@@ -57,4 +57,18 @@ STATIC/ASSISTED 在真实归档完成后、最终确认前选额并展示依据�
 
 7 个独立源码/测试/Skill 文件直接提交，其他 33 个混合文件及混合 `docs/Config.md` 只交付相对于本阶段前像的自有增量，不整体暂存原迁移。完整 [精确增量补丁](patches/DEPLOYMENT-DYNAMIC-WORKSPACE-QUOTA-16.patch) 同时包含 40 个 source owner 和本次配置说明增量，SHA256 为 `dddc831b1b030408bf20c5c5e505cd81e3237b568aa93416149fdf6cefa6f8ec`；原 source patch SHA256 为 `004ce3fee7834df4a91af44f04c2b4279930b3466aa7741724f0670cfed85cf2`。补丁相对于本阶段原工作区，不是已证明可独立构建的干净 checkout。
 
-本次直接定点验证与真实部署记录分别保存，真实 task-board 16 尚未启动。此前通过的本地或真机记录不计为新验收。独立审批、真实前后端业务、成功后的产品收尾、非默认目录真机及重启、其余七项目和最终全新服务器冻结八项目仍需实际证据。
+本次直接定点验证与真实部署记录分别保存。随后完成的主 Agent 真实对照仍因产品收尾阻塞而保留 UNKNOWN，详见下文。此前通过的本地或真机记录不计为新验收。独立审批、真实前后端业务、成功后的产品收尾、非默认目录真机及重启、其余七项目和最终全新服务器冻结八项目仍需实际证据。
+
+## 真实主 Agent 对照 16-03
+
+`task-board-main-only-16-03` 于 2026-10-13 00:09:02+08结束：产品入口一项 FAIL、零错误/跳过，895.8 秒，3279 源码/Skill运行期间零变化。原 task 为 `dc79c361-80f1-467a-8d36-4935ff4c8355`，原库 `agent-main-only-diagnostic-live-task-board-3tpqmebog`，App 意图 `wtl-agent-main-only-diagnostic-task-board-3tpqnu090`。
+
+主模型自主完成来源识别、计划和候选准备；工具链准备 exit 65 后自行使用 Skill、check、command 与 host_command，命令出现 exit 127 后继续排查，最终封存两个组件并调用 deliver/publish/verify/finish。监督代理未执行服务器命令或提供部署步骤，未中途修改源码。此轮 65 次明确 USER_AUTHORIZED_DIAGNOSTIC 判断，审批业务尝试/调用为 0；它证明本版本的主模型能自主推进到远端发布验证，不能替代完整独立审批验收，也不能把失败整体归为审批过严。
+
+产品收尾将原任务保留 UNKNOWN。只读 H2 核对 Agent effectsSettled=false、平台资源 2766、正式 execution 1 条，phase EXECUTING/outcome UNKNOWN，businessCommitted=false、cleanupComplete=false、publicationTemplate 已保存；正式应用/发布等十表均为 0，没有结果摘要。未进入浏览器、真实跨语言业务及生命周期收尾。原主 DB SHA256 `df8e39a7734dcaac46b4fef971081ba7efa907965a682137b8b8ce2f9aa9b48a` 两次只读审计前后均相同，锁已释放。
+
+账本记录 187 FINISHED →188 ERROR ApiException →189 CAUSE OTHER →190 UNKNOWN，无 CLEANED/DELIVERY_RESULT。两个宿主命令的原检查点均 ENDED/exit 0，其 task/server/指纹/元数据绑定匹配；released_at 在 ERROR 后 7 毫秒。现有代码要求清理前检查点已释放，却直到发布循环 finally 才释放，形成可直接复现的顺序缺陷。原 ApiException 的具体 message 没有保存，不将 OTHER 补写为某个历史错误；继续修复和恢复时保留全部原证据与未结资源。
+
+33 个实际捕获响应全部 LANGUAGE：input1611665、output67509、合计1679174，cache hit850176/miss761489，已知输入命中率52.75%；reasoning51743是输出子集。两个配置能力探测的 provider usage 与 transport次数未知。审批0来自隔离诊断条件，不能用于正式审批成本达标；本轮排除最终全新服务器冻结八项目。
+
+此前 `16` 和 `16-02` 两次入口在 SSH检查/模型配置前因安全凭据副本配对缺失、复制旧未结任务导致关闭校验失败，均为 ERROR，非 Agent部署失败；日志/XML/result保留。改用本轮已保存凭据的新测试库生成安全配置副本后进入16-03。原凭据源主DB及受保护引导文件未改，两个任务创建的临时凭据副本已在停止使用后按精确工作区绝对路径清理；保留的16调查库、原13/14/15和原373正式业务未删除。
