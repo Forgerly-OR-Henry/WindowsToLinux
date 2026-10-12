@@ -1,20 +1,27 @@
 package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
 
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
 import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
+import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
+import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 
 /** Sends only fixed Agent observations through fresh independent reviews and original dispatch guards. / 仅经独立新审核及原发送守卫发送固定 Agent 观测。 */
@@ -37,10 +44,37 @@ public final class DeploymentAgentHostChannel {
         this.task = Objects.requireNonNull(task);
         this.server = Objects.requireNonNull(server).id();
         this.beforeSend = Objects.requireNonNull(beforeSend);
-        commands = new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, () -> {
+        commands = new DeploymentBuildCommandChannel(session, new HostReview(Objects.requireNonNull(interaction), task), server, task, revision, budget, () -> {
             if (task.cancelToken().requested()) throw cancelled();
             beforeSend.verify();
         }, layout);
+    }
+
+    private record HostReview(InteractionService original, TaskContext task) implements DeploymentCommandReview {
+        public OperationResult<ApprovalGrant> approveCommand(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
+            if (supplied != task) throw new IllegalArgumentException("Host review differs from its original task");
+            try {
+                return DeploymentCommandReviewRouter.approve(original, intent, request, supplied);
+            } catch (ApiException denied) {
+                if (original instanceof DeploymentCommandReview && denied.problem().code() == ProblemCode.ACCESS_DENIED
+                    && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
+                    && task.id().toString().equals(denied.problem().context().get("task")))
+                    throw DeploymentAlternativeRequiredException.fromReview(task, denied);
+                throw denied;
+            }
+        }
+
+        public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext supplied) throws ApiException {
+            return original.approve(intent, supplied);
+        }
+
+        public OperationResult<ApprovalGrant> approveRequired(ActionIntent intent, TaskContext supplied) throws ApiException {
+            return original.approveRequired(intent, supplied);
+        }
+
+        public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext supplied) throws ApiException {
+            return original.requestText(title, prompt, secret, supplied);
+        }
     }
 
     /** Observes the baseline without invoking any container or ecosystem tools. / 观测基线，不调用容器或生态工具。 */

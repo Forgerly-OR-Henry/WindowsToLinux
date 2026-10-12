@@ -279,4 +279,20 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 按运行前后 logId 差集，本轮新增 22 个 APPROVAL 响应，input 275163、output 6507、合计 281670，hit 170368、miss 104795，捕获输入命中率 61.92%；reasoning 22 项 UNKNOWN，单次输出上限 8192，未请求新配置探测。数字窗口基线95、运行后94、淘汰23条旧记录，原09部署及恢复01/02用量均排除；22响应不等于22裁决。本轮是真实失败部署补偿及历史明细清理证明，未计为最终八项目部署批次。下一次新 task-board 部署必须使用全新任务身份，由主模型自行识别来源、接口、监听、端口与 CORS。
 
+原09真实恢复的两份记录已本地提交 `96fa08b63d2c909972872254dace9d973fb76a19`，未推送、索引为空后启动全新 `task-board-10`，双 OCR 受保护凭据配置验证通过。该轮于 2026-10-12 10:13:16+08 结束一项入口失败、零错误/跳过，37.15 秒，3272 源码运行期间零变化，验证会话 92875 退出、临时凭据 finally 清除，实际 CIM 10:17:30 为 OK/0。新任务 `dcef7515-701d-43da-b201-c2f593a0ddd0`、新库 `agent-live-task-board-3uk0h5b0z4`，App 意图 `wtl-agent-task-board-3uk0h70ud0` 未进入正式业务表。
+
+主模型首个 inspect 调用遭原任务完整独立 APP 拒绝。APP 请求 script offset0/limit4243 及 stdin offset0/limit8000，并在拒绝理由中自述已完整读取脚本；该自述不是独立持久化的完整输入 delivery 证明。产品实际传入 new byte[0]、事实 inputKind=EMPTY，但 request/stdin 读取工具误返回 PROTECTED_BOUND_DATA，APP 因而认为缺少可审输入，并要求尚未出现的 CURRENT_SOURCE 回执。正式拒绝保留 OPEN、reviewBinding `037806cc488efb09924221a81bdc845168db23028b97cb9235b31e08fe833e79`；原 inspect 路径把 ApiException 传播为主循环终止，没有给主模型原拒绝反馈/通信的机会。真实拒绝不授予执行权；是否需要远端源码回执应由 APP 按该请求实际效果判断，不能强制先创建回执或批准。
+
+只读审计确认平台任务归档、资源 0；Agent FAILED、语义版本4、8个事件，无 PREPARE 或正式 execution，effectsSettled=true、无结清摘要，失败账本保留。正式十表 0、模型2/服务器1保持；主库只读前后 SHA256 同为 `A9BAE8E660D0D2737D4C1514411A577C36CFA2820755D9CEBA9CE3E404B268D6`。本轮捕获3响应，input25166/output801/合计25967、hit17920/miss7246、命中71.21%；APP两响应17119，占65.93%，主一响应8848；reasoning30已知+2 UNKNOWN，四项配置探测 usage/transport 仍 UNKNOWN。不是预算耗尽，也不是最终八项目统计。本轮日志、报告、只读审计及调查保留；接下来仅修复 EMPTY 如实呈现及 Agent 主机观察的原生拒绝反馈边界，未知、取消、非原任务与已执行效果保持闭合。
+
+`inspect-review-feedback-fix-01` 只修改 Agent Approval 和 HostChannel，以及三项直接测试。读取 EMPTY stdin 时先核对原请求确实为零字节，再返回真实空页；矛盾输入拒绝，其他 opaque 配置或秘密字节仍不解码。HostChannel 的私有 review adapter 仅在原 Router.approve 边界捕获本任务、原生审批的 ACCESS_DENIED / DEPLOYMENT_COMMAND_REVIEW_DENIED，转换为既有 AlternativeRequired 反馈，保留原异常和绑定理由。它不包围 send/execute；非原任务、取消、配置/guard、未知或已发送执行错误仍传播。STATIC、ASSISTED、共享发送与审批实现保持。
+
+主循环沿用原 effectsSettled 和 route 门，收到 DENY/NOT_SENT、authority NONE；有效 OPEN 绑定允许主模型自行选择回应或另一个当前工具。回应是 MODEL_AUTHORED_DATA，不授予执行权；替代请求及其执行回执都需重新独立审批，不自动批准、重试或规定步骤。CLOSED 重复请求、未结清效果和伪造执行阶段的拒绝仍停止。本地真实 H2/native 主循环中的受控模型选择了回应及替代命令，完整输入分页、新授权、执行和独立精确回执核验均经过产品原路径；这不是 API 模型或真实服务器验收。
+
+八轮限定测试的 27 个不同 logicalID 最新结果全部通过。01 实际 27 项中25通过/2失败；02–06 每轮仅新 Session 方法的三个参数，均2通过/1失败；07 为2通过/1 TimeoutException；08 同三个参数全部通过。中间失败涉及新夹具对既有回应呈现、CLOSED 停止、state.judgement.pending、原观察身份、独立 status 审批、长 exactAction 的完整 SHA descriptor、unable 异常和已知 checkpoint 收尾协议的遗漏；仅校准该新夹具，两个生产 owner 从首轮后没有继续修改。所有失败日志/XML 保留，其他24已通过场景不重复；不能把48次执行当作48个不同场景。
+
+五 Java owner 格式 write/check 通过，八轮测试及格式终态各冻结3272项、零变化，其余3267项逐字节保持。父独立核对实际 XML、raw 前像/终态、保护范围和冻结通过；默认 CIM 权限拒绝保留，实际 10:52:16+08 只读核对相关临时进程0，九个验证会话已退出，用户原 IDEA 保留。10:54:51 writeDone 后停止子任务写入。未运行全类、模块或全项目验证，无真实 Runtime、provider、SSH 或数据库变更。
+
+五 owner 自有增量见 [检查拒绝反馈精确补丁](patches/DEPLOYMENT-AGENT-INSPECT-REVIEW-FEEDBACK.patch)，原始 SHA256 `f448f2d5a125f0256d25049558b386a740671af7cbe22a6024ef0a156d0ba3be`；四项可独立暂存，混合迁移 ReviewStopTest 只交付精确增量补丁，原迁移和旧补丁保持。前像和反向检查通过。原10的 FAILED/DENY 保留，原09恢复03已结清无需重放；新 task-board 产品部署及非默认真机、主机重启和最终八项目仍未通过验收。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

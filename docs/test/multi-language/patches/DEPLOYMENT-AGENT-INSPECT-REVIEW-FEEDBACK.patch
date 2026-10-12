@@ -1,0 +1,544 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -469,10 +469,16 @@
+                 String part = text(args, "part", 16);
+                 if (part.equals("script")) return page(request.script(), offset, limit);
+                 if (!part.equals("stdin")) throw new PageArgumentException("part", "REQUEST_PART_UNKNOWN");
+-                if (!Set.of("EXECUTABLE_SCRIPT", "SOURCE_PATCH").contains(facts.path("inputKind").asText()))
++                String kind = facts.path("inputKind").asText();
++                if (!Set.of("EXECUTABLE_SCRIPT", "SOURCE_PATCH", "EMPTY").contains(kind))
+                     return Map.of("kind", "PROTECTED_BOUND_DATA", "meaning", "Opaque configuration/secret bytes are not model evidence; exactAction retains their byte length and SHA-256.");
+                 byte[] bytes = request.stdin();
+                 try {
++                    if (kind.equals("EMPTY")) {
++                        if (bytes.length != 0)
++                            throw new IOException("Empty input evidence contradicts the original request");
++                        return page("", offset, limit);
++                    }
+                     String value = StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+                     return page(value, offset, limit);
+                 } finally {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannel.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannel.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannel.java
+@@ -1,20 +1,27 @@
+ package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
+ 
+ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++
+ import java.time.Duration;
+ import java.util.Map;
+ import java.util.Objects;
+ import java.util.Optional;
+ 
+ import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
++import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
+ import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+ import gold.debug.windowstolinux.appapi.task.result.*;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
+ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
++import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
++import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+ 
+ /** Sends only fixed Agent observations through fresh independent reviews and original dispatch guards. / 仅经独立新审核及原发送守卫发送固定 Agent 观测。 */
+@@ -37,10 +44,37 @@
+         this.task = Objects.requireNonNull(task);
+         this.server = Objects.requireNonNull(server).id();
+         this.beforeSend = Objects.requireNonNull(beforeSend);
+-        commands = new DeploymentBuildCommandChannel(session, interaction, server, task, revision, budget, () -> {
++        commands = new DeploymentBuildCommandChannel(session, new HostReview(Objects.requireNonNull(interaction), task), server, task, revision, budget, () -> {
+             if (task.cancelToken().requested()) throw cancelled();
+             beforeSend.verify();
+         }, layout);
++    }
++
++    private record HostReview(InteractionService original, TaskContext task) implements DeploymentCommandReview {
++        public OperationResult<ApprovalGrant> approveCommand(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
++            if (supplied != task) throw new IllegalArgumentException("Host review differs from its original task");
++            try {
++                return DeploymentCommandReviewRouter.approve(original, intent, request, supplied);
++            } catch (ApiException denied) {
++                if (original instanceof DeploymentCommandReview && denied.problem().code() == ProblemCode.ACCESS_DENIED
++                    && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
++                    && task.id().toString().equals(denied.problem().context().get("task")))
++                    throw DeploymentAlternativeRequiredException.fromReview(task, denied);
++                throw denied;
++            }
++        }
++
++        public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext supplied) throws ApiException {
++            return original.approve(intent, supplied);
++        }
++
++        public OperationResult<ApprovalGrant> approveRequired(ActionIntent intent, TaskContext supplied) throws ApiException {
++            return original.approveRequired(intent, supplied);
++        }
++
++        public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext supplied) throws ApiException {
++            return original.requestText(title, prompt, secret, supplied);
++        }
+     }
+ 
+     /** Observes the baseline without invoking any container or ecosystem tools. / 观测基线，不调用容器或生态工具。 */
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -255,6 +255,93 @@
+         assertEquals(1, f.fixture.requests.size());
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {"ZERO", "INVALID_OFFSET"})
++    void emptyOriginalStdinIsPagedAsEmptyWithoutInventingProtectedData(String cursor) throws Exception {
++        var f = new Frame();
++        int[] round = {0};
++        f.model = request -> {
++            var input = JSON.readTree(request.messages().getLast().text());
++            assertEquals("EMPTY", input.at("/currentRequest/inputKind").asText());
++            assertFalse(input.path("executableInput").has("stdin"));
++            assertEquals(0, f.grants.size());
++            int current = round[0]++;
++            if (current == 0)
++                return List.of(call("request", Map.of("part", "stdin", "offset", cursor.equals("INVALID_OFFSET") ? 1 : 0, "limit", 8000)));
++            var result = lastToolResult(request);
++            if (cursor.equals("INVALID_OFFSET") && current == 1) {
++                assertTrue(result.error());
++                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
++            }
++            assertFalse(result.error());
++            var page = JSON.readTree(result.text()).path("value");
++            assertEquals(0, page.path("offset").asInt(-1));
++            assertEquals(0, page.path("next").asInt(-1));
++            assertEquals(0, page.path("total").asInt(-1));
++            assertFalse(page.path("hasMore").asBoolean(true));
++            assertTrue(page.path("text").isTextual());
++            assertEquals("", page.path("text").asText());
++            assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", page.path("sha256").asText());
++            assertFalse(page.has("kind"));
++            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        };
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(f.intent(request, "deployment.candidate.host-probe.v1"), request, f.task).outcome());
++        }
++        assertEquals(1, f.grants.size());
++        assertEquals(cursor.equals("INVALID_OFFSET") ? 3 : 2, f.fixture.requests.size());
++    }
++
++    @Test
++    void emptyClassificationWithBytesFailsBeforeReviewAndEmptyPageCannotCoverMissingScript() throws Exception {
++        var contradiction = new Frame();
++        try (var request = contradiction.command("printf actual", "NOT_EMPTY")) {
++            assertThrows(IOException.class, () -> contradiction.agent.review("Review exact input", Map.of("inputKind", "EMPTY"),
++                contradiction.intent(request, "deployment.candidate.host-probe.v1"), request, REVISION, contradiction.task));
++        }
++        assertEquals(0, contradiction.fixture.requests.size());
++        assertEquals(0, contradiction.grants.size());
++        var f = new Frame();
++        int[] round = {0};
++        f.model = request -> {
++            if (round[0]++ == 0)
++                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
++            if (round[0] == 2) return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++            assertTrue(lastToolResult(request).text().contains("EXECUTABLE_INPUT_NOT_DELIVERED"));
++            assertEquals(0, f.grants.size());
++            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++        };
++        try (var request = f.command("printf actual\n" + "# original fixed body\n".repeat(80), "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.candidate.host-probe.v1"), request, f.task));
++        }
++        assertEquals(3, f.fixture.requests.size());
++        assertEquals(0, f.grants.size());
++    }
++
++    @Test
++    void protectedBinaryStdinIsNeverDecodedOrDisclosedByEmptyPagingSupport() throws Exception {
++        var f = new Frame();
++        int[] round = {0};
++        f.model = request -> {
++            assertTrue(request.messages().stream().noneMatch(message -> message.text().contains("FAKE_PROTECTED_BINARY")));
++            assertEquals("OPAQUE_BOUND_DATA", JSON.readTree(request.messages().getLast().text()).at("/currentRequest/inputKind").asText());
++            if (round[0]++ == 0)
++                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
++            assertEquals("PROTECTED_BOUND_DATA", JSON.readTree(lastToolResult(request).text()).at("/value/kind").asText());
++            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++        };
++        byte[] input = ("FAKE_PROTECTED_BINARY" + "\u0000").getBytes(StandardCharsets.UTF_8);
++        input[0] = (byte) 0xff;
++        try (var request = new CommandRequest("printf actual", input, Duration.ofSeconds(5), 8192)) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.publication.config.v1"), request, f.task));
++        }
++        assertEquals(2, f.fixture.requests.size());
++        assertEquals(0, f.grants.size());
++    }
++
+     @Test
+     void priorCompleteDeliveryDoesNotAuthorizeChangedOriginalRequest() throws Exception {
+         var f = new Frame();
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannelTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannelTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannelTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentHostChannelTest.java
+@@ -26,6 +26,7 @@
+ import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation;
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
+@@ -33,6 +34,8 @@
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.ContainerEngineType;
+ import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
+ 
+ /** Local native review and controlled transport only; no API or SSH execution. / 仅本地原生审核与受控传输，不执行 API 或 SSH。 */
+ class DeploymentAgentHostChannelTest {
+@@ -156,13 +159,66 @@
+             return reply(BASELINE);
+         });
+         var channel = new DeploymentAgentHostChannel(session, reviewed.interaction(), SERVER, fixture.task, REVISION, new DeploymentBuildBudget(120), DeploymentSendGuard.NONE);
+-        var denied = assertThrows(ApiException.class, channel::baseline);
+-        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
++        var denied = assertThrows(DeploymentAlternativeRequiredException.class, channel::baseline);
++        assertEquals("DEPLOYMENT_ALTERNATIVE_REQUIRED", denied.problem().eventCode());
++        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", ((ApiException) denied.getCause()).problem().eventCode());
+         assertEquals(1, fixture.requests.size());
+         assertEquals(0, sends.get());
+         var request = fixture.requests.getFirst();
+         assertTrue(request.messages().getLast().text().contains("deployment.candidate.host-probe.v1"));
+         assertTrue(request.messages().getLast().text().contains("WTL_AGENT_HOST_OBSERVATION"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"OPEN", "CLOSED", "FOREIGN_TASK", "OTHER_EVENT", "OTHER_CODE", "NON_NATIVE", "CANCELLED",
++        "UNKNOWN", "UNKNOWN_RESULT", "FAILED_RESULT", "GUARD_SAME_EVENT", "EXECUTE_SAME_EVENT"})
++    void onlyActualSameTaskHostReviewDenialBecomesBoundAlternativeFeedback(String boundary) throws Exception {
++        var fixture = new NativeAiFixture();
++        String binding = "c".repeat(64);
++        var data = Map.of("task", boundary.equals("FOREIGN_TASK") ? UUID.randomUUID().toString() : fixture.task.id().toString(),
++            "reviewBinding", binding, "discussionStatus", boundary.equals("CLOSED") ? "CLOSED" : "OPEN", "reviewReason", "Original independent host refusal");
++        var code = boundary.equals("OTHER_CODE") ? ProblemCode.INVALID_INPUT : boundary.equals("CANCELLED") ? ProblemCode.CANCELLED
++            : boundary.equals("UNKNOWN") ? ProblemCode.UNKNOWN : ProblemCode.ACCESS_DENIED;
++        var original = new ApiException(new Problem(code, boundary.equals("OTHER_EVENT") ? "DEPLOYMENT_COMMAND_STATIC_DENIED" : "DEPLOYMENT_COMMAND_REVIEW_DENIED",
++            "Original classified boundary", data, Optional.empty()));
++        var reviews = new AtomicInteger();
++        var sends = new AtomicInteger();
++        var guards = new AtomicInteger();
++        var contract = boundary.equals("NON_NATIVE") ? InteractionService.class : DeploymentCommandReview.class;
++        var review = (InteractionService) Proxy.newProxyInstance(contract.getClassLoader(), new Class<?>[]{contract}, (proxy, method, args) -> {
++            assertEquals(boundary.equals("NON_NATIVE") ? "approve" : "approveCommand", method.getName());
++            reviews.incrementAndGet();
++            if (boundary.equals("UNKNOWN_RESULT") || boundary.equals("FAILED_RESULT"))
++                return new OperationResult<>(boundary.equals("UNKNOWN_RESULT") ? TaskResult.UNKNOWN : TaskResult.FAILED, Optional.empty(), Optional.of(original.problem()));
++            if (boundary.equals("EXECUTE_SAME_EVENT") || boundary.equals("GUARD_SAME_EVENT"))
++                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
++            throw original;
++        });
++        var remote = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
++            assertEquals("execute", method.getName());
++            sends.incrementAndGet();
++            throw original;
++        });
++        var channel = new DeploymentAgentHostChannel(remote, review, SERVER, fixture.task, REVISION, new DeploymentBuildBudget(120), () -> {
++            if (guards.incrementAndGet() == 2 && boundary.equals("GUARD_SAME_EVENT")) throw original;
++        });
++        if (boundary.equals("OPEN") || boundary.equals("CLOSED")) {
++            var denied = assertThrows(DeploymentAlternativeRequiredException.class, channel::baseline);
++            assertSame(original, denied.getCause());
++            assertEquals(binding, denied.problem().context().get("reviewBinding"));
++            assertEquals(boundary.equals("OPEN"), denied.discussionOpen());
++            assertFalse(denied.preparationUnsent());
++            assertTrue(denied.feedback().contains("NOT_SENT"));
++        } else if (boundary.equals("CANCELLED") || boundary.endsWith("_RESULT")) {
++            var result = channel.baseline();
++            assertEquals(boundary.equals("CANCELLED") ? TaskResult.CANCELLED : boundary.equals("UNKNOWN_RESULT") ? TaskResult.UNKNOWN : TaskResult.FAILED, result.outcome());
++            assertEquals(original.problem(), result.problem().orElseThrow());
++            assertTrue(result.value().isEmpty());
++        } else {
++            assertSame(original, assertThrows(ApiException.class, channel::baseline));
++        }
++        assertEquals(1, reviews.get());
++        assertEquals(boundary.equals("EXECUTE_SAME_EVENT") ? 1 : 0, sends.get());
+     }
+ 
+     @Test
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
+@@ -57,7 +57,12 @@
+         COMMAND_EXECUTE_FAILURE, COMMAND_WRONG_SCRIPT, OPEN_INVALID,
+         INSTALL_DENY, INSTALL_INVALID, INSTALL_REVIEW_FAILED, INSTALL_REVIEW_CANCELLED, INSTALL_REVIEW_UNKNOWN,
+         INSTALL_GUARD_FAILURE, INSTALL_EXECUTE_SAME_EVENT, INSTALL_POSTPROBE_DENY,
+-        INSTALL_WRONG_TASK, INSTALL_WRONG_COMPONENT, INSTALL_WRONG_SOURCE;
++        INSTALL_WRONG_TASK, INSTALL_WRONG_COMPONENT, INSTALL_WRONG_SOURCE,
++        INSPECT_OPEN, INSPECT_CLOSED_REPEAT, INSPECT_UNSETTLED;
++
++        boolean inspection() {
++            return name().startsWith("INSPECT_");
++        }
+ 
+         boolean install() {
+             return name().startsWith("INSTALL_");
+@@ -116,6 +121,12 @@
+     @Test
+     void installSendGuardFailureAfterIndependentGrantIsNotAnUnsentApprovalProof() throws Exception {
+         runBoundary(Boundary.INSTALL_GUARD_FAILURE);
++    }
++
++    @ParameterizedTest
++    @EnumSource(value = Boundary.class, names = {"INSPECT_OPEN", "INSPECT_CLOSED_REPEAT", "INSPECT_UNSETTLED"})
++    void inspectRefusalReturnsNativeFeedbackButRequiresFreshReviewAndSettledEffects(Boundary boundary) throws Exception {
++        runBoundary(boundary);
+     }
+ 
+     private void runBoundary(Boundary boundary) throws Exception {
+@@ -226,6 +237,14 @@
+ 
+         int installAuthorizations;
+ 
++        int inspectionAuthorizations, inspectionSends;
++
++        int inspectionStatusAuthorizations, inspectionStatusSends;
++
++        String inspectionBinding = "", inspectionRequest = "", inspectionObservation = "";
++
++        String inspectionReceipt = "", reviewedStatusRequest = "";
++
+         Set<ActionTarget> reviewedInstallTargets = Set.of();
+ 
+         boolean present, recovering, needsRecovery;
+@@ -303,6 +322,17 @@
+                 new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class}, (proxy, method, args) -> {
+                     if (method.getName().equals("approveReviewedAction")) {
+                         var intent = (gold.debug.windowstolinux.appapi.task.action.ActionIntent) args[0];
++                        if (boundary.inspection()) {
++                            String operation = intent.semantics().orElseThrow().operation();
++                            if (operation.equals("deployment.model.command.status.v1")) {
++                                inspectionStatusAuthorizations++;
++                                assertEquals(reviewedStatusRequest, hash(intent.exactAction()));
++                            } else {
++                                inspectionAuthorizations++;
++                                assertEquals("deployment.model.command.v1", operation, "Denied baseline never reaches host authority");
++                                assertEquals(reviewedRequest, hash(intent.exactAction()));
++                            }
++                        }
+                         if (intent.semantics().orElseThrow().operation().equals("deployment.helper.install.files.custom.v1")) {
+                             installAuthorizations++;
+                             assertSame(task, args[args.length - 1]);
+@@ -318,8 +348,12 @@
+                     }
+                 });
+             try (var sources = new DeploymentAgentSources(reviewed, task, material);
+-                 var remote = boundary.install() ? new DeploymentAgentRemoteTools(context, peer, installHost, server, task,
++                 var remote = boundary.install() || boundary.inspection() ? new DeploymentAgentRemoteTools(context, peer, installHost, server, task,
+                      archive, material, REVISION, () -> REVISION, journal, Optional.empty(), "FULL_CONTROL", true) : null) {
++                if (boundary.inspection()) {
++                    checkInspection(remote);
++                    return;
++                }
+                 var buildTools = new DeploymentAgentBuildTools(reviewed, task, peer, server, REVISION, () -> {
+                 }, sources, projects);
+                 var port = new DeploymentAgentDeliveryPort() {
+@@ -467,6 +501,41 @@
+                 journal.state(task, "UNKNOWN");
+                 needsRecovery = true;
+             }
++        }
++
++        private void checkInspection(DeploymentAgentRemoteTools remote) throws Exception {
++            if (boundary == Boundary.INSPECT_UNSETTLED)
++                journal.event(task, "PREPARE_EXECUTING", "controlled-unclosed", "b".repeat(64));
++            var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Evaluate this controlled source"),
++                new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256()), remote, journal,
++                "FULL_CONTROL", true, REVISION, () -> REVISION);
++            try (var workflow = DeploymentWorkflowAuthorization.open(context, task, server, REVISION, "FULL_CONTROL", true,
++                "source=" + material.snapshot().sha256() + "\narchive=" + archive.sha256())) {
++                if (boundary == Boundary.INSPECT_UNSETTLED) {
++                    var failure = assertThrows(ApiException.class, session::run);
++                    assertEquals("DEPLOYMENT_ALTERNATIVE_PATH_REQUIRES_RECOVERY", failure.problem().eventCode());
++                } else if (boundary == Boundary.INSPECT_CLOSED_REPEAT) {
++                    var failure = assertThrows(IllegalStateException.class, session::run);
++                    assertTrue(failure.getMessage().contains("Repeated rejected inspect parameters without new validated progress"));
++                } else {
++                    var failure = assertThrows(IllegalStateException.class, session::run);
++                    assertEquals("Deployment model cannot continue", failure.getMessage(), "Controlled model ends unable after exercising feedback, never publishes");
++                }
++            }
++            var events = journal.events(task);
++            assertEquals(boundary == Boundary.INSPECT_UNSETTLED ? 1 : boundary == Boundary.INSPECT_CLOSED_REPEAT ? 3 : 4, languageCalls);
++            assertEquals(boundary == Boundary.INSPECT_OPEN ? 3 : 1, reviews, "OPEN selects a fresh action and its independently reviewed status; CLOSED cannot re-review unchanged facts");
++            assertEquals(boundary == Boundary.INSPECT_OPEN ? 1 : 0, inspectionAuthorizations);
++            assertEquals(boundary == Boundary.INSPECT_OPEN ? 1 : 0, inspectionSends);
++            assertEquals(boundary == Boundary.INSPECT_OPEN ? 1 : 0, inspectionStatusAuthorizations);
++            assertEquals(boundary == Boundary.INSPECT_OPEN ? 1 : 0, inspectionStatusSends);
++            assertEquals(0, installSends);
++            assertTrue(events.stream().noneMatch(event -> Set.of("PREPARE_RESULT", "CANDIDATE", "SEALED_ARTIFACT", "PUBLISHED").contains(event.type())));
++            assertEquals(boundary != Boundary.INSPECT_UNSETTLED, DeploymentAgentActionLog.effectsSettled(events));
++            assertEquals(boundary == Boundary.INSPECT_UNSETTLED ? 0 : boundary == Boundary.INSPECT_OPEN ? 1 : 2,
++                events.stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("ALTERNATIVE_REQUIRED")).count());
++            if (boundary == Boundary.INSPECT_OPEN)
++                gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.releaseKnown(context, task);
+         }
+ 
+         OperationResult<Void> recover(TaskContext original) throws Exception {
+@@ -585,6 +654,7 @@
+             var input = json.readTree(request.messages().getLast().text());
+             var facts = input.has("currentRequest") ? input.path("currentRequest") : input;
+             assertEquals(server.id(), facts.path("serverTargets").get(0).asText());
++            if (boundary.inspection()) return inspectionReview(request, input, facts);
+             boolean installation = facts.path("operation").asText().equals("deployment.helper.install.files.custom.v1");
+             boolean executable = facts.path("exactAction").asText().contains("'agent-run'");
+             boolean refused = installation && Set.of(Boundary.INSTALL_REVIEW_FAILED, Boundary.INSTALL_REVIEW_CANCELLED,
+@@ -652,6 +722,53 @@
+             return reviewResponse(request, "review_" + reviews, result);
+         }
+ 
++        private OperationResult<AiResponse> inspectionReview(AiRequest request, JsonNode input, JsonNode facts) throws Exception {
++            assertTrue(input.has("currentRequest"));
++            var page = executablePage(request, input);
++            if (page != null) return page;
++            String operation = facts.path("operation").asText();
++            reviews++;
++            var verdict = json.createObjectNode().put("requiresUserConfirmation", false);
++            for (String key : List.of("missingEvidence", "adjustments", "candidateCommands")) verdict.putArray(key);
++            if (operation.equals("deployment.candidate.host-probe.v1")) {
++                assertEquals("EMPTY", facts.path("inputKind").asText());
++                assertFalse(input.path("executableInput").has("stdin"));
++                inspectionRequest = inspectionActionDigest(facts);
++                inspectionBinding = input.path("reviewBinding").asText();
++                verdict.put("decision", "DENY").put("reason", "Controlled independent refusal of this exact baseline");
++                verdict.put("discussionStatus", boundary == Boundary.INSPECT_CLOSED_REPEAT ? "CLOSED" : "OPEN");
++            } else {
++                assertEquals(Boundary.INSPECT_OPEN, boundary);
++                assertNotEquals(inspectionRequest, inspectionActionDigest(facts));
++                assertNotEquals(inspectionBinding, input.path("reviewBinding").asText());
++                if (operation.equals("deployment.model.command.status.v1")) {
++                    assertEquals(1, inspectionSends);
++                    assertEquals(1, inspectionAuthorizations);
++                    assertEquals(0, inspectionStatusAuthorizations);
++                    assertEquals(0, inspectionStatusSends);
++                    assertEquals("EMPTY", facts.path("inputKind").asText());
++                    reviewedStatusRequest = inspectionActionDigest(facts);
++                } else {
++                    assertEquals("deployment.model.command.v1", operation);
++                    assertEquals(0, inspectionSends);
++                    assertEquals(0, inspectionAuthorizations);
++                    assertEquals("EXECUTABLE_SCRIPT", facts.path("inputKind").asText());
++                    reviewedRequest = inspectionActionDigest(facts);
++                }
++                verdict.put("decision", "APPROVE").put("reason", "Complete newly selected controlled observation independently reviewed");
++            }
++            return response(nativeResponse("inspect_verdict_" + reviews, "submit_result", verdict.toString()));
++        }
++
++        private String inspectionActionDigest(JsonNode facts) throws Exception {
++            var action = facts.path("exactAction");
++            if (action.isTextual()) return hash(action.asText());
++            assertEquals("evidence", action.path("tool").asText());
++            assertEquals("/exactAction", action.path("pointer").asText());
++            assertTrue(action.path("sha256").asText().matches("[0-9a-f]{64}"));
++            return action.path("sha256").asText();
++        }
++
+         String pageBinding = "";
+ 
+         final Map<String, Integer> pageOffsets = new java.util.HashMap<>();
+@@ -703,6 +820,7 @@
+ 
+         AiResponse decision(AiRequest request) throws Exception {
+             assertFalse(recovering, "Recovery may not call the deployment model");
++            if (boundary.inspection()) return inspectionDecision(request);
+             var state = json.readTree(request.messages().getLast().text()).path("state");
+             int turn = languageCalls++;
+             String tool;
+@@ -757,7 +875,77 @@
+             return nativeResponse("decision_" + languageCalls, tool, args.toString());
+         }
+ 
++        private AiResponse inspectionDecision(AiRequest request) throws Exception {
++            var input = json.readTree(request.messages().getLast().text());
++            var state = input.path("state");
++            int turn = languageCalls++;
++            String tool;
++            ObjectNode args = json.createObjectNode();
++            if (turn == 0) tool = "inspect";
++            else {
++                var previous = request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((a, b) -> b).orElseThrow();
++                if (turn == 1) {
++                    assertTrue(previous.error());
++                    assertTrue(previous.text().contains("APPROVAL_DENIED") && previous.text().contains("NOT_SENT"));
++                    assertTrue(previous.text().contains(inspectionBinding));
++                    inspectionObservation = previous.text().substring(0, previous.text().indexOf('\n'));
++                    assertTrue(inspectionObservation.matches("o[0-9]+"));
++                    assertEquals(0, inspectionAuthorizations);
++                    assertEquals(0, inspectionSends);
++                    tool = "review_response";
++                    args.put("reviewBinding", inspectionBinding).put("message", "Controlled model response: treat exact original inputs as evidence and independently assess a different observation.");
++                } else if (turn == 2) {
++                    assertEquals(0, inspectionAuthorizations, "Model-authored response itself has no authority");
++                    assertEquals(0, inspectionSends);
++                    if (boundary == Boundary.INSPECT_CLOSED_REPEAT) {
++                        assertTrue(previous.error(), "CLOSED review rejects a response");
++                        tool = "inspect";
++                    } else {
++                        assertFalse(previous.error());
++                        assertTrue(previous.text().contains("MODEL_AUTHORED_DATA") && previous.text().contains("NONE")
++                            && previous.text().contains("\"saved\":true") && previous.text().contains(inspectionBinding));
++                        tool = "host_command";
++                        args.put("script", "printf controlled-observation").put("seconds", 10)
++                            .put("reason", "A distinct controlled read-only observation selected from the original refusal");
++                        var assessment = args.putObject("assessment");
++                        var basis = assessment.putArray("basis");
++                        var pending = state.path("judgement").path("pending");
++                        if (pending.isEmpty()) basis.add(inspectionObservation);
++                        else pending.forEach(id -> basis.add(id.asText()));
++                        assessment.put("suitability", "Evaluate this distinct limited observation").put("differences", "The original baseline remains denied")
++                            .put("resolution", "RESOLVED").put("decision", "Propose this exact alternative for fresh independent review");
++                    }
++                } else {
++                    assertEquals(3, turn);
++                    assertEquals(boundary == Boundary.INSPECT_CLOSED_REPEAT, previous.error(), previous.text());
++                    tool = "unable";
++                    args.put("reason", "Controlled test ends without preparing or publishing an application");
++                }
++            }
++            return nativeResponse("inspection_decision_" + languageCalls, tool, args.toString());
++        }
++
+         OperationResult<CommandResult> execute(CommandRequest request) throws Exception {
++            if (boundary.inspection()) {
++                assertEquals(Boundary.INSPECT_OPEN, boundary);
++                assertEquals(1, inspectionAuthorizations);
++                assertNotEquals(DeploymentAgentHostProbe.baseline(), request.script(), "Denied baseline never dispatches");
++                if (request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER)) {
++                    assertEquals(reviewedRequest, hash(RemoteActions.command(server, REVISION, request).exactAction()));
++                    var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(actual.tasks(), task);
++                    var original = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.executableFacts(new String(request.stdin(), StandardCharsets.UTF_8), layout);
++                    assertEquals(task.id().toString(), original.get("task"));
++                    inspectionReceipt = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.header(task.id(),
++                        UUID.fromString(original.get("operation").toString()), original.get("bodySha256").toString(), layout) + "EXIT=0\n";
++                    inspectionSends++;
++                    return reply("controlled observation\n");
++                }
++                assertEquals(1, inspectionStatusAuthorizations);
++                assertEquals(reviewedStatusRequest, hash(RemoteActions.command(server, REVISION, request).exactAction()));
++                assertFalse(inspectionReceipt.isEmpty());
++                inspectionStatusSends++;
++                return reply(inspectionReceipt);
++            }
+             String script = request.script();
+             String program = new String(request.stdin(), StandardCharsets.UTF_8);
+             if (program.equals(DeploymentAgentHelperReadiness.script()))

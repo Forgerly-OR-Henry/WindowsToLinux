@@ -26,6 +26,7 @@ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
 import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
+import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
 import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
 import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
 import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
@@ -33,6 +34,8 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.Deplo
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
 import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.ContainerEngineType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Local native review and controlled transport only; no API or SSH execution. / 仅本地原生审核与受控传输，不执行 API 或 SSH。 */
 class DeploymentAgentHostChannelTest {
@@ -156,13 +159,66 @@ class DeploymentAgentHostChannelTest {
             return reply(BASELINE);
         });
         var channel = new DeploymentAgentHostChannel(session, reviewed.interaction(), SERVER, fixture.task, REVISION, new DeploymentBuildBudget(120), DeploymentSendGuard.NONE);
-        var denied = assertThrows(ApiException.class, channel::baseline);
-        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
+        var denied = assertThrows(DeploymentAlternativeRequiredException.class, channel::baseline);
+        assertEquals("DEPLOYMENT_ALTERNATIVE_REQUIRED", denied.problem().eventCode());
+        assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", ((ApiException) denied.getCause()).problem().eventCode());
         assertEquals(1, fixture.requests.size());
         assertEquals(0, sends.get());
         var request = fixture.requests.getFirst();
         assertTrue(request.messages().getLast().text().contains("deployment.candidate.host-probe.v1"));
         assertTrue(request.messages().getLast().text().contains("WTL_AGENT_HOST_OBSERVATION"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"OPEN", "CLOSED", "FOREIGN_TASK", "OTHER_EVENT", "OTHER_CODE", "NON_NATIVE", "CANCELLED",
+        "UNKNOWN", "UNKNOWN_RESULT", "FAILED_RESULT", "GUARD_SAME_EVENT", "EXECUTE_SAME_EVENT"})
+    void onlyActualSameTaskHostReviewDenialBecomesBoundAlternativeFeedback(String boundary) throws Exception {
+        var fixture = new NativeAiFixture();
+        String binding = "c".repeat(64);
+        var data = Map.of("task", boundary.equals("FOREIGN_TASK") ? UUID.randomUUID().toString() : fixture.task.id().toString(),
+            "reviewBinding", binding, "discussionStatus", boundary.equals("CLOSED") ? "CLOSED" : "OPEN", "reviewReason", "Original independent host refusal");
+        var code = boundary.equals("OTHER_CODE") ? ProblemCode.INVALID_INPUT : boundary.equals("CANCELLED") ? ProblemCode.CANCELLED
+            : boundary.equals("UNKNOWN") ? ProblemCode.UNKNOWN : ProblemCode.ACCESS_DENIED;
+        var original = new ApiException(new Problem(code, boundary.equals("OTHER_EVENT") ? "DEPLOYMENT_COMMAND_STATIC_DENIED" : "DEPLOYMENT_COMMAND_REVIEW_DENIED",
+            "Original classified boundary", data, Optional.empty()));
+        var reviews = new AtomicInteger();
+        var sends = new AtomicInteger();
+        var guards = new AtomicInteger();
+        var contract = boundary.equals("NON_NATIVE") ? InteractionService.class : DeploymentCommandReview.class;
+        var review = (InteractionService) Proxy.newProxyInstance(contract.getClassLoader(), new Class<?>[]{contract}, (proxy, method, args) -> {
+            assertEquals(boundary.equals("NON_NATIVE") ? "approve" : "approveCommand", method.getName());
+            reviews.incrementAndGet();
+            if (boundary.equals("UNKNOWN_RESULT") || boundary.equals("FAILED_RESULT"))
+                return new OperationResult<>(boundary.equals("UNKNOWN_RESULT") ? TaskResult.UNKNOWN : TaskResult.FAILED, Optional.empty(), Optional.of(original.problem()));
+            if (boundary.equals("EXECUTE_SAME_EVENT") || boundary.equals("GUARD_SAME_EVENT"))
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new ApprovalGrant(UUID.randomUUID())), Optional.empty());
+            throw original;
+        });
+        var remote = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+            assertEquals("execute", method.getName());
+            sends.incrementAndGet();
+            throw original;
+        });
+        var channel = new DeploymentAgentHostChannel(remote, review, SERVER, fixture.task, REVISION, new DeploymentBuildBudget(120), () -> {
+            if (guards.incrementAndGet() == 2 && boundary.equals("GUARD_SAME_EVENT")) throw original;
+        });
+        if (boundary.equals("OPEN") || boundary.equals("CLOSED")) {
+            var denied = assertThrows(DeploymentAlternativeRequiredException.class, channel::baseline);
+            assertSame(original, denied.getCause());
+            assertEquals(binding, denied.problem().context().get("reviewBinding"));
+            assertEquals(boundary.equals("OPEN"), denied.discussionOpen());
+            assertFalse(denied.preparationUnsent());
+            assertTrue(denied.feedback().contains("NOT_SENT"));
+        } else if (boundary.equals("CANCELLED") || boundary.endsWith("_RESULT")) {
+            var result = channel.baseline();
+            assertEquals(boundary.equals("CANCELLED") ? TaskResult.CANCELLED : boundary.equals("UNKNOWN_RESULT") ? TaskResult.UNKNOWN : TaskResult.FAILED, result.outcome());
+            assertEquals(original.problem(), result.problem().orElseThrow());
+            assertTrue(result.value().isEmpty());
+        } else {
+            assertSame(original, assertThrows(ApiException.class, channel::baseline));
+        }
+        assertEquals(1, reviews.get());
+        assertEquals(boundary.equals("EXECUTE_SAME_EVENT") ? 1 : 0, sends.get());
     }
 
     @Test

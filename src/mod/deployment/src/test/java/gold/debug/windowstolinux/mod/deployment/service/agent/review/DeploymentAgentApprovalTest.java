@@ -255,6 +255,93 @@ class DeploymentAgentApprovalTest {
         assertEquals(1, f.fixture.requests.size());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"ZERO", "INVALID_OFFSET"})
+    void emptyOriginalStdinIsPagedAsEmptyWithoutInventingProtectedData(String cursor) throws Exception {
+        var f = new Frame();
+        int[] round = {0};
+        f.model = request -> {
+            var input = JSON.readTree(request.messages().getLast().text());
+            assertEquals("EMPTY", input.at("/currentRequest/inputKind").asText());
+            assertFalse(input.path("executableInput").has("stdin"));
+            assertEquals(0, f.grants.size());
+            int current = round[0]++;
+            if (current == 0)
+                return List.of(call("request", Map.of("part", "stdin", "offset", cursor.equals("INVALID_OFFSET") ? 1 : 0, "limit", 8000)));
+            var result = lastToolResult(request);
+            if (cursor.equals("INVALID_OFFSET") && current == 1) {
+                assertTrue(result.error());
+                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+            }
+            assertFalse(result.error());
+            var page = JSON.readTree(result.text()).path("value");
+            assertEquals(0, page.path("offset").asInt(-1));
+            assertEquals(0, page.path("next").asInt(-1));
+            assertEquals(0, page.path("total").asInt(-1));
+            assertFalse(page.path("hasMore").asBoolean(true));
+            assertTrue(page.path("text").isTextual());
+            assertEquals("", page.path("text").asText());
+            assertEquals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", page.path("sha256").asText());
+            assertFalse(page.has("kind"));
+            return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var request = f.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(f.intent(request, "deployment.candidate.host-probe.v1"), request, f.task).outcome());
+        }
+        assertEquals(1, f.grants.size());
+        assertEquals(cursor.equals("INVALID_OFFSET") ? 3 : 2, f.fixture.requests.size());
+    }
+
+    @Test
+    void emptyClassificationWithBytesFailsBeforeReviewAndEmptyPageCannotCoverMissingScript() throws Exception {
+        var contradiction = new Frame();
+        try (var request = contradiction.command("printf actual", "NOT_EMPTY")) {
+            assertThrows(IOException.class, () -> contradiction.agent.review("Review exact input", Map.of("inputKind", "EMPTY"),
+                contradiction.intent(request, "deployment.candidate.host-probe.v1"), request, REVISION, contradiction.task));
+        }
+        assertEquals(0, contradiction.fixture.requests.size());
+        assertEquals(0, contradiction.grants.size());
+        var f = new Frame();
+        int[] round = {0};
+        f.model = request -> {
+            if (round[0]++ == 0)
+                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+            if (round[0] == 2) return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            assertTrue(lastToolResult(request).text().contains("EXECUTABLE_INPUT_NOT_DELIVERED"));
+            assertEquals(0, f.grants.size());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        try (var request = f.command("printf actual\n" + "# original fixed body\n".repeat(80), "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.candidate.host-probe.v1"), request, f.task));
+        }
+        assertEquals(3, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
+
+    @Test
+    void protectedBinaryStdinIsNeverDecodedOrDisclosedByEmptyPagingSupport() throws Exception {
+        var f = new Frame();
+        int[] round = {0};
+        f.model = request -> {
+            assertTrue(request.messages().stream().noneMatch(message -> message.text().contains("FAKE_PROTECTED_BINARY")));
+            assertEquals("OPAQUE_BOUND_DATA", JSON.readTree(request.messages().getLast().text()).at("/currentRequest/inputKind").asText());
+            if (round[0]++ == 0)
+                return List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 8000)));
+            assertEquals("PROTECTED_BOUND_DATA", JSON.readTree(lastToolResult(request).text()).at("/value/kind").asText());
+            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+        };
+        byte[] input = ("FAKE_PROTECTED_BINARY" + "\u0000").getBytes(StandardCharsets.UTF_8);
+        input[0] = (byte) 0xff;
+        try (var request = new CommandRequest("printf actual", input, Duration.ofSeconds(5), 8192)) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
+            assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.publication.config.v1"), request, f.task));
+        }
+        assertEquals(2, f.fixture.requests.size());
+        assertEquals(0, f.grants.size());
+    }
+
     @Test
     void priorCompleteDeliveryDoesNotAuthorizeChangedOriginalRequest() throws Exception {
         var f = new Frame();
