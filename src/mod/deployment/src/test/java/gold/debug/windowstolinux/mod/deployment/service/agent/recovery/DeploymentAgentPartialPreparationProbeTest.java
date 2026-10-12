@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +49,18 @@ class DeploymentAgentPartialPreparationProbeTest {
         assertEquals(DeploymentAgentPreparationProbe.script(c.absenceBinding()), DeploymentAgentPartialPreparationProbe.script(c, true));
         assertFalse(DeploymentAgentPartialPreparationProbe.script(c, false).contains("\nrm "));
         assertFalse(DeploymentAgentPartialPreparationProbe.script(c, false).contains("--detach"));
+    }
+
+    @Test
+    void failedRejectionDiagnosticWriteKeepsOriginalExitCode() throws Exception {
+        String script = DeploymentAgentPartialPreparationProbe.script(captured(), false);
+        int start = script.indexOf("reject() {"), end = script.indexOf('\n', start);
+        assertTrue(start >= 0 && end > start);
+        assertEquals(-1, script.indexOf("reject() {", end));
+        var result = bash("set -e\n" + script.substring(start, end) + "\nexec 2>&-\nreject FILES NON_PRIVATE_FILE\n", false);
+        assertEquals(64, result.exitCode());
+        assertEquals("", result.output());
+        assertEquals("", result.error());
     }
 
     @ParameterizedTest
@@ -122,7 +135,59 @@ class DeploymentAgentPartialPreparationProbeTest {
         else {
             assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed), result.output());
             assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed), result.output());
+            if (!condition.startsWith("ABSENT")) {
+                var expected = Map.ofEntries(Map.entry("FOREIGN_TASK", "TASK_MISMATCH"), Map.entry("SAME_PREFIX", "ARCHIVE_SHA_MISMATCH"),
+                    Map.entry("MISSING_ARCHIVE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("HARDLINK", "NON_PRIVATE_FILE"),
+                    Map.entry("BUILDER", "UNEXPLAINED_ROOT_ENTRY"), Map.entry("IMAGE", "UNEXPLAINED_ROOT_ENTRY"),
+                    Map.entry("RESTORE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("ACTIVE_BUILD", "NOT_OWNED_OR_BUILD_ACTIVE"),
+                    Map.entry("EXTRA_BIND", "UNEXPLAINED_CANDIDATE_MOUNT"), Map.entry("SHARED_DEVICE", "SHARED_DEVICE_MOUNT"),
+                    Map.entry("EXTRA_LOOP", "UNEXPLAINED_CANDIDATE_LOOP"), Map.entry("WRONG_BACKING", "BACKING_FILE_MISMATCH"));
+                assertEquals(64, observed.exitCode().orElseThrow());
+                var rejection = DeploymentAgentPartialPreparationProbe.rejection(observed).orElseThrow(() -> new AssertionError(result.error()));
+                assertEquals(expected.get(condition), rejection.reason().name());
+                assertEquals("", observed.stdout());
+                assertFalse(observed.stderr().contains(root.toString()));
+                assertFalse(observed.stderr().contains(c.task().toString()));
+            }
         }
+        if (condition.equals("OWNED") || condition.equals("ABSENT")) {
+            assertEquals("", observed.stderr());
+            assertEquals(condition.equals("OWNED") ? DeploymentAgentPartialPreparationProbe.presentOutput(c) : DeploymentAgentPartialPreparationProbe.absentOutput(c), observed.stdout());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"EXACT", "UNKNOWN_ENUM", "PAIR_MISMATCH", "APPENDED", "PREFIXED", "CRLF", "STDOUT", "TRUNCATED", "NONZERO", "MISSING_NEWLINE", "EXIT_ABSENT"})
+    void fixedRejectionsExposeOnlyStaticStageAndReason(String condition) throws Exception {
+        String output = "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=FILES\nREASON=NON_PRIVATE_FILE\n";
+        output = switch (condition) {
+            case "UNKNOWN_ENUM" -> output.replace("NON_PRIVATE_FILE", "UNTRUSTED_REMOTE_VALUE");
+            case "PAIR_MISMATCH" -> output.replace("STAGE=FILES", "STAGE=MOUNTS");
+            case "APPENDED" -> output + "password=FAKE_PASSWORD_MARKER\n";
+            case "PREFIXED" -> "password=FAKE_PASSWORD_MARKER\n" + output;
+            case "CRLF" -> output.replace("\n", "\r\n");
+            case "MISSING_NEWLINE" -> output.stripTrailing();
+            default -> output;
+        };
+        var observed = new CommandResult(condition.equals("EXIT_ABSENT") ? Optional.empty() : Optional.of(condition.equals("NONZERO") ? 1 : 64),
+            condition.equals("STDOUT") ? "unexpected" : "", output, condition.equals("TRUNCATED"));
+        var diagnostic = DeploymentAgentPartialPreparationProbe.rejection(observed);
+        assertEquals(condition.equals("EXACT"), diagnostic.isPresent());
+        if (diagnostic.isPresent()) {
+            assertEquals(DeploymentAgentPartialPreparationProbe.Stage.FILES, diagnostic.orElseThrow().stage());
+            assertEquals(DeploymentAgentPartialPreparationProbe.Reason.NON_PRIVATE_FILE, diagnostic.orElseThrow().reason());
+        }
+        var c = captured();
+        assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed));
+        assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed));
+        var matcher = java.util.regex.Pattern.compile("reject ([A-Z]+) ([A-Z_]+)").matcher(DeploymentAgentPartialPreparationProbe.script(c, false));
+        var reasons = java.util.EnumSet.noneOf(DeploymentAgentPartialPreparationProbe.Reason.class);
+        while (matcher.find()) {
+            var result = new CommandResult(Optional.of(64), "", "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=" + matcher.group(1)
+                + "\nREASON=" + matcher.group(2) + "\n", false);
+            reasons.add(DeploymentAgentPartialPreparationProbe.rejection(result).orElseThrow().reason());
+        }
+        assertEquals(java.util.EnumSet.allOf(DeploymentAgentPartialPreparationProbe.Reason.class), reasons);
     }
 
     @ParameterizedTest

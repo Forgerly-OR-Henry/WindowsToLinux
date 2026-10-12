@@ -78,6 +78,132 @@ class DeploymentAgentPreparationCompensationTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    @ParameterizedTest
+    @ValueSource(strings = {"AUTHORIZE_UNKNOWN", "AUTHORIZE_CANCELLED", "AUTHORIZE_EMPTY", "AUTHORIZE_THROW", "MODEL_DENY", "EXECUTE_UNKNOWN",
+        "EXECUTE_UNKNOWN_VALUE", "EXECUTE_EMPTY", "EXECUTE_NULL", "EXECUTE_THROW", "NONZERO", "EXIT_ABSENT", "TRUNCATED", "STDERR", "SHAPE",
+        "STATIC_REJECTION", "ABSENCE_UNKNOWN", "EVENT_CODE_BODY", "EVENT_CODE_FAKE_TOKEN", "POST_UNKNOWN"})
+    void partialObservationDiagnosticsClassifyActualGateAndTransportWithoutSettlingOriginal(String condition) throws Exception {
+        try (var f = new Frame()) {
+            f.observationCondition = condition;
+            var events = f.journal.events(f.task);
+            var captured = f.capture();
+            var result = f.recover();
+            assertEquals(TaskResult.UNKNOWN, result.outcome());
+            assertEquals(events, f.journal.events(f.task), "Ordinary observation logs must not append recovery evidence");
+            assertFalse(DeploymentAgentActionLog.preparationsSettled(events));
+            assertEquals(condition.equals("POST_UNKNOWN") ? 1 : 0, f.deletes);
+            boolean unexecuted = condition.startsWith("AUTHORIZE_") || condition.equals("MODEL_DENY");
+            assertEquals(unexecuted ? 0 : condition.equals("POST_UNKNOWN") ? 2 : 1, f.partialExecutions);
+            var diagnostic = f.partialDiagnostics().getLast();
+            var details = JSON.readTree(diagnostic.details().orElseThrow());
+            boolean after = condition.equals("POST_UNKNOWN");
+            assertEquals(after ? "POST" : "PRE", details.path("phase").asText());
+            assertEquals(f.id.toString(), details.path("task").asText());
+            assertEquals(captured.preparation().id(), details.path("prepareEvent").asLong());
+            assertEquals(captured.preparation().action(), details.path("prepareAction").asText());
+            assertEquals(DeploymentAgentPartialPreparationProbe.requestDigest(captured, after), details.path("requestSha256").asText());
+            assertEquals(DeploymentAgentPreparationAbsence.digest(events), details.path("eventsSha256").asText());
+            assertEquals(!unexecuted, details.path("executeInvoked").asBoolean());
+            if (condition.equals("MODEL_DENY") || condition.equals("AUTHORIZE_THROW")) {
+                assertFalse(details.path("approveReturned").asBoolean());
+                assertEquals("NOT_RETURNED", details.path("approveOutcome").asText());
+                assertEquals("APPROVE", details.path("exceptionStep").asText());
+                assertEquals(condition.equals("MODEL_DENY") ? "DEPLOYMENT_COMMAND_REVIEW_DENIED" : "DEPLOYMENT_AGENT_CONTROLLED_OBSERVATION",
+                    details.path("exceptionProblemEvent").asText());
+                assertEquals("DEPLOYMENT_AGENT_CANDIDATE_CLEANUP_UNCONFIRMED", result.problem().orElseThrow().eventCode());
+            } else if (condition.startsWith("AUTHORIZE_")) {
+                assertTrue(details.path("approveReturned").asBoolean());
+                assertEquals(condition.equals("AUTHORIZE_UNKNOWN") ? "UNKNOWN" : condition.equals("AUTHORIZE_CANCELLED") ? "CANCELLED" : "SUCCEEDED",
+                    details.path("approveOutcome").asText());
+                assertFalse(details.path("approveValuePresent").asBoolean());
+            } else if (condition.equals("EXECUTE_THROW")) {
+                assertFalse(details.path("executeReturned").asBoolean());
+                assertEquals("EXECUTE", details.path("exceptionStep").asText());
+                assertEquals("IO_FAILURE", details.path("exceptionProblem").asText());
+            } else if (condition.equals("EXECUTE_NULL")) {
+                assertFalse(details.path("executeReturned").asBoolean());
+                assertEquals("NOT_RETURNED", details.path("executeOutcome").asText());
+            } else {
+                assertEquals(condition.startsWith("EXECUTE_UNKNOWN") || condition.startsWith("EVENT_CODE_") || after ? "UNKNOWN" : "SUCCEEDED",
+                    details.path("executeOutcome").asText());
+                if (condition.startsWith("EVENT_CODE_"))
+                    assertEquals("OTHER", details.path("executeProblemEvent").asText());
+                else if (condition.startsWith("EXECUTE_UNKNOWN") || after)
+                    assertEquals("DEPLOYMENT_AGENT_CONTROLLED_OBSERVATION", details.path("executeProblemEvent").asText());
+            }
+            if (f.observedCommand != null) {
+                var command = f.observedCommand;
+                assertEquals(command.exitCode().isPresent(), details.path("exitPresent").asBoolean());
+                command.exitCode().ifPresent(exit -> assertEquals(exit, details.path("exitCode").asInt()));
+                assertEquals(command.truncated(), details.path("truncated").asBoolean());
+                assertEquals(command.stdout().getBytes(StandardCharsets.UTF_8).length, details.path("stdoutUtf8Bytes").asInt());
+                assertEquals(command.stderr().getBytes(StandardCharsets.UTF_8).length, details.path("stderrUtf8Bytes").asInt());
+                assertEquals(DeploymentAgentPreparationAbsence.hash(command.stdout()), details.path("stdoutSha256").asText());
+                assertEquals(DeploymentAgentPreparationAbsence.hash(command.stderr()), details.path("stderrSha256").asText());
+                if (condition.equals("STATIC_REJECTION")) {
+                    assertEquals("OWNERSHIP", details.path("partialStage").asText());
+                    assertEquals("TASK_MISMATCH", details.path("partialReason").asText());
+                }
+                if (condition.equals("ABSENCE_UNKNOWN")) {
+                    assertEquals("LOOPS", details.path("absenceStage").asText());
+                    assertEquals("CANDIDATE_LOOP_PRESENT", details.path("absenceReason").asText());
+                }
+                if (!condition.equals("EXECUTE_UNKNOWN_VALUE") && !after) {
+                    assertFalse(details.path("strictPresent").asBoolean());
+                    assertFalse(details.path("strictAbsent").asBoolean());
+                }
+            } else assertFalse(details.has("stdoutSha256"));
+            assertFalse(diagnostic.details().orElseThrow().contains("FAKE_PASSWORD_MARKER"));
+            assertFalse(diagnostic.details().orElseThrow().contains("FAKE_SOURCE_MARKER"));
+            assertFalse(diagnostic.details().orElseThrow().contains("FORMAT="));
+            assertTrue(diagnostic.details().orElseThrow().length() < 2400);
+        }
+    }
+
+    @Test
+    void normalObservationDiagnosticsPreserveBothPhasesAndProof() throws Exception {
+        try (var f = new Frame()) {
+            var before = f.journal.events(f.task);
+            var captured = f.capture();
+            assertEquals(TaskResult.FAILED, f.recover().outcome());
+            var diagnostics = f.partialDiagnostics();
+            assertEquals(2, diagnostics.size());
+            for (int index = 0; index < diagnostics.size(); index++) {
+                var details = JSON.readTree(diagnostics.get(index).details().orElseThrow());
+                assertEquals(index == 0 ? "PRE" : "POST", details.path("phase").asText());
+                assertEquals("SUCCEEDED", details.path("approveOutcome").asText());
+                assertEquals("SUCCEEDED", details.path("executeOutcome").asText());
+                assertTrue(details.path("executeInvoked").asBoolean());
+                assertEquals(index == 0, details.path("strictPresent").asBoolean());
+                assertEquals(index == 1, details.path("strictAbsent").asBoolean());
+                assertEquals(index == 0 ? "EXACT_PRESENT" : "EXACT_ABSENT", details.path("stdoutShape").asText());
+                assertEquals(DeploymentAgentPartialPreparationProbe.requestDigest(captured, index == 1), details.path("requestSha256").asText());
+            }
+            var events = f.journal.events(f.task);
+            assertEquals(before, events.subList(0, before.size()));
+            assertEquals(List.of(DeploymentAgentPreparationCompensation.EVENT, "AI_RECOVERY_SETTLED", "STATE"), events.subList(before.size(), events.size()).stream().map(e -> e.type()).toList());
+            assertTrue(DeploymentAgentActionLog.preparationsSettled(events));
+            assertEquals(TaskResult.FAILED, f.recover().outcome());
+            assertEquals(events, f.journal.events(f.task));
+            assertEquals(2, f.partialDiagnostics().size());
+            assertEquals(1, f.deletes);
+        }
+    }
+
+    @Test
+    void failedDiagnosticStorageCannotChangeUnknownOrJournal() throws Exception {
+        try (var f = new Frame()) {
+            f.observationCondition = "NONZERO";
+            f.failPartialDiagnostic = true;
+            var before = f.journal.events(f.task);
+            assertEquals(TaskResult.UNKNOWN, f.recover().outcome());
+            assertEquals(1, f.partialDiagnosticAttempts);
+            assertTrue(f.partialDiagnostics().isEmpty());
+            assertEquals(before, f.journal.events(f.task));
+            assertEquals(0, f.deletes);
+        }
+    }
+
     @Test
     void uploadedOriginalClosesOnlyItsTemporaryEffectsAndArchivesFailed() throws Exception {
         try (var f = new Frame()) {
@@ -367,6 +493,14 @@ class DeploymentAgentPreparationCompensationTest {
 
         int diagnosticAttempts;
 
+        int partialDiagnosticAttempts;
+
+        int partialExecutions;
+
+        String observationCondition = "";
+
+        boolean failPartialDiagnostic;
+
         CommandResult observedCommand;
 
         int connected;
@@ -433,6 +567,17 @@ class DeploymentAgentPreparationCompensationTest {
                 });
                 case "approveReviewedAction" -> {
                     grants++;
+                    var intent = (gold.debug.windowstolinux.appapi.task.action.ActionIntent) args[0];
+                    if (intent.semantics().map(s -> s.operation().equals(DeploymentAgentPartialPreparationProbe.OPERATION)).orElse(false)) {
+                        if (observationCondition.equals("AUTHORIZE_THROW"))
+                            throw new ApiException(observationProblem());
+                        if (observationCondition.equals("AUTHORIZE_UNKNOWN"))
+                            yield new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(observationProblem()));
+                        if (observationCondition.equals("AUTHORIZE_CANCELLED"))
+                            yield new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
+                        if (observationCondition.equals("AUTHORIZE_EMPTY"))
+                            yield new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                    }
                     yield success(new ApprovalGrant(UUID.randomUUID()));
                 }
                 default -> throw new AssertionError(name);
@@ -454,6 +599,7 @@ class DeploymentAgentPreparationCompensationTest {
                         yield success(new CommandResult(Optional.of(0), "CANDIDATE_CLEANED=1\n", "", false));
                     }
                     assertTrue(body.contains("WTL_AGENT_PREPARATION_ABSENCE_1"));
+                    partialExecutions++;
                     boolean pre = body.contains("WTL_AGENT_UPLOADED_PREPARATION_1");
                     var captured = DeploymentAgentPreparationCompensation.capture(id, journal.find(task).orElseThrow(), layout, journal.events(task));
                     String output = captured.isPresent() ? present && pre ? DeploymentAgentPartialPreparationProbe.presentOutput(captured.orElseThrow())
@@ -462,7 +608,27 @@ class DeploymentAgentPreparationCompensationTest {
                     if (obstacle.equals("PRE_UNKNOWN") && pre || present && !pre || obstacle.equals("ABSENT_LOOP"))
                         output = "UNKNOWN\n";
                     afterSend.run();
-                    yield success(new CommandResult(Optional.of(0), output, "", false));
+                    if (!observationCondition.isEmpty() && (pre && !observationCondition.equals("POST_UNKNOWN") || !pre && observationCondition.equals("POST_UNKNOWN"))) {
+                        if (observationCondition.equals("EXECUTE_NULL")) yield null;
+                        if (observationCondition.equals("EXECUTE_THROW")) throw new ApiException(observationProblem());
+                        if (observationCondition.equals("EXECUTE_EMPTY"))
+                            yield new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                        if (observationCondition.equals("EXECUTE_UNKNOWN") || observationCondition.startsWith("EVENT_CODE_"))
+                            yield new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(observationProblem()));
+                        if (observationCondition.equals("SHAPE")) output += "password=FAKE_PASSWORD_MARKER\n";
+                        if (observationCondition.equals("STATIC_REJECTION")) output = "";
+                        if (observationCondition.equals("ABSENCE_UNKNOWN"))
+                            output = DeploymentAgentPreparationProbe.unknownOutput(captured.orElseThrow().absenceBinding(),
+                                new DeploymentAgentPreparationProbe.UnknownObservation(DeploymentAgentPreparationProbe.Stage.LOOPS, DeploymentAgentPreparationProbe.Reason.CANDIDATE_LOOP_PRESENT));
+                        String stderr = observationCondition.equals("STDERR") ? "password=FAKE_PASSWORD_MARKER\n源=FAKE_SOURCE_MARKER" : observationCondition.equals("STATIC_REJECTION")
+                            ? "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=OWNERSHIP\nREASON=TASK_MISMATCH\n" : "";
+                        observedCommand = new CommandResult(observationCondition.equals("EXIT_ABSENT") ? Optional.empty() : Optional.of(observationCondition.equals("NONZERO") ? 64
+                            : observationCondition.equals("STATIC_REJECTION") ? 64 : 0), output, stderr, observationCondition.equals("TRUNCATED"));
+                        yield observationCondition.equals("EXECUTE_UNKNOWN_VALUE") || observationCondition.equals("POST_UNKNOWN")
+                            ? new OperationResult<>(TaskResult.UNKNOWN, Optional.of(observedCommand), Optional.of(observationProblem())) : success(observedCommand);
+                    }
+                    observedCommand = new CommandResult(Optional.of(0), output, "", false);
+                    yield success(observedCommand);
                 }
                 default -> throw new AssertionError("Recovery cannot invoke " + name);
             });
@@ -501,7 +667,7 @@ class DeploymentAgentPreparationCompensationTest {
                         }
                     }
                     if (calls.isEmpty()) {
-                        String decision = denyCleanup && deletes == 0 && sent == 2 ? "DENY" : "APPROVE";
+                        String decision = denyCleanup && deletes == 0 && sent == 2 || observationCondition.equals("MODEL_DENY") && sent == 1 ? "DENY" : "APPROVE";
                         calls.add(new AiToolCall(UUID.randomUUID().toString(), "submit_result", "{\"decision\":\"" + decision
                             + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled complete fixed request\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
                     }
@@ -515,6 +681,10 @@ class DeploymentAgentPreparationCompensationTest {
                 case "register" -> nativeAi.context.logs().register((LogCategory) args[0]);
                 case "write" -> {
                     var event = (LogEvent) args[1];
+                    if (event.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_OBSERVATION")) {
+                        partialDiagnosticAttempts++;
+                        if (failPartialDiagnostic) throw new IllegalStateException("password=FAKE_PASSWORD_MARKER");
+                    }
                     if (event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION") && event.message().startsWith("preparation.")) {
                         diagnosticAttempts++;
                         if (obstacle.equals("LOGGER_FAILURE"))
@@ -545,6 +715,16 @@ class DeploymentAgentPreparationCompensationTest {
         Problem processProblem(ProblemCode code) {
             return new Problem(code, "FAKE_PASSWORD_MARKER", "password=FAKE_PASSWORD_MARKER",
                 Map.of("source", "FAKE_SOURCE_MARKER"), Optional.of(id));
+        }
+
+        Problem observationProblem() {
+            return new Problem(ProblemCode.IO_FAILURE, observationCondition.equals("EVENT_CODE_BODY") ? "password=FAKE_PASSWORD_MARKER"
+                : observationCondition.equals("EVENT_CODE_FAKE_TOKEN") ? "FAKE_PASSWORD_MARKER" : "DEPLOYMENT_AGENT_CONTROLLED_OBSERVATION",
+                "password=FAKE_PASSWORD_MARKER", Map.of("source", "FAKE_SOURCE_MARKER"), Optional.empty());
+        }
+
+        List<LogEvent> partialDiagnostics() {
+            return nativeAi.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_OBSERVATION")).toList();
         }
 
         Connection connection() throws Exception {

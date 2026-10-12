@@ -1,0 +1,626 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -17,6 +17,9 @@
+ import gold.debug.windowstolinux.appapi.task.result.Problem;
+ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+ import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.task.log.LogCategory;
++import gold.debug.windowstolinux.appapi.task.log.LogEvent;
++import gold.debug.windowstolinux.appapi.task.log.LogLevel;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+ import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
+ import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore;
+@@ -392,12 +395,86 @@
+                 .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPartialPreparationProbe.OPERATION, Set.of(
+                     new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "directory", captured.workspace().candidateRoot()),
+                     new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "host-prerequisites", "fixed-system-metadata-only"))));
+-            var approved = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
+-            if (approved.outcome() != TaskResult.SUCCEEDED || approved.value().isEmpty()) return null;
+-            guard.verify();
+-            var result = session.execute(request, approved.value().orElseThrow());
+-            return result != null && result.outcome() == TaskResult.SUCCEEDED ? result.value().orElse(null) : null;
+-        }
++            OperationResult<?> approved = null;
++            OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> result = null;
++            boolean executeInvoked = false;
++            String step = "APPROVE";
++            Exception failure = null;
++            try {
++                var grant = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
++                approved = grant;
++                if (grant.outcome() != TaskResult.SUCCEEDED || grant.value().isEmpty()) return null;
++                step = "GUARD";
++                guard.verify();
++                step = "EXECUTE";
++                executeInvoked = true;
++                result = session.execute(request, grant.value().orElseThrow());
++                return result != null && result.outcome() == TaskResult.SUCCEEDED ? result.value().orElse(null) : null;
++            } catch (Exception unavailable) {
++                failure = unavailable;
++                throw unavailable;
++            } finally {
++                partialObservationDiagnostic(task, captured, after, DeploymentAgentPreparationAbsence.hash(intent.exactAction()),
++                    approved, executeInvoked, result, step, failure);
++            }
++        }
++    }
++
++    /** Diagnostic storage cannot change original evidence, transport outcomes or cleanup admission. */
++    private void partialObservationDiagnostic(TaskContext task, DeploymentAgentPreparationCompensation.Captured captured, boolean after,
++                                              String requestSha256, OperationResult<?> approved, boolean executeInvoked,
++                                              OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> result,
++                                              String step, Exception failure) {
++        try {
++            var details = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
++            details.put("phase", after ? "POST" : "PRE").put("task", task.id().toString())
++                .put("prepareEvent", captured.preparation().id()).put("prepareAction", captured.preparation().action())
++                .put("requestSha256", requestSha256).put("eventsSha256", DeploymentAgentPreparationAbsence.digest(captured.events()))
++                .put("approveReturned", approved != null).put("approveOutcome", approved == null ? "NOT_RETURNED" : approved.outcome().name())
++                .put("approveValuePresent", approved != null && approved.value().isPresent())
++                .put("approveProblem", approved == null ? "NONE" : approved.problem().map(p -> p.code().name()).orElse("NONE"))
++                .put("approveProblemEvent", approved == null ? "NONE" : approved.problem().map(p -> observationProblemEvent(p.eventCode())).orElse("NONE"))
++                .put("executeInvoked", executeInvoked).put("executeReturned", result != null)
++                .put("executeOutcome", result == null ? "NOT_RETURNED" : result.outcome().name())
++                .put("executeValuePresent", result != null && result.value().isPresent())
++                .put("executeProblem", result == null ? "NONE" : result.problem().map(p -> p.code().name()).orElse("NONE"))
++                .put("executeProblemEvent", result == null ? "NONE" : result.problem().map(p -> observationProblemEvent(p.eventCode())).orElse("NONE"))
++                .put("exceptionStep", failure == null ? "NONE" : step)
++                .put("exceptionKind", failure == null ? "NONE" : failure instanceof ApiException ? "API_EXCEPTION" : "EXCEPTION")
++                .put("exceptionProblem", failure instanceof ApiException api ? api.problem().code().name() : "NONE")
++                .put("exceptionProblemEvent", failure instanceof ApiException api ? observationProblemEvent(api.problem().eventCode()) : "NONE");
++            var command = result == null ? Optional.<gold.debug.windowstolinux.appapi.linux.command.CommandResult>empty() : result.value();
++            if (command.isPresent()) {
++                var observed = command.orElseThrow();
++                details.put("exitPresent", observed.exitCode().isPresent());
++                observed.exitCode().ifPresent(exit -> details.put("exitCode", exit));
++                details.put("truncated", observed.truncated())
++                    .put("stdoutUtf8Bytes", observed.stdout().getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
++                    .put("stderrUtf8Bytes", observed.stderr().getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
++                    .put("stdoutSha256", DeploymentAgentPreparationAbsence.hash(observed.stdout()))
++                    .put("stderrSha256", DeploymentAgentPreparationAbsence.hash(observed.stderr()))
++                    .put("strictPresent", DeploymentAgentPartialPreparationProbe.present(captured, observed))
++                    .put("strictAbsent", DeploymentAgentPartialPreparationProbe.absent(captured, observed));
++                boolean presentShape = DeploymentAgentPartialPreparationProbe.presentOutput(captured).equals(observed.stdout());
++                var shape = DeploymentAgentPreparationProbe.stdoutShape(captured.absenceBinding(), observed.stdout());
++                details.put("stdoutShape", presentShape ? "EXACT_PRESENT" : shape.kind().name())
++                    .put("stdoutMismatch", presentShape ? "NONE" : shape.mismatch().name());
++                shape.unknown().ifPresent(unknown -> details.put("absenceStage", unknown.stage().name()).put("absenceReason", unknown.reason().name()));
++                DeploymentAgentPartialPreparationProbe.rejection(observed).ifPresent(rejection ->
++                    details.put("partialStage", rejection.stage().name()).put("partialReason", rejection.reason().name()));
++            }
++            var target = context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
++            context.logs().write(target, new LogEvent(LogLevel.INFO, "DEPLOYMENT_AGENT_PARTIAL_OBSERVATION", after ? "partial.POST" : "partial.PRE",
++                Optional.of(details.toString()), Optional.of(task.id()), Optional.of(task.id()),
++                result != null ? Optional.of(result.outcome()) : approved != null ? Optional.of(approved.outcome()) : Optional.empty()));
++        } catch (Exception unavailable) {
++            // Ordinary diagnostics must never replace the original result or exception.
++        }
++    }
++
++    private static String observationProblemEvent(String eventCode) {
++        return eventCode.length() <= 80 && eventCode.matches("(?:DEPLOYMENT|COMMAND|SSH|REMOTE|LINUX|TASK|ACTION|REVIEWED|WORKFLOW|PROCESS)_[A-Z0-9_]+")
++            ? eventCode : "OTHER";
+     }
+ 
+     /** Verifies the original endpoint before handoff, authentication or any remote observation. / 在交权、认证或任何远端观察前核对原端点。
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+@@ -17,6 +17,37 @@
+ /** Read-only admission for one completely uploaded prepare gap; incomplete uploads remain UNKNOWN. */
+ public final class DeploymentAgentPartialPreparationProbe {
+     public static final String OPERATION = "deployment.agent.preparation.partial-observation.v1";
++
++    public enum Stage {EXECUTABLES, OWNERSHIP, FILES, WORKSPACE, MOUNTS, LOOPS, ARCHIVE, HELPER}
++
++    public enum Reason {
++        UNTRUSTED_EXECUTABLE(Stage.EXECUTABLES), NON_EXCLUSIVE_ROOT(Stage.OWNERSHIP), UNSAFE_PARENTS(Stage.OWNERSHIP),
++        UNSAFE_CANDIDATE(Stage.OWNERSHIP), NON_PRIVATE_FILE(Stage.FILES), DEPLOYER_MISMATCH(Stage.OWNERSHIP),
++        PURPOSE_MISMATCH(Stage.WORKSPACE), ROOT_LIST_FAILED(Stage.WORKSPACE), ROOT_LIST_LIMIT(Stage.WORKSPACE),
++        UNEXPLAINED_ROOT_ENTRY(Stage.WORKSPACE), MODE_MISMATCH(Stage.WORKSPACE), DEVICE_READ_FAILED(Stage.WORKSPACE),
++        LIMIT_READ_FAILED(Stage.WORKSPACE), DEVICE_OR_LIMIT_INVALID(Stage.WORKSPACE), IMAGE_SIZE_MISMATCH(Stage.WORKSPACE),
++        BACKING_FILE_MISMATCH(Stage.LOOPS), MOUNT_QUERY_FAILED(Stage.MOUNTS), MOUNT_QUERY_LIMIT(Stage.MOUNTS),
++        MOUNT_ROW_INVALID(Stage.MOUNTS), UNEXPLAINED_CANDIDATE_MOUNT(Stage.MOUNTS), SHARED_DEVICE_MOUNT(Stage.MOUNTS),
++        MOUNT_COUNT_MISMATCH(Stage.MOUNTS), LOOP_QUERY_FAILED(Stage.LOOPS), LOOP_QUERY_LIMIT(Stage.LOOPS),
++        LOOP_ROW_INVALID(Stage.LOOPS), UNEXPLAINED_CANDIDATE_LOOP(Stage.LOOPS), DEVICE_BACKING_MISMATCH(Stage.LOOPS),
++        LOOP_COUNT_MISMATCH(Stage.LOOPS), UNSAFE_MUTABLE(Stage.WORKSPACE), MUTABLE_LIST_FAILED(Stage.WORKSPACE),
++        MUTABLE_LIST_LIMIT(Stage.WORKSPACE), UNEXPLAINED_MUTABLE_ENTRY(Stage.WORKSPACE), TASK_MISMATCH(Stage.OWNERSHIP),
++        ARCHIVE_READ_FAILED(Stage.ARCHIVE), ARCHIVE_SHA_MISMATCH(Stage.ARCHIVE), QUERY_FAILED(Stage.HELPER),
++        NOT_OWNED_OR_BUILD_ACTIVE(Stage.HELPER);
++
++        private final Stage stage;
++
++        Reason(Stage stage) {
++            this.stage = stage;
++        }
++    }
++
++    public record Rejection(Stage stage, Reason reason) {
++        public Rejection {
++            if (stage == null || reason == null || stage != reason.stage)
++                throw new IllegalArgumentException("Partial observation stage and reason differ");
++        }
++    }
+ 
+     private DeploymentAgentPartialPreparationProbe() {
+     }
+@@ -57,6 +88,23 @@
+             && presentOutput(captured).equals(result.stdout());
+     }
+ 
++    /** Static rejection metadata is diagnostic only; it can never authorize compensation. */
++    public static Optional<Rejection> rejection(CommandResult result) {
++        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(64)) || !result.stdout().isEmpty()
++            || result.stderr().length() > 160) return Optional.empty();
++        String[] fields = result.stderr().split("\n", -1);
++        if (fields.length != 4 || !fields[0].equals("FORMAT=WTL_AGENT_PARTIAL_REJECTION_1") || !fields[1].startsWith("STAGE=")
++            || !fields[2].startsWith("REASON=") || !fields[3].isEmpty()) return Optional.empty();
++        try {
++            var stage = Stage.valueOf(fields[1].substring("STAGE=".length()));
++            var reason = Reason.valueOf(fields[2].substring("REASON=".length()));
++            if (stage != reason.stage) return Optional.empty();
++            return Optional.of(new Rejection(stage, reason));
++        } catch (IllegalArgumentException invalid) {
++            return Optional.empty();
++        }
++    }
++
+     public static String script(DeploymentAgentPreparationCompensation.Captured captured, boolean after) {
+         String absence = DeploymentAgentPreparationProbe.script(captured.absenceBinding());
+         if (after) return absence;
+@@ -67,82 +115,82 @@
+         String guards = absence.substring(0, guardEnd);
+         String query = "'" + captured.layout().helperPath() + "' 'candidate-query-task' '" + captured.workspace().applicationId()
+             + "' '" + captured.workspace().candidateId() + "' '" + captured.task() + "'";
+-        return guards + candidateDeclaration + "\n"
++        return guards + "reject() { printf 'FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\\nSTAGE=%s\\nREASON=%s\\n' \"$1\" \"$2\" >&2 || :; exit 64; }\n" + candidateDeclaration + "\n"
+             + "if [ ! -e \"$candidate\" ] && [ ! -L \"$candidate\" ]; then\n" + absence + "exit 0\nfi\n"
+             + """
+             for tool in /usr/bin/stat /usr/bin/readlink /usr/bin/find /usr/bin/id /usr/bin/cat /usr/bin/sha256sum /usr/bin/findmnt /usr/sbin/losetup; do
+               trusted_executable "$tool"
+-              [ "$checked" = SAFE ] || exit 64
++              [ "$checked" = SAFE ] || reject EXECUTABLES UNTRUSTED_EXECUTABLE
+             done
+-            [ "$(/usr/bin/id -u)" = 0 ] && [ "${SUDO_USER:-root}" = root ] || exit 64
++            [ "$(/usr/bin/id -u)" = 0 ] && [ "${SUDO_USER:-root}" = root ] || reject OWNERSHIP NON_EXCLUSIVE_ROOT
+             managed_parents "$candidate"
+-            [ "$checked" = SAFE ] || exit 64
++            [ "$checked" = SAFE ] || reject OWNERSHIP UNSAFE_PARENTS
+             path_metadata "$candidate" directory
+-            [ "$checked" = SAFE ] || exit 64
++            [ "$checked" = SAFE ] || reject OWNERSHIP UNSAFE_CANDIDATE
+             private_file() {
+               path_metadata "$1" file
+-              [ "$checked" = SAFE ] && [ "$(/usr/bin/stat -c '%h' -- "$1")" = 1 ] || exit 64
++              [ "$checked" = SAFE ] && [ "$(/usr/bin/stat -c '%h' -- "$1")" = 1 ] || reject FILES NON_PRIVATE_FILE
+             }
+             for control in .deployer .agent-task .workspace-device .workspace-limit .purpose .workspace.ext4; do
+               private_file "$candidate/$control"
+             done
+-            [ "$(/usr/bin/cat -- "$candidate/.deployer")" = root ] && [ "$(/usr/bin/stat -c '%s' -- "$candidate/.deployer")" = 5 ] || exit 64
+-            [ "$(/usr/bin/cat -- "$candidate/.purpose")" = build ] && [ "$(/usr/bin/stat -c '%s' -- "$candidate/.purpose")" = 6 ] || exit 64
+-            children=$(/usr/bin/find "$candidate" -mindepth 1 -maxdepth 1 -printf '%f\n') || exit 64
+-            [ "${#children}" -le 4096 ] || exit 64
++            [ "$(/usr/bin/cat -- "$candidate/.deployer")" = root ] && [ "$(/usr/bin/stat -c '%s' -- "$candidate/.deployer")" = 5 ] || reject OWNERSHIP DEPLOYER_MISMATCH
++            [ "$(/usr/bin/cat -- "$candidate/.purpose")" = build ] && [ "$(/usr/bin/stat -c '%s' -- "$candidate/.purpose")" = 6 ] || reject WORKSPACE PURPOSE_MISMATCH
++            children=$(/usr/bin/find "$candidate" -mindepth 1 -maxdepth 1 -printf '%f\n') || reject WORKSPACE ROOT_LIST_FAILED
++            [ "${#children}" -le 4096 ] || reject WORKSPACE ROOT_LIST_LIMIT
+             while IFS= read -r child; do
+               case "$child" in .deployer | .agent-task | .workspace-device | .workspace-limit | .purpose | .workspace.ext4 | mutable | .agent-mode) ;;
+-                *) exit 64 ;;
++                *) reject WORKSPACE UNEXPLAINED_ROOT_ENTRY ;;
+               esac
+             done <<< "$children"
+             if [ -e "$candidate/.agent-mode" ] || [ -L "$candidate/.agent-mode" ]; then
+               private_file "$candidate/.agent-mode"
+-              [ "$(/usr/bin/cat -- "$candidate/.agent-mode")" = protected-source ] || exit 64
++              [ "$(/usr/bin/cat -- "$candidate/.agent-mode")" = protected-source ] || reject WORKSPACE MODE_MISMATCH
+             fi
+             image="$candidate/.workspace.ext4"
+-            device=$(/usr/bin/cat -- "$candidate/.workspace-device") || exit 64
+-            limit=$(/usr/bin/cat -- "$candidate/.workspace-limit") || exit 64
+-            [[ "$device" =~ ^/dev/loop[0-9]+$ ]] && [[ "$limit" =~ ^[0-9]{1,12}$ ]] || exit 64
+-            [ "$limit" -ge 67108864 ] && [ "$limit" -le 137438953472 ] && [ "$(/usr/bin/stat -c '%s' -- "$image")" = "$limit" ] || exit 64
+-            [ "$(/usr/sbin/losetup --noheadings --raw --output BACK-FILE "$device")" = "$image" ] || exit 64
+-            mounts=$(/usr/bin/findmnt --kernel --noheadings --raw --output TARGET,SOURCE,FSTYPE) || exit 64
+-            [ "${#mounts}" -le 65536 ] || exit 64
++            device=$(/usr/bin/cat -- "$candidate/.workspace-device") || reject WORKSPACE DEVICE_READ_FAILED
++            limit=$(/usr/bin/cat -- "$candidate/.workspace-limit") || reject WORKSPACE LIMIT_READ_FAILED
++            [[ "$device" =~ ^/dev/loop[0-9]+$ ]] && [[ "$limit" =~ ^[0-9]{1,12}$ ]] || reject WORKSPACE DEVICE_OR_LIMIT_INVALID
++            [ "$limit" -ge 67108864 ] && [ "$limit" -le 137438953472 ] && [ "$(/usr/bin/stat -c '%s' -- "$image")" = "$limit" ] || reject WORKSPACE IMAGE_SIZE_MISMATCH
++            [ "$(/usr/sbin/losetup --noheadings --raw --output BACK-FILE "$device")" = "$image" ] || reject LOOPS BACKING_FILE_MISMATCH
++            mounts=$(/usr/bin/findmnt --kernel --noheadings --raw --output TARGET,SOURCE,FSTYPE) || reject MOUNTS MOUNT_QUERY_FAILED
++            [ "${#mounts}" -le 65536 ] || reject MOUNTS MOUNT_QUERY_LIMIT
+             count=0
+             while IFS=' ' read -r target source filesystem extra; do
+-              [[ "$target" = /* ]] && [ -z "$extra" ] || exit 64
++              [[ "$target" = /* ]] && [ -z "$extra" ] || reject MOUNTS MOUNT_ROW_INVALID
+               case "$target" in "$candidate" | "$candidate"/*)
+-                [ "$target" = "$candidate/mutable" ] && [ "$source" = "$device" ] && [ "$filesystem" = ext4 ] || exit 64
++                [ "$target" = "$candidate/mutable" ] && [ "$source" = "$device" ] && [ "$filesystem" = ext4 ] || reject MOUNTS UNEXPLAINED_CANDIDATE_MOUNT
+                 count=$((count + 1)) ;;
+-                *) case "$source" in "$device" | "$device"\\[*\\]) exit 64 ;; esac ;;
++                *) case "$source" in "$device" | "$device"\\[*\\]) reject MOUNTS SHARED_DEVICE_MOUNT ;; esac ;;
+               esac
+             done <<< "$mounts"
+-            [ "$count" = 1 ] || exit 64
+-            loops=$(/usr/sbin/losetup --list --noheadings --raw --output NAME,BACK-FILE) || exit 64
+-            [ "${#loops}" -le 65536 ] || exit 64
++            [ "$count" = 1 ] || reject MOUNTS MOUNT_COUNT_MISMATCH
++            loops=$(/usr/sbin/losetup --list --noheadings --raw --output NAME,BACK-FILE) || reject LOOPS LOOP_QUERY_FAILED
++            [ "${#loops}" -le 65536 ] || reject LOOPS LOOP_QUERY_LIMIT
+             count=0
+             while IFS=' ' read -r loop backing extra; do
+-              [[ "$loop" =~ ^/dev/loop[0-9]+$ ]] && [[ "$backing" = /* ]] && [ -z "$extra" ] || exit 64
++              [[ "$loop" =~ ^/dev/loop[0-9]+$ ]] && [[ "$backing" = /* ]] && [ -z "$extra" ] || reject LOOPS LOOP_ROW_INVALID
+               case "$backing" in "$candidate" | "$candidate"/*)
+-                [ "$loop" = "$device" ] && [ "$backing" = "$image" ] || exit 64
++                [ "$loop" = "$device" ] && [ "$backing" = "$image" ] || reject LOOPS UNEXPLAINED_CANDIDATE_LOOP
+                 count=$((count + 1)) ;;
+               esac
+-              [ "$loop" != "$device" ] || [ "$backing" = "$image" ] || exit 64
++              [ "$loop" != "$device" ] || [ "$backing" = "$image" ] || reject LOOPS DEVICE_BACKING_MISMATCH
+             done <<< "$loops"
+-            [ "$count" = 1 ] || exit 64
++            [ "$count" = 1 ] || reject LOOPS LOOP_COUNT_MISMATCH
+             path_metadata "$candidate/mutable" directory
+-            [ "$checked" = SAFE ] || exit 64
+-            children=$(/usr/bin/find "$candidate/mutable" -mindepth 1 -maxdepth 1 -printf '%f\n') || exit 64
+-            [ "${#children}" -le 4096 ] || exit 64
++            [ "$checked" = SAFE ] || reject WORKSPACE UNSAFE_MUTABLE
++            children=$(/usr/bin/find "$candidate/mutable" -mindepth 1 -maxdepth 1 -printf '%f\n') || reject WORKSPACE MUTABLE_LIST_FAILED
++            [ "${#children}" -le 4096 ] || reject WORKSPACE MUTABLE_LIST_LIMIT
+             while IFS= read -r child; do
+-              case "$child" in source.tar.gz | input-source | source) ;; *) exit 64 ;; esac
++              case "$child" in source.tar.gz | input-source | source) ;; *) reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY ;; esac
+             done <<< "$children"
+             private_file "$candidate/mutable/source.tar.gz"
+             """
+-            + "[ \"$(/usr/bin/cat -- \"$candidate/.agent-task\")\" = '" + captured.task() + "' ] && [ \"$(/usr/bin/stat -c '%s' -- \"$candidate/.agent-task\")\" = 37 ] || exit 64\n"
+-            + "archive=$(/usr/bin/sha256sum -- \"$candidate/mutable/source.tar.gz\") || exit 64\n"
+-            + "[ \"${archive%% *}\" = '" + captured.workspace().archiveSha256() + "' ] || exit 64\n"
+-            + "status=$(\n" + DeploymentManagedHelperBundle.verifiedCommand(query, captured.layout()) + "\n) || exit 64\n"
+-            + "[ \"$status\" = 'CANDIDATE_STATE=owned\nBUILD_ACTIVE=no' ] || exit 64\n"
++            + "[ \"$(/usr/bin/cat -- \"$candidate/.agent-task\")\" = '" + captured.task() + "' ] && [ \"$(/usr/bin/stat -c '%s' -- \"$candidate/.agent-task\")\" = 37 ] || reject OWNERSHIP TASK_MISMATCH\n"
++            + "archive=$(/usr/bin/sha256sum -- \"$candidate/mutable/source.tar.gz\") || reject ARCHIVE ARCHIVE_READ_FAILED\n"
++            + "[ \"${archive%% *}\" = '" + captured.workspace().archiveSha256() + "' ] || reject ARCHIVE ARCHIVE_SHA_MISMATCH\n"
++            + "status=$(\n" + DeploymentManagedHelperBundle.verifiedCommand(query, captured.layout()) + "\n) || reject HELPER QUERY_FAILED\n"
++            + "[ \"$status\" = 'CANDIDATE_STATE=owned\nBUILD_ACTIVE=no' ] || reject HELPER NOT_OWNED_OR_BUILD_ACTIVE\n"
+             + "printf '%s' '" + presentOutput(captured) + "'\n";
+     }
+ }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+@@ -78,6 +78,132 @@
+ 
+     private static final ObjectMapper JSON = new ObjectMapper();
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {"AUTHORIZE_UNKNOWN", "AUTHORIZE_CANCELLED", "AUTHORIZE_EMPTY", "AUTHORIZE_THROW", "MODEL_DENY", "EXECUTE_UNKNOWN",
++        "EXECUTE_UNKNOWN_VALUE", "EXECUTE_EMPTY", "EXECUTE_NULL", "EXECUTE_THROW", "NONZERO", "EXIT_ABSENT", "TRUNCATED", "STDERR", "SHAPE",
++        "STATIC_REJECTION", "ABSENCE_UNKNOWN", "EVENT_CODE_BODY", "EVENT_CODE_FAKE_TOKEN", "POST_UNKNOWN"})
++    void partialObservationDiagnosticsClassifyActualGateAndTransportWithoutSettlingOriginal(String condition) throws Exception {
++        try (var f = new Frame()) {
++            f.observationCondition = condition;
++            var events = f.journal.events(f.task);
++            var captured = f.capture();
++            var result = f.recover();
++            assertEquals(TaskResult.UNKNOWN, result.outcome());
++            assertEquals(events, f.journal.events(f.task), "Ordinary observation logs must not append recovery evidence");
++            assertFalse(DeploymentAgentActionLog.preparationsSettled(events));
++            assertEquals(condition.equals("POST_UNKNOWN") ? 1 : 0, f.deletes);
++            boolean unexecuted = condition.startsWith("AUTHORIZE_") || condition.equals("MODEL_DENY");
++            assertEquals(unexecuted ? 0 : condition.equals("POST_UNKNOWN") ? 2 : 1, f.partialExecutions);
++            var diagnostic = f.partialDiagnostics().getLast();
++            var details = JSON.readTree(diagnostic.details().orElseThrow());
++            boolean after = condition.equals("POST_UNKNOWN");
++            assertEquals(after ? "POST" : "PRE", details.path("phase").asText());
++            assertEquals(f.id.toString(), details.path("task").asText());
++            assertEquals(captured.preparation().id(), details.path("prepareEvent").asLong());
++            assertEquals(captured.preparation().action(), details.path("prepareAction").asText());
++            assertEquals(DeploymentAgentPartialPreparationProbe.requestDigest(captured, after), details.path("requestSha256").asText());
++            assertEquals(DeploymentAgentPreparationAbsence.digest(events), details.path("eventsSha256").asText());
++            assertEquals(!unexecuted, details.path("executeInvoked").asBoolean());
++            if (condition.equals("MODEL_DENY") || condition.equals("AUTHORIZE_THROW")) {
++                assertFalse(details.path("approveReturned").asBoolean());
++                assertEquals("NOT_RETURNED", details.path("approveOutcome").asText());
++                assertEquals("APPROVE", details.path("exceptionStep").asText());
++                assertEquals(condition.equals("MODEL_DENY") ? "DEPLOYMENT_COMMAND_REVIEW_DENIED" : "DEPLOYMENT_AGENT_CONTROLLED_OBSERVATION",
++                    details.path("exceptionProblemEvent").asText());
++                assertEquals("DEPLOYMENT_AGENT_CANDIDATE_CLEANUP_UNCONFIRMED", result.problem().orElseThrow().eventCode());
++            } else if (condition.startsWith("AUTHORIZE_")) {
++                assertTrue(details.path("approveReturned").asBoolean());
++                assertEquals(condition.equals("AUTHORIZE_UNKNOWN") ? "UNKNOWN" : condition.equals("AUTHORIZE_CANCELLED") ? "CANCELLED" : "SUCCEEDED",
++                    details.path("approveOutcome").asText());
++                assertFalse(details.path("approveValuePresent").asBoolean());
++            } else if (condition.equals("EXECUTE_THROW")) {
++                assertFalse(details.path("executeReturned").asBoolean());
++                assertEquals("EXECUTE", details.path("exceptionStep").asText());
++                assertEquals("IO_FAILURE", details.path("exceptionProblem").asText());
++            } else if (condition.equals("EXECUTE_NULL")) {
++                assertFalse(details.path("executeReturned").asBoolean());
++                assertEquals("NOT_RETURNED", details.path("executeOutcome").asText());
++            } else {
++                assertEquals(condition.startsWith("EXECUTE_UNKNOWN") || condition.startsWith("EVENT_CODE_") || after ? "UNKNOWN" : "SUCCEEDED",
++                    details.path("executeOutcome").asText());
++                if (condition.startsWith("EVENT_CODE_"))
++                    assertEquals("OTHER", details.path("executeProblemEvent").asText());
++                else if (condition.startsWith("EXECUTE_UNKNOWN") || after)
++                    assertEquals("DEPLOYMENT_AGENT_CONTROLLED_OBSERVATION", details.path("executeProblemEvent").asText());
++            }
++            if (f.observedCommand != null) {
++                var command = f.observedCommand;
++                assertEquals(command.exitCode().isPresent(), details.path("exitPresent").asBoolean());
++                command.exitCode().ifPresent(exit -> assertEquals(exit, details.path("exitCode").asInt()));
++                assertEquals(command.truncated(), details.path("truncated").asBoolean());
++                assertEquals(command.stdout().getBytes(StandardCharsets.UTF_8).length, details.path("stdoutUtf8Bytes").asInt());
++                assertEquals(command.stderr().getBytes(StandardCharsets.UTF_8).length, details.path("stderrUtf8Bytes").asInt());
++                assertEquals(DeploymentAgentPreparationAbsence.hash(command.stdout()), details.path("stdoutSha256").asText());
++                assertEquals(DeploymentAgentPreparationAbsence.hash(command.stderr()), details.path("stderrSha256").asText());
++                if (condition.equals("STATIC_REJECTION")) {
++                    assertEquals("OWNERSHIP", details.path("partialStage").asText());
++                    assertEquals("TASK_MISMATCH", details.path("partialReason").asText());
++                }
++                if (condition.equals("ABSENCE_UNKNOWN")) {
++                    assertEquals("LOOPS", details.path("absenceStage").asText());
++                    assertEquals("CANDIDATE_LOOP_PRESENT", details.path("absenceReason").asText());
++                }
++                if (!condition.equals("EXECUTE_UNKNOWN_VALUE") && !after) {
++                    assertFalse(details.path("strictPresent").asBoolean());
++                    assertFalse(details.path("strictAbsent").asBoolean());
++                }
++            } else assertFalse(details.has("stdoutSha256"));
++            assertFalse(diagnostic.details().orElseThrow().contains("FAKE_PASSWORD_MARKER"));
++            assertFalse(diagnostic.details().orElseThrow().contains("FAKE_SOURCE_MARKER"));
++            assertFalse(diagnostic.details().orElseThrow().contains("FORMAT="));
++            assertTrue(diagnostic.details().orElseThrow().length() < 2400);
++        }
++    }
++
++    @Test
++    void normalObservationDiagnosticsPreserveBothPhasesAndProof() throws Exception {
++        try (var f = new Frame()) {
++            var before = f.journal.events(f.task);
++            var captured = f.capture();
++            assertEquals(TaskResult.FAILED, f.recover().outcome());
++            var diagnostics = f.partialDiagnostics();
++            assertEquals(2, diagnostics.size());
++            for (int index = 0; index < diagnostics.size(); index++) {
++                var details = JSON.readTree(diagnostics.get(index).details().orElseThrow());
++                assertEquals(index == 0 ? "PRE" : "POST", details.path("phase").asText());
++                assertEquals("SUCCEEDED", details.path("approveOutcome").asText());
++                assertEquals("SUCCEEDED", details.path("executeOutcome").asText());
++                assertTrue(details.path("executeInvoked").asBoolean());
++                assertEquals(index == 0, details.path("strictPresent").asBoolean());
++                assertEquals(index == 1, details.path("strictAbsent").asBoolean());
++                assertEquals(index == 0 ? "EXACT_PRESENT" : "EXACT_ABSENT", details.path("stdoutShape").asText());
++                assertEquals(DeploymentAgentPartialPreparationProbe.requestDigest(captured, index == 1), details.path("requestSha256").asText());
++            }
++            var events = f.journal.events(f.task);
++            assertEquals(before, events.subList(0, before.size()));
++            assertEquals(List.of(DeploymentAgentPreparationCompensation.EVENT, "AI_RECOVERY_SETTLED", "STATE"), events.subList(before.size(), events.size()).stream().map(e -> e.type()).toList());
++            assertTrue(DeploymentAgentActionLog.preparationsSettled(events));
++            assertEquals(TaskResult.FAILED, f.recover().outcome());
++            assertEquals(events, f.journal.events(f.task));
++            assertEquals(2, f.partialDiagnostics().size());
++            assertEquals(1, f.deletes);
++        }
++    }
++
++    @Test
++    void failedDiagnosticStorageCannotChangeUnknownOrJournal() throws Exception {
++        try (var f = new Frame()) {
++            f.observationCondition = "NONZERO";
++            f.failPartialDiagnostic = true;
++            var before = f.journal.events(f.task);
++            assertEquals(TaskResult.UNKNOWN, f.recover().outcome());
++            assertEquals(1, f.partialDiagnosticAttempts);
++            assertTrue(f.partialDiagnostics().isEmpty());
++            assertEquals(before, f.journal.events(f.task));
++            assertEquals(0, f.deletes);
++        }
++    }
++
+     @Test
+     void uploadedOriginalClosesOnlyItsTemporaryEffectsAndArchivesFailed() throws Exception {
+         try (var f = new Frame()) {
+@@ -367,6 +493,14 @@
+ 
+         int diagnosticAttempts;
+ 
++        int partialDiagnosticAttempts;
++
++        int partialExecutions;
++
++        String observationCondition = "";
++
++        boolean failPartialDiagnostic;
++
+         CommandResult observedCommand;
+ 
+         int connected;
+@@ -433,6 +567,17 @@
+                 });
+                 case "approveReviewedAction" -> {
+                     grants++;
++                    var intent = (gold.debug.windowstolinux.appapi.task.action.ActionIntent) args[0];
++                    if (intent.semantics().map(s -> s.operation().equals(DeploymentAgentPartialPreparationProbe.OPERATION)).orElse(false)) {
++                        if (observationCondition.equals("AUTHORIZE_THROW"))
++                            throw new ApiException(observationProblem());
++                        if (observationCondition.equals("AUTHORIZE_UNKNOWN"))
++                            yield new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(observationProblem()));
++                        if (observationCondition.equals("AUTHORIZE_CANCELLED"))
++                            yield new OperationResult<>(TaskResult.CANCELLED, Optional.empty(), Optional.empty());
++                        if (observationCondition.equals("AUTHORIZE_EMPTY"))
++                            yield new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                    }
+                     yield success(new ApprovalGrant(UUID.randomUUID()));
+                 }
+                 default -> throw new AssertionError(name);
+@@ -454,6 +599,7 @@
+                         yield success(new CommandResult(Optional.of(0), "CANDIDATE_CLEANED=1\n", "", false));
+                     }
+                     assertTrue(body.contains("WTL_AGENT_PREPARATION_ABSENCE_1"));
++                    partialExecutions++;
+                     boolean pre = body.contains("WTL_AGENT_UPLOADED_PREPARATION_1");
+                     var captured = DeploymentAgentPreparationCompensation.capture(id, journal.find(task).orElseThrow(), layout, journal.events(task));
+                     String output = captured.isPresent() ? present && pre ? DeploymentAgentPartialPreparationProbe.presentOutput(captured.orElseThrow())
+@@ -462,7 +608,27 @@
+                     if (obstacle.equals("PRE_UNKNOWN") && pre || present && !pre || obstacle.equals("ABSENT_LOOP"))
+                         output = "UNKNOWN\n";
+                     afterSend.run();
+-                    yield success(new CommandResult(Optional.of(0), output, "", false));
++                    if (!observationCondition.isEmpty() && (pre && !observationCondition.equals("POST_UNKNOWN") || !pre && observationCondition.equals("POST_UNKNOWN"))) {
++                        if (observationCondition.equals("EXECUTE_NULL")) yield null;
++                        if (observationCondition.equals("EXECUTE_THROW")) throw new ApiException(observationProblem());
++                        if (observationCondition.equals("EXECUTE_EMPTY"))
++                            yield new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                        if (observationCondition.equals("EXECUTE_UNKNOWN") || observationCondition.startsWith("EVENT_CODE_"))
++                            yield new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(observationProblem()));
++                        if (observationCondition.equals("SHAPE")) output += "password=FAKE_PASSWORD_MARKER\n";
++                        if (observationCondition.equals("STATIC_REJECTION")) output = "";
++                        if (observationCondition.equals("ABSENCE_UNKNOWN"))
++                            output = DeploymentAgentPreparationProbe.unknownOutput(captured.orElseThrow().absenceBinding(),
++                                new DeploymentAgentPreparationProbe.UnknownObservation(DeploymentAgentPreparationProbe.Stage.LOOPS, DeploymentAgentPreparationProbe.Reason.CANDIDATE_LOOP_PRESENT));
++                        String stderr = observationCondition.equals("STDERR") ? "password=FAKE_PASSWORD_MARKER\n源=FAKE_SOURCE_MARKER" : observationCondition.equals("STATIC_REJECTION")
++                            ? "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=OWNERSHIP\nREASON=TASK_MISMATCH\n" : "";
++                        observedCommand = new CommandResult(observationCondition.equals("EXIT_ABSENT") ? Optional.empty() : Optional.of(observationCondition.equals("NONZERO") ? 64
++                            : observationCondition.equals("STATIC_REJECTION") ? 64 : 0), output, stderr, observationCondition.equals("TRUNCATED"));
++                        yield observationCondition.equals("EXECUTE_UNKNOWN_VALUE") || observationCondition.equals("POST_UNKNOWN")
++                            ? new OperationResult<>(TaskResult.UNKNOWN, Optional.of(observedCommand), Optional.of(observationProblem())) : success(observedCommand);
++                    }
++                    observedCommand = new CommandResult(Optional.of(0), output, "", false);
++                    yield success(observedCommand);
+                 }
+                 default -> throw new AssertionError("Recovery cannot invoke " + name);
+             });
+@@ -501,7 +667,7 @@
+                         }
+                     }
+                     if (calls.isEmpty()) {
+-                        String decision = denyCleanup && deletes == 0 && sent == 2 ? "DENY" : "APPROVE";
++                        String decision = denyCleanup && deletes == 0 && sent == 2 || observationCondition.equals("MODEL_DENY") && sent == 1 ? "DENY" : "APPROVE";
+                         calls.add(new AiToolCall(UUID.randomUUID().toString(), "submit_result", "{\"decision\":\"" + decision
+                             + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled complete fixed request\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
+                     }
+@@ -515,6 +681,10 @@
+                 case "register" -> nativeAi.context.logs().register((LogCategory) args[0]);
+                 case "write" -> {
+                     var event = (LogEvent) args[1];
++                    if (event.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_OBSERVATION")) {
++                        partialDiagnosticAttempts++;
++                        if (failPartialDiagnostic) throw new IllegalStateException("password=FAKE_PASSWORD_MARKER");
++                    }
+                     if (event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION") && event.message().startsWith("preparation.")) {
+                         diagnosticAttempts++;
+                         if (obstacle.equals("LOGGER_FAILURE"))
+@@ -545,6 +715,16 @@
+         Problem processProblem(ProblemCode code) {
+             return new Problem(code, "FAKE_PASSWORD_MARKER", "password=FAKE_PASSWORD_MARKER",
+                 Map.of("source", "FAKE_SOURCE_MARKER"), Optional.of(id));
++        }
++
++        Problem observationProblem() {
++            return new Problem(ProblemCode.IO_FAILURE, observationCondition.equals("EVENT_CODE_BODY") ? "password=FAKE_PASSWORD_MARKER"
++                : observationCondition.equals("EVENT_CODE_FAKE_TOKEN") ? "FAKE_PASSWORD_MARKER" : "DEPLOYMENT_AGENT_CONTROLLED_OBSERVATION",
++                "password=FAKE_PASSWORD_MARKER", Map.of("source", "FAKE_SOURCE_MARKER"), Optional.empty());
++        }
++
++        List<LogEvent> partialDiagnostics() {
++            return nativeAi.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_OBSERVATION")).toList();
+         }
+ 
+         Connection connection() throws Exception {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+@@ -12,6 +12,7 @@
+ import java.time.Duration;
+ import java.util.Arrays;
+ import java.util.List;
++import java.util.Map;
+ import java.util.Optional;
+ import java.util.UUID;
+ import java.util.concurrent.TimeUnit;
+@@ -48,6 +49,18 @@
+         assertEquals(DeploymentAgentPreparationProbe.script(c.absenceBinding()), DeploymentAgentPartialPreparationProbe.script(c, true));
+         assertFalse(DeploymentAgentPartialPreparationProbe.script(c, false).contains("\nrm "));
+         assertFalse(DeploymentAgentPartialPreparationProbe.script(c, false).contains("--detach"));
++    }
++
++    @Test
++    void failedRejectionDiagnosticWriteKeepsOriginalExitCode() throws Exception {
++        String script = DeploymentAgentPartialPreparationProbe.script(captured(), false);
++        int start = script.indexOf("reject() {"), end = script.indexOf('\n', start);
++        assertTrue(start >= 0 && end > start);
++        assertEquals(-1, script.indexOf("reject() {", end));
++        var result = bash("set -e\n" + script.substring(start, end) + "\nexec 2>&-\nreject FILES NON_PRIVATE_FILE\n", false);
++        assertEquals(64, result.exitCode());
++        assertEquals("", result.output());
++        assertEquals("", result.error());
+     }
+ 
+     @ParameterizedTest
+@@ -122,7 +135,59 @@
+         else {
+             assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed), result.output());
+             assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed), result.output());
+-        }
++            if (!condition.startsWith("ABSENT")) {
++                var expected = Map.ofEntries(Map.entry("FOREIGN_TASK", "TASK_MISMATCH"), Map.entry("SAME_PREFIX", "ARCHIVE_SHA_MISMATCH"),
++                    Map.entry("MISSING_ARCHIVE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("HARDLINK", "NON_PRIVATE_FILE"),
++                    Map.entry("BUILDER", "UNEXPLAINED_ROOT_ENTRY"), Map.entry("IMAGE", "UNEXPLAINED_ROOT_ENTRY"),
++                    Map.entry("RESTORE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("ACTIVE_BUILD", "NOT_OWNED_OR_BUILD_ACTIVE"),
++                    Map.entry("EXTRA_BIND", "UNEXPLAINED_CANDIDATE_MOUNT"), Map.entry("SHARED_DEVICE", "SHARED_DEVICE_MOUNT"),
++                    Map.entry("EXTRA_LOOP", "UNEXPLAINED_CANDIDATE_LOOP"), Map.entry("WRONG_BACKING", "BACKING_FILE_MISMATCH"));
++                assertEquals(64, observed.exitCode().orElseThrow());
++                var rejection = DeploymentAgentPartialPreparationProbe.rejection(observed).orElseThrow(() -> new AssertionError(result.error()));
++                assertEquals(expected.get(condition), rejection.reason().name());
++                assertEquals("", observed.stdout());
++                assertFalse(observed.stderr().contains(root.toString()));
++                assertFalse(observed.stderr().contains(c.task().toString()));
++            }
++        }
++        if (condition.equals("OWNED") || condition.equals("ABSENT")) {
++            assertEquals("", observed.stderr());
++            assertEquals(condition.equals("OWNED") ? DeploymentAgentPartialPreparationProbe.presentOutput(c) : DeploymentAgentPartialPreparationProbe.absentOutput(c), observed.stdout());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"EXACT", "UNKNOWN_ENUM", "PAIR_MISMATCH", "APPENDED", "PREFIXED", "CRLF", "STDOUT", "TRUNCATED", "NONZERO", "MISSING_NEWLINE", "EXIT_ABSENT"})
++    void fixedRejectionsExposeOnlyStaticStageAndReason(String condition) throws Exception {
++        String output = "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=FILES\nREASON=NON_PRIVATE_FILE\n";
++        output = switch (condition) {
++            case "UNKNOWN_ENUM" -> output.replace("NON_PRIVATE_FILE", "UNTRUSTED_REMOTE_VALUE");
++            case "PAIR_MISMATCH" -> output.replace("STAGE=FILES", "STAGE=MOUNTS");
++            case "APPENDED" -> output + "password=FAKE_PASSWORD_MARKER\n";
++            case "PREFIXED" -> "password=FAKE_PASSWORD_MARKER\n" + output;
++            case "CRLF" -> output.replace("\n", "\r\n");
++            case "MISSING_NEWLINE" -> output.stripTrailing();
++            default -> output;
++        };
++        var observed = new CommandResult(condition.equals("EXIT_ABSENT") ? Optional.empty() : Optional.of(condition.equals("NONZERO") ? 1 : 64),
++            condition.equals("STDOUT") ? "unexpected" : "", output, condition.equals("TRUNCATED"));
++        var diagnostic = DeploymentAgentPartialPreparationProbe.rejection(observed);
++        assertEquals(condition.equals("EXACT"), diagnostic.isPresent());
++        if (diagnostic.isPresent()) {
++            assertEquals(DeploymentAgentPartialPreparationProbe.Stage.FILES, diagnostic.orElseThrow().stage());
++            assertEquals(DeploymentAgentPartialPreparationProbe.Reason.NON_PRIVATE_FILE, diagnostic.orElseThrow().reason());
++        }
++        var c = captured();
++        assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed));
++        assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed));
++        var matcher = java.util.regex.Pattern.compile("reject ([A-Z]+) ([A-Z_]+)").matcher(DeploymentAgentPartialPreparationProbe.script(c, false));
++        var reasons = java.util.EnumSet.noneOf(DeploymentAgentPartialPreparationProbe.Reason.class);
++        while (matcher.find()) {
++            var result = new CommandResult(Optional.of(64), "", "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=" + matcher.group(1)
++                + "\nREASON=" + matcher.group(2) + "\n", false);
++            reasons.add(DeploymentAgentPartialPreparationProbe.rejection(result).orElseThrow().reason());
++        }
++        assertEquals(java.util.EnumSet.allOf(DeploymentAgentPartialPreparationProbe.Reason.class), reasons);
+     }
+ 
+     @ParameterizedTest

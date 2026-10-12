@@ -249,4 +249,16 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 四项自有增量见 [身份角色精确补丁](patches/DEPLOYMENT-AGENT-SOURCE-IDENTITY.patch)，原始 SHA256 `74ca2f58a2a94b5ab0578a438ac930110d4dc00de54026018b38f408c4c973b3`。全部 owner 前像匹配上一冻结，反向及缓存应用检查通过；三项可独立暂存，一项 RemoteTools 混合迁移只交付单行自有接线补丁。其他迁移、旧补丁、UNKNOWN 与失败证据保留。原 09 产品恢复和修复后的新 task-board 部署尚未开始。
 
+身份接线五项自有路径已本地提交 `cbb9540939e8deb62af1ada410a1ba1981c77ee5`，未推送、索引为空后启动原 09 恢复。`task-board-recovery09-01` 于 2026-10-12 08:46:04+08 结束：一项产品入口失败、零错误/跳过，返回 UNKNOWN / DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED，没有进入产品重开验证。3272 项源码冻结零变化，08:49:07 实际 CIM 为 OK/0，原验证会话退出。原任务及 Agent UNKNOWN 保留，平台资源记录 2337→2616，原事件类型与数量未变，尚无 PREPARE_COMPENSATED 或结清摘要；正式业务十表仍 0、模型 2、服务器 1。只读审计前后库字节一致；该一致性指审计没有改写库，不指本次产品运行没有修改库。
+
+通过原 logId 基线差集捕获本轮 7 个新增 APPROVAL 响应：input 75837、output 3479、合计 79316，hit 34560、miss 41277，捕获输入命中率 45.57%，单次输出上限 8192。reasoning 7 项 UNKNOWN，未请求新配置探测；有界窗口淘汰两条旧响应，原 09 部署用量不混入本轮。7 个模型响应不是 7 个独立审批裁决，不能仅凭 usage 判定哪个请求被拒或执行。进程辅助输出首次传入了错误的相对路径，未写成功；使用该脚本实际相对参数后保存 OK/0，失败工具记录保留。新 UNKNOWN 的精确审批/观察阻塞仍在只读定位，不能据新用量或历史 DENY 推断清理成功；未进行新部署、手工服务器操作或数据库清除。
+
+随后最小只读投影 `recovery09-admission-projection-02` 通过：真实原任务的 122 项有序事件由产品纯 capture 返回 ACCEPTED；`deployment-model-commands` 与 `deployment-native-database` 两项准确 checkpoint 均不存在。新增 279 条资源记录全部 released，原 5 条未结依赖继续保留。三份数据库文件前后 SHA256 完全一致，当前主库 SHA256 为 `FE87EB47162E2E50F47F673455B85D3727CDE5B53E4357B31DEA85674805AF5C`；3272 项源码与该轮真实冻结一致。首次辅助 SQL90016 失败保留，只修复辅助查询，没有打开 Runtime 或调用 API、SSH。当前初始身份及 capture 前门通过，但日志没有审批结果、执行结果及固定守卫原因；仍不能据此证明 PRE/POST、清理发送或具体远端失败原因。
+
+`recovery09-observation-diagnostics-01` 修复已确认的诊断丢失：原 partial approve、guard、execute 和异常控制流保持，只在 finally 写有界普通日志，区分 PRE/POST、真实返回结果、安全事件码、已捕获输出的 UTF8 长度/SHA256、严格形状及静态拒绝原因。`executeInvoked` 只证明 Java 方法调用，不证明 SSH 已发送。日志写入失败被隔离，不写 journal/proof 或改变 UNKNOWN；固定探针原 37 个 exit64 拒绝点只加静态原因码，并隔离 printf 失败以保持退出 64。原守卫条件、顺序、完整归档校验、成功输出、POST 原 Absence、helper、审批和结清门保持。
+
+本地受控 TaskContext/H2/Bash 明确选择直接方法，累计 51 个不同 logicalID 的最新结果全部通过。四轮实际 XML 分别为 50 项中 49 通过/1 失败、失败方法 16 项通过、新退出码反例 1 项失败、修复后该反例及语法 2 项通过；不把 69 次执行计为 69 个不同场景。首轮缺归档夹具按原顺序先触发空目录条目拒绝，只校准原因码预期；第三轮确实复现诊断写入失败导致 expected64/actual1，隔离 printf 后同反例通过。失败日志、XML 和辅助核验失败均保留，未重复其余已通过组。
+
+四个 owner 原始前像匹配真实恢复01冻结；四轮测试和两组仅自有文件格式检查均 3272 项源码零变化，其余 3268 项逐字节保持。父独立核对 raw 前像/终态、实际 XML 与保护范围通过；父辅助扩展路径带 `..` 的首次 OSError22 保留，仅归一化辅助路径后通过。实际 CIM 09:30:40 为临时验证进程 0，所有验证会话退出。四项增量见 [partial 观察精确补丁](patches/DEPLOYMENT-AGENT-PARTIAL-OBSERVATION.patch)，原始 SHA256 `52e292eccfacadf52d63dde6a060fe5c77b312d2ef1fc34dea48024cc9e2f244`；三项可独立暂存，混合迁移 Recovery 只交付自有精确补丁，其他迁移和旧证据保持。本地 51 项不证明原09恢复成功或远端阻塞已解除；新 PRE 正文须重新完整独立审批，不复用旧 grant。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
