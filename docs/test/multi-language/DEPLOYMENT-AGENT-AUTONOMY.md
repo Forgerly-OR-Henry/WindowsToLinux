@@ -273,4 +273,10 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 本地仅选择 ProbeTest 的四个直接方法，实际 XML 36 个不同场景全部通过、零失败/错误/跳过，覆盖标准目录及危险形态、原成功输出、POST 脚本和有限原因码解析。测试及两 owner 格式 write/check 均 3272 项源码冻结零变化，其余 3270 项逐字节保持；新标准目录分支剔除后原固定脚本守卫及顺序相同。父独立核对 raw 前像/终态、实际 XML、非 owner 保护范围通过，实际 CIM 10:02:16 临时验证进程 0，两验证会话退出，没有 Runtime/API/SSH 调用，也没有实际 ext4 格式化或挂载。此前通过的其他测试不重跑。本次两 owner 自有增量见 [标准空目录精确补丁](patches/DEPLOYMENT-AGENT-STANDARD-WORKSPACE-DIRECTORY.patch)，原始 SHA256 `0ff341fce2daeb508d901e5d1360bbb18d3bc9c82a5c90841af37dfcb17c9d07`；两 owner 均可独立暂存，前像、反向及缓存检查通过，其他迁移保持。新 PRE 正文仍须重新完整独立审批，真实恢复及结清待新产品入口验证。
 
+标准空目录修复四项自有路径已本地提交 `ebad3a38a7c37e3ea59a7ae4d9cd50cdfdd77428`，未推送，索引为空后启动 `task-board-recovery09-03`。本轮于 2026-10-12 10:08:55+08 通过一个真实产品恢复入口场景，零失败/错误/跳过，105.1 秒；源码冻结 3272 项零变化，验证会话 30924 退出，实际 CIM 10:09:50 为 OK/0。原 `191bab33-4c43-400a-816d-f4ba78f4b785` 已从 UNKNOWN 结清为 ENDED/FAILED，阻塞为空；产品释放恢复模式并重新打开正常启动。这是产品重开，不是 Linux 主机重启，也不是成功 App 部署。
+
+本轮新普通诊断记录确认 PRE/POST 分别重新独立审批成功、有 grant；执行均 SUCCEEDED、exit0、未截断、stderr0，PRE EXACT_PRESENT（436 UTF8 字节）、POST EXACT_ABSENT（390 字节）。新 PRE request SHA256 `447e925604cd34456489037f68d0b7f8858c6d473fd01b02f5ba551f5d8ad1b5`，原事件摘要保持 `16a8302fd65de2c41f958948c3a6f5f16a506c88cfa67d8b0d25242ce5069d6c`。这轮通过后置身份与资源保护并证明候选相关资源已经不存在，不宣称已枚举出具体标准目录项或释放了某个实测 GB 数。只读审计确认平台任务归档、资源 2888→0、原 Agent task/action event 清除、formal execution 0、effectsSettled=true；仅保留原 operation 绑定的 447 字节 AGENT/FAILED 摘要，无 App/发布身份。正式十表仍 0、模型 2/服务器 1 保持；主数据库只读审计前后 SHA256 相同，当前为 `70E0DD312D1F7075B83DD963F942C509F29044A6EEFF19CDB6D5226B5943DB83`。原09及恢复01/02失败证据保留，原373正式业务身份和其他未结状态未操作。
+
+按运行前后 logId 差集，本轮新增 22 个 APPROVAL 响应，input 275163、output 6507、合计 281670，hit 170368、miss 104795，捕获输入命中率 61.92%；reasoning 22 项 UNKNOWN，单次输出上限 8192，未请求新配置探测。数字窗口基线95、运行后94、淘汰23条旧记录，原09部署及恢复01/02用量均排除；22响应不等于22裁决。本轮是真实失败部署补偿及历史明细清理证明，未计为最终八项目部署批次。下一次新 task-board 部署必须使用全新任务身份，由主模型自行识别来源、接口、监听、端口与 CORS。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
