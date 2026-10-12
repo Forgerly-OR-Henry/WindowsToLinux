@@ -309,4 +309,12 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 只读确认平台原任务归档/资源0、原Agent task/action event清除、formal execution0，仅保留原operation绑定447字节AGENT/FAILED摘要，无App/发布身份；正式十表0、模型2/服务器1保持，主库只读前后SHA256均 `6C2B9441DEE6E3D65E7D900A7D02F7DE6F71C560EC9D28CD9901697DC64C003C`。原失败与调查保留，未处理原373正式业务或其他未结状态，也不宣称释放了实测GB数。本轮数字基线40、之后55、窗口无淘汰，新增15个APP响应input164576/output6317/合计170893、hit102656/miss61920/命中62.38%；15项reasoning UNKNOWN，上限8192，无新配置探测，原11部署40响应费用排除，非最终八项目批次。
 
+`agent-observation-consumer-01` 补齐原11暴露的可审契约缺口。CandidateChannel 用私有构造的不可变 Verification 同源生成原固定观察正文及完整预期 stdout；原 verify(workspace,archive) 委托同一 spec，实际 consumer 的成功封套、exit0、不截断和完整精确匹配门保持。共享部分仅避免生产观察、消费与可审事实漂移，未合并三模式业务编排。两个受控 Interaction 入口验证原正文与结果相同，不代表完整三模式或真实服务器验收。
+
+Agent 仅在上传后的本次 verify 局部附加 currentCommandEvidence，保留原 host/model/conversation、来源身份、路由、budget/guard/layout。证据预持原 spec，并核对原 task/session/server/revision/layout/workspace/archive 对象及完整规范 wrapper/body、EMPTY stdin、targets、输出限制、正整数有界超时和 exactAction；非法首请求不能认领绑定，审批前后继续复核。捕获的 bytes/SHA 与消费规则不等于重新散列、远端成功或授权。既有 approval-context Skill 仅按需解释 observer 与 consumer，仍由 APP 独立审阅完整请求，不强制批准或调用步骤。先前 create/upload 效果仍未结清，DENY/UNKNOWN 不允许 open 或冒充 NOT_SENT。
+
+五轮限定四个新增方法的 22 个不同 logicalID 最新均通过：01 编译缺 import，未运行 JUnit；02 实际22项/5失败/1错误；03 仅失败所属方法17项/4失败；04 仅 Agent5项/4失败；05 仅剩 native 方法4参数全部通过。中间校准新夹具的 FAILED Problem、ZERO timeout 构造拒绝、remote_read 字段及 APPROVE verdict 字段，全部失败日志/XML保留；48次执行不能当作48个不同场景。最新通过包括完整 consumer 的12种回执、5种异源绑定、非法请求/合法29秒超时裁剪，以及原生批准、拒绝、正文投递不全和配置变更。受控 native 路径确有 create/upload，只有完整批准允许 verify/open；其他路径保留 UNKNOWN 与未结清效果。这些是本地真实任务/H2、受控模型与传输验证，无真实 API/SSH 或原数据库操作。
+
+四个 Java owner 限定格式 write/check 通过；五轮测试和实际格式冻结各3272项零变化，其余3267项逐字节保持。父独立核对 raw 前像/终态、实际 Running 类与 XML、最新 logicalID、冻结和保护范围通过。11:51:38+08实际只读CIM相关验证进程0、六个验证会话退出，没有终止用户进程；默认权限失败记录保留。11:52:31 writeDone 后子任务停止全部写入。五 owner 精确增量见 [观察消费契约补丁](patches/DEPLOYMENT-AGENT-OBSERVATION-CONSUMER.patch)，原始 SHA256 `18d46a7d3908491605d6d675dfe2a25ad677ce75c9e1434ad48ba2c3629f95a1`，前像与反向核验通过；两项可独立暂存，三项混合迁移仅交付精确增量补丁，原迁移和其他任务改动保留。新 task-board 产品部署、真实浏览器业务、非默认真机与 Linux 重启、最终冻结八项目仍未验收。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

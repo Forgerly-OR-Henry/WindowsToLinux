@@ -6,6 +6,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,9 +18,13 @@ import gold.debug.windowstolinux.appapi.ai.AiService;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 import gold.debug.windowstolinux.appapi.linux.command.*;
 import gold.debug.windowstolinux.appapi.linux.session.*;
+import gold.debug.windowstolinux.appapi.linux.transfer.*;
 import gold.debug.windowstolinux.appapi.mod.ModContext;
 import gold.debug.windowstolinux.appapi.server.model.ServerId;
 import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
 import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
 import gold.debug.windowstolinux.appapi.task.result.*;
 import gold.debug.windowstolinux.appapi.task.run.TaskContext;
@@ -27,16 +32,396 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization;
 import gold.debug.windowstolinux.mod.deployment.file.*;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel;
+import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
+import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
 import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentSession;
 import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.*;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /** Actual H2 task ledger and native Agent roles, with local controlled model and transport only. */
 class DeploymentAgentPrepareReviewTest extends DeploymentRuntimeFixture {
     private static final String REVISION = "a".repeat(64);
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    enum VerificationMode {APPROVE, DENY, INCOMPLETE_BODY, CONFIGURATION_CHANGED}
+
+    @ParameterizedTest
+    @EnumSource(VerificationMode.class)
+    void uploadedArchiveConsumerEvidenceReachesNativeReviewBeforeVerifyAndOpen(VerificationMode mode) throws Exception {
+        runVerification(mode, false);
+    }
+
+    @Test
+    void uploadedArchiveConsumerEvidenceRejectsUnboundRequests() throws Exception {
+        runVerification(VerificationMode.APPROVE, true);
+    }
+
+    private void runVerification(VerificationMode mode, boolean unbound) throws Exception {
+        var source = Files.createDirectories(root.resolve("verification-source"));
+        Files.writeString(source.resolve("index.html"), "<html>actual controlled source</html>\n");
+        enable();
+        try (var runtime = open()) {
+            start(runtime, true);
+            runtime.servers().saveServerProfile(gold.debug.windowstolinux.app.service.server.ServerProfile.fromStored(
+                new gold.debug.windowstolinux.app.db.server.StoredServerProfile("native-host", "127.0.0.1", 22, "root", "fixture")), "fixture".toCharArray());
+            var actual = runtime.modContexts().get(OWNER).context();
+            var failure = new AtomicReference<Throwable>();
+            var finished = new java.util.concurrent.CompletableFuture<Void>();
+            var handle = actual.tasks().submit(new TaskRequest("native-candidate-verification", "Controlled original candidate verification", List.of("native-host"), true), task -> {
+                try {
+                    var selection = actual.file().sources().selectDirectory(source, task);
+                    try (var material = new DeploymentSourceSetup(actual.file()).prepare(selection, 1048576, 100, task);
+                         var archive = new DeploymentSourceArchiver(actual.file()).prepare(material, 1048576, task)) {
+                        var frame = new VerificationFrame(actual, task, material, archive, mode);
+                        if (unbound) frame.unbound();
+                        else frame.run();
+                    }
+                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                } catch (Exception | AssertionError error) {
+                    failure.set(error);
+                    throw error;
+                } finally {
+                    try {
+                        actual.file().closeTaskResources(task);
+                    } finally {
+                        finished.complete(null);
+                    }
+                }
+            });
+            try {
+                finished.get(30, TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException timeout) {
+                handle.requestCancel();
+                throw timeout;
+            }
+            if (failure.get() != null)
+                throw new AssertionError("Controlled candidate verification failed", failure.get());
+        }
+    }
+
+    private final class VerificationFrame {
+        final TaskContext task;
+
+        final DeploymentSourceMaterial material;
+
+        final DeploymentSourceArchive archive;
+
+        final VerificationMode mode;
+
+        final ServerId server = new ServerId("native-host");
+
+        final DeploymentRemoteWorkspace workspace;
+
+        final DeploymentAgentActionLog journal;
+
+        final RemoteSession peer;
+
+        final ModContext context;
+
+        final AtomicReference<String> revision = new AtomicReference<>(REVISION);
+
+        final IllegalStateException stop = new IllegalStateException("Controlled read after completed prepare");
+
+        final Map<String, Integer> offsets = new HashMap<>();
+
+        final Map<String, String> parts = new HashMap<>();
+
+        String pageBinding = "";
+
+        int decisions, approvalCalls, pages, creates, uploads, verifyGrants, verifySends, opens, verifyVerdicts;
+
+        boolean incompleteRejected;
+
+        String verifiedRequest = "";
+
+        VerificationFrame(ModContext actual, TaskContext task, DeploymentSourceMaterial material, DeploymentSourceArchive archive, VerificationMode mode) {
+            this.task = task;
+            this.material = material;
+            this.archive = archive;
+            this.mode = mode;
+            workspace = new DeploymentRemoteWorkspace("demo-api", archive.sha256());
+            journal = new DeploymentAgentActionLog(actual.db());
+            peer = proxy(RemoteSession.class, (p, m, a) -> switch (m.getName()) {
+                case "facts" -> new RemoteFacts("Linux", "x86_64", "SHA256:native-controlled");
+                case "close" -> null;
+                case "execute" -> transport((CommandRequest) a[0]);
+                case "upload" -> {
+                    var transfer = (TransferRequest) a[0];
+                    uploads++;
+                    assertEquals(1, creates);
+                    assertEquals(archive.path(), transfer.localPath());
+                    assertEquals(workspace.candidateRoot() + "/mutable/source.tar.gz", transfer.remoteAbsolutePath());
+                    yield succeeded(new TransferResult(archive.byteCount(), archive.sha256(), transfer.localPath(), transfer.remoteAbsolutePath()));
+                }
+                default -> throw new AssertionError("No real transport: " + m.getName());
+            });
+            var ai = proxy(AiService.class, (p, m, a) -> {
+                if (m.getName().equals("configurationRevision")) return revision.get();
+                assertEquals("call", m.getName());
+                assertSame(task, a[a.length - 1]);
+                var request = (AiRequest) a[0];
+                return succeeded(request.purpose() == AiPurpose.APPROVAL ? approve(request) : decide(request));
+            });
+            var host = proxy(InteractionService.class, (p, m, a) -> {
+                if (m.getName().equals("approveReviewedAction")) {
+                    var intent = (ActionIntent) a[0];
+                    if (intent.semantics().orElseThrow().operation().equals("deployment.candidate.verify.v1")) {
+                        assertEquals(VerificationMode.APPROVE, mode);
+                        assertEquals(1, verifyVerdicts);
+                        assertEquals(1, creates);
+                        assertEquals(1, uploads);
+                        assertEquals(0, verifySends);
+                        verifyGrants++;
+                        verifiedRequest = intent.exactAction();
+                    }
+                }
+                try {
+                    return m.invoke(actual.interaction(), a);
+                } catch (InvocationTargetException error) {
+                    throw error.getCause();
+                }
+            });
+            context = proxy(ModContext.class, (p, m, a) -> {
+                if (m.getName().equals("ai")) return ai;
+                if (m.getName().equals("interaction")) return host;
+                try {
+                    return m.invoke(actual, a);
+                } catch (InvocationTargetException error) {
+                    throw error.getCause();
+                }
+            });
+        }
+
+        DeploymentAgentRemoteTools remote() throws Exception {
+            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), "b".repeat(64), REVISION, "FULL_CONTROL", true));
+            journal.event(task, "SOURCE", archive.sha256(), material.snapshot().sha256());
+            return new DeploymentAgentRemoteTools(context, peer, context.interaction(), server, task, archive, material,
+                REVISION, () -> revision.get(), journal, Optional.empty(), "FULL_CONTROL", true);
+        }
+
+        void run() throws Exception {
+            try (var tools = remote(); var authorization = DeploymentWorkflowAuthorization.open(context, task, server, REVISION, "FULL_CONTROL", true,
+                "source=" + material.snapshot().sha256() + "\narchive=" + archive.sha256())) {
+                var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Observe actual source"),
+                    new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256()), tools, journal,
+                    "FULL_CONTROL", true, REVISION, () -> revision.get());
+                var error = assertThrows(Exception.class, session::run);
+                if (creates != 1) throw new AssertionError("Original prepare did not reach candidate creation", error);
+                assertEquals(1, creates);
+                assertEquals(1, uploads);
+                assertEquals(mode == VerificationMode.APPROVE ? 1 : 0, verifyGrants);
+                assertEquals(verifyGrants, verifySends);
+                assertEquals(verifySends, opens);
+                assertTrue(pages > 0, "Actual native review receives complete executable pages");
+                var events = journal.events(task);
+                assertEquals(1, events.stream().filter(e -> e.type().equals("PREPARE_EXECUTING")).count());
+                assertFalse(events.stream().anyMatch(e -> Set.of("PREPARE_NOT_SENT", "PREPARE_DISPATCH_NOT_SENT").contains(e.type())));
+                if (mode == VerificationMode.APPROVE) {
+                    assertSame(stop, error);
+                    assertTrue(events.stream().anyMatch(e -> e.type().equals("PREPARE_RESULT")));
+                    assertTrue(events.stream().anyMatch(e -> e.type().equals("CURRENT_SOURCE")));
+                } else {
+                    var api = assertInstanceOf(ApiException.class, error);
+                    assertEquals(mode == VerificationMode.CONFIGURATION_CHANGED ? "DEPLOYMENT_COMMAND_CONFIGURATION_CHANGED" : "DEPLOYMENT_COMMAND_REVIEW_DENIED", api.problem().eventCode());
+                    assertTrue(events.stream().anyMatch(e -> e.type().equals("STATE") && e.detail().equals("UNKNOWN")));
+                    assertFalse(DeploymentAgentActionLog.effectsSettled(events));
+                    assertFalse(events.stream().anyMatch(e -> Set.of("PREPARE_RESULT", "CANDIDATE", "CURRENT_SOURCE").contains(e.type())));
+                    if (mode == VerificationMode.INCOMPLETE_BODY) assertTrue(incompleteRejected);
+                }
+            }
+        }
+
+        void unbound() throws Exception {
+            try (var tools = remote()) {
+                var channel = new DeploymentCandidateChannel(peer, context.interaction(), server, task, REVISION, new DeploymentBuildBudget(7200));
+                var spec = channel.verification(workspace, archive);
+                try (var correct = new CommandRequest(spec.guardedScript(), new byte[0], Duration.ofSeconds(30), 4096)) {
+                    var original = verificationIntent(correct);
+                    var evidence = tools.verificationEvidence(spec, workspace);
+                    assertThrows(IllegalArgumentException.class, () -> new CommandRequest(spec.guardedScript(), new byte[0], Duration.ZERO, 4096));
+                    for (String changed : List.of("BODY", "GUARD", "STDIN", "OUTPUT", "TIMEOUT_HIGH", "TIMEOUT_NANOS", "TARGET", "OPERATION", "REVISION", "TASK")) {
+                        String script = changed.equals("BODY") ? spec.guardedScript() + "\ntrue\n" : changed.equals("GUARD") ? spec.script() : spec.guardedScript();
+                        Duration timeout = changed.equals("TIMEOUT_HIGH") ? Duration.ofSeconds(31) : changed.equals("TIMEOUT_ZERO") ? Duration.ZERO : changed.equals("TIMEOUT_NANOS") ? Duration.ofSeconds(29).plusNanos(1) : Duration.ofSeconds(30);
+                        try (var bad = new CommandRequest(script, changed.equals("STDIN") ? new byte[]{1} : new byte[0], timeout, changed.equals("OUTPUT") ? 4097 : 4096)) {
+                            var intent = verificationIntent(bad);
+                            if (changed.equals("TARGET"))
+                                intent = intent.withSemantics(new ActionSemantics("deployment.candidate.verify.v1", Set.of(new ActionTarget(server.id(), "deployment-candidate", workspace.candidateRoot() + "-foreign"))));
+                            if (changed.equals("OPERATION"))
+                                intent = intent.withSemantics(new ActionSemantics("deployment.candidate.query.v1", intent.semantics().orElseThrow().targets()));
+                            if (changed.equals("REVISION"))
+                                intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "d".repeat(64), bad).withSemantics(original.semantics().orElseThrow());
+                            var actualIntent = intent;
+                            TaskContext supplied = changed.equals("TASK") ? proxy(TaskContext.class, (p, m, a) -> task.id()) : task;
+                            assertThrows(ApiException.class, () -> evidence.facts(actualIntent, bad, supplied), changed);
+                        }
+                    }
+                    assertThrows(ApiException.class, () -> evidence.verify(original, correct, task), "Invalid first requests cannot become the original binding");
+                    var facts = JSON.valueToTree(evidence.facts(original, correct, task));
+                    assertEquals(spec.expectedOutput(), facts.at("/consumer/expectedStdout").asText());
+                    evidence.verify(original, correct, task);
+                    try (var changed = new CommandRequest(spec.guardedScript(), new byte[0], Duration.ofSeconds(29), 4096)) {
+                        assertThrows(ApiException.class, () -> evidence.facts(verificationIntent(changed), changed, task));
+                        var clipped = tools.verificationEvidence(spec, workspace);
+                        assertEquals(29, JSON.valueToTree(clipped.facts(verificationIntent(changed), changed, task)).at("/request/timeoutSeconds").asInt());
+                        clipped.verify(verificationIntent(changed), changed, task);
+                    }
+                    var copy = new DeploymentSourceArchive(archive.snapshot(), archive.sha256(), archive.byteCount() + 1,
+                        archive.uncompressedByteCount(), archive.originSnapshotId(), archive.sourceManifestSha256(), archive.relativeRoot());
+                    assertThrows(ApiException.class, () -> tools.verificationEvidence(channel.verification(workspace, copy), workspace));
+                    var otherSha = archive.sha256().substring(0, 16) + (archive.sha256().substring(16).equals("d".repeat(48)) ? "e" : "d").repeat(48);
+                    var other = new DeploymentSourceArchive(archive.snapshot(), otherSha, archive.byteCount(), archive.uncompressedByteCount(), archive.originSnapshotId(), archive.sourceManifestSha256(), archive.relativeRoot());
+                    assertThrows(ApiException.class, () -> tools.verificationEvidence(channel.verification(workspace, other), workspace));
+                    assertThrows(ApiException.class, () -> tools.verificationEvidence(spec, new DeploymentRemoteWorkspace("demo-api", archive.sha256())));
+                    revision.set("e".repeat(64));
+                    assertThrows(ApiException.class, () -> evidence.verify(original, correct, task));
+                }
+                assertEquals(0, creates + uploads + verifyGrants + verifySends + opens + approvalCalls);
+            }
+        }
+
+        ActionIntent verificationIntent(CommandRequest request) {
+            return gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request)
+                .withSemantics(new ActionSemantics("deployment.candidate.verify.v1", Set.of(new ActionTarget(server.id(), "deployment-candidate", workspace.candidateRoot()))));
+        }
+
+        AiResponse approve(AiRequest request) throws Exception {
+            approvalCalls++;
+            var input = JSON.readTree(request.messages().getLast().text());
+            boolean verification = input.at("/currentRequest/operation").asText().equals("deployment.candidate.verify.v1");
+            if (verification) {
+                var facts = input.at("/currentRequest/currentCommandEvidence");
+                assertEquals("NONE", facts.path("authority").asText());
+                assertEquals("UPLOADED_ARCHIVE_BEFORE_AGENT_OPEN", facts.path("phase").asText());
+                assertEquals(archive.byteCount(), facts.at("/capturedArchive/bytes").asLong());
+                assertEquals(archive.sha256(), facts.at("/capturedArchive/sha256").asText());
+                assertEquals(material.snapshot().id().toString(), facts.at("/capturedArchive/originSnapshotId").asText());
+                assertEquals(material.snapshot().sha256(), facts.at("/capturedArchive/sourceManifestSha256").asText());
+                assertEquals(expectedOutput(), facts.at("/consumer/expectedStdout").asText());
+                assertEquals("NO_CURRENT_SOURCE_RECEIPT", input.at("/identityRoles/protectedTreeAvailability").asText());
+                assertEquals(0, verifyGrants + verifySends + opens);
+                if (mode == VerificationMode.INCOMPLETE_BODY) {
+                    if (verifyVerdicts++ == 0) return verdict("APPROVE");
+                    assertTrue(request.messages().stream().flatMap(m -> m.toolResult().stream()).anyMatch(r -> r.text().contains("EXECUTABLE_INPUT_NOT_DELIVERED")));
+                    incompleteRejected = true;
+                    return verdict("DENY");
+                }
+            } else
+                assertTrue(input.at("/currentRequest/currentCommandEvidence").isMissingNode(), "Only this actual verify carries its consumer evidence");
+            var page = bodyPage(request, input);
+            if (page != null) return page;
+            if (verification) {
+                verifyVerdicts++;
+                if (mode == VerificationMode.DENY) return verdict("DENY");
+                if (mode == VerificationMode.CONFIGURATION_CHANGED) revision.set("e".repeat(64));
+            }
+            return verdict("APPROVE");
+        }
+
+        AiResponse verdict(String decision) {
+            var result = JSON.createObjectNode().put("decision", decision).put("requiresUserConfirmation", false)
+                .put("reason", "Independent controlled current request assessment");
+            if (decision.equals("DENY")) result.put("discussionStatus", "CLOSED");
+            return nativeCall("v" + approvalCalls, "submit_result", result);
+        }
+
+        AiResponse bodyPage(AiRequest request, JsonNode input) throws Exception {
+            String binding = input.path("reviewBinding").asText();
+            if (!binding.equals(pageBinding)) {
+                pageBinding = binding;
+                offsets.clear();
+                parts.clear();
+            }
+            var prior = request.messages().stream().flatMap(m -> m.toolResult().stream()).reduce((a, b) -> b);
+            if (prior.isPresent() && parts.containsKey(prior.orElseThrow().callId())) {
+                var result = prior.orElseThrow();
+                assertFalse(result.error());
+                var envelope = JSON.readTree(result.text());
+                assertEquals(binding, envelope.path("reviewBinding").asText());
+                String part = parts.get(result.callId());
+                assertEquals(input.at("/executableInput/" + part + "/sha256"), envelope.at("/value/sha256"));
+                offsets.put(part, envelope.at("/value/next").asInt());
+            }
+            for (String part : List.of("script", "stdin")) {
+                var original = input.at("/executableInput/" + part);
+                int offset = offsets.getOrDefault(part, 0);
+                if (original.has("text") || offset >= original.path("total").asInt()) continue;
+                String id = "verification_page_" + ++pages;
+                parts.put(id, part);
+                return nativeCall(id, "request", JSON.createObjectNode().put("part", part).put("offset", offset).put("limit", 8000));
+            }
+            return null;
+        }
+
+        AiResponse decide(AiRequest request) throws Exception {
+            request.messages().stream().flatMap(m -> m.toolResult().stream()).reduce((a, b) -> b)
+                .ifPresent(result -> assertFalse(result.error(), result.text()));
+            int turn = decisions++;
+            String tool;
+            ObjectNode args;
+            if (turn == 0) {
+                tool = "read";
+                args = JSON.createObjectNode().put("path", "index.html").put("offset", 0).put("limit", 100);
+            } else if (turn == 1) {
+                tool = "identify";
+                args = (ObjectNode) JSON.readTree("{\"components\":[{\"component\":\"api\",\"root\":\".\",\"technology\":\"Actual static HTML\",\"runtime\":\"Source observation\",\"resources\":\"No database required\",\"uncertainties\":\"Unverified candidate\",\"evidence\":[\"o1\"]}]}");
+            } else if (turn == 2) {
+                tool = "plan";
+                args = (ObjectNode) JSON.readTree("{\"applicationId\":\"demo\",\"explanation\":\"Plan the read source\",\"components\":[{\"id\":\"api\",\"sourceRoot\":\".\",\"dependencies\":[],\"evidence\":[\"o1\"],\"backend\":\"PROCESS\",\"mode\":\"DAEMON\",\"entrypoint\":\"current.sh\",\"arguments\":[],\"workingDirectory\":\"\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10},\"ports\":[],\"resources\":[],\"configuration\":[],\"databases\":[],\"secretReferences\":[]}],\"applicationHealth\":{\"component\":\"api\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10}}}");
+            } else {
+                assertEquals(3, turn);
+                tool = "remote_read";
+                args = JSON.createObjectNode().put("component", "api").put("path", "index.html").put("offset", 0).put("limit", 1);
+            }
+            if (tool.equals("plan")) {
+                var assessment = args.putObject("assessment");
+                var basis = assessment.putArray("basis");
+                var pending = JSON.readTree(request.messages().getLast().text()).at("/state/judgement/pending");
+                if (pending.isEmpty()) basis.add("o1");
+                else pending.forEach(id -> basis.add(id.asText()));
+                assessment.put("suitability", "Use original observations").put("differences", "Candidate not yet observed").put("resolution", "RESOLVED").put("decision", "Read the source through this original proposal");
+            }
+            return nativeCall("verification_model_" + decisions, tool, args);
+        }
+
+        String expectedOutput() {
+            return "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\nBYTES=" + archive.byteCount() + "\nSHA256=" + archive.sha256() + "\nOWNER=0\n";
+        }
+
+        OperationResult<CommandResult> transport(CommandRequest request) {
+            if (new String(request.stdin(), StandardCharsets.UTF_8).equals(DeploymentAgentHelperReadiness.script()))
+                return reply("FORMAT=WTL_AGENT_HELPER_READINESS_1\nSTATUS=READY\nREASON=CURRENT_TASK_READY\nPACKAGED_PROTOCOL=" + DeploymentManagedHelperBundle.PROTOCOL_VERSION + "\nHELPER=MATCH\nBUILD_ENTRY=MATCH\nDEPENDENCIES=MATCH\nROOTS=VALID_OR_ABSENT\nRECEIPTS=SETTLED\n");
+            if (request.script().equals(DeploymentAgentHostProbe.baseline()))
+                return reply("FORMAT=WTL_AGENT_BASELINE_1\nDISTRO_ID=ubuntu\nDISTRO_VARIANT=\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\n");
+            if (request.script().contains("stat -f -c '%a %S'")) return reply("1000000000 4096\n");
+            if (request.script().contains("printf 'BYTES='")) {
+                verifySends++;
+                assertEquals(1, verifyGrants);
+                assertEquals(verifiedRequest, verificationIntent(request).exactAction());
+                return reply(expectedOutput());
+            }
+            if (request.script().contains(" candidate-create-task ")) {
+                creates++;
+                return reply("CANDIDATE=" + workspace.candidateRoot() + "\n");
+            }
+            if (request.script().contains(" candidate-query-task "))
+                return reply("CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n");
+            if (request.script().contains("'agent-open'")) {
+                opens++;
+                assertEquals(1, verifySends);
+                return reply("SOURCE_REVISION=" + material.snapshot().sha256() + "\n");
+            }
+            if (request.script().contains("'agent-read'")) {
+                assertEquals(1, opens);
+                throw stop;
+            }
+            throw new AssertionError("Unrequested controlled operation");
+        }
+    }
 
     @Override
     protected gold.debug.windowstolinux.app.service.task.PlatformInteractionService.Prompts interactionPrompts() {
