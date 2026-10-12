@@ -26,7 +26,7 @@ class ConfigLoaderTest {
     String sample() throws IOException {
         try (var input = ConfigLoader.class.getResourceAsStream(ConfigLoader.RESOURCE)) {
             assertNotNull(input);
-            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n").replaceAll("(?m)[ \t]+#.*$", "");
         }
     }
 
@@ -142,6 +142,27 @@ class ConfigLoaderTest {
             assertThrows(IOException.class, () -> load(yaml.replace("allow-output-token-override: true", "allow-output-token-override: " + invalid), "app"));
         assertThrows(IOException.class, () -> load(yaml.replace("    allow-output-token-override: true\n", ""), "app"));
         assertThrows(IOException.class, () -> load(yaml.replace("allow-output-token-override: true", "allow-output-token-override: true\n    allow-output-token-override: false"), "app"));
+    }
+
+    @Test
+    void nativeStateLimitsAreRequiredStrictAndCapturedWithTheAiConfiguration() throws Exception {
+        String yaml = sample();
+        var configured = load(yaml.replace("max-states: 4096", "max-states: 8192")
+            .replace("max-total-bytes: 67108864", "max-total-bytes: 134217728")
+            .replace("max-value-bytes: 1048576", "max-value-bytes: 524288"), "app").ai().nativeState();
+        assertEquals(new AppConfig.NativeState(8192, 134217728, 524288), configured);
+        assertEquals(AppConfig.defaultsConfig().ai().nativeState(), load(yaml, "app").ai().nativeState());
+        for (String field : new String[]{"max-states", "max-total-bytes", "max-value-bytes"}) {
+            String line = yaml.lines().filter(value -> value.stripLeading().startsWith(field + ":")).findFirst().orElseThrow();
+            assertThrows(IOException.class, () -> load(yaml.replace(line + "\n", ""), "app"));
+            assertThrows(IOException.class, () -> load(yaml.replace(line, line + "\n" + line), "app"));
+            for (String invalid : new String[]{"0", "-1", "null", "true", "1.5", "'4096'", "9223372036854775808"})
+                assertThrows(IOException.class, () -> load(yaml.replace(line, "      " + field + ": " + invalid), "app"));
+        }
+        assertThrows(IOException.class, () -> load(yaml.replace("max-states: 4096", "max-states: 2147483648"), "app"));
+        assertThrows(IOException.class, () -> load(yaml.replace("max-value-bytes: 1048576", "max-value-bytes: 1048577"), "app"));
+        assertThrows(IOException.class, () -> load(yaml.replace("max-total-bytes: 67108864", "max-total-bytes: 1048575"), "app"));
+        assertThrows(IOException.class, () -> load(yaml.replace("native-state:", "native-state:\n      extra: 1"), "app"));
     }
 
     @Test

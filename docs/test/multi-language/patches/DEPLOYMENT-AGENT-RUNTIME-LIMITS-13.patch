@@ -1,0 +1,2005 @@
+diff --git a/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/AppConfig.java b/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/AppConfig.java
+--- a/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/AppConfig.java
++++ b/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/AppConfig.java
+@@ -38,7 +38,8 @@
+      * @return baseline configuration / 默认配置 */
+     public static AppConfig defaultsConfig() {
+         return new AppConfig("data", new Ui(false, false), new Defaults("system", "SYSTEM", 30, 300, true),
+-            new Ssh(30, 2, 10, 15), new Ai(30, 32768, true, 8192, new Budget(60), new Budget(30), new Budget(20)),
++            new Ssh(30, 2, 10, 15), new Ai(30, 32768, true, 8192,
++            new NativeState(4096, 64L * 1024 * 1024, 1024 * 1024), new Budget(60), new Budget(30), new Budget(20)),
+             100, true, Optional.empty());
+     }
+ 
+@@ -71,6 +72,14 @@
+     public record Budget(int timeoutSeconds) {
+     }
+ 
++    /** Task-owned native provider payload limits; public handles retain their 1 MiB bound. */
++    public record NativeState(int maxStates, long maxTotalBytes, int maxValueBytes) {
++        public NativeState {
++            if (maxStates < 1 || maxValueBytes < 1 || maxValueBytes > 1024 * 1024 || maxTotalBytes < maxValueBytes)
++                throw new IllegalArgumentException("Invalid native provider state limits");
++        }
++    }
++
+     /** Independent transport and operation budgets. / 独立传输与用途预算。
+      * @param connectSeconds HTTP connect cap / HTTP连接上限
+      * @param recommendedMaxOutputTokens default output budget / 默认推荐输出额度
+@@ -80,11 +89,13 @@
+      * @param deletion deletion review timeout / 删除审核超时
+      * @param file file judgement timeout / 文件判断超时 */
+     public record Ai(int connectSeconds, int recommendedMaxOutputTokens, boolean allowOutputTokenOverride,
+-                     int verificationMaxOutputTokens, Budget recovery, Budget deletion, Budget file) {
++                     int verificationMaxOutputTokens, NativeState nativeState, Budget recovery, Budget deletion,
++                     Budget file) {
+         public Ai {
+             if (connectSeconds < 1 || recommendedMaxOutputTokens < 1 || verificationMaxOutputTokens < 1)
+                 throw new IllegalArgumentException("AI transport and output budgets must be positive");
+             Objects.requireNonNull(recovery);
++            Objects.requireNonNull(nativeState);
+             Objects.requireNonNull(deletion);
+             Objects.requireNonNull(file);
+         }
+diff --git a/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/ConfigLoader.java b/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/ConfigLoader.java
+--- a/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/ConfigLoader.java
++++ b/src/app/config/src/main/java/gold/debug/windowstolinux/app/config/ConfigLoader.java
+@@ -28,6 +28,7 @@
+         "defaults.delete-ai-explanation", "ssh.heartbeat-seconds", "ssh.recovery.observation-seconds",
+         "ssh.recovery.probe-interval-seconds", "ssh.recovery.probe-timeout-seconds", "ai.connect-seconds",
+         "ai.recommended-max-output-tokens", "ai.allow-output-token-override", "ai.verification-max-output-tokens",
++        "ai.native-state.max-states", "ai.native-state.max-total-bytes", "ai.native-state.max-value-bytes",
+         "ai.recovery.timeout-seconds", "ai.deletion.timeout-seconds", "ai.file.timeout-seconds",
+         "logs.emergency-records", "mod.auto-load", "mod.store.base-url");
+ 
+@@ -102,6 +103,8 @@
+                 new AppConfig.Ai(number(values, "ai.connect-seconds", 86400),
+                     number(values, "ai.recommended-max-output-tokens", Integer.MAX_VALUE), bool(values, "ai.allow-output-token-override"),
+                     number(values, "ai.verification-max-output-tokens", Integer.MAX_VALUE),
++                    new AppConfig.NativeState(number(values, "ai.native-state.max-states", Integer.MAX_VALUE),
++                        positiveLong(values, "ai.native-state.max-total-bytes"), number(values, "ai.native-state.max-value-bytes", 1024 * 1024)),
+                     budget(values, "recovery"), budget(values, "deletion"), budget(values, "file")),
+                 number(values, "logs.emergency-records", 100), !mode.equals("class") || bool(values, "mod.auto-load"), store);
+         } catch (IllegalArgumentException invalid) {
+@@ -172,12 +175,18 @@
+         return values.get(key).booleanValue();
+     }
+ 
+-    /** Requires an integer within the field-specific positive bound. / 要求整数位于字段规定的正数界限内。
+-     * @param values merged effective fields / 合并后生效字段
+-     * @param key supported field key / 支持的字段键
+-     * @param maximum inclusive positive upper bound / 含端点正数上限
+-     * @return validated integer / 已校验整数
++    /** Reads a positive aggregate byte budget without coercion or overflow. / 不进行类型转换或溢出地读取正总字节预算。
++     * @param values merged effective fields / 合并后生效字段
++     * @param key supported field key / 支持的字段键
++     * @return validated long integer / 已校验 long 整数
+      * @throws IOException if type or range is invalid / 类型或范围无效时 */
++    private static long positiveLong(Map<String, JsonNode> values, String key) throws IOException {
++        var node = values.get(key);
++        if (!node.isIntegralNumber() || !node.canConvertToLong() || node.longValue() < 1)
++            throw new IOException("Expected positive long integer: " + key);
++        return node.longValue();
++    }
++
+     private static int number(Map<String, JsonNode> values, String key, int maximum) throws IOException {
+         var node = values.get(key);
+         if (!node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() < 1 || node.intValue() > maximum)
+diff --git a/src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml b/src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml
+--- a/src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml
++++ b/src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml
+@@ -1,41 +1,45 @@
+-common:
+-  database:
+-    data-directory: data
+-  ui:
+-    navigation-collapsed: false
+-    advanced-expanded: false
+-  defaults:
+-    locale: system
+-    theme: SYSTEM
+-    connect-seconds: 30
+-    idle-seconds: 300
+-    delete-ai-explanation: true
+-  ssh:
+-    heartbeat-seconds: 30
+-    recovery:
+-      observation-seconds: 2
+-      probe-interval-seconds: 10
+-      probe-timeout-seconds: 15
+-  ai:
+-    connect-seconds: 30
+-    recommended-max-output-tokens: 32768
+-    allow-output-token-override: true
+-    verification-max-output-tokens: 8192
+-    recovery:
+-      timeout-seconds: 60
+-    deletion:
+-      timeout-seconds: 30
+-    file:
+-      timeout-seconds: 20
+-  logs:
+-    emergency-records: 100
+-  mod:
+-    store:
+-      base-url: ""
+-class:
+-  database:
+-    data-directory: src/app/db/data
+-  mod:
+-    auto-load: false
+-jar: {}
+-app: {}
++common: # 所有运行模式的基础配置；应用启动读取快照，模式分组按字段覆盖
++  database: # 平台数据库目录；相对路径基于工作目录
++    data-directory: data # 数据文件目录，不含数据库凭据
++  ui: # 启动时的界面默认展开状态
++    navigation-collapsed: false # 是否默认收起导航区
++    advanced-expanded: false # 是否默认展开高级设置
++  defaults: # 新连接及界面的默认值；不改已有持久配置
++    locale: system # 界面语言；system 表示跟随系统
++    theme: SYSTEM # 界面主题；SYSTEM 表示跟随系统
++    connect-seconds: 30 # 新 SSH 连接的连接期限，单位：秒
++    idle-seconds: 300 # 新 SSH 连接的空闲期限，单位：秒
++    delete-ai-explanation: true # 删除操作是否默认显示 AI 解释
++  ssh: # 平台 SSH 保活与恢复探测
++    heartbeat-seconds: 30 # 已连接会话保活间隔，单位：秒
++    recovery: # 连接恢复观察及探测策略
++      observation-seconds: 2 # 恢复状态观察窗口，单位：秒
++      probe-interval-seconds: 10 # 恢复探测间隔，单位：秒
++      probe-timeout-seconds: 15 # 单次恢复探测期限，单位：秒
++  ai: # 公共平台模型资源策略；由 AppConfig 传入真实服务实例
++    connect-seconds: 30 # 模型 HTTP 连接期限，单位：秒
++    recommended-max-output-tokens: 32768 # 未显式覆盖时的推荐输出预算，单位：token
++    allow-output-token-override: true # 是否允许请求按公共策略显式覆盖输出预算
++    verification-max-output-tokens: 8192 # 模型配置验证请求的输出预算，单位：token
++    native-state: # 原任务全部用途共用的有限留存资源；耗尽后原用途会话关闭，不逐出旧句柄
++      max-states: 4096 # 每原任务全部用途共用的 native state 数量上限，单位：条
++      max-total-bytes: 67108864 # 每原任务留存 provider payload 的 UTF-8 总量，单位：字节
++      max-value-bytes: 1048576 # 单个 provider payload，单位：UTF-8 字节；不得超过公共句柄的 1 MiB
++    recovery: # 平台恢复用途的模型调用策略
++      timeout-seconds: 60 # 单次恢复解释请求期限，单位：秒
++    deletion: # 平台删除用途的模型调用策略
++      timeout-seconds: 30 # 单次删除解释请求期限，单位：秒
++    file: # 平台文件用途的模型调用策略
++      timeout-seconds: 20 # 单次文件解释请求期限，单位：秒
++  logs: # 平台日志故障兜底
++    emergency-records: 100 # 紧急日志内存留存上限，单位：条
++  mod: # 公共 Mod 管理默认配置
++    store: # Mod 商店地址；不包含访问凭据
++      base-url: "" # 商店基础 HTTP(S) 地址；空字符串表示未配置
++class: # 类目录开发运行模式，仅覆盖以下字段，其余继承 common
++  database: # 开发运行模式的数据目录覆盖
++    data-directory: src/app/db/data # 开发数据文件目录，相对工作目录
++  mod: # 开发运行模式的 Mod 加载策略覆盖
++    auto-load: false # 是否启动时自动加载 Mod
++jar: {} # JAR 运行模式无额外覆盖，全部继承 common
++app: {} # 应用包运行模式无额外覆盖，全部继承 common
+diff --git a/src/app/config/src/test/java/gold/debug/windowstolinux/app/config/ConfigLoaderTest.java b/src/app/config/src/test/java/gold/debug/windowstolinux/app/config/ConfigLoaderTest.java
+--- a/src/app/config/src/test/java/gold/debug/windowstolinux/app/config/ConfigLoaderTest.java
++++ b/src/app/config/src/test/java/gold/debug/windowstolinux/app/config/ConfigLoaderTest.java
+@@ -26,7 +26,7 @@
+     String sample() throws IOException {
+         try (var input = ConfigLoader.class.getResourceAsStream(ConfigLoader.RESOURCE)) {
+             assertNotNull(input);
+-            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
++            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n").replaceAll("(?m)[ \t]+#.*$", "");
+         }
+     }
+ 
+@@ -142,6 +142,27 @@
+             assertThrows(IOException.class, () -> load(yaml.replace("allow-output-token-override: true", "allow-output-token-override: " + invalid), "app"));
+         assertThrows(IOException.class, () -> load(yaml.replace("    allow-output-token-override: true\n", ""), "app"));
+         assertThrows(IOException.class, () -> load(yaml.replace("allow-output-token-override: true", "allow-output-token-override: true\n    allow-output-token-override: false"), "app"));
++    }
++
++    @Test
++    void nativeStateLimitsAreRequiredStrictAndCapturedWithTheAiConfiguration() throws Exception {
++        String yaml = sample();
++        var configured = load(yaml.replace("max-states: 4096", "max-states: 8192")
++            .replace("max-total-bytes: 67108864", "max-total-bytes: 134217728")
++            .replace("max-value-bytes: 1048576", "max-value-bytes: 524288"), "app").ai().nativeState();
++        assertEquals(new AppConfig.NativeState(8192, 134217728, 524288), configured);
++        assertEquals(AppConfig.defaultsConfig().ai().nativeState(), load(yaml, "app").ai().nativeState());
++        for (String field : new String[]{"max-states", "max-total-bytes", "max-value-bytes"}) {
++            String line = yaml.lines().filter(value -> value.stripLeading().startsWith(field + ":")).findFirst().orElseThrow();
++            assertThrows(IOException.class, () -> load(yaml.replace(line + "\n", ""), "app"));
++            assertThrows(IOException.class, () -> load(yaml.replace(line, line + "\n" + line), "app"));
++            for (String invalid : new String[]{"0", "-1", "null", "true", "1.5", "'4096'", "9223372036854775808"})
++                assertThrows(IOException.class, () -> load(yaml.replace(line, "      " + field + ": " + invalid), "app"));
++        }
++        assertThrows(IOException.class, () -> load(yaml.replace("max-states: 4096", "max-states: 2147483648"), "app"));
++        assertThrows(IOException.class, () -> load(yaml.replace("max-value-bytes: 1048576", "max-value-bytes: 1048577"), "app"));
++        assertThrows(IOException.class, () -> load(yaml.replace("max-total-bytes: 67108864", "max-total-bytes: 1048575"), "app"));
++        assertThrows(IOException.class, () -> load(yaml.replace("native-state:", "native-state:\n      extra: 1"), "app"));
+     }
+ 
+     @Test
+diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuations.java b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuations.java
+--- a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuations.java
++++ b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuations.java
+@@ -3,14 +3,19 @@
+ import java.util.*;
+ 
+ import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
++import gold.debug.windowstolinux.app.config.AppConfig;
+ import gold.debug.windowstolinux.appapi.ai.model.*;
+ 
+ /** Task-owned provider state, inaccessible through public diagnostic values. */
+ final class NativeModelContinuations {
+-    private record State(UUID task, AiPurpose purpose, StoredAiModelProfile profile, String revision, String value) {
+-        int payloadBytes() {
+-            return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+-        }
++    private record State(UUID task, AiPurpose purpose, StoredAiModelProfile profile, String revision, String value,
++                         int payloadBytes) {
++    }
++
++    private final AppConfig.NativeState limits;
++
++    NativeModelContinuations(AppConfig.NativeState limits) {
++        this.limits = Objects.requireNonNull(limits);
+     }
+ 
+     private final Map<UUID, State> states = new LinkedHashMap<>();
+@@ -53,15 +58,18 @@
+     }
+ 
+     synchronized AiContinuation retain(UUID task, AiPurpose purpose, StoredAiModelProfile profile, String revision, String value) {
+-        if (value == null || value.isEmpty() || value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1024 * 1024)
++        if (value == null || value.isEmpty())
++            throw new IllegalArgumentException("Native provider state exceeds its bound");
++        int payloadBytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
++        if (payloadBytes > limits.maxValueBytes())
+             throw new IllegalArgumentException("Native provider state exceeds its bound");
+         long count = states.values().stream().filter(s -> s.task().equals(task)).count();
+         long bytes = states.values().stream().filter(s -> s.task().equals(task)).mapToLong(State::payloadBytes).sum();
+-        if (count >= 160 || bytes + value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16L * 1024 * 1024)
++        if (count >= limits.maxStates() || bytes > limits.maxTotalBytes() - payloadBytes)
+             throw new IllegalArgumentException("Native task state capacity exhausted");
+         UUID id = UUID.randomUUID();
+-        states.put(id, new State(task, purpose, profile, revision, value));
+-        bindings.putIfAbsent(new Session(task, purpose), new State(task, purpose, profile, revision, ""));
++        states.put(id, new State(task, purpose, profile, revision, value, payloadBytes));
++        bindings.putIfAbsent(new Session(task, purpose), new State(task, purpose, profile, revision, "", 0));
+         return new AiContinuation(id, states.get(id).payloadBytes());
+     }
+ 
+@@ -78,6 +86,10 @@
+         if (bindings.containsKey(session)) stopped.add(session);
+     }
+ 
++    synchronized void stopAfterRetentionFailure(UUID task, AiPurpose purpose) {
++        stopped.add(new Session(task, purpose));
++    }
++
+     synchronized void clear(UUID task) {
+         states.values().removeIf(s -> s.task().equals(task));
+         bindings.keySet().removeIf(s -> s.task().equals(task));
+diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java
+--- a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java
++++ b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java
+@@ -49,7 +49,7 @@
+ 
+ /** Routes generic model calls through frozen purpose selections and original task credentials. / 经冻结用途选择及原任务凭据路由通用模型调用。 */
+ public final class PlatformAiService implements AiService, AutoCloseable {
+-    private final NativeModelContinuations continuations = new NativeModelContinuations();
++    private final NativeModelContinuations continuations;
+ 
+     /** Configured model connection timeout in seconds. / 已配置的模型连接超时秒数。 */
+     private final int connectSeconds;
+@@ -108,6 +108,7 @@
+     public PlatformAiService(PlatformDatabase database, PlatformTaskRuntime tasks, DesktopSecurityService security,
+                              AiModelStore profiles, String owner, String version, AppConfig.Ai settings) {
+         this.settings = Objects.requireNonNull(settings);
++        this.continuations = new NativeModelContinuations(settings.nativeState());
+         this.connectSeconds = settings.connectSeconds();
+         this.tasks = Objects.requireNonNull(tasks);
+         this.security = Objects.requireNonNull(security);
+@@ -615,16 +616,18 @@
+                         throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed during the native request");
+                     }
+                     var response = result.value().orElseThrow();
+-                    gold.debug.windowstolinux.appapi.ai.model.AiContinuation state;
+                     try {
+-                        state = continuations.retain(task.id(), request.purpose(), profile,
++                        var state = continuations.retain(task.id(), request.purpose(), profile,
+                             revision, pending.call.continuation());
++                        result = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(response.text(),
++                            response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())), Optional.empty());
+                     } catch (IllegalArgumentException exhausted) {
+-                        continuations.stop(task.id(), request.purpose());
+-                        throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained");
++                        continuations.stopAfterRetentionFailure(task.id(), request.purpose());
++                        result = new OperationResult<>(TaskResult.FAILED,
++                            Optional.of(new AiResponse("", response.modelId(), response.finishReason(), response.usage(), List.of(),
++                                Optional.empty(), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())),
++                            Optional.of(error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained").problem()));
+                     }
+-                    result = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(response.text(),
+-                        response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())), Optional.empty());
+                 }
+                 if (result.problem().isPresent())
+                     result = new OperationResult<>(result.outcome(), result.value(), Optional.of(withOutputBudget(result.problem().orElseThrow(), effectiveMaxOutputTokens)));
+diff --git a/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuationsTest.java b/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuationsTest.java
+--- a/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuationsTest.java
++++ b/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/ai/NativeModelContinuationsTest.java
+@@ -10,7 +10,8 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class NativeModelContinuationsTest {
+-    private final NativeModelContinuations states = new NativeModelContinuations();
++    private final NativeModelContinuations states = new NativeModelContinuations(
++        gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().nativeState());
+ 
+     private final UUID task = UUID.randomUUID();
+ 
+@@ -60,4 +61,61 @@
+             request(AiPurpose.LANGUAGE, new AiContinuation(handle.id(), 1)), "revision"));
+         assertThrows(IllegalArgumentException.class, () -> states.retain(task, AiPurpose.LANGUAGE, model, "revision", "中".repeat(400000)));
+     }
++
++    @Test
++    void configuredCapacityKeepsEarlyMixedPurposeAndIndependentSamePurposeBranches() throws Exception {
++        var configured = gold.debug.windowstolinux.app.config.ConfigLoader.load("app").ai().nativeState();
++        var retained = new NativeModelContinuations(configured);
++        var firstLanguage = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "first-language");
++        var firstApproval = retained.retain(task, AiPurpose.APPROVAL, model, "revision", "first-approval");
++        var otherBranch = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "independent-branch");
++        for (int index = 3; index < 512; index++)
++            retained.retain(task, index % 2 == 0 ? AiPurpose.LANGUAGE : AiPurpose.APPROVAL, model, "revision", "state-" + index);
++        assertEquals(4096, configured.maxStates());
++        assertEquals(64L * 1024 * 1024, configured.maxTotalBytes());
++        assertEquals("first-language", retained.values(task, request(AiPurpose.LANGUAGE, firstLanguage), model, "revision").get(firstLanguage.id()));
++        assertEquals("first-approval", retained.values(task, request(AiPurpose.APPROVAL, firstApproval), model, "revision").get(firstApproval.id()));
++        assertEquals("independent-branch", retained.values(task, request(AiPurpose.LANGUAGE, otherBranch), model, "revision").get(otherBranch.id()));
++    }
++
++    @Test
++    void configuredSmallCountIsTaskWideAndClearCannotRemoveAnotherTasksState() {
++        var retained = new NativeModelContinuations(new gold.debug.windowstolinux.app.config.AppConfig.NativeState(2, 64, 32));
++        var other = UUID.randomUUID();
++        var otherHandle = retained.retain(other, AiPurpose.LANGUAGE, model, "revision", "other");
++        var first = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "first");
++        retained.retain(task, AiPurpose.APPROVAL, model, "revision", "second");
++        assertThrows(IllegalArgumentException.class, () -> retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "third"));
++        assertEquals("first", retained.values(task, request(AiPurpose.LANGUAGE, first), model, "revision").get(first.id()));
++        retained.stop(task, AiPurpose.LANGUAGE);
++        retained.clear(task);
++        assertThrows(IllegalArgumentException.class, () -> retained.values(task, request(AiPurpose.LANGUAGE, first), model, "revision"));
++        assertEquals("other", retained.values(other, request(AiPurpose.LANGUAGE, otherHandle), model, "revision").get(otherHandle.id()));
++        retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "new");
++        retained.retain(task, AiPurpose.APPROVAL, model, "revision", "new-second");
++    }
++
++    @Test
++    void configuredUtf8AggregateAndIndividualBoundsRejectWithoutEvictingExistingHandles() {
++        var retained = new NativeModelContinuations(new gold.debug.windowstolinux.app.config.AppConfig.NativeState(10, 12, 8));
++        var first = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "中中");
++        retained.retain(task, AiPurpose.APPROVAL, model, "revision", "abcdef");
++        assertEquals(6, first.payloadBytes());
++        assertThrows(IllegalArgumentException.class, () -> retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "x"));
++        assertThrows(IllegalArgumentException.class, () -> retained.retain(UUID.randomUUID(), AiPurpose.LANGUAGE, model, "revision", "123456789"));
++        assertEquals("中中", retained.values(task, request(AiPurpose.LANGUAGE, first), model, "revision").get(first.id()));
++    }
++
++    @Test
++    void firstRetentionFailureSealsOnlyTheOriginalPurposeUntilItsTaskIsCleared() {
++        var retained = new NativeModelContinuations(new gold.debug.windowstolinux.app.config.AppConfig.NativeState(2, 16, 4));
++        var fresh = new AiRequest(AiPurpose.LANGUAGE, List.of(new AiMessage(AiRole.USER, "next", List.of())), 128, Duration.ofSeconds(5), false);
++        assertThrows(IllegalArgumentException.class, () -> retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "too-large"));
++        retained.stopAfterRetentionFailure(task, AiPurpose.LANGUAGE);
++        assertThrows(IllegalArgumentException.class, () -> retained.bound(task, fresh, "revision"));
++        var approval = retained.retain(task, AiPurpose.APPROVAL, model, "revision", "ok");
++        assertEquals(model, retained.bound(task, request(AiPurpose.APPROVAL, approval), "revision").orElseThrow());
++        retained.clear(task);
++        assertTrue(retained.bound(task, fresh, "revision").isEmpty());
++    }
+ }
+diff --git a/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformNativeModelTest.java b/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformNativeModelTest.java
+--- a/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformNativeModelTest.java
++++ b/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformNativeModelTest.java
+@@ -18,6 +18,64 @@
+ class PlatformNativeModelTest {
+     @TempDir
+     Path root;
++
++    @ParameterizedTest
++    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
++    void nativeRetentionFailureReturnsOnlyActualMetricsStopsItsSessionAndNeverRetriesTheProvider(boolean failFirstResponse) throws Exception {
++        try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root, true)) {
++            PlatformTaskAdmissionIntegrationTest.initialize(runtime, false);
++            PlatformAiServiceTest.model(runtime, fixture, "model", "/model", AiCapabilityType.TEXT, 1);
++            var stored = runtime.persistence().aiProfiles().listConfigured().getFirst();
++            runtime.persistence().aiProfiles().recordVerification(stored.profile(), stored.revision(), AiCapabilityType.TOOL_CALLING, java.time.Instant.now());
++            PlatformAiServiceTest.route(runtime, AiPurposeType.DEPLOYMENT, "model");
++            fixture.handler.set(exchange -> PlatformAiServiceTest.Fixture.reply(exchange, 200,
++                "{\"model\":\"fixture-model\",\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":\"private response\",\"tool_calls\":[{\"id\":\"call_" + fixture.calls.get()
++                    + "\",\"type\":\"function\",\"function\":{\"name\":\"unbound_action\",\"arguments\":\"{}\"}}]}}],\"usage\":{\"prompt_tokens\":23,\"completion_tokens\":7}}"));
++            var base = gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai();
++            var settings = new gold.debug.windowstolinux.app.config.AppConfig.Ai(base.connectSeconds(), base.recommendedMaxOutputTokens(),
++                base.allowOutputTokenOverride(), base.verificationMaxOutputTokens(),
++                new gold.debug.windowstolinux.app.config.AppConfig.NativeState(1, 1048576, failFirstResponse ? 1 : 1048576), base.recovery(), base.deletion(), base.file());
++            try (var ai = new gold.debug.windowstolinux.app.service.ai.PlatformAiService(runtime.persistence().database(), runtime.tasks(),
++                runtime.security(), runtime.persistence().aiProfiles(), PlatformTaskAdmissionIntegrationTest.OWNER, PlatformTaskAdmissionIntegrationTest.VERSION, settings)) {
++                var tools = List.of(new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("unbound_action", "No automatic execution", "{\"type\":\"object\"}"));
++                PlatformServerRefTest.completed(runtime.tasks().bind(PlatformTaskAdmissionIntegrationTest.OWNER, PlatformTaskAdmissionIntegrationTest.VERSION, false)
++                    .submit(PlatformTaskAdmissionIntegrationTest.request(), task -> {
++                        var initial = PlatformAiServiceTest.message(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE);
++                        var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(initial.purpose(), initial.messages(), 1234,
++                            java.time.Duration.ofSeconds(6), false, tools);
++                        gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.model.AiResponse> second;
++                        if (failFirstResponse) second = ai.call(request, task);
++                        else {
++                            var first = ai.call(request, task).value().orElseThrow();
++                            assertTrue(first.continuation().isPresent());
++                            var history = new ArrayList<>(initial.messages());
++                            history.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.assistant(first));
++                            history.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.result(
++                                new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("call_1", "observed result", false)));
++                            second = ai.call(new gold.debug.windowstolinux.appapi.ai.model.AiRequest(initial.purpose(), history, 1234,
++                                java.time.Duration.ofSeconds(6), false, tools), task);
++                        }
++                        assertEquals(TaskResult.FAILED, second.outcome());
++                        assertEquals("AI_SESSION_STATE_LIMIT", second.problem().orElseThrow().eventCode());
++                        var metrics = second.value().orElseThrow();
++                        assertEquals("", metrics.text());
++                        assertTrue(metrics.toolCalls().isEmpty());
++                        assertTrue(metrics.continuation().isEmpty());
++                        assertEquals(Optional.of(23L), metrics.usage().inputTokens());
++                        assertEquals(Optional.of(7L), metrics.usage().outputTokens());
++                        assertTrue(metrics.usage().cachedInputTokens().isEmpty());
++                        assertEquals("model", metrics.modelId());
++                        assertEquals("tool_calls", metrics.finishReason());
++                        assertEquals(Optional.of(1234), metrics.effectiveMaxOutputTokens());
++                        assertTrue(metrics.encodedRequestBytes().orElseThrow() > 0);
++                        var stopped = assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class, () -> ai.call(request, task));
++                        assertEquals("AI_SESSION_BINDING_CHANGED", stopped.problem().eventCode());
++                        return PlatformTaskAdmissionIntegrationTest.success(null);
++                    }));
++                assertEquals(failFirstResponse ? 1 : 2, fixture.calls.get(), "The paid successful response is not retried and the stopped session sends nothing");
++            }
++        }
++    }
+ 
+     @ParameterizedTest
+     @CsvSource({"OPENAI_CHAT_COMPLETIONS,true", "OPENAI_CHAT_COMPLETIONS,false", "OPENAI_RESPONSES,true", "OPENAI_RESPONSES,false", "ANTHROPIC_MESSAGES,true", "ANTHROPIC_MESSAGES,false"})
+diff --git a/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformOutputTokenPolicyTest.java b/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformOutputTokenPolicyTest.java
+--- a/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformOutputTokenPolicyTest.java
++++ b/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformOutputTokenPolicyTest.java
+@@ -29,7 +29,7 @@
+ 
+     static AppConfig.Ai policy(int recommendation, boolean allow, int verification) {
+         var base = AppConfig.defaultsConfig().ai();
+-        return new AppConfig.Ai(base.connectSeconds(), recommendation, allow, verification, base.recovery(), base.deletion(), base.file());
++        return new AppConfig.Ai(base.connectSeconds(), recommendation, allow, verification, base.nativeState(), base.recovery(), base.deletion(), base.file());
+     }
+ 
+     static PlatformRuntime open(Path root, boolean allow) throws Exception {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
+@@ -14,7 +14,8 @@
+  * @param view feedback and pagination settings / 反馈与分页配置
+  * @param ai requested output budgets / 申请输出额度
+  * @param paths remote layout captured by deployments and retained operations / 部署及保留操作捕获的远端布局配置 */
+-public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai, RemotePaths paths) {
++public record DeploymentConfig(Source source, Build build, Environment environment, View view, Ai ai,
++                               RemotePaths paths) {
+     /** Requires all six configuration groups. / 要求六组配置齐全。
+      * @param source source limits / 来源限额
+      * @param build build defaults / 构建默认值
+@@ -44,6 +45,7 @@
+             "/usr/bin", "/usr/lib", "/usr/lib64", "/usr/local", "/usr/local/bin", "/usr/local/lib",
+             "/usr/local/sbin", "/usr/sbin", "/usr/share", "/var", "/var/cache", "/var/lib", "/var/log",
+             "/var/opt");
++
+         private static final List<String> CONTROL_TREES = List.of("/proc", "/sys", "/dev", "/run", "/tmp",
+             "/var/tmp", "/etc/systemd", "/etc/containers");
+ 
+@@ -83,11 +85,46 @@
+ 
+     /** Requested budgets; the APP's output policy determines the actual provider limit. */
+     public record Ai(int deploymentMaxOutputTokens, int extendedDeploymentMaxOutputTokens,
+-                     int approvalMaxOutputTokens) {
++                     int approvalMaxOutputTokens, Requests requests, Execution execution, History history) {
+         public Ai {
+             if (deploymentMaxOutputTokens < 1 || extendedDeploymentMaxOutputTokens < deploymentMaxOutputTokens
+                 || approvalMaxOutputTokens < 1 || approvalMaxOutputTokens > deploymentMaxOutputTokens)
+                 throw new IllegalArgumentException("Invalid deployment AI output budgets");
++            Objects.requireNonNull(requests);
++            Objects.requireNonNull(execution);
++            Objects.requireNonNull(history);
++        }
++    }
++
++    /** Caller-owned request deadlines, independent of output policy and execution permission. */
++    public record Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds) {
++        public Requests {
++            if (deploymentTimeoutSeconds < 1 || approvalTimeoutSeconds < 1 || extendedTimeoutSeconds < 1
++                || extendedTimeoutSeconds > 86400 || extendedTimeoutSeconds < deploymentTimeoutSeconds
++                || extendedTimeoutSeconds < approvalTimeoutSeconds)
++                throw new IllegalArgumentException("Invalid deployment AI request deadlines");
++        }
++    }
++
++    /** Finite task resource ceilings; models decide whether to continue without filling these budgets. */
++    public record Execution(int sharedToolAttempts, int standaloneToolAttempts, int localToolTurns,
++                            int agentModelResponses, int retainedReviewSessions, int maxObservations) {
++        public Execution {
++            if (sharedToolAttempts < 1 || standaloneToolAttempts < 1 || localToolTurns < 1 || agentModelResponses < 1
++                || retainedReviewSessions < 1 || standaloneToolAttempts > sharedToolAttempts || localToolTurns > standaloneToolAttempts
++                || retainedReviewSessions > sharedToolAttempts || agentModelResponses > Integer.MAX_VALUE / 4
++                || maxObservations < 1 || maxObservations > 999999)
++                throw new IllegalArgumentException("Invalid deployment AI execution budgets");
++        }
++    }
++
++    /** Whole-batch history limits within the unchanged non-vision 1 MiB request boundary. */
++    public record History(int maxBatches, int characters, int payloadBytes, int initialBatches,
++                          int initialPayloadBytes) {
++        public History {
++            if (maxBatches < 1 || characters < 1 || characters > 1024 * 1024 || payloadBytes < 1 || payloadBytes > 1024 * 1024
++                || initialBatches < 1 || initialBatches > maxBatches || initialPayloadBytes < 1 || initialPayloadBytes > payloadBytes)
++                throw new IllegalArgumentException("Invalid deployment AI history budgets");
+         }
+     }
+ 
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
+@@ -51,7 +51,14 @@
+         var root = mapper.readTree(bytes);
+         fields(root, Set.of("source", "build", "environment", "view", "ai", "paths"));
+         var ai = root.path("ai");
+-        fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens"));
++        fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens",
++            "requests", "execution", "history"));
++        var requests = ai.path("requests");
++        fields(requests, Set.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds"));
++        var execution = ai.path("execution");
++        fields(execution, Set.of("shared-tool-attempts", "standalone-tool-attempts", "local-tool-turns", "agent-model-responses", "retained-review-sessions", "max-observations"));
++        var history = ai.path("history");
++        fields(history, Set.of("max-batches", "characters", "payload-bytes", "initial-batches", "initial-payload-bytes"));
+         var source = root.path("source");
+         fields(source, Set.of("bytes", "entries", "archive-bytes"));
+         var build = root.path("build");
+@@ -71,7 +78,13 @@
+                     integer(environment, "reboot-seconds"), integer(environment, "poll-seconds")),
+                 new DeploymentConfig.View(integer(view, "refresh-ms"), integer(view, "page-size")),
+                 new DeploymentConfig.Ai(integer(ai, "deployment-max-output-tokens"), integer(ai, "extended-deployment-max-output-tokens"),
+-                    integer(ai, "approval-max-output-tokens")),
++                    integer(ai, "approval-max-output-tokens"),
++                    new DeploymentConfig.Requests(integer(requests, "deployment-timeout-seconds"), integer(requests, "approval-timeout-seconds"),
++                        integer(requests, "extended-timeout-seconds")),
++                    new DeploymentConfig.Execution(integer(execution, "shared-tool-attempts"), integer(execution, "standalone-tool-attempts"),
++                        integer(execution, "local-tool-turns"), integer(execution, "agent-model-responses"), integer(execution, "retained-review-sessions"), integer(execution, "max-observations")),
++                    new DeploymentConfig.History(integer(history, "max-batches"), integer(history, "characters"), integer(history, "payload-bytes"),
++                        integer(history, "initial-batches"), integer(history, "initial-payload-bytes"))),
+                 new DeploymentConfig.RemotePaths(text(paths, "helper-directory"),
+                     text(paths, "applications-root"), text(paths, "state-root"), text(paths, "configuration-root"),
+                     text(paths, "data-root")));
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
+@@ -1,28 +1,45 @@
+-ai:
+-  deployment-max-output-tokens: 32768
+-  extended-deployment-max-output-tokens: 65536
+-  approval-max-output-tokens: 8192
+-source:
+-  bytes: 2147483648
+-  entries: 100000
+-  archive-bytes: 2147483648
+-build:
+-  timeout-seconds: 1800
+-  processes: 1024
+-  memory-mib: 4096
+-  output-bytes: 4194304
+-  workspace-bytes: 4294967296
+-environment:
+-  install-seconds: 900
+-  check-seconds: 30
+-  reboot-seconds: 900
+-  poll-seconds: 5
+-view:
+-  refresh-ms: 750
+-  page-size: 200
+-paths:
+-  helper-directory: /usr/local/lib/windowstolinux
+-  state-root: /var/lib/windowstolinux
+-  applications-root: /opt/windowstolinux/apps
+-  configuration-root: /etc/opt/windowstolinux/apps
+-  data-root: /var/opt/windowstolinux/apps
++ai: # 部署 Mod 的模型运行资源；按类加载器读取快照，不热修改已冻结任务
++  deployment-max-output-tokens: 32768 # 普通部署请求输出预算，单位：token；须大于 0
++  extended-deployment-max-output-tokens: 65536 # 扩展部署请求输出预算，单位：token；不小于普通预算
++  approval-max-output-tokens: 8192 # 独立审批请求输出预算，单位：token；不大于普通预算
++  requests: # 每次模型请求的期限；超时不代表远端副作用已结清
++    deployment-timeout-seconds: 120 # 普通部署模型单次调用期限，单位：秒
++    approval-timeout-seconds: 120 # 独立审批模型单次调用期限，单位：秒
++    extended-timeout-seconds: 600 # 扩展部署模型单次调用期限，单位：秒；不小于普通/审批期限
++  execution: # 有限运行兜底；任一资源耗尽即可停止，不要求模型用满预算
++    shared-tool-attempts: 4096 # 主 AGENT 与嵌套工具循环共用的尝试上限，单位：次；拒绝也扣减
++    standalone-tool-attempts: 256 # 无外层协调 scope 时的工具尝试上限，单位：次
++    local-tool-turns: 128 # 单个局部工具循环的模型响应上限，单位：轮
++    agent-model-responses: 512 # 主 AGENT 协调循环的模型响应上限，单位：轮
++    retained-review-sessions: 4096 # 不同原审批请求会话身份的留存上限，单位：条；主管按 Skill 自主决定是否继续讨论
++    max-observations: 4096 # 原任务观察记录留存上限，单位：条；1..999999，不重用或删除已引用观察身份
++  history: # 仅裁剪完整交互批次；保留的工具响应不截断，编码后仍受公共 1 MiB 上限约束
++    max-batches: 24 # 滚动历史保留的完整 native 交互批次上限，单位：批
++    characters: 131072 # 历史加当前状态的 UTF-16 长度上限，单位：码元
++    payload-bytes: 262144 # 历史/策略/当前状态及 continuation 的 UTF-8 载荷上限，单位：字节；最终编码仍限 1 MiB
++    initial-batches: 2 # 可保留的初始完整交互批次数量，单位：批
++    initial-payload-bytes: 8192 # 初始批次合计载荷上限，单位：UTF-8 字节
++source: # 本地源目录快照及归档资源；仍须满足下游公共 API 的结构限制
++  bytes: 2147483648 # 单次源目录快照总量，单位：字节；最大 2 GiB
++  entries: 100000 # 单次源目录快照条目数上限，单位：条；最大 100000
++  archive-bytes: 2147483648 # 源归档文件大小上限，单位：字节；最大 2 GiB
++build: # 隔离构建的资源约束；服务器能力与公共构建契约仍须满足
++  timeout-seconds: 1800 # 单次隔离构建期限，单位：秒
++  processes: 1024 # 隔离构建可用进程数上限，单位：个
++  memory-mib: 4096 # 隔离构建内存上限，单位：MiB
++  output-bytes: 4194304 # 单次构建输出收集上限，单位：字节
++  workspace-bytes: 4294967296 # 隔离构建工作目录磁盘配额，单位：字节
++environment: # 产品环境准备与检查期限；不改变命令审批或远端事实要求
++  install-seconds: 900 # 单次依赖安装期限，单位：秒
++  check-seconds: 30 # 单次环境检查期限，单位：秒
++  reboot-seconds: 900 # 重启后等待目标恢复期限，单位：秒
++  poll-seconds: 5 # 环境就绪轮询间隔，单位：秒
++view: # 部署界面刷新及列表分页
++  refresh-ms: 750 # 部署界面刷新间隔，单位：毫秒
++  page-size: 200 # 部署列表每页数量上限，单位：条
++paths: # Linux 远端布局；属于冻结配置身份，修改后仅影响新配置/新任务
++  helper-directory: /usr/local/lib/windowstolinux # 产品 helper 安装目录，绝对路径
++  state-root: /var/lib/windowstolinux # 产品部署状态根目录，绝对路径
++  applications-root: /opt/windowstolinux/apps # 应用安装根目录，绝对路径
++  configuration-root: /etc/opt/windowstolinux/apps # 应用配置根目录，绝对路径
++  data-root: /var/opt/windowstolinux/apps # 应用持久数据根目录，绝对路径
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
+@@ -15,7 +15,7 @@
+     private static String bundledYaml() throws IOException {
+         try (var input = DeploymentConfigLoaderTest.class.getResourceAsStream(DeploymentConfigLoader.RESOURCE)) {
+             assertNotNull(input);
+-            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
++            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n").replaceAll("(?m)[ \t]+#.*$", "");
+         }
+     }
+ 
+@@ -30,7 +30,8 @@
+         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
+         assertEquals(DeploymentConfig.Environment.original(), config.environment());
+         assertEquals(new DeploymentConfig.View(750, 200), config.view());
+-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192), config.ai());
++        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600),
++            new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
+         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
+             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
+             "/var/opt/windowstolinux/apps"), config.paths());
+@@ -130,7 +131,9 @@
+         var config = parse(yaml.replace("deployment-max-output-tokens: 32768", "deployment-max-output-tokens: 4096")
+             .replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 12288")
+             .replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2048"));
+-        assertEquals(new DeploymentConfig.Ai(4096, 12288, 2048), config.ai());
++        assertEquals(4096, config.ai().deploymentMaxOutputTokens());
++        assertEquals(12288, config.ai().extendedDeploymentMaxOutputTokens());
++        assertEquals(2048, config.ai().approvalMaxOutputTokens());
+         for (String invalid : java.util.List.of(
+             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 32769"),
+             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 0"),
+@@ -146,4 +149,40 @@
+         assertThrows(IOException.class, () -> DeploymentConfigLoader.load(null));
+         assertThrows(IOException.class, () -> DeploymentConfigLoader.load(new ByteArrayInputStream(new byte[65537])));
+     }
++
++    @Test
++    void runtimeBudgetsRejectMissingUnknownDuplicateOverflowAndInvalidRelationships() throws Exception {
++        String yaml = bundledYaml();
++        var larger = parse(yaml.replace("shared-tool-attempts: 4096", "shared-tool-attempts: 8192")
++            .replace("standalone-tool-attempts: 256", "standalone-tool-attempts: 512")
++            .replace("local-tool-turns: 128", "local-tool-turns: 256")
++            .replace("agent-model-responses: 512", "agent-model-responses: 1024")
++            .replace("retained-review-sessions: 4096", "retained-review-sessions: 8192")
++            .replace("characters: 131072", "characters: 262144").replace("payload-bytes: 262144", "payload-bytes: 524288"));
++        assertEquals(new DeploymentConfig.Execution(8192, 512, 256, 1024, 8192, 4096), larger.ai().execution());
++        assertEquals(262144, larger.ai().history().characters());
++        for (String field : java.util.List.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds",
++            "shared-tool-attempts", "standalone-tool-attempts", "local-tool-turns", "agent-model-responses", "retained-review-sessions", "max-observations",
++            "max-batches", "characters", "payload-bytes", "initial-batches", "initial-payload-bytes")) {
++            String line = yaml.lines().filter(value -> value.stripLeading().startsWith(field + ":")).findFirst().orElseThrow();
++            assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
++            assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)));
++            for (String invalid : java.util.List.of("0", "-1", "null", "true", "1.2", "'128'", "2147483648", "9223372036854775808"))
++                assertThrows(IOException.class, () -> parse(yaml.replace(line, "    " + field + ": " + invalid)));
++        }
++        for (String invalid : java.util.List.of(
++            yaml.replace("requests:", "requests:\n    unknown: 1"),
++            yaml.replace("execution:", "execution:\n    unknown: 1"), yaml.replace("history:", "history:\n    unknown: 1"),
++            yaml.replace("extended-timeout-seconds: 600", "extended-timeout-seconds: 119"),
++            yaml.replace("standalone-tool-attempts: 256", "standalone-tool-attempts: 4097"),
++            yaml.replace("local-tool-turns: 128", "local-tool-turns: 257"),
++            yaml.replace("retained-review-sessions: 4096", "retained-review-sessions: 4097"),
++            yaml.replace("agent-model-responses: 512", "agent-model-responses: 2147483647"),
++            yaml.replace("max-observations: 4096", "max-observations: 1000000"),
++            yaml.replace("characters: 131072", "characters: 1048577"),
++            yaml.replace("payload-bytes: 262144", "payload-bytes: 1048577"),
++            yaml.replace("initial-batches: 2", "initial-batches: 25"),
++            yaml.replace("initial-payload-bytes: 8192", "initial-payload-bytes: 262145")))
++            assertThrows(IOException.class, () -> parse(invalid));
++    }
+ }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
+@@ -163,8 +163,9 @@
+         throws ApiException, CapabilityOutcomeException {
+         int tokens = purpose == AiPurpose.APPROVAL ? output.approvalMaxOutputTokens()
+             : extended ? output.extendedDeploymentMaxOutputTokens() : output.deploymentMaxOutputTokens();
+-        var request = new AiRequest(purpose, messages, tokens,
+-            Duration.ofSeconds(extended ? 600 : 60), false, tools);
++        int seconds = purpose == AiPurpose.APPROVAL ? output.requests().approvalTimeoutSeconds()
++            : extended ? output.requests().extendedTimeoutSeconds() : output.requests().deploymentTimeoutSeconds();
++        var request = new AiRequest(purpose, messages, tokens, Duration.ofSeconds(seconds), false, tools);
+         if (purpose == AiPurpose.APPROVAL
+             && tools.size() == 1 && tools.getFirst().name().equals("submit_result"))
+             request = request.withRequiredTool("submit_result");
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
+@@ -38,4 +38,23 @@
+             assertEquals("UNKNOWN", DeploymentAiCallMetrics.facts(request, failed).get("maximumOutputTokens"));
+         }
+     }
++
++    @Test
++    void failedRetentionMetricsAreRecordedBeforeTheDeploymentCallerRejectsExecution() throws Exception {
++        var fixture = new NativeAiFixture();
++        var paid = new AiResponse("", "fixture", "tool_calls", usage, List.of(), Optional.empty(), Optional.of(123), Optional.of(32768));
++        fixture.replies.add(new OperationResult<>(TaskResult.FAILED, Optional.of(paid),
++            Optional.of(new Problem(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained", Map.of(), Optional.empty()))));
++        var failure = assertThrows(DeploymentAiJson.CapabilityOutcomeException.class,
++            () -> new DeploymentAiJson(fixture.context).call(request.purpose(), request.messages(), List.of(), "fixture-route", fixture.task, false));
++        assertEquals(TaskResult.FAILED, failure.outcome());
++        assertEquals("AI_SESSION_STATE_LIMIT", failure.problem().orElseThrow().eventCode());
++        var logged = new com.fasterxml.jackson.databind.ObjectMapper().readTree(fixture.events.getFirst().details().orElseThrow());
++        assertEquals("3", logged.path("inputTokens").asText());
++        assertEquals("4", logged.path("outputTokens").asText());
++        assertEquals("UNKNOWN", logged.path("cachedInputTokens").asText());
++        assertEquals("32768", logged.path("maximumOutputTokens").asText());
++        assertEquals("123", logged.path("encodedRequestBytes").asText());
++        assertEquals(1, fixture.requests.size());
++    }
+ }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiOutputConfigTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiOutputConfigTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiOutputConfigTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiOutputConfigTest.java
+@@ -13,7 +13,9 @@
+     @Test
+     void analysisAndApprovalUseTheirOwnConfiguredOutputRequests() throws Exception {
+         var fixture = new NativeAiFixture();
+-        var ai = new DeploymentAiJson(fixture.context, new DeploymentConfig.Ai(4096, 12288, 2048));
++        var configured = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai();
++        var ai = new DeploymentAiJson(fixture.context, new DeploymentConfig.Ai(4096, 12288, 2048,
++            new DeploymentConfig.Requests(12, 9, 60), configured.execution(), configured.history()));
+         for (var purpose : List.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL)) {
+             fixture.nativeReply(new AiToolCall(purpose.name(), "submit_result", "{}"));
+             var response = fixture.replies.removeLast().value().orElseThrow();
+@@ -23,5 +25,10 @@
+         }
+         assertEquals(List.of(Optional.of(4096), Optional.of(2048)), fixture.requests.stream().map(AiRequest::maxOutputTokens).toList());
+         assertEquals(2, fixture.requests.size());
++        assertEquals(List.of(java.time.Duration.ofSeconds(12), java.time.Duration.ofSeconds(9)), fixture.requests.stream().map(AiRequest::timeout).toList());
++        fixture.nativeReply(new AiToolCall("extended", "submit_result", "{}"));
++        ai.call(AiPurpose.LANGUAGE, fixture.requests.getFirst().messages(), List.of(), "fixture-route", fixture.task, true);
++        assertEquals(Optional.of(12288), fixture.requests.getLast().maxOutputTokens());
++        assertEquals(java.time.Duration.ofSeconds(60), fixture.requests.getLast().timeout());
+     }
+ }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudget.java
+@@ -17,7 +17,8 @@
+     private int remaining;
+ 
+     private DeploymentToolBudget(int maximum) {
+-        if (maximum < 1 || maximum > 512 || CURRENT.get() != null)
++        if (maximum < 1 || maximum > gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().sharedToolAttempts()
++            || CURRENT.get() != null)
+             throw new IllegalStateException("Invalid nested tool budget scope");
+         this.maximum = maximum;
+         remaining = maximum;
+@@ -31,17 +32,21 @@
+     /** Owns a bounded standalone scope only when no enclosing coordinator owns one. / 仅在没有外层协调预算时持有独立有界作用域。
+      * @return owned default scope, or null while the enclosing scope remains responsible / 自有默认作用域；已有外层预算时返回null且不回填 */
+     public static DeploymentToolBudget openStandaloneIfAbsent() {
+-        return CURRENT.get() == null ? open(80) : null;
++        return CURRENT.get() == null ? open(standaloneMaximum()) : null;
+     }
+ 
+     public static int maximum() {
+         var scope = CURRENT.get();
+-        return scope == null ? 80 : scope.maximum;
++        return scope == null ? standaloneMaximum() : scope.maximum;
+     }
+ 
+     public static int remaining() {
+         var scope = CURRENT.get();
+-        return scope == null ? 80 : scope.remaining;
++        return scope == null ? standaloneMaximum() : scope.remaining;
++    }
++
++    private static int standaloneMaximum() {
++        return gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().standaloneToolAttempts();
+     }
+ 
+     public static boolean consume(List<AiToolCall> calls) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistory.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistory.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistory.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistory.java
+@@ -9,6 +9,16 @@
+ 
+ /** Keeps complete native batches; only the latest message carries the full current state. */
+ public final class DeploymentNativeHistory {
++    private final gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.History limits;
++
++    public DeploymentNativeHistory() {
++        this(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history());
++    }
++
++    public DeploymentNativeHistory(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.History limits) {
++        this.limits = Objects.requireNonNull(limits);
++    }
++
+     private final Deque<List<AiMessage>> batches = new ArrayDeque<>();
+ 
+     private final List<List<AiMessage>> initial = new ArrayList<>();
+@@ -24,7 +34,7 @@
+     public List<AiMessage> messages(String policy, String current) {
+         preserveInitial = false;
+         trimShared(current.length(), bytes(policy) + bytes(current));
+-        if (size() + current.length() > 42000 || payloadSize() + bytes(policy) + bytes(current) > 65536)
++        if (size() + current.length() > limits.characters() || payloadSize() + bytes(policy) + bytes(current) > limits.payloadBytes())
+             throw new IllegalArgumentException("Current Agent evidence exceeds bounded context");
+         return visibleMessages(policy, current);
+     }
+@@ -41,12 +51,12 @@
+     public List<AiMessage> agentMessages(String policy, String current) {
+         preserveInitial = true;
+         long currentBytes = bytes(policy) + bytes(current);
+-        if (current.length() > 42000 || currentBytes > 65536)
++        if (current.length() > limits.characters() || currentBytes > limits.payloadBytes())
+             throw agentContextFailure(policy, current);
+         trim(current.length(), currentBytes);
+-        while (!batches.isEmpty() && (size() + current.length() > 42000 || payloadSize() + currentBytes > 65536))
++        while (!batches.isEmpty() && (size() + current.length() > limits.characters() || payloadSize() + currentBytes > limits.payloadBytes()))
+             batches.removeFirst();
+-        while (!initial.isEmpty() && (size() + current.length() > 42000 || payloadSize() + currentBytes > 65536))
++        while (!initial.isEmpty() && (size() + current.length() > limits.characters() || payloadSize() + currentBytes > limits.payloadBytes()))
+             initial.removeFirst();
+         return visibleMessages(policy, current);
+     }
+@@ -76,7 +86,7 @@
+         if (current.length() > 1048576)
+             throw new IllegalArgumentException("Complete approval evidence exceeds its existing bound");
+         trim(0, bytes(policy));
+-        if (size() > 42000 || payloadSize() + bytes(policy) > 65536)
++        if (size() > limits.characters() || payloadSize() + bytes(policy) > limits.payloadBytes())
+             throw new IllegalArgumentException("Approval history exceeds bounded context");
+         return assembled(policy, current);
+     }
+@@ -91,7 +101,7 @@
+     }
+ 
+     public void retain(String input, AiResponse response, List<AiToolResult> results) {
+-        retain(input, response, results, 42000);
++        retain(input, response, results, limits.characters());
+     }
+ 
+     public void retainReview(String input, AiResponse response, List<AiToolResult> results) {
+@@ -106,17 +116,17 @@
+         group.add(new AiMessage(AiRole.USER, stateReference(input, inputLimit), List.of()));
+         group.add(AiMessage.assistant(response));
+         results.forEach(result -> group.add(AiMessage.result(result)));
+-        if (groupSize(group) > 42000 || groupBytes(group) > 65536)
++        if (groupSize(group) > limits.characters() || groupBytes(group) > limits.payloadBytes())
+             throw new IllegalArgumentException("A complete native batch exceeds context budget");
+         var complete = List.copyOf(group);
+-        if (!initialClosed && decisions < 2 && groupBytes(group)
+-            + initial.stream().mapToLong(DeploymentNativeHistory::groupBytes).sum() <= 8192) {
++        if (!initialClosed && decisions < limits.initialBatches() && groupBytes(group)
++            + initial.stream().mapToLong(DeploymentNativeHistory::groupBytes).sum() <= limits.initialPayloadBytes()) {
+             initial.add(complete);
+         } else {
+             initialClosed = true;
+             batches.addLast(complete);
+         }
+-        if (decisions == 1) initialClosed = true;
++        if (decisions == limits.initialBatches() - 1) initialClosed = true;
+         if (preserveInitial) trim(0, 0);
+         else trimShared(0, 0);
+         decisions++;
+@@ -162,14 +172,14 @@
+     }
+ 
+     private void trim(int currentSize, long currentBytes) {
+-        while (batches.size() > 1 && (batches.size() + initial.size() > 12 || size() + currentSize > 42000
+-            || payloadSize() + currentBytes > 65536)) batches.removeFirst();
++        while (batches.size() > 1 && (batches.size() + initial.size() > limits.maxBatches() || size() + currentSize > limits.characters()
++            || payloadSize() + currentBytes > limits.payloadBytes())) batches.removeFirst();
+     }
+ 
+     /** Shared callers may discard the oldest complete group, but must retain the latest group. */
+     private void trimShared(int currentSize, long currentBytes) {
+-        while (initial.size() + batches.size() > 1 && (initial.size() + batches.size() > 12
+-            || size() + currentSize > 42000 || payloadSize() + currentBytes > 65536)) {
++        while (initial.size() + batches.size() > 1 && (initial.size() + batches.size() > limits.maxBatches()
++            || size() + currentSize > limits.characters() || payloadSize() + currentBytes > limits.payloadBytes())) {
+             if (!initial.isEmpty()) initial.removeFirst();
+             else batches.removeFirst();
+         }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoop.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoop.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoop.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoop.java
+@@ -160,7 +160,8 @@
+         this.revision = Objects.requireNonNull(revision);
+         this.policy = Objects.requireNonNull(policy);
+         this.selectedInstructions = Objects.requireNonNull(selectedInstructions);
+-        if (budget < 1 || budget > 80) throw new IllegalArgumentException("Invalid model tool budget");
++        if (budget < 1 || budget > gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().localToolTurns())
++            throw new IllegalArgumentException("Invalid model tool budget");
+         this.budget = budget;
+         this.review = review;
+     }
+@@ -172,6 +173,13 @@
+      * @throws Exception if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+     public OperationResult<T> run(Supplier<Map<String, Tool<T>>> available,
+                                   Supplier<Map<String, Object>> state) throws Exception {
++        try (var scope = DeploymentToolBudget.openStandaloneIfAbsent()) {
++            return runScoped(available, state);
++        }
++    }
++
++    private OperationResult<T> runScoped(Supplier<Map<String, Tool<T>>> available,
++                                         Supplier<Map<String, Object>> state) throws Exception {
+         var ai = new DeploymentAiJson(context);
+         var history = new DeploymentNativeHistory();
+         int attempts = 0;
+@@ -186,7 +194,8 @@
+                     review != null && review.required(entry.getKey()) ? DeploymentToolSchemas.withAssessment(entry.getValue().schema()) : entry.getValue().schema())).toList();
+             var current = new HashMap<String, Object>(state.get());
+             if (review != null) current.put("judgement", review.state());
+-            String input = DeploymentAiJson.facts(Map.of("state", current, "remaining", budget - turn - 1), 42000);
++            String input = DeploymentAiJson.facts(Map.of("state", current, "remaining", budget - turn - 1),
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters());
+             var response = ai.call(AiPurpose.LANGUAGE, history.messages(policy + selectedInstructions.get(), input), definitions, revision, task, false);
+             if (response.toolCalls().isEmpty())
+                 throw new IllegalStateException("Native tool action required; text cannot finish deployment");
+@@ -270,11 +279,13 @@
+                 DeploymentToolScheduler.Execution.LOCAL_READ, args -> Feedback.observed(review.observation(
+                 DeploymentJsonFields.text(args, "id", 8), DeploymentJsonFields.number(args, "offset", 0, 12000), DeploymentJsonFields.number(args, "limit", 1, 6000)))));
+             var indexSchema = DeploymentToolSchemas.object("offset:integer", "limit:integer");
+-            ((com.fasterxml.jackson.databind.node.ObjectNode) indexSchema.at("/properties/offset")).put("maximum", 400);
++            ((com.fasterxml.jackson.databind.node.ObjectNode) indexSchema.at("/properties/offset")).put("maximum", gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations());
+             ((com.fasterxml.jackson.databind.node.ObjectNode) indexSchema.at("/properties/limit")).put("maximum", 50);
+             tools.put("evidence_index", new Tool<>("Page original observation metadata", indexSchema.toString(),
+                 DeploymentToolScheduler.Execution.LOCAL_READ, args -> Feedback.observed(DeploymentAiJson.facts(review.evidenceIndex(
+-                DeploymentJsonFields.number(args, "offset", 0, 400), DeploymentJsonFields.number(args, "limit", 1, 50)), 42000))));
++                    DeploymentJsonFields.number(args, "offset", 0, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations()),
++                    DeploymentJsonFields.number(args, "limit", 1, 50)),
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters()))));
+         }
+         return Map.copyOf(tools);
+     }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentToolBudgetTest.java
+@@ -8,6 +8,25 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentToolBudgetTest {
++    @Test
++    void configuredSharedAndStandaloneScopesRemainIndependentAndNestedLoopsCannotRefill() {
++        try (var standalone = DeploymentToolBudget.openStandaloneIfAbsent()) {
++            assertNotNull(standalone);
++            assertEquals(256, DeploymentToolBudget.maximum());
++            assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("standalone", "read", "{}"))));
++            assertNull(DeploymentToolBudget.openStandaloneIfAbsent());
++            assertEquals(255, DeploymentToolBudget.remaining());
++        }
++        try (var shared = DeploymentToolBudget.open(4096)) {
++            assertEquals(4096, DeploymentToolBudget.maximum());
++            assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("original", "read", "{}"))));
++            assertNull(DeploymentToolBudget.openStandaloneIfAbsent());
++            assertEquals(4095, DeploymentToolBudget.remaining());
++            assertFalse(DeploymentToolBudget.consume(List.of(new AiToolCall("original", "read", "{}"))));
++            assertEquals(4094, DeploymentToolBudget.remaining());
++        }
++    }
++
+     @Test
+     void nestedAttemptsAndDuplicateIdsConsumeOriginalBudgetAndScopeIsReleased() {
+         try (var scope = DeploymentToolBudget.open(4)) {
+@@ -25,8 +44,8 @@
+ 
+     @Test
+     void explicitLargerScopeRetainsMaximumAndCannotReplenishAfterExhaustion() {
+-        assertEquals(80, DeploymentToolBudget.maximum());
+-        assertEquals(80, DeploymentToolBudget.remaining());
++        assertEquals(256, DeploymentToolBudget.maximum());
++        assertEquals(256, DeploymentToolBudget.remaining());
+         try (var scope = DeploymentToolBudget.open(512)) {
+             assertEquals(512, DeploymentToolBudget.maximum());
+             var main = java.util.stream.IntStream.range(0, 320)
+@@ -44,8 +63,8 @@
+             assertEquals(0, DeploymentToolBudget.remaining());
+             assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(512));
+         }
+-        assertEquals(80, DeploymentToolBudget.maximum());
+-        assertEquals(80, DeploymentToolBudget.remaining());
++        assertEquals(256, DeploymentToolBudget.maximum());
++        assertEquals(256, DeploymentToolBudget.remaining());
+         try (var scope = DeploymentToolBudget.open(80)) {
+             assertEquals(80, DeploymentToolBudget.maximum());
+             assertEquals(80, DeploymentToolBudget.remaining());
+@@ -55,9 +74,9 @@
+     @Test
+     void unsupportedScopeLimitsAreRejectedWithoutOpeningAScope() {
+         assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(0));
+-        assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(513));
+-        assertEquals(80, DeploymentToolBudget.maximum());
+-        assertEquals(80, DeploymentToolBudget.remaining());
++        assertThrows(IllegalStateException.class, () -> DeploymentToolBudget.open(4097));
++        assertEquals(256, DeploymentToolBudget.maximum());
++        assertEquals(256, DeploymentToolBudget.remaining());
+     }
+ 
+     @Test
+@@ -73,7 +92,7 @@
+             assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("same-id", "read", "{}"))));
+             assertEquals(79, DeploymentToolBudget.remaining());
+         }
+-        assertEquals(80, DeploymentToolBudget.maximum());
+-        assertEquals(80, DeploymentToolBudget.remaining());
++        assertEquals(256, DeploymentToolBudget.maximum());
++        assertEquals(256, DeploymentToolBudget.remaining());
+     }
+ }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistoryTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistoryTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistoryTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeHistoryTest.java
+@@ -9,10 +9,52 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentNativeHistoryTest {
++    private static final gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.History SMALL_LIMITS =
++        new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.History(12, 42000, 65536, 2, 8192);
++
++    @Test
++    void configuredLargeWindowRetainsEveryCompleteNativeBatchBeyondTheOldWindow() {
++        var history = new DeploymentNativeHistory();
++        history.agentMessages("policy", "initial");
++        for (int turn = 0; turn < 20; turn++) {
++            var calls = List.of(new AiToolCall("a" + turn, "read", "{}"), new AiToolCall("b" + turn, "read", "{}"));
++            var response = new AiResponse("", "model", "tool_calls",
++                new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls,
++                Optional.of(new AiContinuation(UUID.randomUUID(), 4000)));
++            history.retain("state", response, List.of(new AiToolResult("a" + turn, "a".repeat(2000), false),
++                new AiToolResult("b" + turn, "b".repeat(2000), false)));
++        }
++        var messages = history.agentMessages("policy", "current");
++        assertEquals(20, messages.stream().filter(message -> message.role() == AiRole.ASSISTANT).count());
++        assertTrue(messages.stream().mapToLong(message -> message.toolResult().map(result -> result.text().length()).orElse(0)).sum() > 65536);
++        for (int index = 0; index < messages.size(); index++)
++            if (messages.get(index).role() == AiRole.ASSISTANT) {
++                var assistant = messages.get(index);
++                assertTrue(assistant.continuation().isPresent());
++                assertEquals(assistant.toolCalls().get(0).id(), messages.get(index + 1).toolResult().orElseThrow().callId());
++                assertEquals(assistant.toolCalls().get(1).id(), messages.get(index + 2).toolResult().orElseThrow().callId());
++                assertEquals(2000, messages.get(index + 1).toolResult().orElseThrow().text().length());
++            }
++    }
++
++    @Test
++    void completeApprovalAndHistoryStillFaceTheExactFinalEncodedOneMibGate() {
++        var history = new DeploymentNativeHistory();
++        var messages = history.reviewMessages("policy", "🧭".repeat(270000));
++        assertEquals(540000, messages.getLast().text().length());
++        var request = new AiRequest(AiPurpose.APPROVAL, messages, 8192, java.time.Duration.ofMinutes(2), false);
++        assertEquals(1048576, request.maxRequestBytes());
++        assertThrows(IllegalArgumentException.class,
++            () -> gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
++                    gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS)
++                .encode("fixture", request, 8192, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.HIGH, Map.of()));
++        assertEquals("🧭".repeat(270000), messages.getLast().text(), "The complete caller input is never silently truncated to fit");
++    }
++
+     @Test
+     void agentMayEvictLatestWholeBatchWhileSharedContextStillRejectsIt() {
+-        var history = new DeploymentNativeHistory();
+-        var shared = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
++        var shared = new DeploymentNativeHistory(SMALL_LIMITS);
+         history.agentMessages("policy", "start");
+         shared.messages("policy", "start");
+         for (int turn = 0; turn < 2; turn++) {
+@@ -45,7 +87,7 @@
+ 
+     @Test
+     void agentRetainsExactFittingBatchesAndHardFailsWhenStateOrPolicyAloneCannotFit() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         var response = response("original");
+         var result = new AiToolResult("original", "original body", true);
+         history.retain("state", response, List.of(result));
+@@ -58,14 +100,14 @@
+         assertTrue(oversized.getMessage().contains("currentCharacters=42001"));
+         assertFalse(oversized.getMessage().contains("original body"));
+         var policy = assertThrows(IllegalArgumentException.class,
+-            () -> new DeploymentNativeHistory().agentMessages("🧭".repeat(17000), "current"));
++            () -> new DeploymentNativeHistory(SMALL_LIMITS).agentMessages("🧭".repeat(17000), "current"));
+         assertTrue(policy.getMessage().contains("policyBytes=68000"));
+         assertFalse(policy.getMessage().contains("🧭"));
+     }
+ 
+     @Test
+     void agentEvictsOnlyNecessaryWholeInitialAnchorWhenCurrentStateFitsByItself() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         history.agentMessages("policy", "start");
+         for (int turn = 0; turn < 2; turn++)
+             history.retain("state", response("anchor" + turn), List.of(new AiToolResult("anchor" + turn, "a".repeat(1000), false)));
+@@ -80,7 +122,7 @@
+ 
+     @Test
+     void sharedRetentionEvictsOldInitialGroupsBeforeRecentBatchesAcrossRequests() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         for (int turn = 0; turn < 25; turn++) {
+             String state = "state" + turn;
+             history.messages("policy", state);
+@@ -106,11 +148,11 @@
+         selection.select("source policy", Map.of("fact", "initial"), fixture.configurationRevision, fixture.task, false);
+         selection.select("source policy", Map.of("fact", "a".repeat(3000)), fixture.configurationRevision, fixture.task, false);
+         selection.select("source policy", Map.of("fact", "b".repeat(3000)), fixture.configurationRevision, fixture.task, false);
+-        var current = Map.of("fact", "c".repeat(35000));
++        var current = Map.of("fact", "c".repeat(124000));
+         assertEquals("read3", selection.select("source policy", current, fixture.configurationRevision, fixture.task, false).id());
+         assertEquals(4, fixture.requests.size());
+         var messages = fixture.requests.getLast().messages();
+-        assertEquals(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.facts(current, 42000), messages.getLast().text());
++        assertEquals(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.facts(current, 131072), messages.getLast().text());
+         assertEquals(AiMessage.assistant(latestResponse), messages.get(2));
+         assertEquals(List.of("read2"), messages.stream().flatMap(message -> message.toolResult().stream()).map(AiToolResult::callId).toList());
+         assertTrue(messages.get(1).text().startsWith("Previous tool interaction batch 3 state sha256="));
+@@ -119,7 +161,7 @@
+ 
+     @Test
+     void approvalHistoryRetainsItsInitialPrefixAndCompleteCurrentEvidence() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         history.reviewMessages("policy", "first review");
+         for (int turn = 0; turn < 2; turn++)
+             history.retainReview("review" + turn, response("anchor" + turn), List.of(new AiToolResult("anchor" + turn, "reviewed", false)));
+@@ -136,7 +178,7 @@
+ 
+     @Test
+     void visibleResultsMatchExactLastRequestBodiesWithoutChangingNativeBindings() throws Exception {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         String state = "original UTF-8 state 原始🧭";
+         String body = "o1 component=api\nactual UTF-8 source 原始🧭\n";
+         var response = response("query");
+@@ -156,7 +198,7 @@
+ 
+     @Test
+     void evictedResultCanReenterVisibilityOnlyAfterAnotherRequestIsAssembled() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         for (int turn = 0; turn < 2; turn++)
+             history.retain("state", response("prefix" + turn), List.of(new AiToolResult("prefix" + turn, "prefix body " + turn, false)));
+         String recovered = "o3 component=api\ncomplete previously queried source page";
+@@ -188,8 +230,8 @@
+ 
+     @Test
+     void visibleResultSnapshotsAreIsolatedBetweenHistoryInstances() {
+-        var first = new DeploymentNativeHistory();
+-        var second = new DeploymentNativeHistory();
++        var first = new DeploymentNativeHistory(SMALL_LIMITS);
++        var second = new DeploymentNativeHistory(SMALL_LIMITS);
+         first.retain("state", response("first"), List.of(new AiToolResult("first", "first exact body", false)));
+         first.messages("policy", "current");
+         assertTrue(first.visibleToolResult("first exact body"));
+@@ -204,7 +246,7 @@
+ 
+     @Test
+     void opaqueProviderPayloadSizeEvictsOnlyWholeOldBatches() throws Exception {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         var states = new HashMap<UUID, String>();
+         var json = new com.fasterxml.jackson.databind.ObjectMapper();
+         for (int index = 0; index < 3; index++) {
+@@ -237,7 +279,7 @@
+ 
+     @Test
+     void intermediateReadBodyRemainsAvailableForFollowingIdentification() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         var evidence = new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentEvidence();
+         String revision = "a".repeat(64);
+         String lostId = "";
+@@ -257,7 +299,7 @@
+ 
+     @Test
+     void agentKeepsInitialPrefixWhileOldestRecentBodiesAreEvicted() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         history.agentMessages("policy", "initial");
+         for (int i = 0; i < 12; i++)
+             history.retain("state" + i, response("r" + i), List.of(new AiToolResult("r" + i, "b".repeat(3000), false)));
+@@ -278,7 +320,7 @@
+ 
+     @Test
+     void latestFullStateAppearsOnceWhileOriginalNativeResponsesAndResultsRemainExact() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         String oldState = "old-source-revision:" + "x".repeat(8000);
+         String currentState = "current-source-revision:" + "y".repeat(9000);
+         var response = response("first");
+@@ -297,7 +339,7 @@
+ 
+     @Test
+     void stateChangesDoNotRewritePriorHistoryOrEvictToolBodiesToRepeatFullSnapshots() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         history.retain("first:" + "a".repeat(12000), response("a"), List.of(new AiToolResult("a", "body-a".repeat(500), false)));
+         var originalGroup = history.messages("policy", "second:" + "b".repeat(12000)).subList(1, 4);
+         history.retain("second:" + "b".repeat(12000), response("b"), List.of(new AiToolResult("b", "body-b".repeat(500), false)));
+@@ -310,7 +352,7 @@
+ 
+     @Test
+     void contextBudgetStillEvictsWholeGroupsAndRejectsOversizedCurrentState() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         for (int i = 0; i < 4; i++) {
+             String id = "call" + i;
+             history.retain("snapshot", response(id), List.of(new AiToolResult(id, "z".repeat(10000), false)));
+@@ -324,7 +366,7 @@
+ 
+     @Test
+     void missingReorderedOrForeignResultsCannotEnterHistory() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         var response = response("expected");
+         assertThrows(IllegalArgumentException.class, () -> history.retain("state", response, List.of()));
+         assertThrows(IllegalArgumentException.class, () -> history.retain("state", response, List.of(new AiToolResult("foreign", "body", false))));
+@@ -343,7 +385,7 @@
+ 
+     @Test
+     void agentTrimmingNeverSeparatesCallBatchFromAllResultsOrLosesTheBinding() {
+-        var history = new DeploymentNativeHistory();
++        var history = new DeploymentNativeHistory(SMALL_LIMITS);
+         history.agentMessages("policy", "initial");
+         for (int i = 0; i < 20; i++) {
+             var calls = List.of(new AiToolCall("a" + i, "read", "{}"), new AiToolCall("b" + i, "read", "{}"));
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoopTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoopTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoopTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentModelToolLoopTest.java
+@@ -23,6 +23,57 @@
+     private final AtomicInteger calls = new AtomicInteger();
+ 
+     private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
++
++    @Test
++    void configuredObservationIndexSchemaAllowsActualEvidenceBeyondFourHundred() throws Exception {
++        var fixture = new gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture();
++        var evidence = new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentEvidence();
++        for (int index = 0; index <= 500; index++) evidence.observe("", REVISION, 0, "LIST", "source-" + index, false);
++        fixture.nativeReply(new AiToolCall("index", "evidence_index", "{\"offset\":500,\"limit\":1}"));
++        fixture.nativeReply(new AiToolCall("finish", "finish", "{}"));
++        var reads = new AtomicInteger();
++        var review = new DeploymentModelToolLoop.SelectionReview() {
++            public boolean required(String name) {
++                return false;
++            }
++
++            public void assess(String name, com.fasterxml.jackson.databind.JsonNode summary) {
++                fail("No assessment authority is requested");
++            }
++
++            public String observed(String name, String output) {
++                String id = evidence.observe("", REVISION, 0, "TOOL_" + name, "", false);
++                evidence.output(id, output);
++                return id;
++            }
++
++            public Map<String, Object> state() {
++                return Map.of();
++            }
++
++            public String observation(String id, int offset, int limit) {
++                return evidence.read(id, offset, limit);
++            }
++
++            public Map<String, Object> evidenceIndex(int offset, int limit) {
++                assertEquals(500, offset);
++                reads.incrementAndGet();
++                return evidence.index(offset, limit);
++            }
++        };
++        var loop = new DeploymentModelToolLoop<String>(fixture.context, fixture.task, fixture.configurationRevision,
++            "Read actual original observation metadata", 2, review);
++        var result = loop.run(() -> Map.of("finish", new DeploymentModelToolLoop.Tool<String>("Finish local selection",
++            args -> DeploymentModelToolLoop.Feedback.ended(success("done")))), Map::of);
++        assertEquals(TaskResult.SUCCEEDED, result.outcome());
++        assertEquals(1, reads.get());
++        assertEquals(2, fixture.requests.size());
++        assertTrue(fixture.requests.getLast().messages().stream().flatMap(message -> message.toolResult().stream())
++            .anyMatch(value -> value.text().contains("o501")), "The actual page reaches the next model request");
++        var indexTool = fixture.requests.getFirst().tools().stream().filter(tool -> tool.name().equals("evidence_index")).findFirst().orElseThrow();
++        assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations(),
++            new ObjectMapper().readTree(indexTool.inputSchema()).at("/properties/offset/maximum").asInt());
++    }
+ 
+     @Test
+     void modelChoosesIndependentOrderAndReceivesActualFeedback() throws Exception {
+@@ -88,6 +139,28 @@
+     }
+ 
+     private DeploymentModelToolLoop<String> loop(List<String> replies) {
++        return loop(replies, 6);
++    }
++
++    @Test
++    void configuredLocalBudgetCanPassEightyTurnsAndNestedScopeCannotReplenishIt() throws Exception {
++        var loop = loop(Collections.nCopies(81, "advance"), 81);
++        try (var outer = DeploymentToolBudget.open(90)) {
++            assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("outer", "read", "{}"))));
++            var result = loop.run(() -> Map.of("advance", new DeploymentModelToolLoop.Tool<>("Observe independent progress", args -> {
++                selected.add("advance");
++                return selected.size() == 81
++                    ? DeploymentModelToolLoop.Feedback.ended(success("done"))
++                    : DeploymentModelToolLoop.Feedback.observed("Actual observed progress " + selected.size());
++            })), Map::of);
++            assertEquals(TaskResult.SUCCEEDED, result.outcome());
++            assertEquals(81, calls.get());
++            assertEquals(8, DeploymentToolBudget.remaining());
++            assertEquals(90, DeploymentToolBudget.maximum());
++        }
++    }
++
++    private DeploymentModelToolLoop<String> loop(List<String> replies, int budget) {
+         var ai = (AiService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{AiService.class}, (p, m, a) -> {
+             if (m.getName().equals("configurationRevision")) return REVISION;
+             assertEquals("call", m.getName());
+@@ -95,10 +168,11 @@
+             var request = (AiRequest) a[0];
+             assertEquals(AiPurpose.LANGUAGE, request.purpose());
+             var payload = new ObjectMapper().readTree(request.messages().getLast().text());
+-            assertEquals(5 - turn, payload.path("remaining").asInt());
++            assertEquals(budget - 1 - turn, payload.path("remaining").asInt());
+             assertFalse(request.jsonObjectResponse());
+             assertFalse(request.tools().isEmpty());
+-            if (!selected.isEmpty()) assertTrue(request.messages().stream().anyMatch(message -> message.toolResult().isPresent()));
++            if (!selected.isEmpty())
++                assertTrue(request.messages().stream().anyMatch(message -> message.toolResult().isPresent()));
+             return success(new AiResponse("", "controlled", "tool_calls", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+                 List.of(new AiToolCall("call_" + turn, replies.get(turn), "{}")), Optional.of(new AiContinuation(UUID.randomUUID(), 1))));
+         });
+@@ -116,7 +190,7 @@
+             case "id" -> java.util.UUID.fromString("00000000-0000-0000-0000-000000000001");
+             default -> throw new AssertionError(m.getName());
+         });
+-        return new DeploymentModelToolLoop<>(context, task, REVISION, "Test model-selected tools", 6);
++        return new DeploymentModelToolLoop<>(context, task, REVISION, "Test model-selected tools", budget);
+     }
+ 
+     private static <T> OperationResult<T> success(T value) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -121,7 +121,7 @@
+     private Map<String, String> acceptedSourceRevisions = Map.of();
+ 
+     /** Monotonic decision allowance shared by all model turns. / 所有模型轮次共用的单调决策额度。 */
+-    private int remaining = 80;
++    private int remaining = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().agentModelResponses();
+ 
+     private int toolAttempts;
+ 
+@@ -213,7 +213,8 @@
+      * @return actual publication outcome / 真实发布结果
+      * @throws Exception on denied, unknown, cancelled or exhausted work / 工作被拒绝、未知、取消或耗尽时 */
+     public OperationResult<DeploymentAgentDeliveryPort.Published> run() throws Exception {
+-        try (var budget = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(512)) {
++        try (var budget = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget.open(
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().sharedToolAttempts())) {
+             return runBounded();
+         }
+     }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFacts.java
+@@ -11,10 +11,11 @@
+ 
+     static Map<String, Object> observe(int remainingResponses, int mainAttempts) {
+         int maximumAttempts = DeploymentToolBudget.maximum();
+-        int maximumMainAttempts = Math.min(maximumAttempts, 80 * 4);
++        int maximumResponses = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().agentModelResponses();
++        int maximumMainAttempts = Math.min(maximumAttempts, maximumResponses * 4);
+         int mainRemaining = Math.min(Math.max(0, maximumMainAttempts - mainAttempts), Math.max(0, remainingResponses + 1) * 4);
+         int sharedRemaining = DeploymentToolBudget.remaining();
+-        return Map.ofEntries(Map.entry("maximumModelResponses", 80), Map.entry("remainingModelResponsesAfterThisRequest", remainingResponses),
++        return Map.ofEntries(Map.entry("maximumModelResponses", maximumResponses), Map.entry("remainingModelResponsesAfterThisRequest", remainingResponses),
+             Map.entry("maximumMainToolAttempts", maximumMainAttempts), Map.entry("maximumSharedToolAttempts", maximumAttempts),
+             Map.entry("mainToolAttempts", mainAttempts), Map.entry("remainingMainToolAttempts", mainRemaining),
+             Map.entry("remainingSharedToolAttempts", sharedRemaining), Map.entry("remainingExecutableToolAttempts", Math.min(mainRemaining, sharedRemaining)),
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+@@ -47,7 +47,8 @@
+ 
+     public gold.debug.windowstolinux.appapi.ai.model.AiResponse decide(Map<String, Object> state,
+                                                                        gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory history, int remaining, TaskContext task) throws Exception {
+-        if (remaining < 0 || remaining > 80) throw new IllegalArgumentException("Invalid decision budget");
++        if (remaining < 0 || remaining > gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().agentModelResponses())
++            throw new IllegalArgumentException("Invalid decision budget");
+         String input = facts(state, remaining);
+         var result = ai.call(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE,
+             history.agentMessages(POLICY + DeploymentAgentSkills.system(DeploymentAgentSkills.Role.DEPLOYMENT,
+@@ -58,8 +59,9 @@
+ 
+     public static String facts(Map<String, Object> state, int remaining) throws IOException {
+         return DeploymentAiJson.facts(Map.of("state", state, "remaining", remaining,
+-            "skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.DEPLOYMENT),
+-            "availableTools", catalog(state).stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition::name).toList()), 42000);
++                "skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.DEPLOYMENT),
++                "availableTools", catalog(state).stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition::name).toList()),
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters());
+     }
+ 
+     public static boolean critical(String tool) {
+@@ -262,6 +264,8 @@
+         for (String name : List.of("source", "source_index", "list", "read", "search", "remote_read"))
+             ((com.fasterxml.jackson.databind.node.ObjectNode) map.get(name).at("/properties/limit")).put("maximum", 100);
+         ((com.fasterxml.jackson.databind.node.ObjectNode) map.get("evidence_index").at("/properties/limit")).put("maximum", 50);
++        ((com.fasterxml.jackson.databind.node.ObjectNode) map.get("evidence_index").at("/properties/offset"))
++            .put("maximum", gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations());
+         DeploymentAgentSchemas.actualArgumentBounds(map);
+         for (var entry : map.entrySet())
+             if (criticalName(entry.getKey())) {
+@@ -343,7 +347,8 @@
+                 yield new DeploymentAgentProposal.ReviewResponse(binding, message);
+             }
+             case "evidence_index" -> new DeploymentAgentProposal.EvidenceIndex(
+-                DeploymentJsonFields.number(args, "offset", 0, 400), DeploymentJsonFields.number(args, "limit", 1, 50));
++                DeploymentJsonFields.number(args, "offset", 0, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations()),
++                DeploymentJsonFields.number(args, "limit", 1, 50));
+             case "plan_state" -> {
+                 DeploymentJsonFields.exact(args, Set.of("component", "offset", "limit"));
+                 yield new DeploymentAgentProposal.PlanState(DeploymentJsonFields.text(args, "component", 63),
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -126,7 +126,7 @@
+     }
+ 
+     private void rememberDiscussion(String identity, String progress, Result result, String binding) {
+-        if (!discussions.containsKey(identity) && discussions.size() >= 512)
++        if (!discussions.containsKey(identity) && discussions.size() >= gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().retainedReviewSessions())
+             discussions.remove(discussions.keySet().iterator().next());
+         discussions.put(identity, new Discussion(progress, result, binding, ""));
+     }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
+@@ -97,7 +97,8 @@
+             gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.hash(proposal.toString()), task, journal);
+         journal.event(task, "AI_PUBLICATION", proposal.graph().applicationId(), "MODEL_GENERATED_COMMANDS");
+         var skills = new DeploymentAgentSkills(task, DeploymentAgentSkills.Role.DEPLOYMENT);
+-        var loop = new DeploymentModelToolLoop<DeploymentPublishResult>(context, task, revision, POLICY, remainingDecisions, judgement, skills::system);
++        var loop = new DeploymentModelToolLoop<DeploymentPublishResult>(context, task, revision, POLICY,
++            Math.min(remainingDecisions, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().localToolTurns()), judgement, skills::system);
+         var commandSchema = gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas.object("script", "seconds:integer", "reason");
+         ((com.fasterxml.jackson.databind.node.ObjectNode) commandSchema.at("/properties/seconds")).put("minimum", 1).put("maximum", 7200);
+         try {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedDeployment.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedDeployment.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedDeployment.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedDeployment.java
+@@ -47,7 +47,8 @@
+                                              Supplier<Map<String, Object>> state) throws Exception {
+         String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
+         String policy = POLICY;
+-        var loop = new DeploymentModelToolLoop<T>(context, task, revision, policy, 80);
++        var loop = new DeploymentModelToolLoop<T>(context, task, revision, policy,
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().localToolTurns());
+         var inspectionBudget = new DeploymentBuildBudget(600);
+         try {
+             return loop.run(() -> {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentBudgetFactsTest.java
+@@ -44,26 +44,26 @@
+     }
+ 
+     @Test
+-    void factsDeriveActualScopeMaximumWhileModelResponsesRemainEighty() {
+-        for (int maximum : List.of(4, 80, 512)) {
++    void factsDeriveActualScopeMaximumAndConfiguredModelResponses() {
++        for (int maximum : List.of(4, 80, 512, 4096)) {
+             try (var scope = DeploymentToolBudget.open(maximum)) {
+                 assertTrue(DeploymentToolBudget.consume(List.of(call("main"), call("publication"))));
+                 var facts = DeploymentAgentBudgetFacts.observe(79, 1);
+-                assertEquals(80, facts.get("maximumModelResponses"));
++                assertEquals(512, facts.get("maximumModelResponses"));
+                 assertEquals(79, facts.get("remainingModelResponsesAfterThisRequest"));
+-                int mainMaximum = Math.min(maximum, 320);
++                int mainMaximum = Math.min(maximum, 2048);
+                 assertEquals(mainMaximum, facts.get("maximumMainToolAttempts"));
+                 assertEquals(maximum, facts.get("maximumSharedToolAttempts"));
+-                assertEquals(mainMaximum - 1, facts.get("remainingMainToolAttempts"));
++                assertEquals(Math.min(mainMaximum - 1, 320), facts.get("remainingMainToolAttempts"));
+                 assertEquals(maximum - 2, facts.get("remainingSharedToolAttempts"));
+-                assertEquals(Math.min(mainMaximum - 1, maximum - 2), facts.get("remainingExecutableToolAttempts"));
++                assertEquals(Math.min(Math.min(mainMaximum - 1, 320), maximum - 2), facts.get("remainingExecutableToolAttempts"));
+                 assertEquals(4, facts.get("maximumCallsPerResponse"));
+                 assertEquals(maximum - 2, DeploymentToolBudget.remaining());
+             }
+         }
+         var defaultFacts = DeploymentAgentBudgetFacts.observe(78, 2);
+-        assertEquals(80, defaultFacts.get("maximumSharedToolAttempts"));
+-        assertEquals(78, defaultFacts.get("remainingExecutableToolAttempts"));
++        assertEquals(256, defaultFacts.get("maximumSharedToolAttempts"));
++        assertEquals(254, defaultFacts.get("remainingExecutableToolAttempts"));
+     }
+ 
+     @Test
+@@ -76,7 +76,7 @@
+             assertEquals(204, facts.get("remainingMainToolAttempts"));
+             assertEquals(429, facts.get("remainingSharedToolAttempts"));
+             assertEquals(204, facts.get("remainingExecutableToolAttempts"));
+-            assertEquals(80, facts.get("maximumModelResponses"));
++            assertEquals(512, facts.get("maximumModelResponses"));
+             assertFalse(DeploymentToolBudget.consume(List.of(call("publish"))));
+             assertEquals(428, DeploymentToolBudget.remaining());
+             var publication = java.util.stream.IntStream.range(0, 300).mapToObj(i -> call("publication-" + i)).toList();
+@@ -90,7 +90,7 @@
+         try (var scope = DeploymentToolBudget.open(512)) {
+             assertTrue(DeploymentToolBudget.consume(List.of(call("main"))));
+             var lastResponse = DeploymentAgentBudgetFacts.observe(0, 1);
+-            assertEquals(320, lastResponse.get("maximumMainToolAttempts"));
++            assertEquals(512, lastResponse.get("maximumMainToolAttempts"));
+             assertEquals(512, lastResponse.get("maximumSharedToolAttempts"));
+             assertEquals(4, lastResponse.get("remainingMainToolAttempts"));
+             assertEquals(511, lastResponse.get("remainingSharedToolAttempts"));
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -341,13 +341,13 @@
+     }
+ 
+     @Test
+-    void agentExecutesThreeHundredTwentyDistinctReadsInEightyModelResponsesThenStops() throws Exception {
++    void agentExecutesConfiguredDistinctSourceQueriesAcrossConfiguredModelResponsesThenStops() throws Exception {
+         fourCallAttemptBudget = true;
+         verifyScenario(ScenarioType.BUDGET);
+-        assertEquals(320, nativeIds, "The original session receives exactly four calls per response");
+-        assertEquals(80, calls.get(), "Increasing the shared tool scope does not increase the eighty-response allowance");
+-        assertEquals(java.util.stream.IntStream.range(0, 80).map(i -> 79 - i).boxed().toList(), budgets);
+-        assertTrue(boundarySends.isEmpty(), "Actual local source reads do not create server authority or dispatch");
++        assertEquals(2048, nativeIds, "The original session receives exactly four calls per response");
++        assertEquals(512, calls.get(), "The configured main response allowance stops the original session");
++        assertEquals(java.util.stream.IntStream.range(0, 512).map(i -> 511 - i).boxed().toList(), budgets);
++        assertTrue(boundarySends.isEmpty(), "Actual local source queries do not create server authority or dispatch");
+     }
+ 
+     @Test
+@@ -936,17 +936,16 @@
+     private void verifyScenario(ScenarioType selected) throws Exception {
+         scenario = selected;
+         Files.createDirectories(selectedSourceDirectory());
+-        String sourceText = sourceReadPagination
++        String sourceText = fourCallAttemptBudget
++            ? java.util.stream.IntStream.range(0, 2048).mapToObj(index -> "Actual distinct source fact " + index)
++            .collect(java.util.stream.Collectors.joining("\n")) + "\n"
++            : sourceReadPagination
+             ? java.util.stream.IntStream.rangeClosed(1, 134).mapToObj(line -> "actual source line " + line)
+             .collect(java.util.stream.Collectors.joining("\n")) + "\nTAIL_ENTRYPOINT_FACT\n"
+             : singleUnsupported
+             ? "Custom unsupported builder produces one api executable.\n"
+             : "Build api and web into protected output.\n";
+         Files.writeString(selectedSourceDirectory().resolve("README.md"), sourceText);
+-        if (fourCallAttemptBudget) {
+-            for (int index = 0; index < 320; index++)
+-                Files.writeString(selectedSourceDirectory().resolve("budget-" + index + ".txt"), "Actual distinct source fact " + index + "\n");
+-        }
+         enable();
+         try (var runtime = open()) {
+             start(runtime, true);
+@@ -990,7 +989,9 @@
+                         ? "FULL_CONTROL"
+                         : selected == ScenarioType.AI_APPROVAL_DRIFT
+                         || selected == ScenarioType.APPROVAL_MISSING ? "AUTOMATIC" : "MANUAL_REVIEW",
+-                    selected != ScenarioType.APPROVAL_DRIFT && rememberAuthorization, 65536, fourCallAttemptBudget ? 400 : 100, 65536), location);
++                    selected != ScenarioType.APPROVAL_DRIFT && rememberAuthorization,
++                    fourCallAttemptBudget ? 1048576 : 65536, 100,
++                    fourCallAttemptBudget ? 4194304 : 65536), location);
+                 waitReturned(handle);
+                 if (preselectedSource) {
+                     assertNotEquals(pickerId, handle.id());
+@@ -1314,13 +1315,13 @@
+                     || selected == ScenarioType.TRAILING_JSON || selected == ScenarioType.INVALID_TOOL || selected == ScenarioType.REPEATED_BROWSE || selected == ScenarioType.REPEATED_FEEDBACK || selected == ScenarioType.FEEDBACK_AFTER_REJECTION || selected == ScenarioType.NOVEL_READ_PROGRESS)
+                     assertEquals(0, peer.commands.get());
+                 if (selected == ScenarioType.BUDGET) {
+-                    assertEquals(80, calls.get());
++                    assertEquals(512, calls.get());
+                     assertEquals(0, budgets.getLast());
+                     if (fourCallAttemptBudget) {
+                         var journal = page.events(handle.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).value().orElseThrow().events();
+-                        assertEquals(320, journal.stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("READ")).count(),
+-                            "All 320 actual reads, including the final batch, are durably retained before the decision limit stops execution");
+-                        assertEquals(80, journal.stream().filter(event -> event.type().equals("DECISION")).count());
++                        assertEquals(2048, journal.stream().filter(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("READ")).count(),
++                            "All 2048 actual source pages are durably retained before the decision limit stops execution");
++                        assertEquals(512, journal.stream().filter(event -> event.type().equals("DECISION")).count());
+                     }
+                 }
+                 if (selected == ScenarioType.INVALID_TOOL && exhaustedNativeOutput) {
+@@ -1548,7 +1549,7 @@
+     }
+ 
+     private void waitReturned(TaskHandle<?> handle) throws Exception {
+-        waitReturned(handle, 40);
++        waitReturned(handle, fourCallAttemptBudget ? 180 : 40);
+     }
+ 
+     private void waitReturned(TaskHandle<?> handle, int seconds) throws Exception {
+@@ -1775,9 +1776,9 @@
+                     var budget = data.at("/state/budget");
+                     assertTrue(budget.isObject(), "The actual coordinator request must expose its distinct tool allowance");
+                     assertEquals(data.path("remaining").asInt(), budget.path("remainingModelResponsesAfterThisRequest").asInt());
+-                    assertEquals(320, budget.path("maximumMainToolAttempts").asInt());
+-                    assertEquals(512, budget.path("maximumSharedToolAttempts").asInt());
+-                    assertEquals(80, budget.path("maximumModelResponses").asInt());
++                    assertEquals(2048, budget.path("maximumMainToolAttempts").asInt());
++                    assertEquals(4096, budget.path("maximumSharedToolAttempts").asInt());
++                    assertEquals(512, budget.path("maximumModelResponses").asInt());
+                     assertEquals(4, budget.path("maximumCallsPerResponse").asInt());
+                     assertEquals(Math.min(budget.path("remainingMainToolAttempts").asInt(), budget.path("remainingSharedToolAttempts").asInt()),
+                         budget.path("remainingExecutableToolAttempts").asInt());
+@@ -1820,19 +1821,18 @@
+                 budgets.add(data.path("remaining").intValue());
+                 if (fourCallAttemptBudget) {
+                     var budget = data.at("/state/budget");
+-                    assertEquals(320, budget.path("maximumMainToolAttempts").asInt());
+-                    assertEquals(512, budget.path("maximumSharedToolAttempts").asInt());
+-                    assertEquals(80, budget.path("maximumModelResponses").asInt());
++                    assertEquals(2048, budget.path("maximumMainToolAttempts").asInt());
++                    assertEquals(4096, budget.path("maximumSharedToolAttempts").asInt());
++                    assertEquals(512, budget.path("maximumModelResponses").asInt());
+                     assertEquals(turn * 4, budget.path("mainToolAttempts").asInt());
+-                    assertEquals(320 - turn * 4, budget.path("remainingMainToolAttempts").asInt());
+-                    assertEquals(512 - turn * 4, budget.path("remainingSharedToolAttempts").asInt());
+-                    assertEquals(320 - turn * 4, budget.path("remainingExecutableToolAttempts").asInt());
+-                    assertEquals(turn * 4, data.at("/state/readFiles").size(), "Each prior batch executed four different real source reads");
++                    assertEquals(2048 - turn * 4, budget.path("remainingMainToolAttempts").asInt());
++                    assertEquals(4096 - turn * 4, budget.path("remainingSharedToolAttempts").asInt());
++                    assertEquals(2048 - turn * 4, budget.path("remainingExecutableToolAttempts").asInt());
++                    assertEquals(turn == 0 ? 0 : 1, data.at("/state/readFiles").size(), "Source pages retain the actual frozen file READ basis");
+                     var batch = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolCall>();
+                     for (int index = 0; index < 4; index++) {
+-                        String path = "budget-" + (turn * 4 + index) + ".txt";
+                         batch.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native_" + (++nativeIds), "read",
+-                            "{\"path\":\"" + path + "\",\"offset\":0,\"limit\":10}"));
++                            "{\"path\":\"README.md\",\"offset\":" + (turn * 4 + index) + ",\"limit\":1}"));
+                     }
+                     return throughProtocol(request, new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
+                         new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocolRequestTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocolRequestTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocolRequestTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocolRequestTest.java
+@@ -206,7 +206,7 @@
+         history.retain("state", observed, List.of(new AiToolResult("read-original", read + "\noriginal source body", false)));
+         String reason = "TOOL_REJECTED: HTTP health endpoint must target the candidate host loopback address";
+         var rejected = new AiResponse("", "model", "tool_calls", observed.usage(),
+-            List.of(new AiToolCall("rejected-plan", "plan", "{}")), Optional.of(new AiContinuation(UUID.randomUUID(), 62000)));
++            List.of(new AiToolCall("rejected-plan", "plan", "{}")), Optional.of(new AiContinuation(UUID.randomUUID(), gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().payloadBytes() - 2048)));
+         history.retain("state", rejected, List.of(new AiToolResult("rejected-plan", reason, true)));
+         var correction = new LinkedHashMap<String, Object>();
+         correction.put("callId", "rejected-plan");
+@@ -254,6 +254,9 @@
+         var json = new com.fasterxml.jackson.databind.ObjectMapper();
+         assertFalse(json.readTree(fixture.requests.getFirst().messages().getLast().text()).path("availableTools").toString().contains("\"deliver\""));
+         assertTrue(json.readTree(fixture.requests.getLast().messages().getLast().text()).path("availableTools").toString().contains("\"deliver\""));
++        var indexTool = fixture.requests.getFirst().tools().stream().filter(tool -> tool.name().equals("evidence_index")).findFirst().orElseThrow();
++        assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations(),
++            json.readTree(indexTool.inputSchema()).at("/properties/offset/maximum").asInt());
+     }
+ 
+     @Test
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidence.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidence.java
+@@ -5,6 +5,18 @@
+ /** Actual observations and independent findings outlive rolling transcripts. / 实际观察和独立发现独立于滚动会话。
+  * This state is not an approval or an execution receipt. / 此状态不是审批或执行回执。 */
+ public final class DeploymentAgentEvidence {
++    private final int maxObservations;
++
++    public DeploymentAgentEvidence() {
++        this(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations());
++    }
++
++    public DeploymentAgentEvidence(int maxObservations) {
++        if (maxObservations < 1 || maxObservations > 999999)
++            throw new IllegalArgumentException("Observation capacity exceeds the original ID bound");
++        this.maxObservations = maxObservations;
++    }
++
+     /** Identity metadata for one actual observation / 一项实际观察的身份元数据。
+      * @param component Selected component identity / 选定组件身份
+      * @param revision Exact current revision / 精确当前修订
+@@ -64,7 +76,8 @@
+      * @param critical result requiring evaluation / 须评估的结果
+      * @return stable task-local ID / 稳定任务内标识 */
+     public String observe(String component, String revision, long plan, String kind, String path, boolean critical) {
+-        if (observations.size() >= 400) throw new IllegalStateException("Agent observation capacity exhausted");
++        if (observations.size() >= maxObservations)
++            throw new IllegalStateException("Agent observation capacity exhausted");
+         String id = "o" + ++sequence;
+         observations.put(id, new Observation(component, revision, plan, kind, path));
+         if (critical) pending.add(id);
+@@ -218,7 +231,7 @@
+     }
+ 
+     public Map<String, Object> index(int offset, int limit) {
+-        if (offset < 0 || offset > 400 || limit < 1 || limit > 50)
++        if (offset < 0 || offset > maxObservations || limit < 1 || limit > 50)
+             throw new IllegalArgumentException("Invalid evidence index page");
+         var entries = new ArrayList<Map<String, Object>>();
+         for (var entry : observations.entrySet()) {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidenceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentEvidenceTest.java
+@@ -11,6 +11,32 @@
+     private final DeploymentAgentEvidence evidence = new DeploymentAgentEvidence();
+ 
+     private final String revision = "a".repeat(64);
++
++    @Test
++    void configuredObservationCapacityKeepsOriginalReadsBeyondTheOldFourHundredLimit() {
++        String first = evidence.observe("", revision, 0, "READ", "api/main.py", false);
++        evidence.output(first, "actual source entrypoint");
++        for (int index = 1; index < 600; index++) evidence.observe("", revision, 0, "LIST", "api", false);
++        evidence.identify(List.of(finding("api", List.of(first))), Map.of("api", revision), revision);
++        evidence.requireIdentified("api", "api", revision);
++        assertTrue(evidence.read(first, 0, 6000).contains("actual source entrypoint"));
++        assertEquals(first, ((Map<?, ?>) ((List<?>) evidence.index(0, 1).get("entries")).getFirst()).get("id"));
++        assertThrows(IllegalArgumentException.class, () -> evidence.requireIdentified("api", "web", revision));
++        assertThrows(IllegalArgumentException.class, () -> evidence.requireIdentified("api", "api", "b".repeat(64)));
++    }
++
++    @Test
++    void smallerConfiguredObservationLimitRejectsWithoutEvictionOrIdentityReuse() {
++        var small = new DeploymentAgentEvidence(2);
++        String first = small.observe("", revision, 0, "READ", "api/main.py", false);
++        small.output(first, "exact original source");
++        assertEquals("o2", small.observe("", revision, 0, "LIST", "api", false));
++        assertThrows(IllegalStateException.class, () -> small.observe("", revision, 0, "READ", "api/other.py", false));
++        assertThrows(IllegalArgumentException.class, () -> small.index(3, 1));
++        assertEquals(2, ((List<?>) small.index(0, 50).get("entries")).size());
++        assertTrue(small.read(first, 0, 6000).contains("exact original source"));
++        small.identify(List.of(finding("api", List.of(first))), Map.of("api", revision), revision);
++    }
+ 
+     @Test
+     void databaseSourceSelectionRequiresExactManifestAndCurrentComponentConsumptionReads() {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeSelection.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeSelection.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeSelection.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/agent/DeploymentNativeSelection.java
+@@ -1,6 +1,7 @@
+ package gold.debug.windowstolinux.mod.deployment.ai.agent;
+ 
+ import java.util.*;
++
+ import gold.debug.windowstolinux.appapi.ai.model.*;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+@@ -9,30 +10,44 @@
+ /** Bounded native read/submit conversation for independent source comparison. */
+ public final class DeploymentNativeSelection {
+     private final DeploymentAiJson ai;
++
+     private final DeploymentNativeHistory history = new DeploymentNativeHistory();
++
+     private AiResponse pending;
++
+     private String input;
++
+     private final List<AiToolResult> results = new ArrayList<>();
++
+     private int cursor;
+-    public DeploymentNativeSelection(ModContext context) { ai = new DeploymentAiJson(context); }
++
++    public DeploymentNativeSelection(ModContext context) {
++        ai = new DeploymentAiJson(context);
++    }
+ 
+     public AiToolCall select(String policy, Map<String, ?> facts, String revision, TaskContext task, boolean calibration) throws Exception {
+         if (pending != null && cursor > results.size()) {
+-            String feedback = DeploymentAiJson.facts(facts, 48000);
+-            results.add(new AiToolResult(pending.toolCalls().get(cursor-1).id(),
++            String feedback = DeploymentAiJson.facts(facts, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters());
++            results.add(new AiToolResult(pending.toolCalls().get(cursor - 1).id(),
+                 "CURRENT_VERIFIED_STATE\n" + feedback.substring(0, Math.min(6000, feedback.length())), false));
+         }
+         if (pending != null && cursor < pending.toolCalls().size()) return pending.toolCalls().get(cursor++);
+-        if (pending != null) { history.retain(input, pending, results); results.clear(); }
++        if (pending != null) {
++            history.retain(input, pending, results);
++            results.clear();
++        }
+         var tools = new ArrayList<AiToolDefinition>();
+-        for (String name : List.of("list", "read", "search")) tools.add(new AiToolDefinition(name, "Read bounded frozen source evidence",
+-            DeploymentToolSchemas.object(name.equals("search") ? "query" : "path", "offset:integer", "limit:integer").toString()));
++        for (String name : List.of("list", "read", "search"))
++            tools.add(new AiToolDefinition(name, "Read bounded frozen source evidence",
++                DeploymentToolSchemas.object(name.equals("search") ? "query" : "path", "offset:integer", "limit:integer").toString()));
+         tools.add(new AiToolDefinition(calibration ? "conclude" : "identify", "Submit independent source findings; business evidence validators decide acceptance",
+             calibration ? DeploymentToolSchemas.object("decision", "reason", "evidence:array").toString()
+                 : DeploymentToolSchemas.object("components:array").toString()));
+-        if (!calibration) tools.add(new AiToolDefinition("unable", "Report inability to identify", DeploymentToolSchemas.object("reason").toString()));
+-        input = DeploymentAiJson.facts(facts, 42000);
+-        pending = ai.call(AiPurpose.LANGUAGE, history.messages(policy, input), tools, revision, task, false); cursor = 0;
++        if (!calibration)
++            tools.add(new AiToolDefinition("unable", "Report inability to identify", DeploymentToolSchemas.object("reason").toString()));
++        input = DeploymentAiJson.facts(facts, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history().characters());
++        pending = ai.call(AiPurpose.LANGUAGE, history.messages(policy, input), tools, revision, task, false);
++        cursor = 0;
+         if (!pending.finishReason().equals("tool_calls") || pending.toolCalls().isEmpty() || pending.toolCalls().size() > 4)
+             throw new IllegalArgumentException("Source comparison requires one to four complete native calls");
+         return pending.toolCalls().get(cursor++);
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJsonTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJsonTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJsonTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJsonTest.java
+@@ -43,14 +43,17 @@
+     void configuredBudgetsReachOrdinaryExtendedAndIndependentApprovalRequests() throws Exception {
+         var fixture = new NativeAiFixture();
+         var ai = new DeploymentAiJson(fixture.context,
+-            new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Ai(4096, 12288, 2048));
++            new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Ai(4096, 12288, 2048,
++                new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.Requests(45, 75, 600),
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution(),
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().history()));
+         var messages = List.of(new AiMessage(AiRole.USER, "bounded original evidence", List.of()));
+         for (int index = 0; index < 3; index++) {
+             fixture.nativeReply(new AiToolCall("configured" + index, "submit_result", "{}"));
+             ai.call(index == 2 ? AiPurpose.APPROVAL : AiPurpose.LANGUAGE, messages, List.of(), "fixture-route", fixture.task, index != 0);
+         }
+         assertEquals(List.of(4096, 12288, 2048), fixture.requests.stream().map(request -> request.maxOutputTokens().orElseThrow()).toList());
+-        assertEquals(List.of(60L, 600L, 600L), fixture.requests.stream().map(request -> request.timeout().toSeconds()).toList());
++        assertEquals(List.of(45L, 600L, 75L), fixture.requests.stream().map(request -> request.timeout().toSeconds()).toList());
+         assertEquals(3, fixture.requests.size(), "No clamping fallback or extra model call is introduced");
+     }
+ 
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -753,7 +753,7 @@
+             observedTokens.set(290005L);
+             var defaults = gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai();
+             var policy = new gold.debug.windowstolinux.app.config.AppConfig.Ai(defaults.connectSeconds(), 8192, true,
+-                defaults.verificationMaxOutputTokens(), defaults.recovery(), defaults.deletion(), defaults.file());
++                defaults.verificationMaxOutputTokens(), defaults.nativeState(), defaults.recovery(), defaults.deletion(), defaults.file());
+             var monitoredAi = monitored(original, policy).ai();
+             assertEquals(TaskResult.SUCCEEDED, monitoredAi.call(request, null).outcome());
+             assertEquals(600000L, observedTokens.get());
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
+@@ -35,7 +35,7 @@
+                 ((ObjectNode) properties.get(field)).put("maxLength", maximum);
+             }
+         }
+-        ((ObjectNode) schemas.get("evidence_index").at("/properties/offset")).put("maximum", 400);
++        ((ObjectNode) schemas.get("evidence_index").at("/properties/offset")).put("maximum", gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().maxObservations());
+         ((ObjectNode) schemas.get("observation").at("/properties/offset")).put("maximum", 12000);
+         ((ObjectNode) schemas.get("observation").at("/properties/id")).put("maxLength", 8);
+         ((ObjectNode) schemas.get("source").at("/properties/kind")).put("maxLength", 8)
+diff --git a/docs/Config.md b/docs/Config.md
+--- a/docs/Config.md
++++ b/docs/Config.md
+@@ -14,7 +14,7 @@
+ | JAR | 最外层主入口 JAR 所在目录 | data |
+ | APP | EXE 所在目录 | data |
+ 
+-顶层仅允许 `common`、`class`、`jar`、`app` 四个区。通用字段按叶字段合并 `common` 与当前模式区；模式区明确填写的值优先，未填写的字段继承 common。唯一例外是 `mod.auto-load`：只允许填写 `class.mod.auto-load`，不能写入 common、jar 或 app，填写到这些区会报错。JAR/APP 固定加载 Mod，不存在配置开关。其他模式的合法字段不影响当前模式。区及中间映射允许省略或填写 `{}`，但合并后 21 个通用叶字段必须齐全；CLASS 还必须填写专属 Mod 开关。没有隐藏的加载器默认回退。表中默认值是随程序发布的 YAML 值。`null` 不代表继承，任何区的 null、未知字段或重复键均报错。有效区的错误类型、非法值、语法错误、缺失资源和缺失生效字段都停止启动并提示配置位置及原因。单文件上限 256 KiB。
++顶层仅允许 `common`、`class`、`jar`、`app` 四个区。通用字段按叶字段合并 `common` 与当前模式区；模式区明确填写的值优先，未填写的字段继承 common。唯一例外是 `mod.auto-load`：只允许填写 `class.mod.auto-load`，不能写入 common、jar 或 app，填写到这些区会报错。JAR/APP 固定加载 Mod，不存在配置开关。其他模式的合法字段不影响当前模式。区及中间映射允许省略或填写 `{}`，但合并后本说明列出的通用叶字段必须齐全；CLASS 还必须填写专属 Mod 开关。没有隐藏的加载器默认回退。表中默认值是随程序发布的 YAML 值。`null` 不代表继承，任何区的 null、未知字段或重复键均报错。有效区的错误类型、非法值、语法错误、缺失资源和缺失生效字段都停止启动并提示配置位置及原因。单文件上限 256 KiB。
+ 
+ 修改资源 YAML 后需重新构建并重启；CLASS 使用构建输出中的资源，JAR/APP 需重新打包 Config JAR。升级时如需保留定制配置，应先合并资源 YAML 再构建。配置不提供 ENV 覆盖、命令行字段覆盖、外置文件覆盖、运行时修改或热加载。路径可以明确填写绝对路径；Windows 示例建议使用 `/` 或 YAML 单引号。切换路径不自动搬迁、复制、覆盖或回退到已有数据库，迁移时应自行完整处理配对文件。用户在 DB 中保存的语言、主题、连接阈值及删除说明设置优先于 YAML 默认值；新数据库通过初始化接口接收删除说明初始偏好，已有数据库值不被改写。
+ 
+@@ -62,6 +62,9 @@
+ | `ai.recommended-max-output-tokens` | 普通模型调用未指定额度时的推荐最大输出 Token；关闭覆写时强制使用 | 整数 / Token | 32768 | 1～2147483647 | `32768` | CLASS / JAR / APP |
+ | `ai.allow-output-token-override` | 允许调用方为本次普通模型调用覆写推荐额度 | 布尔 | true | true / false | `false` | CLASS / JAR / APP |
+ | `ai.verification-max-output-tokens` | 文字、视觉及原生工具能力验证的独立输出额度 | 整数 / Token | 8192 | 1～2147483647 | `8192` | CLASS / JAR / APP |
++| `ai.native-state.max-states` | 每个原任务所有用途共享的 native 状态数量上限 | 整数 / 条 | 4096 | 1～2147483647 | `8192` | CLASS / JAR / APP |
++| `ai.native-state.max-total-bytes` | 每个原任务全部 native 状态实际 UTF-8 载荷上限 | 整数 / 字节 | 67108864 | 1～9223372036854775807，且不小于 max-value-bytes | `134217728` | CLASS / JAR / APP |
++| `ai.native-state.max-value-bytes` | 单个 native 状态实际 UTF-8 载荷上限 | 整数 / 字节 | 1048576 | 1～1048576，受公共 continuation 契约约束 | `1048576` | CLASS / JAR / APP |
+ | `ai.recovery.timeout-seconds` | 救援模型请求总超时 | 整数 / 秒 | 60 | 1～86400 | `60` | CLASS / JAR / APP |
+ | `ai.deletion.timeout-seconds` | 删除审核请求总超时 | 整数 / 秒 | 30 | 1～86400 | `30` | CLASS / JAR / APP |
+ | `ai.file.timeout-seconds` | 文件判断请求总超时 | 整数 / 秒 | 20 | 1～86400 | `20` | CLASS / JAR / APP |
+@@ -70,6 +73,8 @@
+ 
+ 模型编辑器中的旧输出额度字段及其 DB 存取暂留，页面本次不调整。该字段不再参与调用、能力验证或冻结路由；仅修改它不使验证失效。推荐值和覆写开关纳入冻结调用修订，启动快照改变后原任务仍须通过续接检查。
+ 
++native 状态预算为平台内存资源策略，按原任务汇总用途，保留独立会话的合法旧句柄；当前请求未引用不构成释放依据。达到任一容量边界时明确失败；provider 已成功但本地保存失败的响应仅交付实际计量，清空文本、工具及 continuation，并封闭该 purpose 会话。此失败不证明原部署副作用已结清。详细作用域、历史窗口与结构上界见[Agent运行预算配置](test/multi-language/DEPLOYMENT-AGENT-RUNTIME-LIMITS.md)。
++
+ ### 日志参数
+ 
+ | 配置键 | 用途 | 类型／单位 | 默认值 | 允许值／范围 | 填写示例 | 生效模式 |
+@@ -97,7 +102,7 @@
+ 
+ ## 完整可加载示例
+ 
+-此示例与 Config 模块资源目录中的 `config.yaml` 相同，可直接保存到上述资源文件后重新构建。修改时保持全部有效叶字段齐全。
++此示例的字段和值与 Config 模块资源目录中的 `config.yaml` 一致，可直接保存到上述资源文件后重新构建。资源文件中全部字段另有用途和单位注释。修改时保持全部有效叶字段齐全。
+ 
+ ```yaml
+ common:
+@@ -123,6 +128,10 @@
+     recommended-max-output-tokens: 32768
+     allow-output-token-override: true
+     verification-max-output-tokens: 8192
++    native-state:
++      max-states: 4096
++      max-total-bytes: 67108864
++      max-value-bytes: 1048576
+     recovery:
+       timeout-seconds: 60
+     deletion:
+@@ -149,13 +158,27 @@
+ 
+ 源文件位于 [部署 Mod 配置资源](../src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml)，通过本 Mod 的 classpath 读取 `/gold/debug/windowstolinux/mod/deployment/config/config.yaml`。`DeploymentConfigLoader` 在 `Mod.start` 登记服务前加载配置；同一选中 Mod 类加载器只加载一次，服务和页面共享不可变 `DeploymentConfig`。部署 Mod 不依赖 APP Config 实现，也不读取外置同名文件、环境变量或命令行字段覆盖。
+ 
+-六组共 22 个叶字段必须齐全：17 个整数参数与 `paths` 下的 5 个目录字符串。缺失、未知、重复、null、类型错误、小数、溢出、越界和多个 YAML 文档均报错，不提供加载失败后的默认回退。目录必须为规范 Linux 绝对路径，五根不得相同或互相包含，禁止系统保留目录。单文件上限 64 KiB。修改后重新构建并重启；CLASS 使用部署 Mod 构建输出，JAR/APP 需重新打包并按原 Mod 安装和版本选择流程使用新构建。
++全部六组及 `ai.requests`、`ai.execution`、`ai.history` 的叶字段必须齐全，配置键见下表。缺失、未知、重复、null、类型错误、小数、溢出、越界和多个 YAML 文档均报错，不提供加载失败后的默认回退。目录必须为规范 Linux 绝对路径，五根不得相同或互相包含，禁止系统保留目录。单文件上限 64 KiB。修改后重新构建并重启；CLASS 使用部署 Mod 构建输出，JAR/APP 需重新打包并按原 Mod 安装和版本选择流程使用新构建。
+ 
+ | 配置键 | 用途 | 单位 | 默认值 | 允许范围 |
+ |---|---|---|---|---|
+-| `ai.deployment-max-output-tokens` | 普通部署/Agent 调用申请的最大输出额度 | Token | 8192 | 1～2147483647 |
++| `ai.deployment-max-output-tokens` | 普通部署/Agent 调用申请的最大输出额度 | Token | 32768 | 1～2147483647 |
+ | `ai.extended-deployment-max-output-tokens` | 扩展部署分析申请的最大输出额度 | Token | 65536 | deployment-max-output-tokens～2147483647 |
+ | `ai.approval-max-output-tokens` | 每次独立审批申请的最大输出额度 | Token | 8192 | 1～deployment-max-output-tokens |
++| `ai.requests.deployment-timeout-seconds` | 单次普通部署模型请求时限 | 秒 | 120 | 1～86400 |
++| `ai.requests.approval-timeout-seconds` | 单次审批模型请求时限 | 秒 | 120 | 1～86400 |
++| `ai.requests.extended-timeout-seconds` | 单次扩展部署模型请求时限 | 秒 | 600 | 普通与审批时限最大值～86400 |
++| `ai.execution.shared-tool-attempts` | 一次协调作用域内共享工具尝试上限，嵌套继续扣减 | 次 | 4096 | 1～2147483647 |
++| `ai.execution.standalone-tool-attempts` | 没有外层协调作用域时的独立工具尝试上限 | 次 | 256 | 1～shared-tool-attempts |
++| `ai.execution.local-tool-turns` | 单个局部循环的响应与工具尝试预算 | 次 | 128 | 1～standalone-tool-attempts |
++| `ai.execution.agent-model-responses` | 一次主Agent协调循环的响应预算 | 次 | 512 | 1～536870911，避免每响应4个工具的计数乘法溢出 |
++| `ai.execution.retained-review-sessions` | 留存的不同原审批请求会话身份上限 | 个 | 4096 | 1～shared-tool-attempts |
++| `ai.execution.max-observations` | 原任务可留存的观察证据数量上限 | 条 | 4096 | 1～999999，保留既有证据ID格式 |
++| `ai.history.max-batches` | 滚动保留的完整工具响应批次上限 | 批 | 24 | 1～2147483647 |
++| `ai.history.characters` | 单份历史文本窗口 | UTF-16码元 | 131072 | 1～1048576 |
++| `ai.history.payload-bytes` | 单份历史实际 UTF-8 与 opaque 载荷窗口 | 字节 | 262144 | 1～1048576 |
++| `ai.history.initial-batches` | 保留的初始批次数量 | 批 | 2 | 1～max-batches |
++| `ai.history.initial-payload-bytes` | 初始批次载荷窗口 | 字节 | 8192 | 1～payload-bytes |
+ | `source.bytes` | 新任务来源准入字节上限 | 字节 | 2147483648 | 1～2147483648 |
+ | `source.entries` | 新任务来源准入条目上限 | 条 | 100000 | 1～100000 |
+ | `source.archive-bytes` | 新任务压缩归档上限 | 字节 | 2147483648 | 1～2147483648 |
+@@ -175,9 +198,11 @@
+ 
+ 新环境任务在初始范围确认后、远端操作前，在同一原任务保存 `deployment.config.environment.v1` 非秘密元数据检查点并立即释放其占用。原任务恢复读取已捕获时限，不受新 YAML 影响；缺少该元数据的旧环境任务仍使用原有 900/30/900/5 秒时限。原环境操作日志的版本、任务类型、远端操作身份和数据库结构保持不变；损坏元数据拒绝恢复，不改用新值。
+ 
+-三项 AI 输出额度通过新的 `AiRequest.maxOutputTokens` 可选字段明确申请，所有部署模式和原任务恢复共用该配置。APP 开启 `allow-output-token-override` 时采用申请值；关闭时采用 APP 推荐值，因此这些字段不是能覆盖 APP 策略的硬限制。实际采用额度以 `AiResponse.effectiveMaxOutputTokens` 或错误元数据为准；诊断分别记录申请值和实际值，失败不裁剪重试。普通调用仍为60秒，扩展分析和完整命令审批仍为600秒；完整证据、独立审批和输入体积监督不因输出配置改变。修改随包 YAML 后重新构建、加载 Mod 才生效，不在运行中的任务内热更新。
+-
+-`service/core/config` 继续管理应用部署的业务配置、作用范围和不可变修订。审批偏好、模型选择、轮次/累计 Token 预算、提示词、helper 协议和远端固定脚本不属于这些固定参数；用户偏好和已提交业务配置继续使用原有持久化流程。
++三项 AI 输出额度通过 `AiRequest.maxOutputTokens` 可选字段明确申请，所有部署模式和原任务恢复共用该配置。APP 开启 `allow-output-token-override` 时采用申请值；关闭时采用 APP 推荐值，因此这些字段不是能覆盖 APP 策略的硬限制。实际采用额度以 `AiResponse.effectiveMaxOutputTokens` 或错误元数据为准；诊断分别记录申请值和实际值，失败不裁剪重试。普通及审批请求时限默认120秒，扩展默认600秒，均从 `ai.requests` 读取；完整证据、独立审批和输入体积监督保持。修改随包 YAML 后重新构建、加载 Mod 才生效，不在运行中的任务内热更新。
++
++工具、响应、审查身份留存和历史窗口使用 `ai.execution` 与 `ai.history`，均为有限资源预算；任一先达到即可拒绝，不能理解为所有最坏嵌套都可同时跑满。审批模型通过实时Skill自行判断重复讨论是否必要，`retained-review-sessions` 只控制身份留存容量，不规定讨论轮数。公共非视觉模型请求最终仍受1 MiB编码载荷约束，窗口扩大不会截断完整审查输入来伪造投递完成。
++
++`service/core/config` 继续管理应用部署的业务配置、作用范围和不可变修订。审批偏好、模型选择、累计 Token 监督预算、提示词、helper 协议和远端固定脚本继续沿各自边界管理；用户偏好和已提交业务配置使用原有持久化流程。完整运行预算说明及未验证范围见[Agent运行预算配置](test/multi-language/DEPLOYMENT-AGENT-RUNTIME-LIMITS.md)。
+ 
+ ### 部署服务器目录
+ 

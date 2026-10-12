@@ -126,7 +126,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     }
 
     private void rememberDiscussion(String identity, String progress, Result result, String binding) {
-        if (!discussions.containsKey(identity) && discussions.size() >= 512)
+        if (!discussions.containsKey(identity) && discussions.size() >= gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().execution().retainedReviewSessions())
             discussions.remove(discussions.keySet().iterator().next());
         discussions.put(identity, new Discussion(progress, result, binding, ""));
     }

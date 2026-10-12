@@ -29,7 +29,7 @@ class PlatformOutputTokenPolicyTest {
 
     static AppConfig.Ai policy(int recommendation, boolean allow, int verification) {
         var base = AppConfig.defaultsConfig().ai();
-        return new AppConfig.Ai(base.connectSeconds(), recommendation, allow, verification, base.recovery(), base.deletion(), base.file());
+        return new AppConfig.Ai(base.connectSeconds(), recommendation, allow, verification, base.nativeState(), base.recovery(), base.deletion(), base.file());
     }
 
     static PlatformRuntime open(Path root, boolean allow) throws Exception {

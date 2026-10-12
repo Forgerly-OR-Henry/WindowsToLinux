@@ -15,7 +15,7 @@ class DeploymentConfigLoaderTest {
     private static String bundledYaml() throws IOException {
         try (var input = DeploymentConfigLoaderTest.class.getResourceAsStream(DeploymentConfigLoader.RESOURCE)) {
             assertNotNull(input);
-            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n").replaceAll("(?m)[ \t]+#.*$", "");
         }
     }
 
@@ -30,7 +30,8 @@ class DeploymentConfigLoaderTest {
         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192), config.ai());
+        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600),
+            new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
             "/var/opt/windowstolinux/apps"), config.paths());
@@ -130,7 +131,9 @@ class DeploymentConfigLoaderTest {
         var config = parse(yaml.replace("deployment-max-output-tokens: 32768", "deployment-max-output-tokens: 4096")
             .replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 12288")
             .replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2048"));
-        assertEquals(new DeploymentConfig.Ai(4096, 12288, 2048), config.ai());
+        assertEquals(4096, config.ai().deploymentMaxOutputTokens());
+        assertEquals(12288, config.ai().extendedDeploymentMaxOutputTokens());
+        assertEquals(2048, config.ai().approvalMaxOutputTokens());
         for (String invalid : java.util.List.of(
             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 32769"),
             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 0"),
@@ -145,5 +148,41 @@ class DeploymentConfigLoaderTest {
     void missingOrOversizedResourceIsRejected() {
         assertThrows(IOException.class, () -> DeploymentConfigLoader.load(null));
         assertThrows(IOException.class, () -> DeploymentConfigLoader.load(new ByteArrayInputStream(new byte[65537])));
+    }
+
+    @Test
+    void runtimeBudgetsRejectMissingUnknownDuplicateOverflowAndInvalidRelationships() throws Exception {
+        String yaml = bundledYaml();
+        var larger = parse(yaml.replace("shared-tool-attempts: 4096", "shared-tool-attempts: 8192")
+            .replace("standalone-tool-attempts: 256", "standalone-tool-attempts: 512")
+            .replace("local-tool-turns: 128", "local-tool-turns: 256")
+            .replace("agent-model-responses: 512", "agent-model-responses: 1024")
+            .replace("retained-review-sessions: 4096", "retained-review-sessions: 8192")
+            .replace("characters: 131072", "characters: 262144").replace("payload-bytes: 262144", "payload-bytes: 524288"));
+        assertEquals(new DeploymentConfig.Execution(8192, 512, 256, 1024, 8192, 4096), larger.ai().execution());
+        assertEquals(262144, larger.ai().history().characters());
+        for (String field : java.util.List.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds",
+            "shared-tool-attempts", "standalone-tool-attempts", "local-tool-turns", "agent-model-responses", "retained-review-sessions", "max-observations",
+            "max-batches", "characters", "payload-bytes", "initial-batches", "initial-payload-bytes")) {
+            String line = yaml.lines().filter(value -> value.stripLeading().startsWith(field + ":")).findFirst().orElseThrow();
+            assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
+            assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)));
+            for (String invalid : java.util.List.of("0", "-1", "null", "true", "1.2", "'128'", "2147483648", "9223372036854775808"))
+                assertThrows(IOException.class, () -> parse(yaml.replace(line, "    " + field + ": " + invalid)));
+        }
+        for (String invalid : java.util.List.of(
+            yaml.replace("requests:", "requests:\n    unknown: 1"),
+            yaml.replace("execution:", "execution:\n    unknown: 1"), yaml.replace("history:", "history:\n    unknown: 1"),
+            yaml.replace("extended-timeout-seconds: 600", "extended-timeout-seconds: 119"),
+            yaml.replace("standalone-tool-attempts: 256", "standalone-tool-attempts: 4097"),
+            yaml.replace("local-tool-turns: 128", "local-tool-turns: 257"),
+            yaml.replace("retained-review-sessions: 4096", "retained-review-sessions: 4097"),
+            yaml.replace("agent-model-responses: 512", "agent-model-responses: 2147483647"),
+            yaml.replace("max-observations: 4096", "max-observations: 1000000"),
+            yaml.replace("characters: 131072", "characters: 1048577"),
+            yaml.replace("payload-bytes: 262144", "payload-bytes: 1048577"),
+            yaml.replace("initial-batches: 2", "initial-batches: 25"),
+            yaml.replace("initial-payload-bytes: 8192", "initial-payload-bytes: 262145")))
+            assertThrows(IOException.class, () -> parse(invalid));
     }
 }

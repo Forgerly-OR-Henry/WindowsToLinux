@@ -44,26 +44,26 @@ class DeploymentAgentBudgetFactsTest {
     }
 
     @Test
-    void factsDeriveActualScopeMaximumWhileModelResponsesRemainEighty() {
-        for (int maximum : List.of(4, 80, 512)) {
+    void factsDeriveActualScopeMaximumAndConfiguredModelResponses() {
+        for (int maximum : List.of(4, 80, 512, 4096)) {
             try (var scope = DeploymentToolBudget.open(maximum)) {
                 assertTrue(DeploymentToolBudget.consume(List.of(call("main"), call("publication"))));
                 var facts = DeploymentAgentBudgetFacts.observe(79, 1);
-                assertEquals(80, facts.get("maximumModelResponses"));
+                assertEquals(512, facts.get("maximumModelResponses"));
                 assertEquals(79, facts.get("remainingModelResponsesAfterThisRequest"));
-                int mainMaximum = Math.min(maximum, 320);
+                int mainMaximum = Math.min(maximum, 2048);
                 assertEquals(mainMaximum, facts.get("maximumMainToolAttempts"));
                 assertEquals(maximum, facts.get("maximumSharedToolAttempts"));
-                assertEquals(mainMaximum - 1, facts.get("remainingMainToolAttempts"));
+                assertEquals(Math.min(mainMaximum - 1, 320), facts.get("remainingMainToolAttempts"));
                 assertEquals(maximum - 2, facts.get("remainingSharedToolAttempts"));
-                assertEquals(Math.min(mainMaximum - 1, maximum - 2), facts.get("remainingExecutableToolAttempts"));
+                assertEquals(Math.min(Math.min(mainMaximum - 1, 320), maximum - 2), facts.get("remainingExecutableToolAttempts"));
                 assertEquals(4, facts.get("maximumCallsPerResponse"));
                 assertEquals(maximum - 2, DeploymentToolBudget.remaining());
             }
         }
         var defaultFacts = DeploymentAgentBudgetFacts.observe(78, 2);
-        assertEquals(80, defaultFacts.get("maximumSharedToolAttempts"));
-        assertEquals(78, defaultFacts.get("remainingExecutableToolAttempts"));
+        assertEquals(256, defaultFacts.get("maximumSharedToolAttempts"));
+        assertEquals(254, defaultFacts.get("remainingExecutableToolAttempts"));
     }
 
     @Test
@@ -76,7 +76,7 @@ class DeploymentAgentBudgetFactsTest {
             assertEquals(204, facts.get("remainingMainToolAttempts"));
             assertEquals(429, facts.get("remainingSharedToolAttempts"));
             assertEquals(204, facts.get("remainingExecutableToolAttempts"));
-            assertEquals(80, facts.get("maximumModelResponses"));
+            assertEquals(512, facts.get("maximumModelResponses"));
             assertFalse(DeploymentToolBudget.consume(List.of(call("publish"))));
             assertEquals(428, DeploymentToolBudget.remaining());
             var publication = java.util.stream.IntStream.range(0, 300).mapToObj(i -> call("publication-" + i)).toList();
@@ -90,7 +90,7 @@ class DeploymentAgentBudgetFactsTest {
         try (var scope = DeploymentToolBudget.open(512)) {
             assertTrue(DeploymentToolBudget.consume(List.of(call("main"))));
             var lastResponse = DeploymentAgentBudgetFacts.observe(0, 1);
-            assertEquals(320, lastResponse.get("maximumMainToolAttempts"));
+            assertEquals(512, lastResponse.get("maximumMainToolAttempts"));
             assertEquals(512, lastResponse.get("maximumSharedToolAttempts"));
             assertEquals(4, lastResponse.get("remainingMainToolAttempts"));
             assertEquals(511, lastResponse.get("remainingSharedToolAttempts"));

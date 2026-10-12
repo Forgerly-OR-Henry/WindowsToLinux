@@ -3,14 +3,19 @@ package gold.debug.windowstolinux.app.service.ai;
 import java.util.*;
 
 import gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile;
+import gold.debug.windowstolinux.app.config.AppConfig;
 import gold.debug.windowstolinux.appapi.ai.model.*;
 
 /** Task-owned provider state, inaccessible through public diagnostic values. */
 final class NativeModelContinuations {
-    private record State(UUID task, AiPurpose purpose, StoredAiModelProfile profile, String revision, String value) {
-        int payloadBytes() {
-            return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        }
+    private record State(UUID task, AiPurpose purpose, StoredAiModelProfile profile, String revision, String value,
+                         int payloadBytes) {
+    }
+
+    private final AppConfig.NativeState limits;
+
+    NativeModelContinuations(AppConfig.NativeState limits) {
+        this.limits = Objects.requireNonNull(limits);
     }
 
     private final Map<UUID, State> states = new LinkedHashMap<>();
@@ -53,15 +58,18 @@ final class NativeModelContinuations {
     }
 
     synchronized AiContinuation retain(UUID task, AiPurpose purpose, StoredAiModelProfile profile, String revision, String value) {
-        if (value == null || value.isEmpty() || value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1024 * 1024)
+        if (value == null || value.isEmpty())
+            throw new IllegalArgumentException("Native provider state exceeds its bound");
+        int payloadBytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (payloadBytes > limits.maxValueBytes())
             throw new IllegalArgumentException("Native provider state exceeds its bound");
         long count = states.values().stream().filter(s -> s.task().equals(task)).count();
         long bytes = states.values().stream().filter(s -> s.task().equals(task)).mapToLong(State::payloadBytes).sum();
-        if (count >= 160 || bytes + value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 16L * 1024 * 1024)
+        if (count >= limits.maxStates() || bytes > limits.maxTotalBytes() - payloadBytes)
             throw new IllegalArgumentException("Native task state capacity exhausted");
         UUID id = UUID.randomUUID();
-        states.put(id, new State(task, purpose, profile, revision, value));
-        bindings.putIfAbsent(new Session(task, purpose), new State(task, purpose, profile, revision, ""));
+        states.put(id, new State(task, purpose, profile, revision, value, payloadBytes));
+        bindings.putIfAbsent(new Session(task, purpose), new State(task, purpose, profile, revision, "", 0));
         return new AiContinuation(id, states.get(id).payloadBytes());
     }
 
@@ -76,6 +84,10 @@ final class NativeModelContinuations {
     synchronized void stop(UUID task, AiPurpose purpose) {
         var session = new Session(task, purpose);
         if (bindings.containsKey(session)) stopped.add(session);
+    }
+
+    synchronized void stopAfterRetentionFailure(UUID task, AiPurpose purpose) {
+        stopped.add(new Session(task, purpose));
     }
 
     synchronized void clear(UUID task) {

@@ -330,3 +330,17 @@ Agent 仅在上传后的本次 verify 局部附加 currentCommandEvidence，保�
 两owner精确增量见 [第12轮输出预算补丁](patches/DEPLOYMENT-AI-OUTPUT-BUDGET-12.patch)，原始SHA256 `55802c67cd4acdaa9e53f6711c2142ac91c29ce14ff9fd0062762daf457195a1`，前像与反向核验通过；一项可独立暂存，一项混合迁移仅保存本次精确增量，原迁移保留。按用户最新要求，完成此项验证、本地提交及交接后暂停，不启动task-board-13。真实可运行task-board App、浏览器业务、非默认真机与Linux重启、其他七项和最终冻结八项目仍未验收。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
+
+2026-10-12恢复推进后，`task-board-13` 使用新任务 `bb9ce013-263d-45d3-aded-8cc3ee54357d`、新库 `agent-live-task-board-3xxhcfx03g` 和 App 意图 `wtl-agent-task-board-3xxhchfhfs`。于13:07:19+08结束一项真实产品入口失败，零错误/跳过，961.074秒；3272项源码与Skill冻结零变化，验证会话35626退出，实际CIM13:11:21为OK/0，用户原IDEA保持。主模型自行完成来源识别、计划修正、数据库选择、两次完整候选准备并进入prepare_tools，没有正式App或真实浏览器业务结果。
+
+真实产品FAILURE记录确认终因是 `AI_SESSION_STATE_LIMIT`。平台按同一原任务累计LANGUAGE与APPROVAL的native状态，原固定上限160条；42个LANGUAGE与118个APPROVAL成功响应恰好达到该数量边界。第161个请求在provider成功后保存continuation失败，响应及精确usage未交回上层，不能计为未发送、0用量或可执行结果。普通部署实际请求32768、审批8192；没有本轮已见length或4百万监督停止标记。源码及两次有界只读H2核查均未修改原数据，独占锁已释放；不能仅根据次数认定无限讨论或推断累计字节分支未触发。
+
+该轮160份已知响应用量为input2396868、output76884、合计2473752，hit1429120、miss967748，捕获输入命中率59.62%；主模型913350，审批1560402，占已知总量63.08%。reasoning32723已知、118项未知；第161次精确用量及4项配置探测的usage/transport仍未知。15个APPROVE提交不是15次授权或执行证明。数字仅属于本开发失败轮，排除最终冻结八项目；没有重放请求付费取证。
+
+原任务UNKNOWN、资源4439、effectsSettled=false保留。两对PREPARE结果及databases结果完整，但prepare_tools的CAPABILITY_EXECUTING191没有RESULT；最后审批未完成不能覆盖此前已发送的resolve子操作。现有恢复入口尚不能由这些证据结清该capability，本阶段未运行恢复、未删除候选、未补造NOT_SENT或COMPENSATED，正式业务十表仍0、模型2/服务器1保持。调查证据保留，原373等已有正式业务及其他未结状态未操作。
+
+用户随后要求将大型项目相关运行限额提高并集中到配置文件。本阶段暂停真实部署与恢复，仅进行运行预算配置化、native容量及失败计量修复和直接本地验证；完整独立审批、任务身份及模式边界继续生效。后续真实App、非默认目录服务器部署与Linux重启、其余七项和最终冻结八项目仍待验收。
+
+运行预算配置化已完成本地验证：native每任务4096状态/64MiB总载荷，单值1MiB公共界保留；请求时限120/120/600s、工具尝试和主响应、历史窗口、审批会话身份留存及观察容量均接入实际consumer。平台与Mod两份YAML全部字段补齐注释，严格必填及关系校验生效，主管自主判断讨论是否继续；身份留存数不规定讨论轮数。provider成功后本地retain失败返回FAILED纯计量响应，清空可执行内容并封闭该purpose，包括首次尚无binding的情况，不重付费或回填旧13未知用量。
+
+99个不同定点场景最新全部通过，五轮108次执行和编译/夹具失败记录保留；只重跑失败与直接受影响组。512轮协调夹具完成2048个不同真实本地源码页READ、账本与预算收尾，不创建服务器权限。35个Java格式检查通过，测试及格式3272冻结零变化，其他3235源文件保持，原13数据库三文件SHA未变。实际provider/SSH/原任务恢复调用0，不产生新缓存或审批占比验收批次。当前仅通过本地运行预算与失败处理验证，真实部署仍按用户要求暂停。字段、默认值、结构上界、失败轮及精确增量提交隔离见[Agent运行预算配置](DEPLOYMENT-AGENT-RUNTIME-LIMITS.md)，共享[配置填写说明](../../Config.md)已同步；原13 UNKNOWN及4439资源继续保留。

@@ -51,7 +51,14 @@ public final class DeploymentConfigLoader {
         var root = mapper.readTree(bytes);
         fields(root, Set.of("source", "build", "environment", "view", "ai", "paths"));
         var ai = root.path("ai");
-        fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens"));
+        fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens",
+            "requests", "execution", "history"));
+        var requests = ai.path("requests");
+        fields(requests, Set.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds"));
+        var execution = ai.path("execution");
+        fields(execution, Set.of("shared-tool-attempts", "standalone-tool-attempts", "local-tool-turns", "agent-model-responses", "retained-review-sessions", "max-observations"));
+        var history = ai.path("history");
+        fields(history, Set.of("max-batches", "characters", "payload-bytes", "initial-batches", "initial-payload-bytes"));
         var source = root.path("source");
         fields(source, Set.of("bytes", "entries", "archive-bytes"));
         var build = root.path("build");
@@ -71,7 +78,13 @@ public final class DeploymentConfigLoader {
                     integer(environment, "reboot-seconds"), integer(environment, "poll-seconds")),
                 new DeploymentConfig.View(integer(view, "refresh-ms"), integer(view, "page-size")),
                 new DeploymentConfig.Ai(integer(ai, "deployment-max-output-tokens"), integer(ai, "extended-deployment-max-output-tokens"),
-                    integer(ai, "approval-max-output-tokens")),
+                    integer(ai, "approval-max-output-tokens"),
+                    new DeploymentConfig.Requests(integer(requests, "deployment-timeout-seconds"), integer(requests, "approval-timeout-seconds"),
+                        integer(requests, "extended-timeout-seconds")),
+                    new DeploymentConfig.Execution(integer(execution, "shared-tool-attempts"), integer(execution, "standalone-tool-attempts"),
+                        integer(execution, "local-tool-turns"), integer(execution, "agent-model-responses"), integer(execution, "retained-review-sessions"), integer(execution, "max-observations")),
+                    new DeploymentConfig.History(integer(history, "max-batches"), integer(history, "characters"), integer(history, "payload-bytes"),
+                        integer(history, "initial-batches"), integer(history, "initial-payload-bytes"))),
                 new DeploymentConfig.RemotePaths(text(paths, "helper-directory"),
                     text(paths, "applications-root"), text(paths, "state-root"), text(paths, "configuration-root"),
                     text(paths, "data-root")));

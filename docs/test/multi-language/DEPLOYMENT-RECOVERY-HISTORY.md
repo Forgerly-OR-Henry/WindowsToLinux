@@ -85,3 +85,5 @@ Agent 恢复最早先查结清凭证；原资源仍占用时返回 UNKNOWN。历
 GPT-6.1-Sol 负责实现与定点修正，GPT-6-Astra 仅参与正式来源、窄结清凭证及完整候选恢复审批边界的只读判断；其 v2 建议已按用户最新要求撤除。
 
 本轮 Maven、测试子进程与格式验证进程均已退出；用户原有 IDEA 进程保留。
+
+2026-10-12第13轮新部署的原task `bb9ce013-263d-45d3-aded-8cc3ee54357d` 因平台native状态保存上限终止，仍为UNKNOWN。两份完整候选及databases结果不能结清prepare_tools的CAPABILITY_EXECUTING191：此前resolve已有真实执行结果，最后审批中断仅证明最后请求未获授权，不能证明整个capability未发送。原effectsSettled=false、4439资源及全部Agent明细保留，无正式App、无结清摘要。现有恢复缺少该capability内原toolchain操作及可信回执/status的整体结清依据；本阶段没有调用恢复或清理，也没有补造RESULT/NOT_SENT/COMPENSATED。两次有界只读诊断的原3个数据库文件SHA均未变化，锁已释放。第13轮实际用量、终因和暂停范围见[Agent自主验收记录](DEPLOYMENT-AGENT-AUTONOMY.md)，不作为恢复成功证据。数据库保持v1，原373正式业务及其他未结记录继续保留。

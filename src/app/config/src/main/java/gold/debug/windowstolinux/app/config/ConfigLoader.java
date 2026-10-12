@@ -28,6 +28,7 @@ public final class ConfigLoader {
         "defaults.delete-ai-explanation", "ssh.heartbeat-seconds", "ssh.recovery.observation-seconds",
         "ssh.recovery.probe-interval-seconds", "ssh.recovery.probe-timeout-seconds", "ai.connect-seconds",
         "ai.recommended-max-output-tokens", "ai.allow-output-token-override", "ai.verification-max-output-tokens",
+        "ai.native-state.max-states", "ai.native-state.max-total-bytes", "ai.native-state.max-value-bytes",
         "ai.recovery.timeout-seconds", "ai.deletion.timeout-seconds", "ai.file.timeout-seconds",
         "logs.emergency-records", "mod.auto-load", "mod.store.base-url");
 
@@ -102,6 +103,8 @@ public final class ConfigLoader {
                 new AppConfig.Ai(number(values, "ai.connect-seconds", 86400),
                     number(values, "ai.recommended-max-output-tokens", Integer.MAX_VALUE), bool(values, "ai.allow-output-token-override"),
                     number(values, "ai.verification-max-output-tokens", Integer.MAX_VALUE),
+                    new AppConfig.NativeState(number(values, "ai.native-state.max-states", Integer.MAX_VALUE),
+                        positiveLong(values, "ai.native-state.max-total-bytes"), number(values, "ai.native-state.max-value-bytes", 1024 * 1024)),
                     budget(values, "recovery"), budget(values, "deletion"), budget(values, "file")),
                 number(values, "logs.emergency-records", 100), !mode.equals("class") || bool(values, "mod.auto-load"), store);
         } catch (IllegalArgumentException invalid) {
@@ -172,12 +175,18 @@ public final class ConfigLoader {
         return values.get(key).booleanValue();
     }
 
-    /** Requires an integer within the field-specific positive bound. / 要求整数位于字段规定的正数界限内。
+    /** Reads a positive aggregate byte budget without coercion or overflow. / 不进行类型转换或溢出地读取正总字节预算。
      * @param values merged effective fields / 合并后生效字段
      * @param key supported field key / 支持的字段键
-     * @param maximum inclusive positive upper bound / 含端点正数上限
-     * @return validated integer / 已校验整数
+     * @return validated long integer / 已校验 long 整数
      * @throws IOException if type or range is invalid / 类型或范围无效时 */
+    private static long positiveLong(Map<String, JsonNode> values, String key) throws IOException {
+        var node = values.get(key);
+        if (!node.isIntegralNumber() || !node.canConvertToLong() || node.longValue() < 1)
+            throw new IOException("Expected positive long integer: " + key);
+        return node.longValue();
+    }
+
     private static int number(Map<String, JsonNode> values, String key, int maximum) throws IOException {
         var node = values.get(key);
         if (!node.isIntegralNumber() || !node.canConvertToInt() || node.intValue() < 1 || node.intValue() > maximum)

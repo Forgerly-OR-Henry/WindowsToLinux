@@ -20,6 +20,64 @@ class PlatformNativeModelTest {
     Path root;
 
     @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void nativeRetentionFailureReturnsOnlyActualMetricsStopsItsSessionAndNeverRetriesTheProvider(boolean failFirstResponse) throws Exception {
+        try (var fixture = new PlatformAiServiceTest.Fixture(); var runtime = PlatformOutputTokenPolicyTest.open(root, true)) {
+            PlatformTaskAdmissionIntegrationTest.initialize(runtime, false);
+            PlatformAiServiceTest.model(runtime, fixture, "model", "/model", AiCapabilityType.TEXT, 1);
+            var stored = runtime.persistence().aiProfiles().listConfigured().getFirst();
+            runtime.persistence().aiProfiles().recordVerification(stored.profile(), stored.revision(), AiCapabilityType.TOOL_CALLING, java.time.Instant.now());
+            PlatformAiServiceTest.route(runtime, AiPurposeType.DEPLOYMENT, "model");
+            fixture.handler.set(exchange -> PlatformAiServiceTest.Fixture.reply(exchange, 200,
+                "{\"model\":\"fixture-model\",\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":\"private response\",\"tool_calls\":[{\"id\":\"call_" + fixture.calls.get()
+                    + "\",\"type\":\"function\",\"function\":{\"name\":\"unbound_action\",\"arguments\":\"{}\"}}]}}],\"usage\":{\"prompt_tokens\":23,\"completion_tokens\":7}}"));
+            var base = gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai();
+            var settings = new gold.debug.windowstolinux.app.config.AppConfig.Ai(base.connectSeconds(), base.recommendedMaxOutputTokens(),
+                base.allowOutputTokenOverride(), base.verificationMaxOutputTokens(),
+                new gold.debug.windowstolinux.app.config.AppConfig.NativeState(1, 1048576, failFirstResponse ? 1 : 1048576), base.recovery(), base.deletion(), base.file());
+            try (var ai = new gold.debug.windowstolinux.app.service.ai.PlatformAiService(runtime.persistence().database(), runtime.tasks(),
+                runtime.security(), runtime.persistence().aiProfiles(), PlatformTaskAdmissionIntegrationTest.OWNER, PlatformTaskAdmissionIntegrationTest.VERSION, settings)) {
+                var tools = List.of(new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("unbound_action", "No automatic execution", "{\"type\":\"object\"}"));
+                PlatformServerRefTest.completed(runtime.tasks().bind(PlatformTaskAdmissionIntegrationTest.OWNER, PlatformTaskAdmissionIntegrationTest.VERSION, false)
+                    .submit(PlatformTaskAdmissionIntegrationTest.request(), task -> {
+                        var initial = PlatformAiServiceTest.message(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE);
+                        var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(initial.purpose(), initial.messages(), 1234,
+                            java.time.Duration.ofSeconds(6), false, tools);
+                        gold.debug.windowstolinux.appapi.task.result.OperationResult<gold.debug.windowstolinux.appapi.ai.model.AiResponse> second;
+                        if (failFirstResponse) second = ai.call(request, task);
+                        else {
+                            var first = ai.call(request, task).value().orElseThrow();
+                            assertTrue(first.continuation().isPresent());
+                            var history = new ArrayList<>(initial.messages());
+                            history.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.assistant(first));
+                            history.add(gold.debug.windowstolinux.appapi.ai.model.AiMessage.result(
+                                new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("call_1", "observed result", false)));
+                            second = ai.call(new gold.debug.windowstolinux.appapi.ai.model.AiRequest(initial.purpose(), history, 1234,
+                                java.time.Duration.ofSeconds(6), false, tools), task);
+                        }
+                        assertEquals(TaskResult.FAILED, second.outcome());
+                        assertEquals("AI_SESSION_STATE_LIMIT", second.problem().orElseThrow().eventCode());
+                        var metrics = second.value().orElseThrow();
+                        assertEquals("", metrics.text());
+                        assertTrue(metrics.toolCalls().isEmpty());
+                        assertTrue(metrics.continuation().isEmpty());
+                        assertEquals(Optional.of(23L), metrics.usage().inputTokens());
+                        assertEquals(Optional.of(7L), metrics.usage().outputTokens());
+                        assertTrue(metrics.usage().cachedInputTokens().isEmpty());
+                        assertEquals("model", metrics.modelId());
+                        assertEquals("tool_calls", metrics.finishReason());
+                        assertEquals(Optional.of(1234), metrics.effectiveMaxOutputTokens());
+                        assertTrue(metrics.encodedRequestBytes().orElseThrow() > 0);
+                        var stopped = assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class, () -> ai.call(request, task));
+                        assertEquals("AI_SESSION_BINDING_CHANGED", stopped.problem().eventCode());
+                        return PlatformTaskAdmissionIntegrationTest.success(null);
+                    }));
+                assertEquals(failFirstResponse ? 1 : 2, fixture.calls.get(), "The paid successful response is not retried and the stopped session sends nothing");
+            }
+        }
+    }
+
+    @ParameterizedTest
     @CsvSource({"OPENAI_CHAT_COMPLETIONS,true", "OPENAI_CHAT_COMPLETIONS,false", "OPENAI_RESPONSES,true", "OPENAI_RESPONSES,false", "ANTHROPIC_MESSAGES,true", "ANTHROPIC_MESSAGES,false"})
     void nativeRoundTripUsesSelectedProtocolEvenWhenUrlLooksLikeChat(ModelProtocol protocol, boolean allow) throws Exception {
         nativeRoundTrip(protocol, allow, ModelReasoningLevel.DEFAULT);

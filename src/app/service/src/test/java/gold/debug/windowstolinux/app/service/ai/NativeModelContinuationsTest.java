@@ -10,7 +10,8 @@ import gold.debug.windowstolinux.appapi.ai.model.*;
 import org.junit.jupiter.api.Test;
 
 class NativeModelContinuationsTest {
-    private final NativeModelContinuations states = new NativeModelContinuations();
+    private final NativeModelContinuations states = new NativeModelContinuations(
+        gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().nativeState());
 
     private final UUID task = UUID.randomUUID();
 
@@ -59,5 +60,62 @@ class NativeModelContinuationsTest {
         assertThrows(IllegalArgumentException.class, () -> states.bound(task,
             request(AiPurpose.LANGUAGE, new AiContinuation(handle.id(), 1)), "revision"));
         assertThrows(IllegalArgumentException.class, () -> states.retain(task, AiPurpose.LANGUAGE, model, "revision", "中".repeat(400000)));
+    }
+
+    @Test
+    void configuredCapacityKeepsEarlyMixedPurposeAndIndependentSamePurposeBranches() throws Exception {
+        var configured = gold.debug.windowstolinux.app.config.ConfigLoader.load("app").ai().nativeState();
+        var retained = new NativeModelContinuations(configured);
+        var firstLanguage = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "first-language");
+        var firstApproval = retained.retain(task, AiPurpose.APPROVAL, model, "revision", "first-approval");
+        var otherBranch = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "independent-branch");
+        for (int index = 3; index < 512; index++)
+            retained.retain(task, index % 2 == 0 ? AiPurpose.LANGUAGE : AiPurpose.APPROVAL, model, "revision", "state-" + index);
+        assertEquals(4096, configured.maxStates());
+        assertEquals(64L * 1024 * 1024, configured.maxTotalBytes());
+        assertEquals("first-language", retained.values(task, request(AiPurpose.LANGUAGE, firstLanguage), model, "revision").get(firstLanguage.id()));
+        assertEquals("first-approval", retained.values(task, request(AiPurpose.APPROVAL, firstApproval), model, "revision").get(firstApproval.id()));
+        assertEquals("independent-branch", retained.values(task, request(AiPurpose.LANGUAGE, otherBranch), model, "revision").get(otherBranch.id()));
+    }
+
+    @Test
+    void configuredSmallCountIsTaskWideAndClearCannotRemoveAnotherTasksState() {
+        var retained = new NativeModelContinuations(new gold.debug.windowstolinux.app.config.AppConfig.NativeState(2, 64, 32));
+        var other = UUID.randomUUID();
+        var otherHandle = retained.retain(other, AiPurpose.LANGUAGE, model, "revision", "other");
+        var first = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "first");
+        retained.retain(task, AiPurpose.APPROVAL, model, "revision", "second");
+        assertThrows(IllegalArgumentException.class, () -> retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "third"));
+        assertEquals("first", retained.values(task, request(AiPurpose.LANGUAGE, first), model, "revision").get(first.id()));
+        retained.stop(task, AiPurpose.LANGUAGE);
+        retained.clear(task);
+        assertThrows(IllegalArgumentException.class, () -> retained.values(task, request(AiPurpose.LANGUAGE, first), model, "revision"));
+        assertEquals("other", retained.values(other, request(AiPurpose.LANGUAGE, otherHandle), model, "revision").get(otherHandle.id()));
+        retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "new");
+        retained.retain(task, AiPurpose.APPROVAL, model, "revision", "new-second");
+    }
+
+    @Test
+    void configuredUtf8AggregateAndIndividualBoundsRejectWithoutEvictingExistingHandles() {
+        var retained = new NativeModelContinuations(new gold.debug.windowstolinux.app.config.AppConfig.NativeState(10, 12, 8));
+        var first = retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "中中");
+        retained.retain(task, AiPurpose.APPROVAL, model, "revision", "abcdef");
+        assertEquals(6, first.payloadBytes());
+        assertThrows(IllegalArgumentException.class, () -> retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "x"));
+        assertThrows(IllegalArgumentException.class, () -> retained.retain(UUID.randomUUID(), AiPurpose.LANGUAGE, model, "revision", "123456789"));
+        assertEquals("中中", retained.values(task, request(AiPurpose.LANGUAGE, first), model, "revision").get(first.id()));
+    }
+
+    @Test
+    void firstRetentionFailureSealsOnlyTheOriginalPurposeUntilItsTaskIsCleared() {
+        var retained = new NativeModelContinuations(new gold.debug.windowstolinux.app.config.AppConfig.NativeState(2, 16, 4));
+        var fresh = new AiRequest(AiPurpose.LANGUAGE, List.of(new AiMessage(AiRole.USER, "next", List.of())), 128, Duration.ofSeconds(5), false);
+        assertThrows(IllegalArgumentException.class, () -> retained.retain(task, AiPurpose.LANGUAGE, model, "revision", "too-large"));
+        retained.stopAfterRetentionFailure(task, AiPurpose.LANGUAGE);
+        assertThrows(IllegalArgumentException.class, () -> retained.bound(task, fresh, "revision"));
+        var approval = retained.retain(task, AiPurpose.APPROVAL, model, "revision", "ok");
+        assertEquals(model, retained.bound(task, request(AiPurpose.APPROVAL, approval), "revision").orElseThrow());
+        retained.clear(task);
+        assertTrue(retained.bound(task, fresh, "revision").isEmpty());
     }
 }
