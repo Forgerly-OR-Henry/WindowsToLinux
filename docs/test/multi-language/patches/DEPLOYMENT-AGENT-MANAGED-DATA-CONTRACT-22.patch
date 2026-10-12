@@ -1,0 +1,391 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -817,7 +817,13 @@
+                     throw new IllegalArgumentException("Prepared sandbox backend changed");
+             }
+         var resolved = new ArrayList<DeploymentAgentPlan.Part>();
+-        for (var component : proposal.plan().components()) resolved.add(tools.resolve(component));
++        var resourceLayout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++        for (var component : proposal.plan().components()) {
++            var part = tools.resolve(component);
++            gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentPlanResourceConstraints.require(part,
++                Optional.ofNullable(candidates.get(part.id())).map(candidate -> candidate.workspace().applicationId()), resourceLayout);
++            resolved.add(part);
++        }
+         var declared = new DeploymentAgentPlan(proposal.plan().applicationId(), proposal.plan().healthComponentId(), proposal.plan().health(), resolved);
+         var nextPlan = new DeploymentAgentPlan(declared.applicationId(), declared.healthComponentId(), declared.health(), tools.selectWorkspaces(declared, Map.copyOf(candidates)));
+         var sources = new LinkedHashMap<String, String>();
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanResourceConstraints.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanResourceConstraints.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanResourceConstraints.java
+@@ -0,0 +1,52 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.protocol;
++
++import java.util.LinkedHashMap;
++import java.util.Map;
++import java.util.Optional;
++
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentDatabaseConnection;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation;
++
++/** Checks the component's combined helper binding namespace before accepting an Agent plan. / 接受 Agent 计划前校验组件合并后的 helper 绑定命名空间。 */
++public final class DeploymentAgentPlanResourceConstraints {
++    private DeploymentAgentPlanResourceConstraints() {
++    }
++
++    /** Rejects duplicate identities and access paths without relabeling or dropping verified resources. / 拒绝重复身份及访问路径，不重命名或丢弃已核实资源。
++     * @param part source-bound resolved component / 来源绑定的已解析组件
++     * @param applicationId existing candidate's exact managed identity / 既有候选的精确受管身份
++     * @param layout original task layout / 原任务布局
++     * @throws IllegalArgumentException if combined managed content is ambiguous / 合并后的受管内容有歧义时 */
++    public static void require(DeploymentAgentPlan.Part part, Optional<String> applicationId, DeploymentRemoteLayout layout) {
++        var identities = new LinkedHashMap<String, String>();
++        var paths = new LinkedHashMap<String, String>();
++        for (var file : part.resources().fileBindings())
++            binding(part.id(), identities, paths, file.bindingId(), file.dataPath().path(), file.resourceType().name());
++        for (var database : part.resources().databaseBindings().orElse(java.util.List.of())) {
++            if (!(database.connection() instanceof DeploymentDatabaseConnection.Sqlite sqlite)) continue;
++            String path = sqlite.accessPath();
++            if (path.isEmpty()) {
++                String owner = applicationId.orElseThrow(() -> new IllegalArgumentException(
++                    "AGENT_PLAN_MANAGED_DATA_CONSTRAINT: component " + part.id() + " has SQLite bindings without an existing candidate identity"));
++                path = sqlite.location().resolve(owner, DeploymentStorageLocation.StorageResourceType.DATABASE, database.databaseId(), layout)
++                    + "/" + sqlite.fileName();
++            }
++            binding(part.id(), identities, paths, database.databaseId(), path, "SQLITE");
++        }
++    }
++
++    private static void binding(String component, Map<String, String> identities, Map<String, String> paths,
++                                String id, String path, String kind) {
++        String previous = identities.putIfAbsent(id, kind);
++        if (previous != null)
++            throw new IllegalArgumentException("AGENT_PLAN_MANAGED_DATA_CONSTRAINT: component " + component
++                + " duplicates binding ID " + id + " across " + previous + " and " + kind
++                + "; file/configuration and SQLite bindings share one namespace. Correct the file declaration while retaining verified database targets.");
++        previous = paths.putIfAbsent(path, id);
++        if (previous != null)
++            throw new IllegalArgumentException("AGENT_PLAN_MANAGED_DATA_CONSTRAINT: component " + component
++                + " bindings " + previous + " and " + id + " duplicate logical access path " + path
++                + "; declare distinct access paths or remove the redundant file declaration while retaining verified database targets.");
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+@@ -99,7 +99,7 @@
+             case "validate_runtime" ->
+                 "Execute the current component's exact typed ON_DEMAND COMMAND verification and workingDirectory in its candidate through fresh independent command review. plan_state pages the exact accepted entrypoint, argv, workingDirectory and expected output when needed for correction. No argv or interpreter defaults are supplied. Applicable only to a direct nonempty ManagedProcess entrypoint without deployment configuration, secrets, inputs or resource bindings. Success proves this candidate invocation only; published health remains required. Applicable components need current success before seal; build, command, patch and replan invalidate it. NOT_APPLICABLE does not certify runtime health and preserves deployment-time verification obligations.";
+             case "plan" ->
+-                "Declare the initial component graph and intended artifact layout after identification. Original state.requirements overrides repository defaults. When publicUrl is supplied, declare an EXTERNAL HTTP/HTTPS endpoint with explicit protocol and accessUrl equal to that requested URL. Every port has explicit protocol and accessUrl; TCP/UDP use empty accessUrl. Matching TCP transport or a host port alone does not declare HTTP/browser identity. PROCESS creates no port forwarding: every host and target port must name the same actual listener; container port publishing remains explicit. Browser loopback targets the client machine, so source-backed browser API addresses and CORS must agree with the actual externally reachable API. Inspect actual generated output through tools before seal; a correct declaration does not prove listener, browser or business behavior. Correct proposals yourself; never assume a sealed publication can change ports. Assess this proposed source-backed declaration, not completion of later preparation, build or runtime admission. Unobserved tools, not-yet-built planned outputs and initially unknown database bindings are later verification obligations; they are blocking discrepancies only if they prevent this declaration or its next action. Actual source conflicts and failed pending results still require assessment and resolution. Derive runtime behavior from current READ facts; read the actual entrypoint, HTTP route definition and storage consumer before declaring health URL paths, ports, bind addresses or data environment names. Match directory versus file semantics; conventional defaults and recognition suggestions do not replace these source facts. Declare literal artifact-relative paths for outputs and launchers to be built after this plan. Their existence and behavior must be verified before seal and publication. Use verified sourceSha256 for configuration. Unknown database bindings are null initially; prepare them after this plan and revise from real bindings. Assess every pending observation.";
++                "Declare the initial component graph and intended artifact layout after identification. Original state.requirements overrides repository defaults. When publicUrl is supplied, declare an EXTERNAL HTTP/HTTPS endpoint with explicit protocol and accessUrl equal to that requested URL. Every port has explicit protocol and accessUrl; TCP/UDP use empty accessUrl. Matching TCP transport or a host port alone does not declare HTTP/browser identity. PROCESS creates no port forwarding: every host and target port must name the same actual listener; container port publishing remains explicit. Browser loopback targets the client machine, so source-backed browser API addresses and CORS must agree with the actual externally reachable API. Inspect actual generated output through tools before seal; a correct declaration does not prove listener, browser or business behavior. Correct proposals yourself; never assume a sealed publication can change ports. Assess this proposed source-backed declaration, not completion of later preparation, build or runtime admission. Unobserved tools, not-yet-built planned outputs and initially unknown database bindings are later verification obligations; they are blocking discrepancies only if they prevent this declaration or its next action. Actual source conflicts and failed pending results still require assessment and resolution. Derive runtime behavior from current READ facts; read the actual entrypoint, HTTP route definition and storage consumer before declaring health URL paths, ports, bind addresses or data environment names. Match directory versus file semantics; conventional defaults and recognition suggestions do not replace these source facts. Declare literal artifact-relative paths for outputs and launchers to be built after this plan. Their existence and behavior must be verified before seal and publication. Use verified sourceSha256 for configuration. Unknown database bindings are null initially; prepare them after this plan and revise from real bindings. Within each component, file/configuration bindings and SQLite database bindings share one binding-ID and logical-access-path namespace; do not declare the same identity or exact access path twice. Verified database targets are retained when correcting file declarations. Assess every pending observation.";
+             case "check" ->
+                 "Refresh actual bounded host baseline for the component; only a selected container engine receives its separate independently reviewed operational check. Unobserved capabilities remain unknown. assessmentCoverage describes evaluations this observation does not perform, not a global rejection of the plan. This does not analyze source, select a recipe, admit a project or prepare a candidate; it cannot substitute for analyze.";
+             case "analyze" ->
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentDatabaseDeclarationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentDatabaseDeclarationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentDatabaseDeclarationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentDatabaseDeclarationTest.java
+@@ -36,6 +36,188 @@
+     private static final String REVISION = "a".repeat(64);
+ 
+     private final ObjectMapper json = new ObjectMapper();
++
++    @Test
++    void duplicateResolvedSqliteBindingReturnsToMainLoopBeforeAnyPreparationAndCorrectedPlanRetainsDatabase() throws Exception {
++        var source = Files.createDirectories(root.resolve("duplicate-data-source"));
++        Files.writeString(source.resolve("index.html"), "Controlled source-backed persistent service\n");
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            var actual = runtime.modContexts().get(OWNER).context();
++            var failed = new AtomicReference<Throwable>();
++            var finished = new CompletableFuture<Void>();
++            var handle = actual.tasks().submit(new TaskRequest("agent-managed-data-local", "Reject ambiguous resources before publication", List.of(), false), task -> {
++                try {
++                    var selection = actual.file().sources().selectDirectory(source, task);
++                    try (var material = new DeploymentSourceSetup(actual.file()).prepare(selection, 1048576, 100, task)) {
++                        var browser = new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256());
++                        var server = new ServerId("managed-data-only");
++                        var journal = new DeploymentAgentActionLog(actual.db());
++                        journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), "b".repeat(64), REVISION, "MANUAL_REVIEW", true));
++                        var calls = new AtomicInteger();
++                        var preparations = new AtomicInteger();
++                        var deliveries = new AtomicInteger();
++                        var database = new gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentDatabaseBinding("state",
++                            new gold.debug.windowstolinux.mod.deployment.service.core.model.database.DeploymentDatabaseConnection.Sqlite("state.db",
++                                gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.DeploymentStorageLocation.defaults(), "data/state.db"));
++                        var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
++                            if (method.getName().equals("configurationRevision")) return REVISION;
++                            assertEquals("call", method.getName());
++                            assertSame(task, args[args.length - 1]);
++                            var request = (AiRequest) args[0];
++                            assertEquals(AiPurpose.LANGUAGE, request.purpose());
++                            var state = json.readTree(request.messages().getLast().text()).path("state");
++                            int turn = calls.getAndIncrement();
++                            if (turn == 3) {
++                                assertTrue(state.path("recentRejections").toString().contains("duplicates binding ID state"));
++                                var refusal = request.messages().stream().flatMap(message -> message.toolResult().stream())
++                                    .filter(result -> result.callId().equals("data_2")).findFirst().orElseThrow();
++                                assertTrue(refusal.error());
++                                assertTrue(refusal.text().contains("AGENT_PLAN_MANAGED_DATA_CONSTRAINT"));
++                                assertEquals(0, preparations.get());
++                                assertEquals(0, deliveries.get());
++                                assertEquals(0, state.path("planRevision").asInt());
++                                assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("PLAN")
++                                    || event.type().startsWith("PREPARE_") || event.type().startsWith("DELIVERY_")));
++                                assertTrue(DeploymentAgentActionLog.effectsSettled(journal.events(task)));
++                            }
++                            String tool = switch (turn) {
++                                case 0 -> "read";
++                                case 1 -> "identify";
++                                case 2, 3 -> "plan";
++                                case 4 -> "command";
++                                case 5 -> "seal";
++                                case 6 -> "deliver";
++                                default -> throw new AssertionError("No calls after corrected controlled delivery");
++                            };
++                            var parameters = (ObjectNode) json.readTree(switch (tool) {
++                                case "read" -> "{\"path\":\"index.html\",\"offset\":0,\"limit\":100}";
++                                case "identify" -> """
++                                    {"components":[{"component":"api","root":".","technology":"Read source",
++                                    "runtime":"Declared process","resources":"Verified SQLite state","uncertainties":"Controlled test does not certify business behavior","evidence":["o1"]}]}
++                                    """;
++                                case "plan" -> plan(false);
++                                case "command" -> "{\"component\":\"api\",\"script\":\"printf result\",\"seconds\":10}";
++                                case "seal" -> "{\"component\":\"api\"}";
++                                case "deliver" -> "{}";
++                                default -> throw new AssertionError(tool);
++                            });
++                            if (tool.equals("plan")) {
++                                var part = (ObjectNode) parameters.path("components").get(0);
++                                part.putArray("databases").add("state");
++                                part.putObject("workspace").put("mode", "EXPLICIT").put("minimumBuildBytes", 0).put("preferredBuildBytes", 0).put("explicitBytes", 134217728);
++                                part.putArray("resources").addObject().put("id", turn == 2 ? "state" : "uploads")
++                                    .put("path", "uploads").put("access", "READ_WRITE").put("schema", "files").put("reversible", true)
++                                    .put("type", "FILE").put("seedFile", "").put("digest", "");
++                            }
++                            if (!Set.of("read", "identify").contains(tool)) {
++                                var assessment = parameters.putObject("assessment");
++                                var basis = assessment.putArray("basis");
++                                var pending = state.path("judgement").path("pending");
++                                if (pending.isEmpty()) basis.add("o1");
++                                else pending.forEach(id -> basis.add(id.asText()));
++                                assessment.put("suitability", "Current controlled evidence").put("differences", "Keep verified database identity while correcting redundant file identity")
++                                    .put("resolution", "RESOLVED").put("decision", "Submit current declaration");
++                            }
++                            return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
++                                new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()),
++                                List.of(new AiToolCall("data_" + turn, tool, parameters.toString())), Optional.empty())), Optional.empty());
++                        });
++                        var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
++                            if (method.getName().equals("ai")) return ai;
++                            try {
++                                return method.invoke(actual, args);
++                            } catch (InvocationTargetException failure) {
++                                throw failure.getCause();
++                            }
++                        });
++                        var port = new DeploymentAgentDeliveryPort() {
++                            public DeploymentSourceBrowser source(String component) {
++                                return browser;
++                            }
++
++                            public DeploymentAgentPlan.Part resolve(DeploymentAgentPlan.Part part) {
++                                assertEquals(Optional.of(List.of("state")), part.databaseIds());
++                                return new DeploymentAgentPlan.Part(part.id(), part.sourceRoot(), part.dependencies(), part.evidence(), part.runtime(),
++                                    new gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings(part.resources().fileBindings(), Optional.of(List.of(database))),
++                                    part.configuration(), part.databaseIds(), part.secretReferences(), part.workspaceRequest(), part.workspaceSelection());
++                            }
++
++                            public List<DeploymentAgentPlan.Part> selectWorkspaces(DeploymentAgentPlan plan, Map<String, Prepared> existing) {
++                                var part = plan.components().getFirst();
++                                var quota = gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.select(
++                                    List.of(new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(part.id(), 0, 0, part.workspaceRequest().orElseThrow())),
++                                    4294967296L, new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Policy(4294967296L, 1073741824L),
++                                    gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT).get(part.id());
++                                return List.of(part.withWorkspace(quota));
++                            }
++
++                            public Map<String, String> inspect() {
++                                throw new AssertionError("No host inspection");
++                            }
++
++                            public Prepared prepare(String application, DeploymentAgentPlan.Part part) {
++                                preparations.incrementAndGet();
++                                return new Prepared(new DeploymentRemoteWorkspace(application + "-" + part.id(), "c".repeat(64)), browser.revision(), part.workspaceSelection().orElseThrow());
++                            }
++
++                            public CommandFeedback command(TaskContext original, Prepared candidate, String revision, String script, Duration timeout) {
++                                return new CommandFeedback(true, true, 0, "Controlled command completed");
++                            }
++
++                            public String read(TaskContext original, Prepared candidate, String revision, String path, int offset, int limit) {
++                                throw new AssertionError();
++                            }
++
++                            public String patch(TaskContext original, Prepared candidate, String revision, DeploymentAgentPatch patch) {
++                                throw new AssertionError();
++                            }
++
++                            public void validateSeal(TaskContext original, Prepared candidate, String revision) {
++                                assertSame(task, original);
++                            }
++
++                            public String seal(TaskContext original, Prepared candidate, String revision) {
++                                return "d".repeat(64);
++                            }
++
++                            public OperationResult<Published> deliver(TaskContext original, DeploymentAgentPlan plan, Map<String, Prepared> candidates, Map<String, String> revisions, Map<String, String> artifacts, int remaining) {
++                                assertSame(task, original);
++                                var part = plan.components().getFirst();
++                                assertEquals(List.of(database), part.resources().databaseBindings().orElseThrow());
++                                assertEquals("uploads", part.resources().fileBindings().getFirst().bindingId());
++                                assertEquals(Optional.of(List.of("state")), part.databaseIds());
++                                deliveries.incrementAndGet();
++                                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new Published(Set.of("api"), "Controlled publication receipt")), Optional.empty());
++                            }
++
++                            public void close() {
++                            }
++                        };
++                        var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Retain verified resources"), browser, port, journal, "MANUAL_REVIEW", true, REVISION, () -> REVISION);
++                        assertEquals(TaskResult.SUCCEEDED, session.run().outcome());
++                        assertEquals(7, calls.get());
++                        assertEquals(1, preparations.get());
++                        assertEquals(1, deliveries.get());
++                        assertEquals(1, journal.events(task).stream().filter(event -> event.type().equals("PLAN")).count());
++                        assertTrue(DeploymentAgentActionLog.effectsSettled(journal.events(task)));
++                    }
++                    actual.file().closeTaskResources(task);
++                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                } catch (Exception | AssertionError failure) {
++                    failed.set(failure);
++                    throw failure;
++                } finally {
++                    finished.complete(null);
++                }
++            });
++            finished.get(30, TimeUnit.SECONDS);
++            if (failed.get() != null)
++                throw new AssertionError("Controlled merged data correction failed", failed.get());
++            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
++        }
++    }
+ 
+     @ParameterizedTest
+     @ValueSource(booleans = {false, true})
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanResourceConstraintsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanResourceConstraintsTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanResourceConstraintsTest.java
+@@ -0,0 +1,107 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.protocol;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.util.List;
++import java.util.Optional;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishArguments;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.database.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.path.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++class DeploymentAgentPlanResourceConstraintsTest {
++    private static final DeploymentRemoteLayout LAYOUT = DeploymentRemoteLayout.original();
++
++    @ParameterizedTest
++    @ValueSource(strings = {"file-id", "configuration-id", "file-path", "configuration-path", "sqlite-path", "default-path"})
++    void mergedHelperBindingDuplicatesAreRejectedWithoutDroppingEitherDeclaration(String scenario) throws Exception {
++        String path = scenario.endsWith("path") ? "data/state.db" : "data";
++        String databasePath = "data/state.db";
++        if (scenario.equals("default-path")) {
++            path = DeploymentStorageLocation.defaults().resolve("demo-api", DeploymentStorageLocation.StorageResourceType.DATABASE, "state", LAYOUT) + "/state.db";
++            databasePath = "";
++        }
++        var type = scenario.startsWith("configuration") ? DeploymentStorageLocation.StorageResourceType.CONFIGURATION : DeploymentStorageLocation.StorageResourceType.FILE;
++        String id = scenario.endsWith("id") ? "state" : "files";
++        var file = new DeploymentFileBinding(id, new DeploymentStoragePath(path,
++            type == DeploymentStorageLocation.StorageResourceType.CONFIGURATION ? DeploymentStoragePath.AccessMode.READ_ONLY : DeploymentStoragePath.AccessMode.READ_WRITE,
++            "schema", true), DeploymentStorageLocation.defaults(), type,
++            type == DeploymentStorageLocation.StorageResourceType.CONFIGURATION ? "settings.json" : "",
++            type == DeploymentStorageLocation.StorageResourceType.CONFIGURATION ? "a".repeat(64) : "");
++        var databases = new java.util.ArrayList<>(List.of(sqlite("state", databasePath)));
++        var files = scenario.equals("sqlite-path") ? List.<DeploymentFileBinding>of() : List.of(file);
++        if (scenario.equals("sqlite-path")) databases.add(sqlite("other", databasePath));
++        var resources = new DeploymentResourceBindings(files, Optional.of(databases));
++        var part = part(resources);
++        var failure = assertThrows(IllegalArgumentException.class,
++            () -> DeploymentAgentPlanResourceConstraints.require(part, Optional.of("demo-api"), LAYOUT));
++        assertTrue(failure.getMessage().startsWith("AGENT_PLAN_MANAGED_DATA_CONSTRAINT: component api"));
++        assertTrue(failure.getMessage().contains(scenario.endsWith("id") ? "binding ID state" : "logical access path"));
++        assertSame(resources, part.resources(), "Validation preserves the original resource declarations");
++        assertEquals(files.size() + databases.size(), Integer.parseInt(DeploymentPublishArguments.content("demo-api", resources).get(2)));
++    }
++
++    @Test
++    void nestedDirectoryAndSqliteChildRemainDistinctBindings() throws Exception {
++        var files = List.of(new DeploymentFileBinding("uploads", new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE, "files", true), DeploymentStorageLocation.defaults()));
++        var resources = new DeploymentResourceBindings(files, Optional.of(List.of(sqlite("state", "data/state.db"))));
++        assertDoesNotThrow(() -> DeploymentAgentPlanResourceConstraints.require(part(resources), Optional.of("demo-api"), LAYOUT));
++        var encoded = DeploymentPublishArguments.content("demo-api", resources);
++        assertEquals("2", encoded.get(2));
++        assertEquals("uploads", encoded.get(3));
++        assertEquals("state", encoded.get(13));
++        assertEquals("data/state.db", encoded.get(14));
++    }
++
++    @Test
++    void serverDatabaseAndOtherComponentDoNotLoseTheirIndependentReferences() throws Exception {
++        var file = new DeploymentFileBinding("state", new DeploymentStoragePath("data", DeploymentStoragePath.AccessMode.READ_WRITE, "files", true), DeploymentStorageLocation.defaults());
++        var server = new DeploymentDatabaseBinding("state", new DeploymentDatabaseConnection.Server(DeploymentDatabaseEngineType.POSTGRESQL,
++            "db.example", 5432, "app", "app", new DeploymentSecretRef("db-secret", 1), true));
++        assertDoesNotThrow(() -> DeploymentAgentPlanResourceConstraints.require(part(new DeploymentResourceBindings(List.of(file), Optional.of(List.of(server)))), Optional.empty(), LAYOUT));
++        var shared = new DeploymentResourceBindings(List.of(), Optional.of(List.of(sqlite("state", "data/state.db"))));
++        var original = part(shared);
++        var second = new DeploymentAgentPlan.Part("worker", ".", List.of(), List.of("o1"), original.runtime(), shared, List.of(), Optional.of(List.of("state")), List.of());
++        assertDoesNotThrow(() -> DeploymentAgentPlanResourceConstraints.require(original, Optional.of("demo-api"), LAYOUT));
++        assertDoesNotThrow(() -> DeploymentAgentPlanResourceConstraints.require(second, Optional.of("demo-worker"), LAYOUT));
++        assertSame(shared, second.resources());
++    }
++
++    @Test
++    void unknownDatabaseScopeBeforePreparationRemainsUnknownAndDoesNotRejectInitialPlan() throws Exception {
++        var part = part(new DeploymentResourceBindings(List.of(), Optional.empty()));
++        assertTrue(part.databaseIds().isEmpty());
++        assertDoesNotThrow(() -> DeploymentAgentPlanResourceConstraints.require(part, Optional.empty(), LAYOUT));
++        assertTrue(part.resources().databaseBindings().isEmpty());
++    }
++
++    @Test
++    void unboundDefaultSqlitePathCannotBeGuessedFromGlobalLayoutOrComponentName() throws Exception {
++        var part = part(new DeploymentResourceBindings(List.of(), Optional.of(List.of(sqlite("state", "")))));
++        var failure = assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPlanResourceConstraints.require(part, Optional.empty(), LAYOUT));
++        assertTrue(failure.getMessage().contains("existing candidate identity"));
++    }
++
++    private static DeploymentDatabaseBinding sqlite(String id, String path) {
++        return new DeploymentDatabaseBinding(id, new DeploymentDatabaseConnection.Sqlite("state.db", DeploymentStorageLocation.defaults(), path));
++    }
++
++    private static DeploymentAgentPlan.Part part(DeploymentResourceBindings resources) throws Exception {
++        var initial = DeploymentAgentPlanProtocol.parse(new ObjectMapper().readTree("""
++            {"applicationId":"demo","components":[{"id":"api","sourceRoot":".","dependencies":[],"evidence":["o1"],
++            "backend":"PROCESS","mode":"DAEMON","entrypoint":"run.sh","arguments":[],"workingDirectory":"",
++            "workspace":{"mode":"AUTO","minimumBuildBytes":0,"preferredBuildBytes":134217728,"explicitBytes":0},
++            "health":{"type":"PROCESS","timeout":30,"stability":3},"ports":[],"resources":[],"configuration":[],
++            "databases":[],"secretReferences":[]}],"applicationHealth":{"component":"api","health":{"type":"PROCESS","timeout":30,"stability":3}}}
++            """)).components().getFirst();
++        return new DeploymentAgentPlan.Part(initial.id(), initial.sourceRoot(), initial.dependencies(), initial.evidence(), initial.runtime(), resources,
++            initial.configuration(), resources.databaseBindings().map(bindings -> bindings.stream().map(DeploymentDatabaseBinding::databaseId).toList()), List.of());
++    }
++}

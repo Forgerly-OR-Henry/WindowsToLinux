@@ -428,3 +428,10 @@ task-board-main-only-19-01已结束，实际1测试/1FAIL/0error-skip，源码�
 19 TCP/browser空的根因已独立核实：原生端口工具不能表达HTTP/HTTPS，parser强制TCP、encode丢字段，网络约束只核公网端口；不是模型主动选错协议，不靠投影或Skill猜HTTP。21仅Agent独立protocol四Java及两个直接Tests，显式protocol/accessUrl保真往返并匹配原publicUrl，CLI无网页要求保留。shared core、独立生产审批、live/MainOnlyFixture、Config/Skill、旧typed存储与原冻结plan/DBv1不改。
 
 48个最新定点逻辑case PASS，包含旧typed TCP字节往返；首轮Network夹具缺workspace的失败保留，仅补夹具并重跑失败33项，已过Protocol15不重跑。6Javaformat、3279源保护/补丁正反向、CIM0均通过；0真实API/SSH/Runtime/原DB。详见[HTTP契约修复21](DEPLOYMENT-AGENT-HTTP-PLAN-CONTRACT-21.md)。下一轮继续纯主Agent/task-board/APP0，新独立入口46300；此时未执行新真机部署，不回填19失败为成功或宣称完整业务、双Agent、旧恢复、重启或八项目已通过。
+
+
+## 2026-10-13 纯主Agent21失败与合并数据绑定修复22
+
+新纯部署21-01实际777.0秒/1FAIL/3279freeze0，38LANGUAGE、APP0；主模型构建/封存/deliver后native publish遭managed-data-duplicate，rollback受controlled-directory拒绝，原任务UNKNOWN，两source-snapshot与business仍未结。父只读typed原执行确认backend FILE(taskdb)与SQLite(tasks)都指向data/tasks.db，DB前后SHA不变、0Runtime/API/SSH。maintenance可能已写，不改NOT_SENT、不删未知资源或重放原冻结计划。
+
+22仅Agent Session resolve后接受前校验合并namespace并反馈模型，保留真实候选/layout/已核实DB身份，不去重、不误挡server DB或跨组件共享引用；shared/helper/approval/DBv1/Config/Skill不改。11个直接case一次PASS、5Javaformat、原像3279→3281/非owner0/patch正反向/CIM0通过。已知21 input2002472/output93327/total2095799/cache64.85%，2配置probe UNKNOWN，单列不混最终八项目。详见[数据绑定契约修复22](DEPLOYMENT-AGENT-MANAGED-DATA-CONTRACT-22.md)。下一轮继续新task-board/APP0/独立46400，未出真机成功；原21 UNKNOWN与调查、旧App与其他未结保持。

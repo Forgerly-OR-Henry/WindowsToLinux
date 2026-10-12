@@ -13,3 +13,10 @@
 下一真实轮task-board-main-only-21-01使用新任务、新App、独立publicUrl46300，审批发送前硬拒绝、Runtime close后APP0。主Agent自行决定调查与工具/命令，监督只观察实际阻塞、通过代码/Skill修复，不接手SSH或提供逐步部署答案。源码/Skill须全程冻结；先验证自然部署与正式HTTP身份，不混入业务QA、浏览器或最终冻结八项目。真实新轮尚未启动，不能将48本地case当真机成功。
 
 旧19失败记录、16发布应用与UNKNOWN、未结清明细和调查保留。成功恢复历史清理、完整task-board业务/浏览器/工具和双Agent、非默认目录真机/重启、其余七项目及最终冻结新服务器八项目仍待验收。21使用GPT-6.1-Sol，未使用GPT-6-Astra；证据位于.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-http-plan-contract-21。
+
+
+## 2026-10-13 纯主Agent21失败与合并数据绑定修复22
+
+新纯部署21-01实际777.0秒/1FAIL/3279freeze0，38LANGUAGE、APP0；主模型构建/封存/deliver后native publish遭managed-data-duplicate，rollback受controlled-directory拒绝，原任务UNKNOWN，两source-snapshot与business仍未结。父只读typed原执行确认backend FILE(taskdb)与SQLite(tasks)都指向data/tasks.db，DB前后SHA不变、0Runtime/API/SSH。maintenance可能已写，不改NOT_SENT、不删未知资源或重放原冻结计划。
+
+22仅Agent Session resolve后接受前校验合并namespace并反馈模型，保留真实候选/layout/已核实DB身份，不去重、不误挡server DB或跨组件共享引用；shared/helper/approval/DBv1/Config/Skill不改。11个直接case一次PASS、5Javaformat、原像3279→3281/非owner0/patch正反向/CIM0通过。已知21 input2002472/output93327/total2095799/cache64.85%，2配置probe UNKNOWN，单列不混最终八项目。详见[数据绑定契约修复22](DEPLOYMENT-AGENT-MANAGED-DATA-CONTRACT-22.md)。下一轮继续新task-board/APP0/独立46400，未出真机成功；原21 UNKNOWN与调查、旧App与其他未结保持。
