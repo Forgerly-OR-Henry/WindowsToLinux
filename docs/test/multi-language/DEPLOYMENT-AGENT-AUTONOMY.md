@@ -408,3 +408,16 @@ provider用量按实际record-ID差集：before33/after72，新52、旧13被有�
 用户最新明确先task-board、暂停审批模型、先测部署；原16恢复轮有52次APPROVAL，不能作为纯主Agent成功证据。已纠正优先级，保留原恢复问题和原应用，先运行新任务独立端口46200。本轮只编译新增的部署阶段判定入口（0测试、0真实API/SSH），1Java格式检查通过，3279项只改唯一测试owner。成功必须有主任务自然结束、正式App完整身份/健康组件/publicUrl和平台成功归档，Runtime关闭后APP尝试/调用/token均0。业务QA留到之后，管理失败单独归因；不绕过生产完整审批或手工接管部署。
 
 详见[纯部署对照19](DEPLOYMENT-AGENT-MAIN-ONLY-DEPLOYMENT-PROBE-19.md)。真实新轮尚未启动，旧UNKNOWN、未结清明细和调查继续保留；未宣称完整前后端、双Agent、非默认目录真机/重启或最终八项目通过。
+
+
+## 2026-10-13 02:48+08 纯主Agent真实19-01结果
+
+task-board-main-only-19-01已结束，实际1测试/1FAIL/0error-skip，源码与Skill冻结3279项无变化。全程38捕获响应全部LANGUAGE，70诊断domain判断；Runtime关闭后APP尝试/调用/token均0。主Agent自主识别两组件、规划、处理工具链空间不足与ownership失败、读取Skill、检查环境、改用获授权命令、修正127构建失败、封存、deliver、选择产品publish、verify、finish；监督代理未写运行中源码/Skill，未现场提示工具步骤或接手SSH。
+
+原任务1a5f7268-6fed-4e41-ba1d-c659954ee1fd自然返回Published healthy=[backend,frontend]，平台自然ENDED/SUCCEEDED且PLATFORM_TASK_SUCCEEDED归档；新正式App wtl-agent-main-only-diagnostic-task-board-779tb0t9o保存。验收失败原因明确为正式入口契约：frontend Endpoint web的protocol=tcp、value=tcp://45.192.105.213:46200、browser为空，backend endpoints为空，未通过原授权http://45.192.105.213:46200网页入口断言。不能将此轮直接说为完整纯部署通过，也不能将它说为主模型卡死、审批阻断或单纯断言误判；HTTP服务/网页入口与TCP监听的契约需要继续定点调查。
+
+测试finally通过普通产品管理入口仅将本轮新App停止并禁用自启，实际STATIC_LIVE_CLEAN已出；Runtime关闭后APP0，正常CIM按本轮捕获PID及CreationDate匹配确认0进程。受保护凭据副本19已按精确workspace/GUID目录校验清除、原凭据源双文件SHA保持，原16应用46100、其他业务/UNKNOWN及调查DB保留。没有业务写入、真实浏览器验收或Linux重启，不重复付费获取已存在部署回执。
+
+已知provider usage：input2073765/output78693/合计2152458，cache hit1394048/miss679717，捕获输入命中率67.22%；reasoning62537是输出子集。38请求均有响应usage；DEPLOYMENT两项配置探测的provider用量/transport次数仍UNKNOWN，不将它们计为0。审批捕获占比0%，此轮只是main-only开发对照，不能混入最终冻结八项目或计作完整双Agent达标轮。
+
+自有入口交付本地提交43a26151，未推送；真实19证据及XML/usage/父核结果保留。下一阶段先只读查HTTP入口工具/Skill和Agent判断的具体契约缺口，再按证据最小修复并定点验证，继续保持main-only优先。原16成功恢复历史清理、完整task-board业务/浏览器/工具与双Agent验收、非默认目录真机与重启、其他七项目和最终冻结八项目仍待完成。
