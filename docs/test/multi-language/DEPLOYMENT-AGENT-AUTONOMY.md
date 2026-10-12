@@ -386,3 +386,18 @@ Agent 仅在上传后的本次 verify 局部附加 currentCommandEvidence，保�
 3 个实际 loopback HTTP 参数最新通过，两个 Java 格式检查通过；首次相邻端口夹具失败保留，修正后只重跑同一直接方法。3279 文件仅两个测试 owner 改变，父核 XML/前后像/补丁正反向字节，未运行真实恢复。额外只读原16账本显示两组件 AUTO workspace/candidate 都为1207959552字节（1.125 GiB），重规划保持同 Q；原 DB SHA 不变，两个本轮临时凭据副本已清理，原 UNKNOWN/资源/业务和调查保留。
 
 详见[恢复业务入口18](DEPLOYMENT-AGENT-RECOVERED-BUSINESS-18.md)。原16仍待实际产品恢复、独立审批与严格结清；本地通过不能替代真实成功或完整双 Agent 验收。
+
+
+## 2026-10-13 原16真实恢复与网络切换暂停
+
+task-board-recovery16-01 从原任务产品 reconcile 执行真实独立审批；2026-10-13 01:46:40+08结束，产品入口1FAIL/0error-skip、360.2秒，3279源码/Skill运行冻结零变化。没有重放build/publish/主模型决策或在运行中修改源码。主only原部署仍是诊断，不反向计作完整双Agent部署成功。
+
+本轮重新核实原发布健康并完成真实业务提交、候选清理及finishKnown：原formal execution 1cf87400-2b94-4672-a6e2-28d1cdf6217c已FINISHED/SUCCEEDED，businessCommitted=true、cleanupComplete=true，结果DEPLOYMENT_PUBLICATION_COMMITTED；账本新增AI_PUBLICATION_CLEANED/AI_RECOVERY_SETTLED/STATE SUCCEEDED。正式App1/组件2/发布1，原正式配置与身份保留。原model-command checkpoint仍是两个ENDED/exit0且已释放；不是把旧UNKNOWN改写成原部署成功。
+
+平台task dc79c361-80f1-467a-8d36-4935ff4c8355仍UNKNOWN，仅Business result requires explicit reconciliation阻塞；Agent/执行/平台资源明细仍保留，operation结果摘要0、资源记录总数5569。原155 DELIVERY_EXECUTING没有配对DELIVERY_RESULT，effectsSettled=false；HistoryArchive的严格结清门因此阻断归档，产品报告TASK_RECOVERY_FAILED。不能据已有业务提交和候选清理直接删历史或宣称完整恢复成功。恢复后的浏览器/业务验收及产品停止禁用尚未启动，仍未证明前后端完整业务或独立双Agent部署。
+
+只读post审计两次主DB SHA前后均56376364577479F161D2076879CBDF07810A5B101CAC5C4DD1B4B8217B36E425，锁释放，未初始化Runtime/API/SSH。此前未恢复成功的原13/14/15、原373正式业务及调查均保持。
+
+provider用量按实际record-ID差集：before33/after72，新52、旧13被有界日志轮换，不能用净增39当新调用数。52捕获响应全部APPROVAL，input666816/output38997/合计705813，cache hit282880/miss383936、已知输入命中率42.42%；reasoning23161是输出子集。实际单次上限8192，低于原部署普通32768；没有新配置探测，未捕获transport尝试仍未知。本轮恢复单列，不重复计原33或混最终冻结八项目。
+
+按用户“找合适时机暂停以切换网络”，在本轮结束、结果/用量保存和进程核对后暂停，不启动browser/business16或后续部署。01:48:45正常用户CIM自有临时验证进程0，用户既有IDE未终止；部署App与持久业务身份保留。下次用户明确恢复后，先核网络/工具链/源冻/原任务实际状态，只修成功恢复的原外层delivery结清记录这一实际阻塞，严格保留未结内层、外来记录及旧UNKNOWN，不通用忽略effectsSettled或伪造旧DELIVERY_RESULT/NOT_SENT；从产品入口结清并验证历史清除，再完成真实浏览器与业务/生命周期验收。完整八项目、非默认目录真机和Linux重启、最终冻结新服务器及缓存/审批比例仍待验收。
