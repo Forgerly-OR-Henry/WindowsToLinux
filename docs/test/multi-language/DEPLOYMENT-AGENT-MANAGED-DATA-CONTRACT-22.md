@@ -15,3 +15,10 @@
 五owner Java格式write/check通过，before3279→after3281仅3已有owner修改和2自有新增，非owner/删除0；父核全原像/当前字节、11XML及精确补丁正反向字节，正常用户CIM0。新约束及其直接测试可独立提交；3迁移混合owner只交付[精确增量](patches/DEPLOYMENT-AGENT-MANAGED-DATA-CONTRACT-22.patch)，完整五owner补丁SHA256为8a63dacc73adce392f331641b4452e5a04f74b823806d40a67813b3052ac7f24，不整体暂存原迁移，不默认推送。补丁基于本阶段完整工作区前像，未证明干净checkout单独构建。
 
 21本轮临时验证进程已按exact PID/CreationDate确认0、临时凭据副本安全清除且原源双文件hash不变。原16应用46100、19已安装但停用App、21 UNKNOWN数据库/资源及其他任务全部保留。下一轮新task-board任务、APP0、独立publicUrl46400，继续监督模型自主闭环；此时未执行新轮，不能将11本地case计为真机成功。实际历史恢复清理、完整业务/浏览器/工具/双Agent、非默认目录真机/重启、其余七项目及最终冻结新服务器八项目仍待完成。22使用GPT-6.1-Sol，未用GPT-6-Astra。
+
+
+## 2026-10-13 04:20+08 纯主 Agent 真实 23-01 通过
+
+task-board-main-only-23-01 实际 1 定点测试 PASS，935.955 秒，3281 项运行源码/Skill 冻结零变化。主模型自主完成两组件构建、封存、交付、发布、verify 和 finish，原任务自然 ENDED/SUCCEEDED、平台成功归档、正式 App 与授权 HTTP 入口匹配。Runtime 关闭后 APP 尝试/调用/token 均为 0；本轮验证 App 经产品管理 STOPPED/DISABLED，自有进程 0，临时受保护凭据副本清除且原源哈希不变。旧 App、原 21 UNKNOWN 及其他未结清与调查保留。
+
+已知 provider input1420368/output75553/total1495921，cache hit986624/miss433744，捕获输入命中率69.46%；reasoning60404为输出子集。30LANGUAGE 响应，两个配置探测用量/transport 仍 UNKNOWN，开发轮独立记录。当前主 Agent 可在此条件下完成纯部署；审批原因还需同版本双 Agent 对照，不能由一次成功独立归因。业务/浏览器/全部工具、成功恢复历史清理、非默认目录真机/重启、其余七项目和最终冻结八项目仍待验收。详见[真实结果23](DEPLOYMENT-AGENT-MAIN-ONLY-RESULT-23.md)。

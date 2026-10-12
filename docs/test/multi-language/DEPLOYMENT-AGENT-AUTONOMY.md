@@ -435,3 +435,10 @@ task-board-main-only-19-01已结束，实际1测试/1FAIL/0error-skip，源码�
 新纯部署21-01实际777.0秒/1FAIL/3279freeze0，38LANGUAGE、APP0；主模型构建/封存/deliver后native publish遭managed-data-duplicate，rollback受controlled-directory拒绝，原任务UNKNOWN，两source-snapshot与business仍未结。父只读typed原执行确认backend FILE(taskdb)与SQLite(tasks)都指向data/tasks.db，DB前后SHA不变、0Runtime/API/SSH。maintenance可能已写，不改NOT_SENT、不删未知资源或重放原冻结计划。
 
 22仅Agent Session resolve后接受前校验合并namespace并反馈模型，保留真实候选/layout/已核实DB身份，不去重、不误挡server DB或跨组件共享引用；shared/helper/approval/DBv1/Config/Skill不改。11个直接case一次PASS、5Javaformat、原像3279→3281/非owner0/patch正反向/CIM0通过。已知21 input2002472/output93327/total2095799/cache64.85%，2配置probe UNKNOWN，单列不混最终八项目。详见[数据绑定契约修复22](DEPLOYMENT-AGENT-MANAGED-DATA-CONTRACT-22.md)。下一轮继续新task-board/APP0/独立46400，未出真机成功；原21 UNKNOWN与调查、旧App与其他未结保持。
+
+
+## 2026-10-13 04:20+08 纯主 Agent 真实 23-01 通过
+
+task-board-main-only-23-01 实际 1 定点测试 PASS，935.955 秒，3281 项运行源码/Skill 冻结零变化。主模型自主完成两组件构建、封存、交付、发布、verify 和 finish，原任务自然 ENDED/SUCCEEDED、平台成功归档、正式 App 与授权 HTTP 入口匹配。Runtime 关闭后 APP 尝试/调用/token 均为 0；本轮验证 App 经产品管理 STOPPED/DISABLED，自有进程 0，临时受保护凭据副本清除且原源哈希不变。旧 App、原 21 UNKNOWN 及其他未结清与调查保留。
+
+已知 provider input1420368/output75553/total1495921，cache hit986624/miss433744，捕获输入命中率69.46%；reasoning60404为输出子集。30LANGUAGE 响应，两个配置探测用量/transport 仍 UNKNOWN，开发轮独立记录。当前主 Agent 可在此条件下完成纯部署；审批原因还需同版本双 Agent 对照，不能由一次成功独立归因。业务/浏览器/全部工具、成功恢复历史清理、非默认目录真机/重启、其余七项目和最终冻结八项目仍待验收。详见[真实结果23](DEPLOYMENT-AGENT-MAIN-ONLY-RESULT-23.md)。
