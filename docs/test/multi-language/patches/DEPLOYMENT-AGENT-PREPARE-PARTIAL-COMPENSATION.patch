@@ -1,0 +1,1700 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -23,6 +23,7 @@
+ import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationCompensation;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentProjectChannel;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentPrepareNotSentException;
+ import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher;
+@@ -66,6 +67,8 @@
+                 return unknown("DEPLOYMENT_AGENT_PREFORMAL_IDENTITY_MISSING");
+             var commands = context.tasks().findCheckpoint(task, gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY);
+             if (commands.isPresent() && !commands.orElseThrow().snapshot().released()) {
++                if (DeploymentAgentPreparationCompensation.capture(task.id(), saved, layout, events).isPresent())
++                    return unknown("DEPLOYMENT_AGENT_PARTIAL_PREPARATION_BRANCH_UNCONFIRMED");
+                 var server = new ServerId(saved.identity().server());
+                 requireOriginalProfile(server, events, task);
+                 String reviewRevision = DeploymentAgentRecoveryReview.revision(context, task, saved, journal);
+@@ -184,7 +187,26 @@
+                                                     List<DeploymentAgentActionLog.Event> events, DeploymentRemoteLayout layout) throws Exception {
+         if (saved.state().equals("SUCCEEDED"))
+             return unknown("DEPLOYMENT_AGENT_FORMAL_SUCCESS_MISSING");
+-        if (!preparationsSettled(events)) {
++        var endedEvents = events;
++        if (Set.of("FAILED", "CANCELLED").contains(saved.state()) && endedEvents.stream().anyMatch(event ->
++            event.type().equals(DeploymentAgentPreparationCompensation.EVENT)
++                && DeploymentAgentPreparationCompensation.matches(task.id(), saved.identity(), layout, event, endedEvents))
++            && events.size() >= 2 && events.get(events.size() - 2).type().equals("AI_RECOVERY_SETTLED")
++            && preparationsSettled(events) && context.tasks().resourcesReleased(task)) {
++            TaskResult outcome = TaskResult.valueOf(saved.state());
++            return new OperationResult<>(outcome, Optional.empty(), Optional.of(problem(outcome == TaskResult.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
++                "DEPLOYMENT_AGENT_PREFORMAL_RECONCILED")));
++        }
++        var partial = DeploymentAgentPreparationCompensation.capture(task.id(), saved, layout, events);
++        if (partial.isPresent() && (gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.unconfirmed(context, task)
++            || gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog.find(context.tasks(), task).isPresent()))
++            return unknown("DEPLOYMENT_AGENT_PARTIAL_PREPARATION_BRANCH_UNCONFIRMED");
++        if (partial.isPresent()) {
++            try (var connection = context.db().openConnection(task)) {
++                DeploymentAgentPreparationCompensation.requireNoBusinessReference(connection, partial.orElseThrow());
++            }
++        }
++        if (!preparationsSettled(events) && partial.isEmpty()) {
+             try {
+                 if (!DeploymentAgentPreparationReconciliation.settle(context, task, journal, saved, layout, events))
+                     return unknown("DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED");
+@@ -194,7 +216,8 @@
+                 return unknown("DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED");
+             }
+         }
+-        var workspaces = originalWorkspaces(task.id(), saved.identity(), events, layout);
++        var workspaces = partial.isPresent() ? Optional.of(List.of(partial.orElseThrow().workspace()))
++            : originalWorkspaces(task.id(), saved.identity(), events, layout);
+         if (workspaces.isEmpty())
+             return unknown("DEPLOYMENT_AGENT_PREFORMAL_IDENTITY_MISSING");
+         if (!workspaces.orElseThrow().isEmpty()) {
+@@ -217,7 +240,7 @@
+                         .effectResult(task.id(), helper);
+                     return unknown("DEPLOYMENT_AGENT_HELPER_CHANGED");
+                 }
+-                if (!DeploymentAgentResourceRecovery.settle(reviewed, task, server, events,
++                if (partial.isEmpty() && !DeploymentAgentResourceRecovery.settle(reviewed, task, server, events,
+                     new gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseChannel(session, reviewed.interaction(), server, task, layout)))
+                     return unknown("DEPLOYMENT_AGENT_RESOURCE_UNCONFIRMED");
+                 if (!DeploymentAgentActionLog.effectsSettled(journal.events(task).stream().filter(v -> v.type().startsWith("CAPABILITY_")).toList()))
+@@ -230,7 +253,11 @@
+                         throw new IllegalStateException("Original AI configuration unavailable", unavailable);
+                     }
+                 }, layout);
+-                for (var workspace : workspaces.orElseThrow()) {
++                if (partial.isPresent()) {
++                    var captured = DeploymentAgentPreparationCompensation.capture(task.id(), saved, layout, journal.events(task)).orElseThrow();
++                    if (!compensatePreparation(task, captured, session, server, reviewRevision))
++                        return unknown("DEPLOYMENT_AGENT_ORIGINAL_PREPARATION_UNCONFIRMED");
++                } else for (var workspace : workspaces.orElseThrow()) {
+                     var status = channel.candidateStatus(workspace);
+                     if (status.buildActive())
+                         return unknown("DEPLOYMENT_AGENT_ORIGINAL_BUILD_ACTIVE");
+@@ -257,8 +284,15 @@
+         if (!context.tasks().resourcesReleased(task))
+             return unknown("DEPLOYMENT_AGENT_SOURCE_RETAINED");
+         TaskResult outcome = saved.state().equals("CANCELLED") ? TaskResult.CANCELLED : TaskResult.FAILED;
+-        journal.event(task, "AI_RECOVERY_SETTLED", task.id().toString(),
+-            outcome.name() + ":COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED");
++        var settledEvents = journal.events(task);
++        boolean committedSettlement = !settledEvents.isEmpty() && settledEvents.getLast().type().equals("AI_RECOVERY_SETTLED")
++            && settledEvents.getLast().action().equals(task.id().toString())
++            && settledEvents.getLast().detail().equals(outcome.name() + ":COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED")
++            && settledEvents.stream().anyMatch(event -> event.type().equals(DeploymentAgentPreparationCompensation.EVENT)
++            && DeploymentAgentPreparationCompensation.matches(task.id(), saved.identity(), layout, event, settledEvents));
++        if (!committedSettlement)
++            journal.event(task, "AI_RECOVERY_SETTLED", task.id().toString(),
++                outcome.name() + ":COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED");
+         journal.state(task, outcome.name());
+         return new OperationResult<>(outcome, Optional.empty(),
+             Optional.of(problem(outcome == TaskResult.CANCELLED ? ProblemCode.CANCELLED : ProblemCode.IO_FAILURE,
+@@ -267,6 +301,103 @@
+ 
+     private static boolean preparationsSettled(List<DeploymentAgentActionLog.Event> events) {
+         return DeploymentAgentActionLog.preparationsSettled(events);
++    }
++
++    /** Closes only the original temporary effects, never resumes its preparation or model session. */
++    private boolean compensatePreparation(TaskContext task, DeploymentAgentPreparationCompensation.Captured captured,
++                                          RemoteSession session, ServerId server, String revision) throws Exception {
++        var guard = (gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard) () -> {
++            try {
++                if (!journal.find(task).orElseThrow().equals(captured.snapshot()) || !journal.events(task).equals(captured.events())
++                    || !gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context, task,
++                    captured.snapshot().identity(), captured.events()).equals(captured.layout())
++                    || !revision.equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task))
++                    || gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.unconfirmed(context, task)
++                    || task.cancelToken().requested())
++                    throw new SQLException("Original partial preparation binding changed");
++                var nativeReceipt = gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog.find(context.tasks(), task);
++                if (nativeReceipt.isPresent())
++                    throw new SQLException("Partial preparation has a native database branch");
++                try (var connection = context.db().openConnection(task)) {
++                    DeploymentAgentPreparationCompensation.requireNoBusinessReference(connection, captured);
++                }
++                var current = context.servers().get(server, task);
++                if (!captured.profile().equals(DeploymentAgentInputs.targetProfile(current))
++                    || !captured.endpoint().equals(DeploymentAgentInputs.physicalTarget(current))
++                    || !captured.snapshot().identity().targetDigest().equals(DeploymentAgentInputs.targetDigest(server, session)))
++                    throw new SQLException("Original partial preparation target changed");
++            } catch (Exception changed) {
++                var failure = new ApiException(problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_PARTIAL_PREPARATION_CHANGED"));
++                failure.initCause(changed);
++                throw failure;
++            }
++        };
++        guard.verify();
++        var evidence = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence() {
++            public Map<String, ?> facts(gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
++                                        gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext actual) throws ApiException {
++                verify(intent, request, actual);
++                return Map.of("originalTask", task.id().toString(), "originalPrepareEvent", captured.preparation().id(),
++                    "originalPrepareAction", captured.preparation().action(), "originalArchiveSha256", captured.workspace().archiveSha256(),
++                    "originalSnapshotSha256", captured.source(), "originalConfigurationSha256", captured.snapshot().identity().configurationDigest(),
++                    "originalEventsSha256", DeploymentAgentPreparationAbsence.digest(captured.events()),
++                    "purpose", "COMPENSATE_ONLY_ORIGINAL_COMPLETELY_UPLOADED_INACTIVE_PREPARATION");
++            }
++
++            public String reviewInstructions() {
++                return "Review the complete fixed product request for this single original failed preparation. Archive SHA identifies tar.gz bytes; "
++                    + "snapshot SHA identifies the frozen source tree; configuration SHA identifies model policy. They have distinct roles. "
++                    + "Only read-only bounded ownership/absence observations and the exact original candidate cleanup are admitted. "
++                    + "No preparation, build, publication, application or persistent/shared data changes are authorized. "
++                    + "Missing/partial/mismatched archive, active build or unknown ownership remains UNKNOWN.";
++            }
++
++            public void verify(gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
++                               gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext actual) throws ApiException {
++                guard.verify();
++                String digest = DeploymentAgentPreparationAbsence.hash(gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(
++                    server, captured.snapshot().identity().configurationDigest(), request).exactAction());
++                if (actual != task || !Set.of(DeploymentAgentPartialPreparationProbe.requestDigest(captured, false),
++                    DeploymentAgentPartialPreparationProbe.requestDigest(captured, true), DeploymentAgentProjectChannel.originalCleanupRequestDigest(
++                        task.id(), server.id(), captured.snapshot().identity().configurationDigest(), captured.workspace())).contains(digest))
++                    throw new ApiException(problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_PARTIAL_REQUEST_CHANGED"));
++            }
++        };
++        var reviewed = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.scope(context, task,
++            captured.snapshot().identity().approvalMode(), captured.snapshot().identity().rememberAuthorization(), () -> revision, evidence);
++        var before = observePartial(task, captured, session, server, reviewed, guard, false);
++        boolean present = DeploymentAgentPartialPreparationProbe.present(captured, before);
++        if (!present && !DeploymentAgentPartialPreparationProbe.absent(captured, before)) return false;
++        var cleanup = DeploymentAgentPreparationCompensation.Cleanup.NOT_REQUIRED;
++        String cleanupRequest = "";
++        if (present) {
++            var channel = new DeploymentAgentProjectChannel(session, reviewed.interaction(), server, task,
++                captured.snapshot().identity().configurationDigest(), () -> revision, captured.layout());
++            var receipt = channel.compensateOriginalCandidate(captured.workspace(), guard);
++            cleanup = receipt.succeeded() ? DeploymentAgentPreparationCompensation.Cleanup.SUCCEEDED : DeploymentAgentPreparationCompensation.Cleanup.UNCONFIRMED;
++            cleanupRequest = receipt.requestSha256();
++        }
++        if (!DeploymentAgentPartialPreparationProbe.absent(captured, observePartial(task, captured, session, server, reviewed, guard, true)))
++            return false;
++        guard.verify();
++        journal.preparationCompensated(task, captured, DeploymentAgentPreparationCompensation.proof(captured, present, cleanup, cleanupRequest));
++        return true;
++    }
++
++    private gold.debug.windowstolinux.appapi.linux.command.CommandResult observePartial(TaskContext task,
++                                                                                        DeploymentAgentPreparationCompensation.Captured captured, RemoteSession session, ServerId server, ModContext reviewed,
++                                                                                        gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard, boolean after) throws Exception {
++        try (var request = DeploymentAgentPartialPreparationProbe.request(captured, after)) {
++            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, captured.snapshot().identity().configurationDigest(), request)
++                .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPartialPreparationProbe.OPERATION, Set.of(
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "directory", captured.workspace().candidateRoot()),
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "host-prerequisites", "fixed-system-metadata-only"))));
++            var approved = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
++            if (approved.outcome() != TaskResult.SUCCEEDED || approved.value().isEmpty()) return null;
++            guard.verify();
++            var result = session.execute(request, approved.value().orElseThrow());
++            return result != null && result.outcome() == TaskResult.SUCCEEDED ? result.value().orElse(null) : null;
++        }
+     }
+ 
+     /** Verifies the original endpoint before handoff, authentication or any remote observation. / 在交权、认证或任何远端观察前核对原端点。
+@@ -322,8 +453,10 @@
+                     if (pending != null && !pending.isEmpty()) completed.add(pending.removeFirst().detail());
+                     proofs.remove(event.action());
+                 }
+-                case DeploymentAgentPreparationAbsence.EVENT -> {
+-                    if (!DeploymentAgentPreparationAbsence.matches(task, identity, layout, event, events))
++                case DeploymentAgentPreparationAbsence.EVENT, DeploymentAgentPreparationCompensation.EVENT -> {
++                    if (!(event.type().equals(DeploymentAgentPreparationAbsence.EVENT)
++                        ? DeploymentAgentPreparationAbsence.matches(task, identity, layout, event, events)
++                        : DeploymentAgentPreparationCompensation.matches(task, identity, layout, event, events)))
+                         return Optional.empty();
+                     var pending = executing.get(event.action());
+                     var attempt = pending == null ? null : pending.pollFirst();
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+@@ -283,6 +283,48 @@
+         }
+     }
+ 
++    /** Appends one compensated preparation while locking its original task and complete evidence prefix. */
++    public void preparationCompensated(TaskContext task, DeploymentAgentPreparationCompensation.Captured captured, String proof) throws Exception {
++        if (!task.id().equals(captured.task())) throw new SQLException("Foreign preparation compensation");
++        try (var connection = database.openConnection(task)) {
++            connection.setAutoCommit(false);
++            try {
++                DeploymentAgentEvidenceLimit.require(connection, task.id(), false);
++                if (!find(connection, task.id()).orElseThrow().equals(captured.snapshot()))
++                    throw new SQLException("Original preparation identity changed");
++                DeploymentAgentPreparationCompensation.requireNoBusinessReference(connection, captured);
++                var current = events(connection, task.id());
++                if (current.size() == captured.events().size() + 1 && current.subList(0, captured.events().size()).equals(captured.events())
++                    && current.getLast().detail().equals(proof)
++                    && DeploymentAgentPreparationCompensation.matches(task.id(), captured.snapshot().identity(), captured.layout(), current.getLast(), current)) {
++                    connection.commit();
++                    return;
++                }
++                if (!current.equals(captured.events())) throw new SQLException("Original preparation evidence changed");
++                var proposed = new Event(Math.addExact(current.getLast().id(), 1), DeploymentAgentPreparationCompensation.EVENT,
++                    captured.preparation().action(), proof);
++                if (!DeploymentAgentPreparationCompensation.matches(task.id(), captured.snapshot().identity(), captured.layout(), proposed, current))
++                    throw new SQLException("Original preparation compensation proof is invalid");
++                try (var statement = connection.prepareStatement("INSERT INTO deployment_agent_event(task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,?,?,?)")) {
++                    statement.setString(1, task.id().toString());
++                    statement.setString(2, captured.preparation().action());
++                    statement.setString(3, DeploymentAgentPreparationCompensation.EVENT);
++                    statement.setString(4, proof);
++                    statement.setLong(5, Instant.now().toEpochMilli());
++                    statement.executeUpdate();
++                }
++                connection.commit();
++            } catch (Exception failure) {
++                try {
++                    connection.rollback();
++                } catch (SQLException rollback) {
++                    failure.addSuppressed(rollback);
++                }
++                throw failure;
++            }
++        }
++    }
++
+     /** Changes task state and records matching evidence in one transaction. / 在同一事务中改变任务状态并记录相应依据。
+      * @param task original task / 原任务
+      * @param state known lifecycle state / 已知生命周期状态
+@@ -460,6 +502,10 @@
+                     (key, count) -> count == 1 ? null : count - 1);
+             if (event.type().equals(DeploymentAgentPreparationAbsence.EVENT) && DeploymentAgentPreparationAbsence.matches(event, complete))
+                 pending.computeIfPresent(List.of("PREPARE", event.action()), (key, count) -> count == 1 ? null : count - 1);
++            if (event.type().equals(DeploymentAgentPreparationCompensation.EVENT)) {
++                if (!DeploymentAgentPreparationCompensation.matches(event, complete)) return false;
++                pending.computeIfPresent(List.of("PREPARE", event.action()), (key, count) -> count == 1 ? null : count - 1);
++            }
+         }
+         return pending.isEmpty();
+     }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentProjectChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentProjectChannel.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentProjectChannel.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentProjectChannel.java
+@@ -307,6 +307,49 @@
+         outputGenerations.merge(workspace.candidateId(), 1L, Long::sum);
+     }
+ 
++    /** A dispatched cleanup may be unconfirmed; strict absence is established separately by recovery. */
++    public record CompensationReceipt(boolean succeeded, String requestSha256) {
++    }
++
++    public static String originalCleanupRequestDigest(UUID task, String server, String configuration,
++                                                      DeploymentRemoteWorkspace workspace) {
++        try (var request = originalCleanupRequest(task, workspace)) {
++            return sha256(RemoteActions.command(new ServerId(server), configuration, request).exactAction().getBytes(StandardCharsets.UTF_8));
++        }
++    }
++
++    private static CommandRequest originalCleanupRequest(UUID task, DeploymentRemoteWorkspace workspace) {
++        String script = List.of(workspace.layout().helperPath(), "candidate-cleanup-task", workspace.applicationId(),
++                workspace.candidateId(), task.toString()).stream().map(DeploymentAgentProjectChannel::quote)
++            .collect(java.util.stream.Collectors.joining(" "));
++        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, workspace.layout()), new byte[0], Duration.ofSeconds(45), 4096);
++    }
++
++    /** Only the narrow recovery caller supplies prior ownership admission and a fresh before-send guard. */
++    public CompensationReceipt compensateOriginalCandidate(DeploymentRemoteWorkspace workspace,
++                                                           gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard) throws Exception {
++        requireLayout(workspace);
++        try (var request = originalCleanupRequest(task.id(), workspace)) {
++            var intent = RemoteActions.command(server, configurationRevision, request).withSemantics(
++                DeploymentAgentQuestionScope.meaning(server.id(), render("candidate-cleanup-task", workspace), new byte[0],
++                    sha256((request.script() + "\n" + sha256(new byte[0])).getBytes(StandardCharsets.UTF_8))));
++            String digest = sha256(intent.exactAction().getBytes(StandardCharsets.UTF_8));
++            var review = DeploymentCommandReviewRouter.approve(interaction, intent, request, task);
++            if (review.outcome() != TaskResult.SUCCEEDED || review.value().isEmpty())
++                throw new DeploymentAiJson.CapabilityOutcomeException(review.outcome(), review.problem());
++            guard.verify();
++            try {
++                var result = session.execute(request, review.value().orElseThrow());
++                boolean succeeded = result != null && result.outcome() == TaskResult.SUCCEEDED && result.value().isPresent()
++                    && result.value().orElseThrow().exitCode().equals(Optional.of(0)) && !result.value().orElseThrow().truncated()
++                    && result.value().orElseThrow().stderr().isEmpty() && result.value().orElseThrow().stdout().equals("CANDIDATE_CLEANED=1\n");
++                return new CompensationReceipt(succeeded, digest);
++            } catch (Exception unconfirmed) {
++                return new CompensationReceipt(false, digest);
++            }
++        }
++    }
++
+     /** Checks candidate and current source binding. / 检查候选与当前来源绑定。
+      * @param candidate opened candidate / 已开启候选
+      * @param revision current revision / 当前修订 */
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java
+@@ -0,0 +1,230 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence;
++
++import java.sql.Connection;
++import java.sql.SQLException;
++import java.util.*;
++
++import com.fasterxml.jackson.core.JsonParser;
++import com.fasterxml.jackson.databind.DeserializationFeature;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPartialPreparationProbe;
++import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentProjectChannel;
++import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentManagedUnitResolver;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++
++/** Compensation of one uploaded original preparation; never a claim that preparation was not sent. */
++public final class DeploymentAgentPreparationCompensation {
++    public static final String EVENT = "PREPARE_COMPENSATED";
++
++    private static final ObjectMapper JSON = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++
++    private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
++        "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE");
++
++    private DeploymentAgentPreparationCompensation() {
++    }
++
++    public enum Cleanup {SUCCEEDED, UNCONFIRMED, NOT_REQUIRED}
++
++    public record Captured(UUID task, DeploymentAgentActionLog.Snapshot snapshot, DeploymentRemoteLayout layout,
++                           DeploymentAgentActionLog.Event preparation, DeploymentRemoteWorkspace workspace,
++                           String source, String plan, String profile, String endpoint, String application,
++                           List<DeploymentAgentActionLog.Event> events) {
++        public Captured {
++            events = List.copyOf(events);
++        }
++
++        /** Reuses only fixed absence metadata checks; the old capture and proof policy remain unchanged. */
++        public DeploymentAgentPreparationAbsence.Captured absenceBinding() {
++            return new DeploymentAgentPreparationAbsence.Captured(task, snapshot, layout, preparation, workspace,
++                source, plan, profile, endpoint, application, events);
++        }
++    }
++
++    public static Optional<Captured> capture(UUID task, DeploymentAgentActionLog.Snapshot saved, DeploymentRemoteLayout layout,
++                                             List<DeploymentAgentActionLog.Event> events) {
++        try {
++            if (saved.executionSemantics() != 4 || !Set.of("UNKNOWN", "CANCELLED").contains(saved.state())
++                || events.isEmpty() || events.size() >= 10000) return Optional.empty();
++            var prepare = one(events, "PREPARE_EXECUTING");
++            var source = one(events, "SOURCE");
++            var plan = one(events, "PLAN");
++            var application = one(events, "PLAN_APPLICATION");
++            var profile = one(events, "TARGET_PROFILE");
++            var endpoint = one(events, "REMOTE_TARGET");
++            var policy = one(events, "REMEMBER_AUTHORIZATION");
++            var header = one(events, "REMOTE_LAYOUT");
++            if (!prepare.detail().matches("[a-z0-9][a-z0-9-]{0,62}") || !digest(source.action()) || !digest(source.detail())
++                || !plan.action().isEmpty() || !digest(plan.detail()) || !application.action().isEmpty()
++                || !application.detail().matches("[a-z0-9][a-z0-9-]{0,62}") || !profile.action().isEmpty() || !digest(profile.detail())
++                || !endpoint.action().isEmpty() || !digest(endpoint.detail())
++                || !policy.action().equals("rememberAuthorization.v1") || !policy.detail().equals(Boolean.toString(saved.identity().rememberAuthorization()))
++                || !prepare.action().equals(hash(task + ":" + prepare.detail() + ":" + source.detail())))
++                return Optional.empty();
++            for (var original : List.of(source, plan, application, profile, endpoint, policy, header))
++                if (original.id() >= prepare.id()) return Optional.empty();
++            var canonical = JSON.createObjectNode().put("formatVersion", 1).put("task", task.toString()).put("server", saved.identity().server());
++            canonical.set("layout", JSON.readTree(layout.canonical()));
++            canonical.put("layoutSha256", layout.digest());
++            if (!header.action().equals(task.toString()) || !header.detail().equals(canonical.toString()))
++                return Optional.empty();
++            var workspace = new DeploymentRemoteWorkspace(DeploymentManagedUnitResolver.managedId(application.detail(), prepare.detail()), source.action(), layout);
++            long prior = 0;
++            long reviewEvent = 0;
++            String review = null;
++            DeploymentAgentActionLog.Event inspection = null;
++            int readiness = 0;
++            boolean ready = false;
++            DeploymentAgentActionLog.Event state = null;
++            for (var event : events) {
++                if (event.id() <= prior || event.action() == null || event.detail() == null) return Optional.empty();
++                prior = event.id();
++                if (event.type().equals("STATE")) {
++                    if (!event.action().isEmpty() || !Set.of("RUNNING", "WAITING", "UNKNOWN", "CANCELLED").contains(event.detail())
++                        || event.id() > prepare.id() && !Set.of("UNKNOWN", "CANCELLED").contains(event.detail()))
++                        return Optional.empty();
++                    state = event;
++                } else if (event.type().equals("PREPARE_EXECUTING")) {
++                    if (!event.equals(prepare)) return Optional.empty();
++                } else if (event.type().equals("HELPER_READINESS_OBSERVED")) {
++                    if (event.id() <= prepare.id() || !digest(event.action()) || ++readiness > 2
++                        || !Set.of("MISSING:HELPER_MISSING", "READY:CURRENT_TASK_READY").contains(event.detail()))
++                        return Optional.empty();
++                    if (ready || state != null && state.id() > prepare.id()) return Optional.empty();
++                    ready = event.detail().equals("READY:CURRENT_TASK_READY");
++                } else if (event.type().equals("RECOVERY_REVIEW_BOUND")) {
++                    if (event.id() <= prepare.id() || review != null || !event.action().equals(saved.identity().configurationDigest())
++                        || !digest(event.detail())) return Optional.empty();
++                    review = event.detail();
++                    reviewEvent = event.id();
++                } else if (event.type().equals("RECOVERY_REVIEW_REBOUND")) {
++                    if (review == null || !event.action().equals(saved.identity().configurationDigest()))
++                        return Optional.empty();
++                    String prefix = "previousEventId=" + reviewEvent + "\npreviousReviewRevision=" + review + "\nreviewRevision=";
++                    if (!event.detail().startsWith(prefix)) return Optional.empty();
++                    String selected = event.detail().substring(prefix.length());
++                    if (!digest(selected) || selected.equals(review)) return Optional.empty();
++                    review = selected;
++                    reviewEvent = event.id();
++                } else if (event.type().equals("INSPECT_REQUESTED")) {
++                    if (event.id() <= prepare.id() || inspection != null || !event.action().equals(task.toString()))
++                        return Optional.empty();
++                    if (!UUID.fromString(event.detail()).toString().equals(event.detail())) return Optional.empty();
++                    inspection = event;
++                } else if (event.type().equals("INSPECT_RESULT")) {
++                    if (inspection == null || !event.action().equals(Long.toString(inspection.id()))
++                        || !(Set.of("{" + workspace.candidateId() + "=PRESENT}", "{" + workspace.candidateId() + "=ABSENT}",
++                        "{" + workspace.candidateId() + "=BUILD_ACTIVE}").contains(event.detail())
++                        || event.detail().matches("UNCONFIRMED:[A-Za-z][A-Za-z0-9]{0,79}"))) return Optional.empty();
++                    inspection = null;
++                } else if (event.id() >= prepare.id() || !BEFORE.contains(event.type())) return Optional.empty();
++            }
++            if (!ready || inspection != null || state == null || state.id() <= prepare.id() || !state.detail().equals(saved.state()))
++                return Optional.empty();
++            return Optional.of(new Captured(task, saved, layout, prepare, workspace, source.detail(), plan.detail(), profile.detail(), endpoint.detail(), application.detail(), events));
++        } catch (Exception invalid) {
++            return Optional.empty();
++        }
++    }
++
++    /** Local references are checked in the same original-task transaction as the proof. */
++    public static void requireNoBusinessReference(Connection connection, Captured captured) throws SQLException {
++        for (var selected : List.of(
++            List.of("SELECT execution_id FROM deployment_execution WHERE platform_task_id=?", captured.task()),
++            List.of("SELECT application_id FROM managed_application WHERE application_id=?", captured.application()),
++            List.of("SELECT deployment_unit_id FROM deployment_unit WHERE deployment_unit_id=?", captured.workspace().applicationId()))) {
++            try (var query = connection.prepareStatement((String) selected.getFirst())) {
++                query.setObject(1, selected.get(1));
++                try (var rows = query.executeQuery()) {
++                    if (rows.next())
++                        throw new SQLException("Original partial preparation has a formal business reference");
++                }
++            }
++        }
++    }
++
++    public static String proof(Captured captured, boolean beforePresent, Cleanup cleanup, String cleanupRequest) {
++        if (beforePresent == (cleanup == Cleanup.NOT_REQUIRED))
++            throw new IllegalArgumentException("Cleanup observation differs from pre-observation");
++        String expectedCleanup = beforePresent ? DeploymentAgentProjectChannel.originalCleanupRequestDigest(captured.task(),
++            captured.snapshot().identity().server(), captured.snapshot().identity().configurationDigest(), captured.workspace()) : "";
++        if (!expectedCleanup.equals(cleanupRequest))
++            throw new IllegalArgumentException("Cleanup request is not the captured original action");
++        var identity = captured.snapshot().identity();
++        return JSON.createObjectNode().put("formatVersion", 1).put("task", captured.task().toString())
++            .put("server", identity.server()).put("targetSha256", identity.targetDigest()).put("configurationSha256", identity.configurationDigest())
++            .put("approvalMode", identity.approvalMode()).put("state", captured.snapshot().state()).put("layoutSha256", captured.layout().digest())
++            .put("profileSha256", captured.profile()).put("endpointSha256", captured.endpoint()).put("sourceSha256", captured.source())
++            .put("archiveSha256", captured.workspace().archiveSha256()).put("planSha256", captured.plan()).put("application", captured.application())
++            .put("component", captured.preparation().detail()).put("candidate", captured.workspace().candidateId())
++            .put("prepareEventId", captured.preparation().id()).put("prepareAction", captured.preparation().action())
++            .put("priorEventsSha256", DeploymentAgentPreparationAbsence.digest(captured.events()))
++            .put("helperSha256", DeploymentManagedHelperBundle.helperSha256(captured.layout()))
++            .put("beforeRequestSha256", DeploymentAgentPartialPreparationProbe.requestDigest(captured, false))
++            .put("beforeResultSha256", hash(beforePresent ? DeploymentAgentPartialPreparationProbe.presentOutput(captured)
++                : DeploymentAgentPartialPreparationProbe.absentOutput(captured)))
++            .put("cleanup", cleanup.name()).put("cleanupRequestSha256", cleanupRequest)
++            .put("afterRequestSha256", DeploymentAgentPartialPreparationProbe.requestDigest(captured, true))
++            .put("afterResultSha256", hash(DeploymentAgentPartialPreparationProbe.absentOutput(captured))).toString();
++    }
++
++    public static boolean matches(DeploymentAgentActionLog.Event event, List<DeploymentAgentActionLog.Event> events) {
++        try {
++            if (!event.type().equals(EVENT) || event.detail().length() > 8192) return false;
++            var node = JSON.readTree(event.detail());
++            if (!node.isObject() || !node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1)
++                return false;
++            UUID task = UUID.fromString(node.path("task").textValue());
++            var prefix = events.stream().filter(value -> value.id() < event.id()).toList();
++            var policy = one(prefix, "REMEMBER_AUTHORIZATION");
++            if (!Set.of("true", "false").contains(policy.detail())) return false;
++            var identity = new DeploymentAgentActionLog.Identity(node.path("server").textValue(), node.path("targetSha256").textValue(),
++                node.path("configurationSha256").textValue(), node.path("approvalMode").textValue(), Boolean.parseBoolean(policy.detail()));
++            var layout = DeploymentRemoteLayout.decode(JSON.readTree(one(prefix, "REMOTE_LAYOUT").detail()).path("layout").toString());
++            var captured = capture(task, new DeploymentAgentActionLog.Snapshot(identity, node.path("state").textValue(), 4), layout, prefix).orElseThrow();
++            var suffix = events.stream().filter(value -> value.id() > event.id()).toList();
++            String outcome = captured.snapshot().state().equals("CANCELLED") ? "CANCELLED" : "FAILED";
++            if (suffix.size() > 2 || !suffix.isEmpty() && (!suffix.getFirst().type().equals("AI_RECOVERY_SETTLED")
++                || !suffix.getFirst().action().equals(task.toString())
++                || !suffix.getFirst().detail().equals(outcome + ":COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED"))
++                || suffix.size() == 2 && (!suffix.getLast().type().equals("STATE") || !suffix.getLast().action().isEmpty()
++                || !suffix.getLast().detail().equals(outcome))) return false;
++            Cleanup cleanup = Cleanup.valueOf(node.path("cleanup").textValue());
++            return event.action().equals(captured.preparation().action()) && event.id() > captured.preparation().id()
++                && proof(captured, cleanup != Cleanup.NOT_REQUIRED, cleanup, node.path("cleanupRequestSha256").textValue()).equals(event.detail());
++        } catch (Exception invalid) {
++            return false;
++        }
++    }
++
++    public static boolean matches(UUID task, DeploymentAgentActionLog.Identity identity, DeploymentRemoteLayout layout,
++                                  DeploymentAgentActionLog.Event event, List<DeploymentAgentActionLog.Event> events) {
++        if (!matches(event, events)) return false;
++        try {
++            var n = JSON.readTree(event.detail());
++            return n.path("task").textValue().equals(task.toString()) && n.path("server").textValue().equals(identity.server())
++                && n.path("targetSha256").textValue().equals(identity.targetDigest()) && n.path("configurationSha256").textValue().equals(identity.configurationDigest())
++                && n.path("approvalMode").textValue().equals(identity.approvalMode()) && n.path("layoutSha256").textValue().equals(layout.digest());
++        } catch (Exception invalid) {
++            return false;
++        }
++    }
++
++    private static boolean digest(String value) {
++        return value != null && value.matches("[0-9a-f]{64}");
++    }
++
++    private static String hash(String value) {
++        return DeploymentAgentPreparationAbsence.hash(value);
++    }
++
++    private static DeploymentAgentActionLog.Event one(List<DeploymentAgentActionLog.Event> events, String type) {
++        var found = events.stream().filter(event -> event.type().equals(type)).toList();
++        if (found.size() != 1)
++            throw new IllegalArgumentException("Original preparation header is missing or duplicated");
++        return found.getFirst();
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+@@ -0,0 +1,148 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.util.Arrays;
++import java.util.Optional;
++
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationCompensation;
++import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript;
++
++/** Read-only admission for one completely uploaded prepare gap; incomplete uploads remain UNKNOWN. */
++public final class DeploymentAgentPartialPreparationProbe {
++    public static final String OPERATION = "deployment.agent.preparation.partial-observation.v1";
++
++    private DeploymentAgentPartialPreparationProbe() {
++    }
++
++    public static CommandRequest request(DeploymentAgentPreparationCompensation.Captured captured, boolean after) {
++        byte[] input = script(captured, after).getBytes(StandardCharsets.UTF_8);
++        try {
++            return new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, input, Duration.ofSeconds(30), 4096);
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
++    }
++
++    public static String requestDigest(DeploymentAgentPreparationCompensation.Captured captured, boolean after) {
++        try (var request = request(captured, after)) {
++            return DeploymentAgentPreparationAbsence.hash(RemoteActions.command(new ServerId(captured.snapshot().identity().server()),
++                captured.snapshot().identity().configurationDigest(), request).exactAction());
++        }
++    }
++
++    public static String absentOutput(DeploymentAgentPreparationCompensation.Captured captured) {
++        return DeploymentAgentPreparationProbe.absentOutput(captured.absenceBinding());
++    }
++
++    public static String presentOutput(DeploymentAgentPreparationCompensation.Captured captured) {
++        return "FORMAT=WTL_AGENT_UPLOADED_PREPARATION_1\nTASK=" + captured.task() + "\nPREPARE_EVENT=" + captured.preparation().id()
++            + "\nCANDIDATE=" + captured.workspace().candidateId() + "\nLAYOUT_SHA256=" + captured.layout().digest()
++            + "\nEVENTS_SHA256=" + DeploymentAgentPreparationAbsence.digest(captured.events())
++            + "\nARCHIVE_SHA256=" + captured.workspace().archiveSha256() + "\nSTATUS=OWNED_UPLOADED_INACTIVE\n";
++    }
++
++    public static boolean absent(DeploymentAgentPreparationCompensation.Captured captured, CommandResult result) {
++        return DeploymentAgentPreparationProbe.absent(captured.absenceBinding(), result);
++    }
++
++    public static boolean present(DeploymentAgentPreparationCompensation.Captured captured, CommandResult result) {
++        return result != null && !result.truncated() && result.exitCode().equals(Optional.of(0)) && result.stderr().isEmpty()
++            && presentOutput(captured).equals(result.stdout());
++    }
++
++    public static String script(DeploymentAgentPreparationCompensation.Captured captured, boolean after) {
++        String absence = DeploymentAgentPreparationProbe.script(captured.absenceBinding());
++        if (after) return absence;
++        String candidateDeclaration = "candidate='" + captured.workspace().candidateRoot() + "'";
++        int guardEnd = absence.indexOf(candidateDeclaration);
++        if (guardEnd < 1 || absence.indexOf(candidateDeclaration, guardEnd + 1) >= 0)
++            throw new IllegalStateException("Fixed absence guards are unavailable");
++        String guards = absence.substring(0, guardEnd);
++        String query = "'" + captured.layout().helperPath() + "' 'candidate-query-task' '" + captured.workspace().applicationId()
++            + "' '" + captured.workspace().candidateId() + "' '" + captured.task() + "'";
++        return guards + candidateDeclaration + "\n"
++            + "if [ ! -e \"$candidate\" ] && [ ! -L \"$candidate\" ]; then\n" + absence + "exit 0\nfi\n"
++            + """
++            for tool in /usr/bin/stat /usr/bin/readlink /usr/bin/find /usr/bin/id /usr/bin/cat /usr/bin/sha256sum /usr/bin/findmnt /usr/sbin/losetup; do
++              trusted_executable "$tool"
++              [ "$checked" = SAFE ] || exit 64
++            done
++            [ "$(/usr/bin/id -u)" = 0 ] && [ "${SUDO_USER:-root}" = root ] || exit 64
++            managed_parents "$candidate"
++            [ "$checked" = SAFE ] || exit 64
++            path_metadata "$candidate" directory
++            [ "$checked" = SAFE ] || exit 64
++            private_file() {
++              path_metadata "$1" file
++              [ "$checked" = SAFE ] && [ "$(/usr/bin/stat -c '%h' -- "$1")" = 1 ] || exit 64
++            }
++            for control in .deployer .agent-task .workspace-device .workspace-limit .purpose .workspace.ext4; do
++              private_file "$candidate/$control"
++            done
++            [ "$(/usr/bin/cat -- "$candidate/.deployer")" = root ] && [ "$(/usr/bin/stat -c '%s' -- "$candidate/.deployer")" = 5 ] || exit 64
++            [ "$(/usr/bin/cat -- "$candidate/.purpose")" = build ] && [ "$(/usr/bin/stat -c '%s' -- "$candidate/.purpose")" = 6 ] || exit 64
++            children=$(/usr/bin/find "$candidate" -mindepth 1 -maxdepth 1 -printf '%f\n') || exit 64
++            [ "${#children}" -le 4096 ] || exit 64
++            while IFS= read -r child; do
++              case "$child" in .deployer | .agent-task | .workspace-device | .workspace-limit | .purpose | .workspace.ext4 | mutable | .agent-mode) ;;
++                *) exit 64 ;;
++              esac
++            done <<< "$children"
++            if [ -e "$candidate/.agent-mode" ] || [ -L "$candidate/.agent-mode" ]; then
++              private_file "$candidate/.agent-mode"
++              [ "$(/usr/bin/cat -- "$candidate/.agent-mode")" = protected-source ] || exit 64
++            fi
++            image="$candidate/.workspace.ext4"
++            device=$(/usr/bin/cat -- "$candidate/.workspace-device") || exit 64
++            limit=$(/usr/bin/cat -- "$candidate/.workspace-limit") || exit 64
++            [[ "$device" =~ ^/dev/loop[0-9]+$ ]] && [[ "$limit" =~ ^[0-9]{1,12}$ ]] || exit 64
++            [ "$limit" -ge 67108864 ] && [ "$limit" -le 137438953472 ] && [ "$(/usr/bin/stat -c '%s' -- "$image")" = "$limit" ] || exit 64
++            [ "$(/usr/sbin/losetup --noheadings --raw --output BACK-FILE "$device")" = "$image" ] || exit 64
++            mounts=$(/usr/bin/findmnt --kernel --noheadings --raw --output TARGET,SOURCE,FSTYPE) || exit 64
++            [ "${#mounts}" -le 65536 ] || exit 64
++            count=0
++            while IFS=' ' read -r target source filesystem extra; do
++              [[ "$target" = /* ]] && [ -z "$extra" ] || exit 64
++              case "$target" in "$candidate" | "$candidate"/*)
++                [ "$target" = "$candidate/mutable" ] && [ "$source" = "$device" ] && [ "$filesystem" = ext4 ] || exit 64
++                count=$((count + 1)) ;;
++                *) case "$source" in "$device" | "$device"\\[*\\]) exit 64 ;; esac ;;
++              esac
++            done <<< "$mounts"
++            [ "$count" = 1 ] || exit 64
++            loops=$(/usr/sbin/losetup --list --noheadings --raw --output NAME,BACK-FILE) || exit 64
++            [ "${#loops}" -le 65536 ] || exit 64
++            count=0
++            while IFS=' ' read -r loop backing extra; do
++              [[ "$loop" =~ ^/dev/loop[0-9]+$ ]] && [[ "$backing" = /* ]] && [ -z "$extra" ] || exit 64
++              case "$backing" in "$candidate" | "$candidate"/*)
++                [ "$loop" = "$device" ] && [ "$backing" = "$image" ] || exit 64
++                count=$((count + 1)) ;;
++              esac
++              [ "$loop" != "$device" ] || [ "$backing" = "$image" ] || exit 64
++            done <<< "$loops"
++            [ "$count" = 1 ] || exit 64
++            path_metadata "$candidate/mutable" directory
++            [ "$checked" = SAFE ] || exit 64
++            children=$(/usr/bin/find "$candidate/mutable" -mindepth 1 -maxdepth 1 -printf '%f\n') || exit 64
++            [ "${#children}" -le 4096 ] || exit 64
++            while IFS= read -r child; do
++              case "$child" in source.tar.gz | input-source | source) ;; *) exit 64 ;; esac
++            done <<< "$children"
++            private_file "$candidate/mutable/source.tar.gz"
++            """
++            + "[ \"$(/usr/bin/cat -- \"$candidate/.agent-task\")\" = '" + captured.task() + "' ] && [ \"$(/usr/bin/stat -c '%s' -- \"$candidate/.agent-task\")\" = 37 ] || exit 64\n"
++            + "archive=$(/usr/bin/sha256sum -- \"$candidate/mutable/source.tar.gz\") || exit 64\n"
++            + "[ \"${archive%% *}\" = '" + captured.workspace().archiveSha256() + "' ] || exit 64\n"
++            + "status=$(\n" + DeploymentManagedHelperBundle.verifiedCommand(query, captured.layout()) + "\n) || exit 64\n"
++            + "[ \"$status\" = 'CANDIDATE_STATE=owned\nBUILD_ACTIVE=no' ] || exit 64\n"
++            + "printf '%s' '" + presentOutput(captured) + "'\n";
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+@@ -0,0 +1,679 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import java.io.InputStreamReader;
++import java.lang.reflect.InvocationTargetException;
++import java.lang.reflect.Proxy;
++import java.nio.charset.StandardCharsets;
++import java.sql.Connection;
++import java.sql.DriverManager;
++import java.sql.SQLException;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.HexFormat;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++import java.util.Objects;
++import java.util.Optional;
++import java.util.UUID;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.ai.AiService;
++import gold.debug.windowstolinux.appapi.ai.model.AiToolCall;
++import gold.debug.windowstolinux.appapi.db.ModDatabase;
++import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
++import gold.debug.windowstolinux.appapi.file.FileService;
++import gold.debug.windowstolinux.appapi.linux.LinuxService;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.ServerService;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
++import gold.debug.windowstolinux.appapi.task.TaskService;
++import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
++import gold.debug.windowstolinux.appapi.task.action.InteractionService;
++import gold.debug.windowstolinux.appapi.task.action.WorkflowGrant;
++import gold.debug.windowstolinux.appapi.task.log.LogCategory;
++import gold.debug.windowstolinux.appapi.task.log.LogEvent;
++import gold.debug.windowstolinux.appapi.task.log.LogService;
++import gold.debug.windowstolinux.appapi.task.log.LogTarget;
++import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
++import gold.debug.windowstolinux.appapi.task.result.ApiException;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.Problem;
++import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.appapi.ui.UiService;
++import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
++import gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentHistoryArchive;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationCompensation;
++import gold.debug.windowstolinux.mod.deployment.service.deploy.database.DeploymentNativeDatabaseActionLog;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++/** Isolated original-task transactions and fake independent approval; no runtime transport. */
++class DeploymentAgentPreparationCompensationTest {
++    private static final String REVISION = "a".repeat(64);
++
++    private static final String SOURCE = "b".repeat(64);
++
++    private static final String ARCHIVE = "c".repeat(64);
++
++    private static final ObjectMapper JSON = new ObjectMapper();
++
++    @Test
++    void uploadedOriginalClosesOnlyItsTemporaryEffectsAndArchivesFailed() throws Exception {
++        try (var f = new Frame()) {
++            var before = f.journal.events(f.task);
++            var business = f.business();
++            assertTrue(DeploymentAgentPreparationAbsence.capture(f.id, f.journal.find(f.task).orElseThrow(), f.layout, before).isEmpty());
++            var result = f.recover();
++            assertEquals(TaskResult.FAILED, result.outcome(), f.nativeAi.events.toString());
++            assertEquals(1, f.deletes);
++            assertEquals(4, f.sent);
++            var events = f.journal.events(f.task);
++            assertEquals(before, events.subList(0, before.size()));
++            var proof = events.stream().filter(e -> e.type().equals(DeploymentAgentPreparationCompensation.EVENT)).findFirst().orElseThrow();
++            assertEquals("SUCCEEDED", JSON.readTree(proof.detail()).path("cleanup").asText());
++            assertTrue(DeploymentAgentActionLog.effectsSettled(events));
++            assertEquals(TaskResult.FAILED, f.recover().outcome());
++            assertEquals(events, f.journal.events(f.task), "Restart after final state must not append duplicate settlement or delete again");
++            assertEquals(1, f.deletes);
++            assertTrue(events.stream().noneMatch(e -> e.type().equals("PREPARE_NOT_SENT") || e.type().equals("PREPARE_RESULT")));
++            var archive = new DeploymentAgentHistoryArchive(f.context);
++            assertEquals(TaskResult.FAILED, archive.settle(f.task, result).outcome());
++            assertEquals(TaskResult.FAILED, archive.settle(f.task, result).outcome());
++            assertEquals(1, f.deletes);
++            assertEquals(business, f.business());
++        }
++    }
++
++    @Test
++    void committedSettlementSurvivesFinalStateCommitFailureWithoutAnotherDeleteOrEvent() throws Exception {
++        try (var f = new Frame()) {
++            f.fault = "FINAL_STATE_COMMIT";
++            assertThrows(SQLException.class, f::recover);
++            var interrupted = f.journal.events(f.task);
++            assertEquals("UNKNOWN", f.journal.find(f.task).orElseThrow().state());
++            assertEquals(1, interrupted.stream().filter(e -> e.type().equals("AI_RECOVERY_SETTLED")).count());
++            assertTrue(DeploymentAgentActionLog.preparationsSettled(interrupted));
++            assertEquals(1, f.deletes);
++            assertEquals(4, f.sent);
++            var result = f.recover();
++            assertEquals(TaskResult.FAILED, result.outcome());
++            var events = f.journal.events(f.task);
++            assertEquals(1, events.stream().filter(e -> e.type().equals("AI_RECOVERY_SETTLED")).count());
++            assertEquals(interrupted, events.subList(0, interrupted.size()));
++            assertTrue(DeploymentAgentActionLog.preparationsSettled(events));
++            assertEquals(1, f.deletes);
++            assertEquals(4, f.sent);
++            assertEquals(TaskResult.FAILED, new DeploymentAgentHistoryArchive(f.context).settle(f.task, result).outcome());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"LATE_SOURCE", "LATE_PLAN", "SECOND_PREPARE", "WRONG_ACTION", "SIDE_EFFECT", "PUBLICATION", "NATIVE", "LATE_OBSERVATION", "DUPLICATE_PLAN_APP"})
++    void changedOrBranchedOriginalCannotAcquireCandidate(String change) throws Exception {
++        try (var f = new Frame()) {
++            switch (change) {
++                case "LATE_SOURCE" -> f.journal.event(f.task, "SOURCE", ARCHIVE, SOURCE);
++                case "LATE_PLAN" -> f.journal.event(f.task, "PLAN", "", "e".repeat(64));
++                case "DUPLICATE_PLAN_APP" -> f.journal.event(f.task, "PLAN_APPLICATION", "", "other");
++                case "SECOND_PREPARE" -> f.journal.event(f.task, "PREPARE_EXECUTING", "e".repeat(64), "web");
++                case "WRONG_ACTION" ->
++                    f.sql("UPDATE deployment_agent_event SET action_id='" + "e".repeat(64) + "' WHERE event_type='PREPARE_EXECUTING'");
++                case "SIDE_EFFECT" -> f.journal.event(f.task, "CAPABILITY_EXECUTING", "x", "secret");
++                case "PUBLICATION" -> f.journal.event(f.task, "AI_PUBLICATION", "demo", "START");
++                case "NATIVE" -> f.nativeDispatched();
++                case "LATE_OBSERVATION" -> f.journal.event(f.task, "AGENT_OBSERVATION", "x", "later model activity");
++                default -> throw new AssertionError(change);
++            }
++            var before = f.journal.events(f.task);
++            assertEquals(TaskResult.UNKNOWN, f.recover().outcome());
++            assertEquals(0, f.sent);
++            assertEquals(0, f.filesClosed);
++            assertEquals(before, f.journal.events(f.task));
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"ACK_ABSENT", "ACK_PRESENT", "PRE_UNKNOWN", "ABSENT_LOOP", "DENY", "INITIAL_ABSENT"})
++    void receiptAndAbsenceStayDistinctAndDeniedCleanupNeverSends(String condition) throws Exception {
++        try (var f = new Frame()) {
++            f.obstacle = condition;
++            if (condition.equals("DENY")) f.denyCleanup = true;
++            if (condition.equals("INITIAL_ABSENT") || condition.equals("ABSENT_LOOP")) f.present = false;
++            var result = f.recover();
++            boolean closed = condition.equals("ACK_ABSENT") || condition.equals("INITIAL_ABSENT");
++            assertEquals(closed ? TaskResult.FAILED : TaskResult.UNKNOWN, result.outcome());
++            assertEquals(condition.startsWith("ACK_") ? 1 : 0, f.deletes);
++            if (closed) {
++                var proof = f.journal.events(f.task).stream().filter(e -> e.type().equals(DeploymentAgentPreparationCompensation.EVENT)).findFirst().orElseThrow();
++                assertEquals(condition.equals("ACK_ABSENT") ? "UNCONFIRMED" : "NOT_REQUIRED", JSON.readTree(proof.detail()).path("cleanup").asText());
++            } else {
++                assertEquals(0, f.filesClosed);
++                assertFalse(DeploymentAgentActionLog.preparationsSettled(f.journal.events(f.task)));
++            }
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"INSERT", "COMMIT_FAILED", "COMMIT_ACK_LOST"})
++    void transactionFailureOrLostAcknowledgementRequiresObservationOrValidReceipt(String fault) throws Exception {
++        try (var f = new Frame()) {
++            var captured = f.capture();
++            String proof = f.proof(captured);
++            f.fault = fault;
++            assertThrows(SQLException.class, () -> f.journal.preparationCompensated(f.task, captured, proof));
++            boolean committed = fault.equals("COMMIT_ACK_LOST");
++            assertEquals(committed, DeploymentAgentActionLog.preparationsSettled(f.journal.events(f.task)));
++            if (committed) {
++                f.journal.preparationCompensated(f.task, captured, proof);
++                assertEquals(TaskResult.FAILED, f.recover().outcome());
++                assertEquals(0, f.sent);
++            } else {
++                assertEquals(captured.events(), f.journal.events(f.task));
++                f.present = false;
++                assertEquals(TaskResult.FAILED, f.recover().outcome());
++                assertEquals(0, f.deletes);
++            }
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"SOURCE", "STATE", "FORMAL", "BUSINESS", "FORGED", "FOREIGN"})
++    void transactionalRecheckRejectsChangesAndForgedProofs(String change) throws Exception {
++        try (var f = new Frame()) {
++            var captured = f.capture();
++            String proof = f.proof(captured);
++            switch (change) {
++                case "SOURCE" -> f.journal.event(f.task, "SOURCE", ARCHIVE, SOURCE);
++                case "STATE" -> f.journal.state(f.task, "CANCELLED");
++                case "FORMAL" ->
++                    f.sql("INSERT INTO deployment_execution(execution_id,platform_task_id,server_profile_id,mode,reviewed_revision,request_payload,recovery_payload,phase,created_at,updated_at) VALUES('"
++                        + UUID.randomUUID() + "','" + f.id + "','original-server','AGENT','" + REVISION + "',X'7b7d',X'7b7d','EXECUTING',1,1)");
++                case "BUSINESS" ->
++                    f.sql("INSERT INTO managed_application(application_id,server_profile_id,updated_at) VALUES('demo','original-server',1)");
++                case "FORGED" -> proof = proof.replace("\"afterResultSha256\":\"", "\"afterResultSha256\":\"0");
++                case "FOREIGN" -> proof = proof.replace(f.id.toString(), UUID.randomUUID().toString());
++                default -> throw new AssertionError(change);
++            }
++            String selected = proof;
++            assertThrows(SQLException.class, () -> f.journal.preparationCompensated(f.task, captured, selected));
++            assertFalse(DeploymentAgentActionLog.preparationsSettled(f.journal.events(f.task)));
++            assertEquals(0, f.deletes);
++        }
++    }
++
++    @Test
++    void duplicateConcurrentAppendsAreOnceAndLaterProgressCannotHideBehindProof() throws Exception {
++        try (var f = new Frame()) {
++            var captured = f.capture();
++            String proof = f.proof(captured);
++            var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
++            try {
++                var a = executor.submit(() -> {
++                    f.journal.preparationCompensated(f.task, captured, proof);
++                    return true;
++                });
++                var b = executor.submit(() -> {
++                    f.journal.preparationCompensated(f.task, captured, proof);
++                    return true;
++                });
++                assertTrue(a.get(10, java.util.concurrent.TimeUnit.SECONDS));
++                assertTrue(b.get(10, java.util.concurrent.TimeUnit.SECONDS));
++            } finally {
++                executor.shutdownNow();
++                assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
++            }
++            assertEquals(1, f.journal.events(f.task).stream().filter(e -> e.type().equals(DeploymentAgentPreparationCompensation.EVENT)).count());
++            f.journal.event(f.task, DeploymentAgentPreparationCompensation.EVENT, captured.preparation().action(), proof);
++            assertFalse(DeploymentAgentActionLog.preparationsSettled(f.journal.events(f.task)));
++            assertTrue(DeploymentAgentRecovery.originalWorkspaces(f.id, captured.snapshot().identity(), f.journal.events(f.task)).isEmpty());
++        }
++    }
++
++    @Test
++    void bindingChangeAfterPreObservationCannotDispatchCleanup() throws Exception {
++        try (var f = new Frame()) {
++            f.afterSend = () -> f.journal.event(f.task, "SOURCE", ARCHIVE, SOURCE);
++            assertEquals(TaskResult.UNKNOWN, f.recover().outcome());
++            assertEquals(0, f.deletes);
++            assertEquals(0, f.filesClosed);
++        }
++    }
++
++    @Test
++    void confirmedProofCannotConcealLaterIdentityOrPublication() throws Exception {
++        try (var f = new Frame()) {
++            var captured = f.capture();
++            f.journal.preparationCompensated(f.task, captured, f.proof(captured));
++            f.journal.event(f.task, "SOURCE", ARCHIVE, SOURCE);
++            assertFalse(DeploymentAgentActionLog.preparationsSettled(f.journal.events(f.task)));
++            assertEquals(TaskResult.UNKNOWN, f.recover().outcome());
++            assertEquals(0, f.sent);
++            assertEquals(0, f.filesClosed);
++        }
++    }
++
++    @Test
++    void oldAbsenceStillNeedsItsOwnCompleteObservationAndRejectsReadiness() throws Exception {
++        try (var f = new Frame()) {
++            f.sql("DELETE FROM deployment_agent_event WHERE event_type='HELPER_READINESS_OBSERVED'");
++            f.present = false;
++            assertEquals(TaskResult.FAILED, f.recover().outcome(), f.nativeAi.events.toString());
++            assertEquals(0, f.deletes);
++            assertEquals(1, f.sent);
++            assertTrue(f.journal.events(f.task).stream().anyMatch(e -> e.type().equals(DeploymentAgentPreparationAbsence.EVENT)));
++        }
++    }
++
++    @Test
++    void original09TypedIdentityBindsFullArchiveDistinctFromSnapshotAndPolicy() throws Exception {
++        UUID task = UUID.fromString("191bab33-4c43-400a-816d-f4ba78f4b785");
++        String archive = "c99039223d8e52cf3c78f413eef7e50aea3866d6969e5b6107a7bb26d8858a47";
++        String source = "188ceae2557c7b758c2f4686d1e3653ca8c9df5d38801853ccab149987e9a6c0";
++        var identity = new DeploymentAgentActionLog.Identity("static-live", "c46170de167e15e59701c3ce53313c75eedb78bd60ce67393cf5677d6fcf7eaf",
++            "e7c1cf418b145d3d85f6718db9e28783f1cb238566ab62f607357f0bf26f13b7", "MANUAL_REVIEW", false);
++        var layout = DeploymentRemoteLayout.original();
++        var header = JSON.createObjectNode().put("formatVersion", 1).put("task", task.toString()).put("server", identity.server());
++        header.set("layout", JSON.readTree(layout.canonical()));
++        header.put("layoutSha256", layout.digest());
++        var events = List.of(new DeploymentAgentActionLog.Event(1, "REMEMBER_AUTHORIZATION", "rememberAuthorization.v1", "false"),
++            new DeploymentAgentActionLog.Event(2, "REMOTE_TARGET", "", "f".repeat(64)), new DeploymentAgentActionLog.Event(3, "REMOTE_LAYOUT", task.toString(), header.toString()),
++            new DeploymentAgentActionLog.Event(4, "SOURCE", archive, source), new DeploymentAgentActionLog.Event(5, "TARGET_PROFILE", "", "e".repeat(64)),
++            new DeploymentAgentActionLog.Event(98, "PLAN_APPLICATION", "", "wtl-agent-task-board-3q8om79rww"), new DeploymentAgentActionLog.Event(99, "PLAN", "", "e".repeat(64)),
++            new DeploymentAgentActionLog.Event(118, "PREPARE_EXECUTING", "81921ee8aef135d428d133826bebdcb4f31a62c2dedf132e86b62b886167f8ac", "backend"),
++            new DeploymentAgentActionLog.Event(119, "HELPER_READINESS_OBSERVED", "f".repeat(64), "MISSING:HELPER_MISSING"),
++            new DeploymentAgentActionLog.Event(120, "HELPER_READINESS_OBSERVED", "f".repeat(64), "READY:CURRENT_TASK_READY"), new DeploymentAgentActionLog.Event(121, "STATE", "", "UNKNOWN"));
++        var snapshot = new DeploymentAgentActionLog.Snapshot(identity, "UNKNOWN", 4);
++        var original = DeploymentAgentPreparationCompensation.capture(task, snapshot, layout, events).orElseThrow();
++        assertEquals("wtl-agent-task-board-3q8om79rww-backend-c99039223d8e52cf", original.workspace().candidateId());
++        assertEquals(source, original.source());
++        var changed = new ArrayList<>(events);
++        changed.set(3, new DeploymentAgentActionLog.Event(4, "SOURCE", archive.substring(0, 16) + "0".repeat(48), source));
++        var differentArchive = DeploymentAgentPreparationCompensation.capture(task, snapshot, layout, changed).orElseThrow();
++        assertEquals(original.workspace().candidateId(), differentArchive.workspace().candidateId());
++        assertFalse(DeploymentAgentPartialPreparationProbe.present(differentArchive, new CommandResult(Optional.of(0),
++            DeploymentAgentPartialPreparationProbe.presentOutput(original), "", false)));
++        assertFalse(DeploymentAgentPartialPreparationProbe.requestDigest(original, false).equals(DeploymentAgentPartialPreparationProbe.requestDigest(differentArchive, false)));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"VALID_REVIEW", "INVALID_REBOUND", "VALID_INSPECT", "FOREIGN_INSPECT"})
++    void recoveryMetadataIsExplicitlyBoundRatherThanAnArbitrarySuffix(String condition) throws Exception {
++        try (var f = new Frame()) {
++            boolean valid = condition.startsWith("VALID_");
++            if (condition.endsWith("REVIEW") || condition.equals("INVALID_REBOUND")) {
++                f.journal.event(f.task, "RECOVERY_REVIEW_BOUND", REVISION, "f".repeat(64));
++                if (!valid)
++                    f.journal.event(f.task, "RECOVERY_REVIEW_REBOUND", REVISION, "previousEventId=0\npreviousReviewRevision=" + "f".repeat(64) + "\nreviewRevision=" + "e".repeat(64));
++            } else {
++                f.journal.event(f.task, "INSPECT_REQUESTED", valid ? f.id.toString() : UUID.randomUUID().toString(), UUID.randomUUID().toString());
++                long requested = f.journal.events(f.task).getLast().id();
++                f.journal.event(f.task, "INSPECT_RESULT", Long.toString(requested), "{" + f.captureCandidate() + "=PRESENT}");
++            }
++            assertEquals(valid, DeploymentAgentPreparationCompensation.capture(f.id, f.journal.find(f.task).orElseThrow(), f.layout, f.journal.events(f.task)).isPresent());
++        }
++    }
++
++    private static final class Frame implements AutoCloseable {
++        final NativeAiFixture nativeAi = new NativeAiFixture();
++
++        final UUID id = nativeAi.task.id();
++
++        final String jdbc = "jdbc:h2:mem:preparation-compensation-" + id;
++
++        final Connection retained = DriverManager.getConnection(jdbc);
++
++        final DeploymentRemoteLayout layout = DeploymentRemoteLayout.original();
++
++        final ServerId server = new ServerId("original-server");
++
++        final ServerInfo profile = new ServerInfo(server, "Original", "original.invalid", 22, "root", Optional.of("controlled-fingerprint"), Optional.empty());
++
++        final RemoteFacts remoteFacts = new RemoteFacts("linux", "amd64", "controlled-fingerprint");
++
++        ServerInfo observedProfile = profile;
++
++        String observedFingerprint = remoteFacts.fingerprint();
++
++        final TaskContext task = nativeAi.task;
++
++        final ModDatabase db;
++
++        final DeploymentAgentActionLog journal;
++
++        final ModContext context;
++
++        final Map<String, TaskCheckpoint> checkpoints = new HashMap<>();
++
++        int diagnosticAttempts;
++
++        CommandResult observedCommand;
++
++        int connected;
++
++        int sent;
++
++        int grants;
++
++        int deletes;
++
++        boolean present = true;
++
++        boolean denyCleanup;
++
++        final Map<String, Integer> modelCursor = new HashMap<>();
++
++        int filesClosed;
++
++        String obstacle = "";
++
++        String fault = "";
++
++        Hook afterSend = () -> {
++        };
++
++        Frame() throws Exception {
++            nativeAi.configurationRevision = REVISION;
++            try (var schema = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream(
++                "/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
++                org.h2.tools.RunScript.execute(retained, schema);
++            }
++            db = proxy(ModDatabase.class, (name, args) -> name.equals("identity")
++                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, id) : connection());
++            journal = new DeploymentAgentActionLog(db);
++            String target = DeploymentAgentInputs.hash(server.id() + ":" + remoteFacts.fingerprint());
++            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), target, REVISION, "FULL_CONTROL", true),
++                Optional.of(DeploymentAgentInputs.physicalTarget(profile)));
++            DeploymentAgentLayouts.record(journal, task, server, layout);
++            journal.event(task, "SOURCE", ARCHIVE, SOURCE);
++            journal.event(task, "TARGET_PROFILE", "", DeploymentAgentInputs.targetProfile(profile));
++            journal.event(task, "PLAN_APPLICATION", "", "demo");
++            journal.event(task, "PLAN", "", "e".repeat(64));
++            journal.event(task, "PREPARE_EXECUTING", DeploymentAgentInputs.hash(task.id() + ":api:" + SOURCE), "api");
++            journal.event(task, "HELPER_READINESS_OBSERVED", "d".repeat(64), "MISSING:HELPER_MISSING");
++            journal.event(task, "HELPER_READINESS_OBSERVED", "e".repeat(64), "READY:CURRENT_TASK_READY");
++            journal.state(task, "UNKNOWN");
++            var capturedLayout = JSON.createObjectNode().put("formatVersion", 1).put("task", id.toString());
++            capturedLayout.set("layout", JSON.readTree(layout.canonical()));
++            capturedLayout.put("layoutSha256", layout.digest());
++            TaskCheckpoint checkpoint = proxy(TaskCheckpoint.class, (name, args) -> new TaskCheckpoint.Snapshot(0, capturedLayout.toString(), true));
++            checkpoints.put("deployment.config.remote-layout.v1", checkpoint);
++            var tasks = proxy(TaskService.class, (name, args) -> switch (name) {
++                case "findCheckpoint" -> Optional.ofNullable(checkpoints.get((String) args[1]));
++                case "beginCheckpoint" -> {
++                    var created = new MemoryCheckpoint((String) args[2]);
++                    assertTrue(checkpoints.putIfAbsent((String) args[1], created) == null);
++                    yield created;
++                }
++                case "resourcesReleased" -> filesClosed > 0;
++                default -> throw new AssertionError(name);
++            });
++            var host = proxy(InteractionService.class, (name, args) -> switch (name) {
++                case "openReviewedWorkflow" -> success((WorkflowGrant) () -> {
++                });
++                case "approveReviewedAction" -> {
++                    grants++;
++                    yield success(new ApprovalGrant(UUID.randomUUID()));
++                }
++                default -> throw new AssertionError(name);
++            });
++            var session = proxy(RemoteSession.class, (name, args) -> switch (name) {
++                case "facts" -> new RemoteFacts("linux", "amd64", observedFingerprint);
++                case "close" -> null;
++                case "execute" -> {
++                    sent++;
++                    CommandRequest request = (CommandRequest) args[0];
++                    String body = new String(request.stdin(), StandardCharsets.UTF_8);
++                    if (body.isEmpty() && request.script().contains("' probe"))
++                        yield success(new CommandResult(Optional.of(0), "HELPER=1\nPROTOCOL=" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PROTOCOL_VERSION
++                            + "\nSHA256=" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout) + "\n", "", false));
++                    if (request.script().contains("'candidate-cleanup-task'")) {
++                        deletes++;
++                        if (!obstacle.equals("ACK_PRESENT")) present = false;
++                        if (obstacle.startsWith("ACK_")) throw new ApiException(processProblem(ProblemCode.IO_FAILURE));
++                        yield success(new CommandResult(Optional.of(0), "CANDIDATE_CLEANED=1\n", "", false));
++                    }
++                    assertTrue(body.contains("WTL_AGENT_PREPARATION_ABSENCE_1"));
++                    boolean pre = body.contains("WTL_AGENT_UPLOADED_PREPARATION_1");
++                    var captured = DeploymentAgentPreparationCompensation.capture(id, journal.find(task).orElseThrow(), layout, journal.events(task));
++                    String output = captured.isPresent() ? present && pre ? DeploymentAgentPartialPreparationProbe.presentOutput(captured.orElseThrow())
++                        : DeploymentAgentPartialPreparationProbe.absentOutput(captured.orElseThrow())
++                        : DeploymentAgentPreparationProbe.absentOutput(DeploymentAgentPreparationAbsence.capture(id, journal.find(task).orElseThrow(), layout, journal.events(task)).orElseThrow());
++                    if (obstacle.equals("PRE_UNKNOWN") && pre || present && !pre || obstacle.equals("ABSENT_LOOP"))
++                        output = "UNKNOWN\n";
++                    afterSend.run();
++                    yield success(new CommandResult(Optional.of(0), output, "", false));
++                }
++                default -> throw new AssertionError("Recovery cannot invoke " + name);
++            });
++            var linux = proxy(LinuxService.class, (name, args) -> {
++                assertEquals("connect", name);
++                connected++;
++                return session;
++            });
++            var files = proxy(FileService.class, (name, args) -> {
++                assertEquals("closeTaskResources", name);
++                filesClosed++;
++                return null;
++            });
++            var servers = proxy(ServerService.class, (name, args) -> {
++                assertEquals("get", name);
++                return observedProfile;
++            });
++            var ui = proxy(UiService.class, (name, args) -> new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
++            var ai = proxy(AiService.class, (name, args) -> {
++                if (name.equals("configurationRevision")) return REVISION;
++                if (name.equals("call")) {
++                    var request = (gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0];
++                    var input = JSON.readTree(request.messages().getLast().text());
++                    String binding = input.path("reviewBinding").asText();
++                    int cursor = modelCursor.getOrDefault(binding, 0);
++                    var calls = new ArrayList<AiToolCall>();
++                    int index = 0;
++                    for (String part : List.of("script", "stdin")) {
++                        var descriptor = input.path("executableInput").path(part);
++                        int total = descriptor.path("total").asInt();
++                        if (total <= 512) continue;
++                        for (int offset = 0; offset < total; offset += 2500) {
++                            if (index++ == cursor)
++                                calls.add(new AiToolCall(UUID.randomUUID().toString(), "request", JSON.createObjectNode()
++                                    .put("part", part).put("offset", offset).put("limit", 2500).toString()));
++                        }
++                    }
++                    if (calls.isEmpty()) {
++                        String decision = denyCleanup && deletes == 0 && sent == 2 ? "DENY" : "APPROVE";
++                        calls.add(new AiToolCall(UUID.randomUUID().toString(), "submit_result", "{\"decision\":\"" + decision
++                            + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled complete fixed request\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
++                    }
++                    modelCursor.put(binding, cursor + 1);
++                    nativeAi.nativeReply(calls.toArray(AiToolCall[]::new));
++                    return nativeAi.context.ai().call(request, task);
++                }
++                throw new AssertionError(name);
++            });
++            var logs = proxy(LogService.class, (name, args) -> switch (name) {
++                case "register" -> nativeAi.context.logs().register((LogCategory) args[0]);
++                case "write" -> {
++                    var event = (LogEvent) args[1];
++                    if (event.eventCode().equals("DEPLOYMENT_AGENT_OBSERVATION") && event.message().startsWith("preparation.")) {
++                        diagnosticAttempts++;
++                        if (obstacle.equals("LOGGER_FAILURE"))
++                            throw new IllegalStateException("password=FAKE_PASSWORD_MARKER");
++                    }
++                    yield nativeAi.context.logs().write((LogTarget) args[0], event);
++                }
++                default -> throw new AssertionError(name);
++            });
++            context = proxy(ModContext.class, (name, args) -> switch (name) {
++                case "db" -> db;
++                case "tasks" -> tasks;
++                case "interaction" -> host;
++                case "linux" -> linux;
++                case "servers" -> servers;
++                case "file" -> files;
++                case "ui" -> ui;
++                case "ai" -> ai;
++                case "logs" -> logs;
++                default -> throw new AssertionError(name);
++            });
++            sql("INSERT INTO deployment_unit(deployment_unit_id,server_profile_id,systemd_unit_name,release_root_path,ownership_manifest_sha256,runtime_payload) VALUES('shared-unit','another-server','shared.service','/opt/shared','" + "f".repeat(64) + "',X'010203')");
++            sql("INSERT INTO secret_revision(secret_id,secret_revision,credential_id,purpose,created_at) VALUES('persistent-secret',1,'retained-credential','deployment-runtime',1)");
++            sql("INSERT INTO deployment_unit_configuration_snapshot(deployment_unit_id,configuration_revision,configuration_sha256,schema_version,created_at) VALUES('shared-unit',1,'" + "f".repeat(64) + "','1',1)");
++            sql("INSERT INTO deployment_unit_configuration_entry VALUES('shared-unit',1,'persistent-value','RUNTIME','TEXT','KEEP')");
++        }
++
++        Problem processProblem(ProblemCode code) {
++            return new Problem(code, "FAKE_PASSWORD_MARKER", "password=FAKE_PASSWORD_MARKER",
++                Map.of("source", "FAKE_SOURCE_MARKER"), Optional.of(id));
++        }
++
++        Connection connection() throws Exception {
++            var connection = DriverManager.getConnection(jdbc);
++            var stateWrite = new boolean[1];
++            return proxy(Connection.class, (name, args) -> {
++                if (name.equals("prepareStatement") && ((String) args[0]).startsWith("UPDATE deployment_agent_task SET task_state="))
++                    stateWrite[0] = true;
++                if (name.equals("commit") && stateWrite[0] && fault.equals("FINAL_STATE_COMMIT")) {
++                    fault = "";
++                    throw new SQLException("Controlled final state commit failure after committed settlement");
++                }
++                if (name.equals("prepareStatement") && fault.equals("INSERT") && ((String) args[0]).startsWith("INSERT INTO deployment_agent_event")) {
++                    fault = "";
++                    throw new SQLException("Controlled append failure");
++                }
++                if (name.equals("commit") && fault.startsWith("COMMIT_")) {
++                    String selected = fault;
++                    fault = "";
++                    if (selected.equals("COMMIT_ACK_LOST")) connection.commit();
++                    throw new SQLException("Controlled commit confirmation failure");
++                }
++                try {
++                    for (var method : Connection.class.getMethods())
++                        if (method.getName().equals(name) && method.getParameterCount() == (args == null ? 0 : args.length)) {
++                            try {
++                                return method.invoke(connection, args);
++                            } catch (IllegalArgumentException overload) {
++                            }
++                        }
++                    throw new AssertionError(name);
++                } catch (InvocationTargetException failed) {
++                    throw failed.getCause();
++                }
++            });
++        }
++
++        void approve() {
++            nativeAi.nativeReply(new AiToolCall(UUID.randomUUID().toString(), "submit_result",
++                "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact metadata observation only\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
++        }
++
++        void nativeDispatched() throws Exception {
++            var receipt = DeploymentNativeDatabaseActionLog.begin(context.tasks(), task, server, UUID.randomUUID(), "prepare", "d".repeat(64), "e".repeat(64), "original-database");
++            receipt.dispatched();
++            journal.event(task, "AGENT_DATABASE_INDEX", "native-dispatched", "d".repeat(64) + ":" + "e".repeat(64));
++        }
++
++        DeploymentAgentPreparationCompensation.Captured capture() throws Exception {
++            return DeploymentAgentPreparationCompensation.capture(id, journal.find(task).orElseThrow(), layout, journal.events(task)).orElseThrow();
++        }
++
++        String captureCandidate() {
++            return new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("demo-api", ARCHIVE, layout).candidateId();
++        }
++
++        String proof(DeploymentAgentPreparationCompensation.Captured captured) {
++            return DeploymentAgentPreparationCompensation.proof(captured, false, DeploymentAgentPreparationCompensation.Cleanup.NOT_REQUIRED, "");
++        }
++
++        OperationResult<Void> recover() throws Exception {
++            return new DeploymentAgentRecovery(context, journal).reconcile(task, journal.find(task).orElseThrow());
++        }
++
++        void sql(String statement) throws Exception {
++            try (var query = retained.createStatement()) {
++                query.executeUpdate(statement);
++            }
++        }
++
++        List<String> business() throws Exception {
++            var result = new ArrayList<String>();
++            for (String table : List.of("deployment_unit", "managed_application", "managed_application_component", "managed_application_dependency", "deployment_release",
++                "deployment_unit_configuration_snapshot", "deployment_unit_configuration_entry", "deployment_unit_release_binding", "secret_revision", "deployment_unit_release_secret_reference")) {
++                try (var query = retained.createStatement(); var rows = query.executeQuery("SELECT * FROM " + table + " ORDER BY 1")) {
++                    while (rows.next()) {
++                        var values = new ArrayList<Object>();
++                        for (int column = 1; column <= rows.getMetaData().getColumnCount(); column++) {
++                            Object value = rows.getObject(column);
++                            values.add(value instanceof java.sql.Blob blob ? HexFormat.of().formatHex(blob.getBytes(1, Math.toIntExact(blob.length()))) : value);
++                        }
++                        result.add(table + ":" + values);
++                    }
++                }
++            }
++            return result;
++        }
++
++        public void close() throws Exception {
++            retained.close();
++        }
++    }
++
++    @FunctionalInterface
++    private interface Hook {
++        void run() throws Exception;
++    }
++
++    @FunctionalInterface
++    private interface Invocation {
++        Object call(String name, Object[] args) throws Throwable;
++    }
++
++    private static final class MemoryCheckpoint implements TaskCheckpoint {
++        private Snapshot value;
++
++        MemoryCheckpoint(String payload) {
++            value = new Snapshot(0, payload, false);
++        }
++
++        public Snapshot snapshot() {
++            return value;
++        }
++
++        public Snapshot advance(Snapshot expected, String payload) {
++            assertEquals(value, expected);
++            return value = new Snapshot(value.revision() + 1, payload, false);
++        }
++
++        public void close() {
++            value = new Snapshot(value.revision() + 1, value.payload(), true);
++        }
++    }
++
++    private static <T> T proxy(Class<T> type, Invocation callback) {
++        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (self, method, args) -> callback.call(method.getName(), args)));
++    }
++
++    private static <T> OperationResult<T> success(T value) {
++        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(value), Optional.empty());
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+@@ -0,0 +1,202 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import java.io.ByteArrayOutputStream;
++import java.io.OutputStream;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.time.Duration;
++import java.util.Arrays;
++import java.util.List;
++import java.util.Optional;
++import java.util.UUID;
++import java.util.concurrent.TimeUnit;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Reason;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Stage;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.Mismatch;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.StdoutKind;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPreparationProbe.UnknownObservation;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationAbsence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentPreparationCompensation;
++import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentHelperInstallerScript;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import org.junit.jupiter.api.Assumptions;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++/** Executes only controlled local Bash metadata fixtures; no real host, helper or server. */
++class DeploymentAgentPartialPreparationProbeTest {
++    @TempDir
++    Path root;
++
++    @Test
++    void fixedBeforeAndAfterScriptsParseAndKeepOriginalHelperBytes() throws Exception {
++        var c = captured();
++        assertEquals(0, bash(DeploymentAgentPartialPreparationProbe.script(c, false), true).exitCode());
++        assertEquals(0, bash(DeploymentAgentPartialPreparationProbe.script(c, true), true).exitCode());
++        assertEquals(DeploymentAgentPreparationProbe.script(c.absenceBinding()), DeploymentAgentPartialPreparationProbe.script(c, true));
++        assertFalse(DeploymentAgentPartialPreparationProbe.script(c, false).contains("\nrm "));
++        assertFalse(DeploymentAgentPartialPreparationProbe.script(c, false).contains("--detach"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"OWNED", "FOREIGN_TASK", "SAME_PREFIX", "MISSING_ARCHIVE", "HARDLINK", "BUILDER", "IMAGE", "RESTORE", "ACTIVE_BUILD", "EXTRA_BIND", "SHARED_DEVICE", "EXTRA_LOOP", "WRONG_BACKING", "ABSENT", "ABSENT_MOUNT", "ABSENT_LOOP"})
++    void completeArchiveAndExactOwnershipRejectEveryUnexplainedEffect(String condition) throws Exception {
++        var c = captured();
++        String script = DeploymentAgentPartialPreparationProbe.script(c, false)
++            .replace("candidate='" + c.workspace().candidateRoot() + "'", "candidate=\"$fixture_path/candidate\"")
++            .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/id -u", "fixture_id -u")
++            .replace("/usr/bin/systemctl", "fixture_systemctl").replace("/usr/bin/findmnt", "fixture_findmnt")
++            .replace("/usr/sbin/losetup", "fixture_losetup")
++            .replace("for tool in fixture_stat", "trusted_executable() { checked=SAFE; }\nfor tool in fixture_stat");
++        int start = script.indexOf("status=$(\n"), finish = script.indexOf("[ \"$status\" = ", start);
++        script = script.substring(0, start) + "status='CANDIDATE_STATE=owned\nBUILD_ACTIVE=no'\n[ \"$condition\" != ACTIVE_BUILD ] || status='CANDIDATE_STATE=owned\nBUILD_ACTIVE=yes'\n" + script.substring(finish);
++        String fixture = "condition='" + condition + "'\nexpected_task='" + c.task() + "'\n" + """
++            fixture_path=$(pwd -P) || exit 69
++            if [[ "$condition" != ABSENT* ]]; then
++              mkdir -p -- "$fixture_path/candidate/mutable" || exit 69
++              printf 'root\n' > "$fixture_path/candidate/.deployer"
++              printf '%s\n' "$expected_task" > "$fixture_path/candidate/.agent-task"
++              printf 'build\n' > "$fixture_path/candidate/.purpose"
++              printf '/dev/loop7\n' > "$fixture_path/candidate/.workspace-device"
++              printf '67108864\n' > "$fixture_path/candidate/.workspace-limit"
++              : > "$fixture_path/candidate/.workspace.ext4"
++              printf 'controlled archive\n' > "$fixture_path/candidate/mutable/source.tar.gz"
++              case "$condition" in
++                FOREIGN_TASK) printf '00000000-0000-0000-0000-000000000000\n' > "$fixture_path/candidate/.agent-task" ;;
++                SAME_PREFIX) printf 'changed archive\n' > "$fixture_path/candidate/mutable/source.tar.gz" ;;
++                MISSING_ARCHIVE) rm -- "$fixture_path/candidate/mutable/source.tar.gz" ;;
++                BUILDER) : > "$fixture_path/candidate/.builder-intent" ;;
++                IMAGE) : > "$fixture_path/candidate/.image-engine" ;;
++                RESTORE) mkdir -- "$fixture_path/candidate/mutable/restore-activation" ;;
++              esac
++            fi
++            fixture_stat() {
++              if [ "$2" = '%u:%g' ]; then printf '0:0\n'
++              elif [ "$2" = '%a' ]; then printf '755\n'
++              elif [ "$2" = '%s' ] && [[ "$4" = */.workspace.ext4 ]]; then printf '67108864\n'
++              elif [ "$2" = '%h' ] && [ "$condition" = HARDLINK ] && [[ "$4" = */source.tar.gz ]]; then printf '2\n'
++              else /usr/bin/stat "$@"; fi
++            }
++            fixture_id() { printf '0\n'; }
++            fixture_systemctl() { printf 'LoadState=not-found\nActiveState=inactive\nControlGroup=\n'; }
++            fixture_findmnt() {
++              if [ "$*" = '--kernel --noheadings --raw --output TARGET' ]; then
++                printf '/\n'
++                [ "$condition" != ABSENT_MOUNT ] || printf '%s/mutable\n' "$candidate"
++                return 0
++              fi
++              printf '/ /dev/root ext4\n'
++              printf '%s/mutable /dev/loop7 ext4\n' "$candidate"
++              [ "$condition" != EXTRA_BIND ] || printf '%s/mutable/alias /dev/root ext4\n' "$candidate"
++              [ "$condition" != SHARED_DEVICE ] || printf '/opt/shared /dev/loop7[/other] ext4\n'
++              return 0
++            }
++            fixture_losetup() {
++              if [[ "$*" = *'--output BACK-FILE /dev/loop7' ]]; then
++                if [ "$condition" = WRONG_BACKING ]; then printf '/opt/foreign.ext4\n'; else printf '%s/.workspace.ext4\n' "$candidate"; fi
++              elif [[ "$*" = *'--output NAME,BACK-FILE'* ]]; then
++                printf '/dev/loop7 %s/.workspace.ext4\n' "$candidate"
++                [ "$condition" != EXTRA_LOOP ] || printf '/dev/loop8 %s/unexplained.ext4\n' "$candidate"
++              elif [ "$condition" = ABSENT_LOOP ]; then printf '%s/.workspace.ext4 (deleted)\n' "$candidate"; fi
++              return 0
++            }
++            """;
++        var result = bash(fixture + script, false);
++        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
++        if (condition.equals("OWNED"))
++            assertTrue(DeploymentAgentPartialPreparationProbe.present(c, observed), result.error());
++        else if (condition.equals("ABSENT"))
++            assertTrue(DeploymentAgentPartialPreparationProbe.absent(c, observed), result.output() + result.error());
++        else {
++            assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed), result.output());
++            assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed), result.output());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"ARCHIVE", "TRUNCATED", "STDERR", "NONZERO", "UNKNOWN_EXIT", "TASK", "EVENTS"})
++    void onlyCompleteBoundCleanOutputCanSupportProof(String change) throws Exception {
++        var c = captured();
++        String output = DeploymentAgentPartialPreparationProbe.presentOutput(c);
++        if (change.equals("ARCHIVE"))
++            output = output.replace(c.workspace().archiveSha256(), c.workspace().archiveSha256().substring(0, 16) + "0".repeat(48));
++        if (change.equals("TASK")) output = output.replace(c.task().toString(), UUID.randomUUID().toString());
++        if (change.equals("EVENTS"))
++            output = output.replace(DeploymentAgentPreparationAbsence.digest(c.events()), "0".repeat(64));
++        var result = new CommandResult(change.equals("UNKNOWN_EXIT") ? Optional.empty() : Optional.of(change.equals("NONZERO") ? 1 : 0), output, change.equals("STDERR") ? "unknown" : "", change.equals("TRUNCATED"));
++        assertFalse(DeploymentAgentPartialPreparationProbe.present(c, result));
++    }
++
++    private static DeploymentAgentPreparationCompensation.Captured captured() throws Exception {
++        UUID task = UUID.fromString("191bab33-4c43-400a-816d-f4ba78f4b785");
++        var layout = DeploymentRemoteLayout.original();
++        var identity = new DeploymentAgentActionLog.Identity("original-server", "a".repeat(64), "d".repeat(64), "FULL_CONTROL", true);
++        String snapshot = "b".repeat(64), archive = DeploymentAgentPreparationAbsence.hash("controlled archive\n");
++        var node = new ObjectMapper().createObjectNode().put("formatVersion", 1).put("task", task.toString()).put("server", identity.server());
++        node.set("layout", new ObjectMapper().readTree(layout.canonical()));
++        node.put("layoutSha256", layout.digest());
++        var events = List.of(new DeploymentAgentActionLog.Event(1, "REMEMBER_AUTHORIZATION", "rememberAuthorization.v1", "true"),
++            new DeploymentAgentActionLog.Event(2, "REMOTE_TARGET", "", "f".repeat(64)), new DeploymentAgentActionLog.Event(3, "REMOTE_LAYOUT", task.toString(), node.toString()),
++            new DeploymentAgentActionLog.Event(4, "SOURCE", archive, snapshot), new DeploymentAgentActionLog.Event(5, "TARGET_PROFILE", "", "e".repeat(64)),
++            new DeploymentAgentActionLog.Event(98, "PLAN_APPLICATION", "", "demo"), new DeploymentAgentActionLog.Event(99, "PLAN", "", "e".repeat(64)),
++            new DeploymentAgentActionLog.Event(118, "PREPARE_EXECUTING", DeploymentAgentPreparationAbsence.hash(task + ":api:" + snapshot), "api"),
++            new DeploymentAgentActionLog.Event(119, "HELPER_READINESS_OBSERVED", "f".repeat(64), "MISSING:HELPER_MISSING"),
++            new DeploymentAgentActionLog.Event(120, "HELPER_READINESS_OBSERVED", "f".repeat(64), "READY:CURRENT_TASK_READY"), new DeploymentAgentActionLog.Event(121, "STATE", "", "UNKNOWN"));
++        return DeploymentAgentPreparationCompensation.capture(task, new DeploymentAgentActionLog.Snapshot(identity, "UNKNOWN", 4), layout, events).orElseThrow();
++    }
++
++    private Result bash(String input, boolean syntaxOnly) throws Exception {
++        return bash(input, syntaxOnly, false);
++    }
++
++    private Result bash(String input, boolean syntaxOnly, boolean emulatedLink) throws Exception {
++        var command = new java.util.ArrayList<>(List.of(bashExecutable(), "--noprofile", "--norc"));
++        if (syntaxOnly) command.add("-n");
++        command.add("-s");
++        return bash(command, input.getBytes(StandardCharsets.UTF_8), emulatedLink);
++    }
++
++    private static String bashExecutable() {
++        String executable = System.getProperty("managed.test.bash", System.getProperty("os.name").startsWith("Windows")
++            ? "C:\\Program Files\\Git\\bin\\bash.exe" : "/bin/bash");
++        Assumptions.assumeTrue(Files.isExecutable(Path.of(executable)), "Configured local Bash is unavailable");
++        return executable;
++    }
++
++    private Result bash(List<String> command, byte[] input, boolean emulatedLink) throws Exception {
++        var script = Files.createTempFile(root, "probe-input-", ".sh");
++        var stdout = Files.createTempFile(root, "probe-stdout-", ".out");
++        var stderr = Files.createTempFile(root, "probe-stderr-", ".err");
++        Files.write(script, input);
++        var builder = new ProcessBuilder(command).directory(root.toFile()).redirectInput(script.toFile()).redirectOutput(stdout.toFile()).redirectError(stderr.toFile());
++        builder.environment().put("MSYS", emulatedLink ? "winsymlinks" : "winsymlinks:nativestrict");
++        var process = builder.start();
++        try {
++            assertTrue(process.waitFor(15, TimeUnit.SECONDS), "Controlled local Bash must terminate");
++            return new Result(process.exitValue(), Files.readString(stdout, StandardCharsets.UTF_8), Files.readString(stderr, StandardCharsets.UTF_8));
++        } finally {
++            if (process.isAlive()) {
++                process.destroyForcibly();
++                assertTrue(process.waitFor(5, TimeUnit.SECONDS));
++            }
++            Files.deleteIfExists(script);
++            Files.deleteIfExists(stdout);
++            Files.deleteIfExists(stderr);
++        }
++    }
++
++    private record Result(int exitCode, String output, String error) {
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -19,7 +19,7 @@
+     /** Fixed operations whose stdin is executable Bash rather than protected data. / stdin是可执行Bash而非受保护数据的固定动作。 */
+     private static final Set<String> SCRIPT_INPUT = Set.of("deployment.helper.install.v1",
+         "deployment.helper.install.tracked.v1", "deployment.helper.install.files.v1", "deployment.helper.install.files.custom.v1", "deployment.agent.helper.readiness.v1",
+-        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1", "deployment.agent.preparation.absence.v1",
++        "deployment.helper.install.status.v1", "deployment.build.run.v1", "deployment.model.command.v1", "deployment.agent.preparation.absence.v1", "deployment.agent.preparation.partial-observation.v1",
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -34,7 +34,7 @@
+         "deployment.publication.observe-restored.v1", "deployment.publication.rollback.v1", "deployment.publication.retain.v1", "deployment.publication.maintenance-end.v1", "deployment.publication.candidate-cleanup.v1",
+         "deployment.application.lifecycle.v1", "deployment.native-db.inspect.v1", "deployment.native-db.target.v1", "deployment.native-db.start.v1", "deployment.native-db.install.v1",
+         "deployment.native-db.prepare.v1", "deployment.native-db.initialize.v1", "deployment.native-db.resume.v1", "deployment.native-db.status.v1", "deployment.agent.helper.v1",
+-        "deployment.model.command.v1", "deployment.model.command.status.v1", "deployment.agent.preparation.absence.v1",
++        "deployment.model.command.v1", "deployment.model.command.status.v1", "deployment.agent.preparation.absence.v1", "deployment.agent.preparation.partial-observation.v1",
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationAbsenceTest.java
+@@ -82,7 +82,7 @@
+         try (var frame = new Frame()) {
+             var business = frame.business();
+             var original = frame.journal.events(frame.task);
+-            frame.approve();
++            frame.approveCompleteInput();
+             var result = frame.recover();
+             assertEquals(TaskResult.FAILED, result.outcome(), "Recovered absence is compensation, not a completed application");
+             assertEquals(1, frame.sent);
+@@ -361,6 +361,10 @@
+ 
+         int diagnosticAttempts;
+ 
++        boolean completeReviewInputs;
++
++        final Map<String, Integer> reviewPages = new HashMap<>();
++
+         CommandResult observedCommand;
+ 
+         int connected;
+@@ -482,9 +486,28 @@
+             var ui = proxy(UiService.class, (name, args) -> new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
+             var ai = proxy(AiService.class, (name, args) -> {
+                 if (name.equals("configurationRevision")) return REVISION;
+-                if (name.equals("call")) return args.length == 3
+-                    ? nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], (String) args[1], task)
+-                    : nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], task);
++                if (name.equals("call")) {
++                    var request = (gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0];
++                    if (completeReviewInputs) {
++                        var input = JSON.readTree(request.messages().getLast().text());
++                        String binding = input.path("reviewBinding").asText();
++                        int cursor = reviewPages.getOrDefault(binding, 0), index = 0;
++                        AiToolCall next = null;
++                        for (String part : List.of("script", "stdin")) {
++                            int total = input.path("executableInput").path(part).path("total").asInt();
++                            if (total <= 512) continue;
++                            for (int offset = 0; offset < total; offset += 2500)
++                                if (index++ == cursor)
++                                    next = new AiToolCall(UUID.randomUUID().toString(), "request", JSON.createObjectNode()
++                                        .put("part", part).put("offset", offset).put("limit", 2500).toString());
++                        }
++                        reviewPages.put(binding, cursor + 1);
++                        if (next == null) approve();
++                        else nativeAi.nativeReply(next);
++                    }
++                    return args.length == 3 ? nativeAi.context.ai().call(request, (String) args[1], task)
++                        : nativeAi.context.ai().call(request, task);
++                }
+                 throw new AssertionError(name);
+             });
+             var logs = proxy(LogService.class, (name, args) -> switch (name) {
+@@ -554,6 +577,10 @@
+         void approve() {
+             nativeAi.nativeReply(new AiToolCall(UUID.randomUUID().toString(), "submit_result",
+                 "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact metadata observation only\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
++        }
++
++        void approveCompleteInput() {
++            completeReviewInputs = true;
+         }
+ 
+         void nativeDispatched() throws Exception {

@@ -82,7 +82,7 @@ class DeploymentAgentPreparationAbsenceTest {
         try (var frame = new Frame()) {
             var business = frame.business();
             var original = frame.journal.events(frame.task);
-            frame.approve();
+            frame.approveCompleteInput();
             var result = frame.recover();
             assertEquals(TaskResult.FAILED, result.outcome(), "Recovered absence is compensation, not a completed application");
             assertEquals(1, frame.sent);
@@ -361,6 +361,10 @@ class DeploymentAgentPreparationAbsenceTest {
 
         int diagnosticAttempts;
 
+        boolean completeReviewInputs;
+
+        final Map<String, Integer> reviewPages = new HashMap<>();
+
         CommandResult observedCommand;
 
         int connected;
@@ -482,9 +486,28 @@ class DeploymentAgentPreparationAbsenceTest {
             var ui = proxy(UiService.class, (name, args) -> new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
             var ai = proxy(AiService.class, (name, args) -> {
                 if (name.equals("configurationRevision")) return REVISION;
-                if (name.equals("call")) return args.length == 3
-                    ? nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], (String) args[1], task)
-                    : nativeAi.context.ai().call((gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0], task);
+                if (name.equals("call")) {
+                    var request = (gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0];
+                    if (completeReviewInputs) {
+                        var input = JSON.readTree(request.messages().getLast().text());
+                        String binding = input.path("reviewBinding").asText();
+                        int cursor = reviewPages.getOrDefault(binding, 0), index = 0;
+                        AiToolCall next = null;
+                        for (String part : List.of("script", "stdin")) {
+                            int total = input.path("executableInput").path(part).path("total").asInt();
+                            if (total <= 512) continue;
+                            for (int offset = 0; offset < total; offset += 2500)
+                                if (index++ == cursor)
+                                    next = new AiToolCall(UUID.randomUUID().toString(), "request", JSON.createObjectNode()
+                                        .put("part", part).put("offset", offset).put("limit", 2500).toString());
+                        }
+                        reviewPages.put(binding, cursor + 1);
+                        if (next == null) approve();
+                        else nativeAi.nativeReply(next);
+                    }
+                    return args.length == 3 ? nativeAi.context.ai().call(request, (String) args[1], task)
+                        : nativeAi.context.ai().call(request, task);
+                }
                 throw new AssertionError(name);
             });
             var logs = proxy(LogService.class, (name, args) -> switch (name) {
@@ -554,6 +577,10 @@ class DeploymentAgentPreparationAbsenceTest {
         void approve() {
             nativeAi.nativeReply(new AiToolCall(UUID.randomUUID().toString(), "submit_result",
                 "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Exact metadata observation only\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
+        }
+
+        void approveCompleteInput() {
+            completeReviewInputs = true;
         }
 
         void nativeDispatched() throws Exception {
