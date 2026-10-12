@@ -106,3 +106,12 @@ GPT-6.1-Sol 负责实现与定点修正，GPT-6-Astra 仅参与正式来源、�
 只读原账本确认两个宿主命令已 ENDED/exit0，但检查点在 FINISHED 后的 ERROR 之后7毫秒才释放。严格 cleanup binding 要求此前已释放；定点直接再现旧顺序失败。修复17只在 verified finish 创建 cleanupEvidence 前调用既有 strict releaseKnown，保留 finally 与 DISPATCHED/外来/损坏拒绝。7 个不同直接逻辑场景与两个 Java 格式检查通过，父核源码范围、XML及补丁正反向字节；不是全模块或真机恢复验收。
 
 详见[动态配额与真实16记录](DEPLOYMENT-DYNAMIC-WORKSPACE-QUOTA-16.md)及[收尾修复17](DEPLOYMENT-AGENT-COMMAND-FINISH-17.md)。下一步从原产品 reconcile 入口重新验证同一发布、独立审批与严格清理；尚未恢复，不回填旧 UNKNOWN，不重放原部署或删除历史业务身份。
+
+
+## 2026-10-13 原16恢复及业务入口18
+
+验收夹具支持原 main-only 库从既有产品 reconcile 进入，启用原已验证的独立审批路由；不重新配置模型或探测能力，不反向授权原诊断部署。恢复业务按原成功归档/完整 App 身份/已审阅 publicUrl 绑定，依据真实 runtime-config API 地址进行写入与受管重启持久化验证，再等待绑定 application/URL 的真实浏览器证据，最后产品停止并禁用自启。去掉外部 port+1 的冲突硬要求；STATIC/ASSISTED 显式端口路径保持。
+
+3 个实际 loopback HTTP 参数最新通过，两个 Java 格式检查通过；首次相邻端口夹具失败保留，修正后只重跑同一直接方法。3279 文件仅两个测试 owner 改变，父核 XML/前后像/补丁正反向字节，未运行真实恢复。额外只读原16账本显示两组件 AUTO workspace/candidate 都为1207959552字节（1.125 GiB），重规划保持同 Q；原 DB SHA 不变，两个本轮临时凭据副本已清理，原 UNKNOWN/资源/业务和调查保留。
+
+详见[恢复业务入口18](DEPLOYMENT-AGENT-RECOVERED-BUSINESS-18.md)。原16仍待实际产品恢复、独立审批与严格结清；本地通过不能替代真实成功或完整双 Agent 验收。

@@ -15,10 +15,94 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Verifies direct acceptance HTTP using local peers, without a deployment or model. / 使用本地端点验证直连验收，不执行部署或模型调用。 */
 @ResourceLock("java.net.ProxySelector")
 class DeploymentLiveHttpClientTest {
+    @ParameterizedTest
+    @ValueSource(strings = {"SAME_ORIGIN", "PATH_PREFIX", "SEPARATE_PORT"})
+    void usesTheRuntimeConfiguredApiForBusinessAndBrowserRequests(String mode) throws Exception {
+        var configuration = new java.util.concurrent.atomic.AtomicReference<String>();
+        var reads = new AtomicInteger();
+        var writes = new AtomicInteger();
+        var preflights = new AtomicInteger();
+        var frontend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        var backend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        if (backend.getAddress().getPort() == frontend.getAddress().getPort() + 1) {
+            var adjacent = backend;
+            try {
+                backend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            } finally {
+                adjacent.stop(0);
+            }
+        }
+        String web = "http://127.0.0.1:" + frontend.getAddress().getPort();
+        String api = mode.equals("SEPARATE_PORT") ? "http://127.0.0.1:" + backend.getAddress().getPort()
+            : mode.equals("PATH_PREFIX") ? web + "/gateway/" : web;
+        configuration.set(mode.equals("SEPARATE_PORT") ? api : mode.equals("PATH_PREFIX") ? "/gateway/" : "");
+        frontend.createContext("/runtime-config.json", exchange -> {
+            byte[] data = ("{\"apiBase\":\"" + configuration.get() + "\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, data.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(data);
+            } finally {
+                exchange.close();
+            }
+        });
+        var target = mode.equals("SEPARATE_PORT") ? backend : frontend;
+        target.createContext(mode.equals("PATH_PREFIX") ? "/gateway//api/tasks" : "/api/tasks", exchange -> {
+            String method = exchange.getRequestMethod();
+            if (method.equals("OPTIONS")) preflights.incrementAndGet();
+            else if (method.equals("POST")) writes.incrementAndGet();
+            else if (method.equals("GET")) reads.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().set("X-Sample-Protocol", "2");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", web);
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "content-type");
+            exchange.getResponseHeaders().set("Access-Control-Expose-Headers", "X-Sample-Protocol");
+            byte[] data = "{\"id\":17}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, data.length);
+            try (var output = exchange.getResponseBody()) {
+                output.write(data);
+            } finally {
+                exchange.close();
+            }
+        });
+        frontend.start();
+        backend.start();
+        try {
+            if (mode.equals("SEPARATE_PORT"))
+                assertNotEquals(frontend.getAddress().getPort() + 1, backend.getAddress().getPort());
+            var actualBase = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("browserApiBase", String.class);
+            actualBase.setAccessible(true);
+            String selected = (String) actualBase.invoke(null, web);
+            assertEquals(api, selected);
+            assertEquals("{\"id\":17}", new String(request(URI.create(selected + "/api/tasks"), "POST",
+                "{\"title\":\"retained\"}".getBytes(StandardCharsets.UTF_8), "application/json"), StandardCharsets.UTF_8));
+            assertEquals("{\"id\":17}", new String(request(URI.create(selected + "/api/tasks/17"), "GET", null,
+                "application/json"), StandardCharsets.UTF_8));
+            var browser = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("browserApi", String.class, String.class, String.class);
+            browser.setAccessible(true);
+            var response = (com.fasterxml.jackson.databind.JsonNode) browser.invoke(null, web, "/api/tasks/17", "/api/tasks");
+            assertEquals(17, response.path("id").asInt());
+            assertEquals(2, reads.get());
+            assertEquals(1, writes.get());
+            assertEquals(mode.equals("SEPARATE_PORT") ? 2 : 0, preflights.get());
+            for (String invalid : List.of("http://localhost:" + frontend.getAddress().getPort(), web.replace("http:", "https:"), "/")) {
+                configuration.set(invalid);
+                var refusal = assertThrows(java.lang.reflect.InvocationTargetException.class, () -> actualBase.invoke(null, web));
+                assertInstanceOf(org.opentest4j.AssertionFailedError.class, refusal.getCause());
+            }
+            assertEquals(2, reads.get(), "Foreign host/scheme must be rejected before an API request");
+        } finally {
+            backend.stop(0);
+            frontend.stop(0);
+        }
+    }
+
     @Test
     void bypassesGlobalProxyThatClosesWithoutAnHttpResponse() throws Exception {
         var proxyHits = new AtomicInteger();
