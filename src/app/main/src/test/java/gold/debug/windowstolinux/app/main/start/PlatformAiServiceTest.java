@@ -513,6 +513,252 @@ class PlatformAiServiceTest {
     record Sent(String path, String authorization, JsonNode body) {
     }
 
+    static void incomplete(HttpExchange exchange, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.sendResponseHeaders(200, bytes.length + 64);
+        exchange.getResponseBody().write(bytes);
+    }
+
+    static String nativeResponse(String id) {
+        return "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"" + id
+            + "\",\"type\":\"function\",\"function\":{\"name\":\"action\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4}}";
+    }
+
+    @Test
+    void generationRecoveryHandlesIncompleteChunksOnlyAfterIndependentClientAndLeaseRelease() throws Exception {
+        var requests = new ArrayList<String>();
+        var ports = new HashSet<Integer>();
+        var failure = new AtomicReference<Throwable>();
+        try (var server = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1")); var fixture = new Fixture();
+             var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            server.setSoTimeout(6000);
+            initialize(runtime, false);
+            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
+            runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile("text", "http://127.0.0.1:" + server.getLocalPort() + "/chat",
+                "fixture/text", "ai/fixture/text"), "text", Instant.now(), AiCapabilityType.TEXT);
+            route(runtime, AiPurposeType.DEPLOYMENT, "text");
+            var peer = Thread.ofPlatform().daemon(true).start(() -> {
+                try {
+                    for (int number = 1; number <= 2; number++) {
+                        try (var socket = server.accept()) {
+                            socket.setSoTimeout(6000);
+                            ports.add(socket.getPort());
+                            var input = socket.getInputStream();
+                            var headers = new StringBuilder();
+                            while (!headers.toString().endsWith("\r\n\r\n") && headers.length() < 8192) {
+                                int next = input.read();
+                                if (next < 0) throw new IOException("Fixture headers incomplete");
+                                headers.append((char) next);
+                            }
+                            var length = java.util.regex.Pattern.compile("(?i)content-length: ([0-9]+)").matcher(headers);
+                            assertTrue(length.find());
+                            requests.add(new String(input.readNBytes(Integer.parseInt(length.group(1))), StandardCharsets.UTF_8));
+                            if (number == 1)
+                                socket.getOutputStream().write("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n1000\r\n{".getBytes(StandardCharsets.US_ASCII));
+                            else {
+                                assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NOT NULL"));
+                                assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
+                                byte[] response = RESPONSE.getBytes(StandardCharsets.UTF_8);
+                                socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: " + response.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                                socket.getOutputStream().write(response);
+                            }
+                            socket.getOutputStream().flush();
+                        }
+                    }
+                } catch (Throwable failed) {
+                    failure.set(failed);
+                }
+            });
+            try {
+                var ai = runtime.capabilities().ai(OWNER, VERSION);
+                var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(1), task)));
+                assertEquals(List.of(TaskResult.UNKNOWN, TaskResult.SUCCEEDED), result.generationAttempts().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::outcome).toList());
+                assertEquals("HTTP_CHUNK_INCOMPLETE", result.generationAttempts().getFirst().transportFailureKind());
+            } finally {
+                server.close();
+                peer.join(7000);
+                assertFalse(peer.isAlive());
+            }
+            assertNull(failure.get());
+            assertEquals(2, ports.size(), "New generation owns a distinct physical HTTP client");
+            assertEquals(2, requests.size());
+            assertEquals(requests.getFirst(), requests.getLast());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void generationRecoveryPreservesNativeHistoryAndAcceptsOnlyTheNewCompleteTool(boolean approval) throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
+            var stored = runtime.persistence().aiProfiles().listConfigured().getFirst();
+            runtime.persistence().aiProfiles().recordVerification(stored.profile(), stored.revision(), AiCapabilityType.TOOL_CALLING, Instant.now());
+            route(runtime, approval ? AiPurposeType.APPROVAL : AiPurposeType.DEPLOYMENT, "text");
+            var oldTools = new AtomicInteger();
+            var newTools = new AtomicInteger();
+            fixture.handler.set(exchange -> {
+                if (fixture.calls.get() == 2) incomplete(exchange, nativeResponse("lost"));
+                else Fixture.reply(exchange, 200, nativeResponse(fixture.calls.get() == 1 ? "old" : "new"));
+            });
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                var purpose = approval ? AiPurpose.APPROVAL : AiPurpose.LANGUAGE;
+                var definition = new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("action", "Fixture client action", "{\"type\":\"object\"}");
+                var initial = new AiRequest(purpose, message(purpose).messages(), 32, Duration.ofSeconds(6), false, List.of(definition));
+                var previous = ai.call(initial, task).value().orElseThrow();
+                assertEquals("old", previous.toolCalls().getFirst().id());
+                oldTools.incrementAndGet();
+                var history = new ArrayList<>(initial.messages());
+                history.add(AiMessage.assistant(previous));
+                history.add(AiMessage.result(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("old", "EXECUTED", false)));
+                history.add(new AiMessage(AiRole.USER, "Next action", List.of()));
+                var recovered = ai.call(new AiRequest(purpose, history, 32, Duration.ofSeconds(6), false, List.of(definition)).withGenerationRecovery(1), task);
+                assertEquals(TaskResult.SUCCEEDED, recovered.outcome());
+                var response = recovered.value().orElseThrow();
+                assertEquals(List.of("new"), response.toolCalls().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).toList());
+                newTools.incrementAndGet();
+                assertEquals(List.of(TaskResult.UNKNOWN, TaskResult.SUCCEEDED), response.generationAttempts().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::outcome).toList());
+                assertTrue(response.generationAttempts().getFirst().usage().inputTokens().isEmpty());
+                assertEquals(Optional.of(3L), response.generationAttempts().getLast().usage().inputTokens());
+                assertNotEquals(previous.continuation(), response.continuation());
+                assertTrue(response.continuation().isPresent());
+                history.add(AiMessage.assistant(response));
+                history.add(AiMessage.result(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("new", "EXECUTED", false)));
+                assertEquals(TaskResult.SUCCEEDED, ai.call(new AiRequest(purpose, history, 32, Duration.ofSeconds(6), false, List.of(definition)), task).outcome());
+                assertEquals(4, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NOT NULL"));
+                return success(null);
+            }));
+            assertEquals(1, oldTools.get());
+            assertEquals(1, newTools.get());
+            assertEquals(4, fixture.calls.get());
+            var sent = new ArrayList<Sent>();
+            fixture.requests.drainTo(sent);
+            assertEquals(sent.get(1).body(), sent.get(2).body(), "Recovery retains exact history and request bytes");
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 16})
+    void generationRecoveryExhaustionRetainsEveryUnknownAttempt(int extra) throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
+            route(runtime, AiPurposeType.DEPLOYMENT, "text");
+            fixture.handler.set(exchange -> incomplete(exchange, RESPONSE));
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            var original = new AtomicReference<TaskContext>();
+            var observed = new AtomicReference<OperationResult<AiResponse>>();
+            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                original.set(task);
+                var result = ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(extra), task);
+                observed.set(result);
+                return result;
+            });
+            state(handle, TaskState.UNKNOWN);
+            callbackReturned(runtime, original.get());
+            assertEquals(extra + 1, fixture.calls.get());
+            assertTrue(observed.get().value().isEmpty());
+            var attempts = gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(observed.get().problem().orElseThrow());
+            assertEquals(extra + 1, attempts.size());
+            assertTrue(attempts.stream().allMatch(value -> value.outcome() == TaskResult.UNKNOWN && value.usage().inputTokens().isEmpty() && value.usage().outputTokens().isEmpty()));
+            recover(runtime, ai, handle, original.get());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"revision", "cancel", "deadline", "lease", "existing-unknown"})
+    void generationRecoveryStopsBeforeASecondSendWhenOriginalGuardsOrReleaseFail(String boundary) throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
+            route(runtime, AiPurposeType.DEPLOYMENT, "text");
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            var original = new AtomicReference<TaskContext>();
+            var observed = new AtomicReference<OperationResult<AiResponse>>();
+            var admitted = new CountDownLatch(1);
+            var allowResponse = new CountDownLatch(1);
+            fixture.handler.set(exchange -> {
+                try {
+                    assertTrue(allowResponse.await(5, TimeUnit.SECONDS));
+                    if (boundary.equals("revision")) route(runtime, AiPurposeType.DEPLOYMENT);
+                    if (boundary.equals("existing-unknown")) runtime.tasks().reportUncertainEffect(original.get());
+                    if (boundary.equals("deadline")) Thread.sleep(800);
+                } catch (Exception failed) {
+                    throw new IOException(failed);
+                }
+                incomplete(exchange, RESPONSE);
+            });
+            if (boundary.equals("lease"))
+                sql(runtime.persistence().database(), "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_ai_release CHECK(resource_kind<>'CONNECTION' OR released_at IS NULL)");
+            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                original.set(task);
+                admitted.countDown();
+                try {
+                    var base = message(AiPurpose.LANGUAGE);
+                    var bounded = new AiRequest(base.purpose(), base.messages(), 32, Duration.ofMillis(boundary.equals("deadline") ? 500 : 6000), false).withGenerationRecovery(1);
+                    var result = ai.call(bounded, task);
+                    observed.set(result);
+                    return result;
+                } catch (ApiException failure) {
+                    observed.set(new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(failure.problem())));
+                    throw failure;
+                }
+            });
+            assertTrue(admitted.await(5, TimeUnit.SECONDS));
+            assertNotNull(fixture.requests.poll(5, TimeUnit.SECONDS));
+            if (boundary.equals("cancel")) handle.requestCancel();
+            allowResponse.countDown();
+            state(handle, TaskState.UNKNOWN);
+            callbackReturned(runtime, original.get());
+            assertEquals(1, fixture.calls.get());
+            assertEquals(1, gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(observed.get().problem().orElseThrow()).size());
+            if (boundary.equals("existing-unknown"))
+                assertEquals("TASK_EFFECT_UNCERTAIN", observed.get().problem().orElseThrow().context().get("generationRecoveryStoppedBy"));
+            if (boundary.equals("lease"))
+                sql(runtime.persistence().database(), "ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_ai_release");
+            recover(runtime, ai, handle, original.get());
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"reject", "schema", "length", "byte-limit", "headers", "deny"})
+    void generationRecoveryNeverRepeatsOtherTransportOrCompleteResults(String shape) throws Exception {
+        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            initialize(runtime, false);
+            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
+            route(runtime, AiPurposeType.DEPLOYMENT, "text");
+            fixture.handler.set(exchange -> {
+                if (shape.equals("headers")) return;
+                Fixture.reply(exchange, shape.equals("reject") ? 403 : 200, switch (shape) {
+                    case "schema" -> "{\"choices\":[]}";
+                    case "length" -> RESPONSE.replace("stop", "length");
+                    case "deny" -> RESPONSE.replace("你好", "DENY: complete model refusal");
+                    case "byte-limit" -> " ".repeat(8 * 1024 * 1024 + 1);
+                    default -> RESPONSE;
+                });
+            });
+            var ai = runtime.capabilities().ai(OWNER, VERSION);
+            var original = new AtomicReference<TaskContext>();
+            var observed = new AtomicReference<OperationResult<AiResponse>>();
+            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
+                original.set(task);
+                var result = ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(1), task);
+                observed.set(result);
+                return result;
+            });
+            if (Set.of("byte-limit", "headers").contains(shape)) {
+                state(handle, TaskState.UNKNOWN);
+                callbackReturned(runtime, original.get());
+                recover(runtime, ai, handle, original.get());
+            } else handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
+            assertEquals(1, fixture.calls.get());
+            assertNotNull(observed.get());
+            if (shape.equals("length")) assertEquals("length", observed.get().value().orElseThrow().finishReason());
+        }
+    }
+
     @FunctionalInterface
     interface ResponseAction {
         void serve(HttpExchange exchange) throws IOException;

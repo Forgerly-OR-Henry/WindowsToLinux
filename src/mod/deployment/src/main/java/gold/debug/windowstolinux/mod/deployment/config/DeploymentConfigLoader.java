@@ -54,7 +54,7 @@ public final class DeploymentConfigLoader {
         fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens",
             "requests", "execution", "history"));
         var requests = ai.path("requests");
-        fields(requests, Set.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds"));
+        fields(requests, Set.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds", "generation-recovery-attempts"));
         var execution = ai.path("execution");
         fields(execution, Set.of("shared-tool-attempts", "standalone-tool-attempts", "local-tool-turns", "agent-model-responses", "retained-review-sessions", "max-observations"));
         var history = ai.path("history");
@@ -81,7 +81,7 @@ public final class DeploymentConfigLoader {
                 new DeploymentConfig.Ai(integer(ai, "deployment-max-output-tokens"), integer(ai, "extended-deployment-max-output-tokens"),
                     integer(ai, "approval-max-output-tokens"),
                     new DeploymentConfig.Requests(integer(requests, "deployment-timeout-seconds"), integer(requests, "approval-timeout-seconds"),
-                        integer(requests, "extended-timeout-seconds")),
+                        integer(requests, "extended-timeout-seconds"), integer(requests, "generation-recovery-attempts")),
                     new DeploymentConfig.Execution(integer(execution, "shared-tool-attempts"), integer(execution, "standalone-tool-attempts"),
                         integer(execution, "local-tool-turns"), integer(execution, "agent-model-responses"), integer(execution, "retained-review-sessions"), integer(execution, "max-observations")),
                     new DeploymentConfig.History(integer(history, "max-batches"), integer(history, "characters"), integer(history, "payload-bytes"),

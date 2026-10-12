@@ -1,0 +1,1139 @@
+--- a/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/model/AiRequest.java
++++ b/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/model/AiRequest.java
+@@ -14,11 +14,18 @@
+  * @param tools copied native function definitions / 复制的原生函数定义
+  * @param maxRequestBytes exact encoded request ceiling enforced before network send / 网络发送前执行的精确编码请求字节上限
+  * @param requiredToolName optional registered native tool to require; empty retains automatic selection / 可选必须调用的已注册原生工具，空值保留自动选择
++ * @param generationRecoveryAttempts extra pure-generation attempts after an incomplete HTTP body, 0..16; no tool or business operation replay / HTTP 正文不完整后的额外纯生成次数，0..16，不重放工具或业务操作
+  */
+ public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens,
+                         Duration timeout,
+                         boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
+-                        Optional<String> requiredToolName) {
++                        Optional<String> requiredToolName, int generationRecoveryAttempts) {
++    public AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens, Duration timeout,
++                     boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
++                     Optional<String> requiredToolName) {
++        this(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes, requiredToolName, 0);
++    }
++
+     public AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens, Duration timeout,
+                      boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes) {
+         this(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes, Optional.empty());
+@@ -65,7 +72,15 @@
+      * @throws IllegalArgumentException if the name is not a registered tool / 名称不是已注册工具时 */
+     public AiRequest withRequiredTool(String name) {
+         return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
+-            Optional.of(java.util.Objects.requireNonNull(name, "name")));
++            Optional.of(java.util.Objects.requireNonNull(name, "name")), generationRecoveryAttempts);
++    }
++
++    /** Selects bounded new generation attempts within this request's original deadline. Each old attempt remains UNKNOWN; a new complete response alone is accepted. / 在原请求期限内选择有限的新生成；旧尝试保持 UNKNOWN，仅接纳新完整响应。
++     * @param extraAttempts extra attempts, 0 disables recovery and 16 is the public ceiling / 额外次数，0 关闭，公开上限为 16
++     * @return immutable request retaining messages, tools, history and budgets / 保留消息、工具、历史和预算的不可变请求 */
++    public AiRequest withGenerationRecovery(int extraAttempts) {
++        return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
++            requiredToolName, extraAttempts);
+     }
+ 
+     /**
+@@ -78,6 +93,8 @@
+      */
+     public AiRequest {
+         java.util.Objects.requireNonNull(purpose, "purpose");
++        if (generationRecoveryAttempts < 0 || generationRecoveryAttempts > 16)
++            throw new IllegalArgumentException("Generation recovery attempts must be in 0..16");
+         messages = List.copyOf(messages);
+         tools = List.copyOf(tools);
+         if (tools.size() > 128 || tools.stream().map(AiToolDefinition::name).distinct().count() != tools.size())
+--- a/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/model/AiResponse.java
++++ b/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/model/AiResponse.java
+@@ -10,11 +10,20 @@
+  * @param continuation task-bound opaque continuation / 任务绑定的不透明续接状态
+  * @param encodedRequestBytes host-measured encoded request length, absent for unmeasured fixtures / 宿主测量的编码请求长度，未测量的夹具为空
+  * @param effectiveMaxOutputTokens actual host-sent request budget, not the model capability limit / 宿主实际发送的请求额度，不表示模型能力上限
++ * @param generationAttempts immutable physical generation outcomes; unknown usage is never replaced by a later response / 不可变物理生成结果，未知用量不由后续响应覆盖
+  */
+ public record AiResponse(String text, String modelId, String finishReason, AiUsage usage,
+                          java.util.List<AiToolCall> toolCalls, java.util.Optional<AiContinuation> continuation,
+                          java.util.Optional<Integer> encodedRequestBytes,
+-                         java.util.Optional<Integer> effectiveMaxOutputTokens) {
++                         java.util.Optional<Integer> effectiveMaxOutputTokens,
++                         java.util.List<AiGenerationAttempt> generationAttempts) {
++    public AiResponse(String text, String modelId, String finishReason, AiUsage usage,
++                      java.util.List<AiToolCall> toolCalls, java.util.Optional<AiContinuation> continuation,
++                      java.util.Optional<Integer> encodedRequestBytes,
++                      java.util.Optional<Integer> effectiveMaxOutputTokens) {
++        this(text, modelId, finishReason, usage, toolCalls, continuation, encodedRequestBytes, effectiveMaxOutputTokens, java.util.List.of());
++    }
++
+     public AiResponse(String text, String modelId, String finishReason, AiUsage usage,
+                       java.util.List<AiToolCall> toolCalls, java.util.Optional<AiContinuation> continuation,
+                       java.util.Optional<Integer> encodedRequestBytes) {
+@@ -42,6 +51,7 @@
+         java.util.Objects.requireNonNull(modelId, "modelId");
+         java.util.Objects.requireNonNull(finishReason, "finishReason");
+         java.util.Objects.requireNonNull(usage, "usage");
++        generationAttempts = AiGenerationAttempt.validated(generationAttempts);
+         toolCalls = java.util.List.copyOf(toolCalls);
+         java.util.Objects.requireNonNull(continuation);
+         java.util.Objects.requireNonNull(encodedRequestBytes);
+--- /dev/null
++++ b/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/ai/model/AiGenerationAttempt.java
+@@ -0,0 +1,106 @@
++package gold.debug.windowstolinux.appapi.ai.model;
++
++import java.util.*;
++
++import gold.debug.windowstolinux.appapi.task.result.Problem;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++
++/** One physical pure-generation outcome, without prompts, response bodies or credentials. / 一次物理纯生成结果，不含提示、响应正文或凭据。
++ * @param generationId correlation for one logical generation / 一次逻辑生成的关联身份
++ * @param number one-based physical attempt / 从 1 开始的物理尝试序号
++ * @param modelId captured platform model identity / 捕获的平台模型身份
++ * @param protocol captured pure-generation protocol / 捕获的纯生成协议
++ * @param outcome original physical outcome, never rewritten after recovery / 原物理结果，恢复后不重写
++ * @param eventCode original safe event code or AI_GENERATION_COMPLETE / 原安全事件码或 AI_GENERATION_COMPLETE
++ * @param transportFailureKind bounded transport classification or NONE / 有界传输分类或 NONE
++ * @param elapsedMillis physical call elapsed time / 物理调用耗时
++ * @param usage usage of this attempt only, missing fields remain unknown / 仅本次用量，缺失字段保持未知
++ * @param encodedRequestBytes encoded request length / 编码请求长度
++ * @param effectiveMaxOutputTokens captured output budget / 捕获的输出额度 */
++public record AiGenerationAttempt(UUID generationId, int number, String modelId, String protocol,
++                                  TaskResult outcome, String eventCode, String transportFailureKind,
++                                  long elapsedMillis, AiUsage usage, int encodedRequestBytes,
++                                  int effectiveMaxOutputTokens) {
++    public AiGenerationAttempt {
++        Objects.requireNonNull(generationId);
++        Objects.requireNonNull(modelId);
++        Objects.requireNonNull(outcome);
++        Objects.requireNonNull(usage);
++        for (String code : List.of(protocol, eventCode, transportFailureKind))
++            if (!code.matches("[A-Z0-9_]{1,80}")) throw new IllegalArgumentException("Invalid generation trace code");
++        if (number < 1 || number > 17 || elapsedMillis < 0 || encodedRequestBytes < 1 || effectiveMaxOutputTokens < 1)
++            throw new IllegalArgumentException("Invalid generation trace bounds");
++    }
++
++    /** Copies and validates a complete ordered trace. / 复制并校验完整有序轨迹。
++     * @param attempts physical attempts / 物理尝试
++     * @return immutable validated trace / 不可变已校验轨迹 */
++    public static List<AiGenerationAttempt> validated(List<AiGenerationAttempt> attempts) {
++        var values = List.copyOf(attempts);
++        if (values.size() > 17) throw new IllegalArgumentException("Excessive generation trace");
++        for (int index = 0; index < values.size(); index++)
++            if (values.get(index).number() != index + 1 || !values.get(index).generationId().equals(values.getFirst().generationId()))
++                throw new IllegalArgumentException("Generation trace identity differs");
++        return values;
++    }
++
++    /** Carries the same trace on a failure without inventing a response value. / 在失败中携带相同轨迹，不编造响应值。
++     * @param problem original terminal failure / 原终态失败
++     * @param attempts original physical outcomes / 原物理结果
++     * @return failure retaining original classification and usage evidence / 保留原分类及用量依据的失败 */
++    public static Problem attach(Problem problem, List<AiGenerationAttempt> attempts) {
++        var values = validated(attempts);
++        var context = new LinkedHashMap<>(problem.context());
++        context.put("generationAttemptCount", Integer.toString(values.size()));
++        for (var attempt : values) {
++            String prefix = "generationAttempt." + attempt.number() + ".";
++            context.put(prefix + "id", attempt.generationId().toString());
++            context.put(prefix + "modelId", attempt.modelId());
++            context.put(prefix + "protocol", attempt.protocol());
++            context.put(prefix + "outcome", attempt.outcome().name());
++            context.put(prefix + "eventCode", attempt.eventCode());
++            context.put(prefix + "transportFailureKind", attempt.transportFailureKind());
++            context.put(prefix + "elapsedMillis", Long.toString(attempt.elapsedMillis()));
++            context.put(prefix + "encodedRequestBytes", Integer.toString(attempt.encodedRequestBytes()));
++            context.put(prefix + "effectiveMaxOutputTokens", Integer.toString(attempt.effectiveMaxOutputTokens()));
++            var usage = attempt.usage();
++            context.put(prefix + "inputTokens", usage.inputTokens().map(Object::toString).orElse("UNKNOWN"));
++            context.put(prefix + "outputTokens", usage.outputTokens().map(Object::toString).orElse("UNKNOWN"));
++            context.put(prefix + "cachedInputTokens", usage.cachedInputTokens().map(Object::toString).orElse("UNKNOWN"));
++            context.put(prefix + "cacheMissInputTokens", usage.cacheMissInputTokens().map(Object::toString).orElse("UNKNOWN"));
++            context.put(prefix + "reasoningOutputTokens", usage.reasoningOutputTokens().map(Object::toString).orElse("UNKNOWN"));
++        }
++        return new Problem(problem.code(), problem.eventCode(), problem.message(), context, problem.diagnosticId());
++    }
++
++    /** Reads only the typed trace encoding; absent metadata means an uninstrumented caller. / 仅读取类型化轨迹编码，缺失元数据表示未测量调用。
++     * @param problem original failure / 原失败
++     * @return immutable original physical outcomes / 不可变原物理结果 */
++    public static List<AiGenerationAttempt> fromProblem(Problem problem) {
++        var context = problem.context();
++        if (!context.containsKey("generationAttemptCount")) return List.of();
++        int count = Integer.parseInt(context.get("generationAttemptCount"));
++        if (count < 0 || count > 17) throw new IllegalArgumentException("Invalid generation trace count");
++        var attempts = new ArrayList<AiGenerationAttempt>();
++        for (int number = 1; number <= count; number++) {
++            String prefix = "generationAttempt." + number + ".";
++            attempts.add(new AiGenerationAttempt(UUID.fromString(context.get(prefix + "id")), number,
++                context.get(prefix + "modelId"), context.get(prefix + "protocol"), TaskResult.valueOf(context.get(prefix + "outcome")),
++                context.get(prefix + "eventCode"), context.get(prefix + "transportFailureKind"), Long.parseLong(context.get(prefix + "elapsedMillis")),
++                new AiUsage(token(context.get(prefix + "inputTokens")), token(context.get(prefix + "outputTokens")),
++                    token(context.get(prefix + "cachedInputTokens")), token(context.get(prefix + "cacheMissInputTokens")), token(context.get(prefix + "reasoningOutputTokens"))),
++                Integer.parseInt(context.get(prefix + "encodedRequestBytes")), Integer.parseInt(context.get(prefix + "effectiveMaxOutputTokens"))));
++        }
++        return validated(attempts);
++    }
++
++    /** Converts a bounded provider count while keeping absent usage unknown. / 转换有界提供方计数，缺失用量保持未知。
++     * @param value reported numeric count or UNKNOWN / 报告数值或 UNKNOWN
++     * @return exact count when present / 存在时的精确计数 */
++    public static Optional<Long> token(String value) {
++        if (value == null || value.equals("UNKNOWN")) return Optional.empty();
++        long count = Long.parseLong(value);
++        if (count < 0) throw new IllegalArgumentException("Negative usage");
++        return Optional.of(count);
++    }
++}
+--- a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java
++++ b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/ai/PlatformAiService.java
+@@ -33,6 +33,8 @@
+ import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+ import gold.debug.windowstolinux.appapi.ai.model.AiRequest;
+ import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
++import gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt;
++import gold.debug.windowstolinux.appapi.ai.model.AiUsage;
+ import gold.debug.windowstolinux.appapi.ai.voice.VoiceEvent;
+ import gold.debug.windowstolinux.appapi.ai.voice.VoiceListener;
+ import gold.debug.windowstolinux.appapi.ai.voice.VoiceOptions;
+@@ -469,6 +471,7 @@
+             throw new ApiException(withOutputBudget(error(ProblemCode.INVALID_INPUT, "AI_TIMEOUT", "Model timeout is too large").problem(), effectiveMaxOutputTokens));
+         }
+         long start = System.nanoTime();
++        var returnedAttempts = new java.util.concurrent.atomic.AtomicReference<List<AiGenerationAttempt>>(List.of());
+         try {
+             return scope.call(task, false, () -> {
+                 AiPurposeType purpose = mapped(request.purpose());
+@@ -501,6 +504,8 @@
+                 for (var candidate : candidates) {
+                     try (var prepared = capture(candidate, purpose, task, expectedRevision)) {
+                         result = send(candidate.profile(), prepared, request, effectiveMaxOutputTokens, task, start, timeout, false);
++                        returnedAttempts.set(result.value().map(AiResponse::generationAttempts)
++                            .orElse(result.problem().map(AiGenerationAttempt::fromProblem).orElse(List.of())));
+                     }
+                     if (binding.isPresent() || result.outcome() != TaskResult.FAILED || result.problem().isEmpty()
+                         || !result.problem().orElseThrow().eventCode().equals("AI_HTTP_REJECTED"))
+@@ -509,7 +514,10 @@
+                 return Objects.requireNonNull(result);
+             });
+         } catch (ApiException failure) {
+-            throw new ApiException(withOutputBudget(failure.problem(), effectiveMaxOutputTokens));
++            var problem = failure.problem();
++            if (!problem.context().containsKey("generationAttemptCount") && !returnedAttempts.get().isEmpty())
++                problem = AiGenerationAttempt.attach(problem, returnedAttempts.get());
++            throw new ApiException(withOutputBudget(problem, effectiveMaxOutputTokens));
+         } catch (SQLException failure) {
+             throw new ApiException(withOutputBudget(error(ProblemCode.IO_FAILURE, "AI_CONFIGURATION_STORAGE", "Model configuration could not be read").problem(), effectiveMaxOutputTokens));
+         }
+@@ -552,7 +560,7 @@
+         return settings.verificationMaxOutputTokens();
+     }
+ 
+-    /** Owns encoding, one send and actual cleanup within the original deadline. / 在原始期限内持有编码、单次发送及实际清理。
++    /** Owns bounded logical generation and cleanup within the original deadline; each physical client sends at most once. / 原期限内持有有界逻辑生成和清理；每个物理客户端至多发送一次。
+      * @param profile exact captured provider / 精确已捕获提供者
+      * @param prepared original credential / 原凭据
+      * @param request bounded request / 有界请求
+@@ -579,80 +587,151 @@
+                 "Model input, capability or output budget is invalid",
+                 metadata, Optional.empty()));
+         }
+-        boolean transferred = false;
+-        try {
+-            ResourceLease lease = tasks.retain(task,
+-                new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false),
+-                new ResourceRecovery("ai-process.v1", Map.of("bootId", bootId.toString(), "kind", "http")), false);
+-            var pending = new PendingCall(task, lease);
+-            synchronized (this) {
+-                retained.add(pending);
+-            }
+-            try {
+-                long remaining = timeout - (System.nanoTime() - start);
+-                if (remaining <= 0)
+-                    return new OperationResult<>(TaskResult.FAILED, Optional.empty(),
+-                        Optional.of(new Problem(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
+-                            "The request budget ended before another model request was sent", Map.of("effectiveMaxOutputTokens", Integer.toString(effectiveMaxOutputTokens), "maximumOutputTokens", Integer.toString(effectiveMaxOutputTokens)),
+-                            Optional.empty())));
++        var attempts = new ArrayList<AiGenerationAttempt>();
++        UUID generation = UUID.randomUUID();
++        OperationResult<AiResponse> result = null;
++        String continuationValue = null;
++        try {
++            for (int number = 1; ; number++) {
++                if (number > 1) {
++                    try {
++                        tasks.requireExecuting(task, owner, version);
++                        if (tasks.operationCancellation(task).requested() || Thread.currentThread().isInterrupted())
++                            throw error(ProblemCode.CANCELLED, "AI_RECOVERY_CANCELLED", "Generation recovery was cancelled");
++                        if (timeout - (System.nanoTime() - start) <= 0)
++                            throw error(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT", "The original generation deadline ended");
++                        if (!revision.equals(nativeRevision(profile, request, task, probe)))
++                            throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed before generation recovery");
++                    } catch (ApiException stopped) {
++                        var original = result.problem().orElseThrow();
++                        var context = new LinkedHashMap<>(original.context());
++                        context.put("generationRecoveryStoppedBy", stopped.problem().eventCode());
++                        result = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(
++                            original.code(), original.eventCode(), original.message(), context, original.diagnosticId())));
++                        break;
++                    }
++                }
++                ResourceLease lease = tasks.retain(task,
++                    new TaskResource("CONNECTION", "ai-http-" + UUID.randomUUID(), owner, false),
++                    new ResourceRecovery("ai-process.v1", Map.of("bootId", bootId.toString(), "kind", "http")), false);
++                var pending = new PendingCall(task, lease);
++                synchronized (this) {
++                    retained.add(pending);
++                }
+                 try {
+-                    pending.call = new ModelHttpCall(URI.create(profile.endpoint()), prepared.key(), body,
+-                        Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse(), connectSeconds, profile.protocol());
+-                    transferred = true;
+-                } catch (IllegalArgumentException invalid) {
+-                    throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
+-                        "The configured endpoint or credential is invalid");
+-                }
+-                var result = pending.call.execute(tasks.operationCancellation(task));
+-                if (result.value().isPresent()) {
+-                    var response = result.value().orElseThrow();
+-                    result = new OperationResult<>(result.outcome(), Optional.of(new AiResponse(response.text(), response.modelId(),
+-                        response.finishReason(), response.usage(), response.toolCalls(), response.continuation(), Optional.of(body.length), Optional.of(effectiveMaxOutputTokens))), result.problem());
+-                }
+-                if (result.outcome() != TaskResult.SUCCEEDED) continuations.stop(task.id(), request.purpose());
+-                if (result.outcome() == TaskResult.SUCCEEDED && (!request.tools().isEmpty() || request.messages().stream().anyMatch(m -> m.continuation().isPresent()))) {
+-                    if (!revision.equals(nativeRevision(profile, request, task, probe))) {
+-                        continuations.stop(task.id(), request.purpose());
+-                        throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed during the native request");
++                    long remaining = timeout - (System.nanoTime() - start);
++                    if (remaining <= 0)
++                        throw error(ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT", "The original generation deadline ended before sending");
++                    byte[] attemptBody = body.clone();
++                    try {
++                        pending.call = new ModelHttpCall(URI.create(profile.endpoint()), prepared.key(), attemptBody,
++                            Duration.ofNanos(remaining), profile.id(), request.jsonObjectResponse(), connectSeconds, profile.protocol());
++                    } catch (IllegalArgumentException invalid) {
++                        Arrays.fill(attemptBody, (byte) 0);
++                        throw error(ProblemCode.UNAVAILABLE, "AI_CONFIGURATION_INVALID",
++                            "The configured endpoint or credential is invalid");
+                     }
+-                    var response = result.value().orElseThrow();
++                    long attemptStart = System.nanoTime();
++                    result = pending.call.execute(tasks.operationCancellation(task));
++                    continuationValue = pending.call.continuation();
++                    var details = result.problem().map(Problem::context).orElse(Map.of());
++                    attempts.add(new AiGenerationAttempt(generation, number, profile.id(), profile.protocol().name(),
++                        result.outcome(), result.problem().map(Problem::eventCode).orElse("AI_GENERATION_COMPLETE"),
++                        details.getOrDefault("transportFailureKind", "NONE"),
++                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - attemptStart), generationUsage(result),
++                        body.length, effectiveMaxOutputTokens));
++                    if (result.value().isPresent()) {
++                        var response = result.value().orElseThrow();
++                        result = new OperationResult<>(result.outcome(), Optional.of(new AiResponse(response.text(), response.modelId(),
++                            response.finishReason(), response.usage(), response.toolCalls(), response.continuation(), Optional.of(body.length), Optional.of(effectiveMaxOutputTokens))), result.problem());
++                    }
++                } finally {
++                    synchronized (pending) {
++                        pending.running = false;
++                    }
+                     try {
+-                        var state = continuations.retain(task.id(), request.purpose(), profile,
+-                            revision, pending.call.continuation());
+-                        result = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(response.text(),
+-                            response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())), Optional.empty());
+-                    } catch (IllegalArgumentException exhausted) {
+-                        continuations.stopAfterRetentionFailure(task.id(), request.purpose());
+-                        result = new OperationResult<>(TaskResult.FAILED,
+-                            Optional.of(new AiResponse("", response.modelId(), response.finishReason(), response.usage(), List.of(),
+-                                Optional.empty(), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())),
+-                            Optional.of(error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained").problem()));
++                        pending.close();
++                    } catch (ApiException incomplete) {
++                        tasks.reportUncertainEffect(task);
++                        throw incomplete;
+                     }
+                 }
+-                if (result.problem().isPresent())
+-                    result = new OperationResult<>(result.outcome(), result.value(), Optional.of(withOutputBudget(result.problem().orElseThrow(), effectiveMaxOutputTokens)));
+-                if (result.outcome() == TaskResult.UNKNOWN) {
+-                    tasks.callbacks().recordFailure(task, new ApiException(result.problem().orElseThrow()),
+-                        ProblemCode.UNKNOWN, "AI_OPERATION_UNCERTAIN",
+-                        "The original model request returned an uncertain result");
+-                    tasks.reportUncertainEffect(task);
+-                }
+-                return result;
+-            } finally {
+-                synchronized (pending) {
+-                    pending.running = false;
+-                }
++                // Complete-body codecs expose only client function tools. No partial response is accepted or dispatched.
++                // The old physical client and durable lease have ended before the same frozen input is sent anew.
++                if (number > request.generationRecoveryAttempts() || !recoverableGeneration(profile, result)) break;
++            }
++            if (result.outcome() != TaskResult.SUCCEEDED && attempts.stream().anyMatch(attempt -> attempt.outcome() == TaskResult.UNKNOWN))
++                result = new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), result.problem());
++            if (result.outcome() != TaskResult.SUCCEEDED) continuations.stop(task.id(), request.purpose());
++            if (result.outcome() == TaskResult.SUCCEEDED && (!request.tools().isEmpty() || request.messages().stream().anyMatch(m -> m.continuation().isPresent()))) {
++                if (!revision.equals(nativeRevision(profile, request, task, probe))) {
++                    continuations.stop(task.id(), request.purpose());
++                    throw error(ProblemCode.UNAVAILABLE, "AI_SESSION_REVISION_CHANGED", "Model configuration changed during the native request");
++                }
++                var response = result.value().orElseThrow();
+                 try {
+-                    pending.close();
+-                } catch (ApiException incomplete) {
+-                    tasks.reportUncertainEffect(task);
+-                    throw incomplete;
+-                }
+-            }
++                    var state = continuations.retain(task.id(), request.purpose(), profile,
++                        revision, continuationValue);
++                    result = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(response.text(),
++                        response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(state), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())), Optional.empty());
++                } catch (IllegalArgumentException exhausted) {
++                    continuations.stopAfterRetentionFailure(task.id(), request.purpose());
++                    result = new OperationResult<>(TaskResult.FAILED,
++                        Optional.of(new AiResponse("", response.modelId(), response.finishReason(), response.usage(), List.of(),
++                            Optional.empty(), response.encodedRequestBytes(), response.effectiveMaxOutputTokens())),
++                        Optional.of(error(ProblemCode.UNAVAILABLE, "AI_SESSION_STATE_LIMIT", "Native continuation state cannot be retained").problem()));
++                }
++            }
++            if (result.problem().isPresent())
++                result = new OperationResult<>(result.outcome(), result.value(), Optional.of(withOutputBudget(result.problem().orElseThrow(), effectiveMaxOutputTokens)));
++            result = generationTrace(result, attempts);
++            if (result.outcome() == TaskResult.UNKNOWN) {
++                tasks.callbacks().recordFailure(task, new ApiException(result.problem().orElseThrow()),
++                    ProblemCode.UNKNOWN, "AI_OPERATION_UNCERTAIN",
++                    "The original model request returned an uncertain result");
++                tasks.reportUncertainEffect(task);
++            }
++            return result;
++        } catch (ApiException incomplete) {
++            continuations.stop(task.id(), request.purpose());
++            if (incomplete.problem().code() == ProblemCode.UNKNOWN || attempts.stream().anyMatch(attempt -> attempt.outcome() == TaskResult.UNKNOWN))
++                tasks.reportUncertainEffect(task);
++            throw new ApiException(AiGenerationAttempt.attach(incomplete.problem(), attempts));
+         } finally {
+-            if (!transferred)
+-                Arrays.fill(body, (byte) 0);
+-        }
++            Arrays.fill(body, (byte) 0);
++        }
++    }
++
++    /** Allows only explicitly selected incomplete bodies from the current pure client-function protocols. / 仅允许显式选择的当前纯客户端函数协议的不完整正文恢复。 */
++    private static boolean recoverableGeneration(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
++                                                 OperationResult<AiResponse> result) {
++        boolean pure = switch (profile.protocol()) {
++            case OPENAI_CHAT_COMPLETIONS, OPENAI_RESPONSES, ANTHROPIC_MESSAGES -> true;
++        };
++        return pure && result.outcome() == TaskResult.UNKNOWN && result.value().isEmpty()
++            && result.problem().filter(problem -> problem.code() == ProblemCode.IO_FAILURE
++            && problem.eventCode().equals("AI_TRANSPORT_UNKNOWN")
++            && Set.of("HTTP_BODY_INCOMPLETE", "HTTP_CHUNK_INCOMPLETE").contains(problem.context().getOrDefault("transportFailureKind", "NONE"))).isPresent();
++    }
++
++    /** Retains only this physical attempt's reported usage. / 仅保留本次物理尝试的报告用量。 */
++    private static AiUsage generationUsage(OperationResult<AiResponse> result) {
++        if (result.value().isPresent()) return result.value().orElseThrow().usage();
++        var details = result.problem().map(Problem::context).orElse(Map.of());
++        try {
++            return new AiUsage(AiGenerationAttempt.token(details.get("inputTokens")), AiGenerationAttempt.token(details.get("outputTokens")),
++                AiGenerationAttempt.token(details.get("cachedInputTokens")), AiGenerationAttempt.token(details.get("cacheMissInputTokens")),
++                AiGenerationAttempt.token(details.get("reasoningOutputTokens")));
++        } catch (IllegalArgumentException malformed) {
++            return new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
++        }
++    }
++
++    /** Exposes all physical attempts on success or on the original failure without a fabricated response. / 在成功或原失败中暴露所有物理尝试，不编造响应。 */
++    private static OperationResult<AiResponse> generationTrace(OperationResult<AiResponse> result, List<AiGenerationAttempt> attempts) {
++        var response = result.value().map(value -> new AiResponse(value.text(), value.modelId(), value.finishReason(), value.usage(),
++            value.toolCalls(), value.continuation(), value.encodedRequestBytes(), value.effectiveMaxOutputTokens(), attempts));
++        return new OperationResult<>(result.outcome(), response, result.problem().map(problem -> AiGenerationAttempt.attach(problem, attempts)));
+     }
+ 
+     private String nativeRevision(gold.debug.windowstolinux.app.db.ai.StoredAiModelProfile profile,
+--- a/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformAiServiceTest.java
++++ b/src/app/main/src/test/java/gold/debug/windowstolinux/app/main/start/PlatformAiServiceTest.java
+@@ -513,6 +513,252 @@
+     record Sent(String path, String authorization, JsonNode body) {
+     }
+ 
++    static void incomplete(HttpExchange exchange, String body) throws IOException {
++        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
++        exchange.sendResponseHeaders(200, bytes.length + 64);
++        exchange.getResponseBody().write(bytes);
++    }
++
++    static String nativeResponse(String id) {
++        return "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"\",\"tool_calls\":[{\"id\":\"" + id
++            + "\",\"type\":\"function\",\"function\":{\"name\":\"action\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4}}";
++    }
++
++    @Test
++    void generationRecoveryHandlesIncompleteChunksOnlyAfterIndependentClientAndLeaseRelease() throws Exception {
++        var requests = new ArrayList<String>();
++        var ports = new HashSet<Integer>();
++        var failure = new AtomicReference<Throwable>();
++        try (var server = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1")); var fixture = new Fixture();
++             var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
++            server.setSoTimeout(6000);
++            initialize(runtime, false);
++            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
++            runtime.persistence().aiProfiles().saveVerified(new StoredAiModelProfile("text", "http://127.0.0.1:" + server.getLocalPort() + "/chat",
++                "fixture/text", "ai/fixture/text"), "text", Instant.now(), AiCapabilityType.TEXT);
++            route(runtime, AiPurposeType.DEPLOYMENT, "text");
++            var peer = Thread.ofPlatform().daemon(true).start(() -> {
++                try {
++                    for (int number = 1; number <= 2; number++) {
++                        try (var socket = server.accept()) {
++                            socket.setSoTimeout(6000);
++                            ports.add(socket.getPort());
++                            var input = socket.getInputStream();
++                            var headers = new StringBuilder();
++                            while (!headers.toString().endsWith("\r\n\r\n") && headers.length() < 8192) {
++                                int next = input.read();
++                                if (next < 0) throw new IOException("Fixture headers incomplete");
++                                headers.append((char) next);
++                            }
++                            var length = java.util.regex.Pattern.compile("(?i)content-length: ([0-9]+)").matcher(headers);
++                            assertTrue(length.find());
++                            requests.add(new String(input.readNBytes(Integer.parseInt(length.group(1))), StandardCharsets.UTF_8));
++                            if (number == 1)
++                                socket.getOutputStream().write("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n1000\r\n{".getBytes(StandardCharsets.US_ASCII));
++                            else {
++                                assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NOT NULL"));
++                                assertEquals(1, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
++                                byte[] response = RESPONSE.getBytes(StandardCharsets.UTF_8);
++                                socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: " + response.length + "\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
++                                socket.getOutputStream().write(response);
++                            }
++                            socket.getOutputStream().flush();
++                        }
++                    }
++                } catch (Throwable failed) {
++                    failure.set(failed);
++                }
++            });
++            try {
++                var ai = runtime.capabilities().ai(OWNER, VERSION);
++                var result = completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(1), task)));
++                assertEquals(List.of(TaskResult.UNKNOWN, TaskResult.SUCCEEDED), result.generationAttempts().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::outcome).toList());
++                assertEquals("HTTP_CHUNK_INCOMPLETE", result.generationAttempts().getFirst().transportFailureKind());
++            } finally {
++                server.close();
++                peer.join(7000);
++                assertFalse(peer.isAlive());
++            }
++            assertNull(failure.get());
++            assertEquals(2, ports.size(), "New generation owns a distinct physical HTTP client");
++            assertEquals(2, requests.size());
++            assertEquals(requests.getFirst(), requests.getLast());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void generationRecoveryPreservesNativeHistoryAndAcceptsOnlyTheNewCompleteTool(boolean approval) throws Exception {
++        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
++            initialize(runtime, false);
++            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
++            var stored = runtime.persistence().aiProfiles().listConfigured().getFirst();
++            runtime.persistence().aiProfiles().recordVerification(stored.profile(), stored.revision(), AiCapabilityType.TOOL_CALLING, Instant.now());
++            route(runtime, approval ? AiPurposeType.APPROVAL : AiPurposeType.DEPLOYMENT, "text");
++            var oldTools = new AtomicInteger();
++            var newTools = new AtomicInteger();
++            fixture.handler.set(exchange -> {
++                if (fixture.calls.get() == 2) incomplete(exchange, nativeResponse("lost"));
++                else Fixture.reply(exchange, 200, nativeResponse(fixture.calls.get() == 1 ? "old" : "new"));
++            });
++            var ai = runtime.capabilities().ai(OWNER, VERSION);
++            completed(runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
++                var purpose = approval ? AiPurpose.APPROVAL : AiPurpose.LANGUAGE;
++                var definition = new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("action", "Fixture client action", "{\"type\":\"object\"}");
++                var initial = new AiRequest(purpose, message(purpose).messages(), 32, Duration.ofSeconds(6), false, List.of(definition));
++                var previous = ai.call(initial, task).value().orElseThrow();
++                assertEquals("old", previous.toolCalls().getFirst().id());
++                oldTools.incrementAndGet();
++                var history = new ArrayList<>(initial.messages());
++                history.add(AiMessage.assistant(previous));
++                history.add(AiMessage.result(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("old", "EXECUTED", false)));
++                history.add(new AiMessage(AiRole.USER, "Next action", List.of()));
++                var recovered = ai.call(new AiRequest(purpose, history, 32, Duration.ofSeconds(6), false, List.of(definition)).withGenerationRecovery(1), task);
++                assertEquals(TaskResult.SUCCEEDED, recovered.outcome());
++                var response = recovered.value().orElseThrow();
++                assertEquals(List.of("new"), response.toolCalls().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).toList());
++                newTools.incrementAndGet();
++                assertEquals(List.of(TaskResult.UNKNOWN, TaskResult.SUCCEEDED), response.generationAttempts().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::outcome).toList());
++                assertTrue(response.generationAttempts().getFirst().usage().inputTokens().isEmpty());
++                assertEquals(Optional.of(3L), response.generationAttempts().getLast().usage().inputTokens());
++                assertNotEquals(previous.continuation(), response.continuation());
++                assertTrue(response.continuation().isPresent());
++                history.add(AiMessage.assistant(response));
++                history.add(AiMessage.result(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("new", "EXECUTED", false)));
++                assertEquals(TaskResult.SUCCEEDED, ai.call(new AiRequest(purpose, history, 32, Duration.ofSeconds(6), false, List.of(definition)), task).outcome());
++                assertEquals(4, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NOT NULL"));
++                return success(null);
++            }));
++            assertEquals(1, oldTools.get());
++            assertEquals(1, newTools.get());
++            assertEquals(4, fixture.calls.get());
++            var sent = new ArrayList<Sent>();
++            fixture.requests.drainTo(sent);
++            assertEquals(sent.get(1).body(), sent.get(2).body(), "Recovery retains exact history and request bytes");
++            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(ints = {0, 1, 16})
++    void generationRecoveryExhaustionRetainsEveryUnknownAttempt(int extra) throws Exception {
++        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
++            initialize(runtime, false);
++            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
++            route(runtime, AiPurposeType.DEPLOYMENT, "text");
++            fixture.handler.set(exchange -> incomplete(exchange, RESPONSE));
++            var ai = runtime.capabilities().ai(OWNER, VERSION);
++            var original = new AtomicReference<TaskContext>();
++            var observed = new AtomicReference<OperationResult<AiResponse>>();
++            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
++                original.set(task);
++                var result = ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(extra), task);
++                observed.set(result);
++                return result;
++            });
++            state(handle, TaskState.UNKNOWN);
++            callbackReturned(runtime, original.get());
++            assertEquals(extra + 1, fixture.calls.get());
++            assertTrue(observed.get().value().isEmpty());
++            var attempts = gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(observed.get().problem().orElseThrow());
++            assertEquals(extra + 1, attempts.size());
++            assertTrue(attempts.stream().allMatch(value -> value.outcome() == TaskResult.UNKNOWN && value.usage().inputTokens().isEmpty() && value.usage().outputTokens().isEmpty()));
++            recover(runtime, ai, handle, original.get());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"revision", "cancel", "deadline", "lease", "existing-unknown"})
++    void generationRecoveryStopsBeforeASecondSendWhenOriginalGuardsOrReleaseFail(String boundary) throws Exception {
++        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
++            initialize(runtime, false);
++            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
++            route(runtime, AiPurposeType.DEPLOYMENT, "text");
++            var ai = runtime.capabilities().ai(OWNER, VERSION);
++            var original = new AtomicReference<TaskContext>();
++            var observed = new AtomicReference<OperationResult<AiResponse>>();
++            var admitted = new CountDownLatch(1);
++            var allowResponse = new CountDownLatch(1);
++            fixture.handler.set(exchange -> {
++                try {
++                    assertTrue(allowResponse.await(5, TimeUnit.SECONDS));
++                    if (boundary.equals("revision")) route(runtime, AiPurposeType.DEPLOYMENT);
++                    if (boundary.equals("existing-unknown")) runtime.tasks().reportUncertainEffect(original.get());
++                    if (boundary.equals("deadline")) Thread.sleep(800);
++                } catch (Exception failed) {
++                    throw new IOException(failed);
++                }
++                incomplete(exchange, RESPONSE);
++            });
++            if (boundary.equals("lease"))
++                sql(runtime.persistence().database(), "ALTER TABLE platform_task_resource ADD CONSTRAINT fixture_ai_release CHECK(resource_kind<>'CONNECTION' OR released_at IS NULL)");
++            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
++                original.set(task);
++                admitted.countDown();
++                try {
++                    var base = message(AiPurpose.LANGUAGE);
++                    var bounded = new AiRequest(base.purpose(), base.messages(), 32, Duration.ofMillis(boundary.equals("deadline") ? 500 : 6000), false).withGenerationRecovery(1);
++                    var result = ai.call(bounded, task);
++                    observed.set(result);
++                    return result;
++                } catch (ApiException failure) {
++                    observed.set(new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(failure.problem())));
++                    throw failure;
++                }
++            });
++            assertTrue(admitted.await(5, TimeUnit.SECONDS));
++            assertNotNull(fixture.requests.poll(5, TimeUnit.SECONDS));
++            if (boundary.equals("cancel")) handle.requestCancel();
++            allowResponse.countDown();
++            state(handle, TaskState.UNKNOWN);
++            callbackReturned(runtime, original.get());
++            assertEquals(1, fixture.calls.get());
++            assertEquals(1, gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(observed.get().problem().orElseThrow()).size());
++            if (boundary.equals("existing-unknown"))
++                assertEquals("TASK_EFFECT_UNCERTAIN", observed.get().problem().orElseThrow().context().get("generationRecoveryStoppedBy"));
++            if (boundary.equals("lease"))
++                sql(runtime.persistence().database(), "ALTER TABLE platform_task_resource DROP CONSTRAINT fixture_ai_release");
++            recover(runtime, ai, handle, original.get());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"reject", "schema", "length", "byte-limit", "headers", "deny"})
++    void generationRecoveryNeverRepeatsOtherTransportOrCompleteResults(String shape) throws Exception {
++        try (var fixture = new Fixture(); var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
++            initialize(runtime, false);
++            model(runtime, fixture, "text", "/chat", AiCapabilityType.TEXT, 128);
++            route(runtime, AiPurposeType.DEPLOYMENT, "text");
++            fixture.handler.set(exchange -> {
++                if (shape.equals("headers")) return;
++                Fixture.reply(exchange, shape.equals("reject") ? 403 : 200, switch (shape) {
++                    case "schema" -> "{\"choices\":[]}";
++                    case "length" -> RESPONSE.replace("stop", "length");
++                    case "deny" -> RESPONSE.replace("你好", "DENY: complete model refusal");
++                    case "byte-limit" -> " ".repeat(8 * 1024 * 1024 + 1);
++                    default -> RESPONSE;
++                });
++            });
++            var ai = runtime.capabilities().ai(OWNER, VERSION);
++            var original = new AtomicReference<TaskContext>();
++            var observed = new AtomicReference<OperationResult<AiResponse>>();
++            var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(request(), task -> {
++                original.set(task);
++                var result = ai.call(message(AiPurpose.LANGUAGE).withGenerationRecovery(1), task);
++                observed.set(result);
++                return result;
++            });
++            if (Set.of("byte-limit", "headers").contains(shape)) {
++                state(handle, TaskState.UNKNOWN);
++                callbackReturned(runtime, original.get());
++                recover(runtime, ai, handle, original.get());
++            } else handle.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
++            assertEquals(1, fixture.calls.get());
++            assertNotNull(observed.get());
++            if (shape.equals("length")) assertEquals("length", observed.get().value().orElseThrow().finishReason());
++        }
++    }
++
+     @FunctionalInterface
+     interface ResponseAction {
+         void serve(HttpExchange exchange) throws IOException;
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJson.java
+@@ -24,6 +24,9 @@
+ 
+     private final DeploymentConfig.Ai output;
+ 
++    /** Explicit caller selection; ordinary and assisted adapters keep zero extra attempts. / 调用者显式选择，普通及 ASSISTED 适配器保持零额外尝试。 */
++    private final int generationRecoveryAttempts;
++
+     private final gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation approvalConversation;
+ 
+     public DeploymentAiJson(ModContext context) {
+@@ -40,9 +43,25 @@
+ 
+     private DeploymentAiJson(ModContext context, DeploymentConfig.Ai output,
+                              gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation conversation) {
++        this(context, output, conversation, 0);
++    }
++
++    /** Opts one independent caller into pure-generation recovery without changing deployment orchestration. / 一个独立调用者选择纯生成恢复，不改变部署编排。
++     * @param context original capabilities / 原能力
++     * @param extraAttempts selected 0..16 extra attempts within each original deadline / 各原期限内选择的 0..16 额外次数 */
++    public DeploymentAiJson(ModContext context, int extraAttempts) {
++        this(context, DeploymentConfigLoader.current().ai(), null, extraAttempts);
++    }
++
++    private DeploymentAiJson(ModContext context, DeploymentConfig.Ai output,
++                             gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation conversation,
++                             int extraAttempts) {
+         this.context = Objects.requireNonNull(context);
+         this.output = Objects.requireNonNull(output);
+         this.approvalConversation = conversation;
++        if (extraAttempts < 0 || extraAttempts > 16)
++            throw new IllegalArgumentException("Generation recovery attempts must be in 0..16");
++        this.generationRecoveryAttempts = extraAttempts;
+     }
+ 
+     /** Unknown instruction supplements retain SYSTEM authority only on the current stateless transport. */
+@@ -165,7 +184,8 @@
+             : extended ? output.extendedDeploymentMaxOutputTokens() : output.deploymentMaxOutputTokens();
+         int seconds = purpose == AiPurpose.APPROVAL ? output.requests().approvalTimeoutSeconds()
+             : extended ? output.requests().extendedTimeoutSeconds() : output.requests().deploymentTimeoutSeconds();
+-        var request = new AiRequest(purpose, messages, tokens, Duration.ofSeconds(seconds), false, tools);
++        var request = new AiRequest(purpose, messages, tokens, Duration.ofSeconds(seconds), false, tools)
++            .withGenerationRecovery(generationRecoveryAttempts);
+         if (purpose == AiPurpose.APPROVAL
+             && tools.size() == 1 && tools.getFirst().name().equals("submit_result"))
+             request = request.withRequiredTool("submit_result");
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+@@ -35,7 +35,8 @@
+      * @param context platform capabilities / 平台能力
+      * @param configurationRevision frozen whole model routing / 冻结完整模型路由 */
+     public DeploymentAgentProtocol(ModContext context, String configurationRevision) {
+-        this.ai = new DeploymentAiJson(context);
++        this.ai = new DeploymentAiJson(context,
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
+         this.configurationRevision = Objects.requireNonNull(configurationRevision);
+     }
+ 
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -149,7 +149,8 @@
+         this.task = Objects.requireNonNull(task);
+         this.evidence = Objects.requireNonNull(evidence);
+         this.reviewSource = reviewSource;
+-        this.ai = new DeploymentAiJson(context);
++        this.ai = new DeploymentAiJson(context,
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
+     }
+ 
+     public static DeploymentAgentApproval forTask(ModContext context, TaskContext task) {
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java
+@@ -96,9 +96,20 @@
+         }
+     }
+ 
+-    /** Caller-owned request deadlines, independent of output policy and execution permission. */
+-    public record Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds) {
++    /** Caller-owned request deadlines and an optional Agent pure-generation recovery budget; unrelated to project size, tool attempts or execution permission.
++     * @param deploymentTimeoutSeconds ordinary logical generation deadline / 普通逻辑生成期限
++     * @param approvalTimeoutSeconds approval logical generation deadline / 审批逻辑生成期限
++     * @param extendedTimeoutSeconds extended logical generation deadline / 扩展逻辑生成期限
++     * @param generationRecoveryAttempts extra incomplete-body generation attempts for independently selected Agent callers, 0..16; 0 disables / 独立 Agent 调用者选择的正文不完整额外生成次数，0..16；0 关闭 */
++    public record Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds,
++                           int generationRecoveryAttempts) {
++        public Requests(int deploymentTimeoutSeconds, int approvalTimeoutSeconds, int extendedTimeoutSeconds) {
++            this(deploymentTimeoutSeconds, approvalTimeoutSeconds, extendedTimeoutSeconds, 0);
++        }
++
+         public Requests {
++            if (generationRecoveryAttempts < 0 || generationRecoveryAttempts > 16)
++                throw new IllegalArgumentException("Generation recovery attempts must be in 0..16");
+             if (deploymentTimeoutSeconds < 1 || approvalTimeoutSeconds < 1 || extendedTimeoutSeconds < 1
+                 || extendedTimeoutSeconds > 86400 || extendedTimeoutSeconds < deploymentTimeoutSeconds
+                 || extendedTimeoutSeconds < approvalTimeoutSeconds)
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoader.java
+@@ -54,7 +54,7 @@
+         fields(ai, Set.of("deployment-max-output-tokens", "extended-deployment-max-output-tokens", "approval-max-output-tokens",
+             "requests", "execution", "history"));
+         var requests = ai.path("requests");
+-        fields(requests, Set.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds"));
++        fields(requests, Set.of("deployment-timeout-seconds", "approval-timeout-seconds", "extended-timeout-seconds", "generation-recovery-attempts"));
+         var execution = ai.path("execution");
+         fields(execution, Set.of("shared-tool-attempts", "standalone-tool-attempts", "local-tool-turns", "agent-model-responses", "retained-review-sessions", "max-observations"));
+         var history = ai.path("history");
+@@ -81,7 +81,7 @@
+                 new DeploymentConfig.Ai(integer(ai, "deployment-max-output-tokens"), integer(ai, "extended-deployment-max-output-tokens"),
+                     integer(ai, "approval-max-output-tokens"),
+                     new DeploymentConfig.Requests(integer(requests, "deployment-timeout-seconds"), integer(requests, "approval-timeout-seconds"),
+-                        integer(requests, "extended-timeout-seconds")),
++                        integer(requests, "extended-timeout-seconds"), integer(requests, "generation-recovery-attempts")),
+                     new DeploymentConfig.Execution(integer(execution, "shared-tool-attempts"), integer(execution, "standalone-tool-attempts"),
+                         integer(execution, "local-tool-turns"), integer(execution, "agent-model-responses"), integer(execution, "retained-review-sessions"), integer(execution, "max-observations")),
+                     new DeploymentConfig.History(integer(history, "max-batches"), integer(history, "characters"), integer(history, "payload-bytes"),
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetrics.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetrics.java
+@@ -58,7 +58,10 @@
+             record(request, current, started, start, result);
+             return result;
+         } catch (ApiException failed) {
+-            record(request, current, started, start, new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(failed.problem())));
++            var attempts = AiGenerationAttempt.fromProblem(failed.problem());
++            var outcome = failed.problem().code() == ProblemCode.UNKNOWN || attempts.stream().anyMatch(value -> value.outcome() == TaskResult.UNKNOWN)
++                ? TaskResult.UNKNOWN : TaskResult.FAILED;
++            record(request, current, started, start, new OperationResult<>(outcome, Optional.empty(), Optional.of(failed.problem())));
+             throw failed;
+         }
+     }
+@@ -131,6 +134,21 @@
+         put(values, "reasoningOutputTokens", usage.flatMap(AiUsage::reasoningOutputTokens), problem);
+         String finish = response.map(AiResponse::finishReason).orElse(problem.getOrDefault("finishReason", "UNKNOWN"));
+         values.put("finishReason", java.util.Set.of("stop", "length", "content_filter", "tool_calls", "insufficient_system_resource").contains(finish) ? finish : "UNKNOWN");
++        var attempts = result.value().map(AiResponse::generationAttempts)
++            .orElseGet(() -> result.problem().map(AiGenerationAttempt::fromProblem).orElse(java.util.List.of()));
++        values.put("generationAttemptCount", attempts.isEmpty() ? "UNKNOWN" : Integer.toString(attempts.size()));
++        values.put("generationUnknownOutcomeCount", attempts.isEmpty() ? "UNKNOWN" : Long.toString(attempts.stream().filter(value -> value.outcome() == TaskResult.UNKNOWN).count()));
++        values.put("generationUnknownUsageCount", attempts.isEmpty() ? "UNKNOWN" : Long.toString(attempts.stream().filter(value -> value.usage().inputTokens().isEmpty()
++            || value.usage().outputTokens().isEmpty()).count()));
++        values.put("generationKnownInputTokens", attempts.isEmpty() ? "UNKNOWN" : attempts.stream().flatMap(value -> value.usage().inputTokens().stream())
++            .map(java.math.BigInteger::valueOf).reduce(java.math.BigInteger.ZERO, java.math.BigInteger::add).toString());
++        values.put("generationKnownOutputTokens", attempts.isEmpty() ? "UNKNOWN" : attempts.stream().flatMap(value -> value.usage().outputTokens().stream())
++            .map(java.math.BigInteger::valueOf).reduce(java.math.BigInteger.ZERO, java.math.BigInteger::add).toString());
++        values.put("generationUsageComplete", Boolean.toString(!attempts.isEmpty() && attempts.stream().allMatch(value -> value.usage().inputTokens().isPresent()
++            && value.usage().outputTokens().isPresent())));
++        if (!attempts.isEmpty())
++            values.putAll(AiGenerationAttempt.attach(new Problem(ProblemCode.UNAVAILABLE, "AI_TRACE", "Physical generation metadata",
++                Map.of(), Optional.empty()), attempts).context());
+         return values;
+     }
+ 
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
+@@ -6,6 +6,7 @@
+     deployment-timeout-seconds: 120 # 普通部署模型单次调用期限，单位：秒
+     approval-timeout-seconds: 120 # 独立审批模型单次调用期限，单位：秒
+     extended-timeout-seconds: 600 # 扩展部署模型单次调用期限，单位：秒；不小于普通/审批期限
++    generation-recovery-attempts: 1 # 独立 AGENT main/APP 显式选择：HTTP 正文不完整后额外纯生成次数，0..16，0 关闭，默认 1；共享原调用期限，仅旧连接和占用释放后发送。不会重放工具/审批/部署，不适用于取消、超时、完整拒绝、格式错误或响应上限；与项目体量及工具预算无关。仅当前生成捕获，旧计划/身份/UNKNOWN 不变，未知用量不补零；其他调用者默认 0。
+   execution: # 有限运行兜底；任一资源耗尽即可停止，不要求模型用满预算
+     shared-tool-attempts: 4096 # 主 AGENT 与嵌套工具循环共用的尝试上限，单位：次；拒绝也扣减
+     standalone-tool-attempts: 256 # 无外层协调 scope 时的工具尝试上限，单位：次
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
+@@ -10,6 +10,46 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentAiCallMetricsTest {
++    @Test
++    void physicalUnknownUsageSurvivesSuccessfulRecoveryAndFailureWithoutInventingTotals() throws Exception {
++        UUID generation = UUID.randomUUID();
++        var missing = new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
++        var attempts = List.of(new AiGenerationAttempt(generation, 1, "fixture", "OPENAI_CHAT_COMPLETIONS", TaskResult.UNKNOWN,
++                "AI_TRANSPORT_UNKNOWN", "HTTP_BODY_INCOMPLETE", 1, missing, 100, 32768),
++            new AiGenerationAttempt(generation, 2, "fixture", "OPENAI_CHAT_COMPLETIONS", TaskResult.SUCCEEDED,
++                "AI_GENERATION_COMPLETE", "NONE", 1, usage, 100, 32768));
++        var response = new AiResponse("ok", "fixture", "stop", usage, List.of(), Optional.empty(), Optional.of(100), Optional.of(32768), attempts);
++        var succeeded = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(response), Optional.<Problem>empty());
++        var facts = DeploymentAiCallMetrics.facts(request, succeeded);
++        assertEquals("2", facts.get("generationAttemptCount"));
++        assertEquals("1", facts.get("generationUnknownUsageCount"));
++        assertEquals("3", facts.get("generationKnownInputTokens"));
++        assertEquals("4", facts.get("generationKnownOutputTokens"));
++        assertEquals("false", facts.get("generationUsageComplete"));
++        assertEquals("UNKNOWN", facts.get("generationAttempt.1.inputTokens"));
++        assertEquals("UNKNOWN", facts.get("generationAttempt.1.outcome"));
++        assertEquals("3", facts.get("generationAttempt.2.inputTokens"));
++        var failed = AiGenerationAttempt.attach(new Problem(ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN", "Missing body", Map.of(), Optional.empty()), attempts);
++        assertEquals(attempts, AiGenerationAttempt.fromProblem(failed));
++        var failureFacts = DeploymentAiCallMetrics.facts(request, new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(failed)));
++        assertEquals("2", failureFacts.get("generationAttemptCount"));
++        assertEquals("UNKNOWN", failureFacts.get("inputTokens"));
++        assertEquals("3", failureFacts.get("generationKnownInputTokens"));
++        var fixture = new NativeAiFixture();
++        fixture.replies.add(succeeded);
++        new DeploymentAiCallMetrics(fixture.context, fixture.task, "native_tools").call(request, "fixture-route");
++        var retained = new com.fasterxml.jackson.databind.ObjectMapper().readTree(fixture.events.getFirst().details().orElseThrow());
++        assertEquals("UNKNOWN", retained.path("generationAttempt.1.inputTokens").asText());
++        assertEquals("false", retained.path("generationUsageComplete").asText());
++        assertFalse(retained.toString().contains("analyse"));
++        fixture.refusal = Optional.of(new ApiException(failed));
++        var thrown = assertThrows(ApiException.class, () -> new DeploymentAiCallMetrics(fixture.context, fixture.task, "native_tools").call(request, "fixture-route"));
++        assertSame(failed, thrown.problem());
++        var exceptional = new com.fasterxml.jackson.databind.ObjectMapper().readTree(fixture.events.getLast().details().orElseThrow());
++        assertEquals("UNKNOWN", exceptional.path("outcome").asText());
++        assertEquals("1", exceptional.path("generationUnknownUsageCount").asText());
++    }
++
+     private final AiRequest request = new AiRequest(AiPurpose.LANGUAGE, List.of(new AiMessage(AiRole.USER, "analyse", List.of())), 65536, Duration.ofSeconds(10), false);
+ 
+     private final AiUsage usage = new AiUsage(Optional.of(3L), Optional.of(4L), Optional.empty(), Optional.empty(), Optional.empty());
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiOutputConfigTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiOutputConfigTest.java
+@@ -10,6 +10,66 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentAiOutputConfigTest {
++    @Test
++    void independentApprovalSelectsRecoveryAndKeepsClosedDenialFinal() throws Exception {
++        var fixture = new NativeAiFixture();
++        var binding = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding("fixture-host", "fixture-target", "a".repeat(64));
++        var evidence = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence() {
++            public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding() {
++                return binding;
++            }
++
++            public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() {
++                return Map.of();
++            }
++
++            public Object receipts() {
++                return Map.of();
++            }
++        };
++        var approval = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(fixture.context, fixture.task, evidence);
++        fixture.nativeReply(new AiToolCall("denied", "submit_result", """
++            {"decision":"DENY","requiresUserConfirmation":false,"reason":"Current input is refused","missingEvidence":[],"adjustments":[],"candidateCommands":[],"discussionStatus":"CLOSED"}
++            """));
++        try (var command = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest("printf fixture", "printf fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8), java.time.Duration.ofSeconds(1), 1024)) {
++            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new gold.debug.windowstolinux.appapi.server.model.ServerId("fixture-host"), "a".repeat(64), command);
++            var facts = Map.of("inputKind", "EXECUTABLE_SCRIPT", "completeExecutableInput", "printf fixture");
++            var first = approval.review("Review current input", facts, intent, command, "fixture-route", fixture.task);
++            var second = approval.review("Review current input", facts, intent, command, "fixture-route", fixture.task);
++            assertEquals("DENY", first.decision().decision());
++            assertEquals(first.decision(), second.decision());
++        }
++        assertEquals(1, fixture.requests.size(), "Closed DENY remains final despite selected transport recovery");
++        assertEquals(1, fixture.requests.getFirst().generationRecoveryAttempts());
++        assertEquals(AiPurpose.APPROVAL, fixture.requests.getFirst().purpose());
++    }
++
++    @Test
++    void recoveryIsCallerSelectedForMainAndApprovalWhileOrdinaryAdaptersStayDisabled() throws Exception {
++        var fixture = new NativeAiFixture();
++        for (int extra : List.of(0, 1, 16)) {
++            var selected = new DeploymentAiJson(fixture.context, extra);
++            for (var purpose : List.of(AiPurpose.LANGUAGE, AiPurpose.APPROVAL)) {
++                fixture.nativeReply(new AiToolCall("chosen", "submit_result", "{}"));
++                selected.call(purpose, List.of(new AiMessage(AiRole.USER, "current", List.of())), List.of(new AiToolDefinition("submit_result", "complete", "{\"type\":\"object\"}")),
++                    "fixture-route", fixture.task, false);
++                assertEquals(extra, fixture.requests.getLast().generationRecoveryAttempts());
++                if (purpose == AiPurpose.APPROVAL)
++                    assertEquals(Optional.of("submit_result"), fixture.requests.getLast().requiredToolName());
++            }
++        }
++        fixture.nativeReply(new AiToolCall("ordinary", "submit_result", "{}"));
++        new DeploymentAiJson(fixture.context).call(AiPurpose.LANGUAGE, List.of(new AiMessage(AiRole.USER, "ordinary", List.of())), List.of(), "fixture-route", fixture.task, false);
++        assertEquals(0, fixture.requests.getLast().generationRecoveryAttempts());
++        fixture.nativeReply(new AiToolCall("main", "submit_result", "{}"));
++        new gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProtocol(fixture.context, "fixture-route")
++            .decide(Map.of(), new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory(), 1, fixture.task);
++        assertEquals(1, fixture.requests.getLast().generationRecoveryAttempts());
++        var request = new AiRequest(AiPurpose.LANGUAGE, List.of(new AiMessage(AiRole.USER, "old SDK", List.of())), java.time.Duration.ofSeconds(1), false);
++        assertEquals(0, request.generationRecoveryAttempts());
++        assertThrows(IllegalArgumentException.class, () -> request.withGenerationRecovery(17));
++    }
++
+     @Test
+     void analysisAndApprovalUseTheirOwnConfiguredOutputRequests() throws Exception {
+         var fixture = new NativeAiFixture();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
+@@ -12,6 +12,19 @@
+ import org.junit.jupiter.params.provider.MethodSource;
+ 
+ class DeploymentConfigLoaderTest {
++    @Test
++    void generationRecoveryBudgetIsExplicitBoundedAndCanBeDisabled() throws Exception {
++        String yaml = bundledYaml();
++        for (int count : java.util.List.of(0, 1, 16))
++            assertEquals(count, parse(yaml.replace("generation-recovery-attempts: 1", "generation-recovery-attempts: " + count)).ai().requests().generationRecoveryAttempts());
++        for (String invalid : java.util.List.of("-1", "17", "null", "true", "1.2", "'1'", "2147483648"))
++            assertThrows(IOException.class, () -> parse(yaml.replace("generation-recovery-attempts: 1", "generation-recovery-attempts: " + invalid)));
++        String line = yaml.lines().filter(value -> value.contains("generation-recovery-attempts:")).findFirst().orElseThrow();
++        assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
++        assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)));
++        assertEquals(0, new DeploymentConfig.Requests(120, 120, 600).generationRecoveryAttempts());
++    }
++
+     private static String bundledYaml() throws IOException {
+         try (var input = DeploymentConfigLoaderTest.class.getResourceAsStream(DeploymentConfigLoader.RESOURCE)) {
+             assertNotNull(input);
+@@ -30,7 +43,7 @@
+         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
+         assertEquals(DeploymentConfig.Environment.original(), config.environment());
+         assertEquals(new DeploymentConfig.View(750, 200), config.view());
+-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600),
++        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600, 1),
+             new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
+         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
+             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -102,6 +102,9 @@
+ 
+     private final java.util.concurrent.atomic.AtomicLong approvalTokens = new java.util.concurrent.atomic.AtomicLong();
+ 
++    /** Physical attempts with absent input or output usage; never counted as free requests. / 输入或输出用量缺失的物理尝试，不视为免费请求。 */
++    private final java.util.concurrent.atomic.AtomicLong unknownGenerationUsage = new java.util.concurrent.atomic.AtomicLong();
++
+     private String agentApproval = "";
+ 
+     private boolean agentRemember;
+@@ -256,7 +259,7 @@
+                     }
+                     int inputLimit = agentMode ? value.maxRequestBytes() : (int) Math.min(value.maxRequestBytes(), remaining);
+                     var supervisedRequest = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(value.purpose(), value.messages(),
+-                        value.maxOutputTokens(), value.timeout(), value.jsonObjectResponse(), value.tools(), inputLimit, value.requiredToolName());
++                        value.maxOutputTokens(), value.timeout(), value.jsonObjectResponse(), value.tools(), inputLimit, value.requiredToolName(), value.generationRecoveryAttempts());
+                     for (int index = 0; index < args.length; index++)
+                         if (args[index] == value) args[index] = supervisedRequest;
+                     System.out.println("AI_LIVE_BEFORE_SEND_BOUND purpose=" + value.purpose() + " observed=" + observedTokens.get()
+@@ -298,6 +301,8 @@
+                 try {
+                     result = invoke(method, actual.ai(), args);
+                 } catch (ApiException rejected) {
++                    if (request.isPresent())
++                        generationAccounting(request.orElseThrow().purpose(), gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(rejected.problem()), Optional.empty());
+                     if (rejected.problem().eventCode().equals("AI_REQUEST_BUDGET"))
+                         System.out.println("AI_LIVE_BEFORE_SEND_REJECT maximumRequestBytes="
+                             + rejected.problem().context().getOrDefault("maximumRequestBytes", "UNKNOWN")
+@@ -305,6 +310,13 @@
+                     throw rejected;
+                 }
+                 if (request.isPresent() && result instanceof OperationResult<?> outcome) {
++                    var physical = outcome.value().filter(gold.debug.windowstolinux.appapi.ai.model.AiResponse.class::isInstance)
++                        .map(gold.debug.windowstolinux.appapi.ai.model.AiResponse.class::cast)
++                        .map(gold.debug.windowstolinux.appapi.ai.model.AiResponse::generationAttempts)
++                        .orElseGet(() -> outcome.problem().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::fromProblem).orElse(List.of()));
++                    long total = generationAccounting(request.orElseThrow().purpose(), physical,
++                        outcome.value().filter(gold.debug.windowstolinux.appapi.ai.model.AiResponse.class::isInstance)
++                            .map(gold.debug.windowstolinux.appapi.ai.model.AiResponse.class::cast));
+                     System.out.println("AI_LIVE_OUTCOME purpose=" + request.orElseThrow().purpose() + " result=" + outcome.outcome()
+                         + " problem=" + outcome.problem());
+                     if (outcome.value().orElse(null) instanceof gold.debug.windowstolinux.appapi.ai.model.AiResponse response) {
+@@ -323,15 +335,6 @@
+                             && request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+                             for (var call : response.toolCalls())
+                                 if (call.name().equals("submit_result")) reviewSubmissionMetadata(call);
+-                        long total = observedTokens.addAndGet(response.usage().inputTokens().orElse(0L)
+-                            + response.usage().outputTokens().orElse(0L));
+-                        long used = response.usage().inputTokens().orElse(0L) + response.usage().outputTokens().orElse(0L);
+-                        if (request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+-                            approvalTokens.addAndGet(used);
+-                        else if (request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE)
+-                            deploymentTokens.addAndGet(used);
+-                        System.out.println("AI_LIVE_ROLE_TOKENS deployment=" + deploymentTokens.get() + " approval=" + approvalTokens.get());
+-                        System.out.println("AI_LIVE_OBSERVED_TOKENS total=" + total);
+                         long limit = Long.getLong("managed.live.observedTokenLimit", 150000L);
+                         if (response.finishReason().equals("length"))
+                             System.out.println("AI_LIVE_TRUNCATED_RESPONSE purpose=" + request.orElseThrow().purpose()
+@@ -409,6 +412,54 @@
+                 case "interaction" -> interaction;
+                 default -> invoke(method, actual, args);
+             });
++    }
++
++    /** Records physical known usage once, falling back only for legacy uninstrumented responses. / 仅记录一次物理已知用量，仅旧未测量响应回退。 */
++    private long generationAccounting(gold.debug.windowstolinux.appapi.ai.model.AiPurpose purpose,
++                                      List<gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt> physical,
++                                      Optional<gold.debug.windowstolinux.appapi.ai.model.AiResponse> legacy) {
++        for (var attempt : physical)
++            System.out.println("AI_LIVE_GENERATION_ATTEMPT id=" + attempt.generationId() + " number=" + attempt.number()
++                + " purpose=" + purpose + " model=" + attempt.modelId() + " protocol=" + attempt.protocol()
++                + " outcome=" + attempt.outcome() + " event=" + attempt.eventCode() + " transport=" + attempt.transportFailureKind()
++                + " elapsedMillis=" + attempt.elapsedMillis() + " encodedRequestBytes=" + attempt.encodedRequestBytes()
++                + " maximumOutputTokens=" + attempt.effectiveMaxOutputTokens() + " usage=" + attempt.usage());
++        var usages = physical.isEmpty() ? legacy.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiResponse::usage).toList()
++            : physical.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt::usage).toList();
++        long unknown = usages.stream().filter(usage -> usage.inputTokens().isEmpty() || usage.outputTokens().isEmpty()).count();
++        long known = usages.stream().flatMap(usage -> java.util.stream.Stream.concat(usage.inputTokens().stream(), usage.outputTokens().stream())).mapToLong(Long::longValue).sum();
++        unknownGenerationUsage.addAndGet(unknown);
++        long total = observedTokens.addAndGet(known);
++        if (purpose == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL) approvalTokens.addAndGet(known);
++        else if (purpose == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE)
++            deploymentTokens.addAndGet(known);
++        System.out.println("AI_LIVE_GENERATION_ACCOUNTING physicalAttempts=" + physical.size() + " unknownUsageAttempts=" + unknown
++            + " cumulativeUnknownUsageAttempts=" + unknownGenerationUsage.get() + " knownTokensOnly=true");
++        System.out.println("AI_LIVE_ROLE_TOKENS deployment=" + deploymentTokens.get() + " approval=" + approvalTokens.get());
++        System.out.println("AI_LIVE_OBSERVED_TOKENS total=" + total);
++        return total;
++    }
++
++    @Test
++    void generationAccountingPreservesUnknownAndDoesNotDoubleCountTheFinalResponse() {
++        var unknown = new gold.debug.windowstolinux.appapi.ai.model.AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
++        var known = new gold.debug.windowstolinux.appapi.ai.model.AiUsage(Optional.of(100L), Optional.of(20L), Optional.of(80L), Optional.of(20L), Optional.empty());
++        var generation = java.util.UUID.randomUUID();
++        var attempts = List.of(new gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt(generation, 1, "fixture", "OPENAI_CHAT_COMPLETIONS", TaskResult.UNKNOWN,
++                "AI_TRANSPORT_UNKNOWN", "HTTP_BODY_INCOMPLETE", 1, unknown, 100, 32768),
++            new gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt(generation, 2, "fixture", "OPENAI_CHAT_COMPLETIONS", TaskResult.SUCCEEDED,
++                "AI_GENERATION_COMPLETE", "NONE", 1, known, 100, 32768));
++        assertEquals(120, generationAccounting(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, attempts,
++            Optional.of(new gold.debug.windowstolinux.appapi.ai.model.AiResponse("", "fixture", "stop", known))));
++        assertEquals(1, unknownGenerationUsage.get());
++        assertEquals(120, deploymentTokens.get());
++        var exception = gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.attach(new Problem(ProblemCode.UNKNOWN, "AI_CALL_CLOSE", "Cleanup uncertain", Map.of(), Optional.empty()),
++            List.of(new gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt(java.util.UUID.randomUUID(), 1, "fixture", "OPENAI_CHAT_COMPLETIONS", TaskResult.SUCCEEDED,
++                "AI_GENERATION_COMPLETE", "NONE", 1, known, 100, 32768)));
++        assertEquals(240, generationAccounting(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
++            gold.debug.windowstolinux.appapi.ai.model.AiGenerationAttempt.fromProblem(exception), Optional.empty()));
++        assertEquals(120, approvalTokens.get());
++        assertEquals(1, unknownGenerationUsage.get());
+     }
+ 
+     private static Object invoke(java.lang.reflect.Method method, Object actual, Object[] args) throws Throwable {

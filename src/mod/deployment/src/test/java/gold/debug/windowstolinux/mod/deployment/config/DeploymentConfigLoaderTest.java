@@ -12,6 +12,19 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class DeploymentConfigLoaderTest {
+    @Test
+    void generationRecoveryBudgetIsExplicitBoundedAndCanBeDisabled() throws Exception {
+        String yaml = bundledYaml();
+        for (int count : java.util.List.of(0, 1, 16))
+            assertEquals(count, parse(yaml.replace("generation-recovery-attempts: 1", "generation-recovery-attempts: " + count)).ai().requests().generationRecoveryAttempts());
+        for (String invalid : java.util.List.of("-1", "17", "null", "true", "1.2", "'1'", "2147483648"))
+            assertThrows(IOException.class, () -> parse(yaml.replace("generation-recovery-attempts: 1", "generation-recovery-attempts: " + invalid)));
+        String line = yaml.lines().filter(value -> value.contains("generation-recovery-attempts:")).findFirst().orElseThrow();
+        assertThrows(IOException.class, () -> parse(yaml.replace(line + "\n", "")));
+        assertThrows(IOException.class, () -> parse(yaml.replace(line, line + "\n" + line)));
+        assertEquals(0, new DeploymentConfig.Requests(120, 120, 600).generationRecoveryAttempts());
+    }
+
     private static String bundledYaml() throws IOException {
         try (var input = DeploymentConfigLoaderTest.class.getResourceAsStream(DeploymentConfigLoader.RESOURCE)) {
             assertNotNull(input);
@@ -30,7 +43,7 @@ class DeploymentConfigLoaderTest {
         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600),
+        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600, 1),
             new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",

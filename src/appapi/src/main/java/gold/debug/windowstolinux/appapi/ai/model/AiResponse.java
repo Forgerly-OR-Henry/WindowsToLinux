@@ -10,11 +10,20 @@ package gold.debug.windowstolinux.appapi.ai.model;
  * @param continuation task-bound opaque continuation / 任务绑定的不透明续接状态
  * @param encodedRequestBytes host-measured encoded request length, absent for unmeasured fixtures / 宿主测量的编码请求长度，未测量的夹具为空
  * @param effectiveMaxOutputTokens actual host-sent request budget, not the model capability limit / 宿主实际发送的请求额度，不表示模型能力上限
+ * @param generationAttempts immutable physical generation outcomes; unknown usage is never replaced by a later response / 不可变物理生成结果，未知用量不由后续响应覆盖
  */
 public record AiResponse(String text, String modelId, String finishReason, AiUsage usage,
                          java.util.List<AiToolCall> toolCalls, java.util.Optional<AiContinuation> continuation,
                          java.util.Optional<Integer> encodedRequestBytes,
-                         java.util.Optional<Integer> effectiveMaxOutputTokens) {
+                         java.util.Optional<Integer> effectiveMaxOutputTokens,
+                         java.util.List<AiGenerationAttempt> generationAttempts) {
+    public AiResponse(String text, String modelId, String finishReason, AiUsage usage,
+                      java.util.List<AiToolCall> toolCalls, java.util.Optional<AiContinuation> continuation,
+                      java.util.Optional<Integer> encodedRequestBytes,
+                      java.util.Optional<Integer> effectiveMaxOutputTokens) {
+        this(text, modelId, finishReason, usage, toolCalls, continuation, encodedRequestBytes, effectiveMaxOutputTokens, java.util.List.of());
+    }
+
     public AiResponse(String text, String modelId, String finishReason, AiUsage usage,
                       java.util.List<AiToolCall> toolCalls, java.util.Optional<AiContinuation> continuation,
                       java.util.Optional<Integer> encodedRequestBytes) {
@@ -42,6 +51,7 @@ public record AiResponse(String text, String modelId, String finishReason, AiUsa
         java.util.Objects.requireNonNull(modelId, "modelId");
         java.util.Objects.requireNonNull(finishReason, "finishReason");
         java.util.Objects.requireNonNull(usage, "usage");
+        generationAttempts = AiGenerationAttempt.validated(generationAttempts);
         toolCalls = java.util.List.copyOf(toolCalls);
         java.util.Objects.requireNonNull(continuation);
         java.util.Objects.requireNonNull(encodedRequestBytes);

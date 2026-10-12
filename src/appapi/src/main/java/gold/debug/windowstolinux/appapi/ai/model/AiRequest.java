@@ -14,11 +14,18 @@ import java.util.Optional;
  * @param tools copied native function definitions / 复制的原生函数定义
  * @param maxRequestBytes exact encoded request ceiling enforced before network send / 网络发送前执行的精确编码请求字节上限
  * @param requiredToolName optional registered native tool to require; empty retains automatic selection / 可选必须调用的已注册原生工具，空值保留自动选择
+ * @param generationRecoveryAttempts extra pure-generation attempts after an incomplete HTTP body, 0..16; no tool or business operation replay / HTTP 正文不完整后的额外纯生成次数，0..16，不重放工具或业务操作
  */
 public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens,
                         Duration timeout,
                         boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
-                        Optional<String> requiredToolName) {
+                        Optional<String> requiredToolName, int generationRecoveryAttempts) {
+    public AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens, Duration timeout,
+                     boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes,
+                     Optional<String> requiredToolName) {
+        this(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes, requiredToolName, 0);
+    }
+
     public AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<Integer> maxOutputTokens, Duration timeout,
                      boolean jsonObjectResponse, List<AiToolDefinition> tools, int maxRequestBytes) {
         this(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes, Optional.empty());
@@ -65,7 +72,15 @@ public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<In
      * @throws IllegalArgumentException if the name is not a registered tool / 名称不是已注册工具时 */
     public AiRequest withRequiredTool(String name) {
         return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
-            Optional.of(java.util.Objects.requireNonNull(name, "name")));
+            Optional.of(java.util.Objects.requireNonNull(name, "name")), generationRecoveryAttempts);
+    }
+
+    /** Selects bounded new generation attempts within this request's original deadline. Each old attempt remains UNKNOWN; a new complete response alone is accepted. / 在原请求期限内选择有限的新生成；旧尝试保持 UNKNOWN，仅接纳新完整响应。
+     * @param extraAttempts extra attempts, 0 disables recovery and 16 is the public ceiling / 额外次数，0 关闭，公开上限为 16
+     * @return immutable request retaining messages, tools, history and budgets / 保留消息、工具、历史和预算的不可变请求 */
+    public AiRequest withGenerationRecovery(int extraAttempts) {
+        return new AiRequest(purpose, messages, maxOutputTokens, timeout, jsonObjectResponse, tools, maxRequestBytes,
+            requiredToolName, extraAttempts);
     }
 
     /**
@@ -78,6 +93,8 @@ public record AiRequest(AiPurpose purpose, List<AiMessage> messages, Optional<In
      */
     public AiRequest {
         java.util.Objects.requireNonNull(purpose, "purpose");
+        if (generationRecoveryAttempts < 0 || generationRecoveryAttempts > 16)
+            throw new IllegalArgumentException("Generation recovery attempts must be in 0..16");
         messages = List.copyOf(messages);
         tools = List.copyOf(tools);
         if (tools.size() > 128 || tools.stream().map(AiToolDefinition::name).distinct().count() != tools.size())

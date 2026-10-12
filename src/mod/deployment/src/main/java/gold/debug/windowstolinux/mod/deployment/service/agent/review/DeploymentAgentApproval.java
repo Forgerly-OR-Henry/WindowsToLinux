@@ -149,7 +149,8 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
         this.task = Objects.requireNonNull(task);
         this.evidence = Objects.requireNonNull(evidence);
         this.reviewSource = reviewSource;
-        this.ai = new DeploymentAiJson(context);
+        this.ai = new DeploymentAiJson(context,
+            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().requests().generationRecoveryAttempts());
     }
 
     public static DeploymentAgentApproval forTask(ModContext context, TaskContext task) {
