@@ -317,4 +317,16 @@ Agent 仅在上传后的本次 verify 局部附加 currentCommandEvidence，保�
 
 四个 Java owner 限定格式 write/check 通过；五轮测试和实际格式冻结各3272项零变化，其余3267项逐字节保持。父独立核对 raw 前像/终态、实际 Running 类与 XML、最新 logicalID、冻结和保护范围通过。11:51:38+08实际只读CIM相关验证进程0、六个验证会话退出，没有终止用户进程；默认权限失败记录保留。11:52:31 writeDone 后子任务停止全部写入。五 owner 精确增量见 [观察消费契约补丁](patches/DEPLOYMENT-AGENT-OBSERVATION-CONSUMER.patch)，原始 SHA256 `18d46a7d3908491605d6d675dfe2a25ad677ce75c9e1434ad48ba2c3629f95a1`，前像与反向核验通过；两项可独立暂存，三项混合迁移仅交付精确增量补丁，原迁移和其他任务改动保留。新 task-board 产品部署、真实浏览器业务、非默认真机与 Linux 重启、最终冻结八项目仍未验收。
 
+观察消费契约修复已本地提交 `7f477f72199e1d1d1e168f36684a2bb7104fc4fa`，未推送，随后由全新 `task-board-12` 经安全配置启动真实产品入口。2026-10-12 12:03:19+08结束一项入口失败、零错误/跳过，485.107秒；3272源码/Skill运行期间零变化、会话55285退出，实际CIM12:04:28为OK/0。新任务 `2a48b931-089b-4fd2-8da7-bbfe26161a7c`、库 `agent-live-task-board-3wqk2lfkow`、App意图 `wtl-agent-task-board-3wqk2n4ga4` 未正式发布。主模型自主识别、修正计划与数据库选择，八次APPROVE提交后已有唯一CANDIDATE、PREPARE_RESULT、CURRENT_SOURCE及数据库CAPABILITY_RESULT，已越过原11中断位置；提交不能替代逐请求授权/执行证明。原状态UNKNOWN、1460资源行、无formal execution或App，effectsSettled=true只说明已记录动作回执结清，不能替代整个部署完成。
+
+末次主模型真实有效额度8192，44.639秒返回 finish=length，output及reasoning均8192，没有完整native调用；产品严格抛 `DEPLOYMENT_AI_OUTPUT_BUDGET_EXHAUSTED`，不解析半工具。编码请求115501字节，没有输入或工具预算耗尽证据。此前stale observation、字段与端口拒绝仍保留，不将它们归因于输出额度或声称加额度已经修复上下文问题。本轮59个已知响应input931548/output52970/合计984518，hit633984/miss297564、命中68.06%；主28响应633666，APP31响应350852，占35.64%；reasoning31768已知+31项UNKNOWN，四配置探测usage/transport仍UNKNOWN。它们属于开发失败轮，排除最终冻结八项目统计。
+
+`task-board-recovery12-01` 于12:08:35+08通过原完整候选恢复入口一项场景，零失败/错误/跳过、76.398秒，3272源码零变化、会话8972退出、实际CIM12:09:25为OK/0。原UNKNOWN结清为ENDED/FAILED，无阻塞；产品释放恢复并重开正常启动，未进行Linux重启。只读核对平台原任务归档/资源1460→0、Agent task/action event清除、formal execution0，仅447字节原operation AGENT/FAILED摘要，无App/发布身份；十正式表0、模型2/服务器1保持。主数据库审计前后字节相同，恢复后SHA256 `1C0377C256D064EC452039B3905F114535636B565CDFA4F29E242AC3A870A7D7`。原失败及调查、原373正式业务与其他未结状态保留，不重放原12。
+
+恢复前SQL数字基线因复用旧工具类内部运行身份而拒绝，数据库字节相同，原失败记录保留；使用产品真正 reconcile 前后诊断作为已有日志基线。按recordId实际48→59，其中新增14、淘汰3，新增均为恢复时段APP/native_tools，不用条数相减冒充调用数。父独立重核input116237/output6622/合计122859、hit72960/miss43277、命中62.77%，数值14/14完整，reasoning14项UNKNOWN；有效及请求上限8192，无新配置探测，原部署用量排除。五个宿主许可标签不标识业务模式；源码完整候选链仍经过native reviewer、正式裁决与宿主许可，未发现raw降级。现有证据不提供14回合与五条命令的逐请求verdict/grant映射，不能补造；这轮是失败部署结清，不是成功App。初次after-deploy12审计run展示标签仍为task-board-11但task/DB/内容绑定原12，保留原文件并修正后续辅助标签，不作为旧11验收。
+
+`agent-output-budget-adjustment-12` 仅将普通部署请求额度8192提高至32768，保留APP8192、extended65536、原60秒普通超时和所有权限/完整独立审批门。这是通用输出策略调整，不按模型特化，不改Skill、history或部署步骤；更高额度的provider支持与真实闭环仍待新一轮验证。配置Loader的当前默认及严格APP上界反例相应校准。明确三方法首轮3项全部通过，无失败/错误/跳过；Loader单Java格式write/check通过，实际测试及格式各3272冻结零变，其余3270逐字节保持。父raw/XML/实际Running/保护复核通过，实际CIM12:19:41相关进程0、两验证会话退出，无API/SSH或原数据库修改。
+
+两owner精确增量见 [第12轮输出预算补丁](patches/DEPLOYMENT-AI-OUTPUT-BUDGET-12.patch)，原始SHA256 `55802c67cd4acdaa9e53f6711c2142ac91c29ce14ff9fd0062762daf457195a1`，前像与反向核验通过；一项可独立暂存，一项混合迁移仅保存本次精确增量，原迁移保留。按用户最新要求，完成此项验证、本地提交及交接后暂停，不启动task-board-13。真实可运行task-board App、浏览器业务、非默认真机与Linux重启、其他七项和最终冻结八项目仍未验收。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

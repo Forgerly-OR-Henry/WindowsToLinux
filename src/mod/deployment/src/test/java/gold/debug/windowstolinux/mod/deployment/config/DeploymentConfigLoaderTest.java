@@ -24,13 +24,13 @@ class DeploymentConfigLoaderTest {
     }
 
     @Test
-    void bundledConfigurationPreservesTheOriginalDefaultsAndIsShared() throws Exception {
+    void bundledConfigurationUsesCurrentDefaultsAndIsShared() throws Exception {
         var config = parse(bundledYaml());
         assertEquals(new DeploymentConfig.Source(2147483648L, 100000, 2147483648L), config.source());
         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
-        assertEquals(new DeploymentConfig.Ai(8192, 65536, 8192), config.ai());
+        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192), config.ai());
         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
             "/var/opt/windowstolinux/apps"), config.paths());
@@ -127,12 +127,12 @@ class DeploymentConfigLoaderTest {
     @Test
     void outputBudgetsAreStrictAndApprovalCannotExceedDeployment() throws Exception {
         String yaml = bundledYaml();
-        var config = parse(yaml.replace("deployment-max-output-tokens: 8192", "deployment-max-output-tokens: 4096")
+        var config = parse(yaml.replace("deployment-max-output-tokens: 32768", "deployment-max-output-tokens: 4096")
             .replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 12288")
             .replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2048"));
         assertEquals(new DeploymentConfig.Ai(4096, 12288, 2048), config.ai());
         for (String invalid : java.util.List.of(
-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 8193"),
+            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 32769"),
             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 0"),
             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: '8192'"),
             yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2147483648"),
