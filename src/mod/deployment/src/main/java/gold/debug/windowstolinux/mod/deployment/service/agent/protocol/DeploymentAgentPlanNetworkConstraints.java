@@ -30,30 +30,34 @@ public final class DeploymentAgentPlanNetworkConstraints {
                         + "host and target must name the same process listener port.");
         }
         if (!requirements.containsKey("publicUrl")) return;
-        int port = publicPort(requirements.get("publicUrl"));
+        URI requested = publicUrl(requirements.get("publicUrl"));
+        int port = requested.getPort() == -1 ? "https".equalsIgnoreCase(requested.getScheme()) ? 443 : 80 : requested.getPort();
         boolean exposed = plan.components().stream().flatMap(component -> component.runtime().workload().endpoints().stream())
-            .anyMatch(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL && endpoint.hostPort() == port);
+            .anyMatch(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL && endpoint.hostPort() == port
+                && endpoint.protocol().name().equalsIgnoreCase(requested.getScheme())
+                && !endpoint.accessUrl().isEmpty() && requested.equals(URI.create(endpoint.accessUrl())));
         if (!exposed)
             throw new IllegalArgumentException("AGENT_PLAN_NETWORK_CONSTRAINT: requirements.publicUrl requires an EXTERNAL "
-                + "endpoint on host port " + port + "; correct the source-backed plan before sealing. "
-                + "An INTERNAL endpoint or a repository default port does not satisfy that user requirement.");
+                + "endpoint on host port " + port + " with protocol " + requested.getScheme().toUpperCase(java.util.Locale.ROOT)
+                + " and an explicit accessUrl equal to publicUrl; correct the source-backed declaration. "
+                + "TCP reachability, INTERNAL exposure, an absent URL or a different URL does not satisfy that user requirement.");
     }
 
-    private static int publicPort(String value) {
+    private static URI publicUrl(String value) {
         URI uri;
         try {
             if (value == null) throw new IllegalArgumentException();
             uri = URI.create(value);
+            DeploymentEndpoint.requireAccessUrl(uri);
         } catch (IllegalArgumentException invalid) {
             throw invalidPublicUrl();
         }
         if ((!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme()))
-            || uri.getHost() == null || uri.getRawUserInfo() != null)
+            || uri.getHost() == null || uri.getRawUserInfo() != null || uri.getRawFragment() != null)
             throw invalidPublicUrl();
         int port = uri.getPort();
-        if (port == -1) return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
-        if (port < 1 || port > 65535) throw invalidPublicUrl();
-        return port;
+        if (port != -1 && (port < 1 || port > 65535)) throw invalidPublicUrl();
+        return uri;
     }
 
     private static IllegalArgumentException invalidPublicUrl() {

@@ -1,0 +1,294 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraints.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraints.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraints.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraints.java
+@@ -30,30 +30,34 @@
+                         + "host and target must name the same process listener port.");
+         }
+         if (!requirements.containsKey("publicUrl")) return;
+-        int port = publicPort(requirements.get("publicUrl"));
++        URI requested = publicUrl(requirements.get("publicUrl"));
++        int port = requested.getPort() == -1 ? "https".equalsIgnoreCase(requested.getScheme()) ? 443 : 80 : requested.getPort();
+         boolean exposed = plan.components().stream().flatMap(component -> component.runtime().workload().endpoints().stream())
+-            .anyMatch(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL && endpoint.hostPort() == port);
++            .anyMatch(endpoint -> endpoint.exposure() == DeploymentEndpoint.ExposureType.EXTERNAL && endpoint.hostPort() == port
++                && endpoint.protocol().name().equalsIgnoreCase(requested.getScheme())
++                && !endpoint.accessUrl().isEmpty() && requested.equals(URI.create(endpoint.accessUrl())));
+         if (!exposed)
+             throw new IllegalArgumentException("AGENT_PLAN_NETWORK_CONSTRAINT: requirements.publicUrl requires an EXTERNAL "
+-                + "endpoint on host port " + port + "; correct the source-backed plan before sealing. "
+-                + "An INTERNAL endpoint or a repository default port does not satisfy that user requirement.");
++                + "endpoint on host port " + port + " with protocol " + requested.getScheme().toUpperCase(java.util.Locale.ROOT)
++                + " and an explicit accessUrl equal to publicUrl; correct the source-backed declaration. "
++                + "TCP reachability, INTERNAL exposure, an absent URL or a different URL does not satisfy that user requirement.");
+     }
+ 
+-    private static int publicPort(String value) {
++    private static URI publicUrl(String value) {
+         URI uri;
+         try {
+             if (value == null) throw new IllegalArgumentException();
+             uri = URI.create(value);
++            DeploymentEndpoint.requireAccessUrl(uri);
+         } catch (IllegalArgumentException invalid) {
+             throw invalidPublicUrl();
+         }
+         if ((!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme()))
+-            || uri.getHost() == null || uri.getRawUserInfo() != null)
++            || uri.getHost() == null || uri.getRawUserInfo() != null || uri.getRawFragment() != null)
+             throw invalidPublicUrl();
+         int port = uri.getPort();
+-        if (port == -1) return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+-        if (port < 1 || port > 65535) throw invalidPublicUrl();
+-        return port;
++        if (port != -1 && (port < 1 || port > 65535)) throw invalidPublicUrl();
++        return uri;
+     }
+ 
+     private static IllegalArgumentException invalidPublicUrl() {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocol.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocol.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocol.java
+@@ -67,7 +67,8 @@
+             component.set("health", encodeHealth(part.runtime().healthCheck()));
+             var ports = component.putArray("ports");
+             for (var port : workload.endpoints())
+-                ports.addObject().put("id", port.id()).put("host", port.hostPort()).put("target", port.targetPort()).put("exposure", port.exposure().name());
++                ports.addObject().put("id", port.id()).put("protocol", port.protocol().name()).put("host", port.hostPort())
++                    .put("target", port.targetPort()).put("exposure", port.exposure().name()).put("accessUrl", port.accessUrl());
+             var resources = component.putArray("resources");
+             for (var resource : part.resources().fileBindings()) {
+                 var path = resource.dataPath();
+@@ -134,14 +135,22 @@
+         var endpoints = new ArrayList<DeploymentEndpoint>();
+         var published = new LinkedHashMap<Integer, Integer>();
+         for (JsonNode port : array(node.get("ports"), 32)) {
+-            DeploymentJsonFields.exact(port, Set.of("id", "host", "target", "exposure"));
++            DeploymentJsonFields.exact(port, Set.of("id", "protocol", "host", "target", "exposure", "accessUrl"));
+             var exposure = DeploymentEndpoint.ExposureType.valueOf(DeploymentJsonFields.text(port, "exposure", 16));
++            var protocol = DeploymentEndpoint.ProtocolType.valueOf(DeploymentJsonFields.text(port, "protocol", 16));
+             int host = DeploymentJsonFields.number(port, "host", 1, 65535);
+             int target = DeploymentJsonFields.number(port, "target", 1, 65535);
++            String accessUrl = boundedText(port, "accessUrl", 4096);
++            if (!accessUrl.isEmpty()) {
++                URI address = DeploymentEndpoint.requireAccessUrl(URI.create(accessUrl));
++                int accessPort = address.getPort() == -1 ? "https".equalsIgnoreCase(address.getScheme()) ? 443 : 80 : address.getPort();
++                if (!protocol.name().equalsIgnoreCase(address.getScheme()) || accessPort != host)
++                    throw new IllegalArgumentException("Agent endpoint accessUrl must match its explicit protocol and host port");
++            }
+             endpoints.add(
+-                new DeploymentEndpoint(DeploymentJsonFields.text(port, "id", 63), DeploymentEndpoint.ProtocolType.TCP,
++                new DeploymentEndpoint(DeploymentJsonFields.text(port, "id", 63), protocol,
+                     exposure == DeploymentEndpoint.ExposureType.EXTERNAL ? "0.0.0.0" : "127.0.0.1", host,
+-                    target, exposure, ""));
++                    target, exposure, accessUrl));
+             if (published.put(host, target) != null)
+                 throw new IllegalArgumentException("Duplicate agent host port");
+         }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+@@ -99,7 +99,7 @@
+             case "validate_runtime" ->
+                 "Execute the current component's exact typed ON_DEMAND COMMAND verification and workingDirectory in its candidate through fresh independent command review. plan_state pages the exact accepted entrypoint, argv, workingDirectory and expected output when needed for correction. No argv or interpreter defaults are supplied. Applicable only to a direct nonempty ManagedProcess entrypoint without deployment configuration, secrets, inputs or resource bindings. Success proves this candidate invocation only; published health remains required. Applicable components need current success before seal; build, command, patch and replan invalidate it. NOT_APPLICABLE does not certify runtime health and preserves deployment-time verification obligations.";
+             case "plan" ->
+-                "Declare the initial component graph and intended artifact layout after identification. Original state.requirements overrides repository defaults. When publicUrl is supplied, declare a matching EXTERNAL host port. PROCESS creates no port forwarding: every host and target port must name the same actual listener; container port publishing remains explicit. Browser loopback targets the client machine, so source-backed browser API addresses and CORS must agree with the actual externally reachable API. Inspect actual generated output through tools before seal; a correct declaration does not prove listener, browser or business behavior. Correct proposals yourself; never assume a sealed publication can change ports. Assess this proposed source-backed declaration, not completion of later preparation, build or runtime admission. Unobserved tools, not-yet-built planned outputs and initially unknown database bindings are later verification obligations; they are blocking discrepancies only if they prevent this declaration or its next action. Actual source conflicts and failed pending results still require assessment and resolution. Derive runtime behavior from current READ facts; read the actual entrypoint, HTTP route definition and storage consumer before declaring health URL paths, ports, bind addresses or data environment names. Match directory versus file semantics; conventional defaults and recognition suggestions do not replace these source facts. Declare literal artifact-relative paths for outputs and launchers to be built after this plan. Their existence and behavior must be verified before seal and publication. Use verified sourceSha256 for configuration. Unknown database bindings are null initially; prepare them after this plan and revise from real bindings. Assess every pending observation.";
++                "Declare the initial component graph and intended artifact layout after identification. Original state.requirements overrides repository defaults. When publicUrl is supplied, declare an EXTERNAL HTTP/HTTPS endpoint with explicit protocol and accessUrl equal to that requested URL. Every port has explicit protocol and accessUrl; TCP/UDP use empty accessUrl. Matching TCP transport or a host port alone does not declare HTTP/browser identity. PROCESS creates no port forwarding: every host and target port must name the same actual listener; container port publishing remains explicit. Browser loopback targets the client machine, so source-backed browser API addresses and CORS must agree with the actual externally reachable API. Inspect actual generated output through tools before seal; a correct declaration does not prove listener, browser or business behavior. Correct proposals yourself; never assume a sealed publication can change ports. Assess this proposed source-backed declaration, not completion of later preparation, build or runtime admission. Unobserved tools, not-yet-built planned outputs and initially unknown database bindings are later verification obligations; they are blocking discrepancies only if they prevent this declaration or its next action. Actual source conflicts and failed pending results still require assessment and resolution. Derive runtime behavior from current READ facts; read the actual entrypoint, HTTP route definition and storage consumer before declaring health URL paths, ports, bind addresses or data environment names. Match directory versus file semantics; conventional defaults and recognition suggestions do not replace these source facts. Declare literal artifact-relative paths for outputs and launchers to be built after this plan. Their existence and behavior must be verified before seal and publication. Use verified sourceSha256 for configuration. Unknown database bindings are null initially; prepare them after this plan and revise from real bindings. Assess every pending observation.";
+             case "check" ->
+                 "Refresh actual bounded host baseline for the component; only a selected container engine receives its separate independently reviewed operational check. Unobserved capabilities remain unknown. assessmentCoverage describes evaluations this observation does not perform, not a global rejection of the plan. This does not analyze source, select a recipe, admit a project or prepare a candidate; it cannot substitute for analyze.";
+             case "analyze" ->
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
+@@ -68,11 +68,13 @@
+         property(component, "arguments", array(text(0, 4000), 0, 64));
+         property(component, "workingDirectory", text(0, 512).put("description", "Literal artifact-relative directory. Empty means artifact root."));
+         property(component, "health", health());
+-        var port = DeploymentToolSchemas.object("id", "host:integer", "target:integer", "exposure");
++        var port = DeploymentToolSchemas.object("id", "protocol", "host:integer", "target:integer", "exposure", "accessUrl");
+         property(port, "id", identifier());
++        property(port, "protocol", enumeration("HTTP", "HTTPS", "TCP", "UDP"));
+         property(port, "host", integer(1, 65535));
+         property(port, "target", integer(1, 65535));
+         property(port, "exposure", enumeration("INTERNAL", "EXTERNAL"));
++        property(port, "accessUrl", text(0, 4096).put("description", "Explicit credential-free HTTP/HTTPS public URL matching protocol and host port, or empty for non-browser/internal usage. requirements.publicUrl requires a matching EXTERNAL HTTP/HTTPS endpoint with that exact URL; TCP transport alone is insufficient."));
+         property(component, "ports", array(port, 0, 32));
+         var resource = DeploymentToolSchemas.object("id", "path", "access", "schema", "reversible:boolean", "type", "seedFile", "digest");
+         property(resource, "id", identifier());
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraintsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraintsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraintsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanNetworkConstraintsTest.java
+@@ -45,7 +45,8 @@
+     void matchingWebsiteDoesNotRequireInternalWorkerExposure() throws Exception {
+         var declaration = declaration("PROCESS", 46100, 46100, "EXTERNAL");
+         var worker = ((ObjectNode) declaration.path("components").get(0)).deepCopy().put("id", "worker");
+-        worker.putArray("ports").addObject().put("id", "private").put("host", 18101).put("target", 18101).put("exposure", "INTERNAL");
++        worker.putArray("ports").addObject().put("id", "private").put("protocol", "TCP").put("host", 18101).put("target", 18101)
++            .put("exposure", "INTERNAL").put("accessUrl", "");
+         ((com.fasterxml.jackson.databind.node.ArrayNode) declaration.path("components")).add(worker);
+         assertDoesNotThrow(() -> DeploymentAgentPlanNetworkConstraints.require(DeploymentAgentPlanProtocol.parse(declaration),
+             Map.of("publicUrl", "http://site.example:46100", "network", "Do not infer extra ports from this text")));
+@@ -55,17 +56,54 @@
+     @ValueSource(strings = {"http://site.example", "https://site.example", "HTTP://site.example/path", "https://[2001:db8::1]/"})
+     void publicUrlUsesSchemeDefaultPort(String url) throws Exception {
+         int port = url.toLowerCase(java.util.Locale.ROOT).startsWith("https:") ? 443 : 80;
+-        assertDoesNotThrow(() -> DeploymentAgentPlanNetworkConstraints.require(plan("PROCESS", port, port, "EXTERNAL"), Map.of("publicUrl", url)));
++        var declaration = declaration("PROCESS", port, port, "EXTERNAL");
++        ((ObjectNode) declaration.path("components").get(0).path("ports").get(0))
++            .put("protocol", url.toLowerCase(java.util.Locale.ROOT).startsWith("https:") ? "HTTPS" : "HTTP").put("accessUrl", url);
++        assertDoesNotThrow(() -> DeploymentAgentPlanNetworkConstraints.require(DeploymentAgentPlanProtocol.parse(declaration), Map.of("publicUrl", url)));
+     }
+ 
+     @ParameterizedTest
+     @ValueSource(strings = {"", "not a url", "/relative", "ftp://site.example:46100", "http:///missing-host", "http://site.example:0",
+-        "http://site.example:65536", "http://site.example:-1", "http://site.example:bad", "http://private-value@site.example:46100"})
++        "http://site.example:65536", "http://site.example:-1", "http://site.example:bad", "http://private-value@site.example:46100",
++        "http://site.example:46100/#fragment", "http://127.0.0.1:46100"})
+     void invalidPublicUrlIsRejectedWithoutEchoingInput(String url) throws Exception {
+         var plan = plan("PROCESS", 46100, 46100, "EXTERNAL");
+         var failure = assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPlanNetworkConstraints.require(plan, Map.of("publicUrl", url)));
+         assertTrue(failure.getMessage().contains("valid HTTP/HTTPS URL"));
+         assertFalse(failure.getMessage().contains("private-value"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"TCP", "UDP", "missing-url", "different-host", "different-path", "different-query", "different-protocol"})
++    void anOpenPublicPortCannotReplaceTheRequestedHttpIdentity(String scenario) throws Exception {
++        var declaration = declaration("PROCESS", 46200, 46200, "EXTERNAL");
++        var endpoint = (ObjectNode) declaration.path("components").get(0).path("ports").get(0);
++        switch (scenario) {
++            case "TCP", "UDP" -> endpoint.put("protocol", scenario).put("accessUrl", "");
++            case "missing-url" -> endpoint.put("accessUrl", "");
++            case "different-host" -> endpoint.put("accessUrl", "http://other.example:46200");
++            case "different-path" -> endpoint.put("accessUrl", "http://site.example:46200/different");
++            case "different-query" -> endpoint.put("accessUrl", "http://site.example:46200?view=other");
++            case "different-protocol" ->
++                endpoint.put("protocol", "HTTPS").put("accessUrl", "https://site.example:46200");
++            default -> throw new AssertionError(scenario);
++        }
++        var failure = assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPlanNetworkConstraints.require(
++            DeploymentAgentPlanProtocol.parse(declaration), Map.of("publicUrl", "http://site.example:46200")));
++        assertTrue(failure.getMessage().contains("protocol HTTP"));
++        assertTrue(failure.getMessage().contains("accessUrl equal to publicUrl"));
++        assertFalse(failure.getMessage().contains("other.example"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"TCP", "UDP"})
++    void aNonWebsiteWithoutPublicUrlKeepsItsExplicitSocketProtocol(String protocol) throws Exception {
++        var declaration = declaration("PROCESS", 18100, 18100, "EXTERNAL");
++        ((ObjectNode) declaration.path("components").get(0).path("ports").get(0)).put("protocol", protocol).put("accessUrl", "");
++        var plan = DeploymentAgentPlanProtocol.parse(declaration);
++        assertDoesNotThrow(() -> DeploymentAgentPlanNetworkConstraints.require(plan, Map.of("goal", "Run a source-backed non-browser service")));
++        assertEquals(protocol, plan.components().getFirst().runtime().workload().endpoints().getFirst().protocol().name());
++        assertEquals("", plan.components().getFirst().runtime().workload().endpoints().getFirst().accessUrl());
+     }
+ 
+     @Test
+@@ -89,11 +127,13 @@
+         var declaration = (ObjectNode) JSON.readTree("""
+             {"applicationId":"demo","components":[{"id":"web","sourceRoot":".","dependencies":[],"evidence":["o1"],
+              "backend":"PROCESS","mode":"DAEMON","entrypoint":"run.sh","arguments":[],"workingDirectory":"",
++             "workspace":{"mode":"AUTO","minimumBuildBytes":0,"preferredBuildBytes":134217728,"explicitBytes":0},
+              "health":{"type":"PROCESS","timeout":30,"stability":3},"ports":[],"resources":[],"configuration":[],
+              "databases":[],"secretReferences":[]}],"applicationHealth":{"component":"web","health":{"type":"PROCESS","timeout":30,"stability":3}}}
+             """);
+         var component = (ObjectNode) declaration.path("components").get(0);
+-        component.put("backend", backend).putArray("ports").addObject().put("id", "web").put("host", host).put("target", target).put("exposure", exposure);
++        component.put("backend", backend).putArray("ports").addObject().put("id", "web").put("protocol", "HTTP")
++            .put("host", host).put("target", target).put("exposure", exposure).put("accessUrl", "http://site.example:" + host);
+         return declaration;
+     }
+ }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocolTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocolTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocolTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentPlanProtocolTest.java
+@@ -32,8 +32,8 @@
+             if (index == 3) component.put("mode", "ON_DEMAND");
+             else {
+                 var ports = component.putArray("ports");
+-                ports.addObject().put("id", "api").put("host", 8080).put("target", 8081).put("exposure", "EXTERNAL");
+-                ports.addObject().put("id", "admin").put("host", 9090).put("target", 9091).put("exposure", "INTERNAL");
++                ports.addObject().put("id", "api").put("protocol", "TCP").put("host", 8080).put("target", 8081).put("exposure", "EXTERNAL").put("accessUrl", "");
++                ports.addObject().put("id", "admin").put("protocol", "TCP").put("host", 9090).put("target", 9091).put("exposure", "INTERNAL").put("accessUrl", "");
+             }
+             if (index == 0) component.putNull("databases");
+             else if (index == 1) component.putArray("databases").add("catalog");
+@@ -59,6 +59,78 @@
+             var assessed = assertInstanceOf(DeploymentAgentProposal.Assessed.class, DeploymentAgentProtocol.parse("plan", encoded));
+             assertEquals(declaration, assertInstanceOf(DeploymentAgentProposal.Plan.class, assessed.action()));
+         }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"HTTP", "HTTPS", "TCP", "UDP"})
++    void explicitEndpointFactsSurviveNativeSchemaParsingAndEncoding(String protocol) throws Exception {
++        var input = plan();
++        input.put("explanation", "Source-backed endpoint identity");
++        input.putObject("assessment").putArray("basis").add("o1");
++        ((ObjectNode) input.path("assessment")).put("suitability", "Observed source").put("differences", "Current declaration")
++            .put("resolution", "RESOLVED").put("decision", "Keep the declared protocol");
++        String address = protocol.startsWith("HTTP") ? protocol.toLowerCase(java.util.Locale.ROOT) + "://site.example:8080/ui?view=main" : "";
++        ((ObjectNode) input.path("components").get(0)).putArray("ports").addObject()
++            .put("id", "web").put("protocol", protocol).put("host", 8080).put("target", 8080)
++            .put("exposure", "EXTERNAL").put("accessUrl", address);
++        var assessed = assertInstanceOf(DeploymentAgentProposal.Assessed.class, DeploymentAgentProtocol.parse("plan", input));
++        var declaration = assertInstanceOf(DeploymentAgentProposal.Plan.class, assessed.action());
++        var endpoint = declaration.plan().components().getFirst().runtime().workload().endpoints().getFirst();
++        assertEquals(protocol, endpoint.protocol().name());
++        assertEquals(address, endpoint.accessUrl());
++        var encoded = DeploymentAgentPlanProtocol.encode(declaration);
++        assertEquals(input.path("components").get(0).path("ports"), encoded.path("components").get(0).path("ports"));
++        assertEquals(declaration.plan(), DeploymentAgentPlanProtocol.parse(encoded));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"protocol", "accessUrl", "legacy-four-fields"})
++    void missingEndpointIdentityIsRejectedInsteadOfInferringHttp(String missing) throws Exception {
++        var input = plan();
++        var endpoint = ((ObjectNode) input.path("components").get(0)).putArray("ports").addObject()
++            .put("id", "web").put("protocol", "HTTP").put("host", 8080).put("target", 8080)
++            .put("exposure", "EXTERNAL").put("accessUrl", "http://site.example:8080");
++        if (missing.equals("legacy-four-fields")) endpoint.remove(java.util.List.of("protocol", "accessUrl"));
++        else endpoint.remove(missing);
++        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPlanProtocol.parse(input));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"different-scheme", "different-port", "userinfo", "fragment", "loopback", "tcp-with-url"})
++    void endpointUrlsRequireExplicitMatchingLegalHttpIdentity(String scenario) throws Exception {
++        var input = plan();
++        String address = switch (scenario) {
++            case "different-scheme" -> "https://site.example:8080";
++            case "different-port" -> "http://site.example:8081";
++            case "userinfo" -> "http://private-value@site.example:8080";
++            case "fragment" -> "http://site.example:8080/#section";
++            case "loopback" -> "http://127.0.0.1:8080";
++            default -> "http://site.example:8080";
++        };
++        ((ObjectNode) input.path("components").get(0)).putArray("ports").addObject()
++            .put("id", "web").put("protocol", scenario.equals("tcp-with-url") ? "TCP" : "HTTP")
++            .put("host", 8080).put("target", 8080).put("exposure", "EXTERNAL").put("accessUrl", address);
++        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPlanProtocol.parse(input));
++    }
++
++    @Test
++    void strictNativeFieldsLeaveOriginalTypedTcpFrozenStorageReadable() throws Exception {
++        var input = plan();
++        var port = ((ObjectNode) input.path("components").get(0)).putArray("ports").addObject()
++            .put("id", "service").put("protocol", "TCP").put("host", 8080).put("target", 8080)
++            .put("exposure", "EXTERNAL").put("accessUrl", "");
++        var runtime = DeploymentAgentPlanProtocol.parse(input).components().getFirst().runtime();
++        var frozen = new gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig(
++            runtime.healthCheck(), java.util.Optional.empty(), runtime.identityPolicy(), runtime.workload());
++        var codec = new gold.debug.windowstolinux.mod.deployment.db.resource.DeploymentUnitRuntimeCodec();
++        byte[] stored = codec.write(frozen);
++        port.remove(java.util.List.of("protocol", "accessUrl"));
++        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPlanProtocol.parse(input));
++        var original = codec.read(stored);
++        assertEquals(frozen, original);
++        assertEquals("TCP", original.workload().endpoints().getFirst().protocol().name());
++        assertEquals("", original.workload().endpoints().getFirst().accessUrl());
++        assertArrayEquals(stored, codec.write(original), "Existing typed storage is independent of the native tool grammar");
+     }
+ 
+     @ParameterizedTest(name = "reject {0}")

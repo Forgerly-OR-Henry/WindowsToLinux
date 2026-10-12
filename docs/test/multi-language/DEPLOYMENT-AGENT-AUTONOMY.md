@@ -421,3 +421,10 @@ task-board-main-only-19-01已结束，实际1测试/1FAIL/0error-skip，源码�
 已知provider usage：input2073765/output78693/合计2152458，cache hit1394048/miss679717，捕获输入命中率67.22%；reasoning62537是输出子集。38请求均有响应usage；DEPLOYMENT两项配置探测的provider用量/transport次数仍UNKNOWN，不将它们计为0。审批捕获占比0%，此轮只是main-only开发对照，不能混入最终冻结八项目或计作完整双Agent达标轮。
 
 自有入口交付本地提交43a26151，未推送；真实19证据及XML/usage/父核结果保留。下一阶段先只读查HTTP入口工具/Skill和Agent判断的具体契约缺口，再按证据最小修复并定点验证，继续保持main-only优先。原16成功恢复历史清理、完整task-board业务/浏览器/工具与双Agent验收、非默认目录真机与重启、其他七项目和最终冻结八项目仍待完成。
+
+
+## 2026-10-13 Agent网页入口契约修复21
+
+19 TCP/browser空的根因已独立核实：原生端口工具不能表达HTTP/HTTPS，parser强制TCP、encode丢字段，网络约束只核公网端口；不是模型主动选错协议，不靠投影或Skill猜HTTP。21仅Agent独立protocol四Java及两个直接Tests，显式protocol/accessUrl保真往返并匹配原publicUrl，CLI无网页要求保留。shared core、独立生产审批、live/MainOnlyFixture、Config/Skill、旧typed存储与原冻结plan/DBv1不改。
+
+48个最新定点逻辑case PASS，包含旧typed TCP字节往返；首轮Network夹具缺workspace的失败保留，仅补夹具并重跑失败33项，已过Protocol15不重跑。6Javaformat、3279源保护/补丁正反向、CIM0均通过；0真实API/SSH/Runtime/原DB。详见[HTTP契约修复21](DEPLOYMENT-AGENT-HTTP-PLAN-CONTRACT-21.md)。下一轮继续纯主Agent/task-board/APP0，新独立入口46300；此时未执行新真机部署，不回填19失败为成功或宣称完整业务、双Agent、旧恢复、重启或八项目已通过。
