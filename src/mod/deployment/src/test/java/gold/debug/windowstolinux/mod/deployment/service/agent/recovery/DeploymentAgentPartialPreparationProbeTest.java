@@ -67,14 +67,45 @@ class DeploymentAgentPartialPreparationProbeTest {
     @ValueSource(strings = {"OWNED", "FOREIGN_TASK", "SAME_PREFIX", "MISSING_ARCHIVE", "HARDLINK", "BUILDER", "IMAGE", "RESTORE", "ACTIVE_BUILD", "EXTRA_BIND", "SHARED_DEVICE", "EXTRA_LOOP", "WRONG_BACKING", "ABSENT", "ABSENT_MOUNT", "ABSENT_LOOP"})
     void completeArchiveAndExactOwnershipRejectEveryUnexplainedEffect(String condition) throws Exception {
         var c = captured();
+        var observed = fixture(c, condition);
+        if (condition.equals("OWNED"))
+            assertTrue(DeploymentAgentPartialPreparationProbe.present(c, observed), observed.stderr());
+        else if (condition.equals("ABSENT"))
+            assertTrue(DeploymentAgentPartialPreparationProbe.absent(c, observed), observed.stdout() + observed.stderr());
+        else {
+            assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed), observed.stdout());
+            assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed), observed.stdout());
+            if (!condition.startsWith("ABSENT")) {
+                var expected = Map.ofEntries(Map.entry("FOREIGN_TASK", "TASK_MISMATCH"), Map.entry("SAME_PREFIX", "ARCHIVE_SHA_MISMATCH"),
+                    Map.entry("MISSING_ARCHIVE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("HARDLINK", "NON_PRIVATE_FILE"),
+                    Map.entry("BUILDER", "UNEXPLAINED_ROOT_ENTRY"), Map.entry("IMAGE", "UNEXPLAINED_ROOT_ENTRY"),
+                    Map.entry("RESTORE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("ACTIVE_BUILD", "NOT_OWNED_OR_BUILD_ACTIVE"),
+                    Map.entry("EXTRA_BIND", "UNEXPLAINED_CANDIDATE_MOUNT"), Map.entry("SHARED_DEVICE", "SHARED_DEVICE_MOUNT"),
+                    Map.entry("EXTRA_LOOP", "UNEXPLAINED_CANDIDATE_LOOP"), Map.entry("WRONG_BACKING", "BACKING_FILE_MISMATCH"));
+                assertEquals(64, observed.exitCode().orElseThrow());
+                var rejection = DeploymentAgentPartialPreparationProbe.rejection(observed).orElseThrow(() -> new AssertionError(observed.stderr()));
+                assertEquals(expected.get(condition), rejection.reason().name());
+                assertEquals("", observed.stdout());
+                assertFalse(observed.stderr().contains(root.toString()));
+                assertFalse(observed.stderr().contains(c.task().toString()));
+            }
+        }
+        if (condition.equals("OWNED") || condition.equals("ABSENT")) {
+            assertEquals("", observed.stderr());
+            assertEquals(condition.equals("OWNED") ? DeploymentAgentPartialPreparationProbe.presentOutput(c) : DeploymentAgentPartialPreparationProbe.absentOutput(c), observed.stdout());
+        }
+    }
+
+    private CommandResult fixture(DeploymentAgentPreparationCompensation.Captured c, String condition) throws Exception {
         String script = DeploymentAgentPartialPreparationProbe.script(c, false)
             .replace("candidate='" + c.workspace().candidateRoot() + "'", "candidate=\"$fixture_path/candidate\"")
             .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/id -u", "fixture_id -u")
             .replace("/usr/bin/systemctl", "fixture_systemctl").replace("/usr/bin/findmnt", "fixture_findmnt")
             .replace("/usr/sbin/losetup", "fixture_losetup")
+            .replace("/usr/bin/find", "fixture_find")
             .replace("for tool in fixture_stat", "trusted_executable() { checked=SAFE; }\nfor tool in fixture_stat");
         int start = script.indexOf("status=$(\n"), finish = script.indexOf("[ \"$status\" = ", start);
-        script = script.substring(0, start) + "status='CANDIDATE_STATE=owned\nBUILD_ACTIVE=no'\n[ \"$condition\" != ACTIVE_BUILD ] || status='CANDIDATE_STATE=owned\nBUILD_ACTIVE=yes'\n" + script.substring(finish);
+        script = script.substring(0, start) + "status='CANDIDATE_STATE=owned\nBUILD_ACTIVE=no'\ncase \"$condition\" in ACTIVE_BUILD | LF_ACTIVE_BUILD) status='CANDIDATE_STATE=owned\nBUILD_ACTIVE=yes' ;; esac\n" + script.substring(finish);
         String fixture = "condition='" + condition + "'\nexpected_task='" + c.task() + "'\n" + """
             fixture_path=$(pwd -P) || exit 69
             if [[ "$condition" != ABSENT* ]]; then
@@ -87,20 +118,63 @@ class DeploymentAgentPartialPreparationProbeTest {
               : > "$fixture_path/candidate/.workspace.ext4"
               printf 'controlled archive\n' > "$fixture_path/candidate/mutable/source.tar.gz"
               case "$condition" in
-                FOREIGN_TASK) printf '00000000-0000-0000-0000-000000000000\n' > "$fixture_path/candidate/.agent-task" ;;
-                SAME_PREFIX) printf 'changed archive\n' > "$fixture_path/candidate/mutable/source.tar.gz" ;;
+                FOREIGN_TASK | LF_FOREIGN_TASK) printf '00000000-0000-0000-0000-000000000000\n' > "$fixture_path/candidate/.agent-task" ;;
+                SAME_PREFIX | LF_ARCHIVE) printf 'changed archive\n' > "$fixture_path/candidate/mutable/source.tar.gz" ;;
                 MISSING_ARCHIVE) rm -- "$fixture_path/candidate/mutable/source.tar.gz" ;;
                 BUILDER) : > "$fixture_path/candidate/.builder-intent" ;;
                 IMAGE) : > "$fixture_path/candidate/.image-engine" ;;
                 RESTORE) mkdir -- "$fixture_path/candidate/mutable/restore-activation" ;;
               esac
+              if [[ "$condition" = LF_* ]]; then
+                case "$condition" in
+                  LF_FILE) : > "$fixture_path/candidate/mutable/lost+found" ;;
+                  LF_SYMLINK) mkdir -- "$fixture_path/foreign-directory"; ln -s -- "$fixture_path/foreign-directory" "$fixture_path/candidate/mutable/lost+found" || exit 69 ;;
+                  *) mkdir -- "$fixture_path/candidate/mutable/lost+found" ;;
+                esac
+                case "$condition" in
+                  LF_FILE_ENTRY) printf 'retained recovery data\n' > "$fixture_path/candidate/mutable/lost+found/retained" ;;
+                  LF_DIR_ENTRY) mkdir -- "$fixture_path/candidate/mutable/lost+found/retained" ;;
+                  LF_UNKNOWN_SIBLING) mkdir -- "$fixture_path/candidate/mutable/another-entry" ;;
+                esac
+              fi
             fi
             fixture_stat() {
+              if [[ "$4" = */mutable/lost+found ]]; then
+                case "$2" in
+                  '%u:%g') if [ "$condition" = LF_OWNER ]; then printf '1000:1000\n'; else printf '0:0\n'; fi; return 0 ;;
+                  '%a') if [ "$condition" = LF_MODE ]; then printf '755\n'; else printf '700\n'; fi; return 0 ;;
+                  '%d:%i:%F:%u:%g:%a:%h:%s:%y:%z')
+                    [ "$condition" != LF_STAT_FAILED ] || return 1
+                    [ "$condition" != LF_POST_STAT_FAILED ] || [ ! -e "$fixture_path/stamp-changed" ] || return 1
+                    case "$condition" in
+                      LF_INVALID_STAMP) printf 'UNTRUSTED_METADATA\n'; return 0 ;;
+                      LF_STAMP_LIMIT) printf '%0300d\n' 0; return 0 ;;
+                      LF_STAMP_NEWLINE) printf '12345:11:directory:0:0:700:2:16384:one\ntwo\n'; return 0 ;;
+                    esac
+                    local device=12345 links=2 instant='2026-10-12 00:00:00.000000000 +0000'
+                    [ "$condition" != LF_VOLUME ] || device=54321
+                    [ "$condition" != LF_LINKS ] || links=3
+                    [ ! -e "$fixture_path/stamp-changed" ] || instant='2026-10-12 00:00:00.000000001 +0000'
+                    printf '%s:11:directory:0:0:700:%s:16384:%s:%s\n' "$device" "$links" "$instant" "$instant"
+                    return 0 ;;
+                esac
+              fi
               if [ "$2" = '%u:%g' ]; then printf '0:0\n'
               elif [ "$2" = '%a' ]; then printf '755\n'
+              elif [ "$2" = '%d' ] && [[ "$4" = */mutable ]]; then printf '12345\n'
               elif [ "$2" = '%s' ] && [[ "$4" = */.workspace.ext4 ]]; then printf '67108864\n'
               elif [ "$2" = '%h' ] && [ "$condition" = HARDLINK ] && [[ "$4" = */source.tar.gz ]]; then printf '2\n'
               else /usr/bin/stat "$@"; fi
+            }
+            fixture_find() {
+              if [ "$1" = -P ] && [ "$2" = "$candidate/mutable/lost+found" ]; then
+                [ "$condition" != LF_FIND_FAILED ] || return 1
+                /usr/bin/find "$@"
+                local result=$?
+                case "$condition" in LF_CHANGED | LF_POST_STAT_FAILED) : > "$fixture_path/stamp-changed" ;; esac
+                return "$result"
+              fi
+              /usr/bin/find "$@"
             }
             fixture_id() { printf '0\n'; }
             fixture_systemctl() { printf 'LoadState=not-found\nActiveState=inactive\nControlGroup=\n'; }
@@ -114,6 +188,8 @@ class DeploymentAgentPartialPreparationProbeTest {
               printf '%s/mutable /dev/loop7 ext4\n' "$candidate"
               [ "$condition" != EXTRA_BIND ] || printf '%s/mutable/alias /dev/root ext4\n' "$candidate"
               [ "$condition" != SHARED_DEVICE ] || printf '/opt/shared /dev/loop7[/other] ext4\n'
+              [ "$condition" != LF_EXTRA_MOUNT ] || printf '%s/mutable/lost+found /dev/foreign ext4\n' "$candidate"
+              [ "$condition" != LF_SHARED_DEVICE ] || printf '/opt/shared /dev/loop7[/other] ext4\n'
               return 0
             }
             fixture_losetup() {
@@ -122,38 +198,63 @@ class DeploymentAgentPartialPreparationProbeTest {
               elif [[ "$*" = *'--output NAME,BACK-FILE'* ]]; then
                 printf '/dev/loop7 %s/.workspace.ext4\n' "$candidate"
                 [ "$condition" != EXTRA_LOOP ] || printf '/dev/loop8 %s/unexplained.ext4\n' "$candidate"
+                [ "$condition" != LF_EXTRA_LOOP ] || printf '/dev/loop8 %s/mutable/lost+found/unexplained.ext4\n' "$candidate"
               elif [ "$condition" = ABSENT_LOOP ]; then printf '%s/.workspace.ext4 (deleted)\n' "$candidate"; fi
               return 0
             }
             """;
-        var result = bash(fixture + script, false);
-        var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
-        if (condition.equals("OWNED"))
-            assertTrue(DeploymentAgentPartialPreparationProbe.present(c, observed), result.error());
-        else if (condition.equals("ABSENT"))
-            assertTrue(DeploymentAgentPartialPreparationProbe.absent(c, observed), result.output() + result.error());
-        else {
-            assertFalse(DeploymentAgentPartialPreparationProbe.present(c, observed), result.output());
-            assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed), result.output());
-            if (!condition.startsWith("ABSENT")) {
-                var expected = Map.ofEntries(Map.entry("FOREIGN_TASK", "TASK_MISMATCH"), Map.entry("SAME_PREFIX", "ARCHIVE_SHA_MISMATCH"),
-                    Map.entry("MISSING_ARCHIVE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("HARDLINK", "NON_PRIVATE_FILE"),
-                    Map.entry("BUILDER", "UNEXPLAINED_ROOT_ENTRY"), Map.entry("IMAGE", "UNEXPLAINED_ROOT_ENTRY"),
-                    Map.entry("RESTORE", "UNEXPLAINED_MUTABLE_ENTRY"), Map.entry("ACTIVE_BUILD", "NOT_OWNED_OR_BUILD_ACTIVE"),
-                    Map.entry("EXTRA_BIND", "UNEXPLAINED_CANDIDATE_MOUNT"), Map.entry("SHARED_DEVICE", "SHARED_DEVICE_MOUNT"),
-                    Map.entry("EXTRA_LOOP", "UNEXPLAINED_CANDIDATE_LOOP"), Map.entry("WRONG_BACKING", "BACKING_FILE_MISMATCH"));
-                assertEquals(64, observed.exitCode().orElseThrow());
-                var rejection = DeploymentAgentPartialPreparationProbe.rejection(observed).orElseThrow(() -> new AssertionError(result.error()));
-                assertEquals(expected.get(condition), rejection.reason().name());
-                assertEquals("", observed.stdout());
-                assertFalse(observed.stderr().contains(root.toString()));
-                assertFalse(observed.stderr().contains(c.task().toString()));
-            }
-        }
-        if (condition.equals("OWNED") || condition.equals("ABSENT")) {
+        String directory = "case-" + UUID.randomUUID();
+        var result = bash("mkdir -- '" + directory + "' || exit 69\ncd -- '" + directory + "' || exit 69\n" + fixture + script, false, condition.equals("LF_SYMLINK"));
+        return new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"LF_EMPTY", "LF_FILE_ENTRY", "LF_DIR_ENTRY", "LF_SYMLINK", "LF_FILE", "LF_OWNER", "LF_MODE", "LF_LINKS", "LF_VOLUME",
+        "LF_STAT_FAILED", "LF_FIND_FAILED", "LF_CHANGED", "LF_UNKNOWN_SIBLING", "LF_EXTRA_MOUNT", "LF_SHARED_DEVICE", "LF_EXTRA_LOOP",
+        "LF_FOREIGN_TASK", "LF_ARCHIVE", "LF_ACTIVE_BUILD", "LF_INVALID_STAMP", "LF_STAMP_LIMIT", "LF_STAMP_NEWLINE", "LF_POST_STAT_FAILED"})
+    void standardExt4DirectoryRequiresEmptyPrivateStableMetadataAndOriginalBindings(String condition) throws Exception {
+        var c = captured();
+        var observed = fixture(c, condition);
+        assertEquals(condition.equals("LF_EMPTY"), DeploymentAgentPartialPreparationProbe.present(c, observed), observed.stderr());
+        assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, observed));
+        if (condition.equals("LF_EMPTY")) {
+            assertEquals(DeploymentAgentPartialPreparationProbe.presentOutput(c), observed.stdout());
             assertEquals("", observed.stderr());
-            assertEquals(condition.equals("OWNED") ? DeploymentAgentPartialPreparationProbe.presentOutput(c) : DeploymentAgentPartialPreparationProbe.absentOutput(c), observed.stdout());
+        } else {
+            assertEquals(64, observed.exitCode().orElseThrow(), observed.stderr());
+            var expected = switch (condition) {
+                case "LF_FILE_ENTRY", "LF_DIR_ENTRY" -> "STANDARD_DIRECTORY_NONEMPTY";
+                case "LF_SYMLINK", "LF_FILE", "LF_OWNER", "LF_MODE" -> "STANDARD_DIRECTORY_UNSAFE";
+                case "LF_LINKS", "LF_STAT_FAILED", "LF_INVALID_STAMP", "LF_STAMP_LIMIT", "LF_STAMP_NEWLINE",
+                     "LF_POST_STAT_FAILED" -> "STANDARD_DIRECTORY_METADATA_UNCONFIRMED";
+                case "LF_VOLUME" -> "STANDARD_DIRECTORY_VOLUME_MISMATCH";
+                case "LF_FIND_FAILED" -> "STANDARD_DIRECTORY_SCAN_FAILED";
+                case "LF_CHANGED" -> "STANDARD_DIRECTORY_CHANGED";
+                case "LF_UNKNOWN_SIBLING" -> "UNEXPLAINED_MUTABLE_ENTRY";
+                case "LF_EXTRA_MOUNT" -> "UNEXPLAINED_CANDIDATE_MOUNT";
+                case "LF_SHARED_DEVICE" -> "SHARED_DEVICE_MOUNT";
+                case "LF_EXTRA_LOOP" -> "UNEXPLAINED_CANDIDATE_LOOP";
+                case "LF_FOREIGN_TASK" -> "TASK_MISMATCH";
+                case "LF_ARCHIVE" -> "ARCHIVE_SHA_MISMATCH";
+                case "LF_ACTIVE_BUILD" -> "NOT_OWNED_OR_BUILD_ACTIVE";
+                default -> throw new AssertionError(condition);
+            };
+            assertEquals(expected, DeploymentAgentPartialPreparationProbe.rejection(observed).orElseThrow(() -> new AssertionError(observed.stderr())).reason().name());
+            assertEquals("", observed.stdout());
+            assertFalse(observed.stderr().contains(root.toString()));
+            assertFalse(observed.stderr().contains("retained recovery data"));
         }
+    }
+
+    @Test
+    void previousExactOwnedAndAbsentResultsRemainUnchanged() throws Exception {
+        var c = captured();
+        var owned = fixture(c, "OWNED");
+        var absent = fixture(c, "ABSENT");
+        assertTrue(DeploymentAgentPartialPreparationProbe.present(c, owned), owned.stderr());
+        assertEquals(DeploymentAgentPartialPreparationProbe.presentOutput(c), owned.stdout());
+        assertTrue(DeploymentAgentPartialPreparationProbe.absent(c, absent), absent.stdout() + absent.stderr());
+        assertEquals(DeploymentAgentPartialPreparationProbe.absentOutput(c), absent.stdout());
     }
 
     @ParameterizedTest

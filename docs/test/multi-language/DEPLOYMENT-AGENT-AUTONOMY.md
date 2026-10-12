@@ -261,4 +261,16 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 四个 owner 原始前像匹配真实恢复01冻结；四轮测试和两组仅自有文件格式检查均 3272 项源码零变化，其余 3268 项逐字节保持。父独立核对 raw 前像/终态、实际 XML 与保护范围通过；父辅助扩展路径带 `..` 的首次 OSError22 保留，仅归一化辅助路径后通过。实际 CIM 09:30:40 为临时验证进程 0，所有验证会话退出。四项增量见 [partial 观察精确补丁](patches/DEPLOYMENT-AGENT-PARTIAL-OBSERVATION.patch)，原始 SHA256 `52e292eccfacadf52d63dde6a060fe5c77b312d2ef1fc34dea48024cc9e2f244`；三项可独立暂存，混合迁移 Recovery 只交付自有精确补丁，其他迁移和旧证据保持。本地 51 项不证明原09恢复成功或远端阻塞已解除；新 PRE 正文须重新完整独立审批，不复用旧 grant。
 
+诊断五项自有路径已本地提交 `2fb93758a42dd29d2cf87d35f770fd37ea9d8ad8`，未推送、索引为空后执行 `task-board-recovery09-02`。该轮于 2026-10-12 09:36:13+08 结束一项入口失败、零错误/跳过，3272 项源码零变化、验证会话退出，实际 CIM 09:38:52 为 OK/0。原任务及 Agent 仍 UNKNOWN，原 122 项事件未变，没有 PREPARE_COMPENSATED、结清摘要或正式业务记录。平台资源总行 2616→2888；只读窗口投影确认新增 272 行（CONNECTION 168、CUSTOM 104）全部 released，原 5 项未结依赖保留。十张正式业务表仍 0、模型 2、服务器 1。三份数据库文件只读审计前后字节一致，当前主库 SHA256 `D9F6D64F743780E661311FB0BC43DEABA9FA4E59EB658A913BAAE854BFD5E624`；不是产品运行未写库。
+
+本轮真实 PRE 观察日志表明 approve 返回 SUCCEEDED 且有 grant，execute 返回 FAILED、IO_FAILURE / SSH_COMMAND_NONZERO、存在 CommandResult、退出 64、未截断，stdout 0 / stderr 86 UTF8 字节。静态诊断为 WORKSPACE / UNEXPLAINED_MUTABLE_ENTRY，严格 present/absent 均 false。没有 POST 或清理成功证据，原因码也不表示已枚举出具体目录项。原 `.agent-task` 内容、完整远端 archive SHA256 及 helper owned/inactive 检查位于该拒绝点之后，该轮没有到达这些后置校验。
+
+按前后 logId 差集，本轮新增 7 个 APPROVAL 响应：input 76902、output 2235、合计 79137，hit 50560、miss 26342，捕获输入命中率 65.75%，输出上限 8192；reasoning 7 项 UNKNOWN、未请求新配置探测。基线 89 条、运行后 95 条、有界窗口淘汰 1 条旧记录，原09部署及恢复01用量不混入。本轮用于诊断真实恢复，未计为业务部署或最终八项目批次。后续恢复03的 95 条数字基线复用该已读结果并核对当前库 SHA 相同，明确不是新查询或新验收。
+
+源码核对发现一个产品创建/恢复契约冲突：原 helper 普通 mkfs.ext4 后挂载工作卷，没有清除 siblings；恢复探针仅允许 source.tar.gz、input-source、source。[e2fsprogs 上游源码](https://github.com/tytso/e2fsprogs/blob/master/misc/mke2fs.c) 的正常格式化分支创建 lost+found（umask077）。这证实标准空目录支持缺失，不证实恢复02的具体远端目录项就是 lost+found。
+
+`partial-workspace-entry-01` 仅修改 Agent PartialPreparationProbe 与对应测试，支持字面 lost+found：非符号链接真实目录、root:root、exact700、nlink2、与 mutable 同设备、有界无换行 metadata stamp，固定输出的空目录扫描前后 stamp 完全一致。非空、扫描或 stat 失败、危险形态、跨卷、变动以及其他未知条目仍拒绝；原 task、完整归档、helper owned/inactive、mount/loop、正式引用、cleanup 独立审批与严格 POST 保持，新增有限原因码只用于诊断，不授予清理权限。
+
+本地仅选择 ProbeTest 的四个直接方法，实际 XML 36 个不同场景全部通过、零失败/错误/跳过，覆盖标准目录及危险形态、原成功输出、POST 脚本和有限原因码解析。测试及两 owner 格式 write/check 均 3272 项源码冻结零变化，其余 3270 项逐字节保持；新标准目录分支剔除后原固定脚本守卫及顺序相同。父独立核对 raw 前像/终态、实际 XML、非 owner 保护范围通过，实际 CIM 10:02:16 临时验证进程 0，两验证会话退出，没有 Runtime/API/SSH 调用，也没有实际 ext4 格式化或挂载。此前通过的其他测试不重跑。本次两 owner 自有增量见 [标准空目录精确补丁](patches/DEPLOYMENT-AGENT-STANDARD-WORKSPACE-DIRECTORY.patch)，原始 SHA256 `0ff341fce2daeb508d901e5d1360bbb18d3bc9c82a5c90841af37dfcb17c9d07`；两 owner 均可独立暂存，前像、反向及缓存检查通过，其他迁移保持。新 PRE 正文仍须重新完整独立审批，真实恢复及结清待新产品入口验证。
+
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。

@@ -32,6 +32,9 @@ public final class DeploymentAgentPartialPreparationProbe {
         LOOP_ROW_INVALID(Stage.LOOPS), UNEXPLAINED_CANDIDATE_LOOP(Stage.LOOPS), DEVICE_BACKING_MISMATCH(Stage.LOOPS),
         LOOP_COUNT_MISMATCH(Stage.LOOPS), UNSAFE_MUTABLE(Stage.WORKSPACE), MUTABLE_LIST_FAILED(Stage.WORKSPACE),
         MUTABLE_LIST_LIMIT(Stage.WORKSPACE), UNEXPLAINED_MUTABLE_ENTRY(Stage.WORKSPACE), TASK_MISMATCH(Stage.OWNERSHIP),
+        STANDARD_DIRECTORY_UNSAFE(Stage.WORKSPACE), STANDARD_DIRECTORY_METADATA_UNCONFIRMED(Stage.WORKSPACE),
+        STANDARD_DIRECTORY_VOLUME_MISMATCH(Stage.WORKSPACE), STANDARD_DIRECTORY_SCAN_FAILED(Stage.WORKSPACE),
+        STANDARD_DIRECTORY_NONEMPTY(Stage.WORKSPACE), STANDARD_DIRECTORY_CHANGED(Stage.WORKSPACE),
         ARCHIVE_READ_FAILED(Stage.ARCHIVE), ARCHIVE_SHA_MISMATCH(Stage.ARCHIVE), QUERY_FAILED(Stage.HELPER),
         NOT_OWNED_OR_BUILD_ACTIVE(Stage.HELPER);
 
@@ -182,7 +185,23 @@ public final class DeploymentAgentPartialPreparationProbe {
             children=$(/usr/bin/find "$candidate/mutable" -mindepth 1 -maxdepth 1 -printf '%f\n') || reject WORKSPACE MUTABLE_LIST_FAILED
             [ "${#children}" -le 4096 ] || reject WORKSPACE MUTABLE_LIST_LIMIT
             while IFS= read -r child; do
-              case "$child" in source.tar.gz | input-source | source) ;; *) reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY ;; esac
+              case "$child" in
+                source.tar.gz | input-source | source) ;;
+                lost+found)
+                  directory="$candidate/mutable/lost+found"
+                  path_metadata "$directory" directory
+                  [ "$checked" = SAFE ] && [ "$mode" = 700 ] || reject WORKSPACE STANDARD_DIRECTORY_UNSAFE
+                  directory_stamp=$(/usr/bin/stat -c '%d:%i:%F:%u:%g:%a:%h:%s:%y:%z' -- "$directory") || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
+                  [ "${#directory_stamp}" -le 256 ] && [[ "$directory_stamp" != *$'\\n'* ]] &&
+                    [[ "$directory_stamp" =~ ^[0-9]{1,20}:[0-9]{1,20}:directory:0:0:700:2:[0-9]{1,20}: ]] || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
+                  mutable_device=$(/usr/bin/stat -c '%d' -- "$candidate/mutable") || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
+                  [[ "$mutable_device" =~ ^[0-9]{1,20}$ ]] && [ "${directory_stamp%%:*}" = "$mutable_device" ] || reject WORKSPACE STANDARD_DIRECTORY_VOLUME_MISMATCH
+                  directory_entries=$(/usr/bin/find -P "$directory" -mindepth 1 -maxdepth 1 -printf 'ENTRY\\n' -quit) || reject WORKSPACE STANDARD_DIRECTORY_SCAN_FAILED
+                  [ -z "$directory_entries" ] || reject WORKSPACE STANDARD_DIRECTORY_NONEMPTY
+                  current_directory_stamp=$(/usr/bin/stat -c '%d:%i:%F:%u:%g:%a:%h:%s:%y:%z' -- "$directory") || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
+                  [ "$current_directory_stamp" = "$directory_stamp" ] || reject WORKSPACE STANDARD_DIRECTORY_CHANGED ;;
+                *) reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY ;;
+              esac
             done <<< "$children"
             private_file "$candidate/mutable/source.tar.gz"
             """
