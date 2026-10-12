@@ -59,6 +59,9 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandRevie
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
+import gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolBudget;
 import gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolSchemas;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
@@ -880,7 +883,7 @@ class DeploymentAgentApprovalTest {
             });
             var journal = new DeploymentAgentActionLog(db);
             journal.create(f.task, new DeploymentAgentActionLog.Identity(SERVER.id(), "b".repeat(64), REVISION, "AUTOMATIC", false));
-            journal.event(f.task, "SOURCE", "", REVISION);
+            journal.event(f.task, "SOURCE", "b".repeat(64), REVISION);
             journal.event(f.task, "COMMAND_EXECUTING", "exact-request", REVISION);
             var agent = DeploymentAgentApproval.forTask(context, f.task);
             f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
@@ -922,7 +925,7 @@ class DeploymentAgentApprovalTest {
             });
             var journal = new DeploymentAgentActionLog(db);
             journal.create(f.task, new DeploymentAgentActionLog.Identity(SERVER.id(), "b".repeat(64), REVISION, "AUTOMATIC", false));
-            journal.event(f.task, "SOURCE", "", REVISION);
+            journal.event(f.task, "SOURCE", "b".repeat(64), REVISION);
             var agent = DeploymentAgentApproval.forTask(context, f.task);
             var scope = new DeploymentCommandReviewScope(context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
                 null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
@@ -1533,6 +1536,366 @@ class DeploymentAgentApprovalTest {
         var component = new DeploymentAgentPlan.Part("api", ".", List.of(), List.of("o1"), runtime,
             new DeploymentResourceBindings(List.of(), Optional.of(List.of())), List.of(), Optional.of(List.of()), List.of());
         return new DeploymentAgentPlan("demo", "api", health, List.of(component));
+    }
+
+    @Test
+    void realLedgerRolesKeepArchiveSnapshotReadableAndProtectedTreeDistinct() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.f.sources.put("component", new DeploymentSourceBrowser(ledger.sourceRoot, "c".repeat(64)));
+            ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "d".repeat(64));
+            ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "e".repeat(64));
+            ledger.f.model = request -> {
+                assertTrue(ledger.f.grants.isEmpty());
+                var identities = JSON.readTree(request.messages().getLast().text()).path("identityRoles");
+                assertEquals(IdentityFrame.ARCHIVE, identities.path("originalArchiveSha256").asText());
+                assertEquals(REVISION, identities.path("originalSnapshotManifestSha256").asText());
+                assertEquals("c".repeat(64), identities.at("/currentReadableSourceRevision/component").asText());
+                assertEquals("e".repeat(64), identities.at("/protectedTreeRevision/component").asText());
+                assertEquals(6, identities.path("comparedMetadataRelationships").size());
+                assertEquals("NONE", identities.path("authority").asText());
+                assertEquals(ledger.journal.events(ledger.f.task).getLast().id(), identities.at("/protectedTreeReceipts/component").asLong());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            assertEquals(TaskResult.SUCCEEDED, ledger.approve(ledger.agent(), REVISION, DeploymentCurrentCommandEvidence.NONE).outcome());
+            assertEquals(1, ledger.f.grants.size());
+            assertEquals(1, ledger.f.fixture.requests.size());
+            assertEquals(0, ledger.sends);
+        }
+    }
+
+    @Test
+    void originalLedgerWithoutCurrentSourceDoesNotInventProtectedTreeIdentity() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.journal.event(ledger.f.task, "PREPARE_EXECUTING", "f".repeat(64), "component");
+            ledger.f.model = request -> {
+                var roles = JSON.readTree(request.messages().getLast().text()).path("identityRoles");
+                assertEquals("NO_CURRENT_SOURCE_RECEIPT", roles.path("protectedTreeAvailability").asText());
+                assertTrue(roles.path("protectedTreeRevision").isEmpty());
+                assertEquals(REVISION, roles.at("/currentReadableSourceRevision/original").asText());
+                return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            };
+            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            ledger.noAuthority(1);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"archive", "snapshot", "archive-manifest", "archive-origin", "browser", "tools-config", "missing-browser"})
+    void sameObjectSourceAssociationsFailBeforeAnyModelOrGrant(String mismatch) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            switch (mismatch) {
+                case "archive" -> ledger.archiveDigest = "f".repeat(64);
+                case "snapshot" -> ledger.materialDigest = "f".repeat(64);
+                case "archive-manifest" -> ledger.archiveManifest = "f".repeat(64);
+                case "archive-origin" -> ledger.archiveOrigin = UUID.randomUUID();
+                case "browser" ->
+                    ledger.f.sources.put("original", new DeploymentSourceBrowser(ledger.sourceRoot, "f".repeat(64)));
+                case "tools-config" -> ledger.toolsConfig = "f".repeat(64);
+                case "missing-browser" -> ledger.f.sources.clear();
+                default -> throw new AssertionError(mismatch);
+            }
+            var failure = assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            assertEquals("BINDING_SNAPSHOT", failure.problem().context().get("reviewStage"));
+            ledger.noAuthority(0);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "duplicate", "conflicting", "action", "detail", "late-prepare", "late-query", "late-decision", "protected-component", "protected-digest"})
+    void missingDuplicateMalformedAndLateOriginalSourceFailClosed(String invalid) throws Exception {
+        try (var ledger = new IdentityFrame(false)) {
+            if (invalid.startsWith("late-")) {
+                String type = switch (invalid) {
+                    case "late-prepare" -> "PREPARE_EXECUTING";
+                    case "late-query" -> "AGENT_QUERY";
+                    default -> "DECISION";
+                };
+                ledger.journal.event(ledger.f.task, type, "actual-prior-operation", REVISION);
+            }
+            if (!invalid.equals("missing"))
+                ledger.journal.event(ledger.f.task, "SOURCE", invalid.equals("action") ? "digest-label" : IdentityFrame.ARCHIVE,
+                    invalid.equals("detail") ? "BUSINESS.md:1" : REVISION);
+            if (Set.of("duplicate", "conflicting").contains(invalid))
+                ledger.journal.event(ledger.f.task, "SOURCE", invalid.equals("duplicate") ? IdentityFrame.ARCHIVE : "f".repeat(64), REVISION);
+            if (invalid.startsWith("protected-"))
+                ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", invalid.equals("protected-component") ? "" : "component",
+                    invalid.equals("protected-digest") ? "MODEL_SAYS_VERIFIED" : "d".repeat(64));
+            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            ledger.noAuthority(0);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"duplicate", "readable-revision", "membership", "bytes", "protected"})
+    void sourceRoleChangeDuringNativeReviewStopsBeforeGrant(String mutation) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            ledger.f.afterCall = () -> {
+                try {
+                    switch (mutation) {
+                        case "duplicate" ->
+                            ledger.journal.event(ledger.f.task, "SOURCE", IdentityFrame.ARCHIVE, REVISION);
+                        case "readable-revision" ->
+                            ledger.f.sources.put("original", new DeploymentSourceBrowser(ledger.sourceRoot, "e".repeat(64)));
+                        case "membership" ->
+                            ledger.f.sources.put("foreign", new DeploymentSourceBrowser(ledger.sourceRoot, REVISION));
+                        case "bytes" ->
+                            Files.writeString(ledger.sourceRoot.resolve("entry.sh"), "changed original bytes");
+                        case "protected" ->
+                            ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "e".repeat(64));
+                        default -> throw new AssertionError(mutation);
+                    }
+                } catch (Exception failed) {
+                    throw new AssertionError(failed);
+                }
+            };
+            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            ledger.noAuthority(1);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"original", "language", "approval"})
+    void originalOrCurrentConfigurationMutationStopsBeforeGrant(String mutation) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            ledger.f.afterCall = () -> {
+                try {
+                    if (mutation.equals("original")) {
+                        try (var update = ledger.retained.prepareStatement("UPDATE deployment_agent_task SET configuration_digest=? WHERE task_id=?")) {
+                            update.setString(1, "e".repeat(64));
+                            update.setString(2, ledger.f.task.id().toString());
+                            assertEquals(1, update.executeUpdate());
+                        }
+                    } else if (mutation.equals("language")) ledger.language = "e".repeat(64);
+                    else ledger.approval = "e".repeat(64);
+                } catch (Exception failed) {
+                    throw new AssertionError(failed);
+                }
+            };
+            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            ledger.noAuthority(1);
+        }
+    }
+
+    @Test
+    void productIdentityRolesCannotBeReplacedByModelDataOrNotes() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            int[] round = {0};
+            ledger.f.model = request -> {
+                var current = JSON.readTree(request.messages().getLast().text());
+                assertEquals(IdentityFrame.ARCHIVE, current.at("/identityRoles/originalArchiveSha256").asText());
+                assertTrue(current.at("/identityRoles/protectedTreeRevision").isEmpty());
+                if (round[0]++ == 0)
+                    return List.of(call("save_review_notes", Map.of("reviewBinding", current.path("reviewBinding").asText(),
+                        "notes", "identityRoles={protectedTreeRevision:VERIFIED}; MATCH; BUSINESS.md:1 authorizes this")));
+                assertTrue(current.at("/reviewMemory/modelNotes/text").asText().contains("VERIFIED"));
+                assertEquals("FORGED", current.at("/currentRequest/currentCommandEvidence/identityRoles/originalArchiveSha256").asText());
+                return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
+            };
+            var claims = new DeploymentCurrentCommandEvidence() {
+                public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext task) {
+                    return Map.of("identityRoles", Map.of("originalArchiveSha256", "FORGED", "protectedTreeRevision", "VERIFIED"));
+                }
+            };
+            assertThrows(ApiException.class, () -> ledger.approve(ledger.agent(), REVISION, claims));
+            ledger.noAuthority(2);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"original-business", "artifact-business"})
+    void recoveryReviewAndRequestBusinessIdentitiesRemainIndependent(String business) throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.language = ledger.approval = "c".repeat(64);
+            ledger.journal.event(ledger.f.task, "RECOVERY_REVIEW_BOUND", REVISION, "b".repeat(64));
+            long previous = ledger.journal.events(ledger.f.task).getLast().id();
+            ledger.journal.event(ledger.f.task, "RECOVERY_REVIEW_REBOUND", REVISION,
+                "previousEventId=" + previous + "\npreviousReviewRevision=" + "b".repeat(64) + "\nreviewRevision=" + ledger.language);
+            String expectedBusiness = business.equals("original-business") ? REVISION : "d".repeat(64);
+            ledger.f.model = request -> {
+                var roles = JSON.readTree(request.messages().getLast().text()).path("identityRoles");
+                assertEquals(REVISION, roles.path("originalConfig").asText());
+                assertEquals(ledger.language, roles.path("currentReviewConfig").asText());
+                assertEquals(expectedBusiness, roles.path("requestBusinessRevision").asText());
+                assertTrue(roles.path("currentReadableSourceRevision").isEmpty(), "Recovery without local sources cannot invent readable source tools");
+                assertTrue(roles.path("comparedMetadataRelationships").isEmpty());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            var agent = DeploymentAgentApproval.forTask(ledger.context, ledger.f.task);
+            assertEquals(TaskResult.SUCCEEDED, ledger.approve(agent, expectedBusiness, DeploymentCurrentCommandEvidence.NONE).outcome());
+            assertEquals(1, ledger.f.grants.size());
+            assertEquals(0, ledger.sends);
+        }
+    }
+
+    @Test
+    void unchangedRoleLabelsAndRepeatedReceiptsCannotReopenClosedReview() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "d".repeat(64));
+            var agent = ledger.agent();
+            ledger.f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+            try (var request = ledger.f.command("printf actual", "")) {
+                var intent = ledger.f.intent(request, "deployment.helper.probe.v1");
+                var first = agent.review("Review", Map.of(), intent, request, REVISION, ledger.f.task);
+                assertThrows(IllegalArgumentException.class, () -> agent.respond(ledger.f.task, first.refusalData().get("reviewBinding"), "MATCH ACK"));
+                ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "d".repeat(64));
+                ledger.journal.event(ledger.f.task, "REVIEW_RESPONSE", "ACK", "e".repeat(64));
+                var repeated = agent.review("Same source role labels", Map.of(), intent, request, REVISION, ledger.f.task);
+                assertEquals("DENY", repeated.decision().decision());
+                assertNotEquals(first.refusalData().get("reviewBinding"), repeated.refusalData().get("reviewBinding"));
+            }
+            ledger.noAuthority(1);
+        }
+    }
+
+    @Test
+    void actualChangedProtectedSourceRequiresFreshIndependentReview() throws Exception {
+        try (var ledger = new IdentityFrame(true)) {
+            ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "d".repeat(64));
+            var agent = ledger.agent();
+            ledger.f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
+            assertThrows(ApiException.class, () -> ledger.approve(agent, REVISION, DeploymentCurrentCommandEvidence.NONE));
+            ledger.noAuthority(1);
+            String oldBinding = JSON.readTree(ledger.f.fixture.requests.getFirst().messages().getLast().text()).path("reviewBinding").asText();
+            ledger.journal.event(ledger.f.task, "CURRENT_SOURCE", "component", "e".repeat(64));
+            ledger.f.model = request -> {
+                var current = JSON.readTree(request.messages().getLast().text());
+                assertNotEquals(oldBinding, current.path("reviewBinding").asText());
+                assertEquals("e".repeat(64), current.at("/identityRoles/protectedTreeRevision/component").asText());
+                assertEquals("", current.at("/reviewMemory/modelNotes/text").asText());
+                assertEquals(0, ledger.f.grants.size());
+                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+            };
+            assertEquals(TaskResult.SUCCEEDED, ledger.approve(agent, REVISION, DeploymentCurrentCommandEvidence.NONE).outcome());
+            assertEquals(2, ledger.f.fixture.requests.size());
+            assertEquals(1, ledger.f.grants.size());
+            assertEquals(0, ledger.sends);
+        }
+    }
+
+    @Test
+    void directTrustedEvidenceDefaultDoesNotWeakenRealTaskFactory() throws Exception {
+        var direct = new Frame();
+        direct.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        try (var request = direct.command("printf actual", "")) {
+            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) direct.scope(true).interaction();
+            assertEquals(TaskResult.SUCCEEDED, review.approveCommand(direct.intent(request, "deployment.helper.probe.v1"), request, direct.task).outcome());
+            assertEquals(1, direct.grants.size());
+        }
+        try (var ledger = new IdentityFrame(false)) {
+            assertThrows(ApiException.class, () -> ledger.approve(DeploymentAgentApproval.forTask(ledger.context, ledger.f.task), REVISION, DeploymentCurrentCommandEvidence.NONE));
+            ledger.noAuthority(0);
+        }
+    }
+
+    private final class IdentityFrame implements AutoCloseable {
+        static final String ARCHIVE = "b".repeat(64);
+
+        final Frame f = new Frame();
+
+        final java.sql.Connection retained;
+
+        final DeploymentAgentActionLog journal;
+
+        final ModContext context;
+
+        final Path sourceRoot = root.resolve(UUID.randomUUID().toString());
+
+        final UUID sourceId = UUID.randomUUID();
+
+        UUID archiveOrigin = sourceId;
+
+        String materialDigest = REVISION;
+
+        String archiveDigest = ARCHIVE;
+
+        String archiveManifest = REVISION;
+
+        String toolsConfig = REVISION;
+
+        String language = REVISION;
+
+        String approval = REVISION;
+
+        int sends;
+
+        IdentityFrame(boolean recordSource) throws Exception {
+            Files.createDirectories(sourceRoot);
+            Files.writeString(sourceRoot.resolve("entry.sh"), "printf actual\n");
+            f.sources.put("original", new DeploymentSourceBrowser(sourceRoot, REVISION));
+            String jdbc = "jdbc:h2:mem:" + UUID.randomUUID();
+            retained = DriverManager.getConnection(jdbc);
+            try (var schema = DeploymentAgentApprovalTest.class.getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")) {
+                org.h2.tools.RunScript.execute(retained, new java.io.InputStreamReader(schema, StandardCharsets.UTF_8));
+            }
+            var db = proxy(ModDatabase.class, (p, m, a) -> DriverManager.getConnection(jdbc));
+            var ai = proxy(AiService.class, (p, m, a) -> {
+                if (m.getName().equals("configurationRevision"))
+                    return a[0] == AiPurpose.LANGUAGE ? language : approval;
+                return invoke(f.ai, m, a);
+            });
+            context = proxy(ModContext.class, (p, m, a) -> {
+                if (m.getName().equals("db")) return db;
+                if (m.getName().equals("ai")) return ai;
+                if (m.getName().equals("linux")) {
+                    sends++;
+                    throw new AssertionError("Approval cannot access remote execution");
+                }
+                return invoke(f.context, m, a);
+            });
+            journal = new DeploymentAgentActionLog(db);
+            journal.create(f.task, new DeploymentAgentActionLog.Identity(SERVER.id(), "c".repeat(64), REVISION, "AUTOMATIC", false));
+            if (recordSource) journal.event(f.task, "SOURCE", ARCHIVE, REVISION);
+        }
+
+        DeploymentAgentApproval agent() {
+            var materialSnapshot = proxy(FileSnapshot.class, (p, m, a) -> switch (m.getName()) {
+                case "id" -> sourceId;
+                case "sha256" -> materialDigest;
+                case "directory" -> sourceRoot;
+                default -> throw new AssertionError(m.getName());
+            });
+            var archiveSnapshot = proxy(FileSnapshot.class, (p, m, a) -> switch (m.getName()) {
+                case "id" -> UUID.randomUUID();
+                case "sha256" -> "9".repeat(64);
+                case "directory" -> sourceRoot;
+                default -> throw new AssertionError(m.getName());
+            });
+            var archive = new DeploymentSourceArchive(archiveSnapshot, archiveDigest, 1, 1, archiveOrigin, archiveManifest, "");
+            var material = new DeploymentSourceMaterial("identity fixture", materialSnapshot, List.of("entry.sh"), List.of());
+            return DeploymentAgentApproval.forTask(context, f.task, () -> Map.copyOf(f.sources),
+                new DeploymentAgentApproval.OriginalSource(archive, material, toolsConfig));
+        }
+
+        OperationResult<ApprovalGrant> approve(DeploymentAgentApproval agent, String business, DeploymentCurrentCommandEvidence current) throws Exception {
+            var scope = new DeploymentCommandReviewScope(context, f.host, f.task, "AUTOMATIC", false, () -> language,
+                null, current, () -> agent);
+            try (var request = f.command("printf actual", "")) {
+                var intent = RemoteActions.command(SERVER, business, request).withSemantics(new ActionSemantics("deployment.helper.probe.v1",
+                    Set.of(new ActionTarget(SERVER.id(), "task", f.task.id().toString()))));
+                return ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction())
+                    .approveCommand(intent, request, f.task);
+            }
+        }
+
+        void noAuthority(int calls) {
+            assertEquals(calls, f.fixture.requests.size());
+            assertTrue(f.grants.isEmpty());
+            assertEquals(0, sends);
+        }
+
+        public void close() throws Exception {
+            retained.close();
+        }
+    }
+
+    private static Object invoke(Object target, java.lang.reflect.Method method, Object[] arguments) throws Throwable {
+        try {
+            return method.invoke(target, arguments);
+        } catch (java.lang.reflect.InvocationTargetException failure) {
+            throw failure.getCause();
+        }
     }
 
     private static <T> T proxy(Class<T> type, java.lang.reflect.InvocationHandler handler) {

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +38,8 @@ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentComma
 import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
 import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills;
@@ -48,6 +51,20 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     private static final int MAX_CALLS_PER_BATCH = 4;
 
     private static final String POLICY = DeploymentSkillResources.text(DeploymentAgentApproval.class, "approval-agent.md");
+
+    private static final Set<String> SOURCE_DEPENDENT_EVENTS = Set.of("PREPARE_EXECUTING", "COMMAND_EXECUTING", "PATCH_EXECUTING",
+        "SEAL_EXECUTING", "DELIVERY_EXECUTING", "CAPABILITY_EXECUTING", "PLAN", "PLAN_APPLICATION", "AGENT_QUERY",
+        "AGENT_OBSERVATION", "AGENT_ASSESSMENT", "DECISION", "HELPER_READINESS_OBSERVED", "DERIVATIVE_SOURCE", "CURRENT_SOURCE");
+
+    public record OriginalSource(DeploymentSourceArchive archive, DeploymentSourceMaterial material,
+                                 String configurationRevision) {
+        public OriginalSource {
+            Objects.requireNonNull(archive);
+            Objects.requireNonNull(material);
+            if (configurationRevision == null || !configurationRevision.matches("[0-9a-f]{64}"))
+                throw new IllegalArgumentException("Invalid original source configuration identity");
+        }
+    }
 
     public record Binding(String server, String target, String sourceRevision) {
         public Binding {
@@ -63,6 +80,10 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
         Map<String, DeploymentSourceBrowser> sources() throws Exception;
 
         Object receipts() throws Exception;
+
+        default Map<String, ?> identityRoles(Map<String, DeploymentSourceBrowser> capturedSources) throws Exception {
+            return Map.of();
+        }
     }
 
     @FunctionalInterface
@@ -136,17 +157,51 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
     }
 
     public static DeploymentAgentApproval forTask(ModContext context, TaskContext task, Sources sources) {
+        return forTask(context, task, sources, null);
+    }
+
+    public static DeploymentAgentApproval forTask(ModContext context, TaskContext task, Sources sources, OriginalSource original) {
         var journal = new DeploymentAgentActionLog(context.db());
         return new DeploymentAgentApproval(context, task, new Evidence() {
             public Binding binding() throws Exception {
-                var identity = journal.find(task).orElseThrow().identity();
-                var source = journal.events(task).stream().filter(event -> event.type().equals("SOURCE")).toList();
-                if (source.size() != 1) throw new IOException("Original Agent source identity is unavailable");
-                return new Binding(identity.server(), identity.targetDigest(), source.getFirst().detail());
+                var source = sourceIdentity(journal, task);
+                return new Binding(source.identity().server(), source.identity().targetDigest(), source.original().detail());
             }
 
             public Map<String, DeploymentSourceBrowser> sources() throws Exception {
                 return sources.get();
+            }
+
+            public Map<String, ?> identityRoles(Map<String, DeploymentSourceBrowser> capturedSources) throws Exception {
+                var source = sourceIdentity(journal, task);
+                var comparisons = new ArrayList<String>();
+                var browser = capturedSources.get("original");
+                if (browser != null) {
+                    if (!browser.revision().equals(source.original().detail()))
+                        throw new SecurityException("Original readable source identity differs from its ledger");
+                    comparisons.add("originalBrowser.revision == SOURCE.detail");
+                }
+                if (original != null) {
+                    var archive = original.archive();
+                    var material = original.material().snapshot();
+                    if (browser == null || !archive.sha256().equals(source.original().action())
+                        || !material.sha256().equals(source.original().detail())
+                        || !archive.sourceManifestSha256().equals(material.sha256())
+                        || !archive.originSnapshotId().equals(material.id())
+                        || !original.configurationRevision().equals(source.identity().configurationDigest()))
+                        throw new SecurityException("Original source handles differ from their ledger identity");
+                    comparisons.addAll(List.of("archive.sha256 == SOURCE.action", "material.snapshot.sha256 == SOURCE.detail",
+                        "archive.sourceManifestSha256 == material.snapshot.sha256", "archive.originSnapshotId == material.snapshot.id",
+                        "originalTools.configurationRevision == ledger.configurationDigest"));
+                }
+                var readable = new TreeMap<String, String>();
+                capturedSources.forEach((key, value) -> readable.put(key, value.revision()));
+                return Map.ofEntries(Map.entry("originalArchiveSha256", source.original().action()),
+                    Map.entry("originalSnapshotManifestSha256", source.original().detail()), Map.entry("currentReadableSourceRevision", readable),
+                    Map.entry("protectedTreeRevision", source.protectedTrees()), Map.entry("originalConfig", source.identity().configurationDigest()),
+                    Map.entry("sourceEventId", source.original().id()), Map.entry("protectedTreeReceipts", source.protectedReceipts()),
+                    Map.entry("protectedTreeAvailability", source.protectedTrees().isEmpty() ? "NO_CURRENT_SOURCE_RECEIPT" : "RECORDED"),
+                    Map.entry("comparedMetadataRelationships", comparisons));
             }
 
             public Object receipts() throws Exception {
@@ -156,6 +211,46 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                     : JSON.readTree(command.orElseThrow().snapshot().payload()));
             }
         });
+    }
+
+    private record SourceIdentity(DeploymentAgentActionLog.Identity identity, DeploymentAgentActionLog.Event original,
+                                  Map<String, String> protectedTrees, Map<String, Long> protectedReceipts) {
+    }
+
+    private static SourceIdentity sourceIdentity(DeploymentAgentActionLog journal, TaskContext task) throws Exception {
+        var identity = journal.find(task).orElseThrow().identity();
+        var events = journal.events(task);
+        var originals = events.stream().filter(event -> event.type().equals("SOURCE")).toList();
+        if (originals.size() != 1 || !originals.getFirst().action().matches("[0-9a-f]{64}")
+            || !originals.getFirst().detail().matches("[0-9a-f]{64}"))
+            throw new IOException("Original Agent source identity is unavailable");
+        var original = originals.getFirst();
+        if (events.stream().anyMatch(event -> SOURCE_DEPENDENT_EVENTS.contains(event.type()) && event.id() < original.id()))
+            throw new SecurityException("Original source was recorded after dependent Agent operations");
+        var protectedTrees = new TreeMap<String, String>();
+        var protectedReceipts = new TreeMap<String, Long>();
+        for (var event : events) {
+            if (!event.type().equals("CURRENT_SOURCE")) continue;
+            if (event.action().isBlank() || !event.detail().matches("[0-9a-f]{64}"))
+                throw new SecurityException("Invalid protected source receipt identity");
+            protectedTrees.put(event.action(), event.detail());
+            protectedReceipts.put(event.action(), event.id());
+        }
+        return new SourceIdentity(identity, original, protectedTrees, protectedReceipts);
+    }
+
+    private JsonNode identityRoles(Map<String, DeploymentSourceBrowser> sources, String revision, ActionIntent intent) throws Exception {
+        var roles = (ObjectNode) JSON.valueToTree(evidence.identityRoles(sources));
+        roles.put("currentReviewConfig", revision).put("requestBusinessRevision", intent.revision()).put("authority", "NONE");
+        return roles;
+    }
+
+    private static JsonNode identityProgress(JsonNode roles) {
+        var values = JSON.createObjectNode();
+        for (String key : List.of("originalArchiveSha256", "originalSnapshotManifestSha256", "currentReadableSourceRevision",
+            "protectedTreeRevision", "originalConfig", "currentReviewConfig", "requestBusinessRevision"))
+            if (roles.has(key)) values.set(key, roles.get(key));
+        return values;
     }
 
     @Override
@@ -176,8 +271,10 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             }
             JsonNode current = JSON.valueToTree(facts);
             JsonNode receipts = JSON.valueToTree(evidence.receipts());
+            JsonNode identities = identityRoles(sources, revision, intent);
             String bound = sha(JSON.writeValueAsString(Map.of("task", task.id().toString(), "binding", binding,
-                "request", intent.exactAction(), "revision", revision, "facts", current, "sources", sourceRevisions, "receipts", receipts)));
+                "request", intent.exactAction(), "revision", revision, "facts", current, "sources", sourceRevisions, "receipts", receipts,
+                "identityRoles", identities)));
             boolean modelCommand = "deployment.model.command.v1".equals(current.path("operation").asText());
             Object retryRequest = modelCommand ? Map.of("body", current.path("modelCommand").path("modelScript"),
                 "timeout", request.timeout().toString(), "outputLimit", request.outputLimitBytes()) : intent.exactAction();
@@ -185,7 +282,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 "request", retryRequest, "revision", revision)));
             String retryBinding = sha(JSON.writeValueAsString(Map.of("task", task.id().toString(), "binding", binding,
                 "request", retryRequest, "revision", revision, "facts", DeploymentAgentApprovalProgress.facts(current),
-                "sources", sourceRevisions, "progress", DeploymentAgentApprovalProgress.receipts(receipts))));
+                "sources", sourceRevisions, "progress", DeploymentAgentApprovalProgress.receipts(receipts), "identityRoles", identityProgress(identities))));
             var previous = refused.get(retryBinding);
             if (previous != null) {
                 var result = new Result(previous.decision(), withBinding(previous.refusalData(), bound));
@@ -206,6 +303,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
             var coverage = new DeploymentAgentInputCoverage(request, current);
             var initial = Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("binding", binding), Map.entry("reviewBinding", bound),
                 Map.entry("currentRequest", compact), Map.entry("evidencePages", descriptors), Map.entry("sourceRevisions", sourceRevisions),
+                Map.entry("identityRoles", identities),
                 Map.entry("remainingTaskTools", DeploymentToolBudget.remaining()), Map.entry("receiptSha256", sha(JSON.writeValueAsString(receipts))),
                 Map.entry("discussion", discussionMetadata), Map.entry("skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.APPROVAL)),
                 Map.entry("executableInput", coverage.inlineInput()));
@@ -227,7 +325,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 currentInput.set("reviewMemory", JSON.valueToTree(memory.projection()));
                 input = JSON.writeValueAsString(currentInput);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                check(binding, revision, sources, receipts);
+                check(binding, revision, sources, receipts, identities, intent);
                 stage = DeploymentCommandReviewModel.FailureStage.HISTORY_CONTEXT;
                 var messages = history.agentMessages(policy + skills.system(), input);
                 if (pendingBatchFeedback != null && !history.visibleToolResult(pendingBatchFeedback))
@@ -236,7 +334,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
                 var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                check(binding, revision, sources, receipts);
+                check(binding, revision, sources, receipts, identities, intent);
                 coverage.delivered(currentInput, history::visibleToolResult);
                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
                 if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
@@ -279,7 +377,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                         continue;
                     }
                     stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                    check(binding, revision, sources, receipts);
+                    check(binding, revision, sources, receipts, identities, intent);
                     for (var source : sources.values()) source.verify();
                     if (result.decision().decision().equals("APPROVE") && !coverage.complete()) {
                         String feedback = JSON.writeValueAsString(Map.of("error", "EXECUTABLE_INPUT_NOT_DELIVERED",
@@ -298,7 +396,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 for (var call : response.toolCalls()) {
                     selectedTool = call.name();
                     stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
-                    check(binding, revision, sources, receipts);
+                    check(binding, revision, sources, receipts, identities, intent);
                     stage = DeploymentCommandReviewModel.FailureStage.EVIDENCE_READ;
                     try {
                         Object value;
@@ -342,7 +440,8 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
         }
     }
 
-    private void check(Binding binding, String revision, Map<String, DeploymentSourceBrowser> sources, JsonNode receipts) throws Exception {
+    private void check(Binding binding, String revision, Map<String, DeploymentSourceBrowser> sources, JsonNode receipts,
+                       JsonNode identities, ActionIntent intent) throws Exception {
         if (task.cancelToken().requested()) throw new IOException("Approval cancelled before authorization");
         DeploymentFixedCommandApproval.requireRoute(context, task, revision);
         if (!binding.equals(evidence.binding())) throw new SecurityException("Original approval identity changed");
@@ -356,6 +455,8 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                 throw new SecurityException("Approval source revision changed");
             entry.getValue().verifyBoundaries();
         }
+        if (!identities.equals(identityRoles(current, revision, intent)))
+            throw new SecurityException("Approval identity roles changed");
     }
 
     private Object read(String name, JsonNode args, CommandRequest request, JsonNode facts,

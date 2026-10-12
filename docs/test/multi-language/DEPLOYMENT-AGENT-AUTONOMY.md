@@ -235,6 +235,18 @@ findmnt 修复的四个自有路径已本地提交 `886ee037163b1d4fa0560509feb5
 
 11 轮 Maven 都显式限定场景，源码冻结各 3272 项、零变化；编译、注册及夹具中间失败全部保留，已通过组不重复。最初 9 个 owner、另增旧夹具 1 个和后续窗口改动 2 个分别限定格式检查通过；实际 CIM 确认任务临时进程为 0，默认查询拒绝不当作 0。70 份受保护旧生产/helper/旧 Probe 测试原字节保持，两个共享生产文件仅增加同一准确观察 operation 的登记和 stdin 分类，既有各模式的路由、请求和审批门不变。没有新增真实 API、Runtime、SSH 或模型用量。
 
-十项自有增量见 [上传完成准备的补偿精确补丁](patches/DEPLOYMENT-AGENT-PREPARE-PARTIAL-COMPENSATION.patch)，SHA256 `2c7eb55d65d7e925fc8faf6e924a0829ec7d7618eb15918b726710251f2624d0`；全部前像匹配 09 冻结，反向及缓存应用检查通过。五项可独立暂存，五项混合迁移仅交付自有精确增量，其他改动及旧补丁保持。原 09 的远端状态仍 UNKNOWN，真实完整上传、归属、独立审批及清理后不存在证明仍需产品原任务恢复取得；本地通过不替代此验收。准确身份角色接线目前只有只读设计，尚未实现。
+十项自有增量见 [上传完成准备的补偿精确补丁](patches/DEPLOYMENT-AGENT-PREPARE-PARTIAL-COMPENSATION.patch)，SHA256 `2c7eb55d65d7e925fc8faf6e924a0829ec7d7618eb15918b726710251f2624d0`；全部前像匹配 09 冻结，反向及缓存应用检查通过。五项可独立暂存，五项混合迁移仅交付自有精确增量，其他改动及旧补丁保持。原 09 的远端状态仍 UNKNOWN，真实完整上传、归属、独立审批及清理后不存在证明仍需产品原任务恢复取得；本地通过不替代此验收。在该补偿阶段交付时，准确身份角色接线仍只有只读设计；后续实现与定点验证见下文。
+
+准确身份接线的本地实现范围为四个 Agent 文件。真实 factory 要求原 SOURCE 唯一、两种摘要合法且早于相关操作；RemoteTools 只传递已有 archive、material 和配置句柄，不重新捕获来源。同一对象逐项校验 archive 与 SOURCE.action、material 与 SOURCE.detail、archive 的清单和原快照 UUID、original Browser 与原清单、原工具配置与原任务配置；任何错配在模型调用及授权前闭合。
+
+产品顶层 identityRoles 分别呈现压缩归档、快照清单、当前可读源码、原 CURRENT_SOURCE 回执及配置身份。未产生 CURRENT_SOURCE 的原 09 不会得到推测的保护树修订。currentReviewConfig 和 requestBusinessRevision 分别来自实际审阅路由与 intent.revision()；后者由业务调用方定义，原 09 使用配置摘要不代表通用 API 永远如此，也不比较 BUSINESS.md 的数字版号。关系说明只表示实际元数据比较，不宣称重算压缩字节、远端观察、安全结论或授权。
+
+这些角色进入原 reviewBinding 与审阅前后变化检查。重试进展只纳入实际身份值，重复同值回执的 eventId、说明标签、模型回复及笔记不能重开 CLOSED。基础审批策略只说明角色语义，不规定工具顺序或必然批准；原完整正文投递门、单次授权、路由、取消及各模式边界保持。
+
+`agent-source-identity-01/identity-test-01` 显式选择 13 个方法及其参数化场景，35 项全部通过、零失败/错误/跳过。覆盖不同合法角色、原 09 无保护树回执、同对象关联错配、缺失/重复/错误/晚写来源、审阅期间来源及配置变化、伪造角色/笔记、恢复路由与业务身份独立、重复回执不能重开及真实来源变化需新审批，另保留两个直接既有 journal/host scope 断言。三个自有 Java 格式检查通过；Maven 和格式阶段各冻结 3272 项、零变化。没有新增真实 API、Runtime 或 SSH，不重复累计此前 58/73 项。本地通过仍不证明原 09 的远端状态、清理成功或 task-board 业务部署完成。
+
+父级独立核对四份 raw 前像、终态图像及实际 XML，35 项身份均唯一且通过，修复范围外源码没有变化。辅助终态核对的三次失败分别来自旧测试冻结早于前阶段最终格式化、错误图像目录名及 Windows 长路径读取，原日志保留；按实际最终 metadata 与扩展绝对路径校准后通过，没有为此改源码或重跑业务。实际 CIM 08:37:36 为 OK、相关进程 0，原 IDEA 34300 保留；默认查询拒绝仍记录为未知。
+
+四项自有增量见 [身份角色精确补丁](patches/DEPLOYMENT-AGENT-SOURCE-IDENTITY.patch)，原始 SHA256 `74ca2f58a2a94b5ab0578a438ac930110d4dc00de54026018b38f408c4c973b3`。全部 owner 前像匹配上一冻结，反向及缓存应用检查通过；三项可独立暂存，一项 RemoteTools 混合迁移只交付单行自有接线补丁。其他迁移、旧补丁、UNKNOWN 与失败证据保留。原 09 产品恢复和修复后的新 task-board 部署尚未开始。
 
 数据库 v1 与历史恢复清理的本地验证、正式记录及剩余实际旧库处理见 [DEPLOYMENT-RECOVERY-HISTORY.md](DEPLOYMENT-RECOVERY-HISTORY.md)。目录布局本地通过与仍未完成的真实非默认目录验收见 [DEPLOYMENT-DIRECTORY-CONFIG-531.md](DEPLOYMENT-DIRECTORY-CONFIG-531.md)。
