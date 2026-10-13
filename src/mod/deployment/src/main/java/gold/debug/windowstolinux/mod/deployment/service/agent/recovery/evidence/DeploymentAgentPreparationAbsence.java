@@ -26,7 +26,7 @@ public final class DeploymentAgentPreparationAbsence {
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
-        "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE",
+        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE",
         "PREPARE_EXECUTING", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
 
     private static final Set<String> AFTER = Set.of("STATE", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
@@ -51,7 +51,7 @@ public final class DeploymentAgentPreparationAbsence {
     public static Optional<Captured> capture(UUID task, DeploymentAgentActionLog.Snapshot snapshot, DeploymentRemoteLayout layout,
                                              List<DeploymentAgentActionLog.Event> events) {
         try {
-            if (snapshot.executionSemantics() != 4 || !Set.of("UNKNOWN", "CANCELLED").contains(snapshot.state())
+            if (!Set.of(4, 5).contains(snapshot.executionSemantics()) || !Set.of("UNKNOWN", "CANCELLED").contains(snapshot.state())
                 || events.isEmpty() || events.size() > 10000) return Optional.empty();
             long previous = 0;
             for (var event : events) {
@@ -90,7 +90,7 @@ public final class DeploymentAgentPreparationAbsence {
             if (!capturedLayout.action().equals(task.toString()) || !canonical.equals(node) || !canonical.toString().equals(capturedLayout.detail()))
                 return Optional.empty();
             String managed = DeploymentManagedUnitResolver.managedId(application.detail(), preparation.detail());
-            var workspace = new DeploymentRemoteWorkspace(managed, source.action(), layout);
+            var workspace = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkspaceBinding.workspace(task, snapshot, events, managed, source.action(), layout);
             return Optional.of(new Captured(task, snapshot, layout, preparation, workspace, source.detail(), plan.detail(), profile.detail(),
                 endpoint.detail(), application.detail(), events));
         } catch (Exception invalid) {
@@ -102,13 +102,15 @@ public final class DeploymentAgentPreparationAbsence {
         if (!requestSha256.matches("[0-9a-f]{64}") || !resultSha256.matches("[0-9a-f]{64}"))
             throw new IllegalArgumentException("Invalid preparation observation digest");
         var identity = captured.snapshot().identity();
-        return JSON.createObjectNode().put("formatVersion", 1).put("task", captured.task().toString()).put("server", identity.server())
+        var proof = JSON.createObjectNode().put("formatVersion", captured.snapshot().executionSemantics() == 5 ? 2 : 1).put("task", captured.task().toString()).put("server", identity.server())
             .put("targetSha256", identity.targetDigest()).put("configurationSha256", identity.configurationDigest()).put("approvalMode", identity.approvalMode()).put("state", captured.snapshot().state())
             .put("layoutSha256", captured.layout().digest()).put("profileSha256", captured.profile()).put("endpointSha256", captured.endpoint())
             .put("sourceSha256", captured.source()).put("archiveSha256", captured.workspace().archiveSha256()).put("planSha256", captured.plan())
             .put("application", captured.application()).put("component", captured.preparation().detail()).put("candidate", captured.workspace().candidateId())
             .put("prepareEventId", captured.preparation().id()).put("prepareAction", captured.preparation().action()).put("priorEventsSha256", digest(captured.events()))
-            .put("requestSha256", requestSha256).put("resultSha256", resultSha256).put("observation", "ABSENT_NO_BUILD_MOUNT_LOOP").toString();
+            .put("requestSha256", requestSha256).put("resultSha256", resultSha256).put("observation", "ABSENT_NO_BUILD_MOUNT_LOOP");
+        if (captured.snapshot().executionSemantics() == 5) proof.put("executionSemantics", 5);
+        return proof.toString();
     }
 
     /** Validates the entire original prefix, including the exact preparation event and all immutable headers. */
@@ -119,7 +121,11 @@ public final class DeploymentAgentPreparationAbsence {
             if (node == null || !node.isObject()) return false;
             var fields = new HashSet<String>();
             node.fieldNames().forEachRemaining(fields::add);
-            if (!fields.equals(FIELDS) || !node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1
+            int semantics = node.path("formatVersion").intValue() == 1 ? 4 : 5;
+            var expected = new HashSet<>(FIELDS);
+            if (semantics == 5) expected.add("executionSemantics");
+            if (!fields.equals(expected) || !node.path("formatVersion").isInt() || !Set.of(1, 2).contains(node.path("formatVersion").intValue())
+                || semantics == 5 && (!node.path("executionSemantics").isInt() || node.path("executionSemantics").intValue() != 5)
                 || !node.path("prepareEventId").isIntegralNumber() || !node.path("prepareEventId").canConvertToLong())
                 return false;
             for (String field : FIELDS)
@@ -131,7 +137,7 @@ public final class DeploymentAgentPreparationAbsence {
             if (!Set.of("true", "false").contains(policy.detail())) return false;
             var identity = new DeploymentAgentActionLog.Identity(node.path("server").textValue(), node.path("targetSha256").textValue(),
                 node.path("configurationSha256").textValue(), node.path("approvalMode").textValue(), Boolean.parseBoolean(policy.detail()));
-            var snapshot = new DeploymentAgentActionLog.Snapshot(identity, node.path("state").textValue(), 4);
+            var snapshot = new DeploymentAgentActionLog.Snapshot(identity, node.path("state").textValue(), semantics);
             var layoutNode = JSON.readTree(one(prefix, "REMOTE_LAYOUT").detail()).path("layout");
             var layout = DeploymentRemoteLayout.decode(layoutNode.toString());
             var captured = capture(task, snapshot, layout, prefix).orElseThrow();

@@ -278,7 +278,7 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
                 .reduce((left, right) -> {
                     throw new IllegalStateException("Conflicting source archives");
                 }).orElseThrow();
-            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive, layout);
+            var workspace = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkspaceBinding.workspace(task.id(), journal.find(task).orElseThrow(), events, part.unit().id(), archive, layout);
             String script = List.of(layout.helperPath(), "candidate-cleanup-task", part.unit().id(),
                     candidate.candidateId(), task.id().toString()).stream().map(DeploymentBuildCommandChannel::shellQuote)
                 .collect(java.util.stream.Collectors.joining(" "));
@@ -306,12 +306,13 @@ public final class DeploymentAgentCleanupEvidence implements DeploymentCurrentCo
             var saved = journal.find(task).orElseThrow();
             if (!gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(original, task, saved.identity(), journal.events(task)).equals(layout))
                 throw new IllegalStateException("Original Agent cleanup layout changed");
-            if (!identity.equals(saved.identity()) || saved.executionSemantics() != 4 || !identity.server().equals(server.id())
+            if (!identity.equals(saved.identity()) || !Set.of(4, 5).contains(saved.executionSemantics()) || !identity.server().equals(server.id())
                 || !profile.equals(DeploymentAgentInputs.targetProfile(original.servers().get(server, task)))
                 || !identity.targetDigest().equals(DeploymentAgentInputs.targetDigest(server, borrowed)))
                 throw new IllegalStateException("Original cleanup identity changed");
             DeploymentFixedCommandApproval.requireRoute(original, task, revision);
             var events = journal.events(task);
+            gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkspaceBinding.find(task.id(), saved, events);
             var execution = executions.findForTask(task).orElseThrow();
             var retained = executions.publicationTemplate(execution).orElseThrow();
             if (!execution.identity().equals(executionIdentity) || executionIdentity.mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT

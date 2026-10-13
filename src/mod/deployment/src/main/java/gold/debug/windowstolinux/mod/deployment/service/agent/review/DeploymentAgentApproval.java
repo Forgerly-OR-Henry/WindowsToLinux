@@ -272,7 +272,7 @@ public final class DeploymentAgentApproval implements DeploymentCommandReviewMod
                          String revision, TaskContext supplied) throws ApiException, DeploymentAiJson.CapabilityOutcomeException, IOException {
         var stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
         String selectedTool = "";
-        try (var standaloneBudget = DeploymentToolBudget.openStandaloneIfAbsent()) {
+        try (var standaloneBudget = DeploymentToolBudget.openApprovalIfGoal()) {
             if (supplied != task) throw new SecurityException("Foreign approval task");
             var binding = evidence.binding();
             if (!intent.serverIds().equals(List.of(binding.server())))

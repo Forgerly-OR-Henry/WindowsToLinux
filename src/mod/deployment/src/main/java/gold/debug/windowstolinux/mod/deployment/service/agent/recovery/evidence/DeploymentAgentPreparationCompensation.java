@@ -22,7 +22,7 @@ public final class DeploymentAgentPreparationCompensation {
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
-        "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE");
+        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE");
 
     private DeploymentAgentPreparationCompensation() {
     }
@@ -47,7 +47,7 @@ public final class DeploymentAgentPreparationCompensation {
     public static Optional<Captured> capture(UUID task, DeploymentAgentActionLog.Snapshot saved, DeploymentRemoteLayout layout,
                                              List<DeploymentAgentActionLog.Event> events) {
         try {
-            if (saved.executionSemantics() != 4 || !Set.of("UNKNOWN", "CANCELLED").contains(saved.state())
+            if (!Set.of(4, 5).contains(saved.executionSemantics()) || !Set.of("UNKNOWN", "CANCELLED").contains(saved.state())
                 || events.isEmpty() || events.size() >= 10000) return Optional.empty();
             var prepare = one(events, "PREPARE_EXECUTING");
             var source = one(events, "SOURCE");
@@ -71,7 +71,7 @@ public final class DeploymentAgentPreparationCompensation {
             canonical.put("layoutSha256", layout.digest());
             if (!header.action().equals(task.toString()) || !header.detail().equals(canonical.toString()))
                 return Optional.empty();
-            var workspace = new DeploymentRemoteWorkspace(DeploymentManagedUnitResolver.managedId(application.detail(), prepare.detail()), source.action(), layout);
+            var workspace = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkspaceBinding.workspace(task, saved, events, DeploymentManagedUnitResolver.managedId(application.detail(), prepare.detail()), source.action(), layout);
             long prior = 0;
             long reviewEvent = 0;
             String review = null;
@@ -154,7 +154,7 @@ public final class DeploymentAgentPreparationCompensation {
         if (!expectedCleanup.equals(cleanupRequest))
             throw new IllegalArgumentException("Cleanup request is not the captured original action");
         var identity = captured.snapshot().identity();
-        return JSON.createObjectNode().put("formatVersion", 1).put("task", captured.task().toString())
+        var proof = JSON.createObjectNode().put("formatVersion", captured.snapshot().executionSemantics() == 5 ? 2 : 1).put("task", captured.task().toString())
             .put("server", identity.server()).put("targetSha256", identity.targetDigest()).put("configurationSha256", identity.configurationDigest())
             .put("approvalMode", identity.approvalMode()).put("state", captured.snapshot().state()).put("layoutSha256", captured.layout().digest())
             .put("profileSha256", captured.profile()).put("endpointSha256", captured.endpoint()).put("sourceSha256", captured.source())
@@ -168,14 +168,17 @@ public final class DeploymentAgentPreparationCompensation {
                 : DeploymentAgentPartialPreparationProbe.absentOutput(captured)))
             .put("cleanup", cleanup.name()).put("cleanupRequestSha256", cleanupRequest)
             .put("afterRequestSha256", DeploymentAgentPartialPreparationProbe.requestDigest(captured, true))
-            .put("afterResultSha256", hash(DeploymentAgentPartialPreparationProbe.absentOutput(captured))).toString();
+            .put("afterResultSha256", hash(DeploymentAgentPartialPreparationProbe.absentOutput(captured)));
+        if (captured.snapshot().executionSemantics() == 5) proof.put("executionSemantics", 5);
+        return proof.toString();
     }
 
     public static boolean matches(DeploymentAgentActionLog.Event event, List<DeploymentAgentActionLog.Event> events) {
         try {
             if (!event.type().equals(EVENT) || event.detail().length() > 8192) return false;
             var node = JSON.readTree(event.detail());
-            if (!node.isObject() || !node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1)
+            if (!node.isObject() || !node.path("formatVersion").isInt() || !Set.of(1, 2).contains(node.path("formatVersion").intValue())
+                || node.path("formatVersion").intValue() == 2 && (!node.path("executionSemantics").isInt() || node.path("executionSemantics").intValue() != 5))
                 return false;
             UUID task = UUID.fromString(node.path("task").textValue());
             var prefix = events.stream().filter(value -> value.id() < event.id()).toList();
@@ -184,7 +187,7 @@ public final class DeploymentAgentPreparationCompensation {
             var identity = new DeploymentAgentActionLog.Identity(node.path("server").textValue(), node.path("targetSha256").textValue(),
                 node.path("configurationSha256").textValue(), node.path("approvalMode").textValue(), Boolean.parseBoolean(policy.detail()));
             var layout = DeploymentRemoteLayout.decode(JSON.readTree(one(prefix, "REMOTE_LAYOUT").detail()).path("layout").toString());
-            var captured = capture(task, new DeploymentAgentActionLog.Snapshot(identity, node.path("state").textValue(), 4), layout, prefix).orElseThrow();
+            var captured = capture(task, new DeploymentAgentActionLog.Snapshot(identity, node.path("state").textValue(), node.path("formatVersion").intValue() == 1 ? 4 : 5), layout, prefix).orElseThrow();
             var suffix = events.stream().filter(value -> value.id() > event.id()).toList();
             String outcome = captured.snapshot().state().equals("CANCELLED") ? "CANCELLED" : "FAILED";
             if (suffix.size() > 2 || !suffix.isEmpty() && (!suffix.getFirst().type().equals("AI_RECOVERY_SETTLED")

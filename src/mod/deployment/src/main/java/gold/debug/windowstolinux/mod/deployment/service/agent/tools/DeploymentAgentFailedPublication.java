@@ -63,7 +63,7 @@ public record DeploymentAgentFailedPublication(DeploymentExecutionIdentity execu
         if (!DeploymentAgentActionLog.effectsSettled(events.stream().filter(e -> !e.type().startsWith("DELIVERY_")).toList()))
             throw new IllegalStateException("Another original mutation remains unsettled");
         var assessment = events.getLast();
-        if (!assessment.type().equals("PUBLICATION_ASSESSMENT") || !assessment.action().equals("finish_failure")
+        if (!assessment.type().equals("PUBLICATION_ASSESSMENT") || !Set.of("finish_failure", "continue_deployment").contains(assessment.action())
             || assessment.id() <= rollback || !assessment.detail().matches("[0-9a-f]{64}"))
             throw new IllegalStateException("Current model failure assessment is absent");
         var originalSource = events.stream().filter(e -> e.type().equals("SOURCE")).toList();
@@ -120,7 +120,8 @@ public record DeploymentAgentFailedPublication(DeploymentExecutionIdentity execu
                                        DeploymentExecutionRecord record) throws Exception {
         var layout = proposal.graph().components().getFirst().unit().layout();
         var retained = new DeploymentExecutionStore(context.db()).publicationTemplate(record).orElseThrow();
-        if (saved.executionSemantics() != 4 || !saved.identity().server().equals(server.id())
+        gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkspaceBinding.find(task.id(), saved, journal.events(task));
+        if (!Set.of(4, 5).contains(saved.executionSemantics()) || !saved.identity().server().equals(server.id())
             || !saved.identity().configurationDigest().equals(revision)
             || !saved.identity().targetDigest().equals(DeploymentAgentInputs.targetDigest(server, session))
             || !record.identity().taskId().equals(task.id()) || !record.identity().server().equals(server)

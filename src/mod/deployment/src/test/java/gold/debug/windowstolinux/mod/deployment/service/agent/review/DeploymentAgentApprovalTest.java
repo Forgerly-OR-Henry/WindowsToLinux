@@ -103,6 +103,77 @@ class DeploymentAgentApprovalTest {
     @TempDir
     Path root;
 
+    @Test
+    void goalIsolatesActualApprovalToolsAndChargesActualNestedLoopOnce() throws Exception {
+        var f = new Frame();
+        var goal = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget(
+            new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(60));
+        int[] round = {0};
+        f.model = request -> {
+            assertEquals(AiPurpose.APPROVAL, request.purpose());
+            return round[0]++ == 0 ? List.of(call("request", Map.of("part", "stdin", "offset", 0, "limit", 100)))
+                : List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        };
+        try (var original = goal.open(f.task); var main = DeploymentToolBudget.open(goal.snapshot().maximumTools())) {
+            var before = goal.snapshot();
+            int remaining = DeploymentToolBudget.remaining();
+            assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+            assertEquals(2, f.fixture.requests.size());
+            assertEquals(before, goal.snapshot());
+            assertEquals(remaining, DeploymentToolBudget.remaining());
+            f.model = request -> {
+                assertEquals(AiPurpose.LANGUAGE, request.purpose());
+                return List.of(call("done", Map.of()));
+            };
+            var loop = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop<String>(f.context, f.task, REVISION,
+                "Controlled LANGUAGE capability", 2);
+            var result = loop.run(() -> Map.of("done", new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop.Tool<>(
+                "End this local controlled loop", arguments -> gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentModelToolLoop.Feedback.ended(
+                new OperationResult<>(TaskResult.SUCCEEDED, Optional.of("observed"), Optional.empty())))), Map::of);
+            assertEquals(TaskResult.SUCCEEDED, result.outcome());
+            assertEquals(1, goal.snapshot().nestedResponses());
+            assertEquals(0, goal.snapshot().mainResponses());
+            assertEquals(1, goal.snapshot().sharedTools());
+            assertEquals(remaining - 1, DeploymentToolBudget.remaining());
+        }
+    }
+
+    @Test
+    void goalApprovalRetainsItsExistingLimitAndRestoresMainScopeAfterFailure() throws Exception {
+        var f = new Frame();
+        var goal = new gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget(
+            new gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget(60));
+        f.model = request -> List.of(call("invalid-local-tool", Map.of()));
+        try (var original = goal.open(f.task); var main = DeploymentToolBudget.open(goal.snapshot().maximumTools())) {
+            var before = goal.snapshot();
+            int remaining = DeploymentToolBudget.remaining();
+            assertThrows(Exception.class, () -> f.review(Map.of()));
+            assertEquals(DeploymentConfigLoader.current().ai().execution().standaloneToolAttempts(), f.fixture.requests.size());
+            assertTrue(f.fixture.requests.stream().allMatch(request -> request.purpose() == AiPurpose.APPROVAL));
+            assertEquals(before, goal.snapshot());
+            assertEquals(remaining, DeploymentToolBudget.remaining());
+            f.model = request -> {
+                throw new IOException("Controlled approval transport exception");
+            };
+            assertThrows(Exception.class, () -> f.review(Map.of()));
+            assertEquals(before, goal.snapshot());
+            assertEquals(remaining, DeploymentToolBudget.remaining());
+        }
+    }
+
+    @Test
+    void noGoalActualApprovalKeepsTheExistingEnclosingToolScope() throws Exception {
+        var f = new Frame();
+        f.model = request -> List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
+        assertTrue(gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.current().isEmpty());
+        try (var original = DeploymentToolBudget.open(2)) {
+            assertEquals("APPROVE", f.review(Map.of()).decision().decision());
+            assertEquals(1, DeploymentToolBudget.remaining());
+        }
+        assertEquals(1, f.fixture.requests.size());
+        assertEquals(AiPurpose.APPROVAL, f.fixture.requests.getFirst().purpose());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"request", "evidence"})
     void incompleteExecutableApprovalReportsRealGapsBeforeOnlyFinalIndependentVerdictGrants(String route) throws Exception {
