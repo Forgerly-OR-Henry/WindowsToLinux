@@ -1,0 +1,88 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
+@@ -289,7 +289,8 @@
+                 Map.entry("nativeFailureWithRollback", failedNative.get() != null),
+                 Map.entry("changedAfterNativePublication", modifiedAfterPublish.get()),
+                 Map.entry("nextStep", publicationNextStep(stagedCurrent.get(), standardSent.get(), verifiedCurrent.get(),
+-                    failedNative.get() != null && !modifiedAfterPublish.get()))));
++                    failedNative.get() != null && !modifiedAfterPublish.get(),
++                    gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoal.currentWorker().isPresent()))));
+         } catch (Exception uncertain) {
+             error(journal, task, finishPhase.get(), uncertain);
+             throw uncertain;
+@@ -387,16 +388,20 @@
+         });
+     }
+ 
+-    private static Map<String, Object> publicationNextStep(boolean staged, boolean standardSent, boolean verified, boolean nativeFailure) {
++    private static Map<String, Object> publicationNextStep(boolean staged, boolean standardSent, boolean verified, boolean nativeFailure,
++                                                           boolean continuationOffered) {
+         if (verified)
+             return Map.of("routes", List.of("finish"), "condition", "Assess the actual successful verify observation before finish.");
+         var routes = new ArrayList<String>();
+         if (!standardSent) routes.add("publish -> assess result -> verify -> finish");
+-        if (nativeFailure)
+-            routes.add("finish_failure after assessing native failure; unchanged bindings and legal cleanup still required");
++        if (nativeFailure) {
++            routes.add("finish_failure ends only this attempt as FAILED after assessing native failure; it does not accomplish the deployment goal; unchanged bindings and legal cleanup still required");
++            if (continuationOffered)
++                routes.add("continue_deployment is optional after assessing native failure; original source, resource and goal budget admission plus unchanged bindings are still verified by the tool before any fresh successor");
++        }
+         routes.add(staged ? "command -> assess result -> verify -> finish" : "stage -> assess staged bindings -> command -> assess result -> verify -> finish");
+         return Map.of("routes", List.copyOf(routes), "condition",
+-            "Choose a route from applicability and actual feedback. Native publish stages its own inputs; custom command requires staged=true. Read contracts only to resolve a specific custom lifecycle question. Neither route grants command approval or proves health.");
++            "Choose a route from applicability and actual feedback. Native publish stages its own inputs; custom command requires staged=true. Read contracts only to resolve a specific custom lifecycle question. No route grants command approval or proves health.");
+     }
+ 
+     private static String failureCause(Exception failure) {
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -302,6 +302,12 @@
+ 
+     private boolean continueNativeFailure;
+ 
++    private boolean nativeFailureRouteJourney;
++
++    private final AtomicReference<JsonNode> nativeFailureNextStep = new AtomicReference<>();
++
++    private final AtomicBoolean nativeFailureContinuationOffered = new AtomicBoolean();
++
+     private final AtomicReference<UUID> successorRoot = new AtomicReference<>();
+ 
+     private DeploymentAgentMainOnlyFixture successorDiagnostic;
+@@ -440,6 +446,24 @@
+         continueNativeFailure = true;
+         controlledWorkspaceBytes = 1073741824L;
+         verifyScenario(ScenarioType.SUCCESS);
++    }
++
++    @Test
++    void nativeFailedPublicationNextStepOffersGoalContinuationAndAttemptOnlyFinish() throws Exception {
++        nativeProtocol = gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS;
++        sharedPublication = true;
++        acceptNativeFailure = true;
++        nativeFailureRouteJourney = true;
++        controlledWorkspaceBytes = 1073741824L;
++        verifyScenario(ScenarioType.SUCCESS);
++        assertTrue(nativeFailureContinuationOffered.get(), "The actual restored-failure request offers the original Goal continuation tool");
++        var nextStep = Objects.requireNonNull(nativeFailureNextStep.get(), "The actual restored-failure request must expose nextStep");
++        var routes = java.util.stream.StreamSupport.stream(nextStep.path("routes").spliterator(), false)
++            .map(JsonNode::asText).toList();
++        assertTrue(routes.stream().anyMatch(route -> route.contains("continue_deployment") && route.contains("optional")),
++            "The actual nextStep must present offered continue_deployment as an optional route subject to original admission");
++        assertTrue(routes.stream().anyMatch(route -> route.contains("finish_failure") && route.contains("only this attempt")),
++            "The actual nextStep must distinguish ending this failed attempt from accomplishing the deployment goal");
+     }
+ 
+     @Test
+@@ -2551,6 +2575,10 @@
+                     assertFalse(data.path("state").path("evidenceIndex").path("entries").toString().contains("OBSERVATION"));
+                 }
+                 if (data.path("state").has("publication")) {
++                    if (nativeFailureRouteJourney && data.at("/state/nativeFailureWithRollback").asBoolean()) {
++                        nativeFailureNextStep.compareAndSet(null, data.at("/state/nextStep").deepCopy());
++                        nativeFailureContinuationOffered.set(request.tools().stream().anyMatch(tool -> tool.name().equals("continue_deployment")));
++                    }
+                     if (sharedPublication) {
+                         var command = request.tools().stream().filter(tool -> tool.name().equals("command")).findFirst().orElseThrow();
+                         try {
