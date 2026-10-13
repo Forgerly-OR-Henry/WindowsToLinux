@@ -1,0 +1,277 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -10,7 +10,12 @@
+ import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+ import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+ import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
++import gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice;
++import gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest;
++import gold.debug.windowstolinux.appapi.linux.transfer.TransferResult;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.task.action.InteractionService;
+@@ -224,7 +229,7 @@
+                     "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED", "AI configuration changed before remote dispatch",
+                     Map.of(), Optional.empty()));
+         };
+-        this.candidates = new DeploymentCandidateChannel(session, this.interaction, server, task, configurationRevision,
++        this.candidates = new DeploymentCandidateChannel(candidateDiagnosticSession(configurationRevision), this.interaction, server, task, configurationRevision,
+             budget, beforeSend, layout);
+         this.hosts = new DeploymentAgentHostChannel(session, this.interaction, server, task, configurationRevision,
+             budget, beforeSend, layout);
+@@ -943,7 +948,7 @@
+         configurationRevision = revision;
+         approvalConversation = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation(
+             context, task, server, session.facts().fingerprint(), originalSourceRevision, revision, layout);
+-        candidates = new DeploymentCandidateChannel(session, interaction, server, task, revision, budget, beforeSend, layout);
++        candidates = new DeploymentCandidateChannel(candidateDiagnosticSession(revision), interaction, server, task, revision, budget, beforeSend, layout);
+         hosts = new DeploymentAgentHostChannel(session, interaction, server, task, revision, budget, beforeSend, layout);
+         projects.replaceConfiguration(revision);
+         buildTools.replaceConfiguration(revision);
+@@ -952,6 +957,95 @@
+     @Override
+     public Optional<gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation> approvalConversation() {
+         return Optional.of(approvalConversation);
++    }
++
++    /** Observes candidate API failures before the shared channel preserves UNKNOWN. / 在共用通道保留UNKNOWN前观察候选API失败。 */
++    private RemoteSession candidateDiagnosticSession(String revision) {
++        return new RemoteSession() {
++            @Override
++            public RemoteFacts facts() {
++                return session.facts();
++            }
++
++            @Override
++            public OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant) throws ApiException {
++                try {
++                    return session.execute(request, grant);
++                } catch (ApiException failure) {
++                    candidateApiFailure(request, revision, failure);
++                    throw failure;
++                }
++            }
++
++            @Override
++            public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant) throws ApiException {
++                return session.upload(request, grant);
++            }
++
++            @Override
++            public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
++                return session.upload(request, grant, choice);
++            }
++
++            @Override
++            public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException {
++                return session.download(request, grant);
++            }
++
++            @Override
++            public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
++                return session.download(request, grant, choice);
++            }
++
++            @Override
++            public OperationResult<TransferResult> resumeTransfer(UUID transferId, ApprovalGrant grant) throws ApiException {
++                return session.resumeTransfer(transferId, grant);
++            }
++
++            @Override
++            public OperationResult<Void> discardTransfer(UUID transferId, ApprovalGrant grant) throws ApiException {
++                return session.discardTransfer(transferId, grant);
++            }
++
++            @Override
++            public void close() throws ApiException {
++                session.close();
++            }
++        };
++    }
++
++    private void candidateApiFailure(CommandRequest request, String revision, ApiException failure) {
++        String requestSha256;
++        String metadata;
++        try {
++            requestSha256 = sha256(RemoteActions.command(server, revision, request).exactAction());
++            var facts = new LinkedHashMap<String, String>();
++            facts.put("category", "CANDIDATE_EXECUTE");
++            String name = failure.getClass().getSimpleName();
++            facts.put("exceptionClass", name.matches("[A-Za-z_$][A-Za-z0-9_$]{0,127}") ? name : "ApiException");
++            facts.put("problemCode", failure.problem().code().name());
++            String event = failure.problem().eventCode();
++            if (event != null && Set.of("TASK_CHECKPOINT_READ", "TASK_CHECKPOINT_RELEASE", "TASK_CHECKPOINT_UPDATE", "SERVICE_WORKER", "MOD_TASK_BINDING_CLOSED").contains(event))
++                facts.put("problemEventCode", event);
++            else facts.put("problemEventCodeSha256", event == null ? "ABSENT" : sha256(event));
++            facts.put("messageSha256", failure.getMessage() == null ? "ABSENT" : sha256(failure.getMessage()));
++            facts.put("exactRequestSha256", requestSha256);
++            facts.put("task", task.id().toString());
++            metadata = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(facts);
++        } catch (Exception diagnosticFailure) {
++            if (diagnosticFailure != failure) failure.addSuppressed(diagnosticFailure);
++            return;
++        }
++        try {
++            journal.event(task, "AI_CANDIDATE_COMMAND_API_FAILURE", requestSha256, metadata);
++        } catch (Exception diagnosticFailure) {
++            if (diagnosticFailure != failure) failure.addSuppressed(diagnosticFailure);
++        }
++        try {
++            task.progress("DEPLOYMENT_AGENT_CANDIDATE_API_FAILURE " + metadata);
++        } catch (Exception diagnosticFailure) {
++            if (diagnosticFailure != failure) failure.addSuppressed(diagnosticFailure);
++        }
+     }
+ 
+     /** Requires the same noncopyable platform task object. / 要求同一不可复制的平台任务对象。
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -274,6 +274,18 @@
+ 
+     private Long candidateAvailableBytes;
+ 
++    private boolean planCapacityApiFailure;
++
++    private static final String CAPACITY_API_EVENT = "CONTROLLED_CAPACITY_API_FAILURE";
++
++    private static final String CAPACITY_API_MESSAGE = "password=fixture-private-capacity-value";
++
++    private final AtomicReference<String> capacityApiRequestSha = new AtomicReference<>();
++
++    private final AtomicReference<UUID> capacityApiTask = new AtomicReference<>();
++
++    private final AtomicReference<ApiException> capacityApiOriginalFailure = new AtomicReference<>();
++
+     private final AtomicInteger candidateCapacitySends = new AtomicInteger(), reviewedCandidateCreates = new AtomicInteger();
+ 
+     private final AtomicReference<String> firstReadPageDigest = new AtomicReference<>();
+@@ -491,6 +503,13 @@
+         assertTrue(rollback.path("restored").asBoolean());
+         assertTrue(publication.path("id").asLong() < rollback.path("id").asLong());
+         assertTrue(rollback.path("id").asLong() < nativeEvent.path("id").asLong());
++    }
++
++    @Test
++    void planCapacityTransportFailurePersistsSafeOriginalProblemAndPreservesUnknown() throws Exception {
++        nativeProtocol = gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS;
++        planCapacityApiFailure = true;
++        verifyScenario(ScenarioType.SUCCESS);
+     }
+ 
+     @Test
+@@ -1315,6 +1334,72 @@
+                 } catch (AssertionError timeout) {
+                     throw new AssertionError(diagnostic(runtime, handle), timeout);
+                 }
++                if (planCapacityApiFailure) {
++                    assertNull(fixtureFailure.get(), "The controlled fault must follow a real original fixed review");
++                    assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
++                    assertEquals(3, calls.get(), "Capacity uncertainty stops after read, identify and plan without another model request");
++                    assertEquals(1, candidateCapacitySends.get());
++                    assertEquals(handle.id(), capacityApiTask.get());
++                    assertEquals(0, candidateUploads.get());
++                    assertEquals(0, peer.commands.get());
++                    assertTrue(peer.present.isEmpty());
++                    assertFalse(handle.completion().toCompletableFuture().isDone(), "UNKNOWN preserves the original occupied task rather than completing it");
++                    assertEquals(1, modScalar(runtime, "SELECT COUNT(*) FROM deployment_agent_task WHERE task_id='" + handle.id() + "' AND task_state='UNKNOWN'"));
++                    assertEquals(0, modScalar(runtime, "SELECT COUNT(*) FROM managed_application"));
++                    var events = page.events(handle.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).value().orElseThrow().events();
++                    assertTrue(events.stream().noneMatch(event -> Set.of("PREPARE_EXECUTING", "CANDIDATE", "COMMAND_EXECUTING", "COMMAND_NOT_SENT", "AI_PUBLICATION_NATIVE_RESULT").contains(event.type())),
++                        "Original UNKNOWN is neither a build dispatch nor a NOT_SENT or publication proof");
++                    var diagnostics = events.stream().filter(event -> event.type().equals("AI_CANDIDATE_COMMAND_API_FAILURE")).toList();
++                    var safe = new ObjectMapper().createObjectNode().put("task", handle.id().toString()).put("state", handle.snapshot().state().name())
++                        .put("languageRequests", calls.get()).put("capacityExecutions", candidateCapacitySends.get()).put("diagnosticCount", diagnostics.size())
++                        .put("requestSha256", capacityApiRequestSha.get()).put("originalCode", capacityApiOriginalFailure.get().problem().code().name())
++                        .put("originalEventSha256", evidenceDigestBytes(CAPACITY_API_EVENT)).put("originalMessageSha256", evidenceDigestBytes(CAPACITY_API_MESSAGE));
++                    System.out.println("PLAN_CAPACITY_API_DIAGNOSTIC " + safe);
++                    assertEquals(1, diagnostics.size(), "Persist the execute API cause before the shared channel replaces it with UNKNOWN");
++                    var diagnostic = diagnostics.getFirst();
++                    assertEquals(capacityApiRequestSha.get(), diagnostic.action());
++                    var metadata = new ObjectMapper().readTree(diagnostic.detail());
++                    var fields = new HashSet<String>();
++                    metadata.fieldNames().forEachRemaining(fields::add);
++                    assertEquals(Set.of("category", "exceptionClass", "problemCode", "problemEventCodeSha256", "messageSha256", "exactRequestSha256", "task"), fields);
++                    assertEquals("CANDIDATE_EXECUTE", metadata.path("category").asText());
++                    assertEquals("ApiException", metadata.path("exceptionClass").asText());
++                    assertEquals("IO_FAILURE", metadata.path("problemCode").asText());
++                    assertEquals(evidenceDigestBytes(CAPACITY_API_EVENT), metadata.path("problemEventCodeSha256").asText());
++                    assertEquals(evidenceDigestBytes(CAPACITY_API_MESSAGE), metadata.path("messageSha256").asText());
++                    assertEquals(capacityApiRequestSha.get(), metadata.path("exactRequestSha256").asText());
++                    assertEquals(handle.id().toString(), metadata.path("task").asText());
++                    assertFalse(diagnostic.detail().contains(CAPACITY_API_MESSAGE));
++                    assertFalse(diagnostic.detail().contains(CAPACITY_API_EVENT));
++                    assertEquals(CAPACITY_API_MESSAGE, capacityApiOriginalFailure.get().getMessage());
++                    System.out.println("PLAN_CAPACITY_API_UNKNOWN_VERIFIED " + safe.set("metadata", metadata));
++                    // Explicit local fixture teardown follows the retained UNKNOWN assertions; it is no product recovery proof.
++                    var fixtureRoot = root.toRealPath();
++                    var fixtureTask = handle.id();
++                    assertTrue(fixtureRoot.startsWith(Path.of(System.getProperty("java.io.tmpdir")).toRealPath()));
++                    assertTrue(root.resolve("data").toRealPath().startsWith(fixtureRoot));
++                    assertEquals(fixtureTask, capacityApiTask.get());
++                    registration.close();
++                    try (var teardown = tasks.registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, (previous, originalTask) -> {
++                        assertTrue(planCapacityApiFailure);
++                        assertEquals(fixtureRoot, root.toRealPath());
++                        assertEquals(fixtureTask, previous.id());
++                        assertEquals(fixtureTask, originalTask.id());
++                        assertEquals(TaskState.UNKNOWN, previous.state());
++                        bound.file().closeTaskResources(originalTask);
++                        assertTrue(tasks.resourcesReleased(originalTask));
++                        return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(
++                            new Problem(ProblemCode.IO_FAILURE, "CONTROLLED_LOCAL_TEARDOWN", "Only this local fixture is ended after its UNKNOWN assertions", Map.of(), Optional.empty())));
++                    })) {
++                        assertEquals(TaskState.ENDED, reconcileReady(runtime, handle).state());
++                    }
++                    assertEquals(Optional.of(TaskResult.FAILED), handle.snapshot().outcome());
++                    assertEquals(events, page.events(handle.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).value().orElseThrow().events());
++                    assertEquals(1, candidateCapacitySends.get());
++                    assertEquals(3, calls.get());
++                    System.out.println("PLAN_CAPACITY_API_FIXTURE_TEARDOWN task=" + fixtureTask + " state=ENDED outcome=FAILED remoteReplay=0");
++                    return;
++                }
+                 if (hostEnvelopeDenialJourney) {
+                     hostEnvelopeFacts.put("finalTaskState", handle.snapshot().state().name())
+                         .put("languageRequests", calls.get()).put("feedbackRequests", hostEnvelopeFeedbackRequests)
+@@ -2114,6 +2199,14 @@
+                                     "CONTROLLED_ABSENCE_UNKNOWN", "Original candidate absence query is unknown", Map.of(), Optional.of(task.id()))));
+                             if (((CommandRequest) arguments[0]).script().contains("stat -f -c '%a %S' -- '/var/lib'")) {
+                                 candidateCapacitySends.incrementAndGet();
++                                if (planCapacityApiFailure) {
++                                    capacityApiTask.set(task.id());
++                                    capacityApiRequestSha.set(evidenceDigestBytes(RemoteActions.command(server, revision.get(), (CommandRequest) arguments[0]).exactAction()));
++                                    var failure = new ApiException(new Problem(ProblemCode.IO_FAILURE, CAPACITY_API_EVENT, CAPACITY_API_MESSAGE,
++                                        Map.of(), Optional.of(task.id())));
++                                    capacityApiOriginalFailure.set(failure);
++                                    throw failure;
++                                }
+                                 if (candidateAvailableBytes != null) {
+                                     assertEquals(0, candidateAvailableBytes % 4096);
+                                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-CAPACITY-API-DIAGNOSTIC-82.md
+@@ -0,0 +1,22 @@
++# Agent 候选命令原 API 诊断：82 本地定点交付
++
++80 第二次 plan 参数通过后因 `CapabilityOutcomeException / DEPLOYMENT_BUILD_DISPATCH_UNCONFIRMED` 停止。共享 build channel 将 execute 的原 ApiException 包装为 UNKNOWN 时未保留原 problem/cause，因此具体 API 原因仍未知。
++
++本包只在 AgentRemoteTools 传给 CandidateChannel 的原 RemoteSession 上增加窄委托。execute 失败时 best-effort 保存原 task、exact request SHA256、固定 category、受限 exception class、ProblemCode、已知安全 event 或 SHA、message SHA，同时输出同一安全 progress metadata，然后原样再抛同一个异常。诊断失败不改变原异常，其他操作/close 原样委托。配置刷新重新绑定实际 revision；其它 channel、共享 BuildChannel、STATIC/ASSISTED、UNKNOWN/停止、审批与恢复门均未修改。
++
++唯一新增方法 `DeploymentAgentWorkflowTest#planCapacityTransportFailurePersistsSafeOriginalProblemAndPreservesUnknown`，固定 OPENAI_CHAT_COMPLETIONS，通过真实本地 H2/Codec/固定审批与 controlled capacity execute 注入单一 IO_FAILURE。先验证原 Task/Agent UNKNOWN、capacity 一次、LANGUAGE 三次且停止、未准备/上传/发布、原 task/request 绑定与安全诊断；原 message/event 正文不入新诊断。
++
++| 轮次 | 唯一方法实际结果 | 秒 |
++| --- | --- | --- |
++| baseline-01 | 0 FAIL / 1 ERROR；新夹具误等 UNKNOWN completion | 17.061 |
++| baseline-02 | 1 FAIL / 0 ERROR；诊断缺失，expected 1 / actual 0 | 6.978 |
++| corrected-01 | 0 FAIL / 1 ERROR；目标断言通过，Runtime 因 UNKNOWN 占用拒绝关闭 | 7.073 |
++| corrected-02 | 1 PASS / 0 ERROR | 7.129 |
++
++corrected-02 在全部真实 UNKNOWN/诊断断言与安全 snapshot 留存后，才按精确 UUID、JUnit 临时 root/data 守卫执行显式 TEST-ONLY 回调：仅关闭测试文件资源，并以 FAILED 结束此临时夹具，让 Runtime 实际关闭。该阶段不修改 Agent journal、不 SQL 改账、不重放远端动作，不能作为产品 UNKNOWN 自动恢复或真实业务结清证明。原失败轮全部保留，各轮 source freeze=0、compile failure=0；只复测该方法，没有旧测试/整类/其他 Codec。
++
++仅两 Java owner IDEA write/check 通过；必要 reactor `-DskipTests` package 通过。完整 before/after-final 各3296文件，仅2 source owners变化；JAR SHA256 `8c8868aa41eccef3f5ce8399824e5c2d4b672f7b2f73531012f4c73c356d5945`，6 RemoteTools classes、3未变 Runner classes和15 Agent resources 字节一致。已知24精确 PID/ticks 退出、terminate=0，短子进程采样不穷尽。早期中间进程汇总只计launcher3的下计数记录保留，最终聚合已纠正。
++
++原80/74数据库和 UNKNOWN 未读取、未恢复、未清理；没有 paid/provider/真实 SSH。仅补观测，不确定80原 API 根因，不声称真实部署已恢复。父处理本地隔离提交，子任务未 Git 写。基线 HEAD 为2afb22fb62af002acde3fc206c099506500b12c8。
++
++辅助原证：`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-capacity-api-diagnostic-82/`；完整自有增量位于同目录82-owner-source.patch及正式 `docs/test/multi-language/patches/AGENT-CAPACITY-API-DIAGNOSTIC-82.patch`。
