@@ -53,6 +53,10 @@ final class DeploymentAgentPublicationReceipts implements RemoteSession {
 
     private boolean rollbackObserved;
 
+    private long publicationEvent;
+
+    private long rollbackEvent;
+
     DeploymentAgentPublicationReceipts(RemoteSession borrowed, ServerId server, String revision,
                                        DeploymentPublishResult proposal) {
         this.borrowed = Objects.requireNonNull(borrowed);
@@ -87,6 +91,22 @@ final class DeploymentAgentPublicationReceipts implements RemoteSession {
         captured = 0;
         rollbackObserved = false;
         receipts.clear();
+    }
+
+    void journaled(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Event event) {
+        journaled(event.type(), event.action(), event.detail());
+        if (!phase.equals("publish") || !event.action().equals(application)) return;
+        if (event.type().equals("GRAPH_PROPOSAL")) publicationEvent = event.id();
+        if (event.type().equals("GRAPH_ROLLBACK_RESULT") && event.detail().equals("RESTORED"))
+            rollbackEvent = event.id();
+    }
+
+    long publicationEvent() {
+        return publicationEvent;
+    }
+
+    long rollbackEvent() {
+        return rollbackEvent;
     }
 
     /** Called only after the original publisher journal consumer has accepted this event. */

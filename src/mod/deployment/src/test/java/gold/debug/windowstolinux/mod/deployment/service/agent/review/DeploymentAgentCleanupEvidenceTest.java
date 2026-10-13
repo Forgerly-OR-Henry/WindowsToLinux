@@ -373,6 +373,18 @@ class DeploymentAgentCleanupEvidenceTest {
         }
     }
 
+    @Test
+    void failedCleanupCannotBorrowTheUnfinishedSuccessfulDeliveryException() throws Exception {
+        try (var frame = new Frame()) {
+            assertFalse(DeploymentAgentActionLog.effectsSettled(frame.journal.events(frame.task)));
+            assertThrows(ApiException.class, () -> frame.evidence(false));
+            assertEquals(0, frame.statusQueries);
+            assertEquals(0, frame.deletions);
+            assertEquals(0, frame.absenceQueries);
+            assertEquals("UNKNOWN", frame.journal.find(frame.task).orElseThrow().state());
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"task", "server", "target", "revision", "timeout", "stdin"})
     void supplementalEvidenceRejectsChangedIdentityOrRequest(String change) throws Exception {
@@ -737,8 +749,12 @@ class DeploymentAgentCleanupEvidenceTest {
         }
 
         DeploymentAgentCleanupEvidence evidence() throws Exception {
+            return evidence(true);
+        }
+
+        DeploymentAgentCleanupEvidence evidence(boolean successful) throws Exception {
             var scope = scope();
-            return new DeploymentAgentCleanupEvidence(scope, remote, server, task, REVISION, proposal, Map.of("component", candidate), journal, DeploymentSendGuard.NONE, true);
+            return new DeploymentAgentCleanupEvidence(scope, remote, server, task, REVISION, proposal, Map.of("component", candidate), journal, DeploymentSendGuard.NONE, successful);
         }
 
         DeploymentGraphPublisher publisher() throws Exception {
