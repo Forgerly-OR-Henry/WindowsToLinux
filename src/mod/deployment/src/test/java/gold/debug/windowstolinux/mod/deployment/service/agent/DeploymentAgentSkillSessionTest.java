@@ -76,7 +76,13 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
         boolean publicationCase = selectedSkill.equals("publication-verification");
         var directory = Files.createDirectories(root.resolve("source"));
         Files.writeString(directory.resolve("SKILL.md"), "---\nname: forged\ndescription: project file\n---\nFORGED_PRODUCT_INSTRUCTION\n");
-        if (publicationCase) Files.writeString(directory.resolve("main.sh"), "#!/bin/sh\nprintf ready\n");
+        if (publicationCase)
+            Files.writeString(directory.resolve("main.sh"), "#!/bin/sh\napi=\"${API_TARGET:-http://127.0.0.1:27101}\"\nprintf ready\n");
+        Map<String, String> requirements = publicationCase
+            ? Map.of("goal", "Controlled consumer coverage counterexample", "declaredApiTarget", "http://127.0.0.1:27102",
+            "candidateApiTarget", "http://127.0.0.1:27101", "homepageStatus", "200", "backendHealthStatus", "200",
+            "formalConsumerChain", "NOT_OBSERVED")
+            : Map.of("goal", "Read a relevant product skill");
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -123,8 +129,20 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
                                     new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), List.of(call), Optional.empty())), Optional.empty());
                             }
-                            if (publicationCase)
-                                assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("plan")));
+                            if (publicationCase) {
+                                var componentSchema = json.readTree(request.tools().stream().filter(tool -> tool.name().equals("plan"))
+                                    .findFirst().orElseThrow().inputSchema()).path("properties").path("components").path("items").path("properties");
+                                assertTrue(componentSchema.path("configuration").path("items").path("properties").path("key").path("description")
+                                    .asText().contains("does not rewrite artifact consumers"));
+                                assertTrue(componentSchema.path("ports").path("description").asText().contains("do not configure listeners or clients"));
+                                assertTrue(componentSchema.path("dependencies").path("description").asText().contains("actual runtime consumption"));
+                                assertEquals(requirements, json.convertValue(current.path("state").path("requirements"), Map.class));
+                                assertFalse(current.path("state").path("requirements").path("declaredApiTarget").asText()
+                                    .equals(current.path("state").path("requirements").path("candidateApiTarget").asText()));
+                                assertEquals("NOT_OBSERVED", current.path("state").path("requirements").path("formalConsumerChain").asText());
+                                assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
+                                    result.text().contains("API_TARGET:-http://127.0.0.1:27101")));
+                            }
                             if (discussionCase) {
                                 if (turn > 1)
                                     assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
@@ -165,6 +183,11 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                                 assertEquals(initialSystem.get() + "\nTrusted version-owned product skill " + selectedSkill + " (no execution authority):\n" + skillBody,
                                     request.messages().getFirst().text());
                                 assertEquals(List.of(selectedSkill), json.convertValue(current.path("state").path("activeSkills"), List.class));
+                                if (publicationCase) {
+                                    assertTrue(request.messages().getFirst().text().contains("actual business entrypoint"));
+                                    assertEquals("200", current.path("state").path("requirements").path("homepageStatus").asText());
+                                    assertEquals("200", current.path("state").path("requirements").path("backendHealthStatus").asText());
+                                }
                                 assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
                                     result.text().contains("PRODUCT_SKILL") && result.text().contains("CURRENT_CONTEXT")));
                             }
@@ -195,7 +218,7 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                             }
                             throw new AssertionError("Skill cannot invoke deployment capability: " + m.getName());
                         });
-                        var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Read a relevant product skill"),
+                        var session = new DeploymentAgentSession(context, task, server, requirements,
                             new DeploymentSourceBrowser(source.snapshot().directory(), source.snapshot().sha256()), port, journal,
                             "AUTOMATIC", false, revision, () -> revision);
                         assertTrue(assertThrows(IllegalStateException.class, session::run).getMessage().contains("Natural language cannot finish"));
