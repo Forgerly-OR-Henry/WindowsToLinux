@@ -127,6 +127,8 @@ public final class DeploymentAgentHistoryArchive {
 
     private OperationResult<Void> archive(TaskContext task, UUID selected, OperationResult<Void> observed, boolean historical) throws Exception {
         var result = new java.util.concurrent.atomic.AtomicReference<DeploymentOperationReceipts.Receipt>();
+        if (!historical && !context.tasks().resourcesReleased(task))
+            throw new SQLException("Original resources changed before opening the archive connection");
         var connection = context.db().openConnection(task);
         DeploymentStorageTransaction.execute(connection, () -> {
             try (var lock = connection.prepareStatement("SELECT task_id FROM deployment_agent_task WHERE task_id=? FOR UPDATE")) {
@@ -151,7 +153,7 @@ public final class DeploymentAgentHistoryArchive {
             }
             var saved = DeploymentAgentActionLog.find(connection, selected).orElseThrow();
             var events = DeploymentAgentActionLog.events(connection, selected);
-            if (!saved.state().equals(observed.outcome().name()) || !DeploymentAgentActionLog.effectsSettled(events)
+            if (!saved.state().equals(observed.outcome().name())
                 || gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentHistoryReader.pending(events).isPresent())
                 throw new SQLException("Original Agent evidence remains unresolved");
             boolean recovered = events.stream().anyMatch(event -> event.type().equals("AI_RECOVERY_SETTLED")
@@ -162,13 +164,27 @@ public final class DeploymentAgentHistoryArchive {
                 query.setObject(1, selected);
                 try (var rows = query.executeQuery()) {
                     if (rows.next()) execution = DeploymentExecutionStore.row(rows);
+                    if (rows.next()) throw new SQLException("Original formal operation is not unique");
                 }
             }
+            boolean deliveryProof = events.stream().anyMatch(event -> event.type().equals(DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED));
+            if (deliveryProof || !DeploymentAgentActionLog.effectsSettled(events)) {
+                if (!recovered || execution == null || observed.outcome() != TaskResult.SUCCEEDED)
+                    throw new SQLException("Original delivery recovery is unconfirmed");
+                var template = new DeploymentExecutionStore(context.db()).publicationTemplate(execution).orElseThrow();
+                var proof = DeploymentAgentActionLog.originalDeliveryProof(selected, saved, execution, template, events).orElseThrow();
+                DeploymentReleaseChecker.linked(connection, execution);
+                if (!deliveryProof) DeploymentAgentActionLog.appendDeliveryProof(connection, selected, proof);
+                events = DeploymentAgentActionLog.events(connection, selected);
+            }
+            if (!DeploymentAgentActionLog.effectsSettled(events))
+                throw new SQLException("Original Agent effects remain unresolved");
             var evidence = DeploymentJsonDocument.object().put("formatVersion", 1).put("task", selected.toString())
                 .put("target", saved.identity().targetDigest()).put("configuration", saved.identity().configurationDigest());
             var history = evidence.putArray("events");
-            events.forEach(event -> history.addObject().put("id", event.id()).put("type", event.type())
-                .put("action", event.action()).put("detail", event.detail()));
+            for (var event : events)
+                history.addObject().put("id", event.id()).put("type", event.type())
+                    .put("action", event.action()).put("detail", event.detail());
             UUID operation = selected;
             Optional<String> application = Optional.empty();
             Optional<gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseIdentity> release = Optional.empty();

@@ -1,0 +1,890 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -171,7 +171,24 @@
+             journal.event(task, "AI_PUBLICATION_CLEANED", proposal.graph().applicationId(), "ABSENT");
+         }
+         var latest = executions.findForTask(task).orElseThrow();
+-        var finished = new DeploymentOriginalPublishCommit(context).finishKnown(task, latest);
++        return finishRecovered(task, latest);
++    }
++
++    private OperationResult<Void> finishRecovered(TaskContext task,
++                                                  gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionRecord original) throws Exception {
++        var finished = new DeploymentOriginalPublishCommit(context).finishKnown(task, original);
++        if (finished.outcome() == TaskResult.SUCCEEDED) {
++            var latest = executions.findForTask(task).orElseThrow();
++            if (!latest.identity().equals(original.identity()))
++                return unknown("DEPLOYMENT_AGENT_ORIGINAL_DELIVERY_CHANGED");
++            try {
++                DeploymentAgentActionLog.originalDeliveryProof(task.id(), journal.find(task).orElseThrow(), latest,
++                    executions.publicationTemplate(latest).orElseThrow(), journal.events(task));
++            } catch (Exception unconfirmed) {
++                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, unconfirmed);
++                return unknown("DEPLOYMENT_AGENT_ORIGINAL_DELIVERY_UNCONFIRMED");
++            }
++        }
+         if (finished.outcome() != TaskResult.UNKNOWN) {
+             journal.event(task, "AI_RECOVERY_SETTLED", task.id().toString(),
+                 finished.outcome().name() + ":COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED");
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+@@ -10,6 +10,15 @@
+ import gold.debug.windowstolinux.appapi.task.result.Problem;
+ import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument;
++import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionRecord;
++import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
++import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal;
++import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishTemplateCodec;
++import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseCodec;
++import gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseSnapshot;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+ 
+ /** Durable agent-only state and action evidence, independent of standard deployment. / 独立于标准部署的持久自主任务状态与动作依据。 */
+ public final class DeploymentAgentActionLog {
+@@ -57,6 +66,320 @@
+      * @param state last durable state / 最近持久状态
+      * @param executionSemantics persisted recovery-only version / 已存只恢复语义版本 */
+     public record Snapshot(Identity identity, String state, int executionSemantics) {
++    }
++
++    public static final String DELIVERY_RECOVERY_SETTLED = "DELIVERY_RECOVERY_SETTLED";
++
++    /** A recovery observation binds the original attempt without inventing its missing result. */
++    public record OriginalDeliveryProof(long eventId, String action, long planRevision, UUID task,
++                                        UUID execution, String server, String application, String target,
++                                        String configuration, String layout, String template, String request,
++                                        String recovery, String result, String releaseId, String release,
++                                        String identity, String events) {
++        public OriginalDeliveryProof {
++            if (eventId <= 0 || planRevision <= 0 || !action.matches("[0-9a-f]{64}"))
++                throw new IllegalArgumentException("Invalid original delivery attempt");
++            for (String value : List.of(target, configuration, layout, template, request, recovery, result, release, identity, events))
++                if (!value.matches("[0-9a-f]{64}"))
++                    throw new IllegalArgumentException("Invalid original delivery digest");
++            UUID.fromString(releaseId);
++            Objects.requireNonNull(task);
++            Objects.requireNonNull(execution);
++            if (server.isBlank() || !application.matches("[a-z0-9][a-z0-9-]{0,62}"))
++                throw new IllegalArgumentException("Invalid original delivery owner");
++        }
++
++        public String detail() {
++            return DeploymentJsonDocument.object().put("formatVersion", 1).put("eventId", eventId).put("ordinal", 1)
++                .put("action", action).put("planRevision", planRevision).put("task", task.toString())
++                .put("execution", execution.toString()).put("server", server).put("application", application)
++                .put("target", target).put("configuration", configuration).put("layout", layout).put("template", template)
++                .put("request", request).put("recovery", recovery).put("result", result).put("releaseId", releaseId)
++                .put("release", release).put("identity", identity).put("events", events).toString();
++        }
++    }
++
++    /** Uses the trusted original journal's unique causal interval, never reconstructing an Agent plan. */
++    public static Optional<OriginalDeliveryProof> originalDeliveryProof(UUID task, Snapshot saved,
++                                                                        DeploymentExecutionRecord formal, DeploymentPublishProposal template, List<Event> all) throws SQLException {
++        var proofs = all.stream().filter(e -> e.type().equals(DELIVERY_RECOVERY_SETTLED)).toList();
++        long previousId = 0;
++        for (var event : all) {
++            if (event.id() <= previousId) throw new SQLException("Original event order is invalid");
++            previousId = event.id();
++        }
++        var events = all.stream().filter(e -> !e.type().equals(DELIVERY_RECOVERY_SETTLED)).toList();
++        var deliveries = events.stream().filter(e -> e.type().equals("DELIVERY_EXECUTING")).toList();
++        var results = events.stream().filter(e -> e.type().equals("DELIVERY_RESULT")).toList();
++        if (effectsSettled(events.stream().filter(e -> e.type().startsWith("DELIVERY_")).toList())) {
++            if (!proofs.isEmpty()) throw new SQLException("Recovery proof has no original pending delivery");
++            return Optional.empty();
++        }
++        if (deliveries.size() != 1 || !results.isEmpty() || proofs.size() > 1)
++            throw new SQLException("Original delivery cannot be uniquely attributed");
++        var formalRelease = gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionCodec.release(formal).orElseThrow();
++        var delivery = deliveries.getFirst();
++        var identity = formal.identity();
++        if (saved.executionSemantics() != 4 || !identity.taskId().equals(task)
++            || identity.mode() != DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT
++            || !identity.server().id().equals(saved.identity().server()) || !formal.phase().equals("FINISHED")
++            || !formal.outcome().equals(Optional.of(TaskResult.SUCCEEDED)) || !formal.businessCommitted() || !formal.cleanupComplete()
++            || !template.graph().applicationId().equals(identity.applicationId()))
++            throw new SQLException("Original successful formal delivery is unconfirmed");
++        if (!effectsSettled(events.stream().filter(e -> !e.type().startsWith("DELIVERY_")).toList()))
++            throw new SQLException("Another original effect remains unresolved");
++        long revision = Long.parseLong(delivery.detail());
++        if (!delivery.action().matches("[0-9a-f]{64}") || revision <= 0
++            || revision != events.stream().filter(e -> e.id() < delivery.id()
++            && Set.of("PLAN", "PATCH_RESULT").contains(e.type())).count())
++            throw new SQLException("Original delivery plan revision is unconfirmed");
++        if (events.stream().anyMatch(e -> e.id() > delivery.id() && Set.of("SOURCE", "PLAN", "PLAN_APPLICATION", "PATCH_EXECUTING",
++            "PATCH_RESULT", "CANDIDATE", "CURRENT_SOURCE", "SEAL_EXECUTING", "SEAL_RESULT", "SEALED_ARTIFACT",
++            "ARTIFACT_INVALIDATED", "COMMAND_EXECUTING", "CAPABILITY_EXECUTING").contains(e.type())))
++            throw new SQLException("Original delivered build was subsequently changed");
++        var source = only(events, "SOURCE", null);
++        for (String type : List.of("TARGET_PROFILE", "REMOTE_TARGET")) {
++            var header = only(events, type, null);
++            if (header.id() >= delivery.id() || !header.action().isEmpty() || !header.detail().matches("[0-9a-f]{64}"))
++                throw new SQLException("Original target evidence is unconfirmed");
++        }
++        var plan = latest(events, "PLAN", null, delivery.id());
++        var application = latest(events, "PLAN_APPLICATION", null, plan.id());
++        if (source.id() >= plan.id() || !source.action().matches("[0-9a-f]{64}") || !source.detail().matches("[0-9a-f]{64}")
++            || !plan.detail().matches("[0-9a-f]{64}") || !application.detail().equals(identity.applicationId()))
++            throw new SQLException("Original delivery source or application changed");
++        var layout = template.graph().components().getFirst().unit().layout();
++        var captured = only(events, "REMOTE_LAYOUT", null);
++        var layoutNode = DeploymentJsonDocument.parse(captured.detail());
++        DeploymentJsonDocument.fields(layoutNode, Set.of("formatVersion", "task", "server", "layout", "layoutSha256"));
++        if (!captured.action().equals(task.toString()) || captured.id() >= delivery.id() || !layoutNode.path("formatVersion").isInt()
++            || layoutNode.path("formatVersion").intValue() != 1
++            || !DeploymentJsonDocument.string(layoutNode, "task").equals(task.toString())
++            || !DeploymentJsonDocument.string(layoutNode, "server").equals(identity.server().id())
++            || !DeploymentJsonDocument.string(layoutNode, "layoutSha256").equals(layout.digest())
++            || !layoutNode.path("layout").toString().equals(layout.canonical()))
++            throw new SQLException("Original delivery layout changed");
++        var publication = only(events, "AI_PUBLICATION", identity.applicationId());
++        var finished = only(events, "AI_PUBLICATION_FINISHED", identity.applicationId());
++        var verified = latest(events, "AI_PUBLICATION_VERIFIED", identity.applicationId(), finished.id());
++        var cleaned = latest(events, "AI_PUBLICATION_CLEANED", identity.applicationId(), Long.MAX_VALUE);
++        if (delivery.id() >= publication.id() || publication.id() >= verified.id() || verified.id() >= finished.id()
++            || finished.id() >= cleaned.id() || !publication.detail().equals("MODEL_GENERATED_COMMANDS")
++            || !verified.detail().equals("HEALTHY") || !finished.detail().equals("MODEL_ACCEPTED_VERIFIED_RESULT") || !cleaned.detail().equals("ABSENT"))
++            throw new SQLException("Original publication closure is unconfirmed");
++        var binding = DeploymentJsonDocument.object().put("task", task.toString()).put("source", source.detail())
++            .put("archive", source.action()).put("plan", plan.detail()).put("reviewedRevision", identity.reviewedRevision());
++        var components = binding.putArray("components");
++        var ids = new HashSet<String>();
++        for (var part : template.graph().components()) {
++            String id = part.componentId();
++            ids.add(id);
++            if (!part.unit().server().equals(identity.server()) || !part.unit().layout().equals(layout))
++                throw new SQLException("Original component owner or layout changed");
++            var unit = template.units().stream().filter(u -> u.unit().equals(part.unit())).findFirst().orElseThrow();
++            var candidate = only(events, "CANDIDATE", id);
++            var current = latest(events, "CURRENT_SOURCE", id, delivery.id());
++            var sealed = latest(events, "SEALED_ARTIFACT", id, delivery.id());
++            var tools = only(events, "SEALED_TOOLS", id);
++            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), source.action(), layout);
++            if (!gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentManagedUnitResolver.managedId(identity.applicationId(), id).equals(part.unit().id())
++                || !workspace.candidateId().equals(candidate.detail()) || !current.detail().matches("[0-9a-f]{64}")
++                || !sealed.detail().matches("[0-9a-f]{64}") || current.id() >= sealed.id() || candidate.id() >= sealed.id()
++                || tools.id() <= delivery.id() || tools.id() >= publication.id() || !tools.detail().matches("[0-9a-f]{64}:(true|false)"))
++                throw new SQLException("Original sealed candidate is unconfirmed");
++            var seal = latest(events, "SEAL_EXECUTING", null, sealed.id());
++            var sealResult = latest(events, "SEAL_RESULT", seal.action(), sealed.id());
++            if (!seal.action().equals(hash(id + ":" + current.detail() + ":seal")) || !seal.detail().equals(current.detail())
++                || current.id() >= seal.id() || seal.id() >= sealResult.id() || !sealResult.detail().equals(sealed.detail())
++                || events.stream().anyMatch(e -> e.id() > seal.id() && e.id() < delivery.id()
++                && (e.type().equals("PLAN") || e.type().equals("PATCH_RESULT")
++                || e.type().equals("ARTIFACT_INVALIDATED") && e.action().equals(id))))
++                throw new SQLException("Original seal was invalidated");
++            requireQuota(events, candidate, task, saved.identity(), source, layout.digest());
++            var quota = latest(events, "WORKSPACE_QUOTA", id, delivery.id());
++            var selectedQuota = quotaJson(quota.detail());
++            requireQuotaFields(selectedQuota, false);
++            requireQuotaOwner(selectedQuota, task, saved.identity(), source, layout.digest(), plan.detail());
++            String release = hash("agent-release:" + sealed.detail() + ":" + current.detail() + ":"
++                + unit.configuration().sha256() + ":" + part.reviewedRuntime() + ":" + part.resources());
++            if (!release.equals(unit.release().sha256()))
++                throw new SQLException("Original artifact and formal release differ");
++            components.addObject().put("component", id).put("unit", part.unit().id()).put("ownership", part.unit().ownershipManifestSha256())
++                .put("candidate", candidate.detail()).put("source", current.detail()).put("artifact", sealed.detail())
++                .put("tools", tools.detail()).put("configuration", unit.configuration().sha256()).put("release", release);
++        }
++        for (String type : List.of("CANDIDATE", "CURRENT_SOURCE", "SEALED_ARTIFACT", "SEALED_TOOLS", "WORKSPACE_QUOTA"))
++            if (!events.stream().filter(e -> e.type().equals(type)).map(Event::action).collect(java.util.stream.Collectors.toSet()).equals(ids))
++                throw new SQLException("Original delivery component set changed");
++        var request = DeploymentJsonDocument.parse(formal.requestJson(), 144 * 1_048_576);
++        String encoded = DeploymentPublishTemplateCodec.encodeTemplate(template);
++        if (!request.path("publicationTemplate").toString().equals(encoded))
++            throw new SQLException("Original formal template differs from its typed identity");
++        var snapshot = DeploymentReleaseSnapshot.capture(template.graph(), template.units());
++        String wholeRelease = DeploymentReleaseCodec.digest(DeploymentReleaseCodec.runtime(snapshot), DeploymentReleaseCodec.health(snapshot));
++        if (!formalRelease.sha256().equals(wholeRelease))
++            throw new SQLException("Original template and whole release differ");
++        var review = binding.putArray("recoveryReview");
++        String reviewRevision = saved.identity().configurationDigest();
++        long previousReview = 0;
++        for (var event : events.stream().filter(e -> e.type().startsWith("RECOVERY_REVIEW_")).toList()) {
++            if (!event.action().equals(saved.identity().configurationDigest()))
++                throw new SQLException("Original recovery review owner changed");
++            String next;
++            if (previousReview == 0) {
++                if (!event.type().equals("RECOVERY_REVIEW_BOUND"))
++                    throw new SQLException("Original recovery review predecessor is absent");
++                next = event.detail();
++            } else {
++                String prefix = "previousEventId=" + previousReview + "\npreviousReviewRevision=" + reviewRevision + "\nreviewRevision=";
++                if (!event.type().equals("RECOVERY_REVIEW_REBOUND") || !event.detail().startsWith(prefix))
++                    throw new SQLException("Original recovery review chain changed");
++                next = event.detail().substring(prefix.length());
++            }
++            if (!next.matches("[0-9a-f]{64}") || next.equals(reviewRevision))
++                throw new SQLException("Original recovery review revision is invalid");
++            previousReview = event.id();
++            reviewRevision = next;
++        }
++        binding.put("recoveryReviewRevision", reviewRevision);
++        events.stream().filter(e -> e.type().startsWith("RECOVERY_REVIEW_")).forEach(e ->
++            review.addObject().put("id", e.id()).put("type", e.type()).put("action", e.action()).put("detail", e.detail()));
++        var proof = new OriginalDeliveryProof(delivery.id(), delivery.action(), revision, task, identity.executionId(),
++            identity.server().id(), identity.applicationId(), saved.identity().targetDigest(), saved.identity().configurationDigest(),
++            layout.digest(), hash(encoded), hash(formal.requestJson()), hash(formal.recoveryJson()), hash(formal.resultJson().orElseThrow()),
++            formalRelease.id().toString(), wholeRelease, hash(binding.toString()), eventDigest(events));
++        if (!proofs.isEmpty() && (!proofs.getFirst().action().equals(delivery.action()) || !proofs.getFirst().detail().equals(proof.detail())
++            || proofs.getFirst().id() <= events.getLast().id()))
++            throw new SQLException("Stored recovery proof differs from the exact original binding");
++        return Optional.of(proof);
++    }
++
++    /** Called inside the archive's original row locks and cleanup transaction only. */
++    public static void appendDeliveryProof(Connection connection, UUID task, OriginalDeliveryProof proof) throws SQLException {
++        if (connection.getAutoCommit() || !proof.task().equals(task) || proof.detail().length() > 4096)
++            throw new SQLException("Original delivery proof requires its cleanup transaction");
++        DeploymentAgentEvidenceLimit.require(connection, task, false);
++        try (var insert = connection.prepareStatement("INSERT INTO deployment_agent_event(task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,?,?,?)")) {
++            insert.setString(1, task.toString());
++            insert.setString(2, proof.action());
++            insert.setString(3, DELIVERY_RECOVERY_SETTLED);
++            insert.setString(4, proof.detail());
++            insert.setLong(5, Instant.now().toEpochMilli());
++            if (insert.executeUpdate() != 1)
++                throw new SQLException("Original delivery proof insertion was unconfirmed");
++        }
++    }
++
++    private static Event only(List<Event> events, String type, String action) throws SQLException {
++        var selected = events.stream().filter(e -> e.type().equals(type) && (action == null || e.action().equals(action))).toList();
++        if (selected.size() != 1) throw new SQLException("Original " + type + " evidence is not unique");
++        return selected.getFirst();
++    }
++
++    private static Event latest(List<Event> events, String type, String action, long before) throws SQLException {
++        return events.stream().filter(e -> e.id() < before && e.type().equals(type) && (action == null || e.action().equals(action)))
++            .reduce((first, last) -> last).orElseThrow(() -> new SQLException("Original " + type + " evidence is absent"));
++    }
++
++    private static void requireQuota(List<Event> events, Event candidate, UUID task, Identity identity, Event source, String layout) throws SQLException {
++        var quota = latest(events, "CANDIDATE_QUOTA", candidate.action(), candidate.id());
++        var selected = latest(events, "WORKSPACE_QUOTA", candidate.action(), quota.id());
++        var plan = latest(events, "PLAN", null, quota.id());
++        var data = quotaJson(quota.detail());
++        var declared = quotaJson(selected.detail());
++        requireQuotaFields(data, true);
++        requireQuotaFields(declared, false);
++        requireQuotaOwner(data, task, identity, source, layout, plan.detail());
++        requireQuotaOwner(declared, task, identity, source, layout, plan.detail());
++        for (String key : List.of("task", "server", "source", "configuration", "layout", "plan", "workspaceBytes", "reserveBytes"))
++            if (!data.path(key).equals(declared.path(key))) throw new SQLException("Original candidate quota changed");
++        if (!data.path("candidate").asText().equals(candidate.detail()) || !data.path("prepareAction").asText().equals(
++            gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException.binding(task,
++                candidate.action(), source.detail(), plan.detail(), data.path("workspaceBytes").longValue())))
++            throw new SQLException("Original candidate preparation binding changed");
++        var prepare = latest(events, "PREPARE_EXECUTING", data.path("prepareAction").asText(), quota.id());
++        var result = latest(events, "PREPARE_RESULT", prepare.action(), candidate.id());
++        if (!prepare.detail().equals(candidate.action()) || prepare.id() >= quota.id() || quota.id() >= result.id()
++            || !result.detail().matches("[0-9a-f]{64}"))
++            throw new SQLException("Original candidate preparation result is unconfirmed");
++    }
++
++    private static void requireQuotaOwner(com.fasterxml.jackson.databind.JsonNode node, UUID task, Identity identity,
++                                          Event source, String layout, String plan) throws SQLException {
++        for (String field : List.of("task", "server", "source", "configuration", "layout", "plan"))
++            if (!node.path(field).isTextual()) throw new SQLException("Original quota identity is not textual");
++        if (!node.path("task").asText().equals(task.toString()) || !node.path("server").asText().equals(identity.server())
++            || !node.path("source").asText().equals(source.detail()) || !node.path("configuration").asText().equals(identity.configurationDigest())
++            || !node.path("layout").asText().equals(layout) || !node.path("plan").asText().equals(plan)
++            || !node.path("workspaceBytes").isIntegralNumber() || !node.path("reserveBytes").isIntegralNumber()
++            || !node.path("workspaceBytes").canConvertToLong() || !node.path("reserveBytes").canConvertToLong()
++            || node.path("workspaceBytes").longValue() < gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT
++            || node.path("reserveBytes").longValue() < 1073741824L
++            || node.path("workspaceBytes").longValue() > gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.MAXIMUM
++            || node.path("reserveBytes").longValue() > gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.MAXIMUM)
++            throw new SQLException("Original workspace quota owner is unconfirmed");
++    }
++
++    private static void requireQuotaFields(com.fasterxml.jackson.databind.JsonNode node, boolean candidate) throws SQLException {
++        var fields = new HashSet<>(Set.of("task", "server", "source", "configuration", "layout", "plan", "workspaceBytes", "reserveBytes"));
++        if (candidate) fields.addAll(Set.of("prepareAction", "candidate"));
++        else fields.add("mode");
++        DeploymentJsonDocument.fields(node, fields);
++        if (candidate && (!node.path("prepareAction").isTextual() || !node.path("candidate").isTextual())
++            || !candidate && (!node.path("mode").isTextual() || !Set.of("AUTO", "EXPLICIT").contains(node.path("mode").textValue())))
++            throw new SQLException("Original quota scope is invalid");
++    }
++
++    private static com.fasterxml.jackson.databind.JsonNode quotaJson(String value) throws SQLException {
++        if (value.length() > 4096) throw new SQLException("Original quota evidence exceeds its boundary");
++        try {
++            var node = new com.fasterxml.jackson.databind.ObjectMapper()
++                .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(value);
++            if (node == null || !node.isObject()) throw new SQLException("Original quota evidence is not an object");
++            return node;
++        } catch (java.io.IOException invalid) {
++            throw new SQLException("Original quota evidence is malformed", invalid);
++        }
++    }
++
++    private static String hash(String value) {
++        return gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.hash(value);
++    }
++
++    private static String eventDigest(List<Event> events) {
++        var node = DeploymentJsonDocument.object().putArray("events");
++        events.forEach(e -> node.addObject().put("id", e.id()).put("type", e.type()).put("action", e.action()).put("detail", e.detail()));
++        return hash(node.toString());
++    }
++
++    private static boolean matchesDeliveryProof(Event event, List<Event> events) {
++        try {
++            if (event.detail().length() > 4096) return false;
++            var node = DeploymentJsonDocument.parse(event.detail());
++            DeploymentJsonDocument.fields(node, Set.of("formatVersion", "eventId", "ordinal", "action", "planRevision", "task", "execution",
++                "server", "application", "target", "configuration", "layout", "template", "request", "recovery", "result", "releaseId", "release", "identity", "events"));
++            if (!node.path("formatVersion").isInt() || node.path("formatVersion").intValue() != 1
++                || !node.path("ordinal").isInt() || node.path("ordinal").intValue() != 1
++                || !node.path("eventId").isIntegralNumber() || !node.path("eventId").canConvertToLong()
++                || !node.path("planRevision").isIntegralNumber() || !node.path("planRevision").canConvertToLong())
++                return false;
++            var proof = new OriginalDeliveryProof(node.path("eventId").longValue(), DeploymentJsonDocument.string(node, "action"),
++                node.path("planRevision").longValue(), DeploymentJsonDocument.uuid(node, "task"), DeploymentJsonDocument.uuid(node, "execution"),
++                DeploymentJsonDocument.string(node, "server"), DeploymentJsonDocument.string(node, "application"), DeploymentJsonDocument.string(node, "target"),
++                DeploymentJsonDocument.string(node, "configuration"), DeploymentJsonDocument.string(node, "layout"), DeploymentJsonDocument.string(node, "template"),
++                DeploymentJsonDocument.string(node, "request"), DeploymentJsonDocument.string(node, "recovery"), DeploymentJsonDocument.string(node, "result"),
++                DeploymentJsonDocument.string(node, "releaseId"), DeploymentJsonDocument.string(node, "release"), DeploymentJsonDocument.string(node, "identity"),
++                DeploymentJsonDocument.string(node, "events"));
++            var prefix = events.stream().filter(e -> e.id() < event.id()).toList();
++            var original = only(prefix, "DELIVERY_EXECUTING", null);
++            return event.action().equals(proof.action()) && event.detail().equals(proof.detail()) && original.id() == proof.eventId()
++                && original.action().equals(proof.action()) && original.detail().equals(Long.toString(proof.planRevision()))
++                && prefix.stream().noneMatch(e -> e.type().equals("DELIVERY_RESULT") || e.type().equals(DELIVERY_RECOVERY_SETTLED))
++                && eventDigest(prefix).equals(proof.events());
++        } catch (Exception invalid) {
++            return false;
++        }
+     }
+ 
+     /** Persists identity before any model invocation or remote effect. / 在模型调用或远端影响之前持久化身份。
+@@ -495,6 +818,12 @@
+                 .contains(event.type()))
+                 pending.computeIfPresent(List.of(event.type().substring(0, event.type().length() - "_RESULT".length()), event.action()),
+                     (key, count) -> count == 1 ? null : count - 1);
++            if (event.type().equals(DELIVERY_RECOVERY_SETTLED)) {
++                if (!matchesDeliveryProof(event, complete)) return false;
++                var key = List.of("DELIVERY", event.action());
++                if (!Objects.equals(pending.get(key), 1)) return false;
++                pending.remove(key);
++            }
+             if (Set.of("PREPARE_NOT_SENT", "COMMAND_NOT_SENT", "PATCH_NOT_SENT", "CAPABILITY_NOT_SENT").contains(event.type()) && event.detail().equals("ALTERNATIVE_REQUIRED")
+                 || Set.of("COMMAND_NOT_SENT", "CAPABILITY_NOT_SENT").contains(event.type()) && event.detail().equals("REVIEW_STOPPED_NOT_SENT")
+                 || event.type().equals("PREPARE_NOT_SENT") && event.detail().equals("INSTALL_REVIEW_STOPPED_NOT_SENT"))
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentHistoryArchive.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentHistoryArchive.java
+@@ -127,6 +127,8 @@
+ 
+     private OperationResult<Void> archive(TaskContext task, UUID selected, OperationResult<Void> observed, boolean historical) throws Exception {
+         var result = new java.util.concurrent.atomic.AtomicReference<DeploymentOperationReceipts.Receipt>();
++        if (!historical && !context.tasks().resourcesReleased(task))
++            throw new SQLException("Original resources changed before opening the archive connection");
+         var connection = context.db().openConnection(task);
+         DeploymentStorageTransaction.execute(connection, () -> {
+             try (var lock = connection.prepareStatement("SELECT task_id FROM deployment_agent_task WHERE task_id=? FOR UPDATE")) {
+@@ -151,7 +153,7 @@
+             }
+             var saved = DeploymentAgentActionLog.find(connection, selected).orElseThrow();
+             var events = DeploymentAgentActionLog.events(connection, selected);
+-            if (!saved.state().equals(observed.outcome().name()) || !DeploymentAgentActionLog.effectsSettled(events)
++            if (!saved.state().equals(observed.outcome().name())
+                 || gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentHistoryReader.pending(events).isPresent())
+                 throw new SQLException("Original Agent evidence remains unresolved");
+             boolean recovered = events.stream().anyMatch(event -> event.type().equals("AI_RECOVERY_SETTLED")
+@@ -162,13 +164,27 @@
+                 query.setObject(1, selected);
+                 try (var rows = query.executeQuery()) {
+                     if (rows.next()) execution = DeploymentExecutionStore.row(rows);
+-                }
+-            }
++                    if (rows.next()) throw new SQLException("Original formal operation is not unique");
++                }
++            }
++            boolean deliveryProof = events.stream().anyMatch(event -> event.type().equals(DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED));
++            if (deliveryProof || !DeploymentAgentActionLog.effectsSettled(events)) {
++                if (!recovered || execution == null || observed.outcome() != TaskResult.SUCCEEDED)
++                    throw new SQLException("Original delivery recovery is unconfirmed");
++                var template = new DeploymentExecutionStore(context.db()).publicationTemplate(execution).orElseThrow();
++                var proof = DeploymentAgentActionLog.originalDeliveryProof(selected, saved, execution, template, events).orElseThrow();
++                DeploymentReleaseChecker.linked(connection, execution);
++                if (!deliveryProof) DeploymentAgentActionLog.appendDeliveryProof(connection, selected, proof);
++                events = DeploymentAgentActionLog.events(connection, selected);
++            }
++            if (!DeploymentAgentActionLog.effectsSettled(events))
++                throw new SQLException("Original Agent effects remain unresolved");
+             var evidence = DeploymentJsonDocument.object().put("formatVersion", 1).put("task", selected.toString())
+                 .put("target", saved.identity().targetDigest()).put("configuration", saved.identity().configurationDigest());
+             var history = evidence.putArray("events");
+-            events.forEach(event -> history.addObject().put("id", event.id()).put("type", event.type())
+-                .put("action", event.action()).put("detail", event.detail()));
++            for (var event : events)
++                history.addObject().put("id", event.id()).put("type", event.type())
++                    .put("action", event.action()).put("detail", event.detail());
+             UUID operation = selected;
+             Optional<String> application = Optional.empty();
+             Optional<gold.debug.windowstolinux.mod.deployment.db.release.DeploymentReleaseIdentity> release = Optional.empty();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentEffectEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentEffectEvidenceTest.java
+@@ -15,6 +15,38 @@
+ 
+ /** Retains exact command and patch completion proof across real CLASS/H2 reopen. / 跨真实CLASS/H2重开保留精确命令与补丁完成证明。 */
+ class DeploymentAgentEffectEvidenceTest extends DeploymentRuntimeFixture {
++    @org.junit.jupiter.api.Test
++    void originalDeliveryRecoveryProofSettlesOnlyItsExactAttempt() {
++        var events = new ArrayList<DeploymentAgentActionLog.Event>();
++        String action = "a".repeat(64);
++        events.add(new DeploymentAgentActionLog.Event(1, "DELIVERY_EXECUTING", action, "2"));
++        var prefix = gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.object().putArray("events");
++        events.forEach(e -> prefix.addObject().put("id", e.id()).put("type", e.type()).put("action", e.action()).put("detail", e.detail()));
++        String hash = gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.hash(prefix.toString());
++        var proof = new DeploymentAgentActionLog.OriginalDeliveryProof(1, action, 2, UUID.randomUUID(), UUID.randomUUID(), "server", "application",
++            action, action, action, action, action, action, action, UUID.randomUUID().toString(), action, action, hash);
++        var settled = new DeploymentAgentActionLog.Event(2, DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED, action, proof.detail());
++        assertFalse(DeploymentAgentActionLog.effectsSettled(events));
++        for (String bad : List.of(proof.detail().replace("\"eventId\":1", "\"eventId\":9"),
++            proof.detail().replace("\"planRevision\":2", "\"planRevision\":3"),
++            proof.detail().replace("\"formatVersion\":1", "\"formatVersion\":2"),
++            proof.detail().replace("\"formatVersion\":1", "\"formatVersion\":1,\"formatVersion\":1"),
++            proof.detail().replace(hash, "b".repeat(64)), proof.detail() + "{}")) {
++            var invalid = new ArrayList<>(events);
++            invalid.add(new DeploymentAgentActionLog.Event(2, settled.type(), action, bad));
++            assertFalse(DeploymentAgentActionLog.effectsSettled(invalid), bad);
++        }
++        events.add(settled);
++        assertTrue(DeploymentAgentActionLog.effectsSettled(events));
++        var duplicate = new ArrayList<>(events);
++        duplicate.add(new DeploymentAgentActionLog.Event(3, settled.type(), action, proof.detail()));
++        assertFalse(DeploymentAgentActionLog.effectsSettled(duplicate));
++        events.add(new DeploymentAgentActionLog.Event(3, "DELIVERY_EXECUTING", action, "2"));
++        assertFalse(DeploymentAgentActionLog.effectsSettled(events), "A proof cannot consume a later same-action attempt");
++        var other = new ArrayList<>(List.of(new DeploymentAgentActionLog.Event(1, "COMMAND_EXECUTING", action, "2"), settled));
++        assertFalse(DeploymentAgentActionLog.effectsSettled(other));
++    }
++
+     @org.junit.jupiter.api.Test
+     void installReviewReceiptSettlesOnlyExactPreparationAttemptAndNeverOtherKinds() {
+         var events = new ArrayList<DeploymentAgentActionLog.Event>();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+@@ -40,6 +40,15 @@
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentHistoryArchive;
+ import gold.debug.windowstolinux.mod.deployment.service.core.application.DeploymentApplicationReader;
++import gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument;
++import gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishProposal;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery;
++import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentOriginalPublishCommit;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
++import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
+ 
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.params.ParameterizedTest;
+@@ -47,6 +56,381 @@
+ 
+ /** Real H2/CLASS transaction fixtures; no model or SSH peer is started. / 真实H2/CLASS事务夹具，不启动模型或SSH替身。 */
+ class DeploymentAgentHistoryArchiveTest extends DeploymentAgentArchiveFixture {
++    @Test
++    void originalRecoveryProducerArchivesSuccessKeepsSharedBusinessAndNeverDispatchesAfterReopen() throws Exception {
++        enable();
++        var originals = new ArrayList<UUID>();
++        var creating = new AtomicReference<UUID>();
++        var release = new AtomicReference<DeploymentReleaseIdentity>();
++        var foreign = new AtomicReference<UUID>();
++        try (var runtime = open()) {
++            start(runtime, true);
++            server(runtime);
++            for (int attempt = 0; attempt < 2; attempt++)
++                run(runtime, task -> {
++                    var context = runtime.modContexts().get(OWNER).context();
++                    if (foreign.get() == null) {
++                        var held = context.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest("foreign-fixture", "Foreign retained history", List.of(), false), other -> {
++                            var log = new DeploymentAgentActionLog(context.db());
++                            log.create(other, new DeploymentAgentActionLog.Identity("foreign", "c".repeat(64), "d".repeat(64), "MANUAL_REVIEW", true));
++                            log.state(other, "SUCCEEDED");
++                            return success();
++                        });
++                        foreign.set(held.id());
++                        assertEquals(TaskResult.SUCCEEDED, held.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
++                    }
++                    var id = originalSuccess(runtime, task);
++                    var log = new DeploymentAgentActionLog(context.db());
++                    assertTrue(log.events(task).stream().anyMatch(e -> e.type().equals("STATE") && e.detail().equals("UNKNOWN")));
++                    assertEquals(TaskResult.SUCCEEDED, finishOriginal(context, task).outcome());
++                    assertEquals(TaskResult.SUCCEEDED, finishOriginal(context, task).outcome());
++                    assertTrue(log.events(task).stream().noneMatch(e -> e.type().equals("DELIVERY_RESULT") || e.type().equals(DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED)));
++                    var record = new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow();
++                    var business = new DeploymentReleaseStore(context.db()).list(task, "application").getFirst();
++                    if (creating.get() == null) {
++                        creating.set(id);
++                        release.set(business.identity());
++                    } else {
++                        assertEquals(creating.get(), business.executionId());
++                        assertEquals(release.get(), business.identity());
++                        assertTrue(!record.identity().executionId().equals(business.executionId()));
++                    }
++                    var archive = new DeploymentAgentHistoryArchive(context);
++                    assertEquals(TaskResult.SUCCEEDED, archive.settle(task, success()).outcome());
++                    assertEquals(TaskResult.SUCCEEDED, archive.settle(task, success()).outcome());
++                    assertTrue(log.find(task).isEmpty());
++                    assertTrue(new DeploymentExecutionStore(context.db()).findForTask(task).isEmpty());
++                    assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_agent_event WHERE task_id='" + task.id() + "'"));
++                    assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_agent_task WHERE task_id='" + foreign.get() + "'"));
++                    assertTrue(new DeploymentApplicationReader(context.db()).findForCompletedTask(task.id(), task).isPresent());
++                    assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
++                    originals.add(task.id());
++                    return success();
++                });
++            assertEquals(3, scalar(runtime, "SELECT COUNT(*) FROM mod_server_reference WHERE state='ACTIVE'"));
++            valid(runtime);
++        }
++        try (var runtime = open()) {
++            start(runtime, true);
++            run(runtime, task -> {
++                var context = runtime.modContexts().get(OWNER).context();
++                var strict = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
++                    if (Set.of("linux", "ai", "file").contains(method.getName()))
++                        throw new AssertionError("Receipt reuse cannot dispatch " + method.getName());
++                    return invoke(method, context, args);
++                });
++                for (UUID original : originals) {
++                    assertEquals(TaskResult.SUCCEEDED, new DeploymentAgentHistoryArchive(strict).archiveRecoveredHistory(task, original).outcome());
++                    try (var connection = context.db().openConnection(task)) {
++                        var receipt = DeploymentOperationReceipts.read(connection, original).orElseThrow();
++                        assertEquals(release.get(), receipt.release().orElseThrow());
++                        DeploymentOperationReceipts.validateBusiness(connection, receipt);
++                    }
++                    assertTrue(new DeploymentApplicationReader(context.db()).findForCompletedTask(original, task).isPresent());
++                }
++                assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_agent_task WHERE task_id='" + foreign.get() + "'"));
++                return success();
++            });
++            valid(runtime);
++        }
++    }
++
++    @Test
++    void originalDeliveryLostCommitAcknowledgementReusesTheCommittedReceiptWithoutRepeatingRecovery() throws Exception {
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            server(runtime);
++            run(runtime, task -> {
++                var context = runtime.modContexts().get(OWNER).context();
++                originalSuccess(runtime, task);
++                assertEquals(TaskResult.SUCCEEDED, finishOriginal(context, task).outcome());
++                var uncertain = assertThrows(ApiException.class, () -> new DeploymentAgentHistoryArchive(withDatabase(context, fault(context.db(), "lost_ack"))).settle(task, success()));
++                assertEquals("DEPLOYMENT_COMMIT_UNKNOWN", uncertain.problem().eventCode());
++                assertTrue(new DeploymentAgentActionLog(context.db()).find(task).isEmpty());
++                assertTrue(new DeploymentExecutionStore(context.db()).findForTask(task).isEmpty());
++                assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
++                assertEquals(TaskResult.SUCCEEDED, new DeploymentAgentHistoryArchive(context).settle(task, success()).outcome());
++                return success();
++            });
++            valid(runtime);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"proof", "receipt", "events", "task", "execution", "before_commit"})
++    void originalDeliveryProofAndAllCleanupWritesRollBackTogether(String point) throws Exception {
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            server(runtime);
++            run(runtime, task -> {
++                var context = runtime.modContexts().get(OWNER).context();
++                originalSuccess(runtime, task);
++                assertEquals(TaskResult.SUCCEEDED, finishOriginal(context, task).outcome());
++                var log = new DeploymentAgentActionLog(context.db());
++                var events = log.events(task);
++                var formal = new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow();
++                assertThrows(Exception.class, () -> new DeploymentAgentHistoryArchive(withDatabase(context, fault(context.db(), point))).settle(task, success()));
++                assertEquals(events, log.events(task));
++                assertEquals(formal, new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow());
++                assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
++                assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
++                assertEquals(TaskResult.SUCCEEDED, new DeploymentAgentHistoryArchive(context).settle(task, success()).outcome());
++                return success();
++            });
++            valid(runtime);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"command", "prepare", "capability", "inspect", "multi_delivery", "later_same_action", "bad_proof", "unknown_state", "failed_state", "busy", "source", "configuration", "layout", "revision", "seal", "invalidated", "missing_component", "foreign_candidate", "review_chain"})
++    void originalDeliveryRecoveryRejectsUnresolvedOrChangedEvidenceWithoutDeleting(String kind) throws Exception {
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            server(runtime);
++            run(runtime, task -> {
++                var context = runtime.modContexts().get(OWNER).context();
++                originalSuccess(runtime, task);
++                assertEquals(TaskResult.SUCCEEDED, finishOriginal(context, task).outcome());
++                var log = new DeploymentAgentActionLog(context.db());
++                var original = log.events(task);
++                var delivery = original.stream().filter(e -> e.type().equals("DELIVERY_EXECUTING")).findFirst().orElseThrow();
++                gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint held = null;
++                switch (kind) {
++                    case "command", "prepare", "capability" ->
++                        log.event(task, kind.toUpperCase(Locale.ROOT) + "_EXECUTING", "pending", "original");
++                    case "inspect" -> log.event(task, "INSPECT_REQUESTED", "original", "pending");
++                    case "multi_delivery", "later_same_action" ->
++                        log.event(task, "DELIVERY_EXECUTING", kind.equals("later_same_action") ? delivery.action() : "f".repeat(64), "1");
++                    case "bad_proof" ->
++                        log.event(task, DeploymentAgentActionLog.DELIVERY_RECOVERY_SETTLED, delivery.action(), "{}");
++                    case "unknown_state", "failed_state" ->
++                        log.state(task, kind.equals("unknown_state") ? "UNKNOWN" : "FAILED");
++                    case "busy" ->
++                        held = context.tasks().beginCheckpoint(task, "fixture.held", "{\"formatVersion\":1}");
++                    case "invalidated" -> log.event(task, "ARTIFACT_INVALIDATED", "web", "original");
++                    case "review_chain" ->
++                        log.event(task, "RECOVERY_REVIEW_REBOUND", "b".repeat(64), "broken predecessor");
++                    default -> {
++                        String type = switch (kind) {
++                            case "source" -> "CURRENT_SOURCE";
++                            case "configuration" -> "WORKSPACE_QUOTA";
++                            case "layout" -> "REMOTE_LAYOUT";
++                            case "revision" -> "DELIVERY_EXECUTING";
++                            case "seal", "missing_component" -> "SEALED_ARTIFACT";
++                            case "foreign_candidate" -> "CANDIDATE";
++                            default -> throw new AssertionError(kind);
++                        };
++                        var selected = original.stream().filter(e -> e.type().equals(type)).findFirst().orElseThrow();
++                        String detail = kind.equals("revision") ? "3" : kind.equals("configuration")
++                            ? selected.detail().replace("b".repeat(64), "e".repeat(64)) : kind.equals("layout")
++                            ? selected.detail().replace("\"layoutSha256\":\"", "\"layoutSha256\":\"f") : kind.equals("foreign_candidate")
++                            ? "foreign-" + "f".repeat(16) : "9".repeat(64);
++                        try (var connection = context.db().openConnection(task); var update = connection.prepareStatement(
++                            kind.equals("missing_component") ? "DELETE FROM deployment_agent_event WHERE event_id=? AND task_id=?"
++                                : "UPDATE deployment_agent_event SET event_detail=? WHERE event_id=? AND task_id=?")) {
++                            int index = 1;
++                            if (!kind.equals("missing_component")) update.setString(index++, detail);
++                            update.setLong(index++, selected.id());
++                            update.setString(index, task.id().toString());
++                            assertEquals(1, update.executeUpdate());
++                        }
++                    }
++                }
++                var modified = log.events(task);
++                try {
++                    if (held == null)
++                        assertThrows(Exception.class, () -> new DeploymentAgentHistoryArchive(context).settle(task, success()), kind);
++                    else
++                        assertEquals(TaskResult.UNKNOWN, new DeploymentAgentHistoryArchive(context).settle(task, success()).outcome());
++                    assertEquals(modified, log.events(task));
++                    assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_execution"));
++                    assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
++                    assertEquals(1, count(runtime, task, "SELECT COUNT(*) FROM deployment_release"));
++                } finally {
++                    if (held != null) held.close();
++                    restoreEvents(context, task, original);
++                    log.state(task, "SUCCEEDED");
++                }
++                assertEquals(TaskResult.SUCCEEDED, new DeploymentAgentHistoryArchive(context).settle(task, success()).outcome());
++                return success();
++            });
++            valid(runtime);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"unknown", "uncommitted", "unclean", "foreign_task", "template_release", "whole_release", "invalidated_before_delivery"})
++    void originalDeliveryProofRequiresTheExactFinishedSuccessfulFormalTemplate(String kind) throws Exception {
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            server(runtime);
++            run(runtime, task -> {
++                var context = runtime.modContexts().get(OWNER).context();
++                originalSuccess(runtime, task);
++                assertEquals(TaskResult.SUCCEEDED, finishOriginal(context, task).outcome());
++                var log = new DeploymentAgentActionLog(context.db());
++                var store = new DeploymentExecutionStore(context.db());
++                var formal = store.findForTask(task).orElseThrow();
++                var template = store.publicationTemplate(formal).orElseThrow();
++                var identity = kind.equals("foreign_task") ? new DeploymentExecutionIdentity(formal.identity().executionId(), UUID.randomUUID(), Optional.empty(), "application", new ServerId("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64)) : formal.identity();
++                var invalid = new DeploymentExecutionRecord(identity, kind.equals("unclean") || kind.equals("unknown") ? "EXECUTING" : formal.phase(),
++                    Optional.of(kind.equals("unknown") ? TaskResult.UNKNOWN : TaskResult.SUCCEEDED), formal.requestJson(), formal.recoveryJson(), formal.resultJson(),
++                    !kind.equals("uncommitted") && !kind.equals("unknown"), !kind.equals("unclean") && !kind.equals("unknown"), formal.createdAt(), formal.updatedAt());
++                if (kind.equals("template_release")) {
++                    var changed = template.units().stream().map(u -> new DeploymentUnitCommit(u.unit(), u.runtime(), new DeploymentCurrentRelease(u.unit().id(), "f".repeat(64), u.release().publishedAt()), u.configuration(), u.secrets())).toList();
++                    template = new DeploymentPublishProposal(template.graph(), changed);
++                }
++                if (kind.equals("whole_release")) {
++                    var graph = template.graph();
++                    template = new DeploymentPublishProposal(new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(),
++                        new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck.Process(9, 1), graph.components()), template.units());
++                    var request = (com.fasterxml.jackson.databind.node.ObjectNode) DeploymentJsonDocument.parse(formal.requestJson(), 144 * 1_048_576);
++                    request.set("publicationTemplate", DeploymentJsonDocument.parse(gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishTemplateCodec.encodeTemplate(template),
++                        gold.debug.windowstolinux.mod.deployment.db.publish.DeploymentPublishTemplateCodec.LIMIT));
++                    invalid = new DeploymentExecutionRecord(identity, formal.phase(), formal.outcome(), request.toString(), formal.recoveryJson(), formal.resultJson(),
++                        formal.businessCommitted(), formal.cleanupComplete(), formal.createdAt(), formal.updatedAt());
++                }
++                var events = log.events(task);
++                if (kind.equals("invalidated_before_delivery")) {
++                    var changed = new ArrayList<DeploymentAgentActionLog.Event>();
++                    boolean inserted = false;
++                    for (var event : events) {
++                        changed.add(new DeploymentAgentActionLog.Event(event.id() * 10, event.type(), event.action(), event.detail()));
++                        if (!inserted && event.type().equals("SEALED_ARTIFACT")) {
++                            changed.add(new DeploymentAgentActionLog.Event(event.id() * 10 + 1, "ARTIFACT_INVALIDATED", event.action(), "command"));
++                            inserted = true;
++                        }
++                    }
++                    events = changed;
++                }
++                var selected = template;
++                var selectedFormal = invalid;
++                var selectedEvents = events;
++                assertThrows(Exception.class, () -> DeploymentAgentActionLog.originalDeliveryProof(task.id(), log.find(task).orElseThrow(), selectedFormal, selected, selectedEvents));
++                assertEquals(formal, store.findForTask(task).orElseThrow());
++                assertEquals(0, count(runtime, task, "SELECT COUNT(*) FROM deployment_operation_receipt"));
++                new DeploymentAgentHistoryArchive(context).settle(task, success());
++                return success();
++            });
++        }
++    }
++
++    private UUID originalSuccess(PlatformRuntime runtime, TaskContext task) throws Exception {
++        var context = runtime.modContexts().get(OWNER).context();
++        var log = new DeploymentAgentActionLog(context.db());
++        log.create(task, agentIdentity(), Optional.of("a".repeat(64)));
++        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.record(log, task, new ServerId("server"), layout);
++        String archive = "c".repeat(64), source = "d".repeat(64), current = "e".repeat(64), artifact = "f".repeat(64), plan = "1".repeat(64);
++        log.event(task, "SOURCE", archive, source);
++        log.event(task, "TARGET_PROFILE", "", "a".repeat(64));
++        log.event(task, "PLAN_APPLICATION", "", "application");
++        log.event(task, "PLAN", "", plan);
++        var parts = graph("application").components().stream().map(p -> new DeploymentApplicationGraph.Part(p.componentId(),
++            DeploymentUnitIdentity.forManaged("application-" + p.componentId(), new ServerId("server"), p.unit().ownershipManifestSha256()), p.runtime(), p.dependencies(), p.reviewedRuntime(), p.dataPaths(),
++            new DeploymentResourceBindings(p.resources().fileBindings(), Optional.of(List.of())))).toList();
++        var graph = new DeploymentApplicationGraph("application", "web", graph("application").healthCheck(), parts);
++        var commits = publications(graph, 1, List.of()).stream().map(u -> {
++            var p = graph.components().stream().filter(v -> v.unit().equals(u.unit())).findFirst().orElseThrow();
++            String digest = DeploymentAgentInputs.hash("agent-release:" + artifact + ":" + current + ":" + u.configuration().sha256() + ":" + p.reviewedRuntime() + ":" + p.resources());
++            return new DeploymentUnitCommit(u.unit(), u.runtime(), new DeploymentCurrentRelease(u.unit().id(), digest, u.release().publishedAt()), u.configuration(), u.secrets());
++        }).toList();
++        for (var part : parts) {
++            String id = part.componentId();
++            var workspace = new DeploymentRemoteWorkspace(part.unit().id(), archive, layout);
++            String binding = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException.binding(task.id(), id, source, plan, 1073741824L);
++            var quota = DeploymentJsonDocument.object().put("task", task.id().toString()).put("server", "server").put("source", source).put("configuration", "b".repeat(64))
++                .put("layout", layout.digest()).put("plan", plan).put("workspaceBytes", 1073741824L).put("reserveBytes", 1073741824L).put("mode", "AUTO");
++            log.event(task, "WORKSPACE_QUOTA", id, quota.toString());
++            log.event(task, "PREPARE_EXECUTING", binding, id);
++            quota.remove("mode");
++            quota.put("prepareAction", binding).put("candidate", workspace.candidateId());
++            log.event(task, "CANDIDATE_QUOTA", id, quota.toString());
++            log.event(task, "PREPARE_RESULT", binding, current);
++            log.event(task, "CANDIDATE", id, workspace.candidateId());
++            log.event(task, "CURRENT_SOURCE", id, current);
++            String seal = DeploymentAgentInputs.hash(id + ":" + current + ":seal");
++            log.event(task, "SEAL_EXECUTING", seal, current);
++            log.event(task, "SEAL_RESULT", seal, artifact);
++            log.event(task, "SEALED_ARTIFACT", id, artifact);
++        }
++        log.event(task, "DELIVERY_EXECUTING", "2".repeat(64), "1");
++        for (var part : parts) log.event(task, "SEALED_TOOLS", part.componentId(), "0".repeat(64) + ":false");
++        var proposal = new DeploymentPublishResult(graph, commits);
++        var id = UUID.randomUUID();
++        var store = new DeploymentExecutionStore(context.db());
++        var identity = new DeploymentExecutionIdentity(id, task.id(), Optional.empty(), "application", new ServerId("server"), DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, "a".repeat(64));
++        var intents = DeploymentOriginalPublishCommit.references(new ServerId("server"), proposal, Map.of());
++        store.begin(task, identity, "deployment-agent", intents, Optional.empty(), OBSERVED);
++        var refs = new ArrayList<UUID>();
++        for (var intent : intents) {
++            var ref = context.servers().reserve(new ServerId("server"), intent.businessKey(), task);
++            refs.add(ref.id());
++            store.recordReference(task, id, intent, ref.id(), OBSERVED.plusSeconds(1));
++        }
++        store.startEffects(task, id, OBSERVED.plusSeconds(2));
++        store.recordPublicationTemplate(task, id, new DeploymentPublishProposal(graph, commits), OBSERVED.plusSeconds(3));
++        log.event(task, "AI_PUBLICATION", "application", "MODEL_GENERATED_COMMANDS");
++        log.event(task, "STAGE_EXECUTING", "web", "original");
++        log.event(task, "STAGE_RESULT", "web", "staged");
++        log.event(task, "AI_PUBLICATION_VERIFIED", "application", "HEALTHY");
++        log.event(task, "AI_PUBLICATION_FINISHED", "application", "MODEL_ACCEPTED_VERIFIED_RESULT");
++        store.commitApplication(task, id, graph, commits, OBSERVED.plusSeconds(4));
++        for (UUID ref : refs) context.servers().resolve(ref, ResourceRefResult.REFERENCED, task);
++        log.event(task, "AI_PUBLICATION_CLEANED", "application", "ABSENT");
++        log.state(task, "UNKNOWN");
++        return id;
++    }
++
++    @SuppressWarnings("unchecked")
++    private OperationResult<Void> finishOriginal(ModContext context, TaskContext task) throws Exception {
++        var recovery = new DeploymentAgentRecovery(context, new DeploymentAgentActionLog(context.db()));
++        var method = DeploymentAgentRecovery.class.getDeclaredMethod("finishRecovered", TaskContext.class, DeploymentExecutionRecord.class);
++        method.setAccessible(true);
++        try {
++            var result = (OperationResult<Void>) method.invoke(recovery, task, new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow());
++            if (result.outcome() == TaskResult.UNKNOWN) {
++                var store = new DeploymentExecutionStore(context.db());
++                var formal = store.findForTask(task).orElseThrow();
++                var log = new DeploymentAgentActionLog(context.db());
++                try {
++                    DeploymentAgentActionLog.originalDeliveryProof(task.id(), log.find(task).orElseThrow(), formal, store.publicationTemplate(formal).orElseThrow(), log.events(task));
++                } catch (Exception failure) {
++                    throw new SQLException("Actual recovery finish remained " + result.problem().map(Problem::eventCode).orElse("UNKNOWN"), failure);
++                }
++                throw new SQLException("Actual recovery finish remained " + result.problem().map(Problem::eventCode).orElse("UNKNOWN"));
++            }
++            return result;
++        } catch (InvocationTargetException failed) {
++            if (failed.getCause() instanceof Exception exception) throw exception;
++            if (failed.getCause() instanceof Error error) throw error;
++            throw failed;
++        }
++    }
++
++    private void restoreEvents(ModContext context, TaskContext task, List<DeploymentAgentActionLog.Event> original) throws Exception {
++        try (var connection = context.db().openConnection(task)) {
++            try (var delete = connection.prepareStatement("DELETE FROM deployment_agent_event WHERE task_id=?")) {
++                delete.setString(1, task.id().toString());
++                delete.executeUpdate();
++            }
++            for (var event : original)
++                try (var insert = connection.prepareStatement("INSERT INTO deployment_agent_event(event_id,task_id,action_id,event_type,event_detail,created_at) VALUES(?,?,?,?,?,?)")) {
++                    insert.setLong(1, event.id());
++                    insert.setString(2, task.id().toString());
++                    insert.setString(3, event.action());
++                    insert.setString(4, event.type());
++                    insert.setString(5, event.detail());
++                    insert.setLong(6, System.currentTimeMillis());
++                    assertEquals(1, insert.executeUpdate());
++                }
++        }
++    }
++
+     @Test
+     void platformRecoverySuccessKeepsOriginalCompensatedFailureAndHistoricalCleanupIsIdempotent() throws Exception {
+         enable();
+@@ -368,10 +752,15 @@
+             public Connection openConnection(TaskContext task) throws SQLException, ApiException {
+                 var connection = original.openConnection(task);
+                 return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> {
++                    if (method.getName().equals("commit") && point.equals("lost_ack")) {
++                        invoke(method, connection, args);
++                        throw new SQLException("Committed original settlement acknowledgement lost");
++                    }
+                     if (method.getName().equals("commit") && point.equals("before_commit"))
+                         throw new SQLException("Pre-commit fixture failure");
+                     if (method.getName().equals("prepareStatement") && args[0] instanceof String sql) {
+-                        boolean fail = point.equals("receipt") && sql.startsWith("INSERT INTO deployment_operation_receipt")
++                        boolean fail = point.equals("proof") && sql.startsWith("INSERT INTO deployment_agent_event")
++                            || point.equals("receipt") && sql.startsWith("INSERT INTO deployment_operation_receipt")
+                             || point.equals("events") && sql.startsWith("DELETE FROM deployment_agent_event")
+                             || point.equals("task") && sql.startsWith("DELETE FROM deployment_agent_task")
+                             || point.equals("execution") && sql.startsWith("DELETE FROM deployment_execution");
