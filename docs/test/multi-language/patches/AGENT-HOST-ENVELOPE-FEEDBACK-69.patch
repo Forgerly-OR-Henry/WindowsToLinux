@@ -1,0 +1,378 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -267,8 +267,25 @@
+     public String hostCommand(TaskContext original, String script, int seconds, String reason) throws Exception {
+         sameTask(original);
+         beforeSend.verify();
+-        return DeploymentModelCommandRunner.execute(context, gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.timedHostSession(session, task, seconds), server, task, configurationRevision, script,
+-            seconds, "Host prerequisite only; no application publication: " + reason);
++        var timed = gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.timedHostSession(session, task, seconds);
++        if (script == null) throw new SecurityException("Original host command body is absent");
++        var operation = UUID.randomUUID();
++        String rationale = "Host prerequisite only; no application publication: " + reason;
++        String body = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(script);
++        String executable = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.envelope(
++            task.id(), operation, body, script, rationale, layout);
++        String executableSha = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.digest(executable);
++        try {
++            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandStaticGate.requireFixedAllowed(executable);
++        } catch (SecurityException refused) {
++            String code = refused.getMessage();
++            if (!"DEPLOYMENT_COMMAND_STATIC_INVALID".equals(code) && !"DEPLOYMENT_COMMAND_STATIC_DENIED".equals(code))
++                throw refused;
++            throw new IllegalArgumentException(code + ": NOT_SENT task=" + task.id() + " bodySha256=" + body
++                + " envelopeSha256=" + executableSha, refused);
++        }
++        return DeploymentModelCommandRunner.executeBound(context, timed, server, task, configurationRevision, script,
++            seconds, rationale, operation, layout.digest(), executableSha);
+     }
+ 
+     /** Creates, uploads, hashes and opens a task-owned protected candidate. / 创建、上传、散列并开启任务所属受保护候选。
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunner.java
+@@ -49,11 +49,52 @@
+      * @throws Exception if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+     public static String execute(ModContext context, RemoteSession session, ServerId server, TaskContext task,
+                                  String revision, String script, int seconds, String reason) throws Exception {
++        return execute(context, session, server, task, revision, script, seconds, reason, null);
++    }
++
++    /** Executes the same canonical envelope identity already selected by the original caller. / 执行原调用者已经选定的同一规范封套身份。
++     * @param context original Mod capabilities / 原Mod能力
++     * @param session original task-bound session / 原任务绑定会话
++     * @param server original server / 原服务器
++     * @param task original task / 原任务
++     * @param revision original model revision / 原模型修订
++     * @param script original executable body / 原可执行正文
++     * @param seconds original command timeout / 原命令超时
++     * @param reason original rationale / 原说明
++     * @param operation selected never-used operation / 已选择且从未使用的操作
++     * @param layoutSha256 original captured layout digest / 原捕获目录摘要
++     * @param envelopeSha256 complete actual envelope digest / 完整实际封套摘要
++     * @return original reviewed command feedback / 原已审命令反馈
++     * @throws Exception if binding, admission or receipt cannot be confirmed / 无法确认绑定、准入或回执时 */
++    public static String executeBound(ModContext context, RemoteSession session, ServerId server, TaskContext task,
++                                      String revision, String script, int seconds, String reason, UUID operation,
++                                      String layoutSha256, String envelopeSha256) throws Exception {
++        if (operation == null || layoutSha256 == null || !layoutSha256.matches("[0-9a-f]{64}")
++            || envelopeSha256 == null || !envelopeSha256.matches("[0-9a-f]{64}"))
++            throw new SecurityException("Original model command envelope identity is invalid");
++        return execute(context, session, server, task, revision, script, seconds, reason,
++            new BoundIdentity(operation, layoutSha256, envelopeSha256));
++    }
++
++    private record BoundIdentity(UUID operation, String layoutSha256, String envelopeSha256) {
++    }
++
++    private static String execute(ModContext context, RemoteSession session, ServerId server, TaskContext task,
++                                  String revision, String script, int seconds, String reason, BoundIdentity bound) throws Exception {
+         DeploymentCommandStaticGate.requireFixedAllowed(script);
+         if (script.length() > 24000 || seconds < 1 || seconds > 7200 || reason.isBlank() || reason.length() > 2000)
+             throw new IllegalArgumentException("Invalid model command limits or rationale");
+-        var operation = UUID.randomUUID();
++        var operation = bound == null ? UUID.randomUUID() : bound.operation();
+         String body = DeploymentModelCommandIdentity.digest(script);
++        String boundExecutable = null;
++        if (bound != null) {
++            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++            if (!layout.digest().equals(bound.layoutSha256()))
++                throw new SecurityException("Original model command layout changed");
++            boundExecutable = DeploymentModelCommandIdentity.envelope(task.id(), operation, body, script, reason, layout);
++            if (!DeploymentModelCommandIdentity.digest(boundExecutable).equals(bound.envelopeSha256()))
++                throw new SecurityException("Original model command envelope changed");
++        }
+         var retained = context.tasks().findCheckpoint(task, KEY);
+         TaskCheckpoint checkpoint;
+         com.fasterxml.jackson.databind.node.ObjectNode facts;
+@@ -71,6 +112,8 @@
+                 throw new SecurityException("Original model command target changed");
+         }
+         var commands = (com.fasterxml.jackson.databind.node.ArrayNode) facts.get("commands");
++        if (bound != null && commands.findValuesAsText("operation").contains(operation.toString()))
++            throw new SecurityException("Original model command operation was already used");
+         if (commands.size() >= 16 || commands.findValuesAsText("phase").stream().anyMatch("DISPATCHED"::equals))
+             throw new IllegalStateException("Original model command remains unsettled or budget exhausted");
+         int totalSeconds = seconds;
+@@ -78,8 +121,8 @@
+         if (totalSeconds > 7200) throw new IllegalArgumentException("Model command total time budget exhausted");
+         var entry = commands.addObject().put("operation", operation.toString()).put("body", body).put("seconds", seconds).put("phase", "INTENT");
+         checkpoint.advance(checkpoint.snapshot(), JSON.writeValueAsString(facts));
+-        byte[] envelope = DeploymentModelCommandIdentity.envelope(task.id(), operation, body, script, reason,
+-            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task)).getBytes(StandardCharsets.UTF_8);
++        byte[] envelope = (boundExecutable == null ? DeploymentModelCommandIdentity.envelope(task.id(), operation, body, script, reason,
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task)) : boundExecutable).getBytes(StandardCharsets.UTF_8);
+         try (var request = new CommandRequest(DeploymentModelCommandIdentity.LAUNCHER, envelope,
+             Duration.ofSeconds(seconds), 65536)) {
+             var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -117,6 +117,28 @@
+ 
+     private final com.fasterxml.jackson.databind.node.ObjectNode budgetCorrectionFacts = new ObjectMapper().createObjectNode();
+ 
++    private boolean hostEnvelopeDenialJourney;
++
++    private static final String HOST_ENVELOPE_DENIED_SCRIPT = "# fixture-private-host-marker\nrm -rf .";
++
++    private static final String HOST_ENVELOPE_LEGAL_SCRIPT = "builtin printf 'WTL_CONTROLLED_HOST_PREREQUISITE_OK\\n'";
++
++    private static final String HOST_ENVELOPE_REASON = "Controlled host prerequisite";
++
++    private String hostEnvelopeRejectedCallId;
++
++    private TaskContext hostEnvelopeTask;
++
++    private int hostEnvelopeFeedbackRequests, hostEnvelopeWireRequests, hostEnvelopeIndependentReviews;
++
++    private int hostEnvelopeRejectedSends, hostEnvelopeLegalSends, hostEnvelopeReceiptQueries;
++
++    private final Map<String, String> hostEnvelopeReceipts = new ConcurrentHashMap<>();
++
++    private final List<JsonNode> hostEnvelopeCheckpointSnapshots = new CopyOnWriteArrayList<>();
++
++    private final com.fasterxml.jackson.databind.node.ObjectNode hostEnvelopeFacts = new ObjectMapper().createObjectNode();
++
+     private boolean differentPlanRejections;
+ 
+     private int planRejectionTurns;
+@@ -670,6 +692,23 @@
+         assertTrue(budgetCorrectionFacts.path("innerEffectsSettledBeforeFinish").asBoolean());
+         assertEquals(1, budgetCorrectionFacts.path("formalAppCount").asInt());
+         assertEquals(1, budgetCorrectionFacts.path("formalReleaseCount").asInt());
++    }
++
++    @Test
++    void hostEnvelopeStaticDenialReturnsBoundFeedbackBeforeIndependentLegalCommandAndCommit() throws Exception {
++        nativeProtocol = gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS;
++        hostEnvelopeDenialJourney = sharedPublication = true;
++        assertDoesNotThrow(() -> gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandStaticGate
++            .requireFixedAllowed(HOST_ENVELOPE_DENIED_SCRIPT));
++        verifyScenario(ScenarioType.SUCCESS);
++        assertEquals(1, hostEnvelopeFeedbackRequests);
++        assertEquals(1, hostEnvelopeWireRequests);
++        assertEquals(0, hostEnvelopeRejectedSends);
++        assertEquals(1, hostEnvelopeIndependentReviews);
++        assertEquals(1, hostEnvelopeLegalSends);
++        assertEquals(1, hostEnvelopeReceiptQueries);
++        assertEquals(1, hostEnvelopeFacts.path("formalAppCount").asInt());
++        assertEquals(1, hostEnvelopeFacts.path("formalReleaseCount").asInt());
+     }
+ 
+     @Test
+@@ -1225,6 +1264,46 @@
+                 } catch (AssertionError timeout) {
+                     throw new AssertionError(diagnostic(runtime, handle), timeout);
+                 }
++                if (hostEnvelopeDenialJourney) {
++                    hostEnvelopeFacts.put("finalTaskState", handle.snapshot().state().name())
++                        .put("languageRequests", calls.get()).put("feedbackRequests", hostEnvelopeFeedbackRequests)
++                        .put("rejectedSends", hostEnvelopeRejectedSends).put("legalSends", hostEnvelopeLegalSends)
++                        .put("independentHostReviews", hostEnvelopeIndependentReviews).put("receiptQueries", hostEnvelopeReceiptQueries)
++                        .put("formalAppCount", modScalar(runtime, "SELECT COUNT(*) FROM managed_application"))
++                        .put("formalReleaseCount", modScalar(runtime, "SELECT COUNT(*) FROM deployment_release"));
++                    var result = handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
++                    hostEnvelopeFacts.put("outcome", result.outcome().name());
++                    result.problem().ifPresent(problem -> hostEnvelopeFacts.put("problemCode", problem.code().name())
++                        .put("eventCodeSha256", evidenceDigestBytes(problem.eventCode())));
++                    var snapshots = hostEnvelopeFacts.putArray("checkpointSnapshots");
++                    hostEnvelopeCheckpointSnapshots.forEach(snapshots::add);
++                    var rejectedCheckpoint = hostEnvelopeCheckpointSnapshots.stream()
++                        .filter(entry -> entry.path("body").asText().equals(evidenceDigestBytes(HOST_ENVELOPE_DENIED_SCRIPT)))
++                        .findFirst();
++                    if (rejectedCheckpoint.isPresent()) {
++                        var entry = rejectedCheckpoint.orElseThrow();
++                        String executable = DeploymentModelCommandIdentity.envelope(handle.id(), UUID.fromString(entry.path("operation").asText()),
++                            entry.path("body").asText(), HOST_ENVELOPE_DENIED_SCRIPT,
++                            "Host prerequisite only; no application publication: " + HOST_ENVELOPE_REASON);
++                        var rejected = assertThrows(SecurityException.class, () -> gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandStaticGate
++                            .requireFixedAllowed(executable));
++                        assertEquals("DEPLOYMENT_COMMAND_STATIC_DENIED", rejected.getMessage());
++                        hostEnvelopeFacts.put("actualOperationEnvelopeGateCode", rejected.getMessage())
++                            .put("actualOperationEnvelopeSha256", evidenceDigestBytes(executable));
++                    }
++                    var diagnostics = hostEnvelopeFacts.putArray("safeDiagnostics");
++                    for (var record : new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(bound).read(handle.id()).records()) {
++                        var event = record.event();
++                        if (!Set.of("DEPLOYMENT_AGENT_FAILURE", "DEPLOYMENT_AGENT_TOOL_REJECTED", "DEPLOYMENT_AGENT_SESSION_STOPPED").contains(event.eventCode()))
++                            continue;
++                        diagnostics.addObject().put("eventCode", event.eventCode()).put("messageSha256", evidenceDigestBytes(event.message()))
++                            .put("apiException", event.message().startsWith("ApiException:"))
++                            .put("staticDenied", event.message().contains("DEPLOYMENT_COMMAND_STATIC_DENIED"));
++                    }
++                    System.out.println("HOST_ENVELOPE_DENIAL_BASELINE " + hostEnvelopeFacts);
++                    assertEquals(1, hostEnvelopeFeedbackRequests,
++                        "Known static refusal of the original host envelope before dispatch must reach its original call and permit a new model decision");
++                }
+                 if (budgetPreflightJourney) {
+                     try (var access = scope(runtime, true); var connection = access.openConnection();
+                          var query = connection.prepareStatement("SELECT event_id,event_type,action_id,event_detail FROM deployment_agent_event WHERE task_id=? ORDER BY event_id")) {
+@@ -1921,6 +2000,25 @@
+ 
+     private ModContext bind(ModContext actual, TaskService tasks, DeploymentAgentTestPeer peer, AiService ai) {
+         fixedCommands = new FixedCommandFixture(actual, tasks);
++        var observedTasks = hostEnvelopeDenialJourney ? (TaskService) Proxy.newProxyInstance(TaskService.class.getClassLoader(),
++            new Class<?>[]{TaskService.class}, (proxy, method, arguments) -> {
++                try {
++                    var result = method.invoke(tasks, arguments);
++                    if (method.getName().equals("findCheckpoint") && arguments[1].equals(DeploymentModelCommandRunner.KEY)
++                        && result instanceof Optional<?> found && found.isPresent()) {
++                        var checkpoint = (gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint) found.orElseThrow();
++                        var snapshot = checkpoint.snapshot();
++                        var payload = new ObjectMapper().readTree(snapshot.payload());
++                        assertEquals(((TaskContext) arguments[0]).id().toString(), payload.path("task").asText());
++                        for (var command : payload.path("commands"))
++                            hostEnvelopeCheckpointSnapshots.add(((com.fasterxml.jackson.databind.node.ObjectNode) command.deepCopy())
++                                .put("released", snapshot.released()));
++                    }
++                    return result;
++                } catch (InvocationTargetException failure) {
++                    throw failure.getCause();
++                }
++            }) : tasks;
+         var interaction = fixedCommands.observe(actual.interaction());
+         var trackedAi = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class},
+             (proxy, method, arguments) -> {
+@@ -1974,6 +2072,33 @@
+                             byte[] input = ((CommandRequest) arguments[0]).stdin();
+                             try {
+                                 String body = new String(input, StandardCharsets.UTF_8);
++                                if (hostEnvelopeDenialJourney && originalScript.equals(DeploymentModelCommandIdentity.LAUNCHER)
++                                    && body.startsWith(DeploymentModelCommandIdentity.METADATA)) {
++                                    var facts = DeploymentModelCommandIdentity.executableFacts(body);
++                                    String executable = facts.get("modelScript").toString();
++                                    if (executable.equals(HOST_ENVELOPE_DENIED_SCRIPT)) {
++                                        hostEnvelopeRejectedSends++;
++                                        fail("The rejected host body must never reach the remote peer");
++                                    }
++                                    if (executable.equals(HOST_ENVELOPE_LEGAL_SCRIPT)) {
++                                        assertEquals(task.id().toString(), facts.get("task"));
++                                        assertEquals(evidenceDigestBytes(HOST_ENVELOPE_LEGAL_SCRIPT), facts.get("bodySha256"));
++                                        String operation = facts.get("operation").toString();
++                                        assertNull(hostEnvelopeReceipts.putIfAbsent(operation, DeploymentModelCommandIdentity.header(task.id(),
++                                            UUID.fromString(operation), facts.get("bodySha256").toString()) + "EXIT=0\n"));
++                                        hostEnvelopeLegalSends++;
++                                        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
++                                            Optional.of(0), "WTL_CONTROLLED_HOST_PREREQUISITE_OK\n", "", false)), Optional.empty());
++                                    }
++                                }
++                                if (hostEnvelopeDenialJourney && hostEnvelopeReceipts.entrySet().stream()
++                                    .anyMatch(entry -> originalScript.contains(entry.getKey() + ".receipt"))) {
++                                    var receipt = hostEnvelopeReceipts.entrySet().stream()
++                                        .filter(entry -> originalScript.contains(entry.getKey() + ".receipt")).findFirst().orElseThrow();
++                                    hostEnvelopeReceiptQueries++;
++                                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
++                                        Optional.of(0), receipt.getValue(), "", false)), Optional.empty());
++                                }
+                                 if (body.equals(DeploymentAgentHelperReadiness.script())) {
+                                     readinessSends.incrementAndGet();
+                                     boolean ready = bootstrapFilesAvailable.get();
+@@ -2089,7 +2214,7 @@
+         });
+         return (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class},
+             (proxy, method, args) -> switch (method.getName()) {
+-                case "tasks" -> tasks;
++                case "tasks" -> observedTasks;
+                 case "linux" -> linux;
+                 case "ai" -> trackedAi;
+                 case "interaction" -> interaction;
+@@ -2161,6 +2286,8 @@
+             public OperationResult<AiResponse> call(AiRequest request, String expected, TaskContext task)
+                 throws ApiException {
+                 assertEquals(revision.get(), expected);
++                if (hostEnvelopeDenialJourney)
++                    hostEnvelopeTask = task;
+                 if (continueNativeFailure) {
+                     successorDiagnostic.beforeRequest(request);
+                     assertEquals(AiPurpose.LANGUAGE, request.purpose());
+@@ -2338,6 +2465,24 @@
+                         throw new AssertionError("Static refusal journal must remain before execution", unavailable);
+                     }
+                     staticDenialFeedbackRequests++;
++                }
++                if (hostEnvelopeDenialJourney && hostEnvelopeRejectedCallId != null && hostEnvelopeFeedbackRequests == 0) {
++                    var rejected = request.messages().stream().flatMap(message -> message.toolResult().stream())
++                        .filter(result -> result.callId().equals(hostEnvelopeRejectedCallId)).findFirst().orElseThrow();
++                    assertTrue(rejected.error());
++                    assertTrue(rejected.text().contains("DEPLOYMENT_COMMAND_STATIC_DENIED"));
++                    assertTrue(rejected.text().contains("NOT_SENT"));
++                    assertTrue(rejected.text().contains(task.id().toString()));
++                    assertTrue(rejected.text().contains(evidenceDigestBytes(HOST_ENVELOPE_DENIED_SCRIPT)));
++                    assertTrue(rejected.text().length() <= 512);
++                    assertFalse(rejected.text().contains("fixture-private-host-marker"));
++                    assertFalse(rejected.text().contains("rm -rf ."));
++                    assertEquals(0, hostEnvelopeRejectedSends);
++                    assertEquals(0, hostEnvelopeIndependentReviews);
++                    assertEquals(0, hostEnvelopeLegalSends);
++                    hostEnvelopeFacts.put("originalFeedbackCallIdSha256", evidenceDigestBytes(rejected.callId()))
++                        .put("originalFeedbackSha256", evidenceDigestBytes(rejected.text()));
++                    hostEnvelopeFeedbackRequests++;
+                 }
+                 if (budgetPreflightJourney && budgetRejectedCallId != null && budgetFeedbackRequests == 0) {
+                     var rejected = request.messages().stream().flatMap(message -> message.toolResult().stream())
+@@ -3026,7 +3171,11 @@
+                             var commandFacts = facts.path("modelCommand");
+                             assertEquals(script, commandFacts.path("modelScript").asText());
+                             String rationale = commandFacts.path("rationale").asText();
+-                            assertTrue(Set.of("Publish exact AI plan", "Repair actual failed health gate").contains(rationale));
++                            boolean hostPrerequisite = hostEnvelopeDenialJourney && script.equals(HOST_ENVELOPE_LEGAL_SCRIPT);
++                            if (hostPrerequisite)
++                                assertEquals("Host prerequisite only; no application publication: " + HOST_ENVELOPE_REASON, rationale);
++                            else
++                                assertTrue(Set.of("Publish exact AI plan", "Repair actual failed health gate").contains(rationale));
+                             var renderer = DeploymentModelCommandIdentity.class.getDeclaredMethod("envelope", UUID.class, UUID.class, String.class, String.class, String.class);
+                             renderer.setAccessible(true);
+                             String executable = (String) renderer.invoke(null, task.id(), operation, item.path("body").asText(), script, rationale);
+@@ -3060,6 +3209,8 @@
+                         keys(facts.path("modelCommand")));
+                     assertEquals(task.id().toString(), facts.at("/modelCommand/task").asText());
+                     assertTrue(facts.path("executionScope").asText().startsWith("Selected SSH host identity"));
++                    if (hostEnvelopeDenialJourney && facts.at("/modelCommand/modelScript").asText().equals(HOST_ENVELOPE_LEGAL_SCRIPT))
++                        hostEnvelopeIndependentReviews++;
+                 }
+                 if (proof.operation().equals("deployment.helper.install.v1") || proof.operation().equals("deployment.helper.install.tracked.v1")
+                     || proof.operation().equals("deployment.helper.install.files.v1") || proof.operation().equals("deployment.helper.install.files.custom.v1")) {
+@@ -3677,6 +3828,15 @@
+     }
+ 
+     private String proposal(int turn, JsonNode data) {
++        if (hostEnvelopeDenialJourney && turn >= 2) {
++            if (turn == 2 || turn == 3) {
++                String script = turn == 2 ? HOST_ENVELOPE_DENIED_SCRIPT : HOST_ENVELOPE_LEGAL_SCRIPT;
++                modelScripts.add(script);
++                return "{\"tool\":\"host_command\",\"arguments\":{\"script\":" + new ObjectMapper().valueToTree(script)
++                    + ",\"seconds\":10,\"reason\":\"" + HOST_ENVELOPE_REASON + "\"}}";
++            }
++            turn -= 2;
++        }
+         if (budgetPreflightJourney && turn >= 2) {
+             if (turn == 2 || turn == 3)
+                 return command("api").replace("\"seconds\":10", "\"seconds\":" + (turn == 2 ? 1800 : 1600));
+@@ -3944,6 +4104,13 @@
+             }
+             var selectedCalls = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolCall>();
+             selectedCalls.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native_" + (++nativeIds), name, args.toString()));
++            if (hostEnvelopeDenialJourney && name.equals("host_command")) {
++                assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(),
++                    gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(fixedCommands.tasks,
++                        hostEnvelopeTask));
++                if (args.path("script").asText().equals(HOST_ENVELOPE_DENIED_SCRIPT))
++                    hostEnvelopeRejectedCallId = selectedCalls.getFirst().id();
++            }
+             if (budgetPreflightJourney && name.equals("command") && args.path("seconds").asInt() == 1800) {
+                 var originalBudget = DeploymentAgentGoalBudget.current().orElseThrow();
+                 assertEquals(Duration.ofSeconds(1800).toNanos(), originalBudget.build().snapshot().limitNanos());
+@@ -3972,6 +4139,14 @@
+         try {
+             var codec = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(nativeProtocol);
+             var encoded = codec.encode("controlled", request, 65536, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT, providerStates);
++            if (hostEnvelopeDenialJourney && request.purpose() == AiPurpose.LANGUAGE && hostEnvelopeFeedbackRequests == 1 && hostEnvelopeWireRequests == 0) {
++                String wire = new String(encoded, StandardCharsets.UTF_8);
++                assertTrue(wire.contains(hostEnvelopeRejectedCallId));
++                assertTrue(wire.contains("TOOL_REJECTED:"));
++                assertTrue(wire.contains("DEPLOYMENT_COMMAND_STATIC_DENIED"));
++                assertTrue(wire.contains("NOT_SENT"));
++                hostEnvelopeWireRequests++;
++            }
+             if (budgetPreflightJourney && request.purpose() == AiPurpose.LANGUAGE && budgetFeedbackRequests == 1 && budgetWireRequests == 0) {
+                 String wire = new String(encoded, java.nio.charset.StandardCharsets.UTF_8);
+                 assertTrue(wire.contains(budgetRejectedCallId));
