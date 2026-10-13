@@ -1,0 +1,206 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -892,6 +892,9 @@
+         if (!artifacts.keySet().containsAll(component.dependencies()))
+             throw new IllegalArgumentException("Build dependencies first");
+         var candidate = prepare(component.id());
++        var goal = DeploymentAgentGoalBudget.current();
++        if (goal.isPresent() && proposal.seconds() > goal.orElseThrow().build().remainingSeconds())
++            throw new IllegalArgumentException("Original goal build allowance cannot fund this exact candidate command");
+         if (artifacts.containsKey(component.id()))
+             journal.event(task, "ARTIFACT_INVALIDATED", component.id(), "command");
+         artifacts.remove(component.id());
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -109,6 +109,14 @@
+ 
+     private int staticDenialBeforeSends, staticDenialBeforeApprovals;
+ 
++    private boolean budgetPreflightJourney;
++
++    private String budgetRejectedCallId;
++
++    private int budgetFeedbackRequests, budgetWireRequests;
++
++    private final com.fasterxml.jackson.databind.node.ObjectNode budgetCorrectionFacts = new ObjectMapper().createObjectNode();
++
+     private boolean differentPlanRejections;
+ 
+     private int planRejectionTurns;
+@@ -646,6 +654,22 @@
+         assertEquals(0, candidateUploads.get());
+         assertEquals(staticDenialBeforeSends, boundarySends.size());
+         assertEquals(staticDenialBeforeApprovals, approvals.size());
++    }
++
++    @Test
++    void goalBudgetPreflightRejectionAllowsIndependentTimeoutCorrectionAndNormalCommit() throws Exception {
++        nativeProtocol = gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS;
++        budgetPreflightJourney = sharedPublication = true;
++        controlledWorkspaceBytes = 1073741824L;
++        verifyScenario(ScenarioType.SUCCESS);
++        assertEquals(1, budgetFeedbackRequests);
++        assertEquals(1, budgetWireRequests);
++        assertEquals(0, budgetCorrectionFacts.path("firstAgentRunSends").asInt());
++        assertEquals(0, budgetCorrectionFacts.path("firstIndependentReviews").asInt());
++        assertFalse(budgetCorrectionFacts.path("unknownAtCorrection").asBoolean());
++        assertTrue(budgetCorrectionFacts.path("innerEffectsSettledBeforeFinish").asBoolean());
++        assertEquals(1, budgetCorrectionFacts.path("formalAppCount").asInt());
++        assertEquals(1, budgetCorrectionFacts.path("formalReleaseCount").asInt());
+     }
+ 
+     @Test
+@@ -1200,6 +1224,45 @@
+                     waitReturned(handle, sharedPublication ? 120 : fourCallAttemptBudget ? 180 : 40);
+                 } catch (AssertionError timeout) {
+                     throw new AssertionError(diagnostic(runtime, handle), timeout);
++                }
++                if (budgetPreflightJourney) {
++                    try (var access = scope(runtime, true); var connection = access.openConnection();
++                         var query = connection.prepareStatement("SELECT event_id,event_type,action_id,event_detail FROM deployment_agent_event WHERE task_id=? ORDER BY event_id")) {
++                        query.setString(1, handle.id().toString());
++                        var retained = budgetCorrectionFacts.putArray("terminalEvents");
++                        try (var rows = query.executeQuery()) {
++                            while (rows.next()) {
++                                var event = retained.addObject().put("id", rows.getLong(1)).put("type", rows.getString(2))
++                                    .put("actionSha256", evidenceDigestBytes(rows.getString(3))).put("detailSha256", evidenceDigestBytes(rows.getString(4)));
++                                if (rows.getString(2).equals("AI_PUBLICATION_ERROR_METADATA"))
++                                    event.set("safeErrorMetadata", new ObjectMapper().readTree(rows.getString(4)));
++                            }
++                        }
++                    }
++                    budgetCorrectionFacts.put("finalTaskState", handle.snapshot().state().name())
++                        .put("formalAppCount", modScalar(runtime, "SELECT COUNT(*) FROM managed_application"))
++                        .put("formalReleaseCount", modScalar(runtime, "SELECT COUNT(*) FROM deployment_release"));
++                    if (fixtureFailure.get() != null) {
++                        var failure = fixtureFailure.get();
++                        budgetCorrectionFacts.put("fixtureFailureClass", failure.getClass().getSimpleName())
++                            .put("fixtureFailureMessageSha256", evidenceDigestBytes(String.valueOf(failure.getMessage())));
++                        for (var fixtureLocation : failure.getStackTrace())
++                            if (fixtureLocation.getClassName().equals(DeploymentAgentWorkflowTest.class.getName() + "$FixedCommandFixture")) {
++                                budgetCorrectionFacts.put("fixtureFailureSourceMethod", fixtureLocation.getMethodName()).put("fixtureFailureSourceLine", fixtureLocation.getLineNumber());
++                                break;
++                            }
++                    }
++                    var diagnostics = budgetCorrectionFacts.putArray("safeDiagnostics");
++                    for (var record : new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(bound).read(handle.id()).records()) {
++                        var event = record.event();
++                        if (Set.of("DEPLOYMENT_AI_USAGE", "DEPLOYMENT_AGENT_OBSERVATION", "DEPLOYMENT_STAGE").contains(event.eventCode()))
++                            continue;
++                        diagnostics.addObject().put("eventCode", event.eventCode().matches("DEPLOYMENT_[A-Z_]{1,120}") ? event.eventCode() : "NON_DEPLOYMENT_CODE")
++                            .put("messageSha256", evidenceDigestBytes(String.valueOf(event.message())));
++                    }
++                    System.out.println("BUDGET_CORRECTION_BASELINE " + budgetCorrectionFacts);
++                    assertFalse(budgetCorrectionFacts.path("unknownAtCorrection").asBoolean(),
++                        "A known budget rejection before command send must stay correctable without recording UNKNOWN");
+                 }
+                 if (continueNativeFailure) {
+                     verifySuccessorGoal(runtime, page, tasks, workflow, handle, peer);
+@@ -2276,6 +2339,26 @@
+                     }
+                     staticDenialFeedbackRequests++;
+                 }
++                if (budgetPreflightJourney && budgetRejectedCallId != null && budgetFeedbackRequests == 0) {
++                    var rejected = request.messages().stream().flatMap(message -> message.toolResult().stream())
++                        .filter(result -> result.callId().equals(budgetRejectedCallId)).findFirst().orElseThrow();
++                    assertTrue(rejected.error());
++                    assertTrue(rejected.text().contains("Original goal build allowance cannot fund this exact candidate command"));
++                    assertTrue(rejected.text().length() <= 512);
++                    try {
++                        var events = new DeploymentAgentActionLog(fixedCommands.actual.db()).events(task);
++                        budgetCorrectionFacts.put("unknownAtCorrection", events.stream().anyMatch(event -> event.type().equals("STATE") && event.detail().equals("UNKNOWN")))
++                            .put("firstAgentRunSends", boundarySends.stream().filter(script -> script.contains("'agent-run'")).count())
++                            .put("firstIndependentReviews", independentReviews.get())
++                            .put("firstCommandExecuting", events.stream().filter(event -> event.type().equals("COMMAND_EXECUTING")).count())
++                            .put("firstCommandNotSent", events.stream().filter(event -> event.type().equals("COMMAND_NOT_SENT")).count())
++                            .put("originalFeedbackCallIdSha256", evidenceDigestBytes(rejected.callId()))
++                            .put("originalFeedbackSha256", evidenceDigestBytes(rejected.text()));
++                    } catch (Exception failure) {
++                        throw new AssertionError("Actual budget correction evidence unavailable", failure);
++                    }
++                    budgetFeedbackRequests++;
++                }
+                 if (evictedFeedbackRecovery) verifyEvictedFeedback(request, data, turn);
+                 if (missingRecipeAnalysis && turn >= 4) {
+                     assertEquals("PLANNED", data.at("/state/stage").asText());
+@@ -2338,6 +2421,17 @@
+                     String output;
+                     boolean verified = java.util.stream.StreamSupport.stream(data.path("observations").spliterator(), false)
+                         .anyMatch(v -> v.path("tool").asText().equalsIgnoreCase("verify") && v.path("output").asText().contains("VERIFIED_CURRENT_GRAPH_AND_APPLICATION_HEALTH"));
++                    if (budgetPreflightJourney && verified) {
++                        try {
++                            var events = new DeploymentAgentActionLog(fixedCommands.actual.db()).events(task);
++                            budgetCorrectionFacts.put("innerEffectsSettledBeforeFinish", DeploymentAgentActionLog.effectsSettled(events.stream()
++                                    .filter(event -> !event.type().startsWith("DELIVERY_")).toList()))
++                                .put("commandExecutingBeforeFinish", events.stream().filter(event -> event.type().equals("COMMAND_EXECUTING")).count())
++                                .put("commandResultsBeforeFinish", events.stream().filter(event -> event.type().equals("COMMAND_RESULT")).count());
++                        } catch (Exception failure) {
++                            throw new AssertionError("Actual pre-finish evidence unavailable", failure);
++                        }
++                    }
+                     if (acceptNativeFailure && step >= 0) {
+                         assertTrue(java.util.stream.StreamSupport.stream(data.path("observations").spliterator(), false)
+                                 .anyMatch(value -> value.path("tool").asText().equalsIgnoreCase("publish")
+@@ -3046,9 +3140,10 @@
+                         String guarded = proof.exact().substring(proof.exact().indexOf(marker) + marker.length());
+                         assertEquals(sha((guarded + "\n" + sha(body.getBytes(StandardCharsets.UTF_8))).getBytes(StandardCharsets.UTF_8)), target.path("id").asText());
+                     }
+-                    assertTrue(proof.exact().contains("timeout=PT30S\noutputLimitBytes=1048576\n"));
++                    boolean correctedBudget = budgetPreflightJourney && proof.exact().contains("'1600' '1048576' 'ordinary'");
++                    assertTrue(proof.exact().contains("timeout=" + Duration.ofSeconds(correctedBudget ? 1620 : 30) + "\noutputLimitBytes=1048576\n"));
+                     assertTrue(proof.exact().contains("stdinSha256=" + sha(body.getBytes(StandardCharsets.UTF_8))));
+-                    assertTrue(proof.exact().contains("'10' '1048576' 'ordinary'"));
++                    assertTrue(proof.exact().contains((correctedBudget ? "'1600'" : "'10'") + " '1048576' 'ordinary'"));
+                 }
+                 proof.installed().ifPresent(value -> assertEquals(value,
+                     facts.at("/completeExecutableInput/sources/managedHelper").textValue(), "Actual installer includes the entire helper source"));
+@@ -3369,6 +3464,9 @@
+                     assertEquals(source, current.getFirst().detail(), "Only the actual original protected source authorizes this fixed command");
+                     agent(expected, task, business, "agent-run", ids, List.of(source, "10", "1048576", "ordinary", sha(script.getBytes(StandardCharsets.UTF_8)), "-"),
+                         30, script.getBytes(StandardCharsets.UTF_8), Optional.of(script));
++                    if (budgetPreflightJourney && component.equals("api"))
++                        agent(expected, task, business, "agent-run", ids, List.of(source, "1600", "1048576", "ordinary", sha(script.getBytes(StandardCharsets.UTF_8)), "-"),
++                            1620, script.getBytes(StandardCharsets.UTF_8), Optional.of(script));
+                     if (riskJourney != null && component.equals("api"))
+                         agent(expected, task, business, "agent-run", ids, List.of(source, "10", "1048576", "ordinary", sha(HIGH_SCRIPT.getBytes(StandardCharsets.UTF_8)), "-"),
+                             30, HIGH_SCRIPT.getBytes(StandardCharsets.UTF_8), Optional.of(HIGH_SCRIPT));
+@@ -3579,6 +3677,11 @@
+     }
+ 
+     private String proposal(int turn, JsonNode data) {
++        if (budgetPreflightJourney && turn >= 2) {
++            if (turn == 2 || turn == 3)
++                return command("api").replace("\"seconds\":10", "\"seconds\":" + (turn == 2 ? 1800 : 1600));
++            turn--;
++        }
+         if (staticDenialJourney && turn >= 2) {
+             if (turn == 2) {
+                 staticDenialBeforeSends = boundarySends.size();
+@@ -3841,6 +3944,13 @@
+             }
+             var selectedCalls = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolCall>();
+             selectedCalls.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native_" + (++nativeIds), name, args.toString()));
++            if (budgetPreflightJourney && name.equals("command") && args.path("seconds").asInt() == 1800) {
++                var originalBudget = DeploymentAgentGoalBudget.current().orElseThrow();
++                assertEquals(Duration.ofSeconds(1800).toNanos(), originalBudget.build().snapshot().limitNanos());
++                originalBudget.build().charge(1_000_000_000L);
++                budgetCorrectionFacts.put("startingRemainingSeconds", originalBudget.build().remainingSeconds());
++                budgetRejectedCallId = selectedCalls.getFirst().id();
++            }
+             if (staticDenialJourney && name.equals("command") && args.path("script").asText().equals(STATIC_DENIED_SCRIPT)) {
+                 staticDeniedNativeCalls++;
+                 if (staticDeniedCallId == null) staticDeniedCallId = selectedCalls.getFirst().id();
+@@ -3862,6 +3972,13 @@
+         try {
+             var codec = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(nativeProtocol);
+             var encoded = codec.encode("controlled", request, 65536, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.DEFAULT, providerStates);
++            if (budgetPreflightJourney && request.purpose() == AiPurpose.LANGUAGE && budgetFeedbackRequests == 1 && budgetWireRequests == 0) {
++                String wire = new String(encoded, java.nio.charset.StandardCharsets.UTF_8);
++                assertTrue(wire.contains(budgetRejectedCallId));
++                assertTrue(wire.contains("TOOL_REJECTED:"));
++                assertTrue(wire.contains("Original goal build allowance cannot fund this exact candidate command"));
++                budgetWireRequests++;
++            }
+             if (staticDenialJourney && request.purpose() == AiPurpose.LANGUAGE && staticDenialFeedbackRequests == 1 && staticDenialWireRequests == 0) {
+                 String wire = new String(encoded, java.nio.charset.StandardCharsets.UTF_8);
+                 assertTrue(wire.contains(staticDeniedCallId));
