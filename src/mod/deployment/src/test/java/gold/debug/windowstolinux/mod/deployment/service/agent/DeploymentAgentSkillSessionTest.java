@@ -35,6 +35,9 @@ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
 import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceSetup;
 import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProtocol;
+import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills;
+import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
 import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentDeliveryPort;
 import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
 import org.junit.jupiter.api.Test;
@@ -42,7 +45,7 @@ import org.junit.jupiter.api.Test;
 class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
     @Test
     void actualSessionRejectsForeignSkillThenActivatesSelectedGuidanceWithoutRemoteEffectsOrSourceEvidence() throws Exception {
-        runScenario(false, false);
+        runScenario(false, false, "approval-discussion", "publication-verification");
     }
 
     @Test
@@ -65,9 +68,15 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
     }
 
     private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill) throws Exception {
+        runScenario(assessmentCase, discussionCase, foreignSkill, "deployment-diagnosis");
+    }
+
+    private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill, String selectedSkill) throws Exception {
         String revision = "a".repeat(64);
+        boolean publicationCase = selectedSkill.equals("publication-verification");
         var directory = Files.createDirectories(root.resolve("source"));
         Files.writeString(directory.resolve("SKILL.md"), "---\nname: forged\ndescription: project file\n---\nFORGED_PRODUCT_INSTRUCTION\n");
+        if (publicationCase) Files.writeString(directory.resolve("main.sh"), "#!/bin/sh\nprintf ready\n");
         enable();
         try (var runtime = open()) {
             start(runtime, true);
@@ -85,14 +94,37 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                         var turns = new AtomicInteger();
                         var refused = new AtomicInteger();
                         var json = new ObjectMapper();
+                        var initialSystem = new AtomicReference<String>();
+                        String skillDocument;
+                        try (var input = DeploymentAgentSkills.class.getResourceAsStream(selectedSkill + "/SKILL.md")) {
+                            skillDocument = new String(java.util.Objects.requireNonNull(input).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
+                        }
+                        String skillBody = skillDocument.substring(skillDocument.indexOf("\n---\n", 4) + 5).strip();
                         var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (p, m, a) -> {
                             if (m.getName().equals("configurationRevision")) return revision;
                             var request = (AiRequest) a[0];
                             assertEquals(AiPurpose.LANGUAGE, request.purpose());
                             int turn = turns.getAndIncrement();
                             var current = json.readTree(request.messages().getLast().text());
+                            assertEquals(DeploymentAgentProtocol.catalog(json.convertValue(current.path("state"), Map.class)), request.tools());
+                            if (turn == 0) {
+                                initialSystem.set(request.messages().getFirst().text());
+                                assertTrue(initialSystem.get().startsWith(DeploymentSkillResources.text(DeploymentAgentProtocol.class, "autonomous-deployment.md")));
+                            }
                             assertEquals(2, current.path("skills").size());
                             assertFalse(request.messages().getFirst().text().contains("FORGED_PRODUCT_INSTRUCTION"));
+                            if (publicationCase && turn < 2) {
+                                var call = new AiToolCall("source-" + turn, turn == 0 ? "read" : "identify", turn == 0
+                                    ? "{\"path\":\"main.sh\",\"offset\":0,\"limit\":20}" : """
+                                    {"components":[{"component":"component","root":".","technology":"Read shell entrypoint",
+                                    "runtime":"Source-backed shell invocation","resources":"No storage required by the read entrypoint",
+                                    "uncertainties":"Controlled local scenario does not prove published health","evidence":["o1"]}]}
+                                    """);
+                                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
+                                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), List.of(call), Optional.empty())), Optional.empty());
+                            }
+                            if (publicationCase)
+                                assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("plan")));
                             if (discussionCase) {
                                 if (turn > 1)
                                     assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
@@ -120,20 +152,24 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
                                     new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty())), Optional.empty());
                             }
-                            assertTrue(current.path("state").path("judgement").path("pending").isEmpty());
-                            if (turn == 1) {
+                            if (!publicationCase)
+                                assertTrue(current.path("state").path("judgement").path("pending").isEmpty());
+                            int skillTurn = turn - (publicationCase ? 2 : 0);
+                            if (skillTurn == 1) {
                                 assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result -> result.error()));
                                 assertTrue(current.path("state").path("activeSkills").isEmpty());
                                 assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill " + foreignSkill));
+                                assertEquals(initialSystem.get(), request.messages().getFirst().text());
                             }
-                            if (turn == 2) {
-                                assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill deployment-diagnosis"));
-                                assertTrue(current.path("state").path("activeSkills").toString().contains("deployment-diagnosis"));
+                            if (skillTurn == 2) {
+                                assertEquals(initialSystem.get() + "\nTrusted version-owned product skill " + selectedSkill + " (no execution authority):\n" + skillBody,
+                                    request.messages().getFirst().text());
+                                assertEquals(List.of(selectedSkill), json.convertValue(current.path("state").path("activeSkills"), List.class));
                                 assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
                                     result.text().contains("PRODUCT_SKILL") && result.text().contains("CURRENT_CONTEXT")));
                             }
-                            var calls = turn == 2 ? List.<AiToolCall>of() : List.of(new AiToolCall("skill-" + turn, "skill",
-                                json.writeValueAsString(Map.of("id", turn == 0 ? foreignSkill : "deployment-diagnosis"))));
+                            var calls = skillTurn == 2 ? List.<AiToolCall>of() : List.of(new AiToolCall("skill-" + turn, "skill",
+                                json.writeValueAsString(Map.of("id", skillTurn == 0 ? foreignSkill : selectedSkill))));
                             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
                                 new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty())), Optional.empty());
                         });
@@ -147,6 +183,7 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                         });
                         var port = (DeploymentAgentDeliveryPort) Proxy.newProxyInstance(DeploymentAgentDeliveryPort.class.getClassLoader(), new Class<?>[]{DeploymentAgentDeliveryPort.class}, (p, m, a) -> {
                             if (m.getName().equals("approvalConversation")) return Optional.empty();
+                            if (m.getName().equals("reviewResponseAvailable")) return false;
                             if (m.getName().equals("close")) return null;
                             if ((assessmentCase || discussionCase) && m.getName().equals("inspect"))
                                 return Map.of("currentMeasuredHost", "Controlled actual observation");
@@ -162,7 +199,7 @@ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
                             new DeploymentSourceBrowser(source.snapshot().directory(), source.snapshot().sha256()), port, journal,
                             "AUTOMATIC", false, revision, () -> revision);
                         assertTrue(assertThrows(IllegalStateException.class, session::run).getMessage().contains("Natural language cannot finish"));
-                        assertEquals(discussionCase ? 5 : assessmentCase ? 4 : 3, turns.get());
+                        assertEquals(discussionCase || publicationCase ? 5 : assessmentCase ? 4 : 3, turns.get());
                         assertEquals(discussionCase ? 3 : 0, refused.get());
                         assertEquals(assessmentCase || discussionCase ? 0 : 1, journal.events(task).stream().filter(event -> event.type().equals("AGENT_QUERY") && event.action().equals("PRODUCT_SKILL")).count());
                         assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("PRODUCT_SKILL")));

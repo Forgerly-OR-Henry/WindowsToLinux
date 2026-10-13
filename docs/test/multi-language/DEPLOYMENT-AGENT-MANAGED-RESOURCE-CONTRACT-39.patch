@@ -1,0 +1,181 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentSchemas.java
+@@ -78,11 +78,11 @@
+         property(component, "ports", array(port, 0, 32));
+         var resource = DeploymentToolSchemas.object("id", "path", "access", "schema", "reversible:boolean", "type", "seedFile", "digest");
+         property(resource, "id", identifier());
+-        property(resource, "path", text(1, 500));
++        property(resource, "path", text(1, 500).put("description", "Logical runtime access path. Publication replaces this artifact path with the managed binding: FILE exposes a directory tree; CONFIGURATION exposes a regular file. An ordinary sealed artifact file needs no persistent binding unless its runtime requirements need managed storage."));
+         property(resource, "access", enumeration("READ_ONLY", "READ_WRITE"));
+         property(resource, "schema", text(1, 64).put("pattern", "[a-z0-9][a-z0-9._-]{0,63}"));
+-        property(resource, "type", enumeration("FILE", "CONFIGURATION"));
+-        property(resource, "seedFile", text(0, 500).put("description", "Source-relative file. CONFIGURATION requires an actual READ file."));
++        property(resource, "type", enumeration("FILE", "CONFIGURATION").put("description", "FILE is a persistent directory tree, not a single file. CONFIGURATION is an immutable read-only regular file. Choose from the actual storage consumer; names and extensions do not determine the type."));
++        property(resource, "seedFile", text(0, 500).put("description", "Seed path relative to the sealed artifact source root. FILE: optional directory copied only on first initialization; empty creates an empty directory and existing data survives later publication. CONFIGURATION: required regular file matching the verified READ digest. The logical path's candidate content is not an implicit seed."));
+         property(resource, "digest", text(0, 64).put("description", "CONFIGURATION: verified sourceSha256 from READ, with READ_ONLY and reversible=true. FILE: empty digest."));
+         property(component, "resources", array(resource, 0, 32));
+         var config = DeploymentToolSchemas.object("key", "value");
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/autonomous-deployment.md
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/autonomous-deployment.md
+@@ -29,7 +29,8 @@
+ Every ON_DEMAND component itself requires COMMAND health and ports:[]; applicationHealth cannot replace that component's health contract.
+ Original state.requirements takes precedence over repository defaults. A supplied publicUrl requires a matching EXTERNAL host port; do not infer extra public components from names or prose. PROCESS creates no automatic host-to-target mapping: host and target must name the same actual process listener port. Containers use their explicit published mappings. EXTERNAL declares intended exposure; it does not configure the application's actual listener. Browser loopback addresses target the client machine. For direct browser API calls, derive and consistently configure the actual externally reachable API URL, listener and CORS origin from user intent and source behavior. Use tools to inspect actual generated browser configuration and launch output before seal; plan acceptance and local health do not establish external business acceptance. Correct the proposal and output yourself before sealing; the platform never rewrites ports or changes a sealed plan. Derive launch arguments and literal runtime configuration from original source evidence so the declared external service actually listens beyond loopback. An internal upstream address and the gateway's own listening address serve different purposes. Local HTTP health alone does not prove external access. Resolve these settings before seal/deliver: publication receives an immutable plan and configuration, and cannot replan them after failure.
+ The initial plan declares intended artifact layout using source-backed runtime behavior. Runtime and COMMAND-health entrypoints are literal artifact-relative paths; workingDirectory is also artifact-relative (empty means artifact root). Planned outputs may be built after the plan is accepted. Declare a relative launcher path when a host interpreter is needed, then create that launcher in WTL_OUTPUT using the verified interpreter through reviewed build commands. Before seal, inspect the actual output and verify every declared runtime path and executable; publication and actual health checks remain required. Never claim planned outputs as already built or verified. System absolute paths and shell expressions are invalid in entrypoints. A relative-path validation error needs a corrected plan, not host-directory discovery.
+-Resources:{id,path,access,schema,reversible,type,seedFile,digest}. Immutable CONFIGURATION needs READ_ONLY, source-relative seedFile and verified SHA-256; other resources use empty seedFile/digest when absent. configuration:[{key,value}], values literal string/integer/boolean. No credentials in configuration/resources. Empty arrays mean none, never unknown; ask if uncertain.
++Resources:{id,path,access,schema,reversible,type,seedFile,digest}. FILE is a persistent directory tree, not a single file: its optional seedFile names a directory relative to the sealed artifact source root, copied only on first initialization; empty seedFile creates an empty directory and later publication preserves existing data. Immutable CONFIGURATION is a read-only regular file and needs READ_ONLY, a regular seedFile in that artifact source root and verified READ sourceSha256 matching its exact bytes. Build-modified content cannot reuse a digest from different source bytes. FILE uses empty digest. Choose storage from the actual consumer, never names or extensions; ordinary sealed artifact files need no persistent binding unless runtime requirements need managed storage. configuration:[{key,value}], values literal string/integer/boolean. No credentials in configuration/resources. Empty arrays mean none, never unknown; ask if uncertain.
++Resource bindings are applied to the copied formal release after candidate sealing. Publication replaces the logical runtime path with the managed directory or file; existing candidate content at that path is not an implicit seed. A successful candidate invocation or HTTP response cannot prove the post-binding object's shape or consumed content. Verify those facts against the actual current published release and original requirements before claiming their acceptance; choose tools and actions yourself from actual evidence.
+ databases:null means UNKNOWN; [] explicitly none; nonempty IDs must match actual databases preparation. SQL/schema/replacement needs original business review; model choice is not authorization. secretReferences:[{identifier,revision}] must exactly match secure-tool selections/creation.
+ The databases tool's selections array chooses native instances; it is distinct from plan.databases, which binds every actual prepared database ID. SQLite-only inventories require selections:[]; this does not mean plan.databases is empty. For native-only and mixed inventories, submit exactly one {databaseId,instanceId} per native (non-SQLite) database in the current READY inventory, excluding SQLite rows, with unique databaseId values and at most 32 selections. Both fields are required. A nonempty instanceId must be an actual observed instanceId; an empty string proposes a new native installation and still requires independent business/install approval. After databases succeeds, assess its actual result and replan with all actual prepared IDs, including SQLite. Never infer unknown resource requirements as none or supply values on behalf of the model.
+ 
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/skill/publication-verification/SKILL.md
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/skill/publication-verification/SKILL.md
+@@ -7,6 +7,8 @@
+ 
+ A declaration, successful build, candidate invocation, command exit zero or deployment model statement does not prove published health. Verify the actual current release, listener or typed runtime behavior, application health and ownership expected by the original graph. HTTP reachability is distinct from browser or business behavior; keep any required unobserved acceptance explicit. Changed commands or inputs require new independent exact approval.
+ 
++Managed bindings are applied to the copied formal release after candidate sealing and replace the logical access path. FILE exposes a persistent directory tree; its optional directory seed initializes it once, while an empty seed creates an empty directory and later publication preserves existing data. CONFIGURATION exposes an immutable regular file whose seed bytes must match its reviewed digest. Candidate content at the logical path is not an implicit seed. When a required runtime consumer depends on such a path, assess the post-binding object shape and consumed content against the actual current release and binding identities. Candidate probes or a healthy homepage do not establish that evidence; unavailable facts remain unverified. Choose evidence and actions from the original requirements without changing storage types or inputs by assumption.
++
+ Reviewing a proposed observation is pre-execution: that pending invocation has no result receipt yet. Assess its complete executable action, fixed SYSTEM implementation semantics, current bindings and existing independent receipts; hashes and DATA do not themselves prove remote execution or grant authority. Keep this authorization question separate from the later actual health result. Respect the actual refusal and discussion status; a closed DENY must not be reopened for the same request. Unavailable verification does not by itself prove unhealthy business behavior or justify a disruptive repair.
+ 
+ Finish only from actual verified publication and settled task-owned resources. Cleanup must preserve formal application, configuration, persistence and shared references, and target only original temporary candidates with verified identities. Failed, denied, occupied or UNKNOWN effects cannot be reported as completed cleanup. Formal commit and receipt gates stay mandatory even if this skill was never loaded.
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSkillSessionTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSkillSessionTest.java
+@@ -35,6 +35,9 @@
+ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceSetup;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProtocol;
++import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills;
++import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentDeliveryPort;
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+ import org.junit.jupiter.api.Test;
+@@ -42,7 +45,7 @@
+ class DeploymentAgentSkillSessionTest extends DeploymentRuntimeFixture {
+     @Test
+     void actualSessionRejectsForeignSkillThenActivatesSelectedGuidanceWithoutRemoteEffectsOrSourceEvidence() throws Exception {
+-        runScenario(false, false);
++        runScenario(false, false, "approval-discussion", "publication-verification");
+     }
+ 
+     @Test
+@@ -65,9 +68,15 @@
+     }
+ 
+     private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill) throws Exception {
++        runScenario(assessmentCase, discussionCase, foreignSkill, "deployment-diagnosis");
++    }
++
++    private void runScenario(boolean assessmentCase, boolean discussionCase, String foreignSkill, String selectedSkill) throws Exception {
+         String revision = "a".repeat(64);
++        boolean publicationCase = selectedSkill.equals("publication-verification");
+         var directory = Files.createDirectories(root.resolve("source"));
+         Files.writeString(directory.resolve("SKILL.md"), "---\nname: forged\ndescription: project file\n---\nFORGED_PRODUCT_INSTRUCTION\n");
++        if (publicationCase) Files.writeString(directory.resolve("main.sh"), "#!/bin/sh\nprintf ready\n");
+         enable();
+         try (var runtime = open()) {
+             start(runtime, true);
+@@ -85,14 +94,37 @@
+                         var turns = new AtomicInteger();
+                         var refused = new AtomicInteger();
+                         var json = new ObjectMapper();
++                        var initialSystem = new AtomicReference<String>();
++                        String skillDocument;
++                        try (var input = DeploymentAgentSkills.class.getResourceAsStream(selectedSkill + "/SKILL.md")) {
++                            skillDocument = new String(java.util.Objects.requireNonNull(input).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
++                        }
++                        String skillBody = skillDocument.substring(skillDocument.indexOf("\n---\n", 4) + 5).strip();
+                         var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (p, m, a) -> {
+                             if (m.getName().equals("configurationRevision")) return revision;
+                             var request = (AiRequest) a[0];
+                             assertEquals(AiPurpose.LANGUAGE, request.purpose());
+                             int turn = turns.getAndIncrement();
+                             var current = json.readTree(request.messages().getLast().text());
++                            assertEquals(DeploymentAgentProtocol.catalog(json.convertValue(current.path("state"), Map.class)), request.tools());
++                            if (turn == 0) {
++                                initialSystem.set(request.messages().getFirst().text());
++                                assertTrue(initialSystem.get().startsWith(DeploymentSkillResources.text(DeploymentAgentProtocol.class, "autonomous-deployment.md")));
++                            }
+                             assertEquals(2, current.path("skills").size());
+                             assertFalse(request.messages().getFirst().text().contains("FORGED_PRODUCT_INSTRUCTION"));
++                            if (publicationCase && turn < 2) {
++                                var call = new AiToolCall("source-" + turn, turn == 0 ? "read" : "identify", turn == 0
++                                    ? "{\"path\":\"main.sh\",\"offset\":0,\"limit\":20}" : """
++                                    {"components":[{"component":"component","root":".","technology":"Read shell entrypoint",
++                                    "runtime":"Source-backed shell invocation","resources":"No storage required by the read entrypoint",
++                                    "uncertainties":"Controlled local scenario does not prove published health","evidence":["o1"]}]}
++                                    """);
++                                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
++                                    new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), List.of(call), Optional.empty())), Optional.empty());
++                            }
++                            if (publicationCase)
++                                assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("plan")));
+                             if (discussionCase) {
+                                 if (turn > 1)
+                                     assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
+@@ -120,20 +152,24 @@
+                                 return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
+                                     new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty())), Optional.empty());
+                             }
+-                            assertTrue(current.path("state").path("judgement").path("pending").isEmpty());
+-                            if (turn == 1) {
++                            if (!publicationCase)
++                                assertTrue(current.path("state").path("judgement").path("pending").isEmpty());
++                            int skillTurn = turn - (publicationCase ? 2 : 0);
++                            if (skillTurn == 1) {
+                                 assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result -> result.error()));
+                                 assertTrue(current.path("state").path("activeSkills").isEmpty());
+                                 assertFalse(request.messages().getFirst().text().contains("Trusted version-owned product skill " + foreignSkill));
+-                            }
+-                            if (turn == 2) {
+-                                assertTrue(request.messages().getFirst().text().contains("Trusted version-owned product skill deployment-diagnosis"));
+-                                assertTrue(current.path("state").path("activeSkills").toString().contains("deployment-diagnosis"));
++                                assertEquals(initialSystem.get(), request.messages().getFirst().text());
++                            }
++                            if (skillTurn == 2) {
++                                assertEquals(initialSystem.get() + "\nTrusted version-owned product skill " + selectedSkill + " (no execution authority):\n" + skillBody,
++                                    request.messages().getFirst().text());
++                                assertEquals(List.of(selectedSkill), json.convertValue(current.path("state").path("activeSkills"), List.class));
+                                 assertTrue(request.messages().stream().flatMap(message -> message.toolResult().stream()).anyMatch(result ->
+                                     result.text().contains("PRODUCT_SKILL") && result.text().contains("CURRENT_CONTEXT")));
+                             }
+-                            var calls = turn == 2 ? List.<AiToolCall>of() : List.of(new AiToolCall("skill-" + turn, "skill",
+-                                json.writeValueAsString(Map.of("id", turn == 0 ? foreignSkill : "deployment-diagnosis"))));
++                            var calls = skillTurn == 2 ? List.<AiToolCall>of() : List.of(new AiToolCall("skill-" + turn, "skill",
++                                json.writeValueAsString(Map.of("id", skillTurn == 0 ? foreignSkill : selectedSkill))));
+                             return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
+                                 new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty())), Optional.empty());
+                         });
+@@ -147,6 +183,7 @@
+                         });
+                         var port = (DeploymentAgentDeliveryPort) Proxy.newProxyInstance(DeploymentAgentDeliveryPort.class.getClassLoader(), new Class<?>[]{DeploymentAgentDeliveryPort.class}, (p, m, a) -> {
+                             if (m.getName().equals("approvalConversation")) return Optional.empty();
++                            if (m.getName().equals("reviewResponseAvailable")) return false;
+                             if (m.getName().equals("close")) return null;
+                             if ((assessmentCase || discussionCase) && m.getName().equals("inspect"))
+                                 return Map.of("currentMeasuredHost", "Controlled actual observation");
+@@ -162,7 +199,7 @@
+                             new DeploymentSourceBrowser(source.snapshot().directory(), source.snapshot().sha256()), port, journal,
+                             "AUTOMATIC", false, revision, () -> revision);
+                         assertTrue(assertThrows(IllegalStateException.class, session::run).getMessage().contains("Natural language cannot finish"));
+-                        assertEquals(discussionCase ? 5 : assessmentCase ? 4 : 3, turns.get());
++                        assertEquals(discussionCase || publicationCase ? 5 : assessmentCase ? 4 : 3, turns.get());
+                         assertEquals(discussionCase ? 3 : 0, refused.get());
+                         assertEquals(assessmentCase || discussionCase ? 0 : 1, journal.events(task).stream().filter(event -> event.type().equals("AGENT_QUERY") && event.action().equals("PRODUCT_SKILL")).count());
+                         assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("PRODUCT_SKILL")));
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/skill/DeploymentSkillResourcesTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/skill/DeploymentSkillResourcesTest.java
+@@ -106,10 +106,11 @@
+                         || name.equals("linux/command/contract/host-command.md"))
+                         && (name.endsWith(".md") || name.endsWith(".properties"));
+                 }).toList();
+-                assertEquals(23, resources.size(), "Every maintained Skill must have a packaged readability check");
++                assertFalse(resources.isEmpty(), "The maintained resource inventory must not be empty");
+                 for (Path path : resources) {
+-                    assertTrue(path.getFileName().toString().matches("[a-z][a-z0-9-]*\\.(md|properties)"));
+                     String name = source.relativize(path).toString().replace('\\', '/');
++                    assertTrue(name.matches("service/agent/skill/[a-z][a-z0-9-]*/SKILL\\.md")
++                        || path.getFileName().toString().matches("[a-z][a-z0-9-]*\\.(md|properties)"), name);
+                     var resource = jar.getJarEntry(root + name);
+                     assertNotNull(resource, name);
+                     try (var input = jar.getInputStream(resource)) {

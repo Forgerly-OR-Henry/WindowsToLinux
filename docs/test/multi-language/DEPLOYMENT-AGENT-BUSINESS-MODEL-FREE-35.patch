@@ -1,0 +1,22 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1187,7 +1187,8 @@
+     @Test
+     void verifiesRecoveredTaskBoardThroughProduct() throws Exception {
+         connectionOnly = false;
+-        aiEnabled = true;
++        aiEnabled = false;
++        System.out.println("AI_LIVE_BUSINESS_POLICY modelRequests=FORBIDDEN_BEFORE_TRANSPORT newDeployment=NOT_REQUESTED");
+         Path dataRoot = workspace().resolve("src/app/db/data").toRealPath();
+         root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
+         agentMode = root.getFileName().toString().startsWith("agent-main-only-diagnostic-live-task-board-");
+@@ -1238,6 +1239,9 @@
+                 assertEquals(ApplicationAutostartState.DISABLED, cleaned.autostart());
+                 System.out.println("STATIC_LIVE_CLEAN task-board " + app + " stopped/disabled");
+             }
++        } finally {
++            assertEquals(0, modelCalls.get(), "Published application business acceptance must not call a model");
++            System.out.println("AI_LIVE_BUSINESS_MODEL_CALLS scope=AFTER_RUNTIME_CLOSE attempts=" + modelCalls.get());
+         }
+     }
+ 
