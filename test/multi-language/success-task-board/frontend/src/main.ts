@@ -225,7 +225,7 @@ form("comment-form", async () => {
     body: JSON.stringify({
       text: input("comment").value,
       actorId: actor(),
-      requestId: crypto.randomUUID(),
+      requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
     }),
   });
   input("comment").value = "";

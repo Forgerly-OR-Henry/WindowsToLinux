@@ -1,0 +1,131 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1185,6 +1185,117 @@
+     }
+ 
+     @Test
++    void reconcilesOriginalManagementQueryAndStopsItsApplicationThroughProduct() throws Exception {
++        connectionOnly = false;
++        agentMode = true;
++        aiEnabled = false;
++        root = workspace().resolve("src/app/db/data/agent-main-only-diagnostic-live-task-board-gdfu5zwsg").toRealPath();
++        assertEquals(root, Path.of(System.getProperty("managed.live.originalState")).toRealPath());
++        var query = java.util.UUID.fromString("ef1a3a79-f928-4033-8514-228c04ae8de3");
++        var deployed = java.util.UUID.fromString("4f22fd0a-e484-4041-8f83-9da6f5485761");
++        var app = new DeploymentApplicationId("wtl-agent-main-only-diagnostic-task-board-gdfu7m50c", new ServerId(SERVER));
++        String revision = "b0d84bfbea07c2e1ab8f634a8c851eac6c7c08b95160ab7c87b0518266ca73e1";
++        String ownership = "f3238cacf4410ad2fd5b76daa42e5b0fe59b615808c41a724c7a5c39a243c25a";
++        try {
++            try (var runtime = open()) {
++                var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageHost() {
++                    public void show(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key,
++                                     gold.debug.windowstolinux.appapi.ui.page.PageSpec spec, javax.swing.JComponent component) {
++                        throw new AssertionError("Original query recovery must not mount business pages");
++                    }
++
++                    public void focus(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) {
++                    }
++
++                    public void remove(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) {
++                    }
++
++                    public void environment(gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) {
++                    }
++                }, new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
++                var report = runtime.startDevelopmentMods(workspace(), pages);
++                assertTrue(report.running().isEmpty(), report::toString);
++                assertTrue(report.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")), report::toString);
++                assertEquals(gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.RECOVERY,
++                    runtime.modContexts().get(OWNER).context().launchMode());
++                var original = runtime.tasks().snapshots().stream().filter(value -> value.id().equals(query)).findFirst().orElseThrow();
++                assertEquals(OWNER, original.ownerId());
++                assertEquals(VERSION, original.ownerVersion());
++                assertEquals(DeploymentApplicationsService.QUERY_TASK, original.type());
++                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN, original.state());
++                try (var connection = runtime.persistence().database().openConnection();
++                     var statement = connection.prepareStatement("SELECT request_json FROM platform_task WHERE task_id=?")) {
++                    statement.setObject(1, query);
++                    try (var rows = statement.executeQuery()) {
++                        assertTrue(rows.next());
++                        assertEquals(List.of(SERVER), JSON.convertValue(JSON.readTree(rows.getString(1)).path("serverIds"), List.class));
++                    }
++                }
++                printOriginalDiagnostics(runtime, query);
++                var settled = runtime.tasks().reconcile(query).toCompletableFuture().get(2, TimeUnit.MINUTES);
++                System.out.println("AI_LIVE_MANAGEMENT_QUERY_SETTLED " + settled);
++                assertEquals(query, settled.id());
++                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, settled.state(), settled::toString);
++                assertEquals(TaskResult.FAILED, settled.outcome().orElseThrow());
++                var logs = new gold.debug.windowstolinux.app.db.log.LogStore(runtime.persistence().database());
++                var history = logs.targets().stream().filter(value -> value.owner().equals("app") && value.category().equals("platform_task")).findFirst().orElseThrow();
++                var archived = logs.read(history).stream().filter(value -> query.equals(value.taskId())).findFirst().orElseThrow();
++                assertEquals("PLATFORM_TASK_FAILED", archived.eventCode());
++                var result = JSON.readTree(JSON.readTree(archived.details()).path("result").asText());
++                assertEquals("DEPLOYMENT_APPLICATION_QUERY_INTERRUPTED", result.path("problem").path("eventCode").asText());
++                try (var connection = runtime.persistence().database().openConnection();
++                     var statement = connection.prepareStatement("SELECT COUNT(*) FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
++                    statement.setObject(1, query);
++                    try (var rows = statement.executeQuery()) {
++                        assertTrue(rows.next());
++                        assertEquals(0, rows.getInt(1));
++                    }
++                }
++                runtime.modRecovery().release();
++            }
++            try (var runtime = open()) {
++                var logs = new gold.debug.windowstolinux.app.db.log.LogStore(runtime.persistence().database());
++                var history = logs.targets().stream().filter(value -> value.owner().equals("app") && value.category().equals("platform_task")).findFirst().orElseThrow();
++                var deployedArchive = logs.read(history).stream().filter(value -> deployed.equals(value.taskId())).findFirst().orElseThrow();
++                assertEquals(TaskResult.SUCCEEDED, deployedArchive.outcome());
++                assertEquals("PLATFORM_TASK_SUCCEEDED", deployedArchive.eventCode());
++                assertEquals(OWNER, deployedArchive.subjectMod());
++                assertEquals(DeploymentAgentWorkflow.TASK_TYPE, JSON.readTree(deployedArchive.details()).path("taskType").asText());
++                start(runtime, true);
++                var applications = new DeploymentApplicationsService(monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai()));
++                var originalUsage = completed(applications.usageForCompletedTask(deployed), 2).orElseThrow();
++                assertEquals(app, originalUsage.application());
++                assertEquals(revision, originalUsage.revisionSha256());
++                assertEquals(ownership, originalUsage.ownershipSha256());
++                assertEquals(Set.of("backend", "frontend"), originalUsage.components().stream().map(value -> value.id()).collect(java.util.stream.Collectors.toSet()));
++                assertEquals(Set.of(app.id() + "-backend", app.id() + "-frontend"),
++                    originalUsage.components().stream().map(value -> value.unitId()).collect(java.util.stream.Collectors.toSet()));
++                assertTrue(originalUsage.components().stream().flatMap(value -> value.endpoints().stream()).flatMap(value -> value.browser().stream())
++                    .anyMatch(java.net.URI.create("http://45.192.105.213:46800")::equals));
++                var selected = completed(applications.inspect(app), 2);
++                assertEquals(app, selected.application());
++                assertEquals(revision, selected.revisionSha256());
++                assertEquals(ownership, selected.ownershipSha256());
++                completed(applications.lifecycle(selected, DeploymentLifecycleAction.STOP), 5);
++                selected = completed(applications.inspect(app), 2);
++                assertEquals(revision, selected.revisionSha256());
++                assertEquals(ownership, selected.ownershipSha256());
++                completed(applications.lifecycle(selected, DeploymentLifecycleAction.DISABLE_AUTOSTART), 5);
++                var cleaned = completed(applications.inspect(app), 2);
++                assertEquals(app, cleaned.application());
++                assertEquals(revision, cleaned.revisionSha256());
++                assertEquals(ownership, cleaned.ownershipSha256());
++                assertEquals(ApplicationRunState.STOPPED, cleaned.state());
++                assertEquals(ApplicationAutostartState.DISABLED, cleaned.autostart());
++                System.out.println("AI_LIVE_MANAGEMENT_QUERY_CLEAN " + app + " stopped/disabled originalQuery=" + query);
++            }
++        } finally {
++            assertEquals(0, modelCalls.get(), "Original query recovery and management must not call a model");
++            System.out.println("AI_LIVE_MANAGEMENT_QUERY_MODEL_CALLS scope=AFTER_RUNTIME_CLOSE attempts=" + modelCalls.get());
++        }
++    }
++
++    @Test
+     void verifiesRecoveredTaskBoardThroughProduct() throws Exception {
+         connectionOnly = false;
+         aiEnabled = false;
+--- a/test/multi-language/success-task-board/frontend/src/main.ts
++++ b/test/multi-language/success-task-board/frontend/src/main.ts
+@@ -225,7 +225,7 @@
+     body: JSON.stringify({
+       text: input("comment").value,
+       actorId: actor(),
+-      requestId: crypto.randomUUID(),
++      requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+     }),
+   });
+   input("comment").value = "";
