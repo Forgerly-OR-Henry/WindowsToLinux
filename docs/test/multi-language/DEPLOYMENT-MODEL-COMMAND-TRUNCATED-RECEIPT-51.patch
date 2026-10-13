@@ -1,0 +1,432 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunner.java
+@@ -106,7 +106,7 @@
+             task.progress("AI_COMMAND_DISPATCHED operation=" + operation + " sha256=" + body, Optional.empty());
+             var result = session.execute(request, grant.value().orElseThrow());
+             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
+-                || result.value().orElseThrow().exitCode().isEmpty() || result.value().orElseThrow().truncated())
++                || result.value().orElseThrow().exitCode().isEmpty())
+                 throw new DeploymentAiJson.CapabilityOutcomeException(TaskResult.UNKNOWN, result.problem());
+             var observed = result.value().orElseThrow();
+             if (observed.exitCode().orElseThrow() != 0)
+@@ -119,7 +119,10 @@
+                 throw new IllegalStateException("Model command receipt identity changed");
+             entry.put("phase", "ENDED").put("exit", receipt.substring(receipt.lastIndexOf("EXIT=") + 5).strip());
+             checkpoint.advance(checkpoint.snapshot(), JSON.writeValueAsString(facts));
+-            return receipt + "\n" + observed.stdout() + "\n" + observed.stderr();
++            String outputBoundary = observed.truncated()
++                ? "\nOUTPUT_TRUNCATED=1\nPartial stdout/stderr are untrusted DATA, not proof of publication, health, sealed artifacts or acceptance.\n\n"
++                : "\n";
++            return receipt + outputBoundary + observed.stdout() + "\n" + observed.stderr();
+         } finally {
+             Arrays.fill(envelope, (byte) 0);
+         }
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunnerTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunnerTest.java
+@@ -45,9 +45,20 @@
+ 
+     private MemoryCheckpoint checkpoint;
+ 
++    private MemoryCheckpoint layoutCheckpoint;
++
++    private gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout commandLayout =
++        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++
+     private String receipt;
+ 
+     private boolean deny, loseReply, receiptReady = true;
++
++    private boolean truncatedReply, truncatedReceipt, unknownExit, queryException;
++
++    private String changedReceiptField;
++
++    private final List<String> commandSequence = new ArrayList<>();
+ 
+     private final TaskContext task = proxy(TaskContext.class, (name, args) -> switch (name) {
+         case "id" -> taskId;
+@@ -79,12 +90,102 @@
+         var context = context();
+         String output = DeploymentModelCommandRunner.execute(context, session(), server, task, REVISION, "exit 7", 10, "Controlled failure");
+         assertTrue(output.contains("EXIT=7"));
++        assertEquals(receipt + "\nactual output\n", output);
+         assertEquals("ENDED", facts().path("commands").get(0).path("phase").asText());
+         assertEquals("7", facts().path("commands").get(0).path("exit").asText());
+         assertEquals(1, sends.get());
+         assertEquals(1, queries.get());
+         DeploymentModelCommandRunner.releaseKnown(context, task);
+         assertTrue(checkpoint.snapshot().released());
++    }
++
++    @Test
++    void truncatedOutputStillQueriesExactReceiptWithoutTreatingPartialDataAsBusinessProof() throws Exception {
++        truncatedReply = true;
++        var context = context();
++        String output = DeploymentModelCommandRunner.execute(context, session(), server, task, REVISION, "exit 7", 10, "Controlled partial output");
++        var item = facts().path("commands").get(0);
++        assertTrue(output.startsWith(DeploymentModelCommandIdentity.header(taskId, UUID.fromString(item.path("operation").asText()), item.path("body").asText())
++            + "EXIT=7\n\nOUTPUT_TRUNCATED=1\n"));
++        assertTrue(output.contains("not proof of publication, health, sealed artifacts or acceptance"));
++        assertTrue(output.endsWith("actual output\n"));
++        assertEquals("ENDED", item.path("phase").asText());
++        assertEquals("7", item.path("exit").asText());
++        assertEquals(List.of("EXECUTE", "QUERY"), commandSequence);
++        assertEquals(1, sends.get());
++        assertEquals(1, queries.get());
++        assertFalse(DeploymentModelCommandRunner.unconfirmed(context, task));
++        DeploymentModelCommandRunner.releaseKnown(context, task);
++        assertTrue(checkpoint.snapshot().released());
++    }
++
++    @org.junit.jupiter.params.ParameterizedTest
++    @org.junit.jupiter.params.provider.ValueSource(strings = {"MISSING", "TASK", "OPERATION", "BODY_SHA256", "FORMAT", "TRUNCATED", "EXCEPTION"})
++    void truncatedOutputKeepsDispatchedIdentityWhenReceiptIsNotExactAndComplete(String scenario) throws Exception {
++        truncatedReply = true;
++        receiptReady = !scenario.equals("MISSING");
++        truncatedReceipt = scenario.equals("TRUNCATED");
++        queryException = scenario.equals("EXCEPTION");
++        changedReceiptField = Set.of("TASK", "OPERATION", "BODY_SHA256", "FORMAT").contains(scenario) ? scenario : null;
++        var context = context();
++        assertThrows(Exception.class, () -> DeploymentModelCommandRunner.execute(context, session(), server, task, REVISION,
++            "exit 7", 10, "Controlled unconfirmed receipt"));
++        var original = facts().path("commands").get(0).deepCopy();
++        assertEquals("DISPATCHED", original.path("phase").asText());
++        assertFalse(original.has("exit"));
++        assertTrue(DeploymentModelCommandRunner.unconfirmed(context, task));
++        assertThrows(IllegalStateException.class, () -> DeploymentModelCommandRunner.releaseKnown(context, task));
++        assertEquals(original, facts().path("commands").get(0));
++        assertFalse(checkpoint.snapshot().released());
++        assertEquals(List.of("EXECUTE", "QUERY"), commandSequence);
++        assertEquals(1, sends.get());
++        assertEquals(1, queries.get());
++    }
++
++    @Test
++    void truncatedOutputUsesCapturedLayoutReceiptAndRetainsChangedLayoutAsUnknown() throws Exception {
++        for (boolean changed : List.of(false, true)) {
++            var frame = new DeploymentModelCommandRunnerTest();
++            frame.truncatedReply = true;
++            frame.commandLayout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++                new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths("/usr/local/lib/controlled-model",
++                    "/opt/controlled-model/apps", "/var/lib/controlled-model", "/etc/opt/controlled-model", "/var/opt/controlled-model"));
++            var context = frame.context();
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), frame.task, frame.commandLayout);
++            frame.changedReceiptField = changed ? "LAYOUT_SHA256" : null;
++            if (changed) {
++                assertThrows(Exception.class, () -> DeploymentModelCommandRunner.execute(context, frame.session(), frame.server, frame.task,
++                    REVISION, "exit 7", 10, "Controlled changed layout receipt"));
++                assertEquals("DISPATCHED", frame.facts().path("commands").get(0).path("phase").asText());
++                assertTrue(DeploymentModelCommandRunner.unconfirmed(context, frame.task));
++                assertFalse(frame.checkpoint.snapshot().released());
++            } else {
++                String output = DeploymentModelCommandRunner.execute(context, frame.session(), frame.server, frame.task,
++                    REVISION, "exit 7", 10, "Controlled captured layout receipt");
++                assertTrue(output.startsWith("FORMAT=2\n"));
++                assertTrue(output.contains("LAYOUT_SHA256=" + frame.commandLayout.digest() + "\nEXIT=7\n\nOUTPUT_TRUNCATED=1"));
++                assertEquals("ENDED", frame.facts().path("commands").get(0).path("phase").asText());
++                DeploymentModelCommandRunner.releaseKnown(context, frame.task);
++                assertTrue(frame.checkpoint.snapshot().released());
++            }
++            assertEquals(List.of("EXECUTE", "QUERY"), frame.commandSequence);
++            assertEquals(1, frame.sends.get());
++            assertEquals(1, frame.queries.get());
++        }
++    }
++
++    @Test
++    void truncatedOutputWithUnobservedExitDoesNotQueryOrReleaseOriginalOperation() throws Exception {
++        truncatedReply = true;
++        unknownExit = true;
++        var context = context();
++        assertThrows(Exception.class, () -> DeploymentModelCommandRunner.execute(context, session(), server, task, REVISION,
++            "exit 7", 10, "Controlled missing exit"));
++        assertEquals(List.of("EXECUTE"), commandSequence);
++        assertEquals(1, sends.get());
++        assertEquals(0, queries.get());
++        assertTrue(DeploymentModelCommandRunner.unconfirmed(context, task));
++        assertFalse(checkpoint.snapshot().released());
+     }
+ 
+     @Test
+@@ -257,7 +358,7 @@
+                 var item = facts().path("commands").get(facts().path("commands").size() - 1);
+                 assertEquals("INTENT", item.path("phase").asText());
+                 String executable = new String(request.stdin(), StandardCharsets.UTF_8);
+-                assertEquals("exit 7", DeploymentModelCommandIdentity.executableFacts(executable).get("modelScript"));
++                assertEquals("exit 7", DeploymentModelCommandIdentity.executableFacts(executable, commandLayout).get("modelScript"));
+                 assertTrue(executable.contains("exit 7"));
+                 assertTrue(executable.contains("set -C"));
+                 assertTrue(executable.contains("OPERATION=" + item.path("operation").asText()));
+@@ -270,8 +371,9 @@
+         });
+         var tasks = proxy(TaskService.class, (name, args) -> switch (name) {
+             case "findCheckpoint" -> "deployment.config.remote-layout.v1".equals(args[1])
+-                ? Optional.empty() : Optional.ofNullable(checkpoint);
+-            case "beginCheckpoint" -> checkpoint = new MemoryCheckpoint((String) args[2]);
++                ? Optional.ofNullable(layoutCheckpoint) : Optional.ofNullable(checkpoint);
++            case "beginCheckpoint" -> "deployment.config.remote-layout.v1".equals(args[1])
++                ? layoutCheckpoint = new MemoryCheckpoint((String) args[2]) : (checkpoint = new MemoryCheckpoint((String) args[2]));
+             default -> throw new AssertionError(name);
+         });
+         var ai = proxy(AiService.class, (name, args) -> {
+@@ -306,12 +408,18 @@
+                 assertEquals("DISPATCHED", item.path("phase").asText(), "Dispatch is persisted before the actual send");
+                 if (request.stdin().length > 0) {
+                     sends.incrementAndGet();
+-                    receipt = "FORMAT=1\nTASK=" + taskId + "\nOPERATION=" + item.path("operation").asText()
+-                        + "\nBODY_SHA256=" + item.path("body").asText() + "\nEXIT=7\n";
+-                    yield loseReply ? new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty()) : success(new CommandResult(Optional.of(0), "actual output", "", false));
++                    commandSequence.add("EXECUTE");
++                    receipt = DeploymentModelCommandIdentity.header(taskId, UUID.fromString(item.path("operation").asText()), item.path("body").asText(), commandLayout)
++                        + "EXIT=7\n";
++                    yield loseReply ? new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty()) : success(new CommandResult(unknownExit ? Optional.empty() : Optional.of(0), "actual output", "", truncatedReply));
+                 }
+                 queries.incrementAndGet();
+-                yield receiptReady ? success(new CommandResult(Optional.of(0), receipt, "", false))
++                commandSequence.add("QUERY");
++                assertTrue(request.script().contains(item.path("operation").asText()), "Query must target only the original operation");
++                if (queryException) throw new IllegalStateException("Controlled receipt query exception");
++                String returned = changedReceiptField == null ? receipt
++                    : receipt.replaceFirst(changedReceiptField + "=[^\n]*", changedReceiptField + "=changed");
++                yield receiptReady ? success(new CommandResult(Optional.of(0), returned, "", truncatedReceipt))
+                     : new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty());
+             }
+             default -> throw new AssertionError(name);
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
+@@ -43,6 +43,39 @@
+     private static final ObjectMapper JSON = new ObjectMapper();
+ 
+     @Test
++    void partialCommandReceiptReachesAgentWithoutGrantingVerifiedFinish() throws Exception {
++        try (var frame = new Frame()) {
++            frame.partialModelCommand = true;
++            frame.script = (request, turn) -> {
++                if (turn == 0) return calls(turn, "stage", assessed(Map.of(), "o1"));
++                if (turn == 1)
++                    return calls(turn, "command", assessed(Map.of("script", "printf controlled", "seconds", 1,
++                        "reason", "Controlled partial diagnostic"), "o2"));
++                assertFalse(state(request).path("verified").asBoolean());
++                if (turn == 2) {
++                    assertTrue(lastResult(request).text().contains("EXIT=0"));
++                    assertTrue(lastResult(request).text().contains("OUTPUT_TRUNCATED=1"));
++                    assertTrue(lastResult(request).text().contains("not proof of publication, health, sealed artifacts or acceptance"));
++                    assertTrue(lastResult(request).text().contains("HEALTHY=1"));
++                    return calls(turn, "finish", assessed(Map.of(), "o3"));
++                }
++                assertTrue(lastResult(request).error());
++                assertTrue(lastResult(request).text().contains("Current independent publication verification required"));
++                return calls(turn, "unable", Map.of("reason", "Partial diagnostic output does not verify publication"));
++            };
++            assertEquals(TaskResult.UNKNOWN, frame.run(78).outcome());
++            assertEquals(1, frame.modelDispatches);
++            assertEquals(1, frame.modelReceiptQueries);
++            assertEquals("ENDED", JSON.readTree(frame.modelCheckpoint.snapshot().payload()).path("commands").get(0).path("phase").asText());
++            assertTrue(frame.modelCheckpoint.snapshot().released());
++            assertEquals(0, frame.releases);
++            assertEquals(0, frame.count("AI_PUBLICATION_VERIFIED"));
++            assertEquals(0, frame.count("AI_PUBLICATION_FINISHED"));
++            assertEquals(0, frame.count("AI_PUBLICATION_CLEANED"));
++        }
++    }
++
++    @Test
+     void nativeReviewDenialReachesNextMainContextWithoutSendOrVerifiedFinish() throws Exception {
+         try (var frame = new Frame()) {
+             frame.nativeApproval = true;
+@@ -560,6 +593,14 @@
+         private boolean healthyVerification;
+ 
+         private int nativeReviews;
++
++        private boolean partialModelCommand;
++
++        private int modelDispatches, modelReceiptQueries;
++
++        private gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint modelCheckpoint;
++
++        private String modelReceipt;
+ 
+         private final Deque<CommandResult> remoteReplies = new ArrayDeque<>();
+ 
+@@ -600,8 +641,23 @@
+                 throw new AssertionError(method);
+             });
+             var tasks = proxy(TaskService.class, (method, args) -> {
+-                assertEquals("findCheckpoint", method);
+-                return Optional.empty();
++                if (method.equals("findCheckpoint"))
++                    return "deployment-model-commands".equals(args[1]) ? Optional.ofNullable(modelCheckpoint) : Optional.empty();
++                assertTrue(partialModelCommand);
++                assertEquals("beginCheckpoint", method);
++                var saved = new java.util.concurrent.atomic.AtomicReference<>(new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(0, (String) args[2], false));
++                modelCheckpoint = proxy(gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.class, (name, values) -> {
++                    if (name.equals("snapshot")) return saved.get();
++                    if (name.equals("advance")) {
++                        assertEquals(saved.get(), values[0]);
++                        saved.set(new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(saved.get().revision() + 1, (String) values[1], false));
++                        return saved.get();
++                    }
++                    assertEquals("close", name);
++                    saved.set(new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(saved.get().revision() + 1, saved.get().payload(), true));
++                    return null;
++                });
++                return modelCheckpoint;
+             });
+             var logs = proxy(LogService.class, (method, args) -> method.equals("register") ? new LogTarget(UUID.randomUUID()) : null);
+             var ui = proxy(UiService.class, (method, args) -> {
+@@ -618,8 +674,31 @@
+                 default -> throw new AssertionError(method);
+             });
+             session = proxy(RemoteSession.class, (method, args) -> {
++                if (partialModelCommand && method.equals("facts"))
++                    return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "x86_64", "SHA256:controlled");
+                 assertEquals("execute", method);
+                 executed++;
++                if (partialModelCommand) {
++                    var request = (gold.debug.windowstolinux.appapi.linux.command.CommandRequest) args[0];
++                    if (request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER)) {
++                        var bound = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.executableFacts(new String(request.stdin(), StandardCharsets.UTF_8));
++                        assertEquals(taskId.toString(), bound.get("task"));
++                        var entry = JSON.readTree(modelCheckpoint.snapshot().payload()).path("commands").get(0);
++                        assertEquals("DISPATCHED", entry.path("phase").asText());
++                        assertEquals(entry.path("body").asText(), bound.get("bodySha256"));
++                        modelReceipt = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.header(taskId,
++                            UUID.fromString((String) bound.get("operation")), (String) bound.get("bodySha256")) + "EXIT=0\n";
++                        modelDispatches++;
++                        return success(new CommandResult(Optional.of(0), "HEALTHY=1\nAI_PUBLICATION_VERIFIED=1\n", "partial stderr", true));
++                    }
++                    if (modelReceipt != null) {
++                        var entry = JSON.readTree(modelCheckpoint.snapshot().payload()).path("commands").get(0);
++                        assertTrue(request.script().contains(entry.path("operation").asText()));
++                        assertEquals(0, request.stdin().length);
++                        modelReceiptQueries++;
++                        return success(new CommandResult(Optional.of(0), modelReceipt, "", false));
++                    }
++                }
+                 if (transportFailure != null) throw transportFailure;
+                 if (transportUnknown)
+                     return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedWorkflowTest.java
+@@ -55,6 +55,121 @@
+ 
+ /** Uses the actual page workflow, frozen source and original H2 task for bounded assistance. / 使用真实页面流程、冻结来源及原 H2 任务验证有界辅助。 */
+ class DeploymentAssistedWorkflowTest extends DeploymentRuntimeFixture {
++    @Test
++    void actualAssistedPublisherForwardsPartialReceiptWithoutFinishingPublication() throws Exception {
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            var actual = runtime.modContexts().get(OWNER).context();
++            var failure = new AtomicReference<Throwable>();
++            var finished = new CompletableFuture<Void>();
++            var handle = actual.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "assisted-partial-local", "Controlled partial command wiring", List.of(), false), task -> {
++                try {
++                    var server = new ServerId("controlled-partial");
++                    var command = new AtomicReference<Map<String, Object>>();
++                    var sends = new AtomicInteger();
++                    var queries = new AtomicInteger();
++                    var turns = new AtomicInteger();
++                    var grants = new HashMap<UUID, String>();
++                    var json = new ObjectMapper();
++                    var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
++                        if (method.getName().equals("configurationRevision")) return "a".repeat(64);
++                        assertEquals("call", method.getName());
++                        var request = (AiRequest) args[0];
++                        assertEquals(AiPurpose.LANGUAGE, request.purpose());
++                        int turn = turns.getAndIncrement();
++                        List<AiToolCall> calls;
++                        if (turn == 0) {
++                            calls = List.of(new AiToolCall("partial-command", "supplement", json.writeValueAsString(Map.of(
++                                "script", "printf controlled", "seconds", 1, "missingCapability", "controlled-gap", "reason", "Controlled partial diagnostic"))));
++                        } else {
++                            var feedback = request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((first, last) -> last).orElseThrow();
++                            if (turn == 1) {
++                                assertTrue(feedback.text().contains("EXIT=0"));
++                                assertTrue(feedback.text().contains("OUTPUT_TRUNCATED=1"));
++                                assertTrue(feedback.text().contains("not proof of publication, health, sealed artifacts or acceptance"));
++                                assertTrue(feedback.text().contains("HEALTHY=1"));
++                                calls = List.of(new AiToolCall("unverified-finish", "finish", "{}"));
++                            } else {
++                                assertTrue(feedback.error());
++                                calls = List.of();
++                            }
++                        }
++                        return success(new AiResponse("", "controlled", calls.isEmpty() ? "stop" : "tool_calls",
++                            new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty()));
++                    });
++                    var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) Proxy.newProxyInstance(
++                        gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class.getClassLoader(),
++                        new Class<?>[]{gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class}, (proxy, method, args) -> {
++                            assertEquals("approveCommand", method.getName());
++                            assertSame(task, args[2]);
++                            var intent = (ActionIntent) args[0];
++                            var grant = new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());
++                            grants.put(grant.id(), intent.exactAction());
++                            return success(grant);
++                        });
++                    var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
++                        if (method.getName().equals("ai")) return ai;
++                        if (method.getName().equals("interaction")) return review;
++                        try {
++                            return method.invoke(actual, args);
++                        } catch (InvocationTargetException failed) {
++                            throw failed.getCause();
++                        }
++                    });
++                    var remote = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
++                        if (method.getName().equals("facts"))
++                            return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "x86_64", "SHA256:controlled");
++                        assertEquals("execute", method.getName());
++                        var request = (CommandRequest) args[0];
++                        var grant = (gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) args[1];
++                        assertEquals(RemoteActions.command(server, "a".repeat(64), request).exactAction(), grants.remove(grant.id()));
++                        if (request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER)) {
++                            command.set(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.executableFacts(new String(request.stdin(), StandardCharsets.UTF_8)));
++                            assertEquals(task.id().toString(), command.get().get("task"));
++                            sends.incrementAndGet();
++                            return success(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0), "HEALTHY=1\n", "partial stderr", true));
++                        }
++                        assertEquals(0, request.stdin().length);
++                        assertTrue(request.script().contains((String) command.get().get("operation")));
++                        queries.incrementAndGet();
++                        String receipt = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.header(task.id(),
++                            UUID.fromString((String) command.get().get("operation")), (String) command.get().get("bodySha256")) + "EXIT=0\n";
++                        return success(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0), receipt, "", false));
++                    });
++                    var stopped = assertThrows(IllegalStateException.class, () ->
++                        gold.debug.windowstolinux.mod.deployment.service.standard.assisted.publish.DeploymentAssistedDeployment.run(context, () -> remote,
++                            server, task, () -> {
++                                throw new AssertionError("No inspection plan is needed for this controlled command");
++                            }, Map::of, Map::of));
++                    assertTrue(stopped.getMessage().contains("text cannot finish deployment"));
++                    assertEquals(3, turns.get());
++                    assertEquals(1, sends.get());
++                    assertEquals(1, queries.get());
++                    var checkpoint = actual.tasks().findCheckpoint(task, "deployment-model-commands").orElseThrow().snapshot();
++                    assertEquals("ENDED", json.readTree(checkpoint.payload()).path("commands").get(0).path("phase").asText());
++                    assertTrue(checkpoint.released());
++                    try (var connection = actual.db().openConnection(task); var query = connection.createStatement();
++                         var rows = query.executeQuery("SELECT COUNT(*) FROM managed_application WHERE graph_ready=TRUE")) {
++                        assertTrue(rows.next());
++                        assertEquals(0, rows.getInt(1));
++                    }
++                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                } catch (Exception | AssertionError failed) {
++                    failure.set(failed);
++                    throw failed;
++                } finally {
++                    finished.complete(null);
++                }
++            });
++            finished.get(30, TimeUnit.SECONDS);
++            if (failure.get() != null)
++                throw new AssertionError("Actual assisted partial-command wiring failed", failure.get());
++            assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
++        }
++    }
++
+     enum ScenarioType {
+         REFUSAL, PUBLICATION, CONNECT_DRIFT, SOURCE_REJECTED, SOURCE_UNSAFE
+     }
