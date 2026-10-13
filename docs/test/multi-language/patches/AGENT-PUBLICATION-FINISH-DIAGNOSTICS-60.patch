@@ -1,0 +1,203 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunner.java
+@@ -58,6 +58,11 @@
+         "runtime/systemd/61-service-identity.sh",
+         "runtime/systemd/systemd-manager-isolation.sh",
+         "runtime/container/55-podman-quadlet.sh");
++
++    private enum FinishPhase {RESOURCE_RELEASE, MODEL_COMMAND_RELEASE, CLEANUP_EVIDENCE, CANDIDATE_CLEANUP, FINALLY_MODEL_COMMAND_RELEASE}
++
++    private static final Set<String> SAFE_API_EVENTS = Set.of("TASK_CHECKPOINT_READ", "TASK_CHECKPOINT_RELEASE",
++        "TASK_CHECKPOINT_UPDATE", "SERVICE_WORKER", "MOD_TASK_BINDING_CLOSED");
+ 
+     /** Binds only the original inputs and capabilities owned by this adapter. / 仅绑定当前适配所属的原输入及能力。 */
+     private DeploymentAgentPublishRunner() {
+@@ -111,6 +116,7 @@
+         var standardSent = new java.util.concurrent.atomic.AtomicBoolean();
+         var failedNative = new java.util.concurrent.atomic.AtomicReference<OperationResult<DeploymentPublishResult>>();
+         var modifiedAfterPublish = new java.util.concurrent.atomic.AtomicBoolean();
++        var finishPhase = new java.util.concurrent.atomic.AtomicReference<FinishPhase>();
+         var commandBoundary = new java.util.concurrent.atomic.AtomicReference<Optional<gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot>>(Optional.empty());
+         var judgement = new DeploymentAgentPublicationJudgement(
+             gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.hash(proposal.toString()), task, journal);
+@@ -227,13 +233,25 @@
+                         if (!verifiedCurrent.get())
+                             throw new IllegalArgumentException("Current independent publication verification required");
+                         journal.event(task, "AI_PUBLICATION_FINISHED", proposal.graph().applicationId(), "MODEL_ACCEPTED_VERIFIED_RESULT");
++                        finishPhase.set(FinishPhase.RESOURCE_RELEASE);
++                        phase(journal, task, finishPhase.get(), false);
+                         releaseResources.releaseKnown();
++                        phase(journal, task, finishPhase.get(), true);
++                        finishPhase.set(FinishPhase.MODEL_COMMAND_RELEASE);
++                        phase(journal, task, finishPhase.get(), false);
+                         DeploymentModelCommandRunner.releaseKnown(context, task);
++                        phase(journal, task, finishPhase.get(), true);
++                        finishPhase.set(FinishPhase.CLEANUP_EVIDENCE);
++                        phase(journal, task, finishPhase.get(), false);
+                         var cleanupEvidence = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentCleanupEvidence(
+                             context, receipts, server, task, revision, proposal, candidates, journal, guard, true);
++                        phase(journal, task, finishPhase.get(), true);
++                        finishPhase.set(FinishPhase.CANDIDATE_CLEANUP);
++                        phase(journal, task, finishPhase.get(), false);
+                         var cleanupPublisher = new DeploymentGraphPublisher(cleanupEvidence.context(), cleanupEvidence, server, task,
+                             (type, action, detail) -> journal.event(task, type, action, detail), guard);
+                         var cleaned = cleanupPublisher.cleanup(proposal, candidates, true);
++                        phase(journal, task, finishPhase.get(), true);
+                         if (cleaned.outcome() != TaskResult.SUCCEEDED)
+                             return DeploymentModelToolLoop.Feedback.ended(unknown("DEPLOYMENT_AGENT_CANDIDATE_CLEANUP_UNCONFIRMED"));
+                         journal.event(task, "AI_PUBLICATION_CLEANED", proposal.graph().applicationId(), "ABSENT");
+@@ -273,12 +291,62 @@
+                 Map.entry("nextStep", publicationNextStep(stagedCurrent.get(), standardSent.get(), verifiedCurrent.get(),
+                     failedNative.get() != null && !modifiedAfterPublish.get()))));
+         } catch (Exception uncertain) {
+-            journal.event(task, "AI_PUBLICATION_ERROR", "", uncertain.getClass().getSimpleName());
+-            journal.event(task, "AI_PUBLICATION_ERROR_CAUSE", "", failureCause(uncertain));
++            error(journal, task, finishPhase.get(), uncertain);
+             throw uncertain;
+         } finally {
+-            DeploymentModelCommandRunner.releaseKnown(context, task);
++            finishPhase.set(FinishPhase.FINALLY_MODEL_COMMAND_RELEASE);
++            phase(journal, task, finishPhase.get(), false);
++            try {
++                DeploymentModelCommandRunner.releaseKnown(context, task);
++            } catch (Exception releaseFailure) {
++                error(journal, task, finishPhase.get(), releaseFailure);
++                throw releaseFailure;
++            }
++            phase(journal, task, finishPhase.get(), true);
+         }
++    }
++
++    private static void phase(DeploymentAgentActionLog journal, TaskContext task, FinishPhase phase, boolean returned) {
++        try {
++            journal.event(task, "AI_PUBLICATION_FINISH_STAGE", phase.name(), returned ? "RETURNED" : "CALLING");
++        } catch (Exception ignored) {
++            // Diagnostic storage cannot prevent the original release or cleanup call. / 诊断存储不能阻止原释放或清理调用。
++        }
++    }
++
++    private static void error(DeploymentAgentActionLog journal, TaskContext task, FinishPhase phase, Exception failure) {
++        try {
++            String name = failure.getClass().getSimpleName();
++            if (name.isEmpty()) name = failure instanceof ApiException ? "ApiException" : "Exception";
++            name = name.substring(0, Math.min(name.length(), 128));
++            errorEvent(journal, task, "AI_PUBLICATION_ERROR", name, failure);
++            errorEvent(journal, task, "AI_PUBLICATION_ERROR_CAUSE", failureCause(failure), failure);
++            var metadata = new LinkedHashMap<String, String>();
++            metadata.put("phase", phase == null ? "NONE" : phase.name());
++            metadata.put("exceptionClass", name);
++            metadata.put("messageSha256", diagnosticHash(failure.getMessage()));
++            if (failure instanceof ApiException api) {
++                metadata.put("problemCode", api.problem().code().name());
++                String event = api.problem().eventCode();
++                if (event != null && SAFE_API_EVENTS.contains(event)) metadata.put("problemEventCode", event);
++                else metadata.put("problemEventCodeSha256", diagnosticHash(event));
++            }
++            errorEvent(journal, task, "AI_PUBLICATION_ERROR_METADATA", new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(metadata), failure);
++        } catch (Exception diagnosticFailure) {
++            if (diagnosticFailure != failure) failure.addSuppressed(diagnosticFailure);
++        }
++    }
++
++    private static void errorEvent(DeploymentAgentActionLog journal, TaskContext task, String type, String detail, Exception failure) {
++        try {
++            journal.event(task, type, "", detail);
++        } catch (Exception diagnosticFailure) {
++            if (diagnosticFailure != failure) failure.addSuppressed(diagnosticFailure);
++        }
++    }
++
++    private static String diagnosticHash(String value) {
++        return value == null ? "ABSENT" : gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.hash(value);
+     }
+ 
+     /** Offers bounded reads of fixed lifecycle contracts / 提供固定生命周期合同的有界读取。
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
+@@ -468,6 +468,65 @@
+         }
+     }
+ 
++    @ParameterizedTest
++    @CsvSource({"TASK_CHECKPOINT_RELEASE,false", "FIXTURE_PRIVATE_EVENT,false", "TASK_CHECKPOINT_RELEASE,true"})
++    void resourceReleaseFailureRetainsSafeFinishPhaseAndOriginalApiException(String event, boolean nullMessage) throws Exception {
++        try (var frame = new Frame()) {
++            String privateMessage = "password=fixture-private-message; original-command=fixture-private-script";
++            var problem = new Problem(ProblemCode.UNKNOWN, event, privateMessage,
++                Map.of("credential", "fixture-private-context"), Optional.empty());
++            var original = nullMessage ? new ApiException(problem) {
++                @Override
++                public String getMessage() {
++                    return null;
++                }
++            } : new ApiException(problem);
++            frame.resourceReleaseFailure = original;
++            frame.healthyVerification = true;
++            frame.script = (request, turn) -> {
++                if (turn == 0) return calls(turn, "verify", assessed(Map.of(), "o1"));
++                assertEquals(1, turn, "Only actual verification and assessed finish are requested");
++                assertTrue(state(request).path("verified").asBoolean());
++                assertTrue(lastResult(request).text().contains("VERIFIED_CURRENT_GRAPH_AND_APPLICATION_HEALTH"));
++                return calls(turn, "finish", assessed(Map.of(), "o2"));
++            };
++            assertSame(original, assertThrows(ApiException.class, () -> frame.run(78)));
++            assertEquals(2, frame.decisions.get());
++            assertEquals(1, frame.releases);
++            assertEquals(1, frame.count("AI_PUBLICATION_VERIFIED"));
++            assertEquals(1, frame.count("AI_PUBLICATION_FINISHED"));
++            assertEquals(0, frame.count("AI_PUBLICATION_CLEANED"));
++            assertEquals(0, frame.count("CANDIDATE_CLEANUP_EXECUTING"));
++            assertEquals("ApiException", frame.detail("AI_PUBLICATION_ERROR"));
++            assertEquals("OTHER", frame.detail("AI_PUBLICATION_ERROR_CAUSE"));
++            var metadata = JSON.readTree(frame.detail("AI_PUBLICATION_ERROR_METADATA"));
++            assertEquals("RESOURCE_RELEASE", metadata.path("phase").asText());
++            assertEquals("ApiException", metadata.path("exceptionClass").asText());
++            assertEquals("UNKNOWN", metadata.path("problemCode").asText());
++            assertEquals(nullMessage ? "ABSENT" : diagnosticHash(privateMessage), metadata.path("messageSha256").asText());
++            if (event.equals("TASK_CHECKPOINT_RELEASE")) {
++                assertEquals(event, metadata.path("problemEventCode").asText());
++                assertFalse(metadata.has("problemEventCodeSha256"));
++            } else {
++                assertFalse(metadata.has("problemEventCode"));
++                assertEquals(diagnosticHash(event), metadata.path("problemEventCodeSha256").asText());
++            }
++            var events = frame.journal.events(frame.task);
++            var stages = events.stream().filter(value -> value.type().equals("AI_PUBLICATION_FINISH_STAGE"))
++                .map(value -> value.action() + ":" + value.detail()).toList();
++            assertEquals(List.of("RESOURCE_RELEASE:CALLING", "FINALLY_MODEL_COMMAND_RELEASE:CALLING", "FINALLY_MODEL_COMMAND_RELEASE:RETURNED"), stages);
++            String stored = events.toString();
++            assertFalse(stored.contains(privateMessage));
++            assertFalse(stored.contains("fixture-private-script"));
++            assertFalse(stored.contains("fixture-private-context"));
++            if (!event.equals("TASK_CHECKPOINT_RELEASE")) assertFalse(stored.contains(event));
++        }
++    }
++
++    private static String diagnosticHash(String value) {
++        return gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.hash(value);
++    }
++
+     @Test
+     void defaultSelectionReviewKeepsCommandRedactionAndRejectedCallsConsumeActualAttempts() throws Exception {
+         try (var frame = new Frame()) {
+@@ -577,6 +636,8 @@
+         private int approvals;
+ 
+         private int releases;
++
++        private ApiException resourceReleaseFailure;
+ 
+         private boolean nativeApproval;
+ 
+@@ -757,7 +818,10 @@
+                         "AUTOMATIC", false, () -> REVISION, null, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> agent);
+                 }
+                 return DeploymentAgentPublishRunner.run(reviewed, session, server, task, REVISION, proposal, Map.of(componentId, candidate),
+-                    journal, DeploymentSendGuard.NONE, budget, () -> releases++);
++                    journal, DeploymentSendGuard.NONE, budget, () -> {
++                        releases++;
++                        if (resourceReleaseFailure != null) throw resourceReleaseFailure;
++                    });
+             }
+         }
+ 
