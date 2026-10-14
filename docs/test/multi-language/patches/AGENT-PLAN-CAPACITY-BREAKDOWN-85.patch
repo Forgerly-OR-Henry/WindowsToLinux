@@ -1,0 +1,434 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -302,6 +302,13 @@
+                                     try {
+                                         return perform(proposal);
+                                     } catch (
++                                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanCapacityRefusal refused) {
++                                        requireConfiguration();
++                                        refused.requireBinding(task, source.revision(), models.revision(),
++                                            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task).digest());
++                                        rejectionEvidence.put(call.id(), observe("PLAN_CAPACITY", refused.feedback()));
++                                        return refused;
++                                    } catch (
+                                         gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException refused) {
+                                         if (!DeploymentAgentActionLog.effectsSettled(journal.events(task)))
+                                             throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_CAPACITY_REQUIRES_RECOVERY", "Earlier work still requires reconciliation", Map.of(), Optional.of(task.id())));
+@@ -322,7 +329,8 @@
+                                 }
+ 
+                                 public gold.debug.windowstolinux.appapi.ai.model.AiToolResult commit(gold.debug.windowstolinux.appapi.ai.model.AiToolCall original, Object value) {
+-                                    if (value instanceof DeploymentAlternativeRequiredException || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException)
++                                    if (value instanceof DeploymentAlternativeRequiredException || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException
++                                        || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanCapacityRefusal)
+                                         return new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(original.id(), lastObservation, true);
+                                     if (value != null)
+                                         terminal.set((OperationResult<DeploymentAgentDeliveryPort.Published>) value);
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -383,15 +383,124 @@
+                 inputs.add(new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(part.id(), archive.byteCount(),
+                     gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.sourceFloor(archive.byteCount(), archive.uncompressedByteCount(), 2), request));
+         }
+-        var selected = inputs.isEmpty() ? Map.<String, gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Selection>of()
+-            : gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.select(inputs, capacity.availableBytes(), workspacePolicy,
+-            gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT);
++        Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Selection> selected;
++        try {
++            selected = inputs.isEmpty() ? Map.of()
++                : gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.select(inputs, capacity.availableBytes(), workspacePolicy,
++                gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT);
++        } catch (IllegalArgumentException refused) {
++            throw planCapacityRejection(refused, capacity, inputs);
++        }
+         var resolved = plan.components().stream().map(part -> part.withWorkspace(existing.containsKey(part.id())
+             ? gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.preserve(
+             new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(part.id(), archive.byteCount(),
+                 gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.sourceFloor(archive.byteCount(), archive.uncompressedByteCount(), 2), part.workspaceRequest().orElseThrow()), existing.get(part.id()).quota())
+             : selected.get(part.id()))).toList();
+         return resolved;
++    }
++
++    /** Projects only the original quota refusal and its measured inputs. / 仅投影原配额拒绝及其实测输入。 */
++    private IllegalArgumentException planCapacityRejection(IllegalArgumentException refused,
++                                                           DeploymentCandidateChannel.CapacityObservation capacity,
++                                                           List<gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input> inputs) {
++        var match = java.util.regex.Pattern.compile("WORKSPACE_HOST_INSUFFICIENT: availableBytes=([0-9]{1,19}) requiredBytes=([0-9]{1,19})")
++            .matcher(String.valueOf(refused.getMessage()));
++        if (!match.matches()) return refused;
++        try {
++            long available = Long.parseLong(match.group(1)), required = Long.parseLong(match.group(2));
++            if (!Long.toString(available).equals(match.group(1)) || !Long.toString(required).equals(match.group(2))
++                || available != capacity.availableBytes() || required < workspacePolicy.reserveBytes()
++                || !task.id().equals(capacity.task()) || !server.id().equals(capacity.server())
++                || !configurationRevision.equals(capacity.revision()) || !layout.digest().equals(capacity.layoutSha256())
++                || !originalSourceRevision.matches("[0-9a-f]{64}") || !configurationRevision.matches("[0-9a-f]{64}")
++                || !capacity.requestSha256().matches("[0-9a-f]{64}") || !capacity.resultSha256().matches("[0-9a-f]{64}"))
++                return refused;
++            var ordered = inputs.stream().sorted(Comparator.comparing(gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input::id)).toList();
++            var json = new com.fasterxml.jackson.databind.ObjectMapper();
++            var facts = new LinkedHashMap<String, Object>();
++            facts.put("code", "WORKSPACE_HOST_INSUFFICIENT");
++            facts.put("task", task.id().toString());
++            facts.put("sourceSha256", originalSourceRevision);
++            facts.put("configurationSha256", configurationRevision);
++            facts.put("layoutSha256", capacity.layoutSha256());
++            facts.put("capacityRequestSha256", capacity.requestSha256());
++            facts.put("capacityResultSha256", capacity.resultSha256());
++            facts.put("inputsSha256", sha256(json.writeValueAsString(ordered)));
++            facts.put("archiveBytes", archive.byteCount());
++            facts.put("unpackedBytes", archive.uncompressedByteCount());
++            facts.put("availableBytes", available);
++            facts.put("hostReserveBytes", workspacePolicy.reserveBytes());
++            facts.put("requiredBytes", required);
++            facts.put("aggregateHostCostBytes", Math.subtractExact(required, workspacePolicy.reserveBytes()));
++            facts.put("cost", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT.name());
++            facts.put("hostCostMultiplier", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.hostCost(0,
++                gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT,
++                gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT)
++                / gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT);
++            facts.put("componentCount", ordered.size());
++            var components = new ArrayList<Map<String, Object>>();
++            for (var input : ordered) {
++                var request = input.request();
++                var component = new LinkedHashMap<String, Object>();
++                component.put("id", input.id());
++                component.put("sourceFloorBytes", input.sourceFloorBytes());
++                component.put("mode", request.mode().name());
++                component.put("minimumBuildBytes", request.minimumBuildBytes());
++                component.put("preferredBuildBytes", request.preferredBuildBytes());
++                component.put("explicitBytes", request.explicitBytes());
++                if (request.mode() == gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Mode.EXPLICIT)
++                    component.put("hostCostBytes", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.hostCost(
++                        input.archiveBytes(), request.explicitBytes(), gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT));
++                components.add(component);
++            }
++            facts.put("components", components);
++            facts.put("truncated", false);
++            facts.put("newInputsNotCreatedByRejectedPlan", true);
++            String detail = json.writeValueAsString(facts);
++            int maximumDetail = 12000 - "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=".length();
++            if (detail.length() > maximumDetail) {
++                facts.put("truncated", true);
++                facts.put("componentIds", ordered.stream().map(gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input::id).toList());
++                do {
++                    if (components.isEmpty()) return refused;
++                    components.removeLast();
++                    detail = json.writeValueAsString(facts);
++                } while (detail.length() > maximumDetail);
++            }
++            return new PlanCapacityRefusal(task.id(), originalSourceRevision, configurationRevision, capacity.layoutSha256(),
++                "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + detail, refused);
++        } catch (Exception unavailable) {
++            return refused;
++        }
++    }
++
++    /** Original plan facts, without a dispatch or cleanup proof. / 原计划事实，不构成派发或清理证明。 */
++    public static final class PlanCapacityRefusal extends IllegalArgumentException {
++        private final UUID task;
++
++        private final String source, configuration, layout, feedback;
++
++        private PlanCapacityRefusal(UUID task, String source, String configuration, String layout, String feedback,
++                                    IllegalArgumentException refused) {
++            super("WORKSPACE_HOST_INSUFFICIENT", refused);
++            this.task = task;
++            this.source = source;
++            this.configuration = configuration;
++            this.layout = layout;
++            this.feedback = feedback;
++        }
++
++        /** Requires the same current original caller. / 要求当前原调用方一致。 */
++        public void requireBinding(TaskContext currentTask, String currentSource, String currentConfiguration, String currentLayout) {
++            if (!task.equals(currentTask.id()) || !source.equals(currentSource)
++                || !configuration.equals(currentConfiguration) || !layout.equals(currentLayout))
++                throw new SecurityException("DEPLOYMENT_AGENT_PLAN_CAPACITY_BINDING_CHANGED");
++        }
++
++        /** Returns bounded complete product DATA. / 返回有界完整产品DATA。 */
++        public String feedback() {
++            return feedback;
++        }
+     }
+ 
+     @Override
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentWorkflowTest.java
+@@ -276,6 +276,20 @@
+ 
+     private boolean planCapacityApiFailure;
+ 
++    private boolean planCapacityBreakdownJourney;
++
++    private String planCapacityRejectedCall, planCapacityAcceptedCall;
++
++    private boolean planCapacityLegalPlanObserved;
++
++    private int planCapacityFeedbackRequests;
++
++    private final AtomicReference<JsonNode> planCapacityBreakdown = new AtomicReference<>();
++
++    private final AtomicReference<String> planCapacityRequestSha = new AtomicReference<>(), planCapacityResultSha = new AtomicReference<>();
++
++    private final com.fasterxml.jackson.databind.node.ObjectNode planCapacityBindingFacts = new ObjectMapper().createObjectNode();
++
+     private static final String CAPACITY_API_EVENT = "CONTROLLED_CAPACITY_API_FAILURE";
+ 
+     private static final String CAPACITY_API_MESSAGE = "password=fixture-private-capacity-value";
+@@ -554,6 +568,58 @@
+         assertEquals(0, candidateUploads.get());
+         assertTrue(boundarySends.stream().noneMatch(script -> script.contains("candidate-create-task")
+             || script.contains("'agent-open'") || script.contains("'agent-run'")));
++    }
++
++    @Test
++    void planHostCapacityRefusalExposesBoundBreakdownForIndependentModelChoice() throws Exception {
++        nativeProtocol = gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS;
++        planCapacityBreakdownJourney = sharedPublication = true;
++        controlledWorkspaceBytes = 1073741824L;
++        candidateAvailableBytes = 4 * controlledWorkspaceBytes + gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().workspacePolicy().reserveBytes();
++        verifyScenario(ScenarioType.SUCCESS);
++    }
++
++    private void assertPlanCapacityBreakdown() throws Exception {
++        assertEquals(1, planCapacityFeedbackRequests);
++        var metadata = Objects.requireNonNull(planCapacityBreakdown.get());
++        assertTrue(metadata.isObject(), "The original rejected call must retain complete bounded DATA for the next independent model choice");
++        assertEquals("WORKSPACE_HOST_INSUFFICIENT", metadata.path("code").asText());
++        for (var entry : List.of("task", "sourceSha256", "configurationSha256", "layoutSha256", "capacityRequestSha256", "capacityResultSha256"))
++            assertEquals(planCapacityBindingFacts.path(entry), metadata.path(entry), "Original observation binding: " + entry);
++        assertEquals(candidateAvailableBytes.longValue(), metadata.path("availableBytes").asLong());
++        long reserve = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().build().workspacePolicy().reserveBytes();
++        assertEquals(reserve, metadata.path("hostReserveBytes").asLong());
++        assertEquals(8 * controlledWorkspaceBytes + reserve, metadata.path("requiredBytes").asLong());
++        assertEquals(8 * controlledWorkspaceBytes, metadata.path("aggregateHostCostBytes").asLong());
++        assertEquals("AGENT", metadata.path("cost").asText());
++        assertEquals(2, metadata.path("hostCostMultiplier").asInt());
++        assertEquals(2, metadata.path("componentCount").asInt());
++        assertFalse(metadata.path("truncated").asBoolean());
++        assertTrue(metadata.path("newInputsNotCreatedByRejectedPlan").asBoolean());
++        var inputs = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input>();
++        for (var component : metadata.path("components")) {
++            assertTrue(Set.of("api", "web").contains(component.path("id").asText()));
++            assertEquals("EXPLICIT", component.path("mode").asText());
++            assertEquals(0, component.path("minimumBuildBytes").asLong());
++            assertEquals(0, component.path("preferredBuildBytes").asLong());
++            assertEquals(2 * controlledWorkspaceBytes, component.path("explicitBytes").asLong());
++            long sourceFloor = gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.sourceFloor(
++                metadata.path("archiveBytes").asLong(), metadata.path("unpackedBytes").asLong(), 2);
++            assertEquals(sourceFloor, component.path("sourceFloorBytes").asLong());
++            inputs.add(new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(component.path("id").asText(),
++                metadata.path("archiveBytes").asLong(), sourceFloor,
++                gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.explicit(2 * controlledWorkspaceBytes)));
++        }
++        assertEquals(2, inputs.size());
++        assertEquals(evidenceDigestBytes(new ObjectMapper().writeValueAsString(inputs)), metadata.path("inputsSha256").asText());
++        var fields = new HashSet<String>();
++        metadata.fieldNames().forEachRemaining(fields::add);
++        assertEquals(Set.of("code", "task", "sourceSha256", "configurationSha256", "layoutSha256", "capacityRequestSha256", "capacityResultSha256",
++            "inputsSha256", "archiveBytes", "unpackedBytes", "availableBytes", "hostReserveBytes", "requiredBytes", "aggregateHostCostBytes", "cost", "hostCostMultiplier",
++            "componentCount", "components", "truncated", "newInputsNotCreatedByRejectedPlan"), fields);
++        assertEquals(0, reviewedCandidateCreates.get());
++        assertEquals(0, candidateUploads.get());
++        System.out.println("PLAN_CAPACITY_BREAKDOWN_VERIFIED " + metadata);
+     }
+ 
+     @Test
+@@ -1334,6 +1400,51 @@
+                 } catch (AssertionError timeout) {
+                     throw new AssertionError(diagnostic(runtime, handle), timeout);
+                 }
++                if (planCapacityBreakdownJourney) {
++                    assertTrue(planCapacityLegalPlanObserved);
++                    assertNull(fixtureFailure.get());
++                    assertEquals(2, candidateCapacitySends.get());
++                    assertEquals(0, reviewedCandidateCreates.get());
++                    assertEquals(0, candidateUploads.get());
++                    assertTrue(peer.present.isEmpty());
++                    assertTrue(peer.current.isEmpty());
++                    assertEquals(0, modScalar(runtime, "SELECT COUNT(*) FROM managed_application"));
++                    var events = page.events(handle.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).value().orElseThrow().events();
++                    var fixtureTask = handle.id();
++                    var fixtureRoot = root.toRealPath();
++                    System.out.println("PLAN_CAPACITY_BREAKDOWN_CONTROLLED_STOP task=" + fixtureTask + " state=" + handle.snapshot().state()
++                        + " legalPlanObserved=true publication=0 creates=0 uploads=0");
++                    try {
++                        assertPlanCapacityBreakdown();
++                    } finally {
++                        assertTrue(fixtureRoot.startsWith(Path.of(System.getProperty("java.io.tmpdir")).toRealPath()));
++                        assertTrue(root.resolve("data").toRealPath().startsWith(fixtureRoot));
++                        if (handle.snapshot().state() == TaskState.UNKNOWN) {
++                            registration.close();
++                            try (var teardown = tasks.registerRecovery(DeploymentAgentWorkflow.TASK_TYPE, (previous, originalTask) -> {
++                                assertTrue(planCapacityBreakdownJourney);
++                                assertEquals(fixtureRoot, root.toRealPath());
++                                assertEquals(fixtureTask, previous.id());
++                                assertEquals(fixtureTask, originalTask.id());
++                                assertEquals(TaskState.UNKNOWN, previous.state());
++                                bound.file().closeTaskResources(originalTask);
++                                assertTrue(tasks.resourcesReleased(originalTask));
++                                return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(
++                                    new Problem(ProblemCode.IO_FAILURE, "CONTROLLED_LOCAL_TEARDOWN", "Only this local plan-feedback fixture is ended", Map.of(), Optional.empty())));
++                            })) {
++                                assertEquals(TaskState.ENDED, reconcileReady(runtime, handle).state());
++                            }
++                            assertEquals(events, page.events(handle.id()).completion().toCompletableFuture().get(10, TimeUnit.SECONDS).value().orElseThrow().events());
++                        }
++                        assertEquals(TaskState.ENDED, handle.snapshot().state());
++                        assertEquals(Optional.of(TaskResult.FAILED), handle.snapshot().outcome());
++                        assertEquals(2, candidateCapacitySends.get());
++                        assertEquals(0, candidateUploads.get());
++                        System.out.println("PLAN_CAPACITY_BREAKDOWN_FIXTURE_TEARDOWN task=" + fixtureTask + " state=ENDED outcome=FAILED remoteReplay=0");
++                    }
++                    return;
++                }
++
+                 if (planCapacityApiFailure) {
+                     assertNull(fixtureFailure.get(), "The controlled fault must follow a real original fixed review");
+                     assertEquals(TaskState.UNKNOWN, handle.snapshot().state());
+@@ -1556,7 +1667,25 @@
+                 }
+                 if (modelRefresh.get() != null)
+                     modelRefresh.get().get(10, TimeUnit.SECONDS);
+-                if (candidateAvailableBytes != null) {
++                if (planCapacityBreakdownJourney && handle.snapshot().state() == TaskState.UNKNOWN) {
++                    var stopped = new ObjectMapper().createObjectNode().put("task", handle.id().toString()).put("state", "UNKNOWN");
++                    if (fixtureFailure.get() != null) {
++                        stopped.put("fixtureClass", fixtureFailure.get().getClass().getSimpleName())
++                            .put("fixtureMessageSha256", evidenceDigestBytes(String.valueOf(fixtureFailure.get().getMessage())));
++                        var sites = stopped.putArray("fixtureSourceLines");
++                        for (var site : fixtureFailure.get().getStackTrace())
++                            if (site.getFileName() != null && site.getFileName().equals("DeploymentAgentWorkflowTest.java"))
++                                sites.add(site.getLineNumber());
++                    }
++                    var failures = stopped.putArray("fixedDiagnostics");
++                    for (var record : new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(bound).read(handle.id()).records()) {
++                        var event = record.event();
++                        if (Set.of("DEPLOYMENT_AGENT_FAILURE", "DEPLOYMENT_AGENT_TOOL_REJECTED", "DEPLOYMENT_AGENT_SESSION_STOPPED").contains(event.eventCode()))
++                            failures.addObject().put("eventCode", event.eventCode()).put("messageSha256", evidenceDigestBytes(event.message()));
++                    }
++                    System.out.println("PLAN_CAPACITY_BREAKDOWN_FIXTURE_STATE " + stopped);
++                }
++                if (candidateAvailableBytes != null && !planCapacityBreakdownJourney) {
+                     assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), diagnostic(runtime, handle));
+                     assertEquals(0, peer.commands.get());
+                     assertTrue(peer.present.isEmpty());
+@@ -2209,6 +2338,10 @@
+                                 }
+                                 if (candidateAvailableBytes != null) {
+                                     assertEquals(0, candidateAvailableBytes % 4096);
++                                    if (planCapacityBreakdownJourney) {
++                                        planCapacityRequestSha.set(evidenceDigestBytes(RemoteActions.command(server, revision.get(), (CommandRequest) arguments[0]).exactAction()));
++                                        planCapacityResultSha.set(evidenceDigestBytes((candidateAvailableBytes / 4096) + " 4096\n"));
++                                    }
+                                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(
+                                         Optional.of(0), (candidateAvailableBytes / 4096) + " 4096\n", "", false)), Optional.empty());
+                                 }
+@@ -2455,6 +2588,30 @@
+                 assertEquals(AiPurpose.LANGUAGE, request.purpose());
+                 assertEquals(originalAiTask.get(), task.id(), "A fresh inspection may verify LANGUAGE configuration but must never send a planner request");
+                 int turn = calls.getAndIncrement();
++                if (planCapacityBreakdownJourney && planCapacityRejectedCall != null && planCapacityFeedbackRequests == 0) {
++                    var feedback = request.messages().stream().flatMap(message -> message.toolResult().stream())
++                        .filter(result -> result.callId().equals(planCapacityRejectedCall)).findFirst().orElseThrow();
++                    assertTrue(feedback.error());
++                    assertTrue(feedback.text().contains("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT"));
++                    assertEquals(0, reviewedCandidateCreates.get(), "Only this rejected new plan has no candidate creation");
++                    assertEquals(0, candidateUploads.get());
++                    int dataStart = feedback.text().indexOf("DATA=");
++                    try {
++                        var journal = new DeploymentAgentActionLog(fixedCommands.actual.db());
++                        assertTrue(journal.events(task).stream().noneMatch(event -> event.type().equals("PREPARE_EXECUTING")));
++                        planCapacityBindingFacts.put("task", task.id().toString()).put("sourceSha256", journal.events(task).stream()
++                                .filter(event -> event.type().equals("SOURCE")).findFirst().orElseThrow().detail())
++                            .put("configurationSha256", revision.get()).put("layoutSha256", gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(fixedCommands.tasks, task).digest())
++                            .put("capacityRequestSha256", planCapacityRequestSha.get()).put("capacityResultSha256", planCapacityResultSha.get());
++                        planCapacityBreakdown.set(dataStart < 0 ? com.fasterxml.jackson.databind.node.MissingNode.getInstance()
++                            : new ObjectMapper().readTree(feedback.text().substring(dataStart + 5)));
++                    } catch (Exception unavailable) {
++                        throw new AssertionError("Controlled original plan refusal feedback cannot be captured", unavailable);
++                    }
++                    planCapacityFeedbackRequests++;
++                    System.out.println("PLAN_CAPACITY_BREAKDOWN_FEEDBACK call=" + planCapacityRejectedCall + " error=true dataPresent=" + (dataStart >= 0)
++                        + " feedbackSha256=" + evidenceDigestBytes(feedback.text()) + " creates=0 uploads=0");
++                }
+                 if (exhaustedNativeOutput)
+                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "length",
+                         new gold.debug.windowstolinux.appapi.ai.model.AiUsage(Optional.of(5L), Optional.of(8192L), Optional.empty(), Optional.empty(), Optional.of(8192L)))), Optional.empty());
+@@ -2489,6 +2646,21 @@
+                         budget.path("remainingExecutableToolAttempts").asInt());
+                     assertTrue(budget.path("publicationUsesSharedAttempts").asBoolean());
+                 }
++                if (planCapacityBreakdownJourney && planCapacityAcceptedCall != null && !planCapacityLegalPlanObserved) {
++                    var accepted = request.messages().stream().flatMap(message -> message.toolResult().stream())
++                        .filter(result -> result.callId().equals(planCapacityAcceptedCall)).findFirst().orElseThrow();
++                    assertFalse(accepted.error());
++                    assertEquals(1, data.at("/state/planRevision").asInt());
++                    assertEquals(2, data.at("/state/components").size());
++                    assertEquals(2, candidateCapacitySends.get());
++                    assertEquals(2, fixedCommands.reviews.get(), "Both capacity executions use independent fixed review and exact original grants");
++                    assertEquals(0, reviewedCandidateCreates.get());
++                    assertEquals(0, candidateUploads.get());
++                    planCapacityLegalPlanObserved = true;
++                    System.out.println("PLAN_CAPACITY_LEGAL_PLAN_ACCEPTED task=" + task.id() + " call=" + planCapacityAcceptedCall
++                        + " planRevision=1 capacityExecutions=2 independentFixedReviews=2 creates=0 uploads=0 feedbackSha256=" + evidenceDigestBytes(accepted.text()));
++                }
++
+                 if (data.path("state").path("stage").asText().equals("INVESTIGATING"))
+                     assertEquals(data.path("state").path("readFiles").isEmpty() ? "read" : "identify",
+                         data.path("state").path("nextStep").path("suggestedTool").asText());
+@@ -3976,7 +4148,7 @@
+                     c.putArray("databases");
+                     c.putArray("secretReferences");
+                     c.set("workspace", mapper.valueToTree(gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request.explicit(
+-                        controlledWorkspaceBytes)));
++                        planCapacityBreakdownJourney && planCapacityRejectedCall == null ? 2 * controlledWorkspaceBytes : controlledWorkspaceBytes)));
+                 });
+             }
+             return reply.toString();
+@@ -3995,6 +4167,11 @@
+     }
+ 
+     private String proposal(int turn, JsonNode data) {
++        if (planCapacityBreakdownJourney) {
++            if (turn >= 3)
++                return "{\"tool\":\"unable\",\"arguments\":{\"reason\":\"Controlled stop after independently admitted corrected plan\"}}";
++            if (turn == 2) turn--;
++        }
+         if (hostEnvelopeDenialJourney && turn >= 2) {
+             if (turn == 2 || turn == 3) {
+                 String script = turn == 2 ? HOST_ENVELOPE_DENIED_SCRIPT : HOST_ENVELOPE_LEGAL_SCRIPT;
+@@ -4271,6 +4448,10 @@
+             }
+             var selectedCalls = new ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolCall>();
+             selectedCalls.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native_" + (++nativeIds), name, args.toString()));
++            if (planCapacityBreakdownJourney && name.equals("plan")) {
++                if (planCapacityRejectedCall == null) planCapacityRejectedCall = selectedCalls.getFirst().id();
++                else planCapacityAcceptedCall = selectedCalls.getFirst().id();
++            }
+             if (hostEnvelopeDenialJourney && name.equals("host_command")) {
+                 assertEquals(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(),
+                     gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(fixedCommands.tasks,
+diff --git a/docs/test/multi-language/DEPLOYMENT-AGENT-PLAN-CAPACITY-BREAKDOWN-85.md b/docs/test/multi-language/DEPLOYMENT-AGENT-PLAN-CAPACITY-BREAKDOWN-85.md
+new file mode 100644
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-PLAN-CAPACITY-BREAKDOWN-85.md
+@@ -0,0 +1,13 @@
++# Agent plan 容量拒绝分解反馈（85）
++
++原 plan 在真实容量观察成功后被 `WORKSPACE_HOST_INSUFFICIENT` 拒绝，模型原 call 只能获得 aggregate。Agent 现在把同 task/source/config/layout、容量 request/result SHA 绑定的安全分解交回该 call：原 Request、sourceFloor、EXPLICIT hostCost、reserve 与 aggregate。AUTO 不推测 selected 或依赖大小。原 Quota 算法、拒绝条件与保护不变。
++
++仅原 Quota 确切拒绝且观察/输入身份一致时产生私有构造的 `PlanCapacityRefusal`。Session 复核当前绑定，再使用既有 observe/evidence 通路保留完整合法 JSON（既有 12000 字符上限，必要时明确 truncated 并保留身份、aggregate 和组件 IDs）。普通 IllegalArgumentException 仍走原 512 字反馈。DATA 是原 plan 事实，不构成 NOT_SENT、清理、审批或 PREPARE 证明；newInputsNotCreatedByRejectedPlan 只指此次拒绝的新 inputs。
++
++唯一 selector：`DeploymentAgentWorkflowTest#planHostCapacityRefusalExposesBoundBreakdownForIndependentModelChoice`，固定 OPENAI_CHAT_COMPLETIONS。本地受控场景验证原 call 完整 DATA、拒绝 create/upload=0、下一合法新 plan 的 fresh capacity 独立审阅/精确授权/回执（2 reviews、2 executes），随后受控停止并关闭临时 Runtime。它不证明真实 API 模型自主部署、publication、正式 App 提交或原 UNKNOWN 恢复。若临时 UNKNOWN 需要显式 callback，其仅属于断言后的夹具物理收尾。
++
++原轮全部保留：baseline-01 编译失败、0 cases；baseline-02 1 FAIL/34.435s（旧 failure 分支）、baseline-03 1 FAIL/36.117s（旧 publication 尾部 UNKNOWN），均不是目标；baseline-04 1 FAIL/11.4s，证实缺少 DATA；corrected-01 1 FAIL/10.039s，证实共享 512 字截断；corrected-02 1 PASS、0 FAIL/ERROR/SKIP，XML 11.043s（case 10.932s）。只重跑这个失败方法，未跑旧方法/整类/其他 Codec。
++
++三个 owner 的 IDEA write/check 和 `-DskipTests package` 通过。before 3296 与 82 after-final 相同，after-final 仅 Session、RemoteTools、WorkflowTest 变化；共享层、STATIC/ASSISTED、Skill、审批、UNKNOWN/恢复门不变。原 83/80/74/58 的数据库与证据保留，paid/provider/真实 SSH/原 DB/真实 Runtime/恢复删除=0。
++
++证据目录：`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-plan-capacity-breakdown-85`。完整增量补丁：`patches/AGENT-PLAN-CAPACITY-BREAKDOWN-85.patch`，仅本次 3 sources + 本文；父负责隔离本地提交，不推送。
