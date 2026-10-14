@@ -1,0 +1,205 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index f59fe83d560a7784a3554819c5f405632a30474c..971bf9b3ea71b2f1e25a5253952d6c0bb0d5f23a 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -281,9 +281,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         if (!valid) throw new IllegalArgumentException(code);
+     }
+ 
+-    private static List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> backupBatch(
+-        List<gold.debug.windowstolinux.appapi.ai.model.AiToolCall> calls, Set<String> observedIds, Set<String> priorIds,
+-        BackupAction action, java.util.function.Consumer<List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>> checkpoint) throws Exception {
++    private static List<com.fasterxml.jackson.databind.JsonNode> backupChoices(
++        List<gold.debug.windowstolinux.appapi.ai.model.AiToolCall> calls, Set<String> observedIds, Set<String> priorIds) {
+         backupNativeRequire(!calls.isEmpty() && calls.size() <= 32, "BACKUP_NATIVE_BATCH_BOUND");
+         var ids = new java.util.HashSet<String>();
+         var choices = new java.util.ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+@@ -299,13 +298,74 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             String name = choice.path("action").asText(), id = choice.path("entryId").asText(), category = choice.path("category").asText();
+             backupNativeRequire(Set.of("LIST", "SELECT", "PAGE", "FINISH").contains(name) && choice.path("page").intValue() >= 0, "BACKUP_NATIVE_UNSAFE_ACTION_OR_PAGE");
+             if (name.equals("LIST") || name.equals("SELECT")) {
+-                backupNativeRequire(observedIds.contains(id) && choice.path("page").intValue() == 0, "BACKUP_NATIVE_UNKNOWN_ID_OR_NONZERO_PAGE");
++                backupNativeRequire(observedIds.contains(id), "BACKUP_NATIVE_UNKNOWN_OBSERVED_ID");
++                backupNativeRequire(choice.path("page").intValue() == 0, "BACKUP_NATIVE_NONZERO_ACTION_PAGE");
+                 backupNativeRequire(name.equals("SELECT") ? Set.of("BUSINESS_DATA", "KEY_RECEIPT", "OWNER_MANIFEST", "IRREPLACEABLE_SOURCE").contains(category) : category.isEmpty(), "BACKUP_NATIVE_CATEGORY_REJECTED");
+             } else
+                 backupNativeRequire(id.isEmpty() && category.isEmpty() && (!name.equals("FINISH") || choice.path("page").intValue() == 0), "BACKUP_NATIVE_CONTROL_FIELDS_REJECTED");
+             choices.add(choice);
+         }
+-        priorIds.addAll(ids);
++        return List.copyOf(choices);
++    }
++
++    private static List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> backupFeedbackBatch(
++        List<gold.debug.windowstolinux.appapi.ai.model.AiToolCall> calls, Set<String> observedIds, Set<String> priorIds,
++        BackupAction action, java.util.function.Consumer<List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>> checkpoint) throws Exception {
++        backupNativeRequire(!calls.isEmpty() && calls.size() <= 32, "BACKUP_NATIVE_BATCH_BOUND");
++        backupNativeRequire(calls.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).distinct().count() == calls.size()
++            && calls.stream().noneMatch(call -> priorIds.contains(call.id())), "BACKUP_NATIVE_DUPLICATE_CALL_ID");
++        try {
++            backupChoices(calls, observedIds, priorIds);
++        } catch (IllegalArgumentException invalid) {
++            String reason = invalid.getMessage() != null && invalid.getMessage().matches("BACKUP_NATIVE_[A-Z_]+") ? invalid.getMessage() : "INVALID_NATIVE_ARGUMENTS";
++            priorIds.addAll(calls.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).toList());
++            var results = new java.util.ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>();
++            for (var call : calls)
++                results.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), JSON.writeValueAsString(Map.of(
++                    "callId", call.id(), "tool", call.name(), "status", "REJECTED_NATIVE_BATCH_NO_DISPATCH", "reason", reason)), true));
++            checkpoint.accept(List.copyOf(results));
++            return List.copyOf(results);
++        }
++        return backupBatch(calls, observedIds, priorIds, action, checkpoint);
++    }
++
++    private static final class BackupBatchBudget {
++        private int received, repeated;
++
++        private String previousRejection;
++
++        private void receive(int count) {
++            backupNativeRequire(count >= 0, "BACKUP_NATIVE_INVALID_CALL_COUNT");
++            received = Math.addExact(received, count);
++            backupNativeRequire(received <= 512, "BACKUP_NATIVE_RECEIVED_CALL_BOUND");
++        }
++
++        private void completed(List<gold.debug.windowstolinux.appapi.ai.model.AiToolCall> calls,
++                               List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> results, boolean progressed) {
++            if (progressed || results.stream().anyMatch(result -> !result.error())) {
++                repeated = 0;
++                previousRejection = null;
++                return;
++            }
++            String signature = DeploymentAgentInputs.hash(calls.stream().map(call -> call.name() + ":" + DeploymentAgentInputs.hash(call.arguments())).toList().toString()
++                + results.stream().map(result -> {
++                try {
++                    return JSON.readTree(result.text()).path("reason").asText(JSON.readTree(result.text()).path("status").asText());
++                } catch (Exception invalid) {
++                    throw new IllegalArgumentException("BACKUP_NATIVE_RECEIPT_INVALID");
++                }
++            }).toList());
++            repeated = signature.equals(previousRejection) ? repeated + 1 : 1;
++            previousRejection = signature;
++            backupNativeRequire(repeated < 3, "BACKUP_NATIVE_REPEATED_NO_PROGRESS_REJECTION");
++        }
++    }
++
++    private static List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> backupBatch(
++        List<gold.debug.windowstolinux.appapi.ai.model.AiToolCall> calls, Set<String> observedIds, Set<String> priorIds,
++        BackupAction action, java.util.function.Consumer<List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>> checkpoint) throws Exception {
++        var choices = backupChoices(calls, observedIds, priorIds);
++        priorIds.addAll(calls.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).toList());
+         var results = new java.util.ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>();
+         boolean finished = false, failed = false;
+         Exception failure = null;
+@@ -431,6 +491,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             var ai = new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context);
+             var history = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory();
+             var priorIds = new java.util.HashSet<String>();
++            var batchBudget = new BackupBatchBudget();
+             String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
+             int[] page = {0};
+             boolean[] finished = {false};
+@@ -446,18 +507,24 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                 "action":{"type":"string","enum":["LIST","SELECT","PAGE","FINISH"]},"entryId":{"type":"string","maxLength":64},
+                 "category":{"type":"string","enum":["","BUSINESS_DATA","KEY_RECEIPT","OWNER_MANIFEST","IRREPLACEABLE_SOURCE"]},"page":{"type":"integer","minimum":0}}}
+                 """);
+-            for (int turn = 0; priorIds.size() < 512 && turn < 512; turn++) {
++            for (int turn = 0; batchBudget.received < 512 && turn < 512; turn++) {
+                 var facts = Map.ofEntries(Map.entry("mode", "BACKUP_ONLY_INVENTORY_NO_PAYLOAD"), Map.entry("task", task.id().toString()), Map.entry("server", SERVER),
+                     Map.entry("wireFingerprint", fingerprint), Map.entry("layoutSha256", layoutSha), Map.entry("objects", entries.values().stream().skip((long) page[0] * 64).limit(64).map(file -> backupVisible(file, listed, selected.keySet())).toList()),
+                     Map.entry("page", page[0]), Map.entry("pages", Math.max(1, (entries.size() + 63) / 64)), Map.entry("selectedCount", selected.size()), Map.entry("selectedBytes", state.get("selectedBytes")),
+                     Map.entry("unavailableCount", unavailable.size()), Map.entry("unavailable", unavailable.stream().skip(Math.max(0, unavailable.size() - 16)).toList()));
+                 String input = JSON.writeValueAsString(facts);
+                 var response = ai.call(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, history.messages(policy, input), List.of(tool), revision, task, false);
+-                backupRequire(response.finishReason().equals("tool_calls") && priorIds.size() + response.toolCalls().size() <= 512);
++                try {
++                    batchBudget.receive(response.toolCalls().size());
++                } finally {
++                    state.put("receivedNativeCalls", batchBudget.received);
++                }
++                backupRequire(response.finishReason().equals("tool_calls"));
++                String beforeState = entries.size() + ":" + listed.size() + ":" + selected.size() + ":" + page[0];
+                 List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> results;
+                 try {
+                     int receiptStart = receipts.size();
+-                    results = backupBatch(response.toolCalls(), Set.copyOf(entries.keySet()), priorIds, choice -> {
++                    results = backupFeedbackBatch(response.toolCalls(), Set.copyOf(entries.keySet()), priorIds, choice -> {
+                         String name = choice.path("action").asText(), id = choice.path("entryId").asText();
+                         if (name.equals("PAGE")) {
+                             int requested = choice.path("page").intValue();
+@@ -523,11 +590,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                     });
+                 } catch (IllegalArgumentException invalid) {
+                     String reason = invalid.getMessage() != null && invalid.getMessage().matches("BACKUP_NATIVE_[A-Z_]+") ? invalid.getMessage() : "INVALID_NATIVE_ARGUMENTS";
+-                    receipts.add(Map.of("status", "REJECTED_NATIVE_BATCH_NO_DISPATCH", "reason", reason, "callCount", response.toolCalls().size(), "calls", response.toolCalls().stream().map(call -> Map.of("callId", call.id(), "tool", call.name(), "status", "REJECTED_NATIVE_BATCH_NO_DISPATCH", "reason", reason)).toList()));
+-                    save.accept("REJECTED_NATIVE_BATCH_NO_DISPATCH");
++                    receipts.add(Map.of("status", "NATIVE_BATCH_TERMINATED", "reason", reason, "callCount", response.toolCalls().size(), "calls", response.toolCalls().stream().map(call -> Map.of("callId", call.id(), "tool", call.name())).toList()));
++                    save.accept("NATIVE_BATCH_TERMINATED");
+                     throw invalid;
+                 }
+                 history.retain(input, response, results);
++                batchBudget.completed(response.toolCalls(), results, !beforeState.equals(entries.size() + ":" + listed.size() + ":" + selected.size() + ":" + page[0]));
+                 if (finished[0]) {
+                     save.accept("INVENTORY_FINISH_METADATA_ONLY");
+                     return Map.copyOf(state);
+@@ -593,6 +661,60 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         }));
+         assertThrows(Exception.class, () -> backupBatch(java.util.Collections.nCopies(33, calls.getFirst()), Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
+         }));
++        var rejectedCalls = List.of(
++            new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("feedback_0", "backup_action", arguments),
++            new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("feedback_1", "backup_action", arguments.replace("0}", "1}")));
++        var feedbackIds = new java.util.HashSet<String>();
++        var budget = new BackupBatchBudget();
++        budget.receive(rejectedCalls.size());
++        count.set(0);
++        var rejectedResults = backupFeedbackBatch(rejectedCalls, Set.of(id), feedbackIds, callback, ignored -> {
++        });
++        assertEquals(0, count.get());
++        assertEquals(2, budget.received);
++        assertEquals(rejectedCalls.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).toList(), rejectedResults.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolResult::callId).toList());
++        for (var receipt : rejectedResults) {
++            assertTrue(receipt.error());
++            assertEquals("BACKUP_NATIVE_NONZERO_ACTION_PAGE", JSON.readTree(receipt.text()).path("reason").asText());
++            assertFalse(receipt.text().contains("arguments"));
++        }
++        var feedbackHistory = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory();
++        feedbackHistory.retain("observed-metadata", new gold.debug.windowstolinux.appapi.ai.model.AiResponse("", "local-fixture", "tool_calls", response.usage(), rejectedCalls, Optional.empty()), rejectedResults);
++        assertEquals(2, feedbackHistory.messages("BACKUP_ONLY", "unchanged-metadata").stream().filter(message -> message.toolResult().isPresent()).count());
++        for (var receipt : rejectedResults) assertTrue(feedbackHistory.visibleToolResult(receipt.text()));
++        // A new local submission exercises feedback recovery; this does not claim a real model corrected itself.
++        budget.receive(calls.size());
++        var corrected = backupFeedbackBatch(calls, Set.of(id), feedbackIds, callback, ignored -> {
++        });
++        assertEquals(7, count.get());
++        assertEquals(9, budget.received);
++        assertTrue(corrected.stream().noneMatch(gold.debug.windowstolinux.appapi.ai.model.AiToolResult::error));
++        feedbackHistory.retain("unchanged-metadata", response, corrected);
++        assertEquals(9, feedbackHistory.messages("BACKUP_ONLY", "current-metadata").stream().filter(message -> message.toolResult().isPresent()).count());
++        count.set(0);
++        assertThrows(Exception.class, () -> backupFeedbackBatch(List.of(calls.getFirst(), calls.getFirst()), Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
++        }));
++        assertEquals(0, count.get());
++        for (var batch : invalid) {
++            if (batch.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).distinct().count() != batch.size())
++                continue;
++            var rejected = backupFeedbackBatch(batch, Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
++            });
++            assertTrue(rejected.stream().allMatch(gold.debug.windowstolinux.appapi.ai.model.AiToolResult::error));
++            assertEquals(0, count.get());
++        }
++        var repeatedBudget = new BackupBatchBudget();
++        repeatedBudget.completed(rejectedCalls, rejectedResults, false);
++        repeatedBudget.completed(rejectedCalls, rejectedResults, false);
++        assertThrows(Exception.class, () -> repeatedBudget.completed(rejectedCalls, rejectedResults, false));
++        repeatedBudget.completed(calls, corrected, true);
++        repeatedBudget.completed(rejectedCalls, rejectedResults, false);
++        budget.receive(503);
++        assertEquals(512, budget.received);
++        assertThrows(Exception.class, () -> budget.receive(1));
++        assertEquals(513, budget.received);
++        assertThrows(Exception.class, () -> backupFeedbackBatch(List.of(), Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
++        }));
+         var finishCalls = new java.util.ArrayList<>(calls);
+         finishCalls.set(2, new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("finish", "backup_action", "{\"action\":\"FINISH\",\"entryId\":\"\",\"category\":\"\",\"page\":0}"));
+         count.set(0);
