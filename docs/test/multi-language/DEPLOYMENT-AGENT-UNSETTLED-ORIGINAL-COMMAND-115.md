@@ -1,0 +1,13 @@
+# 原58未结候选命令与恢复边界
+
+2026-10-14，复用59完整原事件投影和当前源码，核对114实际 `DEPLOYMENT_AGENT_HEALTH_ORIGINAL_BINDING_CHANGED` 的拒绝条件。没有新增数据库读取、模型调用、SSH、Runtime、源码修改或测试。
+
+59投影连续覆盖事件1至180，无缺号或重复。108与112均为COMMAND_EXECUTING，113为COMMAND_RESULT，三者actionSha256相同：`55454cdd…55051b8`；两条EXECUTING的timeout摘要不同，未见COMMAND_NOT_SENT或对应恢复结清。Session的命令绑定由component、source revision、script组成，不含timeout，因此一次结果只能抵消一次执行。effectsSettled仍留下一个未结COMMAND，另有157外层DELIVERY未结。
+
+HealthEvidence.settledMutations要求全部非DELIVERY效果结清；原账本保持不变时必返回null，使健康原始绑定门禁拒绝。这是确定的独立拒绝条件，不能声称114实际最先抛出的内部cause就是它；已有统一诊断不保留该内部cause。semantics4及无SUCCESSOR_BINDING本身正常，未发现record值比较的确定错误。
+
+这笔候选构建命令经过Session.command、RemoteTools.command、ProjectChannel agent-run，不经过DeploymentModelCommandRunner。113后者检查点的reconcile/released不能承接108的发送状态。108之后有109 UNKNOWN，现证据不足以区分审批前停止、发送后未知或回执丢失。缺少108那次原调用唯一绑定的dispatcher未发送证明或终态回执；不能用113追补108、伪造NOT_SENT或放宽健康门禁。
+
+原58继续UNKNOWN，原明细、资源、App与调查文件保留，停止付费历史重试，回到新task-board完整独立审批部署。当前源码还存在“审批成功后、execute之前配置漂移”的静态未发送漏记窗口，但尚未证明它导致108，本阶段不据此改生产代码或宣称修复原原因。若后续实际命中，修复应保留配置拒绝、精确dispatcher证明和独立审批，并只跑对应定点方法。
+
+本结论不把旧58健康事件当成当前健康，也不将未结原任务或未验的共享资源删除。新的完整部署使用当前已验证实时capacity/unable诊断，模型自主选择工具、配额及排查路径；监控者不重放旧计划、不接手服务器部署。102纯部署业务通过、105独立审批失败及最终八项目未完成的状态保持不变。
