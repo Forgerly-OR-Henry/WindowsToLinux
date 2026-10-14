@@ -1,0 +1,334 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationCompensation.java
+@@ -22,7 +22,7 @@
+         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+ 
+     private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
+-        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE");
++        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE", "WORKSPACE_QUOTA");
+ 
+     private DeploymentAgentPreparationCompensation() {
+     }
+@@ -62,7 +62,7 @@
+                 || !application.detail().matches("[a-z0-9][a-z0-9-]{0,62}") || !profile.action().isEmpty() || !digest(profile.detail())
+                 || !endpoint.action().isEmpty() || !digest(endpoint.detail())
+                 || !policy.action().equals("rememberAuthorization.v1") || !policy.detail().equals(Boolean.toString(saved.identity().rememberAuthorization()))
+-                || !prepare.action().equals(hash(task + ":" + prepare.detail() + ":" + source.detail())))
++                || !prepare.action().equals(DeploymentAgentPreparationBinding.preparationAction(task, saved.identity(), source, plan, prepare, layout.digest(), events)))
+                 return Optional.empty();
+             for (var original : List.of(source, plan, application, profile, endpoint, policy, header))
+                 if (original.id() >= prepare.id()) return Optional.empty();
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationAbsence.java
+@@ -26,7 +26,7 @@
+         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+ 
+     private static final Set<String> BEFORE = Set.of("REMEMBER_AUTHORIZATION", "REMOTE_TARGET", "REMOTE_LAYOUT", "SOURCE",
+-        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE",
++        "SUCCESSOR_BINDING", "TARGET_PROFILE", "AGENT_QUERY", "AGENT_ASSESSMENT", "AGENT_OBSERVATION", "DECISION", "PLAN", "PLAN_APPLICATION", "STATE", "WORKSPACE_QUOTA",
+         "PREPARE_EXECUTING", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
+ 
+     private static final Set<String> AFTER = Set.of("STATE", "RECOVERY_REVIEW_BOUND", "RECOVERY_REVIEW_REBOUND");
+@@ -73,7 +73,7 @@
+                 || !profile.action().isEmpty() || !profile.detail().matches("[0-9a-f]{64}")
+                 || !endpoint.action().isEmpty() || !endpoint.detail().matches("[0-9a-f]{64}")
+                 || !policy.action().equals("rememberAuthorization.v1") || !policy.detail().equals(Boolean.toString(snapshot.identity().rememberAuthorization()))
+-                || !preparation.action().equals(hash(task + ":" + preparation.detail() + ":" + source.detail())))
++                || !preparation.action().equals(DeploymentAgentPreparationBinding.preparationAction(task, snapshot.identity(), source, plan, preparation, layout.digest(), events)))
+                 return Optional.empty();
+             for (var header : List.of(source, plan, application, profile, endpoint, policy, capturedLayout))
+                 if (header.id() >= preparation.id()) return Optional.empty();
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentActionLog.java
+@@ -201,9 +201,9 @@
+                 throw new SQLException("Original seal was invalidated");
+             requireQuota(events, candidate, task, saved.identity(), source, layout.digest());
+             var quota = latest(events, "WORKSPACE_QUOTA", id, delivery.id());
+-            var selectedQuota = quotaJson(quota.detail());
+-            requireQuotaFields(selectedQuota, false);
+-            requireQuotaOwner(selectedQuota, task, saved.identity(), source, layout.digest(), plan.detail());
++            var selectedQuota = DeploymentAgentPreparationBinding.quotaJson(quota.detail());
++            DeploymentAgentPreparationBinding.requireQuotaFields(selectedQuota, false);
++            DeploymentAgentPreparationBinding.requireQuotaOwner(selectedQuota, task, saved.identity(), source, layout.digest(), plan.detail());
+             String release = hash("agent-release:" + sealed.detail() + ":" + current.detail() + ":"
+                 + unit.configuration().sha256() + ":" + part.reviewedRuntime() + ":" + part.resources());
+             if (!release.equals(unit.release().sha256()))
+@@ -289,12 +289,12 @@
+         var quota = latest(events, "CANDIDATE_QUOTA", candidate.action(), candidate.id());
+         var selected = latest(events, "WORKSPACE_QUOTA", candidate.action(), quota.id());
+         var plan = latest(events, "PLAN", null, quota.id());
+-        var data = quotaJson(quota.detail());
+-        var declared = quotaJson(selected.detail());
+-        requireQuotaFields(data, true);
+-        requireQuotaFields(declared, false);
+-        requireQuotaOwner(data, task, identity, source, layout, plan.detail());
+-        requireQuotaOwner(declared, task, identity, source, layout, plan.detail());
++        var data = DeploymentAgentPreparationBinding.quotaJson(quota.detail());
++        var declared = DeploymentAgentPreparationBinding.quotaJson(selected.detail());
++        DeploymentAgentPreparationBinding.requireQuotaFields(data, true);
++        DeploymentAgentPreparationBinding.requireQuotaFields(declared, false);
++        DeploymentAgentPreparationBinding.requireQuotaOwner(data, task, identity, source, layout, plan.detail());
++        DeploymentAgentPreparationBinding.requireQuotaOwner(declared, task, identity, source, layout, plan.detail());
+         for (String key : List.of("task", "server", "source", "configuration", "layout", "plan", "workspaceBytes", "reserveBytes"))
+             if (!data.path(key).equals(declared.path(key))) throw new SQLException("Original candidate quota changed");
+         if (!data.path("candidate").asText().equals(candidate.detail()) || !data.path("prepareAction").asText().equals(
+@@ -306,45 +306,6 @@
+         if (!prepare.detail().equals(candidate.action()) || prepare.id() >= quota.id() || quota.id() >= result.id()
+             || !result.detail().matches("[0-9a-f]{64}"))
+             throw new SQLException("Original candidate preparation result is unconfirmed");
+-    }
+-
+-    private static void requireQuotaOwner(com.fasterxml.jackson.databind.JsonNode node, UUID task, Identity identity,
+-                                          Event source, String layout, String plan) throws SQLException {
+-        for (String field : List.of("task", "server", "source", "configuration", "layout", "plan"))
+-            if (!node.path(field).isTextual()) throw new SQLException("Original quota identity is not textual");
+-        if (!node.path("task").asText().equals(task.toString()) || !node.path("server").asText().equals(identity.server())
+-            || !node.path("source").asText().equals(source.detail()) || !node.path("configuration").asText().equals(identity.configurationDigest())
+-            || !node.path("layout").asText().equals(layout) || !node.path("plan").asText().equals(plan)
+-            || !node.path("workspaceBytes").isIntegralNumber() || !node.path("reserveBytes").isIntegralNumber()
+-            || !node.path("workspaceBytes").canConvertToLong() || !node.path("reserveBytes").canConvertToLong()
+-            || node.path("workspaceBytes").longValue() < gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT
+-            || node.path("reserveBytes").longValue() < 1073741824L
+-            || node.path("workspaceBytes").longValue() > gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.MAXIMUM
+-            || node.path("reserveBytes").longValue() > gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.MAXIMUM)
+-            throw new SQLException("Original workspace quota owner is unconfirmed");
+-    }
+-
+-    private static void requireQuotaFields(com.fasterxml.jackson.databind.JsonNode node, boolean candidate) throws SQLException {
+-        var fields = new HashSet<>(Set.of("task", "server", "source", "configuration", "layout", "plan", "workspaceBytes", "reserveBytes"));
+-        if (candidate) fields.addAll(Set.of("prepareAction", "candidate"));
+-        else fields.add("mode");
+-        DeploymentJsonDocument.fields(node, fields);
+-        if (candidate && (!node.path("prepareAction").isTextual() || !node.path("candidate").isTextual())
+-            || !candidate && (!node.path("mode").isTextual() || !Set.of("AUTO", "EXPLICIT").contains(node.path("mode").textValue())))
+-            throw new SQLException("Original quota scope is invalid");
+-    }
+-
+-    private static com.fasterxml.jackson.databind.JsonNode quotaJson(String value) throws SQLException {
+-        if (value.length() > 4096) throw new SQLException("Original quota evidence exceeds its boundary");
+-        try {
+-            var node = new com.fasterxml.jackson.databind.ObjectMapper()
+-                .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+-                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(value);
+-            if (node == null || !node.isObject()) throw new SQLException("Original quota evidence is not an object");
+-            return node;
+-        } catch (java.io.IOException invalid) {
+-            throw new SQLException("Original quota evidence is malformed", invalid);
+-        }
+     }
+ 
+     private static String hash(String value) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationBinding.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationBinding.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentPreparationBinding.java
+@@ -0,0 +1,75 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence;
++
++import java.sql.SQLException;
++import java.util.*;
++
++import gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Event;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Identity;
++
++/** Pure original quota validation shared by candidate and partial-preparation evidence. */
++final class DeploymentAgentPreparationBinding {
++    private DeploymentAgentPreparationBinding() {
++    }
++
++    static String preparationAction(UUID task, Identity identity, Event source, Event plan, Event preparation,
++                                    String layout, List<Event> events) throws SQLException {
++        var quotas = events.stream().filter(event -> event.type().equals("WORKSPACE_QUOTA")).toList();
++        if (quotas.isEmpty())
++            return DeploymentAgentPreparationAbsence.hash(task + ":" + preparation.detail() + ":" + source.detail());
++        var components = new HashSet<String>();
++        Long preparedBytes = null;
++        for (var quota : quotas) {
++            if (quota.id() <= plan.id() || quota.id() >= preparation.id() || quota.action() == null
++                || !quota.action().matches("[a-z0-9][a-z0-9-]{0,62}") || !components.add(quota.action()))
++                throw new SQLException("Original preparation quota order or component is invalid");
++            var data = quotaJson(quota.detail());
++            requireQuotaFields(data, false);
++            requireQuotaOwner(data, task, identity, source, layout, plan.detail());
++            if (quota.action().equals(preparation.detail())) preparedBytes = data.path("workspaceBytes").longValue();
++        }
++        if (preparedBytes == null) throw new SQLException("Original preparation component quota is absent");
++        return gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException.binding(
++            task, preparation.detail(), source.detail(), plan.detail(), preparedBytes);
++    }
++
++    static void requireQuotaOwner(com.fasterxml.jackson.databind.JsonNode node, UUID task, Identity identity,
++                                  Event source, String layout, String plan) throws SQLException {
++        for (String field : List.of("task", "server", "source", "configuration", "layout", "plan"))
++            if (!node.path(field).isTextual()) throw new SQLException("Original quota identity is not textual");
++        if (!node.path("task").asText().equals(task.toString()) || !node.path("server").asText().equals(identity.server())
++            || !node.path("source").asText().equals(source.detail()) || !node.path("configuration").asText().equals(identity.configurationDigest())
++            || !node.path("layout").asText().equals(layout) || !node.path("plan").asText().equals(plan)
++            || !node.path("workspaceBytes").isIntegralNumber() || !node.path("reserveBytes").isIntegralNumber()
++            || !node.path("workspaceBytes").canConvertToLong() || !node.path("reserveBytes").canConvertToLong()
++            || node.path("workspaceBytes").longValue() < gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT
++            || node.path("reserveBytes").longValue() < 1073741824L
++            || node.path("workspaceBytes").longValue() > gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.MAXIMUM
++            || node.path("reserveBytes").longValue() > gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.MAXIMUM)
++            throw new SQLException("Original workspace quota owner is unconfirmed");
++    }
++
++    static void requireQuotaFields(com.fasterxml.jackson.databind.JsonNode node, boolean candidate) throws SQLException {
++        var fields = new HashSet<>(Set.of("task", "server", "source", "configuration", "layout", "plan", "workspaceBytes", "reserveBytes"));
++        if (candidate) fields.addAll(Set.of("prepareAction", "candidate"));
++        else fields.add("mode");
++        DeploymentJsonDocument.fields(node, fields);
++        if (candidate && (!node.path("prepareAction").isTextual() || !node.path("candidate").isTextual())
++            || !candidate && (!node.path("mode").isTextual() || !Set.of("AUTO", "EXPLICIT").contains(node.path("mode").textValue())))
++            throw new SQLException("Original quota scope is invalid");
++    }
++
++    static com.fasterxml.jackson.databind.JsonNode quotaJson(String value) throws SQLException {
++        if (value.length() > 4096) throw new SQLException("Original quota evidence exceeds its boundary");
++        try {
++            var node = new com.fasterxml.jackson.databind.ObjectMapper()
++                .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(value);
++            if (node == null || !node.isObject()) throw new SQLException("Original quota evidence is not an object");
++            return node;
++        } catch (java.io.IOException invalid) {
++            throw new SQLException("Original quota evidence is malformed", invalid);
++        }
++    }
++
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+@@ -77,6 +77,111 @@
+     private static final String ARCHIVE = "c".repeat(64);
+ 
+     private static final ObjectMapper JSON = new ObjectMapper();
++
++    @Test
++    void dynamicQuotaPreparationRejectsLegacyBindingDowngrade() throws Exception {
++        UUID task = UUID.fromString("10000000-0000-4000-8000-000000000099");
++        var layout = DeploymentRemoteLayout.original();
++        var identity = new DeploymentAgentActionLog.Identity("original-server", "f".repeat(64), REVISION, "MANUAL_REVIEW", false);
++        var saved = new DeploymentAgentActionLog.Snapshot(identity, "UNKNOWN", 4);
++        String plan = "d".repeat(64);
++        long bytes = 268435456L;
++        var layoutHeader = JSON.createObjectNode().put("formatVersion", 1).put("task", task.toString()).put("server", identity.server());
++        layoutHeader.set("layout", JSON.readTree(layout.canonical()));
++        layoutHeader.put("layoutSha256", layout.digest());
++        var quota = JSON.createObjectNode().put("task", task.toString()).put("server", identity.server()).put("source", SOURCE)
++            .put("configuration", REVISION).put("layout", layout.digest()).put("plan", plan).put("workspaceBytes", bytes)
++            .put("reserveBytes", 1073741824L).put("mode", "AUTO");
++        String binding = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException.binding(task, "api", SOURCE, plan, bytes);
++        var events = new ArrayList<>(List.of(new DeploymentAgentActionLog.Event(1, "REMEMBER_AUTHORIZATION", "rememberAuthorization.v1", "false"),
++            new DeploymentAgentActionLog.Event(2, "REMOTE_TARGET", "", "f".repeat(64)),
++            new DeploymentAgentActionLog.Event(3, "REMOTE_LAYOUT", task.toString(), layoutHeader.toString()),
++            new DeploymentAgentActionLog.Event(4, "SOURCE", ARCHIVE, SOURCE), new DeploymentAgentActionLog.Event(5, "TARGET_PROFILE", "", "e".repeat(64)),
++            new DeploymentAgentActionLog.Event(6, "PLAN_APPLICATION", "", "controlled-app"), new DeploymentAgentActionLog.Event(7, "PLAN", "", plan),
++            new DeploymentAgentActionLog.Event(8, "WORKSPACE_QUOTA", "api", quota.toString()), new DeploymentAgentActionLog.Event(10, "PREPARE_EXECUTING", binding, "api"),
++            new DeploymentAgentActionLog.Event(11, "HELPER_READINESS_OBSERVED", "f".repeat(64), "READY:CURRENT_TASK_READY"),
++            new DeploymentAgentActionLog.Event(12, "STATE", "", "UNKNOWN")));
++        assertTrue(DeploymentAgentPreparationCompensation.capture(task, saved, layout, events).isPresent(),
++            "A real dynamic quota and its new preparation binding must be capturable");
++        assertTrue(DeploymentAgentPreparationAbsence.capture(task, saved, layout, events).isEmpty());
++        var captured = DeploymentAgentPreparationCompensation.capture(task, saved, layout, events).orElseThrow();
++        String cleanup = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentProjectChannel.originalCleanupRequestDigest(
++            task, identity.server(), identity.configurationDigest(), captured.workspace());
++        String proof = DeploymentAgentPreparationCompensation.proof(captured, true, DeploymentAgentPreparationCompensation.Cleanup.SUCCEEDED, cleanup);
++        var proofEvent = new DeploymentAgentActionLog.Event(100, DeploymentAgentPreparationCompensation.EVENT, binding, proof);
++        var withProof = new ArrayList<>(events);
++        withProof.add(proofEvent);
++        assertTrue(DeploymentAgentPreparationCompensation.matches(proofEvent, withProof));
++        var beforeReadiness = new ArrayList<>(events);
++        beforeReadiness.removeIf(event -> event.type().equals("HELPER_READINESS_OBSERVED"));
++        assertTrue(DeploymentAgentPreparationCompensation.capture(task, saved, layout, beforeReadiness).isEmpty());
++        var absent = DeploymentAgentPreparationAbsence.capture(task, saved, layout, beforeReadiness).orElseThrow();
++        String absenceProof = DeploymentAgentPreparationAbsence.proof(absent, DeploymentAgentPreparationProbe.requestDigest(absent),
++            DeploymentAgentPreparationAbsence.hash(DeploymentAgentPreparationProbe.absentOutput(absent)));
++        var absenceEvent = new DeploymentAgentActionLog.Event(100, DeploymentAgentPreparationAbsence.EVENT, binding, absenceProof);
++        var absentWithProof = new ArrayList<>(beforeReadiness);
++        absentWithProof.add(absenceEvent);
++        assertTrue(DeploymentAgentPreparationAbsence.matches(absenceEvent, absentWithProof));
++        assertFalse(JSON.readTree(proof).has("workspaceBytes"));
++        assertEquals(1, JSON.readTree(proof).path("formatVersion").intValue());
++        String legacyBinding = DeploymentAgentPreparationAbsence.hash(task + ":api:" + SOURCE);
++        var legacy = new ArrayList<>(events);
++        legacy.removeIf(event -> event.type().equals("WORKSPACE_QUOTA"));
++        legacy.replaceAll(event -> event.type().equals("PREPARE_EXECUTING") ? new DeploymentAgentActionLog.Event(event.id(), event.type(), legacyBinding, event.detail()) : event);
++        assertTrue(DeploymentAgentPreparationCompensation.capture(task, saved, layout, legacy).isPresent());
++        legacy.removeIf(event -> event.type().equals("HELPER_READINESS_OBSERVED"));
++        assertTrue(DeploymentAgentPreparationAbsence.capture(task, saved, layout, legacy).isPresent());
++        var rejected = new ArrayList<List<DeploymentAgentActionLog.Event>>();
++        var downgraded = new ArrayList<>(events);
++        downgraded.replaceAll(event -> event.type().equals("PREPARE_EXECUTING") ? new DeploymentAgentActionLog.Event(event.id(), event.type(), legacyBinding, event.detail()) : event);
++        rejected.add(downgraded);
++        var removed = new ArrayList<>(events);
++        removed.removeIf(event -> event.type().equals("WORKSPACE_QUOTA"));
++        rejected.add(removed);
++        var duplicate = new ArrayList<>(events);
++        duplicate.add(8, new DeploymentAgentActionLog.Event(9, "WORKSPACE_QUOTA", "api", quota.toString()));
++        rejected.add(duplicate);
++        for (String field : List.of("task", "server", "source", "configuration", "layout", "plan"))
++            rejected.add(quotaMutation(events, quota.deepCopy().put(field, "wrong").toString(), "api", 8));
++        for (String field : List.of("workspaceBytes", "reserveBytes")) {
++            rejected.add(quotaMutation(events, quota.deepCopy().put(field, 1).toString(), "api", 8));
++            rejected.add(quotaMutation(events, quota.deepCopy().put(field, 137438953473L).toString(), "api", 8));
++            rejected.add(quotaMutation(events, quota.deepCopy().put(field, "268435456").toString(), "api", 8));
++            rejected.add(quotaMutation(events, quota.toString().replace("\"" + field + "\":" + quota.path(field), "\"" + field + "\":18446744073709551616"), "api", 8));
++        }
++        for (String invalid : List.of(quota.deepCopy().put("mode", "OTHER").toString(), quota.deepCopy().put("extra", true).toString(),
++            quota.toString().replace("\"mode\":", "\"mode\":\"AUTO\",\"mode\":"), quota + " {}"))
++            rejected.add(quotaMutation(events, invalid, "api", 8));
++        rejected.add(quotaMutation(events, quota.toString(), "different-component", 8));
++        rejected.add(quotaMutation(events, quota.toString(), "api", 13));
++        var early = quotaMutation(events, quota.toString(), "api", 6);
++        early.replaceAll(event -> event.type().equals("PLAN_APPLICATION") ? new DeploymentAgentActionLog.Event(7, event.type(), event.action(), event.detail())
++            : event.type().equals("PLAN") ? new DeploymentAgentActionLog.Event(8, event.type(), event.action(), event.detail()) : event);
++        early.sort(java.util.Comparator.comparingLong(DeploymentAgentActionLog.Event::id));
++        rejected.add(early);
++        var unknown = new ArrayList<>(events);
++        unknown.add(8, new DeploymentAgentActionLog.Event(9, "UNKNOWN_ACTION", "", ""));
++        rejected.add(unknown);
++        var foreignOther = new ArrayList<>(events);
++        foreignOther.add(8, new DeploymentAgentActionLog.Event(9, "WORKSPACE_QUOTA", "worker", quota.deepCopy().put("server", "wrong").toString()));
++        rejected.add(foreignOther);
++        for (var changed : rejected) {
++            assertTrue(DeploymentAgentPreparationCompensation.capture(task, saved, layout, changed).isEmpty());
++            var withoutReady = new ArrayList<>(changed);
++            withoutReady.removeIf(event -> event.type().equals("HELPER_READINESS_OBSERVED"));
++            assertTrue(DeploymentAgentPreparationAbsence.capture(task, saved, layout, withoutReady).isEmpty());
++            var changedProof = new ArrayList<>(changed);
++            changedProof.add(proofEvent);
++            assertFalse(DeploymentAgentPreparationCompensation.matches(proofEvent, changedProof));
++        }
++    }
++
++    private static ArrayList<DeploymentAgentActionLog.Event> quotaMutation(List<DeploymentAgentActionLog.Event> events, String detail, String component, long id) {
++        var changed = new ArrayList<>(events);
++        changed.replaceAll(event -> event.type().equals("WORKSPACE_QUOTA") ? new DeploymentAgentActionLog.Event(id, event.type(), component, detail) : event);
++        changed.sort(java.util.Comparator.comparingLong(DeploymentAgentActionLog.Event::id));
++        return changed;
++    }
+ 
+     @ParameterizedTest
+     @ValueSource(strings = {"AUTHORIZE_UNKNOWN", "AUTHORIZE_CANCELLED", "AUTHORIZE_EMPTY", "AUTHORIZE_THROW", "MODEL_DENY", "EXECUTE_UNKNOWN",
+diff --git a/docs/test/multi-language/DEPLOYMENT-AGENT-PREPARATION-QUOTA-BINDING-99.md b/docs/test/multi-language/DEPLOYMENT-AGENT-PREPARATION-QUOTA-BINDING-99.md
+new file mode 100644
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-PREPARATION-QUOTA-BINDING-99.md
+@@ -0,0 +1,11 @@
++# Agent partial preparation quota binding（99）
++
++原86已create/upload但verify身份失败；98正式只读记录证明其SFTP目标与95 loop19匹配，完整事件含WORKSPACE_QUOTA，旧Compensation/Absence不接受该事件且仅认旧prepare hash，导致两个官方capture均false。原Task UNKNOWN、资源和数据保持；本包不执行原任务恢复/清理。
++
++仅Agent recovery.evidence三个既有owner与一个package-private纯helper修改，测试仅DeploymentAgentPreparationCompensationTest新增一个非参数方法。DeploymentAgentPreparationBinding迁移复用ActionLog既有quotaJson/fields/owner校验；ActionLog原candidate校验调用同窄机制，模式/算法/权限/审批/remoteprobe/Skill/配置/DBversion不改，不新增公共API。
++
++两个capture接纳已完整校验的前置WORKSPACE_QUOTA。没有任何quota时保留原合法旧binding；出现quota必须逐条严格字段、task/server/source/configuration/layout/plan、AUTO或EXPLICIT、整数long及workspace/reserve原范围、component唯一且准备component存在、PLAN<quota<PREPARE。仅用原CandidateCapacityException.binding核新prepare hash，任何失败不回落旧hash。原READY、后序constraints和UNKNOWN边界保持。proof不加字段/不升版，priorEventsSHA已覆盖quota；matches重新capture并逐字验证原proof。
++
++唯一selector DeploymentAgentPreparationCompensationTest#dynamicQuotaPreparationRejectsLegacyBindingDowngrade，纯内存events，不构造Frame/Runtime/H2/DPAPI/provider/SSH。baseline01准确1FAIL0ERROR/SKIP0.122s（READY+新quota绑定应capture成立）；corrected01唯一1PASS0FAIL/ERROR/SKIP0.411s。两轮sourceFreeze0，未跑旧方法、参数组或整个类。方法核READY Comp成功/Abs拒、无READY Abs成功、无quota合法旧绑定、两种proof/matches往返；有quota旧hash、删quota留新hash、各身份漂移、重复/缺component、未知event、错顺序、错误mode/bytes范围与overflow/type、duplicate JSON/trailing/extra均拒。
++
++only5Java IDEA write/check及skipTests package通过。before3296==94afinal；after3297新增一纯helper，增量仅5source owners，非owner0。实际相关evidence class与target/JAR字节一致，既有19Agent classes和15resources保持；原报告、时间、完整raw/manifest和进程证据在agent-preparation-quota-binding-99。原98 sealed不改，原86/所有UNKNOWN/DB/远端0操作。正式UTF-8/LF patch仅本包5source+本文，Git由父按增量隔离本地提交、不推送；不把本地捕获通过当原资源恢复或业务成功证明。

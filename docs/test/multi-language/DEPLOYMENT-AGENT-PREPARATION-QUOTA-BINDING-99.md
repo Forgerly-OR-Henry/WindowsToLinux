@@ -1,0 +1,11 @@
+# Agent partial preparation quota binding（99）
+
+原86已create/upload但verify身份失败；98正式只读记录证明其SFTP目标与95 loop19匹配，完整事件含WORKSPACE_QUOTA，旧Compensation/Absence不接受该事件且仅认旧prepare hash，导致两个官方capture均false。原Task UNKNOWN、资源和数据保持；本包不执行原任务恢复/清理。
+
+仅Agent recovery.evidence三个既有owner与一个package-private纯helper修改，测试仅DeploymentAgentPreparationCompensationTest新增一个非参数方法。DeploymentAgentPreparationBinding迁移复用ActionLog既有quotaJson/fields/owner校验；ActionLog原candidate校验调用同窄机制，模式/算法/权限/审批/remoteprobe/Skill/配置/DBversion不改，不新增公共API。
+
+两个capture接纳已完整校验的前置WORKSPACE_QUOTA。没有任何quota时保留原合法旧binding；出现quota必须逐条严格字段、task/server/source/configuration/layout/plan、AUTO或EXPLICIT、整数long及workspace/reserve原范围、component唯一且准备component存在、PLAN<quota<PREPARE。仅用原CandidateCapacityException.binding核新prepare hash，任何失败不回落旧hash。原READY、后序constraints和UNKNOWN边界保持。proof不加字段/不升版，priorEventsSHA已覆盖quota；matches重新capture并逐字验证原proof。
+
+唯一selector DeploymentAgentPreparationCompensationTest#dynamicQuotaPreparationRejectsLegacyBindingDowngrade，纯内存events，不构造Frame/Runtime/H2/DPAPI/provider/SSH。baseline01准确1FAIL0ERROR/SKIP0.122s（READY+新quota绑定应capture成立）；corrected01唯一1PASS0FAIL/ERROR/SKIP0.411s。两轮sourceFreeze0，未跑旧方法、参数组或整个类。方法核READY Comp成功/Abs拒、无READY Abs成功、无quota合法旧绑定、两种proof/matches往返；有quota旧hash、删quota留新hash、各身份漂移、重复/缺component、未知event、错顺序、错误mode/bytes范围与overflow/type、duplicate JSON/trailing/extra均拒。
+
+only5Java IDEA write/check及skipTests package通过。before3296==94afinal；after3297新增一纯helper，增量仅5source owners，非owner0。实际相关evidence class与target/JAR字节一致，既有19Agent classes和15resources保持；原报告、时间、完整raw/manifest和进程证据在agent-preparation-quota-binding-99。原98 sealed不改，原86/所有UNKNOWN/DB/远端0操作。正式UTF-8/LF patch仅本包5source+本文，Git由父按增量隔离本地提交、不推送；不把本地捕获通过当原资源恢复或业务成功证明。
