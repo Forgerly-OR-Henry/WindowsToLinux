@@ -1,0 +1,115 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index 35d35d0773bf51d2eab00ba58e5bbfc11b1aad3c..fce3446603e5d2894e087cf651fb824eadeaefc7 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -150,6 +150,10 @@
+             "links", file.links().size());
+     }
+ 
++    private static void backupRequirePersistedMetadata(Object current, com.fasterxml.jackson.databind.JsonNode persisted) throws Exception {
++        backupRequire(JSON.readTree(JSON.writeValueAsBytes(current)).equals(persisted));
++    }
++
+     private static Map<String, Object> backupVisible(gold.debug.windowstolinux.appapi.file.model.FileInfo file, Set<String> listed, Set<String> selected) {
+         var row = new LinkedHashMap<>(backupMetadata(file));
+         String id = DeploymentAgentInputs.hash(file.requested().key());
+@@ -295,6 +299,13 @@
+                         : downloads ? backupDownloadSelected(context, task, session, roots, approvedInventory, destination)
+                         : backupInventory(context, task, roots, layout.digest(), session.facts().fingerprint(), evidence);
+                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(result), Optional.empty());
++                } catch (Exception failure) {
++                    try {
++                        backupWriteRecord(evidence, "backup-exception.json", backupFailureEvidence(task.id(), downloads ? "DOWNLOAD" : "INVENTORY_ONLY", failure));
++                    } catch (Exception evidenceFailure) {
++                        failure.addSuppressed(new IllegalStateException("BACKUP_FAILURE_EVIDENCE_NOT_RECORDED"));
++                    }
++                    throw failure;
+                 }
+             });
+             var result = completed(handle, 30);
+@@ -2266,6 +2277,13 @@
+         Files.writeString(evidence.resolve(name), JSON.writeValueAsString(record), java.nio.file.StandardOpenOption.CREATE_NEW);
+     }
+ 
++    private static Map<String, Object> backupFailureEvidence(java.util.UUID task, String mode, Exception failure) {
++        var frames = Arrays.stream(failure.getStackTrace()).limit(64)
++            .map(frame -> Map.of("class", frame.getClassName(), "method", frame.getMethodName(), "line", frame.getLineNumber())).toList();
++        return Map.of("task", task.toString(), "mode", mode, "exceptionClass", failure.getClass().getName(), "stackFrames", frames,
++            "backupComplete", false, "replayAttempted", false);
++    }
++
+     private static Map<String, Object> backupProtectSuccessfulTransfer(
+         OperationResult<gold.debug.windowstolinux.appapi.linux.transfer.TransferResult> result,
+         BackupPrepared item, DatabaseProtection protector, BackupAclReader acl, BackupProtectionCheckpoint checkpoint) throws Exception {
+@@ -2356,8 +2374,9 @@
+                 var before = query.getFile(path, task);
+                 backupRemote(before, roots);
+                 backupRequire(before.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE && seen.add(remote)
+-                    && selected.isObject() && JSON.valueToTree(backupMetadata(before))
+-                    .equals(((com.fasterxml.jackson.databind.node.ObjectNode) selected.deepCopy()).without(List.of("category", "necessity"))));
++                    && selected.isObject());
++                backupRequirePersistedMetadata(backupMetadata(before),
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) selected.deepCopy()).without(List.of("category", "necessity")));
+                 backupBudget(prepared.size(), total, before.bytes());
+                 var necessity = backupNecessity(selected, inventory, roots);
+                 String lowerRemote = remote.toLowerCase(java.util.Locale.ROOT);
+@@ -2454,8 +2473,8 @@
+                                 if (JSON.readTree(remaining.factsJson()).path("necessity").path("category").asText().equals("BUSINESS_DATA")) {
+                                     var selected = java.util.stream.StreamSupport.stream(inventory.path("selected").spliterator(), false)
+                                         .filter(value -> value.path("path").asText().equals(remaining.source().requested().path())).findFirst().orElseThrow();
+-                                    backupRequire(JSON.valueToTree(backupNecessity(selected, inventory, roots))
+-                                        .equals(JSON.readTree(remaining.factsJson()).path("necessity")));
++                                    backupRequirePersistedMetadata(backupNecessity(selected, inventory, roots),
++                                        JSON.readTree(remaining.factsJson()).path("necessity"));
+                                 }
+                                 if (!finished.contains(remaining.memberSha()))
+                                     backupRequire(query.getFile(remaining.source().requested(), task).equals(remaining.source())
+@@ -2579,6 +2598,48 @@
+         assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
+         assertFalse(backupOnlyLive());
+         Path directory = Files.createDirectory(root.resolve("protected-local-136"));
++        for (long bytes : List.of(757760L, 0L, (long) Integer.MAX_VALUE + 1, Long.MAX_VALUE)) {
++            var path = gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), "/var/lib/windowstolinux/backups/controlled/bundle.tar");
++            var observed = new gold.debug.windowstolinux.appapi.file.model.FileInfo(path, path,
++                gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE, bytes, java.time.Instant.EPOCH, "controlled-metadata-157", Optional.empty(), List.of());
++            var metadata = backupMetadata(observed);
++            Path persistedFile = directory.resolve("metadata-" + bytes + ".json");
++            Files.write(persistedFile, JSON.writeValueAsBytes(metadata), java.nio.file.StandardOpenOption.CREATE_NEW);
++            var persisted = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(Files.readAllBytes(persistedFile));
++            String original = persisted.toString();
++            backupRequirePersistedMetadata(metadata, persisted);
++            assertEquals(original, persisted.toString());
++            assertTrue(JSON.valueToTree(metadata).path("bytes").isLong());
++            assertEquals(bytes <= Integer.MAX_VALUE, persisted.path("bytes").isInt());
++            if (bytes <= Integer.MAX_VALUE) assertNotEquals(JSON.valueToTree(metadata), persisted);
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, persisted.deepCopy().put("bytes", bytes ^ 1)));
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, persisted.deepCopy().put("bytes", Long.toString(bytes))));
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, persisted.deepCopy().put("bytes", (double) bytes)));
++            for (String key : List.of("id", "path", "kind", "modified", "identitySha256"))
++                assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, persisted.deepCopy().put(key, "changed")));
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, persisted.deepCopy().put("links", 1)));
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, persisted.deepCopy().put("extra", true)));
++            var missing = persisted.deepCopy();
++            missing.remove("identitySha256");
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(metadata, missing));
++        }
++        backupRequirePersistedMetadata(Map.of("databaseConsistency", Map.of("bundleBytes", 757760L)), JSON.readTree("{\"databaseConsistency\":{\"bundleBytes\":757760}}"));
++        assertThrows(Exception.class, () -> backupRequirePersistedMetadata(Map.of("databaseConsistency", Map.of("bundleBytes", 757760L)),
++            JSON.readTree("{\"databaseConsistency\":{\"bundleBytes\":757761}}")));
++        var failure = new IllegalArgumentException("private-exception-body-157", new IllegalStateException("private-cause-body-157"));
++        var frames = new StackTraceElement[65];
++        Arrays.fill(frames, new StackTraceElement("ControlledBackupFixture", "controlledFailure", "private-file-name-157", 157));
++        failure.setStackTrace(frames);
++        var failureRecord = backupFailureEvidence(java.util.UUID.randomUUID(), "DOWNLOAD", failure);
++        Path failureFile = directory.resolve("failure-record.json");
++        Files.write(failureFile, JSON.writeValueAsBytes(failureRecord), java.nio.file.StandardOpenOption.CREATE_NEW);
++        var failureTree = JSON.readTree(Files.readAllBytes(failureFile));
++        assertEquals(IllegalArgumentException.class.getName(), failureTree.path("exceptionClass").asText());
++        assertEquals(64, failureTree.path("stackFrames").size());
++        assertEquals(157, failureTree.path("stackFrames").get(0).path("line").asInt());
++        assertEquals(false, failureTree.path("replayAttempted").asBoolean());
++        assertEquals(false, failureTree.path("backupComplete").asBoolean());
++        assertFalse(failureTree.toString().contains("private-"));
+         var captured = new java.util.ArrayList<byte[]>();
+         var calls = new AtomicInteger();
+         DatabaseProtection fake = new DatabaseProtection() {

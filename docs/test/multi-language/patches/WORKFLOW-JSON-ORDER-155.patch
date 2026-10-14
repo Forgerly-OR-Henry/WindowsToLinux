@@ -1,0 +1,110 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index 2dc529114ce23beadbdbb024de1e8ad1b53d0f23..35d35d0773bf51d2eab00ba58e5bbfc11b1aad3c 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -422,9 +422,16 @@
+     }
+ 
+     private static ActionIntent backupWorkflowIntent(java.util.UUID task, String server, String run, String inputSha) throws Exception {
++        var metadata = new LinkedHashMap<String, Object>();
++        metadata.put("scope", "BACKUP_ONLY");
++        metadata.put("task", task.toString());
++        metadata.put("run", run);
++        metadata.put("inputSha256", inputSha);
++        metadata.put("reviewMode", "AUTOMATIC");
++        metadata.put("rememberAuthorization", false);
++        metadata.put("recovery", false);
+         return new ActionIntent("deployment.backup.workflow", List.of(server), run, inputSha,
+-            JSON.writeValueAsString(Map.of("scope", "BACKUP_ONLY", "task", task.toString(), "run", run, "inputSha256", inputSha,
+-                "reviewMode", "AUTOMATIC", "rememberAuthorization", false, "recovery", false)), "One frozen backup-only input")
++            JSON.writeValueAsString(metadata), "One frozen backup-only input")
+             .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("backup.workflow.v1", Set.of(
+                 new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-run", run),
+                 new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-input", inputSha))));
+@@ -2001,7 +2008,8 @@
+         var task = java.util.UUID.fromString(result.path("task").asText());
+         var facts = documents.get("approvalFacts");
+         String revision = facts.path("facts").path("exactIntent").path("revision").asText();
+-        backupRequire(facts.path("facts").equals(JSON.readTree(backupCommandFacts(plan, task, revision))));
++        backupRequire(backupComparableWorkflowFacts(facts.path("facts"))
++            .equals(backupComparableWorkflowFacts(JSON.readTree(backupCommandFacts(plan, task, revision)))));
+         String binding = inputDigest(facts.path("facts").toString());
+         for (String name : List.of("approvalFacts", "approval", "grant", "sdkResult"))
+             backupRequire(documents.get(name).path("bindingSha256").asText().equals(binding));
+@@ -2018,6 +2026,18 @@
+         return Map.of("type", "SQLITE_SNAPSHOT_BUNDLE", "proof", reference, "originalReferences", proof,
+             "producerTask", task.toString(), "producerBindingSha256", binding, "bundle", ((com.fasterxml.jackson.databind.node.ObjectNode) snapshot.deepCopy()).without("details"),
+             "consistency", "TWELVE_INDIVIDUAL_ONLINE_SNAPSHOTS_NOT_A_CROSS_DATABASE_INSTANT", "backupComplete", false);
++    }
++
++    private static com.fasterxml.jackson.databind.JsonNode backupComparableWorkflowFacts(com.fasterxml.jackson.databind.JsonNode original) throws Exception {
++        var copy = original.deepCopy();
++        var workflow = copy.path("reviewedWorkflow");
++        backupRequire(workflow.isObject() && workflow.path("exactAction").isTextual());
++        var parser = new com.fasterxml.jackson.databind.ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++        var metadata = parser.readTree(workflow.path("exactAction").asText());
++        backupCommandFields(metadata, Set.of("scope", "task", "run", "inputSha256", "reviewMode", "rememberAuthorization", "recovery"));
++        ((com.fasterxml.jackson.databind.node.ObjectNode) workflow).set("exactAction", metadata);
++        return copy;
+     }
+ 
+     private static void backupSnapshotPayloadSha(Map<String, Object> necessity, String sha) {
+@@ -2103,6 +2123,57 @@
+         assertThrows(Exception.class, () -> backupSnapshotPayloadSha(Map.of("databaseConsistency", accepted), "0".repeat(64)));
+         assertThrows(Exception.class, () -> backupSnapshotProof(workspace, reference, selected.deepCopy().put("path", "/other/bundle.tar"), inventory, backups, data));
+         assertThrows(Exception.class, () -> backupSnapshotProof(workspace, reference, selected, inventory.deepCopy().put("wireFingerprint", "changed"), backups, data));
++        var workflowMetadata = JSON.readTree(JSON.readTree(facts).path("reviewedWorkflow").path("exactAction").asText());
++        var keys = new java.util.ArrayList<String>();
++        workflowMetadata.fieldNames().forEachRemaining(keys::add);
++        assertEquals(List.of("scope", "task", "run", "inputSha256", "reviewMode", "rememberAuthorization", "recovery"), keys);
++        java.util.Collections.reverse(keys);
++        var reorderedMetadata = JSON.createObjectNode();
++        for (String key : keys) reorderedMetadata.set(key, workflowMetadata.path(key));
++        var persistedFacts = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(facts);
++        ((com.fasterxml.jackson.databind.node.ObjectNode) persistedFacts.path("reviewedWorkflow")).put("exactAction", reorderedMetadata.toString());
++        String originalPersisted = persistedFacts.toString();
++        assertTrue(backupComparableWorkflowFacts(persistedFacts).path("reviewedWorkflow").path("exactAction").isObject());
++        assertEquals(originalPersisted, persistedFacts.toString());
++        var factCases = new java.util.ArrayList<com.fasterxml.jackson.databind.node.ObjectNode>();
++        factCases.add(persistedFacts);
++        var badWorkflowStrings = new java.util.ArrayList<String>();
++        badWorkflowStrings.add(reorderedMetadata + "{}");
++        badWorkflowStrings.add(reorderedMetadata.toString().replace("\"scope\":\"BACKUP_ONLY\"", "\"scope\":\"BACKUP_ONLY\",\"scope\":\"BACKUP_ONLY\""));
++        badWorkflowStrings.add(reorderedMetadata.deepCopy().put("extra", true).toString());
++        var missingMetadata = reorderedMetadata.deepCopy();
++        missingMetadata.remove("recovery");
++        badWorkflowStrings.add(missingMetadata.toString());
++        for (String key : keys) badWorkflowStrings.add(reorderedMetadata.deepCopy().put(key, "wrong").toString());
++        for (String bad : badWorkflowStrings) {
++            var changed = persistedFacts.deepCopy();
++            ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("reviewedWorkflow")).put("exactAction", bad);
++            factCases.add(changed);
++        }
++        var authorChanged = persistedFacts.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) authorChanged.path("exactIntent")).put("exactAction", authorChanged.path("exactIntent").path("exactAction").asText() + " ");
++        factCases.add(authorChanged);
++        var inputChanged = persistedFacts.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) inputChanged.path("commandRequest")).put("stdin", " ");
++        factCases.add(inputChanged);
++        for (int i = 0; i < factCases.size(); i++) {
++            var altered = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++            docs.forEach((key, value) -> altered.put(key, value.deepCopy()));
++            var frozen = factCases.get(i);
++            String persistedBinding = inputDigest(frozen.toString());
++            ((com.fasterxml.jackson.databind.node.ObjectNode) altered.get("approvalFacts")).set("facts", frozen);
++            for (String name : List.of("approvalFacts", "approval", "grant", "sdkResult"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) altered.get(name)).put("bindingSha256", persistedBinding);
++            var ref = backupSnapshotLocalReferences(directory, altered);
++            String originalFileSha = backupBytesSha(Files.readAllBytes(directory.resolve("approvalFacts.json")));
++            if (i == 0) {
++                var retained = backupSnapshotProof(workspace, ref, selected, inventory, backups, data);
++                assertEquals(persistedBinding, retained.get("producerBindingSha256"));
++                assertEquals(originalPersisted, frozen.toString());
++            } else
++                assertThrows(Exception.class, () -> backupSnapshotProof(workspace, ref, selected, inventory, backups, data));
++            assertEquals(originalFileSha, backupBytesSha(Files.readAllBytes(directory.resolve("approvalFacts.json"))));
++        }
+         var invalid = new java.util.ArrayList<com.fasterxml.jackson.databind.node.ObjectNode>();
+         invalid.add(snapshot.deepCopy().put("complete", false));
+         invalid.add(snapshot.deepCopy().put("manifestMember", "../manifest.json"));
