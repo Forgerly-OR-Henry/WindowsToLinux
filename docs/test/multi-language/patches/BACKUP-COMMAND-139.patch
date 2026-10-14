@@ -1,0 +1,376 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index 8288524837739248b3a23e655113329ba176821e..af26600b3523814140d4558fb62157e0ca9b6f05 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -72,7 +72,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+     private static boolean liveOrIsolatedInputBridge() {
+         return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+             || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive()
+-            || isolatedBackupMetadata() || backupMetadataOnlyLive() || isolatedProtectedBackupGuard() || isolatedProtectedBackupSentinel();
++            || isolatedBackupMetadata() || backupMetadataOnlyLive() || isolatedProtectedBackupGuard() || isolatedProtectedBackupSentinel()
++            || backupCommandOnlyLive() || isolatedBackupCommandGuard();
+     }
+ 
+     private static boolean isolatedBackupGuard() {
+@@ -305,6 +306,350 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         }
+     }
+ 
++    private static boolean backupCommandOnlyLive() {
++        return Boolean.getBoolean("managed.runtime.backupCommandLive")
++            && "DeploymentStaticLiveAcceptanceTest#executesSelectiveBackupCommandThroughProduct".equals(System.getProperty("test", ""));
++    }
++
++    private static boolean isolatedBackupCommandGuard() {
++        return Boolean.getBoolean("managed.runtime.backupCommandLocal")
++            && "DeploymentStaticLiveAcceptanceTest#backupCommandPlansBindFullRequestsAndPreserveUnknownReceipts".equals(System.getProperty("test", ""));
++    }
++
++    private record BackupCommandPlan(Path file, String sha, String json) {
++    }
++
++    private static void backupCommandFields(com.fasterxml.jackson.databind.JsonNode node, Set<String> expected) {
++        backupRequire(node.isObject());
++        var actual = new java.util.HashSet<String>();
++        node.fieldNames().forEachRemaining(actual::add);
++        backupRequire(actual.equals(expected));
++    }
++
++    private static BackupCommandPlan backupCommandPlan(Path workspace, Path file, String sha, String run, String server,
++                                                       String fingerprint, String layoutSha) throws Exception {
++        Path absolute = file.toAbsolutePath().normalize();
++        Path boundary = workspace.toAbsolutePath().normalize().resolve(".ai-workspace/agent-live-evidence");
++        backupRequire(run != null && run.matches("[a-z0-9][a-z0-9-]{0,95}") && absolute.startsWith(boundary)
++            && sha != null && sha.matches("[0-9a-f]{64}") && Files.isRegularFile(absolute, java.nio.file.LinkOption.NOFOLLOW_LINKS)
++            && Files.size(absolute) <= 131072);
++        backupCanonical(absolute);
++        byte[] bytes = Files.readAllBytes(absolute);
++        backupRequire(backupBytesSha(bytes).equals(sha));
++        String text = java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
++            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString();
++        var parser = new com.fasterxml.jackson.databind.ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++        var node = parser.readTree(text);
++        backupCommandFields(node, Set.of("schema", "scope", "run", "server", "fingerprint", "layoutSha256", "kind", "script", "stdin",
++            "stdinNonSecret", "outputNonSecret", "necessity", "sourceFacts", "evidence", "timeoutSeconds", "outputLimitBytes"));
++        for (String field : List.of("scope", "run", "server", "fingerprint", "layoutSha256", "kind", "script", "stdin", "necessity"))
++            backupRequire(node.path(field).isTextual());
++        backupRequire(node.path("schema").isIntegralNumber() && node.path("schema").canConvertToInt() && node.path("schema").asInt() == 1
++            && node.path("scope").asText().equals("BACKUP_ONLY") && node.path("run").asText().equals(run)
++            && node.path("server").asText().equals(server) && node.path("fingerprint").asText().equals(fingerprint)
++            && node.path("layoutSha256").asText().equals(layoutSha)
++            && Set.of("READONLY_METADATA", "DATABASE_SNAPSHOT", "OWNED_BACKUP_CLEANUP").contains(node.path("kind").asText())
++            && node.path("stdinNonSecret").isBoolean() && node.path("stdinNonSecret").asBoolean()
++            && node.path("outputNonSecret").isBoolean() && node.path("outputNonSecret").asBoolean()
++            && !node.path("script").asText().isBlank() && node.path("script").asText().indexOf('\0') < 0
++            && java.nio.charset.StandardCharsets.UTF_8.newEncoder().canEncode(node.path("script").asText())
++            && java.nio.charset.StandardCharsets.UTF_8.newEncoder().canEncode(node.path("stdin").asText())
++            && !node.path("necessity").asText().isBlank() && node.path("necessity").asText().length() <= 2000
++            && node.path("sourceFacts").isObject() && !node.path("sourceFacts").isEmpty()
++            && node.path("timeoutSeconds").isIntegralNumber() && node.path("timeoutSeconds").canConvertToLong()
++            && node.path("timeoutSeconds").asLong() >= 1 && node.path("timeoutSeconds").asLong() <= 900
++            && node.path("outputLimitBytes").isIntegralNumber() && node.path("outputLimitBytes").canConvertToLong()
++            && node.path("outputLimitBytes").asLong() >= 1 && node.path("outputLimitBytes").asLong() <= 1048576
++            && node.path("evidence").isArray() && !node.path("evidence").isEmpty() && node.path("evidence").size() <= 16);
++        var references = new java.util.HashSet<Path>();
++        for (var reference : node.path("evidence")) {
++            backupCommandFields(reference, Set.of("file", "sha256"));
++            backupRequire(reference.path("file").isTextual() && reference.path("sha256").isTextual()
++                && reference.path("sha256").asText().matches("[0-9a-f]{64}"));
++            Path source = Path.of(reference.path("file").asText());
++            backupRequire(source.isAbsolute() && source.normalize().equals(source) && source.startsWith(boundary) && references.add(source)
++                && Files.isRegularFile(source, java.nio.file.LinkOption.NOFOLLOW_LINKS) && Files.size(source) <= 2 * 1024 * 1024);
++            backupCanonical(source);
++            backupRequire(backupBytesSha(Files.readAllBytes(source)).equals(reference.path("sha256").asText()));
++        }
++        var plan = new BackupCommandPlan(absolute, sha, node.toString());
++        // Sizing placeholders are never submitted as task or approval evidence; actual identities replace equal-length values.
++        backupCommandFacts(plan, new java.util.UUID(0, 0), "0".repeat(64));
++        return plan;
++    }
++
++    private static gold.debug.windowstolinux.appapi.linux.command.CommandRequest backupCommandRequest(BackupCommandPlan plan) throws Exception {
++        var node = JSON.readTree(plan.json());
++        byte[] input = node.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8);
++        try {
++            return new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(node.path("script").asText(), input,
++                java.time.Duration.ofSeconds(node.path("timeoutSeconds").asLong()), node.path("outputLimitBytes").asLong());
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
++    }
++
++    private static String backupCommandFacts(BackupCommandPlan plan, java.util.UUID task, String revision) throws Exception {
++        backupRequire(revision.matches("[0-9a-f]{64}"));
++        var node = JSON.readTree(plan.json());
++        try (var request = backupCommandRequest(plan)) {
++            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(node.path("server").asText()), revision, request);
++            var facts = Map.<String, Object>ofEntries(Map.entry("scope", "BACKUP_ONLY"), Map.entry("task", task.toString()),
++                Map.entry("planFile", plan.file().toString()), Map.entry("planSha256", plan.sha()),
++                Map.entry("plan", ((com.fasterxml.jackson.databind.node.ObjectNode) node.deepCopy()).without(List.of("script", "stdin"))),
++                Map.entry("commandRequest", Map.of("script", request.script(), "stdin", node.path("stdin").asText(),
++                    "timeoutSeconds", request.timeout().toSeconds(), "outputLimitBytes", request.outputLimitBytes())),
++                Map.entry("exactIntent", Map.of("type", intent.type(), "serverIds", intent.serverIds(), "target", intent.target(), "revision", intent.revision(),
++                    "exactAction", intent.exactAction(), "effectSummary", intent.effectSummary(), "semantics", "ABSENT")),
++                Map.entry("replayAllowed", false), Map.entry("backupComplete", false));
++            String encoded = JSON.writeValueAsString(facts);
++            backupRequire(facts.size() <= 64 && encoded.length() <= 48000);
++            return encoded;
++        }
++    }
++
++    @FunctionalInterface
++    private interface BackupCommandExecution {
++        OperationResult<CommandResult> run(gold.debug.windowstolinux.appapi.task.action.ApprovalGrant grant) throws Exception;
++    }
++
++    private static OperationResult<CommandResult> backupCommandDispatch(String binding, String current,
++                                                                        gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision decision,
++                                                                        OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> grant, Set<java.util.UUID> consumed,
++                                                                        BackupCommandExecution execute) throws Exception {
++        backupRequire(binding.matches("[0-9a-f]{64}") && binding.equals(current));
++        if (!decision.decision().equals("APPROVE"))
++            throw new IllegalStateException("BACKUP_COMMAND_INDEPENDENT_APP_DENIED");
++        if (grant.outcome() != TaskResult.SUCCEEDED)
++            throw new ApiException(grant.problem().orElseGet(() -> new Problem(ProblemCode.CANCELLED,
++                "BACKUP_COMMAND_NEW_EXACT_GRANT_NOT_CONFIRMED", "Backup command authorization did not complete", Map.of(), Optional.empty())));
++        backupRequire(grant.value().isPresent());
++        backupRequire(consumed.add(grant.value().orElseThrow().id()));
++        return execute.run(grant.value().orElseThrow());
++    }
++
++    private static Map<String, Object> backupCommandReceipt(OperationResult<CommandResult> result) {
++        var receipt = new LinkedHashMap<String, Object>();
++        receipt.put("outcome", result.outcome().name());
++        result.problem().ifPresent(problem -> receipt.put("problem", Map.of("code", problem.code().name(), "eventCode", problem.eventCode())));
++        result.value().ifPresent(value -> {
++            var command = new LinkedHashMap<String, Object>();
++            command.put("exitObserved", value.exitCode().isPresent());
++            command.put("exitCode", value.exitCode().orElse(null));
++            command.put("stdout", value.stdout());
++            command.put("stderr", value.stderr());
++            command.put("truncated", value.truncated());
++            receipt.put("commandResult", command);
++        });
++        receipt.put("backupComplete", false);
++        receipt.put("replayAttempted", false);
++        return receipt;
++    }
++
++    @Test
++    @EnabledIf("backupCommandOnlyLive")
++    void executesSelectiveBackupCommandThroughProduct() throws Exception {
++        backupRequire(!Boolean.getBoolean("managed.runtime.staticLive") && !Boolean.getBoolean("managed.runtime.agentLive")
++            && !Boolean.getBoolean("managed.runtime.backupLive"));
++        var layout = backupLayout();
++        Path evidence = backupEvidence();
++        String run = System.getProperty("managed.backup.run");
++        String fingerprint = System.getProperty("managed.ssh.fingerprint");
++        var plan = backupCommandPlan(workspace(), Path.of(System.getProperty("managed.backup.commandPlanFile")),
++            System.getProperty("managed.backup.commandPlanSha256"), run, SERVER, fingerprint, layout.digest());
++        backupWriteRecord(evidence, "command-run-claim.json", Map.of("run", run, "scope", "BACKUP_ONLY", "planSha256", plan.sha(), "backupComplete", false));
++        aiEnabled = true;
++        agentMode = true;
++        connectionOnly = false;
++        root = workspace().resolve("src/app/db/data/backup-command-live-" + Long.toUnsignedString(System.nanoTime(), 36));
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            saveServer(runtime);
++            configureLiveModel(runtime, true);
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            var handle = context.tasks().<CommandResult>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "deployment.backup.command", "BACKUP_ONLY", List.of(SERVER), true), task -> {
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
++                try (var session = context.linux().connect(new ServerId(SERVER), task); var request = backupCommandRequest(plan)) {
++                    backupRequire(session.facts().fingerprint().equals(fingerprint));
++                    String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task);
++                    String factsJson = backupCommandFacts(plan, task.id(), revision);
++                    String binding = inputDigest(factsJson);
++                    var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(SERVER), revision, request);
++                    var facts = JSON.convertValue(JSON.readTree(factsJson), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
++                    });
++                    backupWriteRecord(evidence, "command-approval-facts.json", Map.of("bindingSha256", binding, "facts", JSON.readTree(factsJson)));
++                    var decision = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(
++                        new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context).ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
++                            "Review this one complete BACKUP_ONLY command, including the FULL exact script, FULL non-secret stdin, request limits, source facts and references. "
++                                + "The declared kind is not proof of script safety. Deny deployment, secret body reads/output, following unapproved links, old-resource recovery/deletion, "
++                                + "or unsupported snapshot/cleanup ownership. Only the explicitly evidenced bounded metadata or existing narrow owned backup helper action is eligible. "
++                                + "No replay is authorized. A decision grants no execution permission. "
++                                + gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION, facts, revision, task));
++                    backupWriteRecord(evidence, "command-approval.json", Map.of("bindingSha256", binding, "decision", decision.decision(),
++                        "requiresUserConfirmation", decision.requiresUserConfirmation(), "reason", decision.reason()));
++                    if (!decision.decision().equals("APPROVE"))
++                        throw new IllegalStateException("BACKUP_COMMAND_INDEPENDENT_APP_DENIED");
++                    var unchanged = backupCommandPlan(workspace(), plan.file(), plan.sha(), run, SERVER, fingerprint, layout.digest());
++                    backupRequire(binding.equals(inputDigest(backupCommandFacts(unchanged, task.id(),
++                        context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task)))));
++                    var grant = context.interaction().approveReviewedAction(intent, Optional.of(request), decision.requiresUserConfirmation(), decision.reason(), task);
++                    backupWriteRecord(evidence, "command-grant.json", Map.of("bindingSha256", binding, "outcome", grant.outcome().name(),
++                        "grantId", grant.value().map(value -> value.id().toString()).orElse("NONE")));
++                    var result = backupCommandDispatch(binding, inputDigest(factsJson), decision, grant, new java.util.HashSet<>(), actual -> {
++                        var current = backupCommandPlan(workspace(), plan.file(), plan.sha(), run, SERVER, fingerprint, layout.digest());
++                        backupRequire(binding.equals(inputDigest(backupCommandFacts(current, task.id(),
++                            context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task)))));
++                        return session.execute(request, actual);
++                    });
++                    var receipt = new LinkedHashMap<>(backupCommandReceipt(result));
++                    receipt.put("task", task.id().toString());
++                    receipt.put("bindingSha256", binding);
++                    receipt.put("grantId", grant.value().orElseThrow().id().toString());
++                    receipt.put("planSha256", plan.sha());
++                    backupWriteRecord(evidence, "command-sdk-result.json", receipt);
++                    return result;
++                } catch (ApiException failure) {
++                    backupWriteRecord(evidence, "command-exception.json", Map.of("task", task.id().toString(), "code", failure.problem().code().name(),
++                        "eventCode", failure.problem().eventCode(), "planSha256", plan.sha(), "replayAttempted", false));
++                    throw failure;
++                }
++            });
++            try {
++                completed(handle, 30);
++            } finally {
++                backupWriteRecord(evidence, "command-task-observation.json", Map.of("task", handle.id().toString(), "state", handle.snapshot().state().name(),
++                    "planSha256", plan.sha(), "backupComplete", false, "replayAttempted", false));
++            }
++        }
++    }
++
++    @Test
++    @EnabledIf("isolatedBackupCommandGuard")
++    void backupCommandPlansBindFullRequestsAndPreserveUnknownReceipts() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        assertFalse(backupCommandOnlyLive());
++        Path workspace = root.toAbsolutePath().normalize();
++        Path evidence = Files.createDirectories(workspace.resolve(".ai-workspace/agent-live-evidence/local-command-139"));
++        Path source = evidence.resolve("controlled-source.txt");
++        byte[] sourceBytes = "LOCAL_CONTROLLED_METADATA_NOT_REMOTE_PROOF".getBytes(java.nio.charset.StandardCharsets.UTF_8);
++        Files.write(source, sourceBytes);
++        Path file = evidence.resolve("controlled-plan.json");
++        String run = "local-command-139", fingerprint = "LOCAL_ONLY_NOT_A_HOST_FINGERPRINT", layout = "a".repeat(64);
++        var valid = JSON.createObjectNode().put("schema", 1).put("scope", "BACKUP_ONLY").put("run", run).put("server", SERVER)
++            .put("fingerprint", fingerprint).put("layoutSha256", layout).put("kind", "READONLY_METADATA")
++            .put("script", "LOCAL_TEST_FULL_SCRIPT_NOT_A_REMOTE_INVESTIGATION").put("stdin", "LOCAL_TEST_FULL_NON_SECRET_STDIN")
++            .put("stdinNonSecret", true).put("outputNonSecret", true).put("necessity", "Controlled input-boundary test only")
++            .put("timeoutSeconds", 3).put("outputLimitBytes", 1024);
++        valid.putObject("sourceFacts").put("localFixtureOnly", true);
++        valid.putArray("evidence").addObject().put("file", source.toString()).put("sha256", backupBytesSha(sourceBytes));
++        String original = JSON.writeValueAsString(valid);
++        Files.writeString(file, original);
++        java.util.concurrent.Callable<BackupCommandPlan> read = () -> backupCommandPlan(workspace, file, backupBytesSha(Files.readAllBytes(file)), run, SERVER, fingerprint, layout);
++        var plan = read.call();
++        String revision = "b".repeat(64);
++        var task = java.util.UUID.randomUUID();
++        String facts = backupCommandFacts(plan, task, revision);
++        var factsTree = JSON.readTree(facts);
++        assertEquals(valid.path("script"), factsTree.path("commandRequest").path("script"));
++        assertEquals(valid.path("stdin"), factsTree.path("commandRequest").path("stdin"));
++        assertTrue(factsTree.path("exactIntent").path("exactAction").asText().contains(valid.path("script").asText()));
++        assertTrue(factsTree.path("exactIntent").path("exactAction").asText().contains(backupBytesSha(valid.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
++        assertEquals(task.toString(), factsTree.path("task").asText());
++        assertEquals("BACKUP_ONLY", factsTree.path("scope").asText());
++        assertFalse(factsTree.path("replayAllowed").asBoolean());
++        assertFalse(factsTree.path("backupComplete").asBoolean());
++        assertThrows(Exception.class, () -> backupCommandPlan(workspace, file, "0".repeat(64), run, SERVER, fingerprint, layout));
++        Path outside = workspace.resolve("outside.json");
++        Files.writeString(outside, original);
++        assertThrows(Exception.class, () -> backupCommandPlan(workspace, outside, backupBytesSha(Files.readAllBytes(outside)), run, SERVER, fingerprint, layout));
++        var invalid = new java.util.ArrayList<com.fasterxml.jackson.databind.node.ObjectNode>();
++        for (String field : List.of("run", "server", "fingerprint", "layoutSha256", "scope", "kind"))
++            invalid.add(valid.deepCopy().put(field, "wrong"));
++        invalid.add(valid.deepCopy().put("extra", true));
++        var missing = valid.deepCopy();
++        missing.remove("stdin");
++        invalid.add(missing);
++        invalid.add(valid.deepCopy().put("stdinNonSecret", false));
++        invalid.add(valid.deepCopy().put("outputNonSecret", false));
++        invalid.add(valid.deepCopy().put("timeoutSeconds", 901));
++        invalid.add(valid.deepCopy().put("timeoutSeconds", 0.5));
++        invalid.add(valid.deepCopy().put("outputLimitBytes", 1048577));
++        invalid.add(valid.deepCopy().put("schema", 4294967297L));
++        invalid.add(valid.deepCopy().put("necessity", ""));
++        invalid.add(valid.deepCopy().put("script", "q".repeat(24000)));
++        var emptyFacts = valid.deepCopy();
++        emptyFacts.putObject("sourceFacts");
++        invalid.add(emptyFacts);
++        var wrongReference = valid.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) wrongReference.path("evidence").get(0)).put("sha256", "0".repeat(64));
++        invalid.add(wrongReference);
++        for (var node : invalid) {
++            Files.writeString(file, JSON.writeValueAsString(node));
++            assertThrows(Exception.class, read::call);
++        }
++        for (String malformed : List.of(original + "{}", original.replace("\"schema\":1", "\"schema\":1,\"schema\":1"))) {
++            Files.writeString(file, malformed);
++            assertThrows(Exception.class, read::call);
++        }
++        Files.write(file, new byte[]{(byte) 0xc3, (byte) 0x28});
++        assertThrows(Exception.class, read::call);
++        Files.write(file, new byte[131073]);
++        assertThrows(Exception.class, read::call);
++        Files.writeString(file, original);
++        Files.writeString(source, "changed-evidence");
++        assertThrows(Exception.class, read::call);
++        Files.write(source, sourceBytes);
++        read.call();
++        var request = backupCommandRequest(plan);
++        assertArrayEquals(valid.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8), request.stdin());
++        request.close();
++        assertArrayEquals(new byte[request.stdin().length], request.stdin());
++        var approve = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE", false, "Controlled whole-command approval");
++        var deny = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("DENY", false, "Controlled denial");
++        var grant = new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(java.util.UUID.randomUUID());
++        var granted = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(grant), Optional.<Problem>empty());
++        var unknownGrant = new OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>(TaskResult.UNKNOWN, Optional.empty(),
++            Optional.of(new Problem(ProblemCode.UNKNOWN, "LOCAL_COMMAND_GRANT_UNKNOWN", "Controlled authorization uncertainty", Map.of(), Optional.empty())));
++        var cancelledGrant = new OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>(TaskResult.CANCELLED, Optional.empty(),
++            Optional.of(new Problem(ProblemCode.CANCELLED, "LOCAL_COMMAND_GRANT_CANCELLED", "Controlled authorization cancellation", Map.of(), Optional.empty())));
++        var raw = new CommandResult(Optional.empty(), "LOCAL_PARTIAL_STDOUT", "LOCAL_PARTIAL_STDERR", true);
++        var unknown = new OperationResult<>(TaskResult.UNKNOWN, Optional.of(raw),
++            Optional.of(new Problem(ProblemCode.UNKNOWN, "LOCAL_COMMAND_EXECUTION_UNKNOWN", "Controlled execution uncertainty", Map.of(), Optional.empty())));
++        var calls = new AtomicInteger();
++        var consumed = new java.util.HashSet<java.util.UUID>();
++        BackupCommandExecution callback = actual -> {
++            calls.incrementAndGet();
++            return unknown;
++        };
++        String binding = inputDigest(facts);
++        assertThrows(Exception.class, () -> backupCommandDispatch(binding, "0".repeat(64), approve, granted, consumed, callback));
++        assertThrows(Exception.class, () -> backupCommandDispatch(binding, binding, deny, granted, consumed, callback));
++        assertThrows(ApiException.class, () -> backupCommandDispatch(binding, binding, approve, unknownGrant, consumed, callback));
++        assertEquals(ProblemCode.CANCELLED, assertThrows(ApiException.class,
++            () -> backupCommandDispatch(binding, binding, approve, cancelledGrant, consumed, callback)).problem().code());
++        assertEquals(0, calls.get());
++        assertTrue(consumed.isEmpty());
++        assertSame(unknown, backupCommandDispatch(binding, binding, approve, granted, consumed, callback));
++        assertEquals(1, calls.get());
++        assertThrows(Exception.class, () -> backupCommandDispatch(binding, binding, approve, granted, consumed, callback));
++        assertEquals(1, calls.get());
++        var next = new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(java.util.UUID.randomUUID())), Optional.<Problem>empty());
++        assertSame(unknown, backupCommandDispatch(binding, binding, approve, next, consumed, callback));
++        assertEquals(2, calls.get());
++        var retained = JSON.valueToTree(backupCommandReceipt(unknown));
++        assertEquals("UNKNOWN", retained.path("outcome").asText());
++        assertEquals(raw.stdout(), retained.path("commandResult").path("stdout").asText());
++        assertEquals(raw.stderr(), retained.path("commandResult").path("stderr").asText());
++        assertTrue(retained.path("commandResult").path("truncated").asBoolean());
++        assertFalse(retained.path("commandResult").path("exitObserved").asBoolean());
++        assertTrue(retained.path("commandResult").path("exitCode").isNull());
++        assertFalse(retained.path("backupComplete").asBoolean());
++    }
++
+     private record BackupMetadataPlan(String run, List<String> directories, int maxDepth, String sourceTask,
+                                       String sourceRun,
+                                       String sourceSha, String planSha) {
+@@ -3996,8 +4341,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+ 
+     private void configureLiveModel(PlatformRuntime runtime, boolean backupApprovalOnly) throws Exception {
+         if (backupApprovalOnly) {
+-            backupRequire(backupOnlyLive() && !mainOnlyDiagnostic
+-                && "DeploymentStaticLiveAcceptanceTest#downloadSelectiveBackupThroughProduct".equals(System.getProperty("test", "")));
++            backupRequire(!mainOnlyDiagnostic && (backupCommandOnlyLive() || (backupOnlyLive()
++                && "DeploymentStaticLiveAcceptanceTest#downloadSelectiveBackupThroughProduct".equals(System.getProperty("test", "")))));
+             var output = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai();
+             backupRequire(output.deploymentMaxOutputTokens() == 32768 && output.approvalMaxOutputTokens() == 8192
+                 && output.approvalMaxOutputTokens() <= output.deploymentMaxOutputTokens());
