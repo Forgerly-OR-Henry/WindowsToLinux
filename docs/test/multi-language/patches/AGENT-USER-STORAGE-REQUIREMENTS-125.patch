@@ -1,0 +1,156 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index c4058770c2888d7ac4b42ea15a93a9bb0241c41b..5492745732f4c305b88f7a3d01714a3a33234633 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -70,7 +70,14 @@ import org.junit.jupiter.params.provider.MethodSource;
+ @EnabledIf("liveOrIsolatedInputBridge")
+ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+     private static boolean liveOrIsolatedInputBridge() {
+-        return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics();
++        return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
++            || isolatedUserRequirements();
++    }
++
++    private static boolean isolatedUserRequirements() {
++        return "true".equals(System.getProperty("managed.runtime.userRequirementsLocal"))
++            && "DeploymentStaticLiveAcceptanceTest#userStorageRequirementsBindToOneRunAndCannotOverrideDeploymentInputs"
++            .equals(System.getProperty("test", ""));
+     }
+ 
+     private static boolean isolatedInputBridge() {
+@@ -2434,7 +2441,6 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         System.out.println("LIVE_MODE " + mode + " project=" + project);
+         System.out.println("LIVE_DEPLOYMENT_WAIT_MINUTES " + deploymentWaitMinutes);
+         System.out.println("STATIC_LIVE_STATE " + root + " application=" + id);
+-        Path source = copyFixture(project);
+         String host = System.getProperty("managed.ssh.host");
+         int webPort = switch (project) {
+             case "task-board" -> 46100;
+@@ -2448,6 +2454,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             webPort = Integer.parseInt(System.getProperty("managed.live.webPort"));
+             assertTrue(webPort >= 1 && webPort <= 65535, "The authorized public website port must be between 1 and 65535");
+         }
++        Map<String, String> requirements = selectedMode == Mode.AGENT ? liveAgentRequirements(project, id, host, webPort) : Map.of();
++        Path source = copyFixture(project);
+         Map<String, Map<String, String>> values = selectedMode == Mode.AGENT ? Map.of()
+             : runtimeInputs(project, source, host, webPort);
+         enable();
+@@ -2469,7 +2477,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                     agentApproval = mainOnlyDiagnostic ? "MANUAL_REVIEW" : System.getProperty("managed.live.agentApproval", "AUTOMATIC");
+                     agentRemember = !mainOnlyDiagnostic && Boolean.parseBoolean(System.getProperty("managed.live.rememberAuthorization", "true"));
+                     System.out.println("AI_LIVE_PERMISSION_POLICY policy=" + agentApproval + " remember=" + agentRemember);
+-                    var request = new DeploymentAgentInputs.Request(agentRequirements(project, id, host, webPort),
++                    var request = new DeploymentAgentInputs.Request(requirements,
+                         agentApproval, agentRemember, 128L * 1024 * 1024, 10000, 64L * 1024 * 1024);
+                     var workflow = mainOnlyDiagnostic ? diagnosticReview.workflow() : new DeploymentAgentWorkflow(context);
+                     var agent = workflow.submitLocal(new ServerId(SERVER), request);
+@@ -2640,6 +2648,109 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         return root.resolve("source");
+     }
+ 
++    private Map<String, String> liveAgentRequirements(String project, String application, String host, int port) throws Exception {
++        var base = agentRequirements(project, application, host, port);
++        String file = System.getProperty("managed.live.userRequirementsFile");
++        String digest = System.getProperty("managed.live.userRequirementsSha256");
++        String run = System.getProperty("managed.live.userRequirementsRun");
++        if (file == null && digest == null && run == null) return base;
++        String input = System.getProperty("managed.live.inputCheckpoint");
++        String browser = System.getProperty("managed.live.browserCheckpoint");
++        return bindAgentRequirements(base, workspace().resolve(".ai-workspace/agent-live-evidence"),
++            System.getProperty("managed.live.inputRun"), input == null ? null : Path.of(input),
++            browser == null ? null : Path.of(browser), file, digest, run);
++    }
++
++    static Map<String, String> bindAgentRequirements(Map<String, String> base, Path evidenceRoot, String expectedRun,
++                                                     Path inputCheckpoint, Path browserCheckpoint,
++                                                     String file, String digest, String run) throws Exception {
++        if (file == null && digest == null && run == null) return base;
++        if (file == null || digest == null || run == null || evidenceRoot == null || inputCheckpoint == null || browserCheckpoint == null
++            || expectedRun == null || !expectedRun.matches("[a-z0-9][a-z0-9-]{0,95}") || !expectedRun.equals(run)
++            || !digest.matches("[0-9a-f]{64}") || base.containsKey("userMaintenanceRequirements"))
++            throw new IllegalArgumentException("USER_REQUIREMENTS_BINDING");
++        Path boundary = evidenceRoot.toAbsolutePath().normalize();
++        Path directory = inputCheckpoint.toAbsolutePath().normalize();
++        Path target = Path.of(file).toAbsolutePath().normalize();
++        if (!directory.startsWith(boundary) || directory.equals(boundary) || !directory.getFileName().toString().equals(run)
++            || !directory.equals(browserCheckpoint.toAbsolutePath().normalize()) || !target.equals(directory.resolve("user-requirements.txt")))
++            throw new IllegalArgumentException("USER_REQUIREMENTS_DIRECTORY");
++        for (Path cursor = target; cursor != null; cursor = cursor.getParent()) {
++            var attributes = Files.readAttributes(cursor, java.nio.file.attribute.BasicFileAttributes.class, java.nio.file.LinkOption.NOFOLLOW_LINKS);
++            int windowsAttributes = com.sun.jna.platform.win32.Kernel32.INSTANCE.GetFileAttributes(cursor.toString());
++            if (Files.isSymbolicLink(cursor) || attributes.isOther() || !cursor.toRealPath().equals(cursor)
++                || windowsAttributes == -1 || (windowsAttributes & com.sun.jna.platform.win32.WinNT.FILE_ATTRIBUTE_REPARSE_POINT) != 0)
++                throw new IllegalArgumentException("USER_REQUIREMENTS_REPARSE");
++        }
++        if (!Files.isDirectory(directory) || !Files.isRegularFile(target, java.nio.file.LinkOption.NOFOLLOW_LINKS) || Files.size(target) < 1 || Files.size(target) > 4096)
++            throw new IllegalArgumentException("USER_REQUIREMENTS_SIZE");
++        byte[] bytes;
++        try (var input = Files.newInputStream(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
++            bytes = input.readNBytes(4097);
++        }
++        if (bytes.length < 1 || bytes.length > 4096 || !java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)).equals(digest))
++            throw new IllegalArgumentException("USER_REQUIREMENTS_DIGEST");
++        String text = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
++            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
++            .decode(java.nio.ByteBuffer.wrap(bytes)).toString();
++        if (text.isBlank() || text.indexOf('\0') >= 0) throw new IllegalArgumentException("USER_REQUIREMENTS_TEXT");
++        var bound = new LinkedHashMap<>(base);
++        bound.put("userMaintenanceRequirements", text);
++        if (bound.size() > 64 || bound.toString().length() > 8000)
++            throw new IllegalArgumentException("USER_REQUIREMENTS_REQUEST_BUDGET");
++        System.out.println("LIVE_USER_REQUIREMENTS_BOUND run=" + run + " sha256=" + digest + " bytes=" + bytes.length + " characters=" + text.length());
++        return Map.copyOf(bound);
++    }
++
++    @Test
++    @EnabledIf("isolatedUserRequirements")
++    void userStorageRequirementsBindToOneRunAndCannotOverrideDeploymentInputs() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        var base = agentRequirements("task-board", "wtl-test-125", "45.192.105.213", 49100);
++        assertSame(base, bindAgentRequirements(base, null, null, null, null, null, null, null));
++        Path boundary = Files.createDirectory(root.resolve("evidence"));
++        String run = "task-board-approved-125-local";
++        Path directory = Files.createDirectory(boundary.resolve(run));
++        Path file = directory.resolve("user-requirements.txt");
++        String text = "已用的23G，看看能不能清理一下。如果可以压缩或清理，就尝试清除；保留UNKNOWN、正式App、持久数据和证据。";
++        Files.writeString(file, text, java.nio.charset.StandardCharsets.UTF_8);
++        String digest = inputDigest(text);
++        var bound = bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), digest, run);
++        assertEquals(base.size() + 1, bound.size());
++        for (var entry : base.entrySet())
++            assertArrayEquals(entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8), bound.get(entry.getKey()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
++        assertEquals(text, bound.get("userMaintenanceRequirements"));
++        var request = new DeploymentAgentInputs.Request(bound, "AUTOMATIC", false, 128L * 1024 * 1024, 10000, 64L * 1024 * 1024);
++        assertEquals("AUTOMATIC", request.approvalMode());
++        assertFalse(request.rememberAuthorization());
++        assertEquals(bound, request.requirements());
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), "0".repeat(64), run));
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), digest, "wrong-run"));
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, "wrong-run", directory, directory, file.toString(), digest, "wrong-run"));
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), null, run));
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), digest, null));
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, null, digest, run));
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, boundary, file.toString(), digest, run));
++        Path outside = Files.writeString(root.resolve("user-requirements.txt"), text);
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, outside.toString(), digest, run));
++        Path wrongLeaf = Files.writeString(directory.resolve("other.txt"), text);
++        assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, wrongLeaf.toString(), digest, run));
++        for (byte[] invalid : List.of(new byte[0], new byte[]{0}, new byte[]{(byte) 0xc3, (byte) 0x28}, "a".repeat(4097).getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
++            Files.write(file, invalid);
++            String invalidDigest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(invalid));
++            assertThrows(Exception.class, () -> bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), invalidDigest, run));
++        }
++        String coreKeys = "{\"applicationId\":\"override\",\"goal\":\"override\",\"approvalMode\":\"FULL_CONTROL\",\"rememberAuthorization\":true}";
++        Files.writeString(file, coreKeys);
++        var literal = bindAgentRequirements(base, boundary, run, directory, directory, file.toString(), inputDigest(coreKeys), run);
++        assertEquals(coreKeys, literal.get("userMaintenanceRequirements"));
++        for (var entry : base.entrySet()) assertEquals(entry.getValue(), literal.get(entry.getKey()));
++        var unchangedPolicy = new DeploymentAgentInputs.Request(literal, "AUTOMATIC", false, 128L * 1024 * 1024, 10000, 64L * 1024 * 1024);
++        assertEquals("AUTOMATIC", unchangedPolicy.approvalMode());
++        assertFalse(unchangedPolicy.rememberAuthorization());
++    }
++
+     static Map<String, String> agentRequirements(String project, String application, String host, int port) {
+         var requirements = new LinkedHashMap<String, String>();
+         requirements.put("applicationId", application);
