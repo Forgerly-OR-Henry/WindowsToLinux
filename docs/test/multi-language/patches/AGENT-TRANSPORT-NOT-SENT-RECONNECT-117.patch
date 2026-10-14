@@ -1,0 +1,905 @@
+diff --git a/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java b/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java
+index b1e92c3ccec7359810760e0fe1a6bfbece66eee1..87538027a48d04d02d89983dec7f50add8448bce 100644
+--- a/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java
++++ b/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java
+@@ -178,6 +178,9 @@ final class SshCommandExecution {
+      * @return uncertain result with observed bounded output / 附带已观测有界输出的不确定结果
+      */
+     private OperationResult<CommandResult> unknown(String event, String message) {
++        if (event.equals("SSH_COMMAND_TRANSPORT") && dispatched && sender == null && inputState == InputState.NOT_STARTED)
++            return result(TaskResult.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT",
++                "SSH bootstrap opening may have started, but the author script and input sender were never created", null);
+         return result(TaskResult.UNKNOWN, ProblemCode.UNKNOWN, event, message,
+             channel == null ? null : channel.getExitStatus());
+     }
+@@ -204,6 +207,8 @@ final class SshCommandExecution {
+             Map.entry("sessionOpen", Boolean.toString(session.isOpen())),
+             Map.entry("sessionAuthenticated", Boolean.toString(session.isAuthenticated())),
+             Map.entry("inputState", inputState.name()),
++            Map.entry("inputSenderCreated", Boolean.toString(sender != null)),
++            Map.entry("authorPayloadState", sender == null && inputState == InputState.NOT_STARTED ? "NOT_SENT" : "MAY_HAVE_BEEN_SENT"),
+             Map.entry("outputObserved", Boolean.toString(!output.stdout().isEmpty() || !output.stderr().isEmpty())),
+             Map.entry("exitObserved", Boolean.toString(exit != null))));
+         if (sender != null && inputState == InputState.SENDING) {
+diff --git a/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java b/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java
+index 55b7a4daf3d69615b1843316a7dbed17d83187af..5b0892f6d3e1e94f48c751ad2a1c49ff1a22a3c8 100644
+--- a/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java
++++ b/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java
+@@ -26,6 +26,90 @@ public class SshCommandExecutionTest {
+     @TempDir
+     Path root;
+ 
++    @Test
++    void authorPayloadNotSentBeforeSenderRetainsKnownFailureAndStartedSenderRemainsUnknown() throws Exception {
++        for (boolean opened : List.of(false, true)) {
++            var bytes = new AtomicInteger();
++            var inputRequested = new AtomicInteger();
++            var inputStarted = new CountDownLatch(1);
++            var opening = (org.apache.sshd.client.future.OpenFuture) java.lang.reflect.Proxy.newProxyInstance(
++                getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.future.OpenFuture.class},
++                (proxy, method, args) -> switch (method.getName()) {
++                    case "await" -> true;
++                    case "verify" -> {
++                        if (!opened) throw new IOException("private channel failure");
++                        yield proxy;
++                    }
++                    default -> throw new AssertionError(method.getName());
++                });
++            var channel = new org.apache.sshd.client.channel.ChannelExec(SshCommandFrame.COMMAND, null, Map.of()) {
++                @Override
++                public org.apache.sshd.client.future.OpenFuture open() {
++                    return opening;
++                }
++
++                @Override
++                public OutputStream getInvertedIn() {
++                    inputRequested.incrementAndGet();
++                    return new OutputStream() {
++                        public void write(int value) {
++                            bytes.incrementAndGet();
++                            inputStarted.countDown();
++                        }
++                    };
++                }
++
++                @Override
++                public Set<org.apache.sshd.client.channel.ClientChannelEvent> waitFor(Collection<org.apache.sshd.client.channel.ClientChannelEvent> events, long timeout) {
++                    try {
++                        assertTrue(inputStarted.await(3, TimeUnit.SECONDS));
++                    } catch (InterruptedException interrupted) {
++                        throw new AssertionError(interrupted);
++                    }
++                    throw new UncheckedIOException(new IOException("private receipt lost after sender creation"));
++                }
++
++                @Override
++                protected void preClose() {
++                }
++
++                @Override
++                protected org.apache.sshd.common.Closeable getInnerCloseable() {
++                    return builder().build();
++                }
++            };
++            var session = (org.apache.sshd.client.session.ClientSession) java.lang.reflect.Proxy.newProxyInstance(
++                getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.session.ClientSession.class},
++                (proxy, method, args) -> switch (method.getName()) {
++                    case "createExecChannel" -> {
++                        assertEquals(SshCommandFrame.COMMAND, args[0]);
++                        assertFalse(args[0].toString().contains("private-author"));
++                        yield channel;
++                    }
++                    case "isOpen", "isAuthenticated" -> true;
++                    default -> throw new AssertionError(method.getName());
++                });
++            try (var request = request("private-author script", 100)) {
++                var execution = new SshCommandExecution(session, request);
++                try {
++                    var result = execution.run(() -> false);
++                    var problem = result.problem().orElseThrow();
++                    assertEquals(opened ? TaskResult.UNKNOWN : TaskResult.FAILED, result.outcome());
++                    assertEquals(opened ? "SSH_COMMAND_TRANSPORT" : "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", problem.eventCode());
++                    assertEquals("true", problem.context().get("commandOpenRequested"), "Bootstrap opening is not classified as absent");
++                    assertEquals(Boolean.toString(opened), problem.context().get("inputSenderCreated"));
++                    assertEquals(opened ? "MAY_HAVE_BEEN_SENT" : "NOT_SENT", problem.context().get("authorPayloadState"));
++                    assertEquals(opened ? 1 : 0, inputRequested.get());
++                    assertEquals(opened, bytes.get() > 0);
++                    assertFalse(result.toString().contains("private"));
++                } finally {
++                    assertTrue(execution.close());
++                    assertTrue(channel.isClosed());
++                }
++            }
++        }
++    }
++
+     @Test
+     void realBashReceivesLargeUnicodeScriptAndExactBinaryStdinThroughOneSshChannel() throws Exception {
+         Path bash = Path.of(System.getProperty("managed.test.bash", "/bin/bash"));
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+index daff1a15ceba1c4e2c10fbe6548dd95d592ea113..97fc5fb57d0d4134618dd949a013ed8adc0d6834 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -301,6 +301,15 @@ public final class DeploymentAgentSession {
+                                 public Object run() throws Exception {
+                                     try {
+                                         return perform(proposal);
++                                    } catch (
++                                        gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanConnectionRefusal refused) {
++                                        if (plan != null || !candidates.isEmpty() || !DeploymentAgentActionLog.effectsSettled(journal.events(task)))
++                                            throw refused.originalFailure();
++                                        requireConfiguration();
++                                        refused.requireBinding(task, source.revision(), models.revision(),
++                                            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task).digest());
++                                        rejectionEvidence.put(call.id(), observe("PLAN_CONNECTION", refused.feedback()));
++                                        return refused;
+                                     } catch (
+                                         gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanCapacityRefusal refused) {
+                                         requireConfiguration();
+@@ -330,7 +339,8 @@ public final class DeploymentAgentSession {
+ 
+                                 public gold.debug.windowstolinux.appapi.ai.model.AiToolResult commit(gold.debug.windowstolinux.appapi.ai.model.AiToolCall original, Object value) {
+                                     if (value instanceof DeploymentAlternativeRequiredException || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException
+-                                        || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanCapacityRefusal)
++                                        || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanCapacityRefusal
++                                        || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanConnectionRefusal)
+                                         return new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(original.id(), lastObservation, true);
+                                     if (value != null)
+                                         terminal.set((OperationResult<DeploymentAgentDeliveryPort.Published>) value);
+@@ -755,7 +765,7 @@ public final class DeploymentAgentSession {
+      * @throws Exception unavailable or uncertain capability / 能力不可用或未知 */
+     private void capability(DeploymentAgentProposal.Capability value) throws Exception {
+ 
+-        var selected = value.name().equals("secrets") ? null : component(value.component());
++        var selected = Set.of("secrets", "reconnect").contains(value.name()) ? null : component(value.component());
+         if (selected != null)
+             evidence.requireIdentified(selected.id(), selected.sourceRoot(), evidenceRevisions().get(selected.id()));
+         if (value.name().equals("database_select_source"))
+@@ -1089,6 +1099,7 @@ public final class DeploymentAgentSession {
+         return Map.ofEntries(Map.entry("task", task.id().toString()), Map.entry("requirements", requirements), Map.entry("sourceRevision", source.revision()),
+             Map.entry("activeSkills", skills == null ? List.of() : skills.active()),
+             Map.entry("reviewResponseAvailable", tools.reviewResponseAvailable()),
++            Map.entry("reconnectAvailable", plan == null && tools.reconnectAvailable()),
+             Map.entry("budget", DeploymentAgentBudgetFacts.observe(Math.max(0, remaining - 1), toolAttempts)),
+             Map.entry("stage", stage), Map.entry("nextStep", nextStep(stage)), Map.entry("judgement", judgement), Map.entry("evidenceIndex", evidence.latestIndex()),
+             Map.entry("recentRejections", recentRejections), Map.entry("target", server.id()),
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+index 13c0a66c7389b7415e5e70cbb1bb70f440ad8f29..c424ac9e030d15e29800c1e1f5c3834d74613df6 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/protocol/DeploymentAgentProtocol.java
+@@ -90,6 +90,8 @@ public final class DeploymentAgentProtocol {
+                 "Optionally replace your DATA reply to an original OPEN native refusal using its exact reviewBinding. Empty message clears it; maximum 3000 UTF-16 code units and 6000 UTF-8 bytes. This local tool sends no SSH command, issues no grant and starts no review. You must choose a current action yourself; its next complete independent review receives this reply as DATA. CLOSED, foreign, unknown or superseded bindings are rejected. Approval-only evidence tools remain unavailable here; never invent their unread source bytes.";
+             case "source_index" ->
+                 "Page all frozen file paths beneath a directory, including nested source paths, with a stable next cursor. Prefer this over repeated directory descent. This is metadata only: read selected manifests/startup/storage files to obtain READ IDs before identify or plan.";
++            case "reconnect" ->
++                "Explicitly replace the original SSH connection only when reconnectAvailable is true after an initial capacity observation proved the author payload was not sent and the old connection actually closed. This retains the original task, saved target, wire key, configuration, source, budgets and state. It returns connection facts, sends no command and never replays a plan; any later remote command needs its own independent review and single-use grant.";
+             case "inspect" ->
+                 "Observe the authenticated server fingerprint and bounded host baseline. Coverage identifies actually measured facts; language tools, CPU/security and unselected container capabilities remain unobserved, not absent. This is not full platform or runtime admission. Identify and plan from current source READs; prepare exact source-required tools through analyze and prepare_tools.";
+             case "identify" ->
+@@ -201,6 +203,7 @@ public final class DeploymentAgentProtocol {
+                 : gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentToolScheduler.Execution.EXCLUSIVE,
+             criticalName(name), state -> {
+             if (name.equals("review_response")) return Boolean.TRUE.equals(state.get("reviewResponseAvailable"));
++            if (name.equals("reconnect")) return Boolean.TRUE.equals(state.get("reconnectAvailable"));
+             if (Set.of("plan_state", "command", "validate_runtime", "remote_read", "patch", "seal", "deliver", "check", "analyze", "prepare_tools", "build", "database_inspect", "database_select_source", "databases", "secret_select", "secret_create").contains(name))
+                 return state.get("components") instanceof java.util.List<?> components && !components.isEmpty();
+             if (name.equals("plan")) return state.get("judgement") instanceof Map<?, ?> judgement
+@@ -258,7 +261,7 @@ public final class DeploymentAgentProtocol {
+         add.accept("secrets", new String[]{"purpose"});
+         for (String name : List.of("secret_select", "secret_create"))
+             add.accept(name, new String[]{"component", "identifier", "revision:integer", "purpose"});
+-        for (String name : List.of("inspect", "deliver")) add.accept(name, new String[]{});
++        for (String name : List.of("inspect", "deliver", "reconnect")) add.accept(name, new String[]{});
+         add.accept("input", new String[]{"question"});
+         add.accept("unable", new String[]{"reason"});
+         ((com.fasterxml.jackson.databind.node.ObjectNode) map.get("identify").at("/properties/components"))
+@@ -371,7 +374,8 @@ public final class DeploymentAgentProtocol {
+                     DeploymentJsonFields.text(args, "path", 500), DeploymentJsonFields.number(args, "offset", 0, 1000000),
+                     DeploymentJsonFields.number(args, "limit", 1, 100));
+             }
+-            case "check", "analyze", "prepare_tools", "build", "database_inspect", "database_select_source",
++            case "reconnect", "check", "analyze", "prepare_tools", "build", "database_inspect",
++                 "database_select_source",
+                  "databases", "secrets",
+                  "secret_select", "secret_create" -> capability(tool, args);
+             case "list" -> {
+@@ -518,6 +522,7 @@ public final class DeploymentAgentProtocol {
+     private static DeploymentAgentProposal capability(String tool, JsonNode args) throws IOException {
+ 
+         Set<String> fields = switch (tool) {
++            case "reconnect" -> Set.of();
+             case "check" -> Set.of("component");
+             case "analyze" -> Set.of("component", "type");
+             case "prepare_tools" -> Set.of("component", "recipe");
+@@ -536,7 +541,7 @@ public final class DeploymentAgentProtocol {
+             DeploymentAgentDatabaseSourceSelection.parse(args.get("sourceSelection"));
+         if (tool.equals("analyze") && !ANALYSIS_TYPES.contains(DeploymentJsonFields.text(args, "type", 64)))
+             throw new IllegalArgumentException("Unsupported analyze type; select an exact project kind from " + ANALYSIS_TYPES);
+-        return new DeploymentAgentProposal.Capability(tool, tool.equals("secrets") ? "" : DeploymentJsonFields.text(args, "component", 63), args.deepCopy());
++        return new DeploymentAgentProposal.Capability(tool, Set.of("secrets", "reconnect").contains(tool) ? "" : DeploymentJsonFields.text(args, "component", 63), args.deepCopy());
+ 
+     }
+ 
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentDeliveryPort.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentDeliveryPort.java
+index a5550c0d3f04922946632b72cbc6f2a376869afb..1bb4fc77e6c9e077bdcc789a48f6cd87857ff7a3 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentDeliveryPort.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentDeliveryPort.java
+@@ -13,6 +13,11 @@ import gold.debug.windowstolinux.mod.deployment.service.core.model.build.Deploym
+ 
+ /** Narrow execution tools for independently generated Agent commands and attested publication. / 执行独立自主命令并核验发布结果的窄工具能力。 */
+ public interface DeploymentAgentDeliveryPort extends AutoCloseable {
++    /** Whether an actual initial capacity failure permits explicitly replacing the original connection. */
++    default boolean reconnectAvailable() {
++        return false;
++    }
++
+     default java.util.Optional<gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation> approvalConversation() {
+         return java.util.Optional.empty();
+     }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReconnectSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReconnectSession.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..b317c725d729fac7a7d49469e09a1740e34e80b2
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReconnectSession.java
+@@ -0,0 +1,181 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
++
++import java.util.*;
++
++import gold.debug.windowstolinux.appapi.linux.command.*;
++import gold.debug.windowstolinux.appapi.linux.session.*;
++import gold.debug.windowstolinux.appapi.linux.transfer.*;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
++import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
++import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++
++/** Keeps every Agent channel on one original target; replacement never sends a command. */
++final class DeploymentAgentReconnectSession implements RemoteSession {
++    private final ModContext context;
++
++    private final TaskContext task;
++
++    private final RemoteTarget target;
++
++    private final ServerInfo originalProfile;
++
++    private final String configuration;
++
++    private RemoteSession active;
++
++    private OperationResult<CommandResult> lastCommand;
++
++    private boolean eligible, uncertain, ownsActive;
++
++    DeploymentAgentReconnectSession(ModContext context, TaskContext task, ServerId server, RemoteSession original, String configuration) throws ApiException {
++        this.context = context;
++        this.task = task;
++        active = original;
++        this.configuration = configuration;
++        var profile = context.servers().get(server, task);
++        originalProfile = profile;
++        target = new RemoteTarget(server, task.id(), profile.host(), profile.port(), profile.username(),
++            Optional.of(original.facts().fingerprint()));
++    }
++
++    boolean armCapacityFailure(Problem problem) throws ApiException {
++        if (uncertain || lastCommand == null || lastCommand.outcome() != TaskResult.FAILED
++            || lastCommand.problem().orElse(null) != problem
++            || !problem.eventCode().equals("SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT")
++            || !"NOT_SENT".equals(problem.context().get("authorPayloadState"))
++            || !"false".equals(problem.context().get("inputSenderCreated"))
++            || !"NOT_STARTED".equals(problem.context().get("inputState"))) return false;
++        try {
++            requireOriginal();
++            active.close();
++            requireOriginal();
++            eligible = true;
++        } catch (ApiException | RuntimeException failure) {
++            uncertain = true;
++            throw failure;
++        }
++        return true;
++    }
++
++    boolean available() {
++        if (!eligible || uncertain) return false;
++        try {
++            requireOriginal();
++            return true;
++        } catch (ApiException unavailable) {
++            return false;
++        }
++    }
++
++    Map<String, Object> reconnect() throws ApiException {
++        if (!available())
++            throw new IllegalArgumentException("RECONNECT_UNAVAILABLE: no current author-payload absence proof");
++        requireOriginal();
++        eligible = false;
++        try {
++            requireOriginal();
++            active = context.linux().connect(target, task);
++            ownsActive = true;
++            if (!target.fingerprint().orElseThrow().equals(active.facts().fingerprint()))
++                throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_RECONNECT_TARGET_CHANGED",
++                    "Replacement wire key differs from the original target", Map.of(), Optional.of(task.id())));
++            lastCommand = null;
++            return Map.of("task", task.id().toString(), "server", target.server().id(),
++                "fingerprint", active.facts().fingerprint(), "connection", "REPLACED", "commandsReplayed", 0);
++        } catch (ApiException | RuntimeException failure) {
++            uncertain = true;
++            throw failure;
++        }
++    }
++
++    private void requireOriginal() throws ApiException {
++        var profile = context.servers().get(target.server(), task);
++        if (task.cancelToken().requested() || !profile.ref().equals(originalProfile.ref()) || !profile.name().equals(originalProfile.name())
++            || !profile.host().equals(target.host()) || profile.port() != target.port() || !profile.username().equals(target.username())
++            || !profile.trustedFingerprint().equals(originalProfile.trustedFingerprint())
++            || profile.trustedFingerprint().filter(key -> !key.equals(target.fingerprint().orElseThrow())).isPresent()
++            || !configuration.equals(context.ai().configurationRevision(AiPurpose.LANGUAGE, task))
++            || !context.linux().pendingTransfers(task).isEmpty())
++            throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_RECONNECT_UNSETTLED",
++                "Original target or task operation boundary cannot be confirmed", Map.of(), Optional.of(task.id())));
++    }
++
++    private RemoteSession ready() throws ApiException {
++        if (eligible)
++            throw new IllegalArgumentException("RECONNECT_REQUIRED: original connection is closed; this command was not dispatched");
++        if (uncertain)
++            throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_CONNECTION_UNSETTLED",
++                "The original connection requires explicit replacement or reconciliation", Map.of(), Optional.of(task.id())));
++        return active;
++    }
++
++    void requireConnection() throws ApiException {
++        ready();
++    }
++
++    private <T> OperationResult<T> observe(OperationResult<T> result) {
++        if (result.outcome() == TaskResult.UNKNOWN) uncertain = true;
++        return result;
++    }
++
++    @Override
++    public RemoteFacts facts() {
++        return active.facts();
++    }
++
++    @Override
++    public OperationResult<CommandResult> execute(CommandRequest request, ApprovalGrant grant) throws ApiException {
++        lastCommand = null;
++        lastCommand = observe(ready().execute(request, grant));
++        return lastCommand;
++    }
++
++    @Override
++    public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant) throws ApiException {
++        lastCommand = null;
++        return observe(ready().upload(request, grant));
++    }
++
++    @Override
++    public OperationResult<TransferResult> upload(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
++        lastCommand = null;
++        return observe(ready().upload(request, grant, choice));
++    }
++
++    @Override
++    public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant) throws ApiException {
++        lastCommand = null;
++        return observe(ready().download(request, grant));
++    }
++
++    @Override
++    public OperationResult<TransferResult> download(TransferRequest request, ApprovalGrant grant, TransferConflictChoice choice) throws ApiException {
++        lastCommand = null;
++        return observe(ready().download(request, grant, choice));
++    }
++
++    @Override
++    public OperationResult<TransferResult> resumeTransfer(UUID id, ApprovalGrant grant) throws ApiException {
++        lastCommand = null;
++        return observe(ready().resumeTransfer(id, grant));
++    }
++
++    @Override
++    public OperationResult<Void> discardTransfer(UUID id, ApprovalGrant grant) throws ApiException {
++        lastCommand = null;
++        return observe(ready().discardTransfer(id, grant));
++    }
++
++    /** The workflow still owns the initial borrowed session; every replacement is retained until close succeeds. */
++    @Override
++    public void close() throws ApiException {
++        if (ownsActive) {
++            active.close();
++            ownsActive = false;
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+index 25af9ee3de544026df62a115be6680209991e46c..9ed3b74e4e560d42e77b064681958549de637bc3 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -76,6 +76,8 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+ 
+     private final RemoteSession session;
+ 
++    private final DeploymentAgentReconnectSession reconnectSession;
++
+     /** Actual original owner capabilities. / 实际原所有者能力。 */
+     private final DeploymentCommandReviewScope context;
+ 
+@@ -207,7 +209,9 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+                                       gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReviewSource.Bound reviewSource) throws ApiException {
+         this.reviewSource = reviewSource;
+         this.layout = Objects.requireNonNull(layout);
+-        this.session = Objects.requireNonNull(session);
++        this.reconnectSession = new DeploymentAgentReconnectSession(context, task, server, Objects.requireNonNull(session), configurationRevision);
++        this.session = reconnectSession;
++        session = this.session;
+         this.server = Objects.requireNonNull(server);
+         this.task = Objects.requireNonNull(task);
+         this.archive = Objects.requireNonNull(archive);
+@@ -254,6 +258,7 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+      * @throws Exception if host evidence cannot be confirmed / 主机依据无法确认时 */
+     @Override
+     public Map<String, String> inspect() throws Exception {
++        reconnectSession.requireConnection();
+         var facts = value(hosts.baseline());
+         var capacity = value(candidates.capacityObservation());
+         verifyWorkspaceBoundary();
+@@ -370,7 +375,21 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+ 
+     @Override
+     public List<DeploymentAgentPlan.Part> selectWorkspaces(DeploymentAgentPlan plan, Map<String, Prepared> existing) throws Exception {
+-        var capacity = value(candidates.capacityObservation());
++        reconnectSession.requireConnection();
++        DeploymentCandidateChannel.CapacityObservation capacity;
++        try {
++            capacity = value(candidates.capacityObservation());
++        } catch (DeploymentAiJson.CapabilityOutcomeException failure) {
++            if (existing.isEmpty() && workspaceQuotas.isEmpty() && prepared.isEmpty() && componentCandidates.isEmpty()
++                && DeploymentAgentActionLog.effectsSettled(journal.events(task))
++                && !DeploymentModelCommandRunner.unconfirmed(context, task)
++                && failure.outcome() == TaskResult.FAILED && failure.problem().isPresent()) {
++                beforeSend.verify();
++                if (reconnectSession.armCapacityFailure(failure.problem().orElseThrow()))
++                    throw new PlanConnectionRefusal(task.id(), originalSourceRevision, configurationRevision, layout.digest(), failure);
++            }
++            throw failure;
++        }
+         verifyWorkspaceBoundary();
+         var inputs = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input>();
+         for (var part : plan.components()) {
+@@ -506,6 +525,56 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+         }
+     }
+ 
++    /** A bound initial observation failure; it grants neither reconnection nor command replay. */
++    public static final class PlanConnectionRefusal extends IllegalArgumentException {
++        private final UUID task;
++
++        private final String source, configuration, layout;
++
++        private final DeploymentAiJson.CapabilityOutcomeException failure;
++
++        private PlanConnectionRefusal(UUID task, String source, String configuration, String layout,
++                                      DeploymentAiJson.CapabilityOutcomeException failure) {
++            super("PLAN_CAPACITY_AUTHOR_PAYLOAD_NOT_SENT: original bootstrap may have opened; author payload NOT_SENT; original connection closed; reconnect is available; no command replayed", failure);
++            this.task = task;
++            this.source = source;
++            this.configuration = configuration;
++            this.layout = layout;
++            this.failure = failure;
++        }
++
++        public void requireBinding(TaskContext currentTask, String currentSource, String currentConfiguration, String currentLayout) {
++            if (!task.equals(currentTask.id()) || !source.equals(currentSource) || !configuration.equals(currentConfiguration) || !layout.equals(currentLayout))
++                throw new SecurityException("DEPLOYMENT_AGENT_RECONNECT_BINDING_CHANGED");
++        }
++
++        public DeploymentAiJson.CapabilityOutcomeException originalFailure() {
++            return failure;
++        }
++
++        public String feedback() throws java.io.IOException {
++            var facts = new LinkedHashMap<String, Object>();
++            facts.put("outcome", "FAILED");
++            facts.put("event", "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT");
++            facts.put("authorPayloadState", "NOT_SENT");
++            facts.put("commandOpenRequested", failure.problem().orElseThrow().context().get("commandOpenRequested"));
++            facts.put("originalConnectionClosed", true);
++            facts.put("reconnectAvailable", true);
++            facts.put("commandsReplayed", 0);
++            return "PLAN_CAPACITY_CONNECTION_FAILED DATA=" + DeploymentAiJson.facts(facts, 2000);
++        }
++    }
++
++    @Override
++    public boolean reconnectAvailable() {
++        try {
++            return workspaceQuotas.isEmpty() && prepared.isEmpty() && componentCandidates.isEmpty() && reconnectSession.available()
++                && DeploymentAgentActionLog.effectsSettled(journal.events(task)) && !DeploymentModelCommandRunner.unconfirmed(context, task);
++        } catch (Exception unavailable) {
++            return false;
++        }
++    }
++
+     @Override
+     public void acceptWorkspaces(DeploymentAgentPlan plan) {
+         workspaceQuotas.clear();
+@@ -809,6 +878,16 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+     @Override
+     public String capability(gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProposal.Capability request,
+                              DeploymentAgentPlan.Part component, Prepared candidate, String revision, String binding, String applicationId) throws Exception {
++        if (request.name().equals("reconnect")) {
++            if (!applicationId.isEmpty() || !reconnectAvailable() || !DeploymentAgentActionLog.effectsSettled(journal.events(task))
++                || DeploymentModelCommandRunner.unconfirmed(context, task))
++                throw new IllegalArgumentException("RECONNECT_UNAVAILABLE: original operation boundary is unsettled");
++            beforeSend.verify();
++            var facts = reconnectSession.reconnect();
++            beforeSend.verify();
++            journal.event(task, "CONNECTION_REPLACED", "", DeploymentAiJson.facts(facts, 2000));
++            return DeploymentAiJson.facts(facts, 2000);
++        }
+         if (request.name().equals("check")) {
+             var facts = value(hosts.forRuntime(component.runtime()));
+             return "ENVIRONMENT " + facts.facts()
+@@ -1043,8 +1122,12 @@ public final class DeploymentAgentRemoteTools implements DeploymentAgentDelivery
+      * @throws Exception unconfirmed derivative cleanup / 衍生素材清理未确认时 */
+     @Override
+     public void close() throws Exception {
+-        sources.close();
+-        prepared.clear();
++        try {
++            sources.close();
++            prepared.clear();
++        } finally {
++            reconnectSession.close();
++        }
+     }
+ 
+     /** Rebinds exact send approvals without recreating candidates or resetting execution time. / 重新绑定精确发送审批，不重建候选或重置执行时间。
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPlanReconnectTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPlanReconnectTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c03901c915c864935ac93c5640fcbcc5c33c381b
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPlanReconnectTest.java
+@@ -0,0 +1,330 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.tools;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.lang.reflect.*;
++import java.nio.file.*;
++import java.util.*;
++import java.util.concurrent.*;
++import java.util.concurrent.atomic.*;
++
++import com.fasterxml.jackson.databind.*;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.ai.AiService;
++import gold.debug.windowstolinux.appapi.ai.model.*;
++import gold.debug.windowstolinux.appapi.linux.LinuxService;
++import gold.debug.windowstolinux.appapi.linux.command.*;
++import gold.debug.windowstolinux.appapi.linux.session.*;
++import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.server.ServerService;
++import gold.debug.windowstolinux.appapi.server.model.*;
++import gold.debug.windowstolinux.appapi.task.action.ApprovalGrant;
++import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
++import gold.debug.windowstolinux.app.service.server.ServerProfile;
++import gold.debug.windowstolinux.mod.deployment.file.*;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentSession;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import org.junit.jupiter.api.Test;
++
++/** Real native Agent dispatch and independent approval, with owned local source and controlled transport. */
++class DeploymentAgentPlanReconnectTest extends DeploymentRuntimeFixture {
++    private static final String REVISION = "a".repeat(64);
++
++    private static final String FINGERPRINT = "SHA256:" + "A".repeat(43);
++
++    private static final ObjectMapper JSON = new ObjectMapper();
++
++    @Test
++    void planCapacityNotSentRequiresExplicitModelReconnectAndFreshApproval() throws Exception {
++        Path source = Files.createDirectories(root.resolve("reconnect-source"));
++        Files.writeString(source.resolve("run.sh"), "#!/bin/sh\nexec sleep 1\n");
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            var actual = runtime.modContexts().get(OWNER).context();
++            for (String scenario : List.of("RECONNECT", "UNKNOWN", "CLOSE", "PROFILE", "CONFIG", "REVOKED", "UNSETTLED")) {
++                var server = new ServerId("reconnect-" + scenario.toLowerCase(Locale.ROOT));
++                var originalProfile = new ServerProfile(server.id(), "127.0.0.1", 22, "fixture", "fixture");
++                runtime.servers().saveServerProfile(originalProfile, "fixture".toCharArray());
++                var failed = new AtomicReference<Throwable>();
++                var finished = new CompletableFuture<Void>();
++                var handle = actual.tasks().submit(new TaskRequest("agent-reconnect-local", scenario, List.of(server.id()), true), task -> {
++                    var journal = new DeploymentAgentActionLog(actual.db());
++                    boolean journalCreated = false;
++                    try {
++                        var selection = actual.file().sources().selectDirectory(source, task);
++                        try (var material = new DeploymentSourceSetup(actual.file()).prepare(selection, 1048576, 100, task);
++                             var archive = new DeploymentSourceArchiver(actual.file()).prepare(material, 1048576, task)) {
++                            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), "b".repeat(64), REVISION, "AUTOMATIC", false));
++                            journalCreated = true;
++                            journal.event(task, "SOURCE", archive.sha256(), material.snapshot().sha256());
++                            var profile = new AtomicReference<>(new ServerInfo(server, "fixture", originalProfile.host(), originalProfile.sshPort(), originalProfile.username(), Optional.of(FINGERPRINT), Optional.empty()));
++                            var revision = new AtomicReference<>(REVISION);
++                            var approvals = new AtomicInteger();
++                            var mainTurns = new AtomicInteger();
++                            var connections = new AtomicInteger();
++                            var oldCalls = new AtomicInteger();
++                            var newCalls = new AtomicInteger();
++                            var oldClosed = new AtomicBoolean();
++                            var replacementClosed = new AtomicBoolean();
++                            var resourceHeld = new AtomicBoolean(true);
++                            var usedGrants = new HashSet<ApprovalGrant>();
++                            var original = peer((request, grant) -> {
++                                assertTrue(usedGrants.add(grant), "The original single-use grant cannot be reused");
++                                assertEquals(1, oldCalls.incrementAndGet(), "No automatic replay on the failed connection");
++                                if (scenario.equals("UNSETTLED"))
++                                    journal.event(task, "COMMAND_EXECUTING", "other-command", "unconfirmed");
++                                if (scenario.equals("PROFILE"))
++                                    profile.set(new ServerInfo(server, "fixture", "127.0.0.2", 22, "fixture", Optional.of(FINGERPRINT), Optional.empty()));
++                                if (scenario.equals("REVOKED"))
++                                    profile.set(new ServerInfo(server, "fixture", "127.0.0.1", 22, "fixture", Optional.empty(), Optional.empty()));
++                                if (scenario.equals("CONFIG")) revision.set("c".repeat(64));
++                                return absence(scenario.equals("UNKNOWN") ? TaskResult.UNKNOWN : TaskResult.FAILED);
++                            }, () -> {
++                                if (scenario.equals("CLOSE"))
++                                    throw new ApiException(new Problem(ProblemCode.BUSY, "SSH_CLOSE_PENDING", "Controlled local resource remains", Map.of(), Optional.of(task.id())));
++                                oldClosed.set(true);
++                                resourceHeld.set(false);
++                            });
++                            var replacement = peer((request, grant) -> {
++                                assertTrue(oldClosed.get());
++                                assertFalse(resourceHeld.get(), "Physical close and owned resource release precede admission");
++                                assertTrue(usedGrants.add(grant), "A newly reviewed distinct grant is required");
++                                assertEquals(2, approvals.get(), "The new capacity command receives a fresh independent APP call");
++                                newCalls.incrementAndGet();
++                                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), "1048576 4096\n", "", false)), Optional.empty());
++                            }, () -> replacementClosed.set(true));
++                            var linux = (LinuxService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{LinuxService.class}, (p, m, args) -> {
++                                if (m.getName().equals("pendingTransfers")) return List.of();
++                                assertEquals("connect", m.getName());
++                                assertSame(task, args[1]);
++                                assertEquals(new RemoteTarget(server, task.id(), originalProfile.host(), originalProfile.sshPort(), originalProfile.username(), Optional.of(FINGERPRINT)), args[0]);
++                                assertTrue(oldClosed.get());
++                                assertFalse(resourceHeld.get());
++                                assertEquals(0, newCalls.get(), "Reconnection authenticates only; it never replays the plan command");
++                                assertEquals(1, connections.incrementAndGet());
++                                return replacement;
++                            });
++                            var servers = (ServerService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ServerService.class}, (p, m, args) -> {
++                                if (m.getName().equals("get")) {
++                                    assertEquals(server, args[0]);
++                                    assertSame(task, args[1]);
++                                    return profile.get();
++                                }
++                                return invoke(m, actual.servers(), args);
++                            });
++                            var ai = (AiService) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{AiService.class}, (p, m, args) -> {
++                                if (m.getName().equals("configurationRevision")) return revision.get();
++                                assertEquals("call", m.getName());
++                                assertSame(task, args[args.length - 1]);
++                                var request = (AiRequest) args[0];
++                                if (request.purpose() == AiPurpose.APPROVAL) {
++                                    int index = approvals.incrementAndGet();
++                                    assertEquals(index == 1 ? 0 : 1, connections.get());
++                                    return response("approval_" + index, "submit_result", JSON.readTree("""
++                                        {"decision":"APPROVE","requiresUserConfirmation":false,"reason":"Review the exact controlled capacity command",
++                                         "missingEvidence":[],"adjustments":[],"candidateCommands":[]}
++                                        """));
++                                }
++                                assertEquals(AiPurpose.LANGUAGE, request.purpose());
++                                int turn = mainTurns.getAndIncrement();
++                                var state = JSON.readTree(request.messages().getLast().text()).path("state");
++                                assertEquals(task.id().toString(), state.path("task").asText());
++                                assertEquals(material.snapshot().sha256(), state.path("sourceRevision").asText());
++                                if (turn == 3) {
++                                    var feedback = request.messages().stream().flatMap(message -> message.toolResult().stream()).filter(value -> value.callId().equals("main_2")).findFirst().orElseThrow();
++                                    assertTrue(feedback.error());
++                                    assertTrue(feedback.text().contains("authorPayloadState"));
++                                    assertTrue(feedback.text().contains("NOT_SENT"));
++                                    assertTrue(state.path("reconnectAvailable").asBoolean());
++                                    assertEquals(0, state.path("planRevision").asInt());
++                                    assertTrue(state.path("components").isEmpty());
++                                    assertTrue(oldClosed.get());
++                                    assertEquals(0, connections.get());
++                                    assertEquals(0, newCalls.get());
++                                }
++                                if (turn == 4) {
++                                    var rejected = request.messages().stream().flatMap(message -> message.toolResult().stream()).filter(value -> value.callId().equals("main_3")).findFirst().orElseThrow();
++                                    assertTrue(rejected.error());
++                                    assertTrue(rejected.text().contains("RECONNECT_REQUIRED"));
++                                    assertTrue(state.path("reconnectAvailable").asBoolean(), "Local ordering rejection preserves the actual absence proof");
++                                    assertEquals(1, approvals.get(), "A local refusal sends no command and requires no new APP review");
++                                    assertEquals(0, connections.get());
++                                    assertEquals(0, newCalls.get());
++                                }
++                                if (turn == 5) {
++                                    assertEquals(1, connections.get());
++                                    assertEquals(0, newCalls.get(), "The model must separately choose a new plan after reconnect");
++                                    assertEquals(0, state.path("planRevision").asInt());
++                                    assertFalse(state.path("reconnectAvailable").asBoolean());
++                                }
++                                if (turn == 6) {
++                                    assertEquals(1, state.path("planRevision").asInt());
++                                    assertEquals(1, newCalls.get());
++                                }
++                                String tool = switch (turn) {
++                                    case 0 -> "read";
++                                    case 1 -> "identify";
++                                    case 2, 5 -> "plan";
++                                    case 3 -> "inspect";
++                                    case 4 -> "reconnect";
++                                    case 6 -> "unable";
++                                    default -> throw new AssertionError("Unexpected model continuation");
++                                };
++                                ObjectNode params = switch (tool) {
++                                    case "read" ->
++                                        JSON.createObjectNode().put("path", "run.sh").put("offset", 0).put("limit", 100);
++                                    case "identify" -> (ObjectNode) JSON.readTree("""
++                                        {"components":[{"component":"web","root":".","technology":"Read shell entrypoint","runtime":"Process",
++                                         "resources":"None","uncertainties":"Controlled transport proves no deployment","evidence":["o1"]}]}
++                                        """);
++                                    case "plan" -> declaration();
++                                    case "reconnect", "inspect" -> JSON.createObjectNode();
++                                    case "unable" ->
++                                        JSON.createObjectNode().put("reason", "Controlled test ends after a newly accepted plan; no deployment requested");
++                                    default -> throw new AssertionError(tool);
++                                };
++                                if (tool.equals("plan")) {
++                                    var assessment = params.putObject("assessment");
++                                    var basis = assessment.putArray("basis");
++                                    var pending = state.path("judgement").path("pending");
++                                    if (pending.isEmpty()) basis.add("o1");
++                                    else pending.forEach(id -> basis.add(id.asText()));
++                                    assessment.put("suitability", "Current original controlled observations").put("differences", "Transport facts require explicit model continuation")
++                                        .put("resolution", "RESOLVED").put("decision", "Submit this exact source-backed plan");
++                                }
++                                return response("main_" + turn, tool, params);
++                            });
++                            var context = (ModContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{ModContext.class}, (p, m, args) -> switch (m.getName()) {
++                                case "ai" -> ai;
++                                case "linux" -> linux;
++                                case "servers" -> servers;
++                                default -> invoke(m, actual, args);
++                            });
++                            try (var workflow = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
++                                context, task, server, REVISION, "AUTOMATIC", false, "Controlled original source=" + material.snapshot().sha256());
++                                 var tools = new DeploymentAgentRemoteTools(context, original, actual.interaction(), server, task, archive, material, REVISION, revision::get, journal, Optional.empty(), "AUTOMATIC", false)) {
++                                var session = new DeploymentAgentSession(context, task, server, Map.of("goal", "Assess source-backed plan only"),
++                                    new DeploymentSourceBrowser(material.snapshot().directory(), material.snapshot().sha256()), tools, journal, "AUTOMATIC", false, REVISION, revision::get);
++                                if (scenario.equals("RECONNECT")) {
++                                    assertEquals("Deployment model cannot continue", assertThrows(IllegalStateException.class, session::run).getMessage());
++                                    assertEquals(2, approvals.get());
++                                    assertEquals(2, usedGrants.size());
++                                    assertEquals(1, connections.get());
++                                    assertEquals(1, oldCalls.get());
++                                    assertEquals(1, newCalls.get());
++                                } else {
++                                    var stopped = assertThrows(Exception.class, session::run);
++                                    if (scenario.equals("UNKNOWN") || scenario.equals("UNSETTLED"))
++                                        assertEquals(scenario.equals("UNKNOWN") ? TaskResult.UNKNOWN : TaskResult.FAILED,
++                                            assertInstanceOf(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.CapabilityOutcomeException.class, stopped).outcome());
++                                    else {
++                                        var problem = assertInstanceOf(ApiException.class, stopped).problem();
++                                        assertEquals(switch (scenario) {
++                                            case "CLOSE" -> "SSH_CLOSE_PENDING";
++                                            case "PROFILE", "REVOKED" -> "DEPLOYMENT_AGENT_RECONNECT_UNSETTLED";
++                                            case "CONFIG" -> "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED";
++                                            default -> throw new AssertionError(scenario);
++                                        }, problem.eventCode());
++                                    }
++                                    assertFalse(tools.reconnectAvailable());
++                                    assertEquals(0, connections.get());
++                                    assertEquals(0, newCalls.get());
++                                    assertEquals(1, approvals.get());
++                                    if (scenario.equals("CLOSE")) assertTrue(resourceHeld.get());
++                                }
++                            }
++                            if (scenario.equals("RECONNECT"))
++                                assertTrue(replacementClosed.get(), "The replacement is actually closed by the tools owner");
++                        }
++                        journal.state(task, "FAILED");
++                        actual.file().closeTaskResources(task);
++                        assertTrue(actual.tasks().resourcesReleased(task), "Local fixture resources must release before its conclusion");
++                        System.out.println("POINT117_SCENARIO scenario=" + scenario + " task=" + task.id() + " status=BODY_PASSED");
++                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                    } catch (Exception | AssertionError failure) {
++                        failed.set(failure);
++                        System.out.println("POINT117_SCENARIO scenario=" + scenario + " task=" + task.id() + " status=BODY_FAILED type=" + failure.getClass().getSimpleName());
++                        try {
++                            if (journalCreated) journal.state(task, "FAILED");
++                        } catch (Exception cleanup) {
++                            failure.addSuppressed(cleanup);
++                        }
++                        try {
++                            actual.file().closeTaskResources(task);
++                        } catch (Exception cleanup) {
++                            failure.addSuppressed(cleanup);
++                        }
++                        throw failure;
++                    } finally {
++                        finished.complete(null);
++                    }
++                });
++                finished.get(60, TimeUnit.SECONDS);
++                OperationResult<?> conclusion;
++                try {
++                    conclusion = handle.completion().toCompletableFuture().get(30, TimeUnit.SECONDS);
++                } catch (TimeoutException timeout) {
++                    if (failed.get() != null) timeout.addSuppressed(failed.get());
++                    throw timeout;
++                }
++                if (failed.get() != null) throw new AssertionError(scenario, failed.get());
++                assertEquals(TaskResult.SUCCEEDED, conclusion.outcome());
++            }
++        }
++    }
++
++    private static Object invoke(Method method, Object owner, Object[] args) throws Throwable {
++        try {
++            return method.invoke(owner, args);
++        } catch (InvocationTargetException failure) {
++            throw failure.getCause();
++        }
++    }
++
++    private static ObjectNode declaration() throws Exception {
++        return (ObjectNode) JSON.readTree("""
++            {"applicationId":"reconnect-demo","explanation":"Read source-backed process","components":[{"id":"web","sourceRoot":".",
++             "dependencies":[],"evidence":["o1"],"backend":"PROCESS","mode":"DAEMON","entrypoint":"run.sh","arguments":[],
++             "workingDirectory":"","health":{"type":"PROCESS","timeout":30,"stability":3},"ports":[],"resources":[],"configuration":[],
++             "databases":[],"secretReferences":[],"workspace":{"mode":"AUTO","minimumBuildBytes":67108864,"preferredBuildBytes":134217728,"explicitBytes":0}}],
++             "applicationHealth":{"component":"web","health":{"type":"PROCESS","timeout":30,"stability":3}}}
++            """);
++    }
++
++    private static OperationResult<AiResponse> response(String id, String tool, JsonNode params) {
++        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("", "controlled", "tool_calls",
++            new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), List.of(new AiToolCall(id, tool, params.toString())), Optional.empty())), Optional.empty());
++    }
++
++    private static OperationResult<CommandResult> absence(TaskResult outcome) {
++        return new OperationResult<>(outcome, Optional.empty(), Optional.of(new Problem(outcome == TaskResult.UNKNOWN ? ProblemCode.UNKNOWN : ProblemCode.IO_FAILURE,
++            outcome == TaskResult.UNKNOWN ? "SSH_COMMAND_TRANSPORT" : "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT", "Controlled transport observation",
++            Map.of("authorPayloadState", outcome == TaskResult.UNKNOWN ? "MAY_HAVE_BEEN_SENT" : "NOT_SENT", "inputSenderCreated", Boolean.toString(outcome == TaskResult.UNKNOWN),
++                "inputState", outcome == TaskResult.UNKNOWN ? "SENDING" : "NOT_STARTED", "commandOpenRequested", "true"), Optional.empty())));
++    }
++
++    private static RemoteSession peer(Execution execution, Closing closing) {
++        return (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (p, m, args) -> switch (m.getName()) {
++            case "facts" -> new RemoteFacts("Linux", "x86_64", FINGERPRINT);
++            case "execute" -> execution.run((CommandRequest) args[0], (ApprovalGrant) args[1]);
++            case "close" -> {
++                closing.run();
++                yield null;
++            }
++            default -> throw new AssertionError("No transfer or other remote operation: " + m.getName());
++        });
++    }
++
++    @FunctionalInterface
++    private interface Execution {
++        OperationResult<CommandResult> run(CommandRequest request, ApprovalGrant grant) throws Exception;
++    }
++
++    @FunctionalInterface
++    private interface Closing {
++        void run() throws ApiException;
++    }
++}
