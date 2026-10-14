@@ -1,0 +1,519 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index af26600b3523814140d4558fb62157e0ca9b6f05..e7bd2df780eb55c2c6738439b06c677e444b205f 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -394,14 +394,14 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         backupRequire(revision.matches("[0-9a-f]{64}"));
+         var node = JSON.readTree(plan.json());
+         try (var request = backupCommandRequest(plan)) {
+-            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(node.path("server").asText()), revision, request);
++            var intent = backupCommandIntent(plan, revision, request);
+             var facts = Map.<String, Object>ofEntries(Map.entry("scope", "BACKUP_ONLY"), Map.entry("task", task.toString()),
+                 Map.entry("planFile", plan.file().toString()), Map.entry("planSha256", plan.sha()),
+                 Map.entry("plan", ((com.fasterxml.jackson.databind.node.ObjectNode) node.deepCopy()).without(List.of("script", "stdin"))),
+                 Map.entry("commandRequest", Map.of("script", request.script(), "stdin", node.path("stdin").asText(),
+                     "timeoutSeconds", request.timeout().toSeconds(), "outputLimitBytes", request.outputLimitBytes())),
+-                Map.entry("exactIntent", Map.of("type", intent.type(), "serverIds", intent.serverIds(), "target", intent.target(), "revision", intent.revision(),
+-                    "exactAction", intent.exactAction(), "effectSummary", intent.effectSummary(), "semantics", "ABSENT")),
++                Map.entry("exactIntent", backupIntentFacts(intent)),
++                Map.entry("reviewedWorkflow", backupIntentFacts(backupWorkflowIntent(task, node.path("server").asText(), node.path("run").asText(), plan.sha()))),
+                 Map.entry("replayAllowed", false), Map.entry("backupComplete", false));
+             String encoded = JSON.writeValueAsString(facts);
+             backupRequire(facts.size() <= 64 && encoded.length() <= 48000);
+@@ -409,6 +409,136 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         }
+     }
+ 
++    private static Map<String, Object> backupIntentFacts(ActionIntent intent) {
++        var semantics = intent.semantics().orElseThrow();
++        var targets = semantics.targets().stream().sorted(java.util.Comparator
++                .comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
++                .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
++                .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id))
++            .map(target -> Map.of("serverId", target.serverId(), "kind", target.kind(), "id", target.id())).toList();
++        return Map.of("type", intent.type(), "serverIds", intent.serverIds(), "target", intent.target(), "revision", intent.revision(),
++            "exactAction", intent.exactAction(), "effectSummary", intent.effectSummary(),
++            "semantics", Map.of("operation", semantics.operation(), "targets", targets));
++    }
++
++    private static ActionIntent backupWorkflowIntent(java.util.UUID task, String server, String run, String inputSha) throws Exception {
++        return new ActionIntent("deployment.backup.workflow", List.of(server), run, inputSha,
++            JSON.writeValueAsString(Map.of("scope", "BACKUP_ONLY", "task", task.toString(), "run", run, "inputSha256", inputSha,
++                "reviewMode", "AUTOMATIC", "rememberAuthorization", false, "recovery", false)), "One frozen backup-only input")
++            .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("backup.workflow.v1", Set.of(
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-run", run),
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-input", inputSha))));
++    }
++
++    private static gold.debug.windowstolinux.appapi.task.action.WorkflowGrant backupOpenReviewedWorkflow(
++        gold.debug.windowstolinux.appapi.task.action.InteractionService interaction, TaskContext task, String server, String run, String inputSha) throws Exception {
++        var result = interaction.openReviewedWorkflow(backupWorkflowIntent(task.id(), server, run, inputSha),
++            gold.debug.windowstolinux.appapi.task.action.CommandReviewMode.AUTOMATIC, false, false, task);
++        if (result.outcome() != TaskResult.SUCCEEDED)
++            throw new ApiException(result.problem().orElseGet(() -> new Problem(ProblemCode.CANCELLED,
++                "BACKUP_REVIEWED_WORKFLOW_NOT_CONFIRMED", "Backup workflow admission did not complete", Map.of(), Optional.empty())));
++        return result.value().orElseThrow();
++    }
++
++    private static ActionIntent backupCommandIntent(BackupCommandPlan plan, String revision,
++                                                    gold.debug.windowstolinux.appapi.linux.command.CommandRequest request) throws Exception {
++        var node = JSON.readTree(plan.json());
++        String server = node.path("server").asText();
++        String operation = switch (node.path("kind").asText()) {
++            case "READONLY_METADATA" -> "backup.metadata.read.v1";
++            case "DATABASE_SNAPSHOT" -> "backup.database.snapshot.v1";
++            case "OWNED_BACKUP_CLEANUP" -> "backup.owned.cleanup.v1";
++            default -> throw new IllegalArgumentException("BACKUP_COMMAND_KIND");
++        };
++        return gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(server), revision, request)
++            .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(operation, Set.of(
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-run", node.path("run").asText()),
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-command-plan", plan.file().toString()))));
++    }
++
++    private static ActionIntent backupProtectedTransferIntent(String server, String revision, TransferRequest request, String sha, String run, Path cipher) {
++        return gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(new ServerId(server), revision, request, sha, false, TransferConflictChoice.SKIP)
++            .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("backup.download.protected.v1", Set.of(
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "backup-run", run),
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "remote-file", request.remoteAbsolutePath()),
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "local-staging-file", request.localPath().toString()),
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "local-protected-file", cipher.toString()))));
++    }
++
++    private void backupScopedGrantConsumesExactRemoteFacts(ActionIntent intent, ActionIntent reconstructed,
++                                                           Optional<gold.debug.windowstolinux.appapi.linux.command.CommandRequest> command,
++                                                           String run, String inputSha) throws Exception {
++        try (var preparation = super.open()) {
++            var catalog = new gold.debug.windowstolinux.app.service.mod.PlatformModCatalog(preparation.persistence().database());
++            assertTrue(catalog.refresh(workspace()).rejections().isEmpty());
++            start(preparation, false);
++            var intents = preparation.modIntents();
++            intents.apply(intents.review(OWNER, new gold.debug.windowstolinux.app.service.mod.PlatformModIntents.Choice(true, Optional.of(VERSION)), Optional.empty()), false);
++        }
++        try (var runtime = super.open()) {
++            start(runtime, true);
++            try (var operation = runtime.security().enterOperation(); var credentials = runtime.security().openCredentials()) {
++                char[] value = "PUBLIC_LOCAL_SCOPE_SENTINEL".toCharArray();
++                try {
++                    credentials.save("local-scope-only", value);
++                } finally {
++                    Arrays.fill(value, '\0');
++                }
++            }
++            runtime.persistence().servers().saveServerProfile(new gold.debug.windowstolinux.app.db.server.StoredServerProfile(
++                SERVER, "127.0.0.1", 22, "fixture", "local-scope-only", "No remote connection"));
++            try (var capabilities = runtime.capabilities().remoteCapabilities(OWNER, VERSION)) {
++                var verified = new java.util.concurrent.CompletableFuture<Void>();
++                var handle = runtime.tasks().bind(OWNER, VERSION, false).submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                    "deployment.backup.scope.local", "BACKUP_ONLY", List.of(SERVER), true), task -> {
++                    try {
++                        var interaction = capabilities.interaction();
++                        assertEquals("REVIEWED_SCOPE_REQUIRED", assertThrows(ApiException.class,
++                            () -> interaction.approveReviewedAction(intent, command, false, "Controlled local boundary", task)).problem().eventCode());
++                        gold.debug.windowstolinux.appapi.task.action.ApprovalGrant revoked;
++                        try (var workflow = backupOpenReviewedWorkflow(interaction, task, SERVER, run, inputSha)) {
++                            assertEquals("REVIEWED_ACTION_SEMANTICS", assertThrows(ApiException.class,
++                                () -> interaction.approveReviewedAction(reconstructed, command, false, "Unclassified local boundary", task)).problem().eventCode());
++                            var wrongServer = intent.withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(
++                                intent.semantics().orElseThrow().operation(), Set.of(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
++                                "not-admitted", "backup-run", run))));
++                            assertEquals("AUTHORIZATION_TARGET", assertThrows(ApiException.class,
++                                () -> interaction.approveReviewedAction(wrongServer, command, false, "Foreign target", task)).problem().eventCode());
++                            var grant = interaction.approveReviewedAction(intent, command, false, "Controlled local review; no model or remote execution", task);
++                            assertEquals(TaskResult.SUCCEEDED, grant.outcome());
++                            var platform = (PlatformInteractionService) interaction;
++                            assertEquals(intent, platform.reviewed(grant.value().orElseThrow(), task));
++                            var drift = new ActionIntent(reconstructed.type(), reconstructed.serverIds(), reconstructed.target(), reconstructed.revision(),
++                                reconstructed.exactAction() + " ", reconstructed.effectSummary());
++                            assertThrows(ApiException.class, () -> platform.consumeRemote(grant.value().orElseThrow(), drift, task));
++                            platform.consumeRemote(grant.value().orElseThrow(), reconstructed, task);
++                            assertThrows(ApiException.class, () -> platform.consumeRemote(grant.value().orElseThrow(), reconstructed, task));
++                            var next = interaction.approveReviewedAction(intent, command, false, "Second exact local grant", task);
++                            assertEquals(TaskResult.SUCCEEDED, next.outcome());
++                            revoked = next.value().orElseThrow();
++                            assertNotEquals(grant.value().orElseThrow().id(), revoked.id());
++                        }
++                        assertThrows(ApiException.class, () -> ((PlatformInteractionService) interaction).consumeRemote(revoked, reconstructed, task));
++                        verified.complete(null);
++                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                    } catch (Exception | AssertionError failure) {
++                        verified.completeExceptionally(failure);
++                        return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
++                    }
++                });
++                try {
++                    verified.get(10, TimeUnit.SECONDS);
++                    assertEquals(TaskResult.SUCCEEDED, handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
++                } finally {
++                    if (!handle.completion().toCompletableFuture().isDone()) {
++                        handle.requestCancel();
++                        handle.completion().toCompletableFuture().get(10, TimeUnit.SECONDS);
++                    }
++                }
++            }
++        }
++    }
++
+     @FunctionalInterface
+     private interface BackupCommandExecution {
+         OperationResult<CommandResult> run(gold.debug.windowstolinux.appapi.task.action.ApprovalGrant grant) throws Exception;
+@@ -472,12 +602,13 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             var handle = context.tasks().<CommandResult>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+                 "deployment.backup.command", "BACKUP_ONLY", List.of(SERVER), true), task -> {
+                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
+-                try (var session = context.linux().connect(new ServerId(SERVER), task); var request = backupCommandRequest(plan)) {
++                try (var workflow = backupOpenReviewedWorkflow(context.interaction(), task, SERVER, run, plan.sha());
++                     var session = context.linux().connect(new ServerId(SERVER), task); var request = backupCommandRequest(plan)) {
+                     backupRequire(session.facts().fingerprint().equals(fingerprint));
+                     String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task);
+                     String factsJson = backupCommandFacts(plan, task.id(), revision);
+                     String binding = inputDigest(factsJson);
+-                    var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(SERVER), revision, request);
++                    var intent = backupCommandIntent(plan, revision, request);
+                     var facts = JSON.convertValue(JSON.readTree(factsJson), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+                     });
+                     backupWriteRecord(evidence, "command-approval-facts.json", Map.of("bindingSha256", binding, "facts", JSON.readTree(factsJson)));
+@@ -560,6 +691,14 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         assertTrue(factsTree.path("exactIntent").path("exactAction").asText().contains(backupBytesSha(valid.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+         assertEquals(task.toString(), factsTree.path("task").asText());
+         assertEquals("BACKUP_ONLY", factsTree.path("scope").asText());
++        assertEquals("backup.metadata.read.v1", factsTree.path("exactIntent").path("semantics").path("operation").asText());
++        assertEquals("backup.workflow.v1", factsTree.path("reviewedWorkflow").path("semantics").path("operation").asText());
++        assertTrue(factsTree.path("exactIntent").path("semantics").path("targets").toString().contains(plan.file().toString().replace("\\", "\\\\")));
++        try (var scopedRequest = backupCommandRequest(plan)) {
++            backupScopedGrantConsumesExactRemoteFacts(backupCommandIntent(plan, revision, scopedRequest),
++                gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(SERVER), revision, scopedRequest),
++                Optional.of(scopedRequest), run, plan.sha());
++        }
+         assertFalse(factsTree.path("replayAllowed").asBoolean());
+         assertFalse(factsTree.path("backupComplete").asBoolean());
+         assertThrows(Exception.class, () -> backupCommandPlan(workspace, file, "0".repeat(64), run, SERVER, fingerprint, layout));
+@@ -1762,7 +1901,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         int index = batch.items().indexOf(item);
+         var member = root.path("members").get(index);
+         backupRequire(member.path("memberSha256").asText().equals(item.memberSha())
+-            && member.path("transfer").equals(JSON.readTree(item.factsJson())));
++            && member.path("transfer").equals(JSON.readTree(item.factsJson()))
++            && member.path("transfer").path("intent").equals(JSON.valueToTree(backupIntentFacts(item.intent()))));
+     }
+ 
+     private static void backupWriteRecord(Path evidence, String name, Map<String, Object> record) throws Exception {
+@@ -1848,151 +1988,153 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         var seen = new java.util.HashSet<String>();
+         backupRequire(inventory.path("wireFingerprint").asText().equals(session.facts().fingerprint()));
+         String manifestSha = inputDigest(inventory.toString());
+-        String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task);
+-        backupWriteRecord(destination, "claimed-136.json", Map.of("task", task.id().toString(), "proofSha256", run.proofSha(),
+-            "run", System.getProperty("managed.backup.run"), "manifestSha256", manifestSha, "normalCurrentUserSid", run.sid()));
+-        long total = 0;
+-        for (var selected : inventory.path("selected")) {
+-            String remote = selected.path("path").asText();
+-            var path = gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), remote);
+-            var before = query.getFile(path, task);
+-            backupRemote(before, roots);
+-            backupRequire(before.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE && seen.add(remote)
+-                && selected.isObject() && JSON.valueToTree(backupMetadata(before))
+-                .equals(((com.fasterxml.jackson.databind.node.ObjectNode) selected.deepCopy()).without(List.of("category", "necessity"))));
+-            backupBudget(prepared.size(), total, before.bytes());
+-            var necessity = backupNecessity(selected, inventory);
+-            String lowerRemote = remote.toLowerCase(java.util.Locale.ROOT);
+-            backupRequire(!lowerRemote.endsWith(".db") && !lowerRemote.endsWith(".sqlite") && !lowerRemote.endsWith(".sqlite3")
+-                && !lowerRemote.endsWith("-wal") && !lowerRemote.endsWith("-shm") && !lowerRemote.endsWith("-journal"));
+-            String id = selected.path("id").asText();
+-            backupRequire(id.matches("[0-9a-f]{64}"));
+-            Path plain = run.staging().resolve(id + ".plain");
+-            Path cipher = run.directory().resolve(id + ".dpapi");
+-            backupRequire(!Files.exists(plain, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+-                && !Files.exists(cipher, java.nio.file.LinkOption.NOFOLLOW_LINKS));
+-            byte[] bytes = query.readFile(path, (int) Math.max(1, before.bytes()), task);
+-            String sha;
+-            try {
+-                backupRequire(bytes.length == before.bytes());
+-                sha = backupBytesSha(bytes);
+-            } finally {
+-                Arrays.fill(bytes, (byte) 0);
++        String backupRun = System.getProperty("managed.backup.run");
++        try (var workflow = backupOpenReviewedWorkflow(context.interaction(), task, SERVER, backupRun, manifestSha)) {
++            String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task);
++            backupWriteRecord(destination, "claimed-136.json", Map.of("task", task.id().toString(), "proofSha256", run.proofSha(),
++                "run", System.getProperty("managed.backup.run"), "manifestSha256", manifestSha, "normalCurrentUserSid", run.sid()));
++            long total = 0;
++            for (var selected : inventory.path("selected")) {
++                String remote = selected.path("path").asText();
++                var path = gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), remote);
++                var before = query.getFile(path, task);
++                backupRemote(before, roots);
++                backupRequire(before.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE && seen.add(remote)
++                    && selected.isObject() && JSON.valueToTree(backupMetadata(before))
++                    .equals(((com.fasterxml.jackson.databind.node.ObjectNode) selected.deepCopy()).without(List.of("category", "necessity"))));
++                backupBudget(prepared.size(), total, before.bytes());
++                var necessity = backupNecessity(selected, inventory);
++                String lowerRemote = remote.toLowerCase(java.util.Locale.ROOT);
++                backupRequire(!lowerRemote.endsWith(".db") && !lowerRemote.endsWith(".sqlite") && !lowerRemote.endsWith(".sqlite3")
++                    && !lowerRemote.endsWith("-wal") && !lowerRemote.endsWith("-shm") && !lowerRemote.endsWith("-journal"));
++                String id = selected.path("id").asText();
++                backupRequire(id.matches("[0-9a-f]{64}"));
++                Path plain = run.staging().resolve(id + ".plain");
++                Path cipher = run.directory().resolve(id + ".dpapi");
++                backupRequire(!Files.exists(plain, java.nio.file.LinkOption.NOFOLLOW_LINKS)
++                    && !Files.exists(cipher, java.nio.file.LinkOption.NOFOLLOW_LINKS));
++                byte[] bytes = query.readFile(path, (int) Math.max(1, before.bytes()), task);
++                String sha;
++                try {
++                    backupRequire(bytes.length == before.bytes());
++                    sha = backupBytesSha(bytes);
++                } finally {
++                    Arrays.fill(bytes, (byte) 0);
++                }
++                backupRequire(query.getFile(path, task).equals(before));
++                var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(plain, remote, before.bytes());
++                var intent = backupProtectedTransferIntent(SERVER, revision, request, sha, backupRun, cipher);
++                var facts = Map.ofEntries(Map.entry("source", backupMetadata(before)), Map.entry("sourceIdentity", before.identity()),
++                    Map.entry("sourceRequested", Map.of("server", SERVER, "path", before.requested().path())),
++                    Map.entry("sourceActual", Map.of("server", SERVER, "path", before.actual().path())),
++                    Map.entry("sourceLinkTarget", "ABSENT"), Map.entry("sourceLinks", List.of()), Map.entry("sourceSha256", sha), Map.entry("necessity", necessity),
++                    Map.entry("intent", backupIntentFacts(intent)),
++                    Map.entry("plaintextDestination", plain.toString()), Map.entry("cipherDestination", cipher.toString()), Map.entry("maxBytes", request.maxBytes()),
++                    Map.entry("cipherMaxBytes", before.bytes() + 65536),
++                    Map.entry("direction", "DOWNLOAD"), Map.entry("conflict", "SKIP"), Map.entry("memberIndex", prepared.size()),
++                    Map.entry("bytesBeforeMember", total), Map.entry("bytesAfterMember", total + before.bytes()),
++                    Map.entry("protection", "CURRENT_USER_DPAPI_CREATE_NEW_DISK_ROUNDTRIP_SHA_THEN_EXACT_OWNED_PLAIN_DELETE"));
++                String encoded = JSON.writeValueAsString(facts);
++                prepared.add(new BackupPrepared(before, plain, cipher, request, intent, sha, encoded, inputDigest(encoded)));
++                total += before.bytes();
+             }
+-            backupRequire(query.getFile(path, task).equals(before));
+-            var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(plain, remote, before.bytes());
+-            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(new ServerId(SERVER), revision, request, sha, false,
+-                gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP);
+-            var facts = Map.ofEntries(Map.entry("source", backupMetadata(before)), Map.entry("sourceIdentity", before.identity()),
+-                Map.entry("sourceRequested", Map.of("server", SERVER, "path", before.requested().path())),
+-                Map.entry("sourceActual", Map.of("server", SERVER, "path", before.actual().path())),
+-                Map.entry("sourceLinkTarget", "ABSENT"), Map.entry("sourceLinks", List.of()), Map.entry("sourceSha256", sha), Map.entry("necessity", necessity),
+-                Map.entry("intent", Map.of("type", intent.type(), "serverIds", intent.serverIds(), "target", intent.target(), "revision", intent.revision(),
+-                    "exactAction", intent.exactAction(), "effectSummary", intent.effectSummary(), "semantics", "ABSENT")),
+-                Map.entry("plaintextDestination", plain.toString()), Map.entry("cipherDestination", cipher.toString()), Map.entry("maxBytes", request.maxBytes()),
+-                Map.entry("cipherMaxBytes", before.bytes() + 65536),
+-                Map.entry("direction", "DOWNLOAD"), Map.entry("conflict", "SKIP"), Map.entry("memberIndex", prepared.size()),
+-                Map.entry("bytesBeforeMember", total), Map.entry("bytesAfterMember", total + before.bytes()),
+-                Map.entry("protection", "CURRENT_USER_DPAPI_CREATE_NEW_DISK_ROUNDTRIP_SHA_THEN_EXACT_OWNED_PLAIN_DELETE"));
+-            String encoded = JSON.writeValueAsString(facts);
+-            prepared.add(new BackupPrepared(before, plain, cipher, request, intent, sha, encoded, inputDigest(encoded)));
+-            total += before.bytes();
+-        }
+-        backupRequire(!prepared.isEmpty());
+-        var common = Map.<String, Object>ofEntries(Map.entry("mode", "BACKUP_ONLY_PROTECTED_DOWNLOAD_BATCH"), Map.entry("task", task.id().toString()),
+-            Map.entry("server", SERVER), Map.entry("wireFingerprint", session.facts().fingerprint()), Map.entry("revision", revision),
+-            Map.entry("manifestSha256", manifestSha), Map.entry("inventoryTask", inventory.path("task").asText()), Map.entry("layoutSha256", inventory.path("layoutSha256").asText()),
+-            Map.entry("preparedRunProofSha256", run.proofSha()), Map.entry("protectedRoot", run.rootAcl()), Map.entry("protectedStaging", run.stagingAcl()),
+-            Map.entry("preparedMarkerIdentity", run.markerAcl()),
+-            Map.entry("selectedCount", prepared.size()), Map.entry("selectedBytes", total), Map.entry("countLimit", BACKUP_COUNT_LIMIT),
+-            Map.entry("fileByteLimit", BACKUP_FILE_LIMIT), Map.entry("totalByteLimit", BACKUP_TOTAL_LIMIT), Map.entry("payloadIncluded", false),
+-            Map.entry("cipherTotalByteLimit", BACKUP_TOTAL_LIMIT + (long) BACKUP_COUNT_LIMIT * 65536),
+-            Map.entry("localTransientByteLimit", BACKUP_TOTAL_LIMIT + (long) BACKUP_COUNT_LIMIT * 65536 + BACKUP_FILE_LIMIT),
+-            Map.entry("coverage", "UNKNOWN_NOT_A_RELEASE_OWNERSHIP_OR_SQLITE_CONSISTENCY_CLAIM"));
+-        var batches = new java.util.ArrayList<BackupFrozenBatch>();
+-        var pending = new java.util.ArrayList<BackupPrepared>();
+-        for (var item : prepared) {
+-            pending.add(item);
+-            try {
+-                backupFreezeBatch(common, pending);
+-            } catch (IllegalArgumentException tooLarge) {
+-                pending.removeLast();
+-                backupRequire(!pending.isEmpty());
+-                batches.add(backupFreezeBatch(common, pending));
+-                pending.clear();
++            backupRequire(!prepared.isEmpty());
++            var common = Map.<String, Object>ofEntries(Map.entry("mode", "BACKUP_ONLY_PROTECTED_DOWNLOAD_BATCH"), Map.entry("task", task.id().toString()),
++                Map.entry("reviewedWorkflow", backupIntentFacts(backupWorkflowIntent(task.id(), SERVER, backupRun, manifestSha))),
++                Map.entry("server", SERVER), Map.entry("wireFingerprint", session.facts().fingerprint()), Map.entry("revision", revision),
++                Map.entry("manifestSha256", manifestSha), Map.entry("inventoryTask", inventory.path("task").asText()), Map.entry("layoutSha256", inventory.path("layoutSha256").asText()),
++                Map.entry("preparedRunProofSha256", run.proofSha()), Map.entry("protectedRoot", run.rootAcl()), Map.entry("protectedStaging", run.stagingAcl()),
++                Map.entry("preparedMarkerIdentity", run.markerAcl()),
++                Map.entry("selectedCount", prepared.size()), Map.entry("selectedBytes", total), Map.entry("countLimit", BACKUP_COUNT_LIMIT),
++                Map.entry("fileByteLimit", BACKUP_FILE_LIMIT), Map.entry("totalByteLimit", BACKUP_TOTAL_LIMIT), Map.entry("payloadIncluded", false),
++                Map.entry("cipherTotalByteLimit", BACKUP_TOTAL_LIMIT + (long) BACKUP_COUNT_LIMIT * 65536),
++                Map.entry("localTransientByteLimit", BACKUP_TOTAL_LIMIT + (long) BACKUP_COUNT_LIMIT * 65536 + BACKUP_FILE_LIMIT),
++                Map.entry("coverage", "UNKNOWN_NOT_A_RELEASE_OWNERSHIP_OR_SQLITE_CONSISTENCY_CLAIM"));
++            var batches = new java.util.ArrayList<BackupFrozenBatch>();
++            var pending = new java.util.ArrayList<BackupPrepared>();
++            for (var item : prepared) {
+                 pending.add(item);
+-                backupFreezeBatch(common, pending);
++                try {
++                    backupFreezeBatch(common, pending);
++                } catch (IllegalArgumentException tooLarge) {
++                    pending.removeLast();
++                    backupRequire(!pending.isEmpty());
++                    batches.add(backupFreezeBatch(common, pending));
++                    pending.clear();
++                    pending.add(item);
++                    backupFreezeBatch(common, pending);
++                }
+             }
+-        }
+-        if (!pending.isEmpty()) batches.add(backupFreezeBatch(common, pending));
+-        int sequence = 0;
+-        var finished = new java.util.HashSet<String>();
+-        for (int batchNumber = 0; batchNumber < batches.size(); batchNumber++) {
+-            var batch = batches.get(batchNumber);
+-            String batchName = "batch-" + batchNumber;
+-            backupProtectedRunUnchanged(run, acl);
+-            backupWriteRecord(evidence, batchName + "-facts.json", Map.of("batchSha256", batch.sha(), "facts", JSON.readTree(batch.factsJson())));
+-            var facts = JSON.convertValue(JSON.readTree(batch.factsJson()), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+-            });
+-            var decision = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(
+-                new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context).ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
+-                    "Review this complete frozen backup-only batch. APPROVE means ALL enumerated exact transfer intents AND their explicit local DPAPI protection sequences. "
+-                        + "DENY the entire batch if any member, necessity, destination, source identity, plaintext digest or protection plan is unsafe or unsupported. "
+-                        + "No partial verdict, no substituted members, no remote author writes, no reusable grant, no payload. A verdict itself grants no execution permission. "
+-                        + gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION, facts, revision, task));
+-            backupWriteRecord(evidence, batchName + "-review.json", Map.of("batchSha256", batch.sha(), "decision", decision.decision(),
+-                "requiresUserConfirmation", decision.requiresUserConfirmation(), "reason", decision.reason()));
+-            if (!decision.decision().equals("APPROVE"))
+-                throw new IllegalStateException("BACKUP_BATCH_DENIED_NOT_DOWNLOADED");
+-            for (var item : batch.items()) {
+-                String name = "item-" + sequence++;
+-                Runnable recheck = () -> {
+-                    try {
+-                        String currentRevision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task);
+-                        backupProtectedRunUnchanged(run, acl);
+-                        for (var remaining : batch.items()) {
+-                            backupBatchMembership(batch, remaining, currentRevision);
+-                            if (!finished.contains(remaining.memberSha()))
+-                                backupRequire(query.getFile(remaining.source().requested(), task).equals(remaining.source())
+-                                    && !Files.exists(remaining.plain(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+-                                    && !Files.exists(remaining.cipher(), java.nio.file.LinkOption.NOFOLLOW_LINKS));
++            if (!pending.isEmpty()) batches.add(backupFreezeBatch(common, pending));
++            int sequence = 0;
++            var finished = new java.util.HashSet<String>();
++            for (int batchNumber = 0; batchNumber < batches.size(); batchNumber++) {
++                var batch = batches.get(batchNumber);
++                String batchName = "batch-" + batchNumber;
++                backupProtectedRunUnchanged(run, acl);
++                backupWriteRecord(evidence, batchName + "-facts.json", Map.of("batchSha256", batch.sha(), "facts", JSON.readTree(batch.factsJson())));
++                var facts = JSON.convertValue(JSON.readTree(batch.factsJson()), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
++                });
++                var decision = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(
++                    new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context).ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
++                        "Review this complete frozen backup-only batch. APPROVE means ALL enumerated exact transfer intents AND their explicit local DPAPI protection sequences. "
++                            + "DENY the entire batch if any member, necessity, destination, source identity, plaintext digest or protection plan is unsafe or unsupported. "
++                            + "No partial verdict, no substituted members, no remote author writes, no reusable grant, no payload. A verdict itself grants no execution permission. "
++                            + gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION, facts, revision, task));
++                backupWriteRecord(evidence, batchName + "-review.json", Map.of("batchSha256", batch.sha(), "decision", decision.decision(),
++                    "requiresUserConfirmation", decision.requiresUserConfirmation(), "reason", decision.reason()));
++                if (!decision.decision().equals("APPROVE"))
++                    throw new IllegalStateException("BACKUP_BATCH_DENIED_NOT_DOWNLOADED");
++                for (var item : batch.items()) {
++                    String name = "item-" + sequence++;
++                    Runnable recheck = () -> {
++                        try {
++                            String currentRevision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task);
++                            backupProtectedRunUnchanged(run, acl);
++                            for (var remaining : batch.items()) {
++                                backupBatchMembership(batch, remaining, currentRevision);
++                                if (!finished.contains(remaining.memberSha()))
++                                    backupRequire(query.getFile(remaining.source().requested(), task).equals(remaining.source())
++                                        && !Files.exists(remaining.plain(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
++                                        && !Files.exists(remaining.cipher(), java.nio.file.LinkOption.NOFOLLOW_LINKS));
++                            }
++                        } catch (Exception failure) {
++                            throw new IllegalStateException("BACKUP_FROZEN_BATCH_DRIFT_NEW_REVIEW_REQUIRED", failure);
+                         }
+-                    } catch (Exception failure) {
+-                        throw new IllegalStateException("BACKUP_FROZEN_BATCH_DRIFT_NEW_REVIEW_REQUIRED", failure);
+-                    }
+-                };
+-                recheck.run();
+-                var grant = context.interaction().approveReviewedAction(item.intent(), Optional.empty(), decision.requiresUserConfirmation(), decision.reason(), task);
+-                backupWriteRecord(evidence, name + "-grant.json", Map.of("batchSha256", batch.sha(), "memberSha256", item.memberSha(), "outcome", grant.outcome().name(),
+-                    "grantId", grant.value().map(value -> value.id().toString()).orElse("NONE")));
+-                var result = backupDispatch(batch.sha(), inputDigest(batch.factsJson()), decision, grant, consumed, actual -> {
++                    };
+                     recheck.run();
+-                    return session.download(item.request(), actual, gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP);
+-                });
+-                var receipt = new LinkedHashMap<String, Object>();
+-                receipt.put("batchSha256", batch.sha());
+-                receipt.put("memberSha256", item.memberSha());
+-                receipt.put("grantId", grant.value().orElseThrow().id().toString());
+-                receipt.put("outcome", result.outcome().name());
+-                result.value().ifPresent(value -> receipt.put("sdkReceipt", Map.of("bytes", value.transferredBytes(), "sha256", value.sha256(),
+-                    "localPath", value.localPath().toString(), "remotePath", value.remoteAbsolutePath())));
+-                backupWriteRecord(evidence, name + "-sdk-receipt.json", receipt);
+-                var checkpointSequence = new AtomicInteger();
+-                var protectedResult = backupProtectSuccessfulTransfer(result, item, currentUserProtection(), acl,
+-                    value -> backupWriteRecord(evidence, name + "-protection-" + checkpointSequence.getAndIncrement() + ".json", value));
+-                backupProtectedRunUnchanged(run, acl);
+-                backupRequire(query.getFile(item.source().requested(), task).equals(item.source()));
+-                var entry = new LinkedHashMap<>(protectedResult);
+-                entry.put("source", backupMetadata(item.source()));
+-                entry.put("batchSha256", batch.sha());
+-                entry.put("memberSha256", item.memberSha());
+-                entry.put("grantId", grant.value().orElseThrow().id().toString());
+-                completed.add(Map.copyOf(entry));
+-                backupRequire(finished.add(item.memberSha()));
++                    var grant = context.interaction().approveReviewedAction(item.intent(), Optional.empty(), decision.requiresUserConfirmation(), decision.reason(), task);
++                    backupWriteRecord(evidence, name + "-grant.json", Map.of("batchSha256", batch.sha(), "memberSha256", item.memberSha(), "outcome", grant.outcome().name(),
++                        "grantId", grant.value().map(value -> value.id().toString()).orElse("NONE")));
++                    var result = backupDispatch(batch.sha(), inputDigest(batch.factsJson()), decision, grant, consumed, actual -> {
++                        recheck.run();
++                        return session.download(item.request(), actual, gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP);
++                    });
++                    var receipt = new LinkedHashMap<String, Object>();
++                    receipt.put("batchSha256", batch.sha());
++                    receipt.put("memberSha256", item.memberSha());
++                    receipt.put("grantId", grant.value().orElseThrow().id().toString());
++                    receipt.put("outcome", result.outcome().name());
++                    result.value().ifPresent(value -> receipt.put("sdkReceipt", Map.of("bytes", value.transferredBytes(), "sha256", value.sha256(),
++                        "localPath", value.localPath().toString(), "remotePath", value.remoteAbsolutePath())));
++                    backupWriteRecord(evidence, name + "-sdk-receipt.json", receipt);
++                    var checkpointSequence = new AtomicInteger();
++                    var protectedResult = backupProtectSuccessfulTransfer(result, item, currentUserProtection(), acl,
++                        value -> backupWriteRecord(evidence, name + "-protection-" + checkpointSequence.getAndIncrement() + ".json", value));
++                    backupProtectedRunUnchanged(run, acl);
++                    backupRequire(query.getFile(item.source().requested(), task).equals(item.source()));
++                    var entry = new LinkedHashMap<>(protectedResult);
++                    entry.put("source", backupMetadata(item.source()));
++                    entry.put("batchSha256", batch.sha());
++                    entry.put("memberSha256", item.memberSha());
++                    entry.put("grantId", grant.value().orElseThrow().id().toString());
++                    completed.add(Map.copyOf(entry));
++                    backupRequire(finished.add(item.memberSha()));
++                }
+             }
++            return Map.of("mode", "BACKUP_ONLY_PROTECTED_DOWNLOAD", "task", task.id().toString(), "manifestSha256", manifestSha,
++                "files", completed, "bytes", total, "backupComplete", false, "coverage", "BLOCKED_PENDING_NECESSARY_COVERAGE_AND_SQLITE_CONSISTENCY");
+         }
+-        return Map.of("mode", "BACKUP_ONLY_PROTECTED_DOWNLOAD", "task", task.id().toString(), "manifestSha256", manifestSha,
+-            "files", completed, "bytes", total, "backupComplete", false, "coverage", "BLOCKED_PENDING_NECESSARY_COVERAGE_AND_SQLITE_CONSISTENCY");
+     }
+ 
+     private static boolean isolatedProtectedBackupGuard() {
+@@ -2106,9 +2248,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             var source = new gold.debug.windowstolinux.appapi.file.model.FileInfo(remotePath, remotePath,
+                 gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE, payload.length, java.time.Instant.EPOCH, "controlled-136", Optional.empty(), List.of());
+             var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(plain, remote, payload.length);
+-            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(new ServerId(SERVER), "revision-136", request, sha, false,
+-                gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.SKIP);
+-            String facts = JSON.writeValueAsString(Map.of("intent", intent.exactAction(), "plaintextDestination", plain.toString(), "cipherDestination", cipher.toString()));
++            var intent = backupProtectedTransferIntent(SERVER, "revision-136", request, sha, "local-protected-143", cipher);
++            String facts = JSON.writeValueAsString(Map.of("intent", backupIntentFacts(intent), "plaintextDestination", plain.toString(), "cipherDestination", cipher.toString()));
+             var item = new BackupPrepared(source, plain, cipher, request, intent, sha, facts, inputDigest(facts));
+             var batch = backupFreezeBatch(Map.of("revision", "revision-136"), List.of(item));
+             backupBatchMembership(batch, item, "revision-136");
+@@ -2116,6 +2257,14 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             assertThrows(Exception.class, () -> backupBatchMembership(new BackupFrozenBatch(batch.factsJson(), "0".repeat(64), batch.items()), item, "revision-136"));
+             var changed = new BackupPrepared(source, plain, cipher, request, intent, sha, facts + " ", inputDigest(facts + " "));
+             assertThrows(Exception.class, () -> backupBatchMembership(batch, changed, "revision-136"));
++            var changedMeaning = new BackupPrepared(source, plain, cipher, request,
++                backupProtectedTransferIntent(SERVER, "revision-136", request, sha, "different-run", cipher), sha, facts, inputDigest(facts));
++            var staleMeaning = backupFreezeBatch(Map.of("revision", "revision-136"), List.of(changedMeaning));
++            assertThrows(Exception.class, () -> backupBatchMembership(staleMeaning, changedMeaning, "revision-136"));
++            if (scenario.equals("SUCCESS"))
++                backupScopedGrantConsumesExactRemoteFacts(intent,
++                    gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(new ServerId(SERVER), "revision-136", request, sha, false, TransferConflictChoice.SKIP),
++                    Optional.empty(), "local-protected-143", sha);
+             assertThrows(Exception.class, () -> backupFreezeBatch(Map.of("revision", "revision-136", "oversize", "q".repeat(48000)), List.of(item)));
+             var outcome = scenario.equals("UNKNOWN") ? TaskResult.UNKNOWN : TaskResult.SUCCEEDED;
+             var result = new OperationResult<gold.debug.windowstolinux.appapi.linux.transfer.TransferResult>(outcome,

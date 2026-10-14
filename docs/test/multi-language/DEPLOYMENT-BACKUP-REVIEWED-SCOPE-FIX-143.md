@@ -1,0 +1,11 @@
+# 143：备份动作遵守正式审核作用域
+
+142完整独立APP已APPROVE，但新增备份工具未建立正式审核作用域，宿主以`REVIEWED_SCOPE_REQUIRED`拒绝创建grant。修复仅涉及验收fixture的命令和受保护下载调用：真实新Task通过原`openReviewedWorkflow`建立AUTOMATIC作用域，remember=false、recovery=false；完整workflow及逐动作ActionSemantics进入APP事实和精确intent，每次仍需独立APP、新grant和原SDK消费。
+
+宿主作用域按原server、owner、task约束；输入冻结、run和路径语义由工具及APP绑定，不将其描述为宿主新增路径检查。原平台API、部署三模式、数据库版本、安全门禁及旧UNKNOWN均不变。
+
+两个必要方法分别定点通过，均1PASS、0SKIP：`backupCommandPlansBindFullRequestsAndPreserveUnknownReceipts` 5.033秒，`protectedBackupBatchesBindExactTransfersAndRetainUnconfirmedPlaintext` 4.978秒。使用真实本地平台Mod生命周期和审核API，覆盖缺scope、缺semantics、异server、grant精确消费、载荷漂移拒绝、一次性及scope关闭撤销；未以伪造SDK远端回执代替消费验证。首两次command验证因本地夹具缺凭据外键、Mod未启用而ERROR，原证保留，修正夹具后仅重跑失败方法及直接受影响下载方法。
+
+单文件格式检查及显式`-DskipTests package`通过；3299项清单仅fixture变化，最终字节等于两个方法实际验证及打包时的字节。JAR SHA为`2c69cd303213cbaddd0a0d672a69d2386a4b1c35499aa1a0440d721e391d4e64`，1048个class和113个源资源逐字节匹配。正常用户CIM核76组自有PID/创建时刻均退出，临时目录已清；没有provider、SSH、原调查库连接或真实下载。
+
+原始日志、XML/TXT、清单、进程及父核验位于`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/reviewed-backup-scope-143/`。父核实际日志/报告SHA及增量patch正反向原字节；[精确源码增量](patches/REVIEWED-BACKUP-SCOPE-143.patch) SHA为`755e754db1fd9eba39f887b786210bb2102e5c29f1e270549495d3a54a49e088`，隔离保留原混合工作树改动。本阶段仅本地工具验证通过，真实元数据、必要业务数据导回及重装准备尚未完成。
