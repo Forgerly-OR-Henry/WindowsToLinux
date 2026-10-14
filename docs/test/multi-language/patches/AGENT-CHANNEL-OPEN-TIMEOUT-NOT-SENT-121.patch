@@ -1,0 +1,218 @@
+diff --git a/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java b/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java
+index 87538027a48d04d02d89983dec7f50add8448bce..7166f454e2c77d960781f5598dd18c9a75d42c44 100644
+--- a/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java
++++ b/src/app/linux/src/main/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecution.java
+@@ -146,10 +146,20 @@ final class SshCommandExecution {
+                 channel.waitFor(EnumSet.of(ClientChannelEvent.CLOSED), remainingMillis(started));
+             }
+         } catch (java.util.concurrent.TimeoutException failure) {
++            if (cancellation.requested() || Thread.currentThread().isInterrupted())
++                return unknown("SSH_COMMAND_CANCELLED",
++                    "SSH command cancellation does not confirm its remote effects");
++            if (phase == DispatchState.CHANNEL_OPENING && dispatched && !openConfirmed
++                && sender == null && inputState == InputState.NOT_STARTED)
++                return result(TaskResult.FAILED, ProblemCode.IO_FAILURE, "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT",
++                    "SSH bootstrap opening deadline expired before the author script and input sender were created", null);
+             return unknown("SSH_COMMAND_TIMEOUT", "SSH command deadline expired before its effects could be confirmed");
+         } catch (Exception failure) {
+             if (failure instanceof InterruptedIOException || failure instanceof InterruptedException)
+                 Thread.currentThread().interrupt();
++            if (cancellation.requested() || Thread.currentThread().isInterrupted())
++                return unknown("SSH_COMMAND_CANCELLED",
++                    "SSH command cancellation does not confirm its remote effects");
+             return dispatched
+                 ? unknown("SSH_COMMAND_TRANSPORT",
+                 "SSH command effects could not be confirmed after transport failure")
+diff --git a/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java b/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java
+index 5b0892f6d3e1e94f48c751ad2a1c49ff1a22a3c8..571a41af61eb89a87608a42957485f93269aa815 100644
+--- a/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java
++++ b/src/app/linux/src/test/java/gold/debug/windowstolinux/app/linux/ssh/connect/SshCommandExecutionTest.java
+@@ -110,6 +110,188 @@ public class SshCommandExecutionTest {
+         }
+     }
+ 
++    @Test
++    void channelOpeningTimeoutProvesAuthorPayloadAbsenceAndPreservesCancellationAndStartedInputUncertainty() {
++        assertAll(List.of("OPEN_TIMEOUT", "DEADLINE_CANCEL", "DEADLINE_INTERRUPT", "OPEN_CANCEL",
++            "INTERRUPTED_IO", "INTERRUPTED_EXCEPTION", "TRANSPORT_CANCEL", "TRANSPORT_INTERRUPT",
++            "STARTED_TIMEOUT", "CLOSE_PENDING", "BEFORE_CANCEL").stream().map(scenario ->
++            (org.junit.jupiter.api.function.Executable) () -> {
++                var bytes = new AtomicInteger();
++                var inputRequested = new AtomicInteger();
++                var openRequests = new AtomicInteger();
++                var cancellationChecks = new AtomicInteger();
++                var cancelled = new AtomicBoolean(scenario.equals("BEFORE_CANCEL"));
++                var inputStarted = new CountDownLatch(1);
++                var pending = new CountDownLatch(1);
++                boolean startedSender = scenario.equals("STARTED_TIMEOUT");
++                boolean knownAbsence = Set.of("OPEN_TIMEOUT", "CLOSE_PENDING").contains(scenario);
++                boolean interrupted = Set.of("DEADLINE_INTERRUPT", "INTERRUPTED_IO",
++                    "INTERRUPTED_EXCEPTION", "TRANSPORT_INTERRUPT").contains(scenario);
++                class OpeningFailure {
++                    @SuppressWarnings("unchecked")
++                    <T extends Throwable> void raise(Throwable failure) throws T {
++                        throw (T) failure;
++                    }
++                }
++                var opening = new org.apache.sshd.client.future.DefaultOpenFuture(scenario, null) {
++                    @Override
++                    public boolean await(long timeout, org.apache.sshd.common.future.CancelOption... options) throws IOException {
++                        switch (scenario) {
++                            case "INTERRUPTED_IO" -> throw new InterruptedIOException("private-121 transport");
++                            case "INTERRUPTED_EXCEPTION" ->
++                                new OpeningFailure().raise(new InterruptedException("private-121 transport"));
++                            case "TRANSPORT_CANCEL" -> {
++                                cancelled.set(true);
++                                throw new IOException("private-121 transport");
++                            }
++                            case "TRANSPORT_INTERRUPT" -> {
++                                Thread.currentThread().interrupt();
++                                throw new IOException("private-121 transport");
++                            }
++                            case "OPEN_CANCEL" -> cancelled.set(true);
++                            case "STARTED_TIMEOUT" -> {
++                                return super.await(timeout, options);
++                            }
++                            default -> {
++                                try {
++                                    assertFalse(pending.await(350, TimeUnit.MILLISECONDS));
++                                } catch (InterruptedException failure) {
++                                    throw new AssertionError(failure);
++                                }
++                            }
++                        }
++                        return false;
++                    }
++                };
++                if (startedSender) opening.setOpened();
++                var innerCloseable = new org.apache.sshd.common.util.closeable.SimpleCloseable(scenario, null) {
++                    @Override
++                    protected void doClose(boolean immediately) {
++                        if (!scenario.equals("CLOSE_PENDING")) super.doClose(immediately);
++                    }
++
++                    void confirmClose() {
++                        future.setClosed();
++                    }
++                };
++                var channel = new org.apache.sshd.client.channel.ChannelExec(SshCommandFrame.COMMAND, null, Map.of()) {
++                    @Override
++                    public org.apache.sshd.client.future.OpenFuture open() {
++                        openRequests.incrementAndGet();
++                        return opening;
++                    }
++
++                    @Override
++                    public OutputStream getInvertedIn() {
++                        inputRequested.incrementAndGet();
++                        return new OutputStream() {
++                            @Override
++                            public void write(int value) {
++                                bytes.incrementAndGet();
++                                inputStarted.countDown();
++                            }
++                        };
++                    }
++
++                    @Override
++                    public Set<org.apache.sshd.client.channel.ClientChannelEvent> waitFor(Collection<org.apache.sshd.client.channel.ClientChannelEvent> events, long timeout) {
++                        try {
++                            assertTrue(inputStarted.await(3, TimeUnit.SECONDS));
++                            assertFalse(pending.await(timeout, TimeUnit.MILLISECONDS));
++                        } catch (InterruptedException failure) {
++                            throw new AssertionError(failure);
++                        }
++                        return Set.of();
++                    }
++
++                    @Override
++                    protected void preClose() {
++                    }
++
++                    @Override
++                    protected org.apache.sshd.common.Closeable getInnerCloseable() {
++                        return innerCloseable;
++                    }
++                };
++                var session = (org.apache.sshd.client.session.ClientSession) java.lang.reflect.Proxy.newProxyInstance(
++                    getClass().getClassLoader(), new Class<?>[]{org.apache.sshd.client.session.ClientSession.class},
++                    (proxy, method, args) -> switch (method.getName()) {
++                        case "createExecChannel" -> {
++                            assertEquals(SshCommandFrame.COMMAND, args[0]);
++                            assertFalse(args[0].toString().contains("private-121"));
++                            yield channel;
++                        }
++                        case "isOpen", "isAuthenticated" -> true;
++                        default -> throw new AssertionError(method.getName());
++                    });
++                try (var request = new CommandRequest("private-121 author script", "private-121 input".getBytes(StandardCharsets.UTF_8),
++                    startedSender ? Duration.ofSeconds(1) : Duration.ofMillis(250), 100)) {
++                    var execution = new SshCommandExecution(session, request);
++                    try {
++                        var result = execution.run(() -> {
++                            int checks = cancellationChecks.incrementAndGet();
++                            if (checks >= 3 && scenario.equals("DEADLINE_CANCEL")) cancelled.set(true);
++                            if (checks >= 3 && scenario.equals("DEADLINE_INTERRUPT"))
++                                Thread.currentThread().interrupt();
++                            return cancelled.get();
++                        });
++                        var problem = result.problem().orElseThrow();
++                        boolean beforeDispatch = scenario.equals("BEFORE_CANCEL");
++                        assertEquals(beforeDispatch ? TaskResult.CANCELLED : knownAbsence ? TaskResult.FAILED : TaskResult.UNKNOWN,
++                            result.outcome(), scenario);
++                        assertEquals(knownAbsence ? "SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT"
++                            : startedSender ? "SSH_COMMAND_TIMEOUT" : "SSH_COMMAND_CANCELLED", problem.eventCode(), scenario);
++                        assertEquals(knownAbsence ? ProblemCode.IO_FAILURE : beforeDispatch ? ProblemCode.CANCELLED : ProblemCode.UNKNOWN,
++                            problem.code(), scenario);
++                        var diagnostic = problem.context();
++                        assertEquals(beforeDispatch ? "BEFORE_DISPATCH" : startedSender ? "WAITING_FOR_EXIT" : "CHANNEL_OPENING",
++                            diagnostic.get("commandPhase"), scenario);
++                        assertEquals(Boolean.toString(!beforeDispatch), diagnostic.get("commandOpenRequested"));
++                        assertEquals(Boolean.toString(startedSender), diagnostic.get("channelOpenConfirmed"));
++                        assertEquals(Boolean.toString(startedSender), diagnostic.get("inputSenderCreated"));
++                        assertEquals(startedSender ? "MAY_HAVE_BEEN_SENT" : "NOT_SENT", diagnostic.get("authorPayloadState"));
++                        if (!startedSender) assertEquals("NOT_STARTED", diagnostic.get("inputState"));
++                        assertEquals("true", diagnostic.get("sessionOpen"));
++                        assertEquals("true", diagnostic.get("sessionAuthenticated"));
++                        assertEquals("false", diagnostic.get("outputObserved"));
++                        assertEquals("false", diagnostic.get("exitObserved"));
++                        assertEquals(beforeDispatch ? 0 : 1, openRequests.get());
++                        assertEquals(startedSender ? 1 : 0, inputRequested.get());
++                        assertEquals(startedSender, bytes.get() > 0);
++                        assertEquals(interrupted, Thread.currentThread().isInterrupted(), scenario);
++                        assertFalse(result.toString().contains("private-121"));
++                        if (knownAbsence || startedSender) {
++                            assertEquals(startedSender ? "1000" : "250", diagnostic.get("timeoutMillis"));
++                            assertTrue(Long.parseLong(diagnostic.get("elapsedMillis")) >= (startedSender ? 1000 : 250));
++                        }
++                        if (knownAbsence) {
++                            opening.setOpened();
++                            assertTrue(opening.isOpened());
++                            assertEquals(0, inputRequested.get(), "A late open receipt cannot create a sender after run returned");
++                            assertEquals(0, bytes.get());
++                            assertTrue(problem.message().contains("deadline"));
++                        }
++                        if (scenario.equals("CLOSE_PENDING")) {
++                            assertFalse(execution.close());
++                            assertFalse(channel.isClosed(), "Known payload absence does not prove local resource release");
++                        }
++                    } finally {
++                        boolean retainedInterrupt = Thread.interrupted();
++                        try {
++                            innerCloseable.confirmClose();
++                            if (scenario.equals("BEFORE_CANCEL")) channel.close(true);
++                            assertTrue(execution.close());
++                            assertTrue(channel.isClosed());
++                        } finally {
++                            Thread.interrupted();
++                        }
++                        assertEquals(interrupted, retainedInterrupt, scenario);
++                        assertFalse(Thread.currentThread().isInterrupted());
++                    }
++                }
++            }).toList());
++    }
++
+     @Test
+     void realBashReceivesLargeUnicodeScriptAndExactBinaryStdinThroughOneSshChannel() throws Exception {
+         Path bash = Path.of(System.getProperty("managed.test.bash", "/bin/bash"));
