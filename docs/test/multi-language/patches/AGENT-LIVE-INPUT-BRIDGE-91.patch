@@ -1,0 +1,314 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -62,12 +62,154 @@
+ import gold.debug.windowstolinux.mod.deployment.service.standard.shared.contract.DeploymentStandardInputs;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
++import org.junit.jupiter.api.condition.EnabledIf;
+ import org.junit.jupiter.params.ParameterizedTest;
+ import org.junit.jupiter.params.provider.MethodSource;
+ 
+ /** Opt-in real-host acceptance through the three product workflows. / 经三种产品流程执行可选真机验收。 */
+-@EnabledIfSystemProperty(named = "managed.runtime.staticLive", matches = "true")
++@EnabledIf("liveOrIsolatedInputBridge")
+ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
++    private static boolean liveOrIsolatedInputBridge() {
++        return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge();
++    }
++
++    private static boolean isolatedInputBridge() {
++        return "true".equals(System.getProperty("managed.runtime.inputBridgeLocal"))
++            && "DeploymentStaticLiveAcceptanceTest#mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel"
++            .equals(System.getProperty("test"));
++    }
++
++    @Test
++    @EnabledIf("isolatedInputBridge")
++    void mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel() throws Exception {
++        mainOnlyDiagnostic = agentMode = true;
++        Path checkpoint = Files.createDirectory(root.resolve("input-checkpoint"));
++        String previousPath = System.getProperty("managed.live.inputCheckpoint");
++        String previousRun = System.getProperty("managed.live.inputRun");
++        System.setProperty("managed.live.inputCheckpoint", checkpoint.toString());
++        System.setProperty("managed.live.inputRun", "local-input-bridge-91");
++        enable();
++        try (var runtime = super.open()) {
++            start(runtime, true);
++            var actual = runtime.modContexts().get(OWNER).context();
++            var json = new com.fasterxml.jackson.databind.ObjectMapper();
++            String question = "Which controlled option is intended? 密码=cn-sensitive-91; API密钥=api-sensitive-91; 访问令牌=token-sensitive-91";
++            for (String kind : List.of("ANSWER", "CANCEL", "TOKEN_CANCEL", "INTERRUPT")) {
++                var returned = new java.util.concurrent.CompletableFuture<OperationResult<String>>();
++                var worker = new java.util.concurrent.atomic.AtomicReference<Thread>();
++                var handle = actual.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                    "local-main-only-input", "Controlled bound input", List.of(), true), task -> {
++                    try {
++                        worker.set(Thread.currentThread());
++                        var answer = actual.interaction().requestText("Autonomous deployment input", question, false, task);
++                        if (kind.equals("INTERRUPT")) {
++                            assertEquals(TaskResult.CANCELLED, answer.outcome());
++                            assertFalse(Thread.currentThread().isInterrupted());
++                            System.out.println("AI_LIVE_INPUT_CONTROLLED_INTERRUPT outcome=CANCELLED interruptConsumed=true");
++                        }
++                        returned.complete(answer);
++                        return new OperationResult<Void>(answer.outcome(), Optional.empty(), answer.problem());
++                    } catch (Exception | AssertionError failure) {
++                        System.out.println("AI_LIVE_INPUT_CONTROLLED_FAILURE class=" + failure.getClass().getSimpleName()
++                            + " interrupted=" + Thread.currentThread().isInterrupted()
++                            + " messageSha256=" + inputDigest(String.valueOf(failure.getMessage())));
++                        if (kind.equals("INTERRUPT")) Thread.interrupted();
++                        returned.completeExceptionally(failure);
++                        return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
++                    }
++                });
++                try {
++                    Path ready = null;
++                    long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
++                    while (ready == null && System.nanoTime() < until) {
++                        if (returned.isCompletedExceptionally()) {
++                            try {
++                                returned.get();
++                            } catch (java.util.concurrent.ExecutionException failure) {
++                                if (failure.getCause() instanceof AssertionError assertion) throw assertion;
++                                throw failure;
++                            }
++                        }
++                        try (var paths = Files.walk(checkpoint)) {
++                            ready = paths.filter(p -> p.getFileName().toString().equals("ready.json") && !Files.exists(p.resolveSibling("result.json")))
++                                .findFirst().orElse(null);
++                        }
++                        if (ready == null) Thread.sleep(20);
++                    }
++                    assertNotNull(ready, "Actual presenter must retain the bound question before waiting");
++                    var binding = json.readTree(Files.readString(ready));
++                    assertEquals(handle.id().toString(), binding.path("task").asText());
++                    assertEquals(safeInputData(question), binding.path("prompt").asText());
++                    assertTrue(binding.path("redacted").asBoolean());
++                    assertEquals(inputDigest(question), binding.path("questionSha256").asText());
++                    assertFalse(Files.readString(ready).contains("cn-sensitive-91"));
++                    assertFalse(Files.readString(ready).contains("api-sensitive-91"));
++                    assertFalse(Files.readString(ready).contains("token-sensitive-91"));
++                    assertFalse(returned.isDone(), "An unanswered question must remain pending");
++                    String action = kind.equals("ANSWER") ? "ANSWER" : "CANCEL";
++                    var answer = json.createObjectNode().put("schema", 1).put("run", binding.path("run").asText())
++                        .put("task", binding.path("task").asText()).put("requestId", binding.path("requestId").asText())
++                        .put("questionSha256", binding.path("questionSha256").asText()).put("kind", action);
++                    if (kind.equals("ANSWER")) answer.put("text", "The controlled first option.");
++                    Path response = ready.resolveSibling("answer.json");
++                    for (String field : List.of("run", "task", "requestId", "questionSha256")) {
++                        var wrong = answer.deepCopy().put(field, field.equals("questionSha256") ? "0".repeat(64) : java.util.UUID.randomUUID().toString());
++                        Files.writeString(response, wrong.toString());
++                        awaitInputRejection(response, inputDigest(wrong.toString()), json);
++                        assertFalse(returned.isDone());
++                        assertTrue(Files.exists(response), "Foreign answers must not be consumed");
++                    }
++                    for (String malformed : List.of(answer.toString().replace("\"schema\":1", "\"schema\":1,\"schema\":1"),
++                        answer + " {}", answer.toString().replace("\"kind\":\"" + action + "\"", "\"kind\":\"" + action + "\",\"cancel\":true"))) {
++                        Files.writeString(response, malformed);
++                        awaitInputRejection(response, inputDigest(malformed), json);
++                        assertFalse(returned.isDone());
++                        assertTrue(Files.exists(response));
++                    }
++                    if (kind.equals("ANSWER")) {
++                        var sensitive = answer.deepCopy().put("text", "密码=answer-sensitive-91");
++                        Files.writeString(response, sensitive.toString());
++                        awaitInputRejection(response, inputDigest(sensitive.toString()), json);
++                        assertFalse(returned.isDone());
++                    }
++                    if (kind.equals("TOKEN_CANCEL")) handle.requestCancel();
++                    else if (kind.equals("INTERRUPT")) worker.get().interrupt();
++                    else Files.writeString(response, answer.toString());
++                    var outcome = returned.get(10, TimeUnit.SECONDS);
++                    assertEquals(kind.equals("ANSWER") ? TaskResult.SUCCEEDED : TaskResult.CANCELLED, outcome.outcome());
++                    if (kind.equals("ANSWER"))
++                        assertEquals("The controlled first option.", outcome.value().orElseThrow());
++                    else assertTrue(outcome.value().isEmpty());
++                } finally {
++                    if (!returned.isDone()) handle.requestCancel();
++                    returned.handle((value, failure) -> null).get(10, TimeUnit.SECONDS);
++                    long closed = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
++                    while (handle.snapshot().state() != gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED && System.nanoTime() < closed)
++                        Thread.sleep(20);
++                    if (returned.isCompletedExceptionally()) returned.join();
++                    assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, handle.snapshot().state());
++                    System.out.println("AI_LIVE_INPUT_CONTROLLED_TASK_TERMINAL task=" + handle.id() + " state=ENDED");
++                }
++            }
++        } finally {
++            if (previousPath == null) System.clearProperty("managed.live.inputCheckpoint");
++            else System.setProperty("managed.live.inputCheckpoint", previousPath);
++            if (previousRun == null) System.clearProperty("managed.live.inputRun");
++            else System.setProperty("managed.live.inputRun", previousRun);
++        }
++    }
++
++    private static void awaitInputRejection(Path response, String expected, com.fasterxml.jackson.databind.ObjectMapper json) throws Exception {
++        Path rejected = response.resolveSibling("rejected-answer.json");
++        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
++        while (System.nanoTime() < until) {
++            if (Files.exists(rejected) && expected.equals(json.readTree(Files.readString(rejected)).path("answerSha256").asText()))
++                return;
++            Thread.sleep(20);
++        }
++        fail("The exact invalid response must be observed without consumption");
++    }
++
+     private static final String SERVER = "static-live";
+ 
+     private boolean connectionOnly = true;
+@@ -115,6 +257,7 @@
+ 
+     @Override
+     protected PlatformRuntime open() throws Exception {
++        if (isolatedInputBridge()) return super.open();
+         var runtime = PlatformRuntime.open(root.resolve("data"), currentUserProtection());
+         if (runtime.security().securityState().configured()) runtime.security().unlock(PASSWORD.toCharArray());
+         else runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+@@ -137,6 +280,116 @@
+         };
+     }
+ 
++    /** Active original callback only; answers are data, never grants. / 仅当前原回调，答案为数据而非授权。 */
++    private char[] awaitLiveInput(String title, String prompt, TaskSnapshot task, CancelToken cancel) {
++        try {
++            String run = System.getProperty("managed.live.inputRun");
++            if (run == null || !run.matches("[a-z0-9][a-z0-9-]{0,95}") || prompt == null || prompt.length() > 2000
++                || (!isolatedInputBridge() && (supervisedAgent == null || !task.id().equals(supervisedAgent.id()))))
++                throw new IllegalStateException("INPUT_BRIDGE_IDENTITY");
++            Path directory = Path.of(System.getProperty("managed.live.inputCheckpoint")).toAbsolutePath().normalize();
++            Path boundary = isolatedInputBridge() ? root.toRealPath() : workspace().resolve(".ai-workspace/agent-live-evidence").toRealPath();
++            if (!directory.startsWith(boundary) || directory.equals(boundary))
++                throw new IllegalStateException("INPUT_BRIDGE_DIRECTORY");
++            for (Path cursor = directory; cursor != null && cursor.startsWith(boundary); cursor = cursor.getParent())
++                if (Files.isSymbolicLink(cursor)) throw new IllegalStateException("INPUT_BRIDGE_DIRECTORY");
++            Files.createDirectories(directory);
++            if (!directory.toRealPath().startsWith(boundary)) throw new IllegalStateException("INPUT_BRIDGE_DIRECTORY");
++            String requestId = java.util.UUID.randomUUID().toString();
++            Path request = Files.createDirectory(directory.resolve("request-" + requestId));
++            var json = new com.fasterxml.jackson.databind.ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
++                .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
++                .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++            String questionSha = inputDigest(prompt);
++            var ready = json.createObjectNode().put("schema", 1).put("run", run).put("task", task.id().toString())
++                .put("requestId", requestId).put("title", safeInputData(title)).put("prompt", safeInputData(prompt))
++                .put("questionSha256", questionSha).put("questionCharacters", prompt.length()).put("secret", false)
++                .put("status", "READY").put("redacted", !prompt.equals(safeInputData(prompt)) || !title.equals(safeInputData(title)));
++            writeInputMetadata(request.resolve("ready.json"), json.writeValueAsString(ready));
++            System.out.println("AI_LIVE_INPUT_READY run=" + run + " task=" + task.id() + " requestId=" + requestId + " questionSha256=" + questionSha);
++            String rejectedSha = "";
++            Path answerFile = request.resolve("answer.json");
++            while (true) {
++                if (cancel.requested() || Thread.currentThread().isInterrupted()) {
++                    boolean interrupted = Thread.interrupted();
++                    try {
++                        writeInputMetadata(request.resolve("result.json"), json.writeValueAsString(ready.deepCopy().remove(List.of("title", "prompt"))
++                            .put("status", "CANCELLED").put("cancelSource", interrupted ? "INTERRUPT" : "TOKEN")));
++                    } catch (java.io.IOException unavailable) {
++                        System.out.println("AI_LIVE_INPUT_CANCEL_METADATA_UNAVAILABLE task=" + task.id() + " requestId=" + requestId);
++                    }
++                    System.out.println("AI_LIVE_INPUT_CANCELLED task=" + task.id() + " requestId=" + requestId
++                        + " interrupted=" + interrupted);
++                    return null;
++                }
++                if (Files.isRegularFile(answerFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
++                    String answerSha = "OVERSIZE", rejection = "ANSWER_JSON";
++                    try {
++                        if (Files.size(answerFile) > 300000) throw new IllegalArgumentException("ANSWER_SIZE");
++                        String payload = Files.readString(answerFile);
++                        answerSha = inputDigest(payload);
++                        var data = json.readTree(payload);
++                        if (data == null || !data.isObject()) throw new IllegalArgumentException("ANSWER_JSON");
++                        var fields = new java.util.HashSet<String>();
++                        data.fieldNames().forEachRemaining(fields::add);
++                        String kind = data.path("kind").asText();
++                        Set<String> expected = kind.equals("ANSWER")
++                            ? Set.of("schema", "run", "task", "requestId", "questionSha256", "kind", "text")
++                            : Set.of("schema", "run", "task", "requestId", "questionSha256", "kind");
++                        if (!fields.equals(expected) || !data.path("schema").isInt() || data.path("schema").intValue() != 1
++                            || (!kind.equals("ANSWER") && !kind.equals("CANCEL")))
++                            throw new IllegalArgumentException("ANSWER_JSON");
++                        rejection = "ANSWER_BINDING";
++                        for (var binding : Map.of("run", run, "task", task.id().toString(), "requestId", requestId, "questionSha256", questionSha).entrySet())
++                            if (!data.path(binding.getKey()).isTextual() || !binding.getValue().equals(data.path(binding.getKey()).textValue()))
++                                throw new IllegalArgumentException("ANSWER_BINDING");
++                        rejection = "ANSWER_DATA";
++                        if (kind.equals("ANSWER") && (!data.path("text").isTextual() || data.path("text").textValue().length() > 65536
++                            || !data.path("text").textValue().equals(safeInputData(data.path("text").textValue()))))
++                            throw new IllegalArgumentException("ANSWER_DATA");
++                        var result = ready.deepCopy();
++                        result.remove(List.of("title", "prompt"));
++                        result.put("status", kind.equals("ANSWER") ? "ANSWERED" : "CANCELLED").put("answerSha256", answerSha);
++                        writeInputMetadata(request.resolve("result.json"), json.writeValueAsString(result));
++                        System.out.println("AI_LIVE_INPUT_RESOLVED run=" + run + " task=" + task.id() + " requestId=" + requestId + " status=" + result.path("status").asText());
++                        return kind.equals("ANSWER") ? data.path("text").textValue().toCharArray() : null;
++                    } catch (java.io.IOException | IllegalArgumentException invalid) {
++                        if (!answerSha.equals(rejectedSha)) {
++                            rejectedSha = answerSha;
++                            var rejected = json.createObjectNode().put("schema", 1).put("run", run).put("task", task.id().toString())
++                                .put("requestId", requestId).put("questionSha256", questionSha).put("code", rejection).put("answerSha256", answerSha);
++                            writeInputMetadata(request.resolve("rejected-answer.json"), json.writeValueAsString(rejected));
++                        }
++                    }
++                }
++                try {
++                    Thread.sleep(30);
++                } catch (InterruptedException cancelled) {
++                    Thread.currentThread().interrupt();
++                }
++            }
++        } catch (Exception unavailable) {
++            throw new IllegalStateException("INPUT_BRIDGE_UNAVAILABLE", unavailable);
++        }
++    }
++
++    private static String inputDigest(String value) throws java.security.NoSuchAlgorithmException {
++        return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
++            .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
++    }
++
++    private static String safeInputData(String value) {
++        return value.replaceAll("(?i)((?:password|passwd|api[_-]?key|access[_-]?token|authorization|密码|口令|API\\s*密钥|访问令牌|授权令牌)\\s*[:=：]\\s*)[^\\s,;；]+", "$1[REDACTED]")
++            .replaceAll("\\bsk-[A-Za-z0-9_-]{16,}\\b", "[REDACTED]")
++            .replaceAll("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----", "[REDACTED]");
++    }
++
++    private static void writeInputMetadata(Path file, String payload) throws java.io.IOException {
++        Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
++        Files.writeString(temporary, payload + "\n");
++        Files.move(temporary, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
++    }
++
+     @Override
+     protected PlatformInteractionService.Prompts interactionPrompts() {
+         return new PlatformInteractionService.Prompts() {
+@@ -162,6 +415,9 @@
+                     System.out.println("AI_LIVE_IDENTIFICATION_USER_CHOICE STATIC task=" + task.id());
+                     return "STATIC".toCharArray();
+                 }
++                if (mainOnlyDiagnostic && agentMode && !secret && title.equals("Autonomous deployment input")
++                    && System.getProperty("managed.live.inputCheckpoint") != null)
++                    return awaitLiveInput(title, prompt, task, cancel);
+                 throw new AssertionError("Unexpected additional input: " + title);
+             }
+ 
+diff --git a/docs/test/multi-language/DEPLOYMENT-AGENT-LIVE-INPUT-BRIDGE-91.md b/docs/test/multi-language/DEPLOYMENT-AGENT-LIVE-INPUT-BRIDGE-91.md
+new file mode 100644
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-LIVE-INPUT-BRIDGE-91.md
+@@ -0,0 +1,15 @@
++# Main-only live 输入桥（91）
++
++原89在input工具调用后被live harness的Unexpected additional input AssertionError中断，题目未保存，Task UNKNOWN保留。仅Test harness增加当前活跃回调的文件输入桥：mainOnlyDiagnostic && agentMode、非secret、固定Autonomous deployment input标题、显式managed.live.inputCheckpoint及managed.live.inputRun、真实supervisedAgent task匹配。旧STATIC识别与未配置桥的路径保持，生产UI/Agent/shared/Skill无变化。
++
++每次新请求在checkpoint/request-UUID目录生成不可覆盖的ready.json；字段schema=1、run、task、requestId、title、prompt、questionSha256、questionCharacters、secret=false、status=READY、redacted。实际题目中的英文/中文credential-shaped值安全处理，题目SHA绑定原输入，不读凭据。Root在同目录写answer.json；ANSWER固定键schema/run/task/requestId/questionSha256/kind/text，CANCEL固定键同前但无text。严格拒绝重复键、尾部内容、额外键、错误run/task/request/题目SHA与敏感答案；无效answer保持并写仅code/SHA的rejected-answer.json，无默认答案或授权。有效回答只作为DATA返回；result.json保存安全终态/answerSHA或取消来源。原CancelToken/明确CANCEL或中断返回null；中断被消耗为取消，使原平台lease finally能够正常结清，不改变平台UNKNOWN/恢复机制。桥仅本次活动callback，不支持restart pendingInput或旧89恢复。
++
++唯一非参数selector DeploymentStaticLiveAcceptanceTest#mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel。仅managed.runtime.inputBridgeLocal字面true且Surefire test精确等该selector时启用本方法及XOR临时H2；类原staticLive字面true语义保留，新方法额外EnabledIf隔离gate不会混入真实live。此验证不设staticLive/deploy flags、provider/SSH/原DB为0。
++
++全部原轮保留：baseline01 1FAIL2.229s（模块未enable）；baseline02 1ERROR2.931s（继承enable虚调用DPAPI open，随后XOR读取同新临时DB不兼容，该轮不能称DPAPI0，未读真实凭据/原DB）；baseline03 1FAIL6.121s（确切旧input反例，suppressed cleanup blocked）；corrected01 1PASS7.576s；corrected02 1PASS10.766s；corrected03 1FAIL18.178s（人为interrupt TaskUNKNOWN及cleanup）；corrected04 1ERROR18.348s（原lease释放ApiException）；corrected05 1PASS7.826s（四个实际Task ENDED）；corrected06最终1PASS8.196s/case8.183s，0FAIL/ERROR/SKIP（最终JUnit隔离gate确认）。每轮仅同一case，sourceFreeze0，未跑其它方法/类/组；失败不是全通过。默认flags与原业务/UNKNOWN门未放宽。
++
++最终同方法核实际原平台requestText：未答等待；wrong run/task/request/题目SHA实际rejection SHA不消费；duplicate/trailing/extra/ANSWER-CANCEL互斥拒绝；中文凭据值不落ready、敏感答案拒绝；合法答案返回；explicitCANCEL、CancelToken、interrupt均原Cancelled，四个Task END后关闭Runtime。受控答案不是真实API模型部署证明。
++
++before/after3296，仅一个Test owner增量，before==88afinal，生产源0。单owner IDEA write/check与skipTests package通过；19相关生产class/15Agentresources均与88字节相同，JAR容器hash可能变化不代表生产收益。原89及其余UNKNOWN/DB/资源/证据保留，Git交付由父隔离本地提交、不推送。
++
++证据目录.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-live-input-bridge-91；formal增量patch patches/AGENT-LIVE-INPUT-BRIDGE-91.patch，仅本Test+本文，UTF-8/LF。原九轮XML/TXT/result、actual生产parity及knownPID退出详见REPORT与closure。
