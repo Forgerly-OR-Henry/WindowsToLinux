@@ -1,0 +1,109 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index d3752f27bd44958cbb014e944c3253212938498c..fabaee41092d6c95f7b7d08005cb898129d17a33 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -2775,6 +2775,21 @@
+         return new BackupFrozenBatch(encoded, inputDigest(encoded), List.copyOf(items));
+     }
+ 
++    private static gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision backupBatchReview(
++        ModContext context, TaskContext task, String revision, BackupFrozenBatch batch) throws Exception {
++        var facts = JSON.convertValue(JSON.readTree(batch.factsJson()), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
++        });
++        return gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(
++            new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context).ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
++                "Review this complete frozen backup-only batch. APPROVE means ALL enumerated exact transfer intents AND their explicit local DPAPI protection sequences. "
++                    + "DENY the entire batch if any member, necessity, destination, source identity, plaintext digest or protection plan is unsafe or unsupported. "
++                    + "No partial verdict, no substituted members, no remote author writes, no reusable grant, no payload. A verdict itself grants no execution permission. "
++                    + "FileInfo SDK contract: sourceIdentity is backend-specific opaque change-detection evidence. Preserve its exact value and recheck equality of the original SDK FileInfo observations. "
++                    + "Do not infer size, time or permissions by decoding a private identity-string layout. Typed source.bytes is the observed content extent; typed source.modified is the observed modification instant. "
++                    + "sourceSha256 is measured from actual content bytes. Neither the opaque identity token nor metadata alone proves content completeness. "
++                    + gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION, facts, revision, task));
++    }
++
+     private static void backupBatchMembership(BackupFrozenBatch batch, BackupPrepared item, String revision) throws Exception {
+         backupRequire(batch.sha().equals(inputDigest(batch.factsJson())) && item.memberSha().equals(inputDigest(item.factsJson()))
+             && item.intent().revision().equals(revision) && batch.items().stream().filter(value -> value == item).count() == 1);
+@@ -2966,14 +2981,7 @@
+                 String batchName = "batch-" + batchNumber;
+                 backupProtectedRunUnchanged(run, acl);
+                 backupWriteRecord(evidence, batchName + "-facts.json", Map.of("batchSha256", batch.sha(), "facts", JSON.readTree(batch.factsJson())));
+-                var facts = JSON.convertValue(JSON.readTree(batch.factsJson()), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+-                });
+-                var decision = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(
+-                    new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context).ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
+-                        "Review this complete frozen backup-only batch. APPROVE means ALL enumerated exact transfer intents AND their explicit local DPAPI protection sequences. "
+-                            + "DENY the entire batch if any member, necessity, destination, source identity, plaintext digest or protection plan is unsafe or unsupported. "
+-                            + "No partial verdict, no substituted members, no remote author writes, no reusable grant, no payload. A verdict itself grants no execution permission. "
+-                            + gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION, facts, revision, task));
++                var decision = backupBatchReview(context, task, revision, batch);
+                 backupWriteRecord(evidence, batchName + "-review.json", Map.of("batchSha256", batch.sha(), "decision", decision.decision(),
+                     "requiresUserConfirmation", decision.requiresUserConfirmation(), "reason", decision.reason()));
+                 if (!decision.decision().equals("APPROVE"))
+@@ -3124,6 +3132,9 @@
+             var persisted = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.readTree(Files.readAllBytes(persistedFile));
+             String original = persisted.toString();
+             backupRequirePersistedMetadata(metadata, persisted);
++            var identityDrift = new gold.debug.windowstolinux.appapi.file.model.FileInfo(path, path, observed.kind(), observed.bytes(), observed.modified(),
++                observed.identity() + "-changed", observed.target(), observed.links());
++            assertThrows(Exception.class, () -> backupRequirePersistedMetadata(backupMetadata(identityDrift), persisted));
+             assertEquals(original, persisted.toString());
+             assertTrue(JSON.valueToTree(metadata).path("bytes").isLong());
+             assertEquals(bytes <= Integer.MAX_VALUE, persisted.path("bytes").isInt());
+@@ -3187,13 +3198,54 @@
+             String remote = "/etc/opt/windowstolinux/apps/app/controlled.conf";
+             var remotePath = gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), remote);
+             var source = new gold.debug.windowstolinux.appapi.file.model.FileInfo(remotePath, remotePath,
+-                gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE, payload.length, java.time.Instant.EPOCH, "controlled-136", Optional.empty(), List.of());
++                gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE, payload.length, java.time.Instant.EPOCH, "PUBLIC_OPAQUE_BACKEND_IDENTITY", Optional.empty(), List.of());
+             var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(plain, remote, payload.length);
+             var intent = backupProtectedTransferIntent(SERVER, "revision-136", request, sha, "local-protected-143", cipher);
+-            String facts = JSON.writeValueAsString(Map.of("intent", backupIntentFacts(intent), "plaintextDestination", plain.toString(), "cipherDestination", cipher.toString()));
++            String facts = JSON.writeValueAsString(Map.of("intent", backupIntentFacts(intent), "plaintextDestination", plain.toString(), "cipherDestination", cipher.toString(),
++                "source", backupMetadata(source), "sourceIdentity", source.identity(), "sourceSha256", sha));
+             var item = new BackupPrepared(source, plain, cipher, request, intent, sha, facts, inputDigest(facts));
+             var batch = backupFreezeBatch(Map.of("revision", "revision-136"), List.of(item));
+             backupBatchMembership(batch, item, "revision-136");
++            if (scenario.equals("SUCCESS")) {
++                var nativeFixture = new gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture();
++                nativeFixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("backup170", "submit_result",
++                    "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled independent denial\"}"));
++                var decision = backupBatchReview(nativeFixture.context, nativeFixture.task, "revision-136", batch);
++                assertEquals("DENY", decision.decision());
++                assertEquals(1, nativeFixture.requests.size());
++                var actualRequest = nativeFixture.requests.getFirst();
++                String policy = actualRequest.messages().getFirst().text(), user = actualRequest.messages().get(1).text();
++                assertEquals(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, actualRequest.purpose());
++                assertEquals("submit_result", actualRequest.requiredToolName().orElseThrow());
++                assertEquals(8192, actualRequest.maxOutputTokens().orElseThrow());
++                assertEquals(0, actualRequest.generationRecoveryAttempts());
++                assertTrue(policy.contains("sourceIdentity is backend-specific opaque change-detection evidence"));
++                assertTrue(policy.contains("Do not infer size, time or permissions"));
++                assertTrue(policy.contains("Typed source.bytes") && policy.contains("source.modified"));
++                assertTrue(policy.contains("sourceSha256 is measured from actual content bytes"));
++                assertTrue(policy.contains("Neither the opaque identity token nor metadata alone proves content completeness"));
++                var originalFacts = JSON.readTree(batch.factsJson());
++                assertEquals(originalFacts, JSON.readTree(user));
++                var expectedFacts = JSON.convertValue(originalFacts, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
++                });
++                assertEquals(gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.facts(expectedFacts, 48000), user);
++                var retainedSource = JSON.readTree(user).path("members").get(0).path("transfer");
++                assertEquals(source.identity(), retainedSource.path("sourceIdentity").asText());
++                assertEquals(source.bytes(), retainedSource.path("source").path("bytes").asLong());
++                assertEquals(source.modified().toString(), retainedSource.path("source").path("modified").asText());
++                assertEquals(sha, retainedSource.path("sourceSha256").asText());
++                assertEquals(inputDigest(batch.factsJson()), batch.sha());
++                var approval = new OperationResult<>(TaskResult.SUCCEEDED,
++                    Optional.of(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(java.util.UUID.randomUUID())), Optional.<Problem>empty());
++                var consumed = new java.util.HashSet<java.util.UUID>();
++                var dispatches = new AtomicInteger();
++                assertThrows(Exception.class, () -> backupDispatch(batch.sha(), batch.sha(), decision, approval, consumed, actual -> {
++                    dispatches.incrementAndGet();
++                    throw new AssertionError("Controlled DENY cannot dispatch a transfer");
++                }));
++                assertEquals(0, dispatches.get());
++                assertTrue(consumed.isEmpty());
++            }
+             assertThrows(Exception.class, () -> backupBatchMembership(batch, item, "revision-other"));
+             assertThrows(Exception.class, () -> backupBatchMembership(new BackupFrozenBatch(batch.factsJson(), "0".repeat(64), batch.items()), item, "revision-136"));
+             var changed = new BackupPrepared(source, plain, cipher, request, intent, sha, facts + " ", inputDigest(facts + " "));
