@@ -1,0 +1,526 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index e23e892481570bd719ee32d48f5cb40571af9d99..f59fe83d560a7784a3554819c5f405632a30474c 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -71,7 +71,7 @@ import org.junit.jupiter.params.provider.MethodSource;
+ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+     private static boolean liveOrIsolatedInputBridge() {
+         return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+-            || isolatedUserRequirements() || isolatedBackupGuard() || backupOnlyLive();
++            || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive();
+     }
+ 
+     private static boolean isolatedBackupGuard() {
+@@ -79,6 +79,11 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             && "DeploymentStaticLiveAcceptanceTest#backupOnlyBoundariesRequireIndependentApprovalAndVerifiedBytes".equals(System.getProperty("test", ""));
+     }
+ 
++    private static boolean isolatedBackupBatchGuard() {
++        return Boolean.getBoolean("managed.runtime.backupBatchLocal")
++            && "DeploymentStaticLiveAcceptanceTest#backupInventoryAcceptsNativeReadOnlyBatchesAndRetainsPartialMetadata".equals(System.getProperty("test", ""));
++    }
++
+     private static boolean backupOnlyLive() {
+         return Boolean.getBoolean("managed.runtime.backupLive")
+             && Set.of("DeploymentStaticLiveAcceptanceTest#inventorySelectiveBackupThroughProduct",
+@@ -254,7 +259,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                     backupRequire(session.facts().fingerprint().equals(System.getProperty("managed.ssh.fingerprint")));
+                     var roots = List.of(layout.paths().helperDirectory(), layout.paths().applicationsRoot(), layout.paths().stateRoot(), layout.paths().configurationRoot(), layout.paths().dataRoot());
+                     var result = downloads ? backupDownloadSelected(context, task, session, roots, approvedInventory, destination)
+-                        : backupInventory(context, task, roots, layout.digest(), session.facts().fingerprint());
++                        : backupInventory(context, task, roots, layout.digest(), session.facts().fingerprint(), evidence);
+                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(result), Optional.empty());
+                 }
+             });
+@@ -267,109 +272,402 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         }
+     }
+ 
+-    private Map<String, Object> backupInventory(ModContext context, TaskContext task, List<String> roots, String layoutSha, String fingerprint) throws Exception {
++    @FunctionalInterface
++    private interface BackupAction {
++        Map<String, Object> run(com.fasterxml.jackson.databind.JsonNode choice) throws Exception;
++    }
++
++    private static void backupNativeRequire(boolean valid, String code) {
++        if (!valid) throw new IllegalArgumentException(code);
++    }
++
++    private static List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> backupBatch(
++        List<gold.debug.windowstolinux.appapi.ai.model.AiToolCall> calls, Set<String> observedIds, Set<String> priorIds,
++        BackupAction action, java.util.function.Consumer<List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>> checkpoint) throws Exception {
++        backupNativeRequire(!calls.isEmpty() && calls.size() <= 32, "BACKUP_NATIVE_BATCH_BOUND");
++        var ids = new java.util.HashSet<String>();
++        var choices = new java.util.ArrayList<com.fasterxml.jackson.databind.JsonNode>();
++        for (var call : calls) {
++            backupNativeRequire(call.name().equals("backup_action"), "BACKUP_NATIVE_UNKNOWN_TOOL");
++            backupNativeRequire(ids.add(call.id()) && !priorIds.contains(call.id()), "BACKUP_NATIVE_DUPLICATE_CALL_ID");
++            var choice = gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson.arguments(call);
++            var fields = new java.util.HashSet<String>();
++            choice.fieldNames().forEachRemaining(fields::add);
++            backupNativeRequire(fields.equals(Set.of("action", "entryId", "category", "page"))
++                && choice.path("action").isTextual() && choice.path("entryId").isTextual()
++                && choice.path("category").isTextual() && choice.path("page").isInt(), "BACKUP_NATIVE_SCHEMA_REJECTED");
++            String name = choice.path("action").asText(), id = choice.path("entryId").asText(), category = choice.path("category").asText();
++            backupNativeRequire(Set.of("LIST", "SELECT", "PAGE", "FINISH").contains(name) && choice.path("page").intValue() >= 0, "BACKUP_NATIVE_UNSAFE_ACTION_OR_PAGE");
++            if (name.equals("LIST") || name.equals("SELECT")) {
++                backupNativeRequire(observedIds.contains(id) && choice.path("page").intValue() == 0, "BACKUP_NATIVE_UNKNOWN_ID_OR_NONZERO_PAGE");
++                backupNativeRequire(name.equals("SELECT") ? Set.of("BUSINESS_DATA", "KEY_RECEIPT", "OWNER_MANIFEST", "IRREPLACEABLE_SOURCE").contains(category) : category.isEmpty(), "BACKUP_NATIVE_CATEGORY_REJECTED");
++            } else
++                backupNativeRequire(id.isEmpty() && category.isEmpty() && (!name.equals("FINISH") || choice.path("page").intValue() == 0), "BACKUP_NATIVE_CONTROL_FIELDS_REJECTED");
++            choices.add(choice);
++        }
++        priorIds.addAll(ids);
++        var results = new java.util.ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>();
++        boolean finished = false, failed = false;
++        Exception failure = null;
++        for (int i = 0; i < calls.size(); i++) {
++            var call = calls.get(i);
++            Map<String, Object> feedback;
++            if (finished || failed)
++                feedback = Map.of("status", "NOT_STARTED", "reason", finished ? "FINISH_ALREADY_RECORDED" : "PRIOR_ACTION_FAILED");
++            else {
++                try {
++                    feedback = action.run(choices.get(i));
++                    finished = choices.get(i).path("action").asText().equals("FINISH");
++                } catch (Exception rejected) {
++                    failed = true;
++                    failure = rejected;
++                    feedback = Map.of("status", "UNKNOWN_ACTION_FAILED", "failureClass", rejected.getClass().getSimpleName());
++                }
++            }
++            var receipt = new LinkedHashMap<String, Object>(feedback);
++            receipt.put("callId", call.id());
++            receipt.put("tool", call.name());
++            receipt.put("action", choices.get(i).path("action").asText());
++            receipt.put("entryId", choices.get(i).path("entryId").asText());
++            results.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), JSON.writeValueAsString(receipt), !Set.of("LIST_SUCCEEDED", "SELECTED_METADATA_ONLY", "PAGE_SELECTED", "INVENTORY_FINISH_METADATA_ONLY").contains(feedback.get("status"))));
++            checkpoint.accept(List.copyOf(results));
++        }
++        if (failure != null) throw failure;
++        return List.copyOf(results);
++    }
++
++    private static final class BackupProgress {
++        private final Path evidence, file;
++
++        private final String task, run, layoutSha, fingerprint;
++
++        private String lastSha;
++
++        private int sequence;
++
++        private BackupProgress(Path evidence, java.util.UUID task, String run, String layoutSha, String fingerprint) throws Exception {
++            backupCanonical(evidence);
++            backupRequire(evidence.getFileName().toString().equals(run) && run.matches("[a-z0-9][a-z0-9-]{0,95}"));
++            this.evidence = evidence;
++            this.task = task.toString();
++            this.run = run;
++            backupRequire(layoutSha.matches("[0-9a-f]{64}") && !fingerprint.isBlank());
++            this.layoutSha = layoutSha;
++            this.fingerprint = fingerprint;
++            this.file = evidence.resolve("inventory-progress-" + task + ".json");
++            backupRequire(!Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS));
++        }
++
++        private void save(Map<String, Object> metadata, String status) throws Exception {
++            backupCanonical(evidence);
++            backupRequire(task.equals(metadata.get("task")) && run.equals(metadata.get("run"))
++                && layoutSha.equals(metadata.get("layoutSha256")) && fingerprint.equals(metadata.get("wireFingerprint"))
++                && Boolean.FALSE.equals(metadata.get("backupComplete")) && "UNKNOWN_PARENT_REVIEW_REQUIRED".equals(metadata.get("coverage")));
++            var snapshot = new LinkedHashMap<>(metadata);
++            snapshot.put("progressStatus", status);
++            snapshot.put("sequence", sequence);
++            byte[] bytes = JSON.writeValueAsBytes(snapshot);
++            backupRequire(bytes.length <= 2 * 1024 * 1024);
++            if (lastSha == null) Files.write(file, bytes, java.nio.file.StandardOpenOption.CREATE_NEW);
++            else {
++                backupCanonical(file);
++                backupRequire(Files.size(file) <= 2 * 1024 * 1024 && backupBytesSha(Files.readAllBytes(file)).equals(lastSha));
++                Path pending = evidence.resolve(file.getFileName() + ".pending");
++                Files.write(pending, bytes, java.nio.file.StandardOpenOption.CREATE_NEW);
++                try {
++                    backupCanonical(pending);
++                    Files.move(pending, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
++                } finally {
++                    if (Files.exists(pending, java.nio.file.LinkOption.NOFOLLOW_LINKS)) Files.delete(pending);
++                }
++            }
++            lastSha = backupBytesSha(bytes);
++            sequence++;
++        }
++    }
++
++    private Map<String, Object> backupInventory(ModContext context, TaskContext task, List<String> roots, String layoutSha, String fingerprint, Path evidence) throws Exception {
+         var query = context.file().queries();
+         var entries = new LinkedHashMap<String, gold.debug.windowstolinux.appapi.file.model.FileInfo>();
+         var selected = new LinkedHashMap<String, Map<String, Object>>();
+         var listed = new java.util.HashSet<String>();
+         var unavailable = new java.util.ArrayList<Map<String, Object>>();
+-        for (String root : roots) {
++        var receipts = new java.util.ArrayList<Map<String, Object>>();
++        var state = new LinkedHashMap<String, Object>();
++        state.putAll(Map.of("schema", 1, "mode", "INVENTORY_ONLY", "task", task.id().toString(), "run", System.getProperty("managed.backup.run"), "server", SERVER,
++            "wireFingerprint", fingerprint, "layoutSha256", layoutSha, "coverage", "UNKNOWN_PARENT_REVIEW_REQUIRED", "backupComplete", false));
++        var progress = new BackupProgress(evidence, task.id(), System.getProperty("managed.backup.run"), layoutSha, fingerprint);
++        java.util.function.Consumer<String> save = status -> {
++            state.put("objects", entries.values().stream().map(DeploymentStaticLiveAcceptanceTest::backupMetadata).toList());
++            state.put("listedDirectoryIds", List.copyOf(listed));
++            state.put("selected", List.copyOf(selected.values()));
++            state.put("selectedBytes", selected.values().stream().mapToLong(row -> ((Number) row.get("bytes")).longValue()).sum());
++            state.put("unavailable", List.copyOf(unavailable));
++            state.put("actionReceipts", List.copyOf(receipts));
+             try {
+-                var info = query.getFile(gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), root), task);
+-                try {
+-                    backupRemote(info, roots);
+-                } catch (IllegalArgumentException unsupported) {
+-                    unavailable.add(Map.of("path", root, "status", "UNKNOWN_LINK_OR_SPECIAL_ROOT_NOT_FOLLOWED", "kind", info.kind().name(), "links", info.links().size()));
+-                    continue;
+-                }
+-                entries.put(inputDigest(info.requested().key()), info);
+-            } catch (ApiException missing) {
+-                unavailable.add(Map.of("path", root, "status", "UNKNOWN_OR_UNAVAILABLE", "code", missing.problem().code().name(), "eventSha256", inputDigest(missing.problem().eventCode())));
++                progress.save(state, status);
++            } catch (Exception failure) {
++                throw new IllegalStateException("BACKUP_PARTIAL_METADATA_WRITE_FAILED", failure);
+             }
+-        }
+-        long total = 0;
+-        int page = 0;
+-        Map<String, Object> feedback = Map.of();
+-        var ai = new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context);
+-        String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
+-        for (int action = 0; action < 512; action++) {
+-            var visible = entries.values().stream().skip((long) page * 64).limit(64).map(file -> backupVisible(file, listed, selected.keySet())).toList();
+-            var facts = Map.ofEntries(Map.entry("mode", "BACKUP_ONLY_INVENTORY_NO_PAYLOAD"), Map.entry("task", task.id().toString()), Map.entry("server", SERVER),
+-                Map.entry("wireFingerprint", fingerprint), Map.entry("layoutSha256", layoutSha), Map.entry("objects", visible), Map.entry("page", page),
+-                Map.entry("pages", Math.max(1, (entries.size() + 63) / 64)), Map.entry("selectedCount", selected.size()), Map.entry("selectedBytes", total),
+-                Map.entry("unavailableCount", unavailable.size()), Map.entry("unavailable", unavailable.stream().skip(Math.max(0, unavailable.size() - 16)).toList()), Map.entry("lastActionFeedback", feedback));
+-            var choice = ai.ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE,
+-                "The user will reinstall this server. Select necessary irreplaceable business/persistent data, original identities, key receipts/manifests and irreplaceable small modified source. "
+-                    + "Do not export the whole state directory. Preserve all UNKNOWN objects and all formal Apps, including older Apps; do not assume cache/work names are disposable or only App102 matters. "
+-                    + "This task permits readonly metadata inventory only, no payload, SSH command, deployment, plan, prepare, publish, delete or recovery. "
+-                    + "Submit exactly {action,entryId,category,page}. action is LIST,SELECT,PAGE or FINISH. LIST uses an observed directory ID; SELECT uses an observed file ID and category BUSINESS_DATA,KEY_RECEIPT,OWNER_MANIFEST,IRREPLACEABLE_SOURCE. "
+-                    + "PAGE changes the zero-based metadata page; other actions use page=0. FINISH records your selected inventory, never proves backup completeness or quiescent SQLite. Use empty entryId/category where inapplicable.", facts, revision, task);
+-            var fields = new java.util.HashSet<String>();
+-            choice.fieldNames().forEachRemaining(fields::add);
+-            backupRequire(fields.equals(Set.of("action", "entryId", "category", "page")) && choice.path("page").isInt());
+-            String name = choice.path("action").asText();
+-            if (name.equals("PAGE")) {
+-                page = choice.path("page").intValue();
+-                backupRequire(page >= 0 && page * 64L < entries.size());
+-                continue;
+-            }
+-            if (name.equals("FINISH"))
+-                return Map.ofEntries(Map.entry("schema", 1), Map.entry("mode", "INVENTORY_ONLY"), Map.entry("task", task.id().toString()),
+-                    Map.entry("run", System.getProperty("managed.backup.run")), Map.entry("server", SERVER), Map.entry("wireFingerprint", fingerprint), Map.entry("layoutSha256", layoutSha),
+-                    Map.entry("objects", entries.values().stream().map(DeploymentStaticLiveAcceptanceTest::backupMetadata).toList()), Map.entry("listedDirectoryIds", listed),
+-                    Map.entry("selected", selected.values()), Map.entry("selectedBytes", total), Map.entry("unavailable", unavailable), Map.entry("coverage", "UNKNOWN_PARENT_REVIEW_REQUIRED"), Map.entry("backupComplete", false));
+-            String entryId = choice.path("entryId").asText();
+-            var info = entries.get(entryId);
+-            if (info == null) {
+-                feedback = Map.of("status", "REJECTED_UNKNOWN_OBSERVED_ID");
+-                continue;
+-            }
+-            if (name.equals("LIST")) {
+-                if (info.kind() != gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY || listed.contains(entryId)) {
+-                    feedback = Map.of("status", "REJECTED_NOT_AN_UNLISTED_DIRECTORY", "entryId", entryId);
+-                    continue;
+-                }
++        };
++        save.accept("STARTED_METADATA_ONLY");
++        try {
++            for (String root : roots) {
+                 try {
+-                    var children = query.list(info.actual(), 4096, task);
+-                    if (children.size() + entries.size() > 4096) {
+-                        unavailable.add(Map.of("path", info.requested().path(), "status", "UNKNOWN_OBJECT_REGISTRY_BOUND", "observedImmediateChildCount", children.size()));
+-                        feedback = Map.of("status", "UNKNOWN_OBJECT_REGISTRY_BOUND", "entryId", entryId);
++                    var info = query.getFile(gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), root), task);
++                    try {
++                        backupRemote(info, roots);
++                    } catch (IllegalArgumentException unsupported) {
++                        unavailable.add(Map.of("path", root, "status", "UNKNOWN_LINK_OR_SPECIAL_ROOT_NOT_FOLLOWED", "kind", info.kind().name(), "links", info.links().size()));
+                         continue;
+                     }
+-                    for (var child : children) {
+-                        if (child.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE || child.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY) {
++                    entries.put(inputDigest(info.requested().key()), info);
++                } catch (ApiException missing) {
++                    unavailable.add(Map.of("path", root, "status", "UNKNOWN_OR_UNAVAILABLE", "code", missing.problem().code().name(), "eventSha256", inputDigest(missing.problem().eventCode())));
++                } finally {
++                    save.accept("ROOT_OBSERVATION_METADATA_ONLY");
++                }
++            }
++            var ai = new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context);
++            var history = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory();
++            var priorIds = new java.util.HashSet<String>();
++            String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
++            int[] page = {0};
++            boolean[] finished = {false};
++            String policy = "The user will reinstall this server. Select necessary irreplaceable business/persistent data, original identities, key receipts/manifests and irreplaceable small modified source. "
++                + "Do not export the whole state directory. Preserve all UNKNOWN objects and formal Apps including older Apps; names alone do not prove caches disposable. "
++                + "BACKUP_ONLY permits readonly metadata only, no payload, SSH commands, deployment, plan, prepare, publish, delete or recovery. "
++                + "Use one or more native backup_action calls (maximum 32 per batch); each has exactly action,entryId,category,page. LIST/SELECT refer only to observed IDs. "
++                + "LIST an unlisted directory; SELECT a regular file with BUSINESS_DATA,KEY_RECEIPT,OWNER_MANIFEST,IRREPLACEABLE_SOURCE category. PAGE sets zero-based metadata page. "
++                + "Use empty entryId/category when inapplicable and page=0 except PAGE. FINISH records metadata only and stops remaining calls. No action proves backup completeness or SQLite consistency. "
++                + "Read each actual call receipt and latest listed/selected state; rejected calls grant no permission.";
++            var tool = new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("backup_action", "Choose a bounded readonly metadata inventory action, never an executable command or backup completion.", """
++                {"type":"object","additionalProperties":false,"required":["action","entryId","category","page"],"properties":{
++                "action":{"type":"string","enum":["LIST","SELECT","PAGE","FINISH"]},"entryId":{"type":"string","maxLength":64},
++                "category":{"type":"string","enum":["","BUSINESS_DATA","KEY_RECEIPT","OWNER_MANIFEST","IRREPLACEABLE_SOURCE"]},"page":{"type":"integer","minimum":0}}}
++                """);
++            for (int turn = 0; priorIds.size() < 512 && turn < 512; turn++) {
++                var facts = Map.ofEntries(Map.entry("mode", "BACKUP_ONLY_INVENTORY_NO_PAYLOAD"), Map.entry("task", task.id().toString()), Map.entry("server", SERVER),
++                    Map.entry("wireFingerprint", fingerprint), Map.entry("layoutSha256", layoutSha), Map.entry("objects", entries.values().stream().skip((long) page[0] * 64).limit(64).map(file -> backupVisible(file, listed, selected.keySet())).toList()),
++                    Map.entry("page", page[0]), Map.entry("pages", Math.max(1, (entries.size() + 63) / 64)), Map.entry("selectedCount", selected.size()), Map.entry("selectedBytes", state.get("selectedBytes")),
++                    Map.entry("unavailableCount", unavailable.size()), Map.entry("unavailable", unavailable.stream().skip(Math.max(0, unavailable.size() - 16)).toList()));
++                String input = JSON.writeValueAsString(facts);
++                var response = ai.call(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, history.messages(policy, input), List.of(tool), revision, task, false);
++                backupRequire(response.finishReason().equals("tool_calls") && priorIds.size() + response.toolCalls().size() <= 512);
++                List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult> results;
++                try {
++                    int receiptStart = receipts.size();
++                    results = backupBatch(response.toolCalls(), Set.copyOf(entries.keySet()), priorIds, choice -> {
++                        String name = choice.path("action").asText(), id = choice.path("entryId").asText();
++                        if (name.equals("PAGE")) {
++                            int requested = choice.path("page").intValue();
++                            if (requested * 64L >= entries.size())
++                                return Map.of("status", "REJECTED_PAGE_OUT_OF_RANGE");
++                            page[0] = requested;
++                            return Map.of("status", "PAGE_SELECTED", "page", requested);
++                        }
++                        if (name.equals("FINISH")) {
++                            finished[0] = true;
++                            return Map.of("status", "INVENTORY_FINISH_METADATA_ONLY");
++                        }
++                        var info = entries.get(id);
++                        if (name.equals("SELECT")) {
++                            if (!(Boolean) backupVisible(info, listed, selected.keySet()).get("selectable") || selected.containsKey(id))
++                                return Map.of("status", "REJECTED_NOT_AN_UNSELECTED_REGULAR_FILE");
++                            long total = selected.values().stream().mapToLong(row -> ((Number) row.get("bytes")).longValue()).sum();
+                             try {
+-                                backupRemote(child, roots);
+-                            } catch (IllegalArgumentException unsupported) {
+-                                unavailable.add(Map.of("path", child.requested().path(), "status", "UNKNOWN_LINK_OR_SPECIAL_CHILD_NOT_FOLLOWED", "kind", child.kind().name(), "links", child.links().size()));
+-                                continue;
++                                backupBudget(selected.size(), total, info.bytes());
++                            } catch (IllegalArgumentException bound) {
++                                unavailable.add(Map.of("path", info.requested().path(), "status", "UNKNOWN_SELECTION_BUDGET", "bytes", info.bytes()));
++                                return Map.of("status", "UNKNOWN_SELECTION_BUDGET");
+                             }
+-                        } else
+-                            backupRequire(child.requested().server().equals(Optional.of(new ServerId(SERVER))) && child.requested().parent().equals(info.actual()));
+-                        backupRequire(entries.size() < 4096);
+-                        entries.put(inputDigest(child.requested().key()), child);
+-                    }
+-                    listed.add(entryId);
+-                    feedback = Map.of("status", "LIST_SUCCEEDED", "entryId", entryId, "children", children.size());
+-                } catch (ApiException unavailableList) {
+-                    unavailable.add(Map.of("path", info.requested().path(), "status", "UNKNOWN_LIST_NOT_COMPLETE", "code", unavailableList.problem().code().name(), "eventSha256", inputDigest(unavailableList.problem().eventCode())));
+-                    feedback = Map.of("status", "UNKNOWN_LIST_NOT_COMPLETE", "entryId", entryId, "code", unavailableList.problem().code().name());
+-                }
+-            } else if (name.equals("SELECT")) {
+-                if (!(Boolean) backupVisible(info, listed, selected.keySet()).get("selectable") || selected.containsKey(entryId)) {
+-                    feedback = Map.of("status", "REJECTED_NOT_AN_UNSELECTED_REGULAR_FILE", "entryId", entryId);
+-                    continue;
++                            var row = new LinkedHashMap<>(backupMetadata(info));
++                            row.put("category", choice.path("category").asText());
++                            selected.put(id, row);
++                            return Map.of("status", "SELECTED_METADATA_ONLY");
++                        }
++                        if (info.kind() != gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY || listed.contains(id))
++                            return Map.of("status", "REJECTED_NOT_AN_UNLISTED_DIRECTORY");
++                        try {
++                            var children = query.list(info.actual(), 4096, task);
++                            if (children.size() + entries.size() > 4096) {
++                                unavailable.add(Map.of("path", info.requested().path(), "status", "UNKNOWN_OBJECT_REGISTRY_BOUND", "observedImmediateChildCount", children.size()));
++                                return Map.of("status", "UNKNOWN_OBJECT_REGISTRY_BOUND");
++                            }
++                            for (var child : children) {
++                                try {
++                                    backupRemote(child, roots);
++                                } catch (IllegalArgumentException unsupported) {
++                                    unavailable.add(Map.of("path", child.requested().path(), "status", "UNKNOWN_LINK_OR_SPECIAL_CHILD_NOT_FOLLOWED", "kind", child.kind().name(), "links", child.links().size()));
++                                    continue;
++                                }
++                                backupRequire(child.requested().parent().equals(info.actual()));
++                                entries.put(inputDigest(child.requested().key()), child);
++                            }
++                            listed.add(id);
++                            return Map.of("status", "LIST_SUCCEEDED", "children", children.size());
++                        } catch (ApiException failure) {
++                            unavailable.add(Map.of("path", info.requested().path(), "status", "UNKNOWN_LIST_NOT_COMPLETE", "code", failure.problem().code().name(), "eventSha256", inputDigest(failure.problem().eventCode())));
++                            return Map.of("status", "UNKNOWN_LIST_NOT_COMPLETE", "code", failure.problem().code().name());
++                        }
++                    }, partial -> {
++                        while (receipts.size() > receiptStart) receipts.removeLast();
++                        for (var receipt : partial) {
++                            try {
++                                receipts.add(JSON.convertValue(JSON.readTree(receipt.text()), Map.class));
++                            } catch (Exception invalid) {
++                                throw new IllegalStateException("BACKUP_RECEIPT_INVALID", invalid);
++                            }
++                        }
++                        save.accept("ACTION_RECEIPT_METADATA_ONLY");
++                    });
++                } catch (IllegalArgumentException invalid) {
++                    String reason = invalid.getMessage() != null && invalid.getMessage().matches("BACKUP_NATIVE_[A-Z_]+") ? invalid.getMessage() : "INVALID_NATIVE_ARGUMENTS";
++                    receipts.add(Map.of("status", "REJECTED_NATIVE_BATCH_NO_DISPATCH", "reason", reason, "callCount", response.toolCalls().size(), "calls", response.toolCalls().stream().map(call -> Map.of("callId", call.id(), "tool", call.name(), "status", "REJECTED_NATIVE_BATCH_NO_DISPATCH", "reason", reason)).toList()));
++                    save.accept("REJECTED_NATIVE_BATCH_NO_DISPATCH");
++                    throw invalid;
++                }
++                history.retain(input, response, results);
++                if (finished[0]) {
++                    save.accept("INVENTORY_FINISH_METADATA_ONLY");
++                    return Map.copyOf(state);
++                }
++            }
++            throw new IllegalStateException("BACKUP_INVENTORY_ACTION_BOUND_COVERAGE_UNKNOWN");
++        } catch (Exception failure) {
++            try {
++                save.accept("FAILED_OR_UNKNOWN_METADATA_RETAINED");
++            } catch (Exception retentionFailure) {
++                failure.addSuppressed(retentionFailure);
++            }
++            throw failure;
++        }
++    }
++
++    @Test
++    @EnabledIf("isolatedBackupBatchGuard")
++    void backupInventoryAcceptsNativeReadOnlyBatchesAndRetainsPartialMetadata() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        assertFalse(backupOnlyLive());
++        String id = "a".repeat(64);
++        String arguments = "{\"action\":\"LIST\",\"entryId\":\"" + id + "\",\"category\":\"\",\"page\":0}";
++        var calls = new java.util.ArrayList<gold.debug.windowstolinux.appapi.ai.model.AiToolCall>();
++        for (int i = 0; i < 7; i++)
++            calls.add(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("call_" + i, "backup_action", arguments));
++        var count = new AtomicInteger();
++        BackupAction callback = choice -> {
++            count.incrementAndGet();
++            return Map.of("status", "LIST_SUCCEEDED", "children", 3);
++        };
++        var checkpoints = new java.util.ArrayList<List<gold.debug.windowstolinux.appapi.ai.model.AiToolResult>>();
++        var results = backupBatch(calls, Set.of(id), new java.util.HashSet<>(), callback, checkpoints::add);
++        assertEquals(7, count.get());
++        assertEquals(calls.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolCall::id).toList(), results.stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolResult::callId).toList());
++        assertEquals(7, checkpoints.size());
++        var history = new gold.debug.windowstolinux.mod.deployment.ai.agent.DeploymentNativeHistory();
++        var response = new gold.debug.windowstolinux.appapi.ai.model.AiResponse("", "local-fixture", "tool_calls", new gold.debug.windowstolinux.appapi.ai.model.AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), calls, Optional.empty());
++        history.retain("metadata-only", response, results);
++        var messages = history.messages("BACKUP_ONLY", "new-metadata");
++        assertEquals(7, messages.stream().filter(message -> message.toolResult().isPresent()).count());
++        assertEquals(7, messages.stream().mapToInt(message -> message.toolCalls().size()).sum());
++        count.set(0);
++        assertEquals(1, backupBatch(List.of(calls.getFirst()), Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
++        }).size());
++        assertEquals(1, count.get());
++        var invalid = List.of(
++            List.of(calls.getFirst(), new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("other", "execute", arguments)),
++            List.of(calls.getFirst(), calls.getFirst()),
++            List.of(calls.getFirst(), new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("extra", "backup_action", arguments.replace("}", ",\"path\":\"/etc/private\"}"))),
++            List.of(calls.getFirst(), new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unsafe", "backup_action", arguments.replace("LIST", "DELETE"))),
++            List.of(calls.getFirst(), new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("bad-id", "backup_action", arguments.replace(id, "b".repeat(64)))),
++            List.of(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("bad-page", "backup_action", arguments.replace("0}", "1}")))
++        );
++        for (var batch : invalid) {
++            count.set(0);
++            assertThrows(Exception.class, () -> backupBatch(batch, Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
++            }));
++            assertEquals(0, count.get());
++        }
++        assertThrows(Exception.class, () -> backupBatch(calls, Set.of(id), new java.util.HashSet<>(Set.of("call_6")), callback, ignored -> {
++        }));
++        assertThrows(Exception.class, () -> backupBatch(java.util.Collections.nCopies(33, calls.getFirst()), Set.of(id), new java.util.HashSet<>(), callback, ignored -> {
++        }));
++        var finishCalls = new java.util.ArrayList<>(calls);
++        finishCalls.set(2, new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("finish", "backup_action", "{\"action\":\"FINISH\",\"entryId\":\"\",\"category\":\"\",\"page\":0}"));
++        count.set(0);
++        var finishResults = backupBatch(finishCalls, Set.of(id), new java.util.HashSet<>(), choice -> {
++            count.incrementAndGet();
++            return Map.of("status", choice.path("action").asText().equals("FINISH") ? "INVENTORY_FINISH_METADATA_ONLY" : "LIST_SUCCEEDED");
++        }, ignored -> {
++        });
++        assertEquals(3, count.get());
++        assertEquals(7, finishResults.size());
++        for (int i = 3; i < 7; i++)
++            assertEquals("NOT_STARTED", JSON.readTree(finishResults.get(i).text()).path("status").asText());
++        Path evidence = Files.createDirectory(root.resolve("backup-local-130"));
++        var task = java.util.UUID.randomUUID();
++        var progress = new BackupProgress(evidence, task, "backup-local-130", "c".repeat(64), "local-fixture-fingerprint");
++        var metadata = new LinkedHashMap<String, Object>();
++        metadata.putAll(Map.of("task", task.toString(), "run", "backup-local-130", "mode", "INVENTORY_ONLY", "coverage", "UNKNOWN_PARENT_REVIEW_REQUIRED", "backupComplete", false,
++            "layoutSha256", "c".repeat(64), "wireFingerprint", "local-fixture-fingerprint", "objects", List.of(Map.of("id", id, "bytes", 12))));
++        progress.save(metadata, "ROOT_OBSERVATION_METADATA_ONLY");
++        var failureCount = new AtomicInteger();
++        assertThrows(java.io.IOException.class, () -> backupBatch(calls, Set.of(id), new java.util.HashSet<>(), choice -> {
++            if (failureCount.incrementAndGet() == 2)
++                throw new java.io.IOException("controlled-private-body-must-not-leak");
++            return Map.of("status", "LIST_SUCCEEDED");
++        }, partial -> {
++            metadata.put("receipts", partial.stream().map(receipt -> {
++                try {
++                    return JSON.readTree(receipt.text());
++                } catch (Exception rejected) {
++                    throw new IllegalStateException(rejected);
+                 }
+-                backupRequire(Set.of("BUSINESS_DATA", "KEY_RECEIPT", "OWNER_MANIFEST", "IRREPLACEABLE_SOURCE").contains(choice.path("category").asText()));
+-                backupBudget(selected.size(), total, info.bytes());
+-                total += info.bytes();
+-                var row = new LinkedHashMap<>(backupMetadata(info));
+-                row.put("category", choice.path("category").asText());
+-                selected.put(choice.path("entryId").asText(), row);
+-                feedback = Map.of("status", "SELECTED_METADATA_ONLY", "entryId", entryId);
+-            } else throw new IllegalArgumentException("BACKUP_ONLY_ACTION_NOT_ALLOWED");
++            }).toList());
++            try {
++                progress.save(metadata, "PARTIAL_METADATA_ONLY");
++            } catch (Exception rejected) {
++                throw new IllegalStateException(rejected);
++            }
++        }));
++        assertEquals(2, failureCount.get());
++        Path artifact = evidence.resolve("inventory-progress-" + task + ".json");
++        String actual = Files.readString(artifact);
++        var partial = JSON.readTree(actual);
++        assertFalse(partial.path("backupComplete").asBoolean());
++        assertEquals("UNKNOWN_PARENT_REVIEW_REQUIRED", partial.path("coverage").asText());
++        assertEquals(7, partial.path("receipts").size());
++        assertEquals("UNKNOWN_ACTION_FAILED", partial.path("receipts").get(1).path("status").asText());
++        assertEquals("NOT_STARTED", partial.path("receipts").get(6).path("status").asText());
++        assertFalse(actual.contains("controlled-private-body"));
++        assertThrows(Exception.class, () -> new BackupProgress(evidence, task, "backup-local-130", "c".repeat(64), "local-fixture-fingerprint"));
++        assertThrows(Exception.class, () -> new BackupProgress(evidence, java.util.UUID.randomUUID(), "wrong-run", "c".repeat(64), "local-fixture-fingerprint"));
++        Path linkTarget = Files.createDirectory(root.resolve("backup-progress-target"));
++        Path junction = root.resolve("backup-linked-130");
++        var junctionProcess = new ProcessBuilder("cmd.exe", "/c", "mklink", "/J", junction.toString(), linkTarget.toString()).redirectErrorStream(true).start();
++        assertEquals(0, junctionProcess.waitFor());
++        try {
++            assertThrows(Exception.class, () -> new BackupProgress(junction, java.util.UUID.randomUUID(), "backup-linked-130", "c".repeat(64), "local-fixture-fingerprint"));
++        } finally {
++            Files.delete(junction);
+         }
+-        throw new IllegalStateException("BACKUP_INVENTORY_ACTION_BOUND_COVERAGE_UNKNOWN");
++        metadata.put("layoutSha256", "d".repeat(64));
++        assertThrows(Exception.class, () -> progress.save(metadata, "WRONG_LAYOUT"));
++        metadata.put("layoutSha256", "c".repeat(64));
++        metadata.put("backupComplete", true);
++        assertThrows(Exception.class, () -> progress.save(metadata, "FALSE_COMPLETE"));
++        metadata.put("backupComplete", false);
++        metadata.put("task", java.util.UUID.randomUUID().toString());
++        assertThrows(Exception.class, () -> progress.save(metadata, "WRONG_TASK"));
++        metadata.put("task", task.toString());
++        metadata.put("oversized", "x".repeat(2 * 1024 * 1024));
++        assertThrows(Exception.class, () -> progress.save(metadata, "OVER_BOUND"));
++        metadata.remove("oversized");
++        assertEquals(actual, Files.readString(artifact));
++        Files.writeString(artifact, "unrelated-change");
++        assertThrows(Exception.class, () -> progress.save(metadata, "CHANGED_FILE"));
++        assertEquals("unrelated-change", Files.readString(artifact));
+     }
+ 
+     private Map<String, Object> backupDownloadSelected(ModContext context, TaskContext task, RemoteSession session, List<String> roots,
