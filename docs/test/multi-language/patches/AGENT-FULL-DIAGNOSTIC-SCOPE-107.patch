@@ -1,0 +1,201 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -82,8 +82,9 @@
+ 
+     private static boolean isolatedStopDiagnostics() {
+         return "true".equals(System.getProperty("managed.runtime.stopDiagnosticsLocal"))
+-            && "DeploymentStaticLiveAcceptanceTest#safeCapacityRefusalAndUnableDiagnosticsRetainBindingsWithoutBodyLeakage"
+-            .equals(System.getProperty("test"));
++            && Set.of("DeploymentStaticLiveAcceptanceTest#safeCapacityRefusalAndUnableDiagnosticsRetainBindingsWithoutBodyLeakage",
++                "DeploymentStaticLiveAcceptanceTest#fullAgentMonitorRetainsSafeCapacityAndUnableDiagnosticsWithoutWideningScope")
++            .contains(System.getProperty("test", ""));
+     }
+ 
+     @Test
+@@ -165,6 +166,135 @@
+             String rejected = liveToolDiagnosticProjection(task, new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unable-invalid-94", "unable", invalid), null);
+             assertEquals("UNKNOWN", json.readTree(rejected.substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
+             assertFalse(rejected.contains("private-script-94"));
++        }
++    }
++
++    @Test
++    @EnabledIf("isolatedStopDiagnostics")
++    void fullAgentMonitorRetainsSafeCapacityAndUnableDiagnosticsWithoutWideningScope() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        var taskId = java.util.UUID.fromString("10000000-0000-4000-8000-000000000107");
++        var json = new com.fasterxml.jackson.databind.ObjectMapper();
++        var data = json.createObjectNode().put("code", "WORKSPACE_HOST_INSUFFICIENT").put("task", taskId.toString());
++        for (String field : List.of("sourceSha256", "configurationSha256", "layoutSha256", "capacityRequestSha256", "capacityResultSha256", "inputsSha256"))
++            data.put(field, "a".repeat(64));
++        data.put("archiveBytes", 100).put("unpackedBytes", 200).put("availableBytes", 1228001280L)
++            .put("hostReserveBytes", 1073741824L).put("requiredBytes", 1610612736L).put("aggregateHostCostBytes", 536870912L)
++            .put("cost", "AGENT").put("hostCostMultiplier", 2).put("componentCount", 1).put("truncated", false)
++            .put("newInputsNotCreatedByRejectedPlan", true);
++        data.putArray("components").addObject().put("id", "web").put("sourceFloorBytes", 200).put("mode", "EXPLICIT")
++            .put("minimumBuildBytes", 268435456L).put("preferredBuildBytes", 268435456L).put("explicitBytes", 268435456L).put("hostCostBytes", 536870912L);
++        var task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(), new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
++            assertEquals("id", method.getName(), "The memory fixture must not access task resources");
++            return taskId;
++        });
++        var savedOut = System.out;
++        String previousLimit = System.getProperty("managed.live.observedTokenLimit");
++        mainOnlyDiagnostic = false;
++        try {
++            System.setProperty("managed.live.observedTokenLimit", "150000");
++            for (String scenario : List.of("STATIC", "ASSISTED", "APPROVAL", "FULL_AGENT", "OTHER_TOOL", "INVALID_DATA", "UNSAFE_REASON")) {
++                aiEnabled = !scenario.equals("STATIC");
++                agentMode = !scenario.equals("STATIC") && !scenario.equals("ASSISTED");
++                var purpose = scenario.equals("APPROVAL") ? gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL
++                    : gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE;
++                var call = new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("plan-107-" + scenario,
++                    scenario.equals("OTHER_TOOL") ? "inspect" : "plan", "{\"script\":\"private-script-107\",\"password\":\"argument-private-107\"}");
++                var capacityData = data.deepCopy();
++                if (scenario.equals("INVALID_DATA")) capacityData.put("script", "capacity-private-107");
++                var capacity = new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(),
++                    "o1\nTOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + capacityData, true);
++                String reason = scenario.equals("UNSAFE_REASON") ? "Run bash unsafe-private-107 && continue"
++                    : "The observed capacity requires a decision. 密码=cn-private-107; API密钥=api-private-107; access_token=token-private-107";
++                var arguments = json.createObjectNode().put("reason", reason);
++                if (scenario.equals("INVALID_DATA")) arguments.put("script", "unable-private-107");
++                var unable = new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unable-107-" + scenario,
++                    scenario.equals("OTHER_TOOL") ? "inspect" : "unable", arguments.toString());
++                var response = new gold.debug.windowstolinux.appapi.ai.model.AiResponse("", "controlled-memory", "tool_calls",
++                    new gold.debug.windowstolinux.appapi.ai.model.AiUsage(Optional.of(3L), Optional.of(2L), Optional.empty(), Optional.empty(), Optional.empty()),
++                    List.of(unable), Optional.empty());
++                var request = new gold.debug.windowstolinux.appapi.ai.model.AiRequest(purpose,
++                    List.of(new gold.debug.windowstolinux.appapi.ai.model.AiMessage(gold.debug.windowstolinux.appapi.ai.model.AiRole.USER, "{}", List.of()),
++                        new gold.debug.windowstolinux.appapi.ai.model.AiMessage(gold.debug.windowstolinux.appapi.ai.model.AiRole.ASSISTANT, "", List.of(),
++                            List.of(call), Optional.empty(), Optional.empty()),
++                        gold.debug.windowstolinux.appapi.ai.model.AiMessage.result(capacity)),
++                    16, java.time.Duration.ofSeconds(1), false,
++                    List.of(new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition(call.name(), "Controlled observation", "{\"type\":\"object\"}"),
++                        new gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition("unable", "Controlled stop", "{\"type\":\"object\"}")));
++                var calls = new AtomicInteger();
++                var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
++                    assertEquals("call", method.getName());
++                    var forwarded = (gold.debug.windowstolinux.appapi.ai.model.AiRequest) args[0];
++                    assertEquals(request.messages(), forwarded.messages());
++                    assertEquals(request.tools(), forwarded.tools());
++                    assertEquals(request.requiredToolName(), forwarded.requiredToolName());
++                    assertSame(task, args[1]);
++                    calls.incrementAndGet();
++                    return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(response), Optional.empty());
++                });
++                var context = (ModContext) Proxy.newProxyInstance(ModContext.class.getClassLoader(), new Class<?>[]{ModContext.class}, (proxy, method, args) -> {
++                    assertEquals("ai", method.getName(), "The memory fixture must not access Runtime, DB or host capabilities");
++                    return ai;
++                });
++                var output = new java.io.ByteArrayOutputStream();
++                savedOut.println("AI_LIVE_DIAGNOSTIC_CONTROLLED_SCENARIO " + scenario);
++                try (var captured = new java.io.PrintStream(output, true, java.nio.charset.StandardCharsets.UTF_8)) {
++                    System.setOut(captured);
++                    var monitoredAi = monitored(context, gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai()).ai();
++                    if (scenario.equals("STATIC"))
++                        assertEquals("Static acceptance forbids AI: call", assertThrows(AssertionError.class, () -> monitoredAi.call(request, task)).getMessage());
++                    else assertSame(response, monitoredAi.call(request, task).value().orElseThrow());
++                } finally {
++                    System.setOut(savedOut);
++                    savedOut.print(output.toString(java.nio.charset.StandardCharsets.UTF_8));
++                }
++                assertEquals(scenario.equals("STATIC") ? 0 : 1, calls.get());
++                String log = output.toString(java.nio.charset.StandardCharsets.UTF_8);
++                for (String sensitive : List.of("private-script-107", "argument-private-107", "capacity-private-107", "cn-private-107",
++                    "api-private-107", "token-private-107", "unable-private-107", "unsafe-private-107"))
++                    assertFalse(log.contains(sensitive), "A monitored call must not emit credential or executable canaries");
++                var projections = log.lines().filter(line -> line.startsWith("AI_LIVE_STOP_DIAGNOSTIC "))
++                    .map(line -> line.substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).toList();
++                int expected = Set.of("STATIC", "ASSISTED", "APPROVAL").contains(scenario) ? 0 : scenario.equals("OTHER_TOOL") ? 1 : 2;
++                assertEquals(expected, projections.size(), "Actual monitored dispatch must retain both full AGENT observations: " + scenario);
++                if (expected == 0) continue;
++                var capacityProjection = json.readTree(projections.get(0));
++                assertEquals(taskId.toString(), capacityProjection.path("task").asText());
++                if (!scenario.equals("OTHER_TOOL"))
++                    assertEquals(inputDigest(capacity.text()), capacityProjection.path("inputSha256").asText());
++                if (Set.of("OTHER_TOOL", "INVALID_DATA").contains(scenario)) {
++                    assertEquals("UNKNOWN", capacityProjection.path("status").asText());
++                    assertFalse(capacityProjection.has("capacity"));
++                } else {
++                    assertEquals("OBSERVED", capacityProjection.path("status").asText());
++                    assertEquals(call.id(), capacityProjection.path("call").asText());
++                    assertEquals(data.toString(), capacityProjection.path("capacity").toString());
++                    assertTrue(capacity.text().length() > 512);
++                }
++                if (scenario.equals("OTHER_TOOL")) continue;
++                var unableProjection = json.readTree(projections.get(1));
++                assertEquals(taskId.toString(), unableProjection.path("task").asText());
++                assertEquals(unable.id(), unableProjection.path("call").asText());
++                if (scenario.equals("INVALID_DATA")) {
++                    assertEquals("UNKNOWN", unableProjection.path("status").asText());
++                    assertFalse(unableProjection.has("reason"));
++                } else {
++                    assertEquals(inputDigest(reason), unableProjection.path("reasonSha256").asText());
++                    assertTrue(unableProjection.path("redacted").asBoolean());
++                    if (scenario.equals("UNSAFE_REASON")) {
++                        assertEquals("REDACTED", unableProjection.path("status").asText());
++                        assertFalse(unableProjection.has("reason"));
++                    } else {
++                        assertEquals("OBSERVED", unableProjection.path("status").asText());
++                        assertEquals(safeInputData(reason), unableProjection.path("reason").asText());
++                    }
++                }
++            }
++        } finally {
++            System.setOut(savedOut);
++            if (previousLimit == null) System.clearProperty("managed.live.observedTokenLimit");
++            else System.setProperty("managed.live.observedTokenLimit", previousLimit);
+         }
+     }
+ 
+@@ -802,7 +932,8 @@
+                     value.messages().stream().flatMap(message -> message.toolResult().stream())
+                         .filter(tool -> tool.error() && reportedToolRejections.add(tool.callId()))
+                         .forEach(tool -> {
+-                            if (mainOnlyDiagnostic && tool.text().contains("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=")) {
++                            if ((mainOnlyDiagnostic || (agentMode && value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE))
++                                && tool.text().contains("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=")) {
+                                 var original = value.messages().stream().flatMap(message -> message.toolCalls().stream())
+                                     .filter(call -> call.id().equals(tool.callId()) && call.name().equals("plan")).findFirst().orElse(null);
+                                 var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElse(null);
+@@ -855,7 +986,7 @@
+                         for (var call : response.toolCalls())
+                             System.out.println("AI_LIVE_NATIVE_TOOL id=" + call.id() + " name=" + call.name() + " argumentCharacters=" + call.arguments().length()
+                                 + " browse=" + browseMetadata(call));
+-                        if (mainOnlyDiagnostic)
++                        if (mainOnlyDiagnostic || (agentMode && request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE))
+                             for (var call : response.toolCalls())
+                                 if (call.name().equals("unable")) {
+                                     var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElse(null);
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-FULL-DIAGNOSTIC-SCOPE-107.md
+@@ -0,0 +1,29 @@
++# 完整 AGENT 安全诊断 scope（107）
++
++完整 AGENT 的主模型监控现在保留原安全容量拒绝和 `unable` 诊断。105真实日志只保留容量 DATA 的512字符前缀和 unable 参数长度；确定缺口位于 `DeploymentStaticLiveAcceptanceTest.monitored(...).ai()` 的两个 `mainOnlyDiagnostic` gate。本次各补 `agentMode && purpose == LANGUAGE`，原mainOnly条件保留；不将扩展scope应用于APPROVAL、ASSISTED或STATIC。不改变主/审批工具选择、授权、配额算法、通用floor反馈或模型步骤。
++
++原 `diagnosticJson`、`liveToolDiagnosticProjection` 及其校验helper全文不变，SHA256 `8eedee2b061a0cf9152c9dc7228789ae0ce39d4c02d81f6bf0b75abc2372b79f`；原输入桥、secret mask亦不变。容量仍要求原同callId的plan、error结果、task绑定、严格JSON与字段白名单；unable仍仅处理该工具，并保留reason SHA/长度、敏感值脱敏、危险正文REDACTED。其它容量工具缺plan绑定时保留原UNKNOWN元数据，不能输出capacity/reason；没有新增matched-plan gate改变原语义。
++
++新增唯一非参数 selector `DeploymentStaticLiveAcceptanceTest#fullAgentMonitorRetainsSafeCapacityAndUnableDiagnosticsWithoutWideningScope`，字面 `managed.runtime.stopDiagnosticsLocal=true` 与该精确selector共同启用。既有isolatedStopDiagnostics仅增加该精确方法，不支持类级、通配或组合selector；旧94/91/104未重跑。
++
++该方法使用纯内存Fake ModContext（仅ai）、TaskContext（仅id）和AiService（仅call），直接调用真实 `monitored(...).ai().call`。request含原plan call和完整拒绝result，response含unable native call；fixture断言完整messages/tools/task转发、requiredToolName不变和原response原样返回。捕获实际wrapper输出后总是恢复stdout，不直接调用静态投影方法来代替dispatch。没有执行native tool、Runtime、数据库、DPAPI、provider或SSH，也没有新增依赖。
++
++| 轮次 | 唯一方法原结果 | 实际证据 |
++| --- | --- | --- |
++| baseline01 | 1 failure / 0 errors / 0 skipped；class0.129s、case0.114s | STATIC/ASSISTED/APPROVAL范围检查通过；完整AGENT实际dispatch预期两投影、实际零，确证旧scope遗漏 |
++| corrected01 | 1 failure / 0 errors / 0 skipped；class0.251s、case0.237s | 只修两gate后已输出正确两投影；fixture的LongNode与解析IntNode比较失败，完整JSON文本一致；失败原证保留 |
++| corrected02 | 1 pass / 0 failures / 0 errors / 0 skipped；class0.183s、case0.170s | 仅将fixture断言改为完整JSON文本比较；七场景全部通过 |
++| format-01 | single-owner IDEA write/check exit0，freeze0 | 一轮通过，格式后源码字节仍等corrected02已测源码 |
++| package-01 | deployment reactor明确skipTests，exit0，freeze0 | 未附带业务测试 |
++
++最终七场景：STATIC禁止AI且delegate零调用；ASSISTED与APPROVAL无安全停止投影；完整AGENT/LANGUAGE完整capacity及安全reason均OBSERVED，组件声明超512字符仍可核；其它工具仅原UNKNOWN无正文；非法白名单/参数原UNKNOWN无正文；危险reason原REDACTED无正文。原plan arguments、credential-shaped reason及非法/危险脚本canary均未出现在当轮日志。真实 wrapper 的call/task/SHA绑定、安全字段及转发行为均由新方法断言。
++
++所有测试显式 `-pl src/mod/deployment -am -Dtest=DeploymentStaticLiveAcceptanceTest#fullAgentMonitorRetainsSafeCapacityAndUnableDiagnosticsWithoutWideningScope -Dsurefire.failIfNoSpecifiedTests=false -Dmanaged.runtime.stopDiagnosticsLocal=true`，仅同一失败方法重跑，未跑整类/模块/全量。各轮原日志/XML/TXT时间与SHA、源冻结均保留；两失败轮没有覆盖或改写为通过。
++
++before3297精确等104after，冻结HEAD `77a2be13b36708a4ca1c58800fcc1fa127eed175`、index empty；after3297仅指定Test owner变化。旧JAR `4e28dd5418778c8ade7ad85dd142197783b1b7215c85533c3ffcccedf120ecac`，新JAR `97c69cfb003673b5653bc2db477980d445c8ec479563f1dc67327ad701c27bde`；1044生产class和29Agent资源逐项SHA不变。生产源、Skill、配置及105/历史失败UNKNOWN证据未改动。
++
++最终非管理员普通用户CIM正枚举360进程并核自身，30组已记录本次PID/创建ticks全部退出，任务命令残留0。baseline方法执行过快，仅记录launcher、外部快照为空；corrected两轮通过runner自身CIM线程采样保存实际Maven/Surefire后代，采样线程正常取消/结束/移除；package实际后代亦已记录。没有停止既有或其它任务进程。
++
++本次只验证本地内存wrapper诊断闭环，没有付费fullAPP重跑或DB调查。105原unable正文及未完整保留的实际组件声明仍UNKNOWN，不能由新fixture倒推；102原PASS和105原FAIL均保留。
++
++证据：`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-full-diagnostic-scope-107`；正式增量 `patches/AGENT-FULL-DIAGNOSTIC-SCOPE-107.patch`（本次Test+本文），单Test增量 `107-test-increment.patch`。Git由父任务精确隔离本地提交，不推送。
