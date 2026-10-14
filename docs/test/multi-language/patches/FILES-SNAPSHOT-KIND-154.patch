@@ -1,0 +1,48 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index eec769733d6b93710f9833227a203fd5e02b9dff..2dc529114ce23beadbdbb024de1e8ad1b53d0f23 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -349,7 +349,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             && node.path("scope").asText().equals("BACKUP_ONLY") && node.path("run").asText().equals(run)
+             && node.path("server").asText().equals(server) && node.path("fingerprint").asText().equals(fingerprint)
+             && node.path("layoutSha256").asText().equals(layoutSha)
+-            && Set.of("READONLY_METADATA", "DATABASE_SNAPSHOT", "OWNED_BACKUP_CLEANUP").contains(node.path("kind").asText())
++            && Set.of("READONLY_METADATA", "DATABASE_SNAPSHOT", "FILES_SNAPSHOT", "OWNED_BACKUP_CLEANUP").contains(node.path("kind").asText())
+             && node.path("stdinNonSecret").isBoolean() && node.path("stdinNonSecret").asBoolean()
+             && node.path("outputNonSecret").isBoolean() && node.path("outputNonSecret").asBoolean()
+             && !node.path("script").asText().isBlank() && node.path("script").asText().indexOf('\0') < 0
+@@ -447,6 +447,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         String operation = switch (node.path("kind").asText()) {
+             case "READONLY_METADATA" -> "backup.metadata.read.v1";
+             case "DATABASE_SNAPSHOT" -> "backup.database.snapshot.v1";
++            case "FILES_SNAPSHOT" -> "backup.files.snapshot.v1";
+             case "OWNED_BACKUP_CLEANUP" -> "backup.owned.cleanup.v1";
+             default -> throw new IllegalArgumentException("BACKUP_COMMAND_KIND");
+         };
+@@ -619,6 +620,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                                 + "DATABASE_SNAPSHOT may read necessary authorized payload, including potentially secret data, ONLY into a new owned private backup output: "
+                                 + "require exact regular source paths/identities, no unapproved links or hardlinks, complete source facts, native SQLite online consistency/integrity, "
+                                 + "a new private destination, bounded per-file/total peak storage and sufficient fresh capacity. Source WAL/shared-memory filesystem effects are not business writes. "
++                                + "FILES_SNAPSHOT may preserve necessary non-database files only under bounded selection rules, frozen UID/mode/device/inode identities, "
++                                + "stable observations before/after each read and actual content SHA, into a new owned private output with count, byte and peak storage limits. "
++                                + "Database payload still requires the separate BUSINESS_DATA SQLite snapshot consistency admission; a kind label is never proof. "
+                                 + "OWNED_BACKUP_CLEANUP permits only exact independently evidenced resources created by this backup operation. "
+                                 + "Deny payload/secret bodies in stdout, stderr, prompts or logs, deployment, old-resource recovery/deletion, unsupported ownership or consistency, and unbounded collection. "
+                                 + "A DENY always stops; a favorable reason never substitutes for APPROVE. No replay is authorized. A decision grants no execution permission. "
+@@ -707,6 +711,16 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         }
+         assertFalse(factsTree.path("replayAllowed").asBoolean());
+         assertFalse(factsTree.path("backupComplete").asBoolean());
++        Files.writeString(file, valid.deepCopy().put("kind", "FILES_SNAPSHOT").toString());
++        var filesPlan = read.call();
++        String filesFacts = backupCommandFacts(filesPlan, task, revision);
++        var filesTree = JSON.readTree(filesFacts);
++        assertEquals("FILES_SNAPSHOT", filesTree.path("plan").path("kind").asText());
++        assertEquals("backup.files.snapshot.v1", filesTree.path("exactIntent").path("semantics").path("operation").asText());
++        assertEquals(factsTree.path("commandRequest"), filesTree.path("commandRequest"));
++        assertNotEquals(inputDigest(facts), inputDigest(filesFacts));
++        assertNotEquals(plan.sha(), filesPlan.sha());
++        Files.writeString(file, original);
+         assertThrows(Exception.class, () -> backupCommandPlan(workspace, file, "0".repeat(64), run, SERVER, fingerprint, layout));
+         Path outside = workspace.resolve("outside.json");
+         Files.writeString(outside, original);
