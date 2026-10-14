@@ -1,0 +1,106 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -91,6 +91,8 @@
+     /** Reviewed fixed candidate operations on the same target. / 同一目标上经审阅固定候选操作。 */
+     private DeploymentCandidateChannel candidates;
+ 
++    private RemoteSession candidateSession;
++
+     /** Fixed limited Agent host observations on the original reviewed channel. / 原经审核通道上的固定有限 Agent 主机观测。 */
+     private DeploymentAgentHostChannel hosts;
+ 
+@@ -229,7 +231,8 @@
+                     "DEPLOYMENT_AGENT_CONFIGURATION_CHANGED", "AI configuration changed before remote dispatch",
+                     Map.of(), Optional.empty()));
+         };
+-        this.candidates = new DeploymentCandidateChannel(candidateDiagnosticSession(configurationRevision), this.interaction, server, task, configurationRevision,
++        this.candidateSession = candidateDiagnosticSession(configurationRevision);
++        this.candidates = new DeploymentCandidateChannel(candidateSession, this.interaction, server, task, configurationRevision,
+             budget, beforeSend, layout);
+         this.hosts = new DeploymentAgentHostChannel(session, this.interaction, server, task, configurationRevision,
+             budget, beforeSend, layout);
+@@ -512,7 +515,7 @@
+     private gold.debug.windowstolinux.appapi.task.result.OperationResult<DeploymentRemoteWorkspace> verifyUploaded(DeploymentRemoteWorkspace workspace) throws ApiException {
+         var specification = candidates.verification(workspace, archive);
+         var reviewed = context.withCurrentEvidence(verificationEvidence(specification, workspace));
+-        return new DeploymentCandidateChannel(session, reviewed.interaction(), server, task, configurationRevision,
++        return new DeploymentCandidateChannel(candidateSession, reviewed.interaction(), server, task, configurationRevision,
+             budget, beforeSend, layout).verify(specification);
+     }
+ 
+@@ -546,7 +549,7 @@
+         private void requireOriginal() throws ApiException {
+             beforeSend.verify();
+             if (!revision.equals(configurationRevision)
+-                || !specification.matches(session, server, task, revision, layout, workspace, archive)
++                || !specification.matches(candidateSession, server, task, revision, layout, workspace, archive)
+                 || !workspace.archiveSha256().equals(archive.sha256())
+                 || !archive.sourceManifestSha256().equals(originalSourceRevision))
+                 throw changed();
+@@ -1057,7 +1060,8 @@
+         configurationRevision = revision;
+         approvalConversation = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentApprovalConversation(
+             context, task, server, session.facts().fingerprint(), originalSourceRevision, revision, layout);
+-        candidates = new DeploymentCandidateChannel(candidateDiagnosticSession(revision), interaction, server, task, revision, budget, beforeSend, layout);
++        candidateSession = candidateDiagnosticSession(revision);
++        candidates = new DeploymentCandidateChannel(candidateSession, interaction, server, task, revision, budget, beforeSend, layout);
+         hosts = new DeploymentAgentHostChannel(session, interaction, server, task, revision, budget, beforeSend, layout);
+         projects.replaceConfiguration(revision);
+         buildTools.replaceConfiguration(revision);
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+@@ -48,6 +48,8 @@
+ 
+     private static final ObjectMapper JSON = new ObjectMapper();
+ 
++    private boolean diagnosticCandidateSessionIdentityJourney;
++
+     enum VerificationMode {
+         APPROVE, DENY, INCOMPLETE_BODY, CONFIGURATION_CHANGED, CAPACITY_LOW, CAPACITY_TRUNCATED, CAPACITY_CANCELLED, CAPACITY_MISSING, CAPACITY_UNSETTLED, BUILD_SMALL, BUILD_LARGE, CAPACITY_AFTER_INSTALL, CAPACITY_INSTALL_UNKNOWN;
+ 
+@@ -60,6 +62,12 @@
+     @EnumSource(value = VerificationMode.class, names = {"APPROVE", "DENY", "INCOMPLETE_BODY", "CONFIGURATION_CHANGED"})
+     void uploadedArchiveConsumerEvidenceReachesNativeReviewBeforeVerifyAndOpen(VerificationMode mode) throws Exception {
+         runVerification(mode, false);
++    }
++
++    @Test
++    void diagnosticCandidateSessionIdentityIsSharedByProducerEvidenceAndConsumer() throws Exception {
++        diagnosticCandidateSessionIdentityJourney = true;
++        runVerification(VerificationMode.APPROVE, false);
+     }
+ 
+     @ParameterizedTest
+@@ -280,6 +288,12 @@
+                 if (creates != 1) throw new AssertionError("Original prepare did not reach candidate creation", error);
+                 assertEquals(1, creates);
+                 assertEquals(1, uploads);
++                if (diagnosticCandidateSessionIdentityJourney && error instanceof ApiException failure) {
++                    String event = failure.problem().eventCode();
++                    System.out.println("CANDIDATE_SESSION_IDENTITY_FAILURE problemCode=" + failure.problem().code().name()
++                        + " evidenceChanged=" + "DEPLOYMENT_AGENT_VERIFICATION_EVIDENCE_CHANGED".equals(event)
++                        + " verifyGrants=" + verifyGrants + " verifySends=" + verifySends + " opens=" + opens);
++                }
+                 assertEquals(mode == VerificationMode.APPROVE || mode.name().startsWith("BUILD_") ? 1 : 0, verifyGrants);
+                 assertEquals(verifyGrants, verifySends);
+                 assertEquals(verifySends, opens);
+diff --git a/docs/test/multi-language/DEPLOYMENT-AGENT-CANDIDATE-SESSION-IDENTITY-88.md b/docs/test/multi-language/DEPLOYMENT-AGENT-CANDIDATE-SESSION-IDENTITY-88.md
+new file mode 100644
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-CANDIDATE-SESSION-IDENTITY-88.md
+@@ -0,0 +1,13 @@
++# Agent 候选校验会话身份修复（88）
++
++原候选通道的诊断包装会话生成 Verification，而 Agent Evidence 和 reviewed verify 消费者使用原始会话；正式契约要求对象恒等，因此 prepare 在校验审核/发送前被 ACCESS_DENIED / DEPLOYMENT_AGENT_VERIFICATION_EVIDENCE_CHANGED 拒绝。Agent RemoteTools 现在保存单一 candidateSession，初始构造和配置替换各一次 wrap，并让 producer、Evidence.matches、reviewed consumer 复用该对象。配置替换仍生成新身份并拒绝旧规格。
++
++共享 Verification.matches 的 session/task/server/workspace/archive 恒等检查、source/config/layout/request/grant/UNKNOWN/effects/close/审批/Quota不变；其他 channel 继续使用原 session，诊断仍 best-effort 记录并原样重抛 API 异常。没有改 shared、STATIC/ASSISTED、Skill、权限或恢复。
++
++唯一 selector：DeploymentAgentPrepareReviewTest#diagnosticCandidateSessionIdentityIsSharedByProducerEvidenceAndConsumer，非参数方法，复用 runVerification(APPROVE,false) 原临时 H2/native-review/受控 transport。baseline-01：1 FAIL / 9.748s，原 create/upload 断言通过，verifyGrants=0；旧计数断言没有保留 prepare cause，不称已捕获同码。仅新方法启用默认 false 的安全观测后，baseline-02：1 FAIL / 9.979s，原实际 ApiException 的 ProblemCode=ACCESS_DENIED、evidenceChanged=true、verifyGrants/verifySends/opens=0。corrected-01：1 PASS、0 FAIL/ERROR/SKIP，XML 10.844s（case 10.775s）；同一真实生产 prepare 达成1create/1upload、独立native review、1exactgrant/1verifySend/1open及PREPARE_RESULT/CURRENT_SOURCE。原两个失败轮和报告保留；没有执行旧4参数组、其他方法或整类。
++
++仅 RemoteTools 与 PrepareReviewTest 两 owner，before/after source各3296，before等于85after-final，非owner0；HEAD035ee1bcbdd7c595e22109c62b49f0187c877c82/index原字节不变。IDEA两owner write/check与必要skipTests package通过。实际 RemoteTools7 / Session9 / Runner3 共19classes及15Agentresources源码/target/JAR parity；PID/ticks退出证据见辅助报告，不穷尽短child采样。
++
++本地受控验证不是实际86恢复或真实API模型部署验收。原86/83/80/74/58 UNKNOWN、资源及调查DB全部保留，paid/provider/真实SSH/原DB/真实Runtime/恢复删除=0。sourceWriteDone/readDone=true；父负责增量隔离本地提交，不推送。
++
++证据目录：.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-candidate-session-identity-88。增量补丁：patches/AGENT-CANDIDATE-SESSION-IDENTITY-88.patch，仅本次2source+本文，UTF-8/LF。
