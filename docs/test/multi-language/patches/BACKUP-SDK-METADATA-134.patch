@@ -1,0 +1,468 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index 971bf9b3ea71b2f1e25a5253952d6c0bb0d5f23a..e41b841fae004914acc116335c01994edaf2f77d 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -71,7 +71,8 @@ import org.junit.jupiter.params.provider.MethodSource;
+ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+     private static boolean liveOrIsolatedInputBridge() {
+         return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+-            || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive();
++            || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive()
++            || isolatedBackupMetadata() || backupMetadataOnlyLive();
+     }
+ 
+     private static boolean isolatedBackupGuard() {
+@@ -90,6 +91,16 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             "DeploymentStaticLiveAcceptanceTest#downloadSelectiveBackupThroughProduct").contains(System.getProperty("test", ""));
+     }
+ 
++    private static boolean isolatedBackupMetadata() {
++        return Boolean.getBoolean("managed.runtime.backupMetadataLocal")
++            && "DeploymentStaticLiveAcceptanceTest#backupMetadataPlansBindObservedDirectoriesAndPreservePendingCoverage".equals(System.getProperty("test", ""));
++    }
++
++    private static boolean backupMetadataOnlyLive() {
++        return Boolean.getBoolean("managed.backup.metadataOnly")
++            && "DeploymentStaticLiveAcceptanceTest#inventorySelectiveBackupMetadataThroughProduct".equals(System.getProperty("test", ""));
++    }
++
+     private static final long BACKUP_FILE_LIMIT = 64L * 1024 * 1024;
+ 
+     private static final long BACKUP_TOTAL_LIMIT = 256L * 1024 * 1024;
+@@ -222,9 +233,22 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+     }
+ 
+     private void backupThroughProduct(boolean downloads) throws Exception {
++        backupThroughProduct(downloads, false);
++    }
++
++    @Test
++    @EnabledIf("backupMetadataOnlyLive")
++    void inventorySelectiveBackupMetadataThroughProduct() throws Exception {
++        backupThroughProduct(false, true);
++    }
++
++    private void backupThroughProduct(boolean downloads, boolean metadataOnly) throws Exception {
+         backupRequire(!Boolean.getBoolean("managed.runtime.staticLive") && !Boolean.getBoolean("managed.runtime.agentLive"));
+         var layout = backupLayout();
+         Path evidence = backupEvidence();
++        var layoutRoots = List.of(layout.paths().helperDirectory(), layout.paths().applicationsRoot(), layout.paths().stateRoot(), layout.paths().configurationRoot(), layout.paths().dataRoot());
++        var metadataPlan = metadataOnly ? backupMetadataPlan(workspace(), Path.of(System.getProperty("managed.backup.metadataPlanFile")),
++            System.getProperty("managed.backup.metadataPlanSha256"), System.getProperty("managed.backup.run"), layoutRoots, layout.digest(), System.getProperty("managed.ssh.fingerprint")) : null;
+         Path inventoryFile = downloads ? Path.of(System.getProperty("managed.backup.inventoryFile")).toAbsolutePath().normalize() : evidence.resolve("inventory.json");
+         com.fasterxml.jackson.databind.JsonNode frozen = null;
+         if (downloads) {
+@@ -241,24 +265,25 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             backupCanonical(destination.getParent());
+             backupRequire(!Files.exists(destination, java.nio.file.LinkOption.NOFOLLOW_LINKS));
+         }
+-        aiEnabled = true;
+-        agentMode = true;
++        aiEnabled = !metadataOnly;
++        agentMode = !metadataOnly;
+         connectionOnly = false;
+         root = workspace().resolve("src/app/db/data/backup-live-" + Long.toUnsignedString(System.nanoTime(), 36));
+         enable();
+         try (var runtime = open()) {
+             start(runtime, true);
+             saveServer(runtime);
+-            configureLiveModel(runtime);
+-            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            if (!metadataOnly) configureLiveModel(runtime);
++            var context = metadataOnly ? runtime.modContexts().get(OWNER).context() : monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+             final var approvedInventory = frozen;
+             var handle = context.tasks().<Map<String, Object>>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+-                downloads ? "deployment.backup.download" : "deployment.backup.inventory", "BACKUP_ONLY", List.of(SERVER), true), task -> {
++                metadataOnly ? "deployment.backup.metadata" : downloads ? "deployment.backup.download" : "deployment.backup.inventory", "BACKUP_ONLY", List.of(SERVER), true), task -> {
+                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
+                 try (var session = context.linux().connect(new ServerId(SERVER), task)) {
+                     backupRequire(session.facts().fingerprint().equals(System.getProperty("managed.ssh.fingerprint")));
+                     var roots = List.of(layout.paths().helperDirectory(), layout.paths().applicationsRoot(), layout.paths().stateRoot(), layout.paths().configurationRoot(), layout.paths().dataRoot());
+-                    var result = downloads ? backupDownloadSelected(context, task, session, roots, approvedInventory, destination)
++                    var result = metadataOnly ? backupSdkMetadata(context, task, roots, metadataPlan, layout.digest(), session.facts().fingerprint(), evidence)
++                        : downloads ? backupDownloadSelected(context, task, session, roots, approvedInventory, destination)
+                         : backupInventory(context, task, roots, layout.digest(), session.facts().fingerprint(), evidence);
+                     return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(result), Optional.empty());
+                 }
+@@ -272,6 +297,381 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         }
+     }
+ 
++    private record BackupMetadataPlan(String run, List<String> directories, int maxDepth, String sourceTask,
++                                      String sourceRun,
++                                      String sourceSha, String planSha) {
++    }
++
++    private static boolean backupMetadataPath(String path, List<String> roots) {
++        return path.startsWith("/") && roots.stream().anyMatch(root -> path.equals(root) || path.startsWith(root + "/"))
++            && !path.contains("//") && !path.contains("\\") && path.indexOf('\0') < 0
++            && Arrays.stream(path.substring(1).split("/", -1)).allMatch(part -> !part.isEmpty() && !part.equals(".") && !part.equals(".."));
++    }
++
++    private static com.fasterxml.jackson.databind.JsonNode backupBoundJson(Path workspace, Path file, String sha, int limit) throws Exception {
++        Path boundary = workspace.toAbsolutePath().normalize().resolve(".ai-workspace/agent-live-evidence");
++        backupRequire(file.isAbsolute() && file.equals(file.toAbsolutePath().normalize()) && file.startsWith(boundary)
++            && sha != null && sha.matches("[0-9a-f]{64}") && Files.size(file) > 0 && Files.size(file) <= limit);
++        backupCanonical(file);
++        byte[] bytes = Files.readAllBytes(file);
++        backupRequire(bytes.length <= limit && backupBytesSha(bytes).equals(sha));
++        String text = java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
++            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString();
++        return new com.fasterxml.jackson.databind.ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(text);
++    }
++
++    private static BackupMetadataPlan backupMetadataPlan(Path workspace, Path file, String sha, String run, List<String> roots,
++                                                         String layoutSha, String fingerprint) throws Exception {
++        var plan = backupBoundJson(workspace, file, sha, 65535);
++        var fields = new java.util.HashSet<String>();
++        plan.fieldNames().forEachRemaining(fields::add);
++        backupRequire(plan.isObject() && fields.equals(Set.of("schema", "run", "sourceInventoryFile", "sourceInventorySha256", "directories", "maxDepth"))
++            && plan.path("schema").isInt() && plan.path("schema").intValue() == 1 && run != null && run.matches("[a-z0-9][a-z0-9-]{0,95}")
++            && plan.path("run").isTextual() && plan.path("run").asText().equals(run) && plan.path("sourceInventoryFile").isTextual()
++            && plan.path("sourceInventorySha256").isTextual() && plan.path("maxDepth").isInt() && plan.path("maxDepth").intValue() >= 0 && plan.path("maxDepth").intValue() <= 3
++            && plan.path("directories").isArray() && !plan.path("directories").isEmpty() && plan.path("directories").size() <= 128);
++        String sourceSha = plan.path("sourceInventorySha256").asText();
++        var source = backupBoundJson(workspace, Path.of(plan.path("sourceInventoryFile").asText()), sourceSha, 2 * 1024 * 1024);
++        backupRequire(source.path("schema").isInt() && source.path("schema").intValue() == 1 && source.path("mode").asText().equals("INVENTORY_ONLY")
++            && source.path("server").asText().equals(SERVER) && source.path("wireFingerprint").asText().equals(fingerprint)
++            && source.path("layoutSha256").asText().equals(layoutSha) && source.path("objects").isArray() && source.path("objects").size() <= 4096
++            && source.path("run").isTextual() && source.path("run").asText().matches("[a-z0-9][a-z0-9-]{0,95}"));
++        String sourceTask = java.util.UUID.fromString(source.path("task").asText()).toString();
++        backupRequire(sourceTask.equals(source.path("task").asText()));
++        var observed = new java.util.HashSet<String>();
++        for (var row : source.path("objects")) {
++            if (!row.path("kind").asText().equals("DIRECTORY")) continue;
++            String path = row.path("path").asText();
++            backupRequire(row.path("path").isTextual() && backupMetadataPath(path, roots) && row.path("links").isInt() && row.path("links").intValue() == 0
++                && row.path("id").asText().equals(DeploymentAgentInputs.hash(gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), path).key()))
++                && observed.add(path));
++        }
++        var directories = new java.util.ArrayList<String>();
++        for (var target : plan.path("directories")) {
++            backupRequire(target.isTextual() && observed.contains(target.asText()) && !directories.contains(target.asText()));
++            directories.add(target.asText());
++        }
++        return new BackupMetadataPlan(run, List.copyOf(directories), plan.path("maxDepth").intValue(), sourceTask, source.path("run").asText(), sourceSha, sha);
++    }
++
++    private interface BackupMetadataQuery {
++        gold.debug.windowstolinux.appapi.file.model.FileInfo stat(String path) throws ApiException;
++
++        List<gold.debug.windowstolinux.appapi.file.model.FileInfo> list(gold.debug.windowstolinux.appapi.file.model.FilePath path) throws ApiException;
++    }
++
++    private Map<String, Object> backupSdkMetadata(ModContext context, TaskContext task, List<String> roots, BackupMetadataPlan plan,
++                                                  String layoutSha, String fingerprint, Path evidence) throws Exception {
++        var query = context.file().queries();
++        return backupSdkMetadata(new BackupMetadataQuery() {
++            public gold.debug.windowstolinux.appapi.file.model.FileInfo stat(String path) throws ApiException {
++                return query.getFile(gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), path), task);
++            }
++
++            public List<gold.debug.windowstolinux.appapi.file.model.FileInfo> list(gold.debug.windowstolinux.appapi.file.model.FilePath path) throws ApiException {
++                return query.list(path, 4096, task);
++            }
++        }, task.id(), roots, plan, layoutSha, fingerprint, evidence);
++    }
++
++    private static Map<String, Object> backupSdkMetadata(BackupMetadataQuery query, java.util.UUID task, List<String> roots, BackupMetadataPlan plan,
++                                                         String layoutSha, String fingerprint, Path evidence) throws Exception {
++        backupRequire(roots.size() == 5 && plan.directories().size() <= 128 && plan.maxDepth() >= 0 && plan.maxDepth() <= 3);
++        var entries = new LinkedHashMap<String, gold.debug.windowstolinux.appapi.file.model.FileInfo>();
++        var listed = new java.util.HashSet<String>();
++        var unavailable = new java.util.ArrayList<Map<String, Object>>();
++        var receipts = new java.util.ArrayList<Map<String, Object>>();
++        var state = new LinkedHashMap<String, Object>();
++        state.putAll(Map.of("schema", 1, "mode", "INVENTORY_ONLY", "route", "SDK_METADATA_ONLY_NO_PROVIDER", "task", task.toString(), "run", plan.run(),
++            "server", SERVER, "wireFingerprint", fingerprint, "layoutSha256", layoutSha, "coverage", "UNKNOWN_PARENT_REVIEW_REQUIRED", "backupComplete", false));
++        state.putAll(Map.of("sourceTask", plan.sourceTask(), "sourceRun", plan.sourceRun(), "sourceInventorySha256", plan.sourceSha(), "metadataPlanSha256", plan.planSha(), "maxDepth", plan.maxDepth()));
++        var progress = new BackupProgress(evidence, task, plan.run(), layoutSha, fingerprint);
++        int[] statCount = {0}, listCount = {0};
++        java.util.function.Consumer<String> save = status -> {
++            state.put("objects", entries.values().stream().map(DeploymentStaticLiveAcceptanceTest::backupMetadata).toList());
++            state.put("listedDirectoryIds", List.copyOf(listed));
++            state.put("selected", List.of());
++            state.put("selectedBytes", 0L);
++            state.put("unavailable", List.copyOf(unavailable));
++            state.put("actionReceipts", List.copyOf(receipts));
++            state.put("pendingDirectories", entries.values().stream().filter(file -> file.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY
++                && !listed.contains(DeploymentAgentInputs.hash(file.requested().key()))).map(file -> Map.of("path", file.requested().path(), "id", DeploymentAgentInputs.hash(file.requested().key()), "status", "PENDING_NOT_LISTED_BY_THIS_PLAN")).toList());
++            state.put("statQueries", statCount[0]);
++            state.put("directoryListQueries", listCount[0]);
++            try {
++                progress.save(state, status);
++            } catch (Exception failure) {
++                throw new IllegalStateException("BACKUP_PARTIAL_METADATA_WRITE_FAILED", failure);
++            }
++        };
++        var statCache = new LinkedHashMap<String, gold.debug.windowstolinux.appapi.file.model.FileInfo>();
++        var statAttempted = new java.util.HashSet<String>();
++        java.util.function.Function<String, gold.debug.windowstolinux.appapi.file.model.FileInfo> stat = path -> {
++            if (!statAttempted.add(path)) return statCache.get(path);
++            backupRequire(statCount[0] < 133);
++            statCount[0]++;
++            try {
++                var info = query.stat(path);
++                try {
++                    backupRemote(info, roots);
++                } catch (IllegalArgumentException invalid) {
++                    unavailable.add(Map.of("path", path, "status", "UNKNOWN_LINK_SPECIAL_OR_CHANGED_PATH_NOT_FOLLOWED", "kind", info.kind().name(), "links", info.links().size()));
++                    receipts.add(Map.of("path", path, "action", "STAT", "status", "UNKNOWN_NOT_FOLLOWED"));
++                    return null;
++                }
++                backupRequire(info.requested().path().equals(path));
++                if (!entries.containsKey(DeploymentAgentInputs.hash(info.requested().key())) && entries.size() >= 4096) {
++                    unavailable.add(Map.of("path", path, "status", "UNKNOWN_OBJECT_REGISTRY_BOUND"));
++                    receipts.add(Map.of("path", path, "action", "STAT", "status", "UNKNOWN_OBJECT_REGISTRY_BOUND"));
++                    return null;
++                }
++                entries.put(DeploymentAgentInputs.hash(info.requested().key()), info);
++                statCache.put(path, info);
++                receipts.add(Map.of("path", path, "action", "STAT", "status", "STAT_SUCCEEDED", "kind", info.kind().name()));
++                return info;
++            } catch (ApiException failure) {
++                unavailable.add(Map.of("path", path, "status", "UNKNOWN_STAT_NOT_COMPLETE", "code", failure.problem().code().name(), "eventSha256", DeploymentAgentInputs.hash(failure.problem().eventCode())));
++                receipts.add(Map.of("path", path, "action", "STAT", "status", "UNKNOWN_STAT_NOT_COMPLETE", "code", failure.problem().code().name()));
++                return null;
++            } finally {
++                save.accept("SDK_STAT_METADATA_ONLY");
++            }
++        };
++        save.accept("SDK_METADATA_STARTED");
++        try {
++            for (String root : roots) stat.apply(root);
++            record Directory(String path, int depth) {
++            }
++            var queue = new java.util.ArrayDeque<Directory>();
++            var scheduled = new java.util.HashSet<String>();
++            for (String target : plan.directories()) {
++                scheduled.add(target);
++                queue.add(new Directory(target, 0));
++            }
++            while (!queue.isEmpty()) {
++                var directory = queue.removeFirst();
++                var info = stat.apply(directory.path());
++                if (info == null) continue;
++                if (info.kind() != gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY) {
++                    unavailable.add(Map.of("path", directory.path(), "status", "UNKNOWN_TARGET_NO_LONGER_DIRECTORY"));
++                    save.accept("SDK_TARGET_CHANGED_UNKNOWN");
++                    continue;
++                }
++                backupRequire(listCount[0] < 128);
++                listCount[0]++;
++                try {
++                    var children = query.list(info.actual());
++                    if (children.size() + entries.size() > 4096) {
++                        unavailable.add(Map.of("path", directory.path(), "status", "UNKNOWN_OBJECT_REGISTRY_BOUND", "observedImmediateChildCount", children.size()));
++                        receipts.add(Map.of("path", directory.path(), "action", "LIST", "status", "UNKNOWN_OBJECT_REGISTRY_BOUND", "observedImmediateChildCount", children.size()));
++                        continue;
++                    }
++                    for (var child : children) {
++                        try {
++                            backupRemote(child, roots);
++                        } catch (IllegalArgumentException invalid) {
++                            unavailable.add(Map.of("path", child.requested().path(), "status", "UNKNOWN_LINK_OR_SPECIAL_CHILD_NOT_FOLLOWED", "kind", child.kind().name(), "links", child.links().size()));
++                            continue;
++                        }
++                        backupRequire(child.requested().parent().equals(info.actual()));
++                        entries.put(DeploymentAgentInputs.hash(child.requested().key()), child);
++                        if (child.kind() == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY && directory.depth() < plan.maxDepth() && !scheduled.contains(child.requested().path())) {
++                            if (scheduled.size() < 128) {
++                                scheduled.add(child.requested().path());
++                                queue.add(new Directory(child.requested().path(), directory.depth() + 1));
++                            } else
++                                unavailable.add(Map.of("path", child.requested().path(), "status", "UNKNOWN_DIRECTORY_QUERY_BOUND"));
++                        }
++                    }
++                    listed.add(DeploymentAgentInputs.hash(info.requested().key()));
++                    receipts.add(Map.of("path", directory.path(), "action", "LIST", "status", "LIST_SUCCEEDED", "children", children.size(), "depth", directory.depth()));
++                } catch (ApiException failure) {
++                    unavailable.add(Map.of("path", directory.path(), "status", "UNKNOWN_LIST_NOT_COMPLETE", "code", failure.problem().code().name(), "eventSha256", DeploymentAgentInputs.hash(failure.problem().eventCode())));
++                    receipts.add(Map.of("path", directory.path(), "action", "LIST", "status", "UNKNOWN_LIST_NOT_COMPLETE", "code", failure.problem().code().name()));
++                } finally {
++                    save.accept("SDK_LIST_METADATA_ONLY");
++                }
++            }
++            save.accept("SDK_METADATA_PLAN_FINISHED_COVERAGE_PENDING");
++            return Map.copyOf(state);
++        } catch (Exception failure) {
++            try {
++                save.accept("FAILED_OR_UNKNOWN_METADATA_RETAINED");
++            } catch (Exception retentionFailure) {
++                failure.addSuppressed(retentionFailure);
++            }
++            throw failure;
++        }
++    }
++
++    @Test
++    @EnabledIf("isolatedBackupMetadata")
++    void backupMetadataPlansBindObservedDirectoriesAndPreservePendingCoverage() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        assertFalse(backupMetadataOnlyLive());
++        Path workspace = root.toAbsolutePath().normalize();
++        Path boundary = Files.createDirectories(workspace.resolve(".ai-workspace/agent-live-evidence"));
++        Path inputs = Files.createDirectory(boundary.resolve("inputs"));
++        Path evidence = Files.createDirectory(boundary.resolve("sdk-local-134"));
++        List<String> roots = List.of("/helper", "/apps", "/state", "/config", "/data");
++        String target = "/data/app", layoutSha = "a".repeat(64), fingerprint = "local-only-fingerprint";
++        java.util.function.BiFunction<String, gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind, gold.debug.windowstolinux.appapi.file.model.FileInfo> observed = (path, kind) -> {
++            var position = gold.debug.windowstolinux.appapi.file.model.FilePath.remote(new ServerId(SERVER), path);
++            return new gold.debug.windowstolinux.appapi.file.model.FileInfo(position, position, kind, kind == gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE ? 7 : 0,
++                java.time.Instant.EPOCH, "original-local-object", Optional.empty(), List.of());
++        };
++        var sourceRows = new java.util.ArrayList<Map<String, Object>>();
++        for (String path : roots)
++            sourceRows.add(backupMetadata(observed.apply(path, gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY)));
++        sourceRows.add(backupMetadata(observed.apply(target, gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY)));
++        sourceRows.add(backupMetadata(observed.apply(target + "/business.sqlite", gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE)));
++        var source = JSON.valueToTree(Map.of("schema", 1, "mode", "INVENTORY_ONLY", "task", java.util.UUID.randomUUID().toString(), "run", "old-sdk-local",
++            "server", SERVER, "wireFingerprint", fingerprint, "layoutSha256", layoutSha, "objects", sourceRows));
++        Path sourceFile = inputs.resolve("source.json"), planFile = inputs.resolve("metadata-plan.json");
++        byte[] sourceBytes = JSON.writeValueAsBytes(source);
++        Files.write(sourceFile, sourceBytes);
++        var plan = JSON.createObjectNode().put("schema", 1).put("run", "sdk-local-134").put("sourceInventoryFile", sourceFile.toString())
++            .put("sourceInventorySha256", backupBytesSha(sourceBytes)).put("maxDepth", 0);
++        plan.putArray("directories").add(target);
++        Files.write(planFile, JSON.writeValueAsBytes(plan));
++        var selected = backupMetadataPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint);
++        assertEquals(List.of(target), selected.directories());
++        assertEquals(source.path("task").asText(), selected.sourceTask());
++        assertThrows(Exception.class, () -> backupMetadataPlan(workspace, planFile, "0".repeat(64), "sdk-local-134", roots, layoutSha, fingerprint));
++        var badPlans = new java.util.ArrayList<com.fasterxml.jackson.databind.node.ObjectNode>();
++        badPlans.add(plan.deepCopy().put("run", "wrong-run"));
++        badPlans.add(plan.deepCopy().put("maxDepth", 4));
++        badPlans.add(plan.deepCopy().put("schema", 2));
++        badPlans.add(plan.deepCopy().put("extra", "not-an-override"));
++        badPlans.add(plan.deepCopy().put("sourceInventorySha256", "0".repeat(64)));
++        var unknown = plan.deepCopy();
++        unknown.putArray("directories").add("/data/unknown");
++        badPlans.add(unknown);
++        var fileTarget = plan.deepCopy();
++        fileTarget.putArray("directories").add(target + "/business.sqlite");
++        badPlans.add(fileTarget);
++        var tooMany = plan.deepCopy();
++        var targets = tooMany.putArray("directories");
++        for (int i = 0; i < 129; i++) targets.add(target);
++        badPlans.add(tooMany);
++        var duplicate = plan.deepCopy();
++        duplicate.putArray("directories").add(target).add(target);
++        badPlans.add(duplicate);
++        for (var invalid : badPlans) {
++            Files.write(planFile, JSON.writeValueAsBytes(invalid));
++            assertThrows(Exception.class, () -> backupMetadataPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint));
++        }
++        Files.write(planFile, new byte[]{(byte) 0xc3, (byte) 0x28});
++        assertThrows(Exception.class, () -> backupMetadataPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint));
++        Files.write(planFile, new byte[65536]);
++        assertThrows(Exception.class, () -> backupMetadataPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint));
++        Files.write(planFile, JSON.writeValueAsBytes(plan));
++        Files.writeString(sourceFile, "changed-source");
++        assertThrows(Exception.class, () -> backupMetadataPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint));
++        Files.write(sourceFile, sourceBytes);
++        var badSource = source.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) badSource.path("objects").get(5)).put("id", "f".repeat(64));
++        Files.write(sourceFile, JSON.writeValueAsBytes(badSource));
++        var forged = plan.deepCopy().put("sourceInventorySha256", backupBytesSha(Files.readAllBytes(sourceFile)));
++        Files.write(planFile, JSON.writeValueAsBytes(forged));
++        assertThrows(Exception.class, () -> backupMetadataPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint));
++        Files.write(sourceFile, sourceBytes);
++        Files.write(planFile, JSON.writeValueAsBytes(plan));
++        Path outside = workspace.resolve("outside-plan.json");
++        Files.write(outside, Files.readAllBytes(planFile));
++        assertThrows(Exception.class, () -> backupMetadataPlan(workspace, outside, backupBytesSha(Files.readAllBytes(outside)), "sdk-local-134", roots, layoutSha, fingerprint));
++        Path junction = boundary.resolve("linked-inputs");
++        var junctionProcess = new ProcessBuilder("cmd.exe", "/c", "mklink", "/J", junction.toString(), inputs.toString()).redirectErrorStream(true).start();
++        assertEquals(0, junctionProcess.waitFor());
++        try {
++            assertThrows(Exception.class, () -> backupMetadataPlan(workspace, junction.resolve("metadata-plan.json"), backupBytesSha(Files.readAllBytes(planFile)), "sdk-local-134", roots, layoutSha, fingerprint));
++        } finally {
++            Files.delete(junction);
++        }
++        java.util.function.Function<String, gold.debug.windowstolinux.appapi.file.model.FileInfo> current = path -> {
++            var old = observed.apply(path, path.endsWith(".sqlite") ? gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.FILE : gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.DIRECTORY);
++            return new gold.debug.windowstolinux.appapi.file.model.FileInfo(old.requested(), old.actual(), old.kind(), old.bytes(), java.time.Instant.EPOCH.plusSeconds(100), "new-local-observation", Optional.empty(), List.of());
++        };
++        var actualLists = new AtomicInteger();
++        var linked = observed.apply(target + "/linked", gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.LINK);
++        var special = observed.apply(target + "/special", gold.debug.windowstolinux.appapi.file.model.FileInfo.Kind.OTHER);
++        BackupMetadataQuery query = new BackupMetadataQuery() {
++            public gold.debug.windowstolinux.appapi.file.model.FileInfo stat(String path) throws ApiException {
++                if (path.equals("/state"))
++                    throw new ApiException(new Problem(ProblemCode.IO_FAILURE, "LOCAL_METADATA_FAIL", "private-body-not-for-evidence", Map.of(), Optional.empty()));
++                return current.apply(path);
++            }
++
++            public List<gold.debug.windowstolinux.appapi.file.model.FileInfo> list(gold.debug.windowstolinux.appapi.file.model.FilePath path) {
++                actualLists.incrementAndGet();
++                return List.of(current.apply(target + "/business.sqlite"), current.apply(target + "/pending"), linked, special);
++            }
++        };
++        var task = java.util.UUID.randomUUID();
++        var result = backupSdkMetadata(query, task, roots, selected, layoutSha, fingerprint, evidence);
++        var resultTree = JSON.valueToTree(result);
++        assertEquals(1, actualLists.get());
++        assertEquals(1, resultTree.path("directoryListQueries").asInt());
++        assertEquals(6, resultTree.path("statQueries").asInt());
++        assertFalse(resultTree.path("backupComplete").asBoolean());
++        assertTrue(resultTree.path("selected").isEmpty());
++        assertEquals("UNKNOWN_PARENT_REVIEW_REQUIRED", resultTree.path("coverage").asText());
++        assertEquals(3, resultTree.path("unavailable").size());
++        assertTrue(resultTree.path("pendingDirectories").toString().contains(target + "/pending"));
++        assertTrue(resultTree.path("objects").toString().contains("1970-01-01T00:01:40Z"));
++        String partial = Files.readString(evidence.resolve("inventory-progress-" + task + ".json"));
++        assertEquals(task.toString(), JSON.readTree(partial).path("task").asText());
++        assertFalse(partial.contains("private-body-not-for-evidence"));
++        Path failedEvidence = Files.createDirectory(boundary.resolve("sdk-failed-134"));
++        var failedPlan = new BackupMetadataPlan("sdk-failed-134", selected.directories(), 0, selected.sourceTask(), selected.sourceRun(), selected.sourceSha(), selected.planSha());
++        var failed = backupSdkMetadata(new BackupMetadataQuery() {
++            public gold.debug.windowstolinux.appapi.file.model.FileInfo stat(String path) {
++                return current.apply(path);
++            }
++
++            public List<gold.debug.windowstolinux.appapi.file.model.FileInfo> list(gold.debug.windowstolinux.appapi.file.model.FilePath path) throws ApiException {
++                throw new ApiException(new Problem(ProblemCode.IO_FAILURE, "LOCAL_LIST_FAIL", "private-list-body", Map.of(), Optional.empty()));
++            }
++        }, java.util.UUID.randomUUID(), roots, failedPlan, layoutSha, fingerprint, failedEvidence);
++        assertTrue(JSON.valueToTree(failed).path("unavailable").toString().contains("UNKNOWN_LIST_NOT_COMPLETE"));
++        assertEquals(0, JSON.valueToTree(failed).path("listedDirectoryIds").size());
++        assertFalse((Boolean) failed.get("backupComplete"));
++        Path boundedEvidence = Files.createDirectory(boundary.resolve("sdk-bound-134"));
++        var boundedPlan = new BackupMetadataPlan("sdk-bound-134", selected.directories(), 0, selected.sourceTask(), selected.sourceRun(), selected.sourceSha(), selected.planSha());
++        var bounded = backupSdkMetadata(new BackupMetadataQuery() {
++            public gold.debug.windowstolinux.appapi.file.model.FileInfo stat(String path) {
++                return current.apply(path);
++            }
++
++            public List<gold.debug.windowstolinux.appapi.file.model.FileInfo> list(gold.debug.windowstolinux.appapi.file.model.FilePath path) {
++                return java.util.Collections.nCopies(4097, current.apply(target + "/business.sqlite"));
++            }
++        }, java.util.UUID.randomUUID(), roots, boundedPlan, layoutSha, fingerprint, boundedEvidence);
++        assertTrue(JSON.valueToTree(bounded).path("unavailable").toString().contains("UNKNOWN_OBJECT_REGISTRY_BOUND"));
++        assertEquals(0, JSON.valueToTree(bounded).path("listedDirectoryIds").size());
++        Path depthEvidence = Files.createDirectory(boundary.resolve("sdk-depth-134"));
++        var depthPlan = new BackupMetadataPlan("sdk-depth-134", selected.directories(), 1, selected.sourceTask(), selected.sourceRun(), selected.sourceSha(), selected.planSha());
++        var depth = backupSdkMetadata(new BackupMetadataQuery() {
++            public gold.debug.windowstolinux.appapi.file.model.FileInfo stat(String path) {
++                return current.apply(path);
++            }
++
++            public List<gold.debug.windowstolinux.appapi.file.model.FileInfo> list(gold.debug.windowstolinux.appapi.file.model.FilePath path) {
++                if (!path.path().equals(target)) return List.of();
++                return java.util.stream.IntStream.range(0, 129).mapToObj(index -> current.apply(target + "/child-" + index)).toList();
++            }
++        }, java.util.UUID.randomUUID(), roots, depthPlan, layoutSha, fingerprint, depthEvidence);
++        var depthTree = JSON.valueToTree(depth);
++        assertEquals(128, depthTree.path("directoryListQueries").asInt());
++        assertEquals(133, depthTree.path("statQueries").asInt());
++        assertEquals(128, depthTree.path("listedDirectoryIds").size());
++        assertTrue(depthTree.path("unavailable").toString().contains("UNKNOWN_DIRECTORY_QUERY_BOUND"));
++        assertFalse(depthTree.path("pendingDirectories").isEmpty());
++        assertFalse(depthTree.path("backupComplete").asBoolean());
++    }
++
+     @FunctionalInterface
+     private interface BackupAction {
+         Map<String, Object> run(com.fasterxml.jackson.databind.JsonNode choice) throws Exception;
