@@ -1,0 +1,289 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -70,13 +70,231 @@
+ @EnabledIf("liveOrIsolatedInputBridge")
+ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+     private static boolean liveOrIsolatedInputBridge() {
+-        return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge();
++        return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics();
+     }
+ 
+     private static boolean isolatedInputBridge() {
+         return "true".equals(System.getProperty("managed.runtime.inputBridgeLocal"))
+             && "DeploymentStaticLiveAcceptanceTest#mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel"
+             .equals(System.getProperty("test"));
++    }
++
++    private static boolean isolatedStopDiagnostics() {
++        return "true".equals(System.getProperty("managed.runtime.stopDiagnosticsLocal"))
++            && "DeploymentStaticLiveAcceptanceTest#safeCapacityRefusalAndUnableDiagnosticsRetainBindingsWithoutBodyLeakage"
++            .equals(System.getProperty("test"));
++    }
++
++    @Test
++    @EnabledIf("isolatedStopDiagnostics")
++    void safeCapacityRefusalAndUnableDiagnosticsRetainBindingsWithoutBodyLeakage() throws Exception {
++        var task = java.util.UUID.fromString("10000000-0000-4000-8000-000000000094");
++        var json = new com.fasterxml.jackson.databind.ObjectMapper();
++        var data = json.createObjectNode().put("code", "WORKSPACE_HOST_INSUFFICIENT").put("task", task.toString());
++        for (String field : List.of("sourceSha256", "configurationSha256", "layoutSha256", "capacityRequestSha256", "capacityResultSha256", "inputsSha256"))
++            data.put(field, "a".repeat(64));
++        data.put("archiveBytes", 100).put("unpackedBytes", 200).put("availableBytes", 1228001280L)
++            .put("hostReserveBytes", 1073741824L).put("requiredBytes", 1610612736L).put("aggregateHostCostBytes", 536870912L)
++            .put("cost", "AGENT").put("hostCostMultiplier", 2).put("componentCount", 1).put("truncated", false)
++            .put("newInputsNotCreatedByRejectedPlan", true);
++        data.putArray("components").addObject().put("id", "web").put("sourceFloorBytes", 200).put("mode", "EXPLICIT")
++            .put("minimumBuildBytes", 268435456L).put("preferredBuildBytes", 268435456L).put("explicitBytes", 268435456L).put("hostCostBytes", 536870912L);
++        var call = new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("plan-94", "plan", "{}");
++        var result = new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), "o1\nTOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + data, true);
++        String projected = liveToolDiagnosticProjection(task, call, result);
++        assertTrue(projected.startsWith("AI_LIVE_STOP_DIAGNOSTIC "), "The original complete capacity DATA must survive the 512-character summary");
++        var observed = json.readTree(projected.substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
++        assertEquals("OBSERVED", observed.path("status").asText());
++        assertEquals(task.toString(), observed.path("task").asText());
++        assertEquals(call.id(), observed.path("call").asText());
++        assertEquals(data.path("requiredBytes").longValue(), observed.path("capacity").path("requiredBytes").longValue());
++        assertEquals(data.path("components").toString(), observed.path("capacity").path("components").toString());
++        assertFalse(projected.contains("arguments"));
++        var noTask = json.readTree(liveToolDiagnosticProjection(null, call, result).substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
++        assertEquals("NO_TASK_BINDING", noTask.path("projectionFailure").asText());
++        assertEquals("LIVE_DIAGNOSTIC_UNAVAILABLE", noTask.path("code").asText());
++        var noCall = json.readTree(liveToolDiagnosticProjection(task, null, result).substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
++        assertEquals("NO_CALL_BINDING", noCall.path("projectionFailure").asText());
++        for (String invalid : List.of(data.deepCopy().put("script", "private-script-94").toString(),
++            data.deepCopy().put("requiredBytes", "1610612736").toString(), data.deepCopy().put("hostCostMultiplier", 4294967298L).toString(), data.deepCopy().put("task", "wrong-task").toString(),
++            data.toString().replace("\"code\":", "\"code\":\"WORKSPACE_HOST_INSUFFICIENT\",\"code\":"), data + " {}")) {
++            String rejected = liveToolDiagnosticProjection(task, call, new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(),
++                "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + invalid, true));
++            assertEquals("UNKNOWN", json.readTree(rejected.substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
++            assertFalse(rejected.contains("private-script-94"));
++            assertFalse(rejected.contains("capacity\""));
++        }
++        for (var unbound : List.of(new gold.debug.windowstolinux.appapi.ai.model.AiToolResult("other-call", result.text(), true),
++            new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(), result.text(), false)))
++            assertEquals("UNKNOWN", json.readTree(liveToolDiagnosticProjection(task, call, unbound).substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
++        assertEquals("UNKNOWN", json.readTree(liveToolDiagnosticProjection(null, call, result).substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
++        var many = data.deepCopy();
++        var components = (com.fasterxml.jackson.databind.node.ArrayNode) many.path("components");
++        for (int i = 1; i < 40; i++)
++            components.add(((com.fasterxml.jackson.databind.node.ObjectNode) components.get(0).deepCopy()).put("id", "part-" + i));
++        many.put("componentCount", 40);
++        String bounded = liveToolDiagnosticProjection(task, call, new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(),
++            "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + many, true));
++        var boundedData = json.readTree(bounded.substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
++        assertEquals("OBSERVED", boundedData.path("status").asText());
++        assertTrue(boundedData.path("capacity").path("truncated").booleanValue());
++        assertEquals(32, boundedData.path("capacity").path("components").size());
++        assertEquals(40, boundedData.path("capacity").path("componentCount").intValue());
++        assertEquals(data.path("requiredBytes").longValue(), boundedData.path("capacity").path("requiredBytes").longValue());
++        assertTrue(bounded.length() <= 12000);
++        String reason = "The observed capacity requires a user decision. 密码=cn-private-94; API密钥=api-private-94; access_token=token-private-94";
++        var unable = new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unable-94", "unable", json.createObjectNode().put("reason", reason).toString());
++        String declared = liveToolDiagnosticProjection(task, unable, null);
++        var declaredData = json.readTree(declared.substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
++        assertEquals("MODEL_DECLARED_REASON", declaredData.path("classification").asText());
++        assertEquals("OBSERVED", declaredData.path("status").asText());
++        assertEquals(inputDigest(reason), declaredData.path("reasonSha256").asText());
++        assertEquals(reason.length(), declaredData.path("reasonCharacters").intValue());
++        assertEquals(safeInputData(reason), declaredData.path("reason").asText());
++        assertTrue(declaredData.path("redacted").booleanValue());
++        for (String sensitive : List.of("cn-private-94", "api-private-94", "token-private-94"))
++            assertFalse(declared.contains(sensitive));
++        var longReason = new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unable-long-94", "unable", json.createObjectNode().put("reason", "a".repeat(2000)).toString());
++        assertEquals(2000, json.readTree(liveToolDiagnosticProjection(task, longReason, null).substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("reason").asText().length());
++        var unsafe = new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unable-unsafe-94", "unable", json.createObjectNode().put("reason", "Run bash private-script-94 && continue").toString());
++        String redacted = liveToolDiagnosticProjection(task, unsafe, null);
++        assertEquals("REDACTED", json.readTree(redacted.substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
++        assertFalse(redacted.contains("private-script-94"));
++        for (String invalid : List.of("{\"reason\":\"one\",\"reason\":\"two\"}", "{\"reason\":\"one\"} {}", "{\"reason\":\"one\",\"script\":\"private-script-94\"}", "{\"reason\":3}")) {
++            String rejected = liveToolDiagnosticProjection(task, new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("unable-invalid-94", "unable", invalid), null);
++            assertEquals("UNKNOWN", json.readTree(rejected.substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
++            assertFalse(rejected.contains("private-script-94"));
++        }
++    }
++
++    private static com.fasterxml.jackson.databind.ObjectMapper diagnosticJson() {
++        return new com.fasterxml.jackson.databind.ObjectMapper(com.fasterxml.jackson.core.JsonFactory.builder()
++            .enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
++            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++    }
++
++    private static String liveToolDiagnosticProjection(java.util.UUID task,
++                                                       gold.debug.windowstolinux.appapi.ai.model.AiToolCall call,
++                                                       gold.debug.windowstolinux.appapi.ai.model.AiToolResult result) {
++        var json = diagnosticJson();
++        var output = json.createObjectNode().put("schema", 1).put("status", "UNKNOWN").put("code", "LIVE_DIAGNOSTIC_UNAVAILABLE")
++            .put("projectionFailure", task == null ? "NO_TASK_BINDING" : "NO_CALL_BINDING");
++        if (task != null) output.put("task", task.toString());
++        if (call != null && call.id().matches("[A-Za-z0-9_.:-]{1,256}")) output.put("call", call.id());
++        try {
++            if (task == null || !output.has("call")) return "AI_LIVE_STOP_DIAGNOSTIC " + output;
++            output.put("projectionFailure", "INVALID_CALL_BINDING");
++            if (result != null) {
++                output.put("kind", "PLAN_CAPACITY").put("inputSha256", inputDigest(result.text()));
++                if (!call.name().equals("plan") || !result.error() || !call.id().equals(result.callId()) || result.text().length() > 14000)
++                    return "AI_LIVE_STOP_DIAGNOSTIC " + output;
++                String marker = "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=";
++                int at = result.text().indexOf(marker);
++                if (at < 0 || at != result.text().lastIndexOf(marker) || at > 0 && result.text().charAt(at - 1) != '\n')
++                    return "AI_LIVE_STOP_DIAGNOSTIC " + output;
++                output.put("code", "WORKSPACE_HOST_INSUFFICIENT").put("projectionFailure", "INVALID_DATA");
++                var data = json.readTree(result.text().substring(at + marker.length()));
++                Set<String> fields = Set.of("code", "task", "sourceSha256", "configurationSha256", "layoutSha256",
++                    "capacityRequestSha256", "capacityResultSha256", "inputsSha256", "archiveBytes", "unpackedBytes", "availableBytes",
++                    "hostReserveBytes", "requiredBytes", "aggregateHostCostBytes", "cost", "hostCostMultiplier", "componentCount",
++                    "components", "truncated", "newInputsNotCreatedByRejectedPlan", "componentIds");
++                diagnosticFields(data, fields);
++                if (!data.path("task").isTextual() || !task.toString().equals(data.path("task").textValue())
++                    || !data.path("code").isTextual() || !data.path("code").textValue().equals("WORKSPACE_HOST_INSUFFICIENT")
++                    || !data.path("cost").isTextual() || !data.path("cost").textValue().equals("AGENT")
++                    || !data.path("hostCostMultiplier").isIntegralNumber() || !data.path("hostCostMultiplier").canConvertToInt() || data.path("hostCostMultiplier").intValue() != 2
++                    || !data.path("truncated").isBoolean() || !data.path("newInputsNotCreatedByRejectedPlan").isBoolean()
++                    || !data.path("newInputsNotCreatedByRejectedPlan").booleanValue())
++                    throw new IllegalArgumentException();
++                for (String field : List.of("sourceSha256", "configurationSha256", "layoutSha256", "capacityRequestSha256", "capacityResultSha256", "inputsSha256"))
++                    if (!data.path(field).isTextual() || !data.path(field).textValue().matches("[0-9a-f]{64}"))
++                        throw new IllegalArgumentException();
++                for (String field : List.of("archiveBytes", "unpackedBytes", "availableBytes", "hostReserveBytes", "requiredBytes", "aggregateHostCostBytes", "componentCount"))
++                    diagnosticBytes(data, field);
++                if (!data.path("components").isArray() || data.path("components").size() > data.path("componentCount").longValue())
++                    throw new IllegalArgumentException();
++                for (var component : data.path("components")) {
++                    diagnosticFields(component, Set.of("id", "sourceFloorBytes", "mode", "minimumBuildBytes", "preferredBuildBytes", "explicitBytes", "hostCostBytes"));
++                    diagnosticComponentId(component.path("id"));
++                    if (!component.path("mode").isTextual() || !Set.of("AUTO", "EXPLICIT").contains(component.path("mode").textValue()))
++                        throw new IllegalArgumentException();
++                    for (String field : List.of("sourceFloorBytes", "minimumBuildBytes", "preferredBuildBytes", "explicitBytes"))
++                        diagnosticBytes(component, field);
++                    if (component.has("hostCostBytes")) {
++                        if (!component.path("mode").textValue().equals("EXPLICIT"))
++                            throw new IllegalArgumentException();
++                        diagnosticBytes(component, "hostCostBytes");
++                    }
++                }
++                if (data.has("componentIds")) {
++                    if (!data.path("componentIds").isArray()) throw new IllegalArgumentException();
++                    for (var id : data.path("componentIds")) diagnosticComponentId(id);
++                }
++                var capacity = (com.fasterxml.jackson.databind.node.ObjectNode) data.deepCopy();
++                var components = (com.fasterxml.jackson.databind.node.ArrayNode) capacity.path("components");
++                boolean truncated = capacity.path("truncated").booleanValue();
++                while (components.size() > 32) {
++                    components.remove(components.size() - 1);
++                    truncated = true;
++                }
++                if (capacity.has("componentIds")) {
++                    var ids = (com.fasterxml.jackson.databind.node.ArrayNode) capacity.path("componentIds");
++                    while (ids.size() > 64) {
++                        ids.remove(ids.size() - 1);
++                        truncated = true;
++                    }
++                }
++                capacity.put("truncated", truncated);
++                output.remove("projectionFailure");
++                output.put("status", "OBSERVED").set("capacity", capacity);
++                while (output.toString().length() > 12000 && !components.isEmpty()) {
++                    components.remove(components.size() - 1);
++                    capacity.put("truncated", true);
++                }
++                if (output.toString().length() > 12000) throw new IllegalArgumentException();
++            } else {
++                output.put("kind", "UNABLE").put("classification", "MODEL_DECLARED_REASON");
++                if (!call.name().equals("unable") || call.arguments().length() > 12000)
++                    return "AI_LIVE_STOP_DIAGNOSTIC " + output;
++                output.put("projectionFailure", "INVALID_DATA");
++                var proposal = gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProtocol.parse(call.name(), json.readTree(call.arguments()));
++                if (!(proposal instanceof gold.debug.windowstolinux.mod.deployment.service.agent.protocol.DeploymentAgentProposal.Unable unable))
++                    return "AI_LIVE_STOP_DIAGNOSTIC " + output;
++                String reason = unable.reason();
++                output.put("reasonSha256", inputDigest(reason)).put("reasonCharacters", reason.length());
++                if (reason.contains("```") || reason.contains("$(") || reason.contains("&&") || reason.contains("||")
++                    || reason.matches("(?s).*(?:^|\\s)(?:sudo|rm|curl|ssh|bash)\\s+.*") || reason.contains("<") || reason.contains(">")) {
++                    output.put("status", "REDACTED").put("projectionFailure", "UNSAFE_REASON").put("redacted", true);
++                } else {
++                    output.remove("projectionFailure");
++                    output.put("code", "MODEL_DECLARED_REASON");
++                    String safe = safeInputData(reason);
++                    output.put("status", "OBSERVED").put("reason", safe.substring(0, Math.min(2000, safe.length())))
++                        .put("redacted", !reason.equals(safe)).put("truncated", safe.length() > 2000);
++                }
++            }
++        } catch (Exception rejected) {
++            output.remove("capacity");
++            output.remove("reason");
++            output.put("status", "UNKNOWN").put("projectionFailure", "INVALID_DATA");
++        }
++        return "AI_LIVE_STOP_DIAGNOSTIC " + output;
++    }
++
++    private static void diagnosticFields(com.fasterxml.jackson.databind.JsonNode node, Set<String> allowed) {
++        if (!node.isObject()) throw new IllegalArgumentException();
++        node.fieldNames().forEachRemaining(field -> {
++            if (!allowed.contains(field)) throw new IllegalArgumentException();
++        });
++    }
++
++    private static void diagnosticBytes(com.fasterxml.jackson.databind.JsonNode node, String field) {
++        if (!node.path(field).isIntegralNumber() || !node.path(field).canConvertToLong() || node.path(field).longValue() < 0)
++            throw new IllegalArgumentException();
++    }
++
++    private static void diagnosticComponentId(com.fasterxml.jackson.databind.JsonNode id) {
++        if (!id.isTextual() || !id.textValue().matches("[a-z0-9][a-z0-9-]{0,62}")) throw new IllegalArgumentException();
+     }
+ 
+     @Test
+@@ -536,8 +754,15 @@
+                         agentContextMetadata(value, evidence.path("state"));
+                     value.messages().stream().flatMap(message -> message.toolResult().stream())
+                         .filter(tool -> tool.error() && reportedToolRejections.add(tool.callId()))
+-                        .forEach(tool -> System.out.println("AI_LIVE_TOOL_REJECTION call=" + tool.callId() + " feedback="
+-                            + tool.text().substring(0, Math.min(512, tool.text().length())).replace('\n', ' ')));
++                        .forEach(tool -> {
++                            if (mainOnlyDiagnostic && tool.text().contains("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=")) {
++                                var original = value.messages().stream().flatMap(message -> message.toolCalls().stream())
++                                    .filter(call -> call.id().equals(tool.callId()) && call.name().equals("plan")).findFirst().orElse(null);
++                                var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElse(null);
++                                System.out.println(liveToolDiagnosticProjection(task == null ? null : task.id(), original, tool));
++                            } else System.out.println("AI_LIVE_TOOL_REJECTION call=" + tool.callId() + " feedback="
++                                + tool.text().substring(0, Math.min(512, tool.text().length())).replace('\n', ' '));
++                        });
+                     System.out.println("AI_LIVE_REQUEST purpose=" + value.purpose() + " operation=" + evidence.path("operation").asText("analysis")
+                         + " requestedMaximumOutputTokens=" + value.maxOutputTokens() + " maximumOutputTokens=" + outputReserve + " evidenceCharacters=" + evidenceMessage.text().length()
+                         + " conversationCharacters=" + value.messages().stream().mapToLong(message -> message.text().length()
+@@ -583,6 +808,12 @@
+                         for (var call : response.toolCalls())
+                             System.out.println("AI_LIVE_NATIVE_TOOL id=" + call.id() + " name=" + call.name() + " argumentCharacters=" + call.arguments().length()
+                                 + " browse=" + browseMetadata(call));
++                        if (mainOnlyDiagnostic)
++                            for (var call : response.toolCalls())
++                                if (call.name().equals("unable")) {
++                                    var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElse(null);
++                                    System.out.println(liveToolDiagnosticProjection(task == null ? null : task.id(), call, null));
++                                }
+                         for (var call : response.toolCalls())
+                             if (call.name().equals("identify")) identifyMetadata(request.orElseThrow(), call);
+                         if (request.orElseThrow().tools().stream().anyMatch(tool -> tool.name().equals("identify")))
+diff --git a/docs/test/multi-language/DEPLOYMENT-AGENT-LIVE-STOP-DIAGNOSTICS-94.md b/docs/test/multi-language/DEPLOYMENT-AGENT-LIVE-STOP-DIAGNOSTICS-94.md
+new file mode 100644
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-LIVE-STOP-DIAGNOSTICS-94.md
+@@ -0,0 +1,17 @@
++# Main-only live 停止诊断（94）
++
++原92两次容量拒绝的模型反馈含完整 DATA，但 live harness 只打印512字符摘要；native unable 只保留参数长度，无法判断模型声明的实际停止需求。此包仅修改 DeploymentStaticLiveAcceptanceTest，不修改产品工具、分配算法、权限、UNKNOWN、恢复、UI或Skill，也不重取原92题目或reason。
++
++mainOnlyDiagnostic 的两个实际监控点共用纯投影 helper：plan 的原 tool-result 与同 request 中原 assistant call ID/name、实际 TaskContext 绑定；native unable 绑定实际 call/task，经正式 DeploymentAgentProtocol 解析 text reason。其它模式原输出保留，旧91输入桥与 staticLive 字面 true 语义保持。
++
++容量输出 AI_LIVE_STOP_DIAGNOSTIC JSON：schema=1、status、task/call、kind=PLAN_CAPACITY、固定code及原反馈 inputSha256；capacity 仅白名单保留 task、六个 source/config/layout/capacity request/result/inputs SHA、archive/unpacked/available/reserve/required/aggregate bytes、AGENT cost/精确倍率2、组件id和原Request模式/字节、componentCount、新inputs尚未由被拒plan创建的原标记及truncated。严格拒绝重复键、尾部、额外字段、类型错误、错误绑定与倍率溢出。组件最多32项、可选组件ID最多64项，超过时明确truncated，保留身份/aggregate及原总数；完整JSON最多12000字符。仅诊断截断，不改产品组件准入/算法，不输出正文、脚本或猜测实际依赖大小。
++
++unable 以 MODEL_DECLARED_REASON 标注实际模型自述，保留原正式解析reason的SHA/长度，使用91 safeInputData遮蔽英文/中文credential-shaped值；安全文本最多2000字符，标明redacted/truncated。命令或代码形态只输出REDACTED与固定UNSAFE_REASON；格式/绑定不合输出UNKNOWN及固定NO_TASK_BINDING、NO_CALL_BINDING、INVALID_CALL_BINDING或INVALID_DATA，不输出异常message。模型自述不作为外部容量事实、清理证明或下一步骤指令。所有新增投影仅诊断，不改变真实API结果或模型输入/工具选择。
++
++唯一非参数 selector：DeploymentStaticLiveAcceptanceTest#safeCapacityRefusalAndUnableDiagnosticsRetainBindingsWithoutBodyLeakage。仅 managed.runtime.stopDiagnosticsLocal 字面true且 Surefire test 属性精确匹配时启用该本地纯方法；不 enable/open、不Runtime/DPAPI/H2/provider/SSH/原DB。方法同时核完整DATA、严格JSON、绑定、溢出、数组有界、安全文本及UNKNOWN/REDACTED边界，未跑旧91或任何其他方法/类/Codec。
++
++原轮全部保留：baseline01 1FAIL/0ERROR/SKIP，0.065s，确切512摘要目标反例；corrected01 testCompile失败0case（JsonNode链式put），执行前inline Python引用SyntaxError亦保留且未写源；corrected02 1FAIL/0ERROR/SKIP，0.068s（LongNode/IntNode同值断言，非产品故障）；corrected03唯一最终1PASS/0FAIL/ERROR/SKIP，0.110s。每轮sourceFreeze0。single-owner IDEA write/check与skipTests package通过。
++
++before3296==91afinal，after-final3296仅本Test增量。19相关生产class与15Agentresources的source/target/JAR字节与91保持；JAR容器SHA变化不代表生产实现变化。已知6个自有PID+creationTicks均退出，terminate0；未完整采样短子进程，不声称穷尽。原92及全部旧UNKNOWN/DB/资源保持，Git由父按增量本地隔离提交、不推送。
++
++证据：.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-live-stop-diagnostics-94；正式UTF-8/LF增量：patches/AGENT-LIVE-STOP-DIAGNOSTICS-94.patch，仅本Test与本文。此本地诊断验证不证明真实API模型部署成功或原92恢复。
