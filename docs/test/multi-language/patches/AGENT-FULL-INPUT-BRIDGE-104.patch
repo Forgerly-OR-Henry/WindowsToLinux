@@ -1,0 +1,117 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -75,8 +75,9 @@
+ 
+     private static boolean isolatedInputBridge() {
+         return "true".equals(System.getProperty("managed.runtime.inputBridgeLocal"))
+-            && "DeploymentStaticLiveAcceptanceTest#mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel"
+-            .equals(System.getProperty("test"));
++            && Set.of("DeploymentStaticLiveAcceptanceTest#mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel",
++                "DeploymentStaticLiveAcceptanceTest#fullAgentInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel")
++            .contains(System.getProperty("test", ""));
+     }
+ 
+     private static boolean isolatedStopDiagnostics() {
+@@ -300,19 +301,65 @@
+     @Test
+     @EnabledIf("isolatedInputBridge")
+     void mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel() throws Exception {
+-        mainOnlyDiagnostic = agentMode = true;
++        inputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel(true, List.of("ANSWER", "CANCEL", "TOKEN_CANCEL", "INTERRUPT"));
++    }
++
++    @Test
++    @EnabledIf("isolatedInputBridge")
++    void fullAgentInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel() throws Exception {
++        inputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel(false, List.of("ANSWER", "CANCEL"));
++    }
++
++    private void inputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel(boolean diagnostic, List<String> kinds) throws Exception {
++        mainOnlyDiagnostic = diagnostic;
++        agentMode = true;
+         Path checkpoint = Files.createDirectory(root.resolve("input-checkpoint"));
+         String previousPath = System.getProperty("managed.live.inputCheckpoint");
+         String previousRun = System.getProperty("managed.live.inputRun");
+         System.setProperty("managed.live.inputCheckpoint", checkpoint.toString());
+-        System.setProperty("managed.live.inputRun", "local-input-bridge-91");
++        System.setProperty("managed.live.inputRun", diagnostic ? "local-input-bridge-91" : "local-input-bridge-104");
+         enable();
+         try (var runtime = super.open()) {
+             start(runtime, true);
+             var actual = runtime.modContexts().get(OWNER).context();
+             var json = new com.fasterxml.jackson.databind.ObjectMapper();
+             String question = "Which controlled option is intended? 密码=cn-sensitive-91; API密钥=api-sensitive-91; 访问令牌=token-sensitive-91";
+-            for (String kind : List.of("ANSWER", "CANCEL", "TOKEN_CANCEL", "INTERRUPT")) {
++            if (!diagnostic) {
++                for (String rejected : List.of("STATIC", "ASSISTED", "NO_CHECKPOINT", "OTHER_TITLE", "SECRET")) {
++                    agentMode = !rejected.equals("STATIC") && !rejected.equals("ASSISTED");
++                    aiEnabled = rejected.equals("ASSISTED");
++                    if (rejected.equals("NO_CHECKPOINT")) System.clearProperty("managed.live.inputCheckpoint");
++                    var refused = new java.util.concurrent.CompletableFuture<Void>();
++                    String title = rejected.equals("OTHER_TITLE") ? "Other deployment input" : "Autonomous deployment input";
++                    var handle = actual.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                        "local-full-agent-input-refusal", "Controlled refused input", List.of(), true), task -> {
++                        try {
++                            var failure = assertThrows(AssertionError.class,
++                                () -> actual.interaction().requestText(title, question, rejected.equals("SECRET"), task));
++                            assertEquals("Unexpected additional input: " + title, failure.getMessage());
++                            refused.complete(null);
++                            return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                        } catch (Exception | AssertionError failure) {
++                            refused.completeExceptionally(failure);
++                            return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.empty());
++                        }
++                    });
++                    try {
++                        refused.get(10, TimeUnit.SECONDS);
++                    } finally {
++                        if (!refused.isDone()) handle.requestCancel();
++                        long closed = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
++                        while (handle.snapshot().state() != gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED && System.nanoTime() < closed)
++                            Thread.sleep(20);
++                        assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, handle.snapshot().state());
++                        System.setProperty("managed.live.inputCheckpoint", checkpoint.toString());
++                    }
++                    System.out.println("AI_LIVE_INPUT_CONTROLLED_REFUSAL scenario=" + rejected + " task=" + handle.id() + " state=ENDED");
++                }
++                agentMode = true;
++                aiEnabled = false;
++            }
++            for (String kind : kinds) {
+                 var returned = new java.util.concurrent.CompletableFuture<OperationResult<String>>();
+                 var worker = new java.util.concurrent.atomic.AtomicReference<Thread>();
+                 var handle = actual.tasks().submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+@@ -633,7 +680,7 @@
+                     System.out.println("AI_LIVE_IDENTIFICATION_USER_CHOICE STATIC task=" + task.id());
+                     return "STATIC".toCharArray();
+                 }
+-                if (mainOnlyDiagnostic && agentMode && !secret && title.equals("Autonomous deployment input")
++                if (agentMode && !secret && title.equals("Autonomous deployment input")
+                     && System.getProperty("managed.live.inputCheckpoint") != null)
+                     return awaitLiveInput(title, prompt, task, cancel);
+                 throw new AssertionError("Unexpected additional input: " + title);
+--- /dev/null
++++ b/docs/test/multi-language/DEPLOYMENT-AGENT-FULL-INPUT-BRIDGE-104.md
+@@ -0,0 +1,22 @@
++# 完整 AGENT live 输入桥（104）
++
++仅修改 `DeploymentStaticLiveAcceptanceTest` 的 live harness：显式 checkpoint 的完整 AGENT 现在复用原严格输入桥。原 `mainOnlyDiagnostic && agentMode` 入口条件限制了完整 AGENT；改为保留 `agentMode`、非 secret、固定 `Autonomous deployment input` 标题及显式 `managed.live.inputCheckpoint` 条件。`awaitLiveInput` 原文不变，真实路径仍要求当前 `supervisedAgent` task 身份、合法 run、目录边界，以及 exact run/task/request UUID/question SHA 绑定。答案仅作为数据返回，拒绝敏感数据、重复键、尾随内容和额外字段；无默认回答或授权，原取消语义不变。生产源码、Skill、模型配置和真实 DB 未修改。
++
++新增唯一非参数 selector `DeploymentStaticLiveAcceptanceTest#fullAgentInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel`。`managed.runtime.inputBridgeLocal` 必须字面 `true`，且 Surefire `test` 精确等该 selector 或旧91 selector 才启用隔离桥；不支持类级、通配或组合 selector。原91实际 task/requestText/presenter scaffold抽取为私有 helper，旧入口仍传 diagnostic=true、原四案例；新入口传 diagnostic=false，仅 ANSWER/CANCEL。没有重跑旧91。
++
++新方法实际提交平台 task 并调用 `actual.interaction().requestText`，经当前原 presenter callback 验证 STATIC、ASSISTED、缺 checkpoint、其它标题和 secret 的拒绝，以及完整 AGENT 的未答等待、错 run/task/request/question SHA 不消费、严格 JSON/安全数据拒绝、合法 ANSWER 和明确 CANCEL。修复后七个 task 均 ENDED，Runtime 正常关闭。隔离路径仅 `super.open()`、XOR protection和临时 H2；未开启 staticLive/agentLive，provider、SSH、原 DB读取及 DPAPI 调用为零。这是本地 harness 回调验证，未执行付费完整 APP/模型部署验收。
++
++| 轮次 | 精确范围 | 原报告结果 | 说明 |
++| --- | --- | --- | --- |
++| baseline01 | 唯一新增 fullAgent 方法 | 1 run / 0 failures / 1 error / 0 skipped；class 21.71s、case 21.69s | 五拒绝 task ENDED；原完整 AGENT `Unexpected additional input` AssertionError 被 CompletionException 包装，保留 suppressed Mod cleanup blocked/临时 task 未结清证据 |
++| corrected01 | 同一失败方法 | 1 run / 0 failures / 0 errors / 0 skipped；class/case 14.37s | 仅移除 dispatch 的 mainOnly 条件后通过，七 task ENDED |
++| format-01 | 单 owner IDEA write/check | 两者 exit 0，source freeze 0 | 未格式化其它源文件 |
++| package-01 | deployment reactor，明确 skipTests | exit 0，source freeze 0 | 未附带业务测试 |
++
++Maven 测试均显式使用 `-pl src/mod/deployment -am -Dtest=DeploymentStaticLiveAcceptanceTest#fullAgentInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel -Dsurefire.failIfNoSpecifiedTests=false -Dmanaged.runtime.inputBridgeLocal=true`，并保留短 UDS 参数。未跑全类、模块或全量测试。各轮原日志、XML/TXT、原 report 时间及 SHA、源前后冻结均保留，失败轮没有覆盖或改写为通过。
++
++before3297精确等100-after；after3297仅上述 Test owner变化，生产源0。旧 JAR SHA `734e3fd65709061f476f077cb512f31c5df92361bbc6f5068ae37cc45e0b7f47`，新 JAR SHA `4e28dd5418778c8ade7ad85dd142197783b1b7215c85533c3ffcccedf120ecac`；所有生产 class和Agent资源逐项 SHA相同，容器变化不代表生产改动。102 main-only 完整业务 PASS和原89/其它 UNKNOWN证据未改动；baseline01只产生本次临时隔离 Runtime的失败证据，不恢复或读取原数据库。
++
++已保存 actual launcher/Java子进程的 PID与创建 ticks；最终非管理员普通用户 CIM正向枚举362进程并核验 verifier自身，已知本次 exact PID/ticks alive=0、任务命令残留=0。baseline01保留临时 task cleanup失败；corrected01的 Runtime与七task正常结束，所有本次验证进程已退出。
++
++证据：`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-live-input-bridge-104`。初次 before证据复制遇Windows长路径失败，保存为 `before-capture-failed01`；修正证据脚本长路径后 `before` 完整冻结成功，该事件未运行 Runtime。正式增量 `patches/AGENT-FULL-INPUT-BRIDGE-104.patch` 包含本次 Test增量和本文；Git交付由父任务隔离本地提交，不推送。
