@@ -1,0 +1,30 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index e9c9177b99a7a61c01d4f1a1892619e99a91e8cc..cf16c9a6ffdc8987bf6dde7d3903458289c15c2e 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -3087,7 +3087,24 @@
+         agentMode = true;
+         connectionOnly = false;
+         root = workspace().resolve("src/app/db/data/backup-review-probe-" + Long.toUnsignedString(System.nanoTime(), 36));
+-        enable();
++        backupCanonical(root.getParent());
++        backupRequire(!Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS));
++        var process = ProcessHandle.current();
++        var runtimeIdentity = Map.<String, Object>of("root", root.toAbsolutePath().normalize().toString(), "jvmPid", process.pid(),
++            "jvmStartedAt", process.info().startInstant().orElseThrow().toString(), "jvmStartEpochMillis", process.info().startInstant().orElseThrow().toEpochMilli(),
++            "run", System.getProperty("managed.backup.run"), "selector", System.getProperty("test"), "scope", "OWNED_TEMPORARY_PUBLIC_REVIEW_RUNTIME_ONLY");
++        backupWriteRecord(evidence, "public-probe-runtime-before.json", Map.of("identity", runtimeIdentity, "rootExisted", false, "recordedAt", java.time.Instant.now().toString()));
++        try {
++            enable();
++        } finally {
++            if (Files.exists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
++                backupCanonical(root);
++                var attributes = Files.readAttributes(root, java.nio.file.attribute.BasicFileAttributes.class, java.nio.file.LinkOption.NOFOLLOW_LINKS);
++                backupRequire(attributes.isDirectory() && !attributes.isSymbolicLink());
++                backupWriteRecord(evidence, "public-probe-runtime-owner.json", Map.of("identity", runtimeIdentity, "creationTime", attributes.creationTime().toInstant().toString(),
++                    "creationEpochMillis", attributes.creationTime().toMillis(), "recordedAt", java.time.Instant.now().toString(), "createdAfterFreshAbsentCheck", true));
++            }
++        }
+         try (var runtime = open()) {
+             start(runtime, true);
+             configureLiveModel(runtime, true);
