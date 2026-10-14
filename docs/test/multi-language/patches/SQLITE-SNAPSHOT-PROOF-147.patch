@@ -1,0 +1,362 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index e7bd2df780eb55c2c6738439b06c677e444b205f..eec769733d6b93710f9833227a203fd5e02b9dff 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -73,7 +73,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+         return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+             || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive()
+             || isolatedBackupMetadata() || backupMetadataOnlyLive() || isolatedProtectedBackupGuard() || isolatedProtectedBackupSentinel()
+-            || backupCommandOnlyLive() || isolatedBackupCommandGuard();
++            || backupCommandOnlyLive() || isolatedBackupCommandGuard() || isolatedSnapshotProof();
+     }
+ 
+     private static boolean isolatedBackupGuard() {
+@@ -615,9 +615,13 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                     var decision = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(
+                         new gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson(context).ask(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL,
+                             "Review this one complete BACKUP_ONLY command, including the FULL exact script, FULL non-secret stdin, request limits, source facts and references. "
+-                                + "The declared kind is not proof of script safety. Deny deployment, secret body reads/output, following unapproved links, old-resource recovery/deletion, "
+-                                + "or unsupported snapshot/cleanup ownership. Only the explicitly evidenced bounded metadata or existing narrow owned backup helper action is eligible. "
+-                                + "No replay is authorized. A decision grants no execution permission. "
++                                + "The declared kind is not proof of script safety. READONLY_METADATA permits only evidenced bounded metadata reads. "
++                                + "DATABASE_SNAPSHOT may read necessary authorized payload, including potentially secret data, ONLY into a new owned private backup output: "
++                                + "require exact regular source paths/identities, no unapproved links or hardlinks, complete source facts, native SQLite online consistency/integrity, "
++                                + "a new private destination, bounded per-file/total peak storage and sufficient fresh capacity. Source WAL/shared-memory filesystem effects are not business writes. "
++                                + "OWNED_BACKUP_CLEANUP permits only exact independently evidenced resources created by this backup operation. "
++                                + "Deny payload/secret bodies in stdout, stderr, prompts or logs, deployment, old-resource recovery/deletion, unsupported ownership or consistency, and unbounded collection. "
++                                + "A DENY always stops; a favorable reason never substitutes for APPROVE. No replay is authorized. A decision grants no execution permission. "
+                                 + gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION, facts, revision, task));
+                     backupWriteRecord(evidence, "command-approval.json", Map.of("bindingSha256", binding, "decision", decision.decision(),
+                         "requiresUserConfirmation", decision.requiresUserConfirmation(), "reason", decision.reason()));
+@@ -651,7 +655,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             try {
+                 completed(handle, 30);
+             } finally {
+-                backupWriteRecord(evidence, "command-task-observation.json", Map.of("task", handle.id().toString(), "state", handle.snapshot().state().name(),
++                var observation = handle.snapshot();
++                backupWriteRecord(evidence, "command-task-observation.json", Map.of("task", handle.id().toString(), "state", observation.state().name(),
++                    "outcome", observation.outcome().map(Enum::name).orElse("NONE"),
+                     "planSha256", plan.sha(), "backupComplete", false, "replayAttempted", false));
+             }
+         }
+@@ -1852,10 +1858,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             && backupBytesSha(Files.readAllBytes(marker)).equals(run.proofSha()));
+     }
+ 
+-    private Map<String, Object> backupNecessity(com.fasterxml.jackson.databind.JsonNode selected, com.fasterxml.jackson.databind.JsonNode inventory) throws Exception {
++    private Map<String, Object> backupNecessity(com.fasterxml.jackson.databind.JsonNode selected, com.fasterxml.jackson.databind.JsonNode inventory, List<String> roots) throws Exception {
+         String category = selected.path("category").asText();
+-        // BUSINESS_DATA is deliberately blocked until a separately reviewed consistency contract exists.
+-        backupRequire(Set.of("KEY_RECEIPT", "OWNER_MANIFEST", "IRREPLACEABLE_SOURCE").contains(category));
++        backupRequire(Set.of("KEY_RECEIPT", "OWNER_MANIFEST", "IRREPLACEABLE_SOURCE", "BUSINESS_DATA").contains(category));
+         var necessity = selected.path("necessity");
+         String reason = necessity.path("reason").asText();
+         backupRequire(necessity.isObject() && !reason.isBlank() && reason.length() <= 1000);
+@@ -1876,8 +1881,274 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+             && originalInventory.path("wireFingerprint").asText().equals(inventory.path("wireFingerprint").asText())
+             && originalInventory.path("objects").isArray()
+             && java.util.stream.StreamSupport.stream(originalInventory.path("objects").spliterator(), false).anyMatch(expected::equals));
+-        return Map.of("category", category, "reason", reason, "evidenceFile", file.toString(), "evidenceSha256", sha, "entryId", id,
+-            "databaseConsistency", "NOT_ADMITTED_BY_THIS_CANDIDATE");
++        var facts = new LinkedHashMap<String, Object>(Map.of("category", category, "reason", reason, "evidenceFile", file.toString(), "evidenceSha256", sha, "entryId", id,
++            "databaseConsistency", "NOT_ADMITTED_BY_THIS_CANDIDATE"));
++        if (category.equals("BUSINESS_DATA")) {
++            var proof = backupSnapshotProof(workspace(), necessity.path("snapshotEvidence"), selected, inventory, roots.get(2) + "/backups", roots.get(4));
++            facts.put("databaseConsistency", proof);
++        }
++        return Map.copyOf(facts);
++    }
++
++    private static Map<String, Object> backupSnapshotProof(Path workspace, com.fasterxml.jackson.databind.JsonNode reference,
++                                                           com.fasterxml.jackson.databind.JsonNode selected, com.fasterxml.jackson.databind.JsonNode inventory,
++                                                           String backupsRoot, String dataRoot) throws Exception {
++        backupCommandFields(reference, Set.of("file", "sha256"));
++        var proof = backupBoundJson(workspace, Path.of(reference.path("file").asText()), reference.path("sha256").asText(), 65536);
++        backupCommandFields(proof, Set.of("schema", "type", "producerPlan", "approvalFacts", "approval", "grant", "sdkResult", "taskObservation"));
++        backupRequire(proof.path("schema").isInt() && proof.path("schema").asInt() == 1 && proof.path("type").asText().equals("SQLITE_SNAPSHOT_BUNDLE"));
++        var documents = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++        var paths = new java.util.HashSet<Path>();
++        for (String name : List.of("producerPlan", "approvalFacts", "approval", "grant", "sdkResult", "taskObservation")) {
++            var ref = proof.path(name);
++            backupCommandFields(ref, Set.of("file", "sha256"));
++            Path file = Path.of(ref.path("file").asText());
++            backupRequire(paths.add(file));
++            documents.put(name, backupBoundJson(workspace, file, ref.path("sha256").asText(), 2 * 1024 * 1024));
++        }
++        var result = documents.get("sdkResult");
++        var command = result.path("commandResult");
++        backupRequire(result.path("outcome").asText().equals("SUCCEEDED") && !result.has("problem")
++            && result.path("backupComplete").isBoolean() && !result.path("backupComplete").asBoolean()
++            && result.path("replayAttempted").isBoolean() && !result.path("replayAttempted").asBoolean()
++            && command.path("exitObserved").isBoolean() && command.path("exitObserved").asBoolean()
++            && command.path("exitCode").isInt() && command.path("exitCode").asInt() == 0
++            && command.path("truncated").isBoolean() && !command.path("truncated").asBoolean()
++            && command.path("stderr").isTextual() && command.path("stderr").asText().isEmpty()
++            && command.path("stdout").isTextual() && command.path("stdout").asText().length() <= 65536);
++        var parser = new com.fasterxml.jackson.databind.ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++        var snapshot = parser.readTree(command.path("stdout").asText());
++        var fields = new java.util.HashSet<>(Set.of("schema", "type", "run", "server", "fingerprint", "layoutSha256", "operationRoot", "ownerMarkerSha256",
++            "bundlePath", "bundleBytes", "bundleSha256", "manifestMember", "manifestSha256", "sources", "limits", "complete"));
++        if (snapshot.has("details")) fields.add("details");
++        backupCommandFields(snapshot, fields);
++        backupRequire(snapshot.path("schema").isInt() && snapshot.path("schema").asInt() == 1
++            && snapshot.path("type").asText().equals("SQLITE_SNAPSHOT_BUNDLE") && snapshot.path("complete").isBoolean() && snapshot.path("complete").asBoolean()
++            && snapshot.path("server").equals(inventory.path("server")) && snapshot.path("fingerprint").equals(inventory.path("wireFingerprint"))
++            && snapshot.path("layoutSha256").equals(inventory.path("layoutSha256")));
++        if (snapshot.has("details")) backupRequire(snapshot.path("details").isObject());
++        String run = snapshot.path("run").asText();
++        backupRequire(run.matches("[a-z0-9][a-z0-9-]{0,95}") && snapshot.path("operationRoot").asText().equals(backupsRoot + "/" + run)
++            && backupMetadataPath(snapshot.path("bundlePath").asText(), List.of(snapshot.path("operationRoot").asText()))
++            && snapshot.path("bundlePath").asText().substring(snapshot.path("operationRoot").asText().length() + 1).matches("[a-z0-9][a-z0-9-]*\\.tar")
++            && snapshot.path("bundlePath").equals(selected.path("path")) && selected.path("bytes").isIntegralNumber()
++            && selected.path("bytes").canConvertToLong() && snapshot.path("bundleBytes").asLong() == selected.path("bytes").asLong()
++            && snapshot.path("manifestMember").asText().equals("manifest.json"));
++        for (String field : List.of("ownerMarkerSha256", "bundleSha256", "manifestSha256"))
++            backupRequire(snapshot.path(field).isTextual() && snapshot.path(field).asText().matches("[0-9a-f]{64}"));
++        var planRef = proof.path("producerPlan");
++        var plan = backupCommandPlan(workspace, Path.of(planRef.path("file").asText()), planRef.path("sha256").asText(), run,
++            inventory.path("server").asText(), inventory.path("wireFingerprint").asText(), inventory.path("layoutSha256").asText());
++        var planned = documents.get("producerPlan");
++        backupRequire(planned.path("kind").asText().equals("DATABASE_SNAPSHOT"));
++        var expected = planned.path("sourceFacts").path("sqliteSnapshotBundle");
++        backupCommandFields(expected, Set.of("type", "run", "server", "fingerprint", "layoutSha256", "operationRoot", "ownerMarkerSha256", "bundlePath", "manifestMember", "sources", "limits"));
++        for (String field : List.of("type", "run", "server", "fingerprint", "layoutSha256", "operationRoot", "ownerMarkerSha256", "bundlePath", "manifestMember"))
++            backupRequire(expected.path(field).isTextual() && expected.path(field).equals(snapshot.path(field)));
++        var limits = snapshot.path("limits");
++        backupCommandFields(limits, Set.of("snapshotMaxBytes", "bundleMaxBytes", "peakMaxBytes", "minimumAvailableBytes", "availableBeforeBytes"));
++        var constants = Map.of("snapshotMaxBytes", 1048576L, "bundleMaxBytes", 16777216L, "peakMaxBytes", 33554432L, "minimumAvailableBytes", 134217728L);
++        backupCommandFields(expected.path("limits"), constants.keySet());
++        for (var limit : constants.entrySet())
++            backupRequire(limits.path(limit.getKey()).isIntegralNumber() && limits.path(limit.getKey()).canConvertToLong()
++                && limits.path(limit.getKey()).asLong() == limit.getValue()
++                && expected.path("limits").path(limit.getKey()).equals(limits.path(limit.getKey())));
++        backupRequire(limits.path("availableBeforeBytes").isIntegralNumber() && limits.path("availableBeforeBytes").canConvertToLong()
++            && limits.path("availableBeforeBytes").asLong() >= limits.path("minimumAvailableBytes").asLong()
++            && snapshot.path("bundleBytes").isIntegralNumber() && snapshot.path("bundleBytes").canConvertToLong()
++            && snapshot.path("bundleBytes").asLong() > 0 && snapshot.path("bundleBytes").asLong() <= limits.path("bundleMaxBytes").asLong()
++            && expected.path("sources").isArray() && expected.path("sources").size() == 12
++            && snapshot.path("sources").isArray() && snapshot.path("sources").size() == 12);
++        var sourcePaths = new java.util.HashSet<String>();
++        var identities = new java.util.HashSet<String>();
++        var members = new java.util.HashSet<String>();
++        for (int i = 0; i < 12; i++) {
++            var source = snapshot.path("sources").get(i);
++            var original = expected.path("sources").get(i);
++            backupCommandFields(original, Set.of("sourcePath", "sourceDevice", "sourceInode", "sourceBytes", "member"));
++            backupCommandFields(source, Set.of("sourcePath", "sourceDevice", "sourceInode", "sourceNlink", "sourceBytes", "member", "snapshotBytes", "snapshotSha256", "method", "integrity"));
++            for (String field : List.of("sourcePath", "sourceDevice", "sourceInode", "sourceBytes", "member"))
++                backupRequire(original.path(field).equals(source.path(field)));
++            backupRequire(backupMetadataPath(source.path("sourcePath").asText(), List.of(dataRoot))
++                && source.path("sourcePath").asText().substring(dataRoot.length() + 1).matches("[a-z0-9][a-z0-9-]{0,127}/databases/tasks/tasks\\.db")
++                && sourcePaths.add(source.path("sourcePath").asText())
++                && source.path("sourceDevice").asText().matches("[0-9]+") && source.path("sourceInode").asText().matches("[0-9]+")
++                && identities.add(source.path("sourceDevice").asText() + ":" + source.path("sourceInode").asText())
++                && source.path("sourceNlink").isInt() && source.path("sourceNlink").asInt() == 1
++                && source.path("sourceBytes").isIntegralNumber() && source.path("sourceBytes").canConvertToLong()
++                && source.path("sourceBytes").asLong() > 0 && source.path("sourceBytes").asLong() <= 1048576
++                && source.path("member").asText().equals(String.format(java.util.Locale.ROOT, "databases/%02d.sqlite", i)) && members.add(source.path("member").asText())
++                && source.path("snapshotBytes").isIntegralNumber() && source.path("snapshotBytes").canConvertToLong()
++                && source.path("snapshotBytes").asLong() > 0 && source.path("snapshotBytes").asLong() <= 1048576
++                && source.path("snapshotSha256").asText().matches("[0-9a-f]{64}")
++                && source.path("method").asText().equals("PYTHON_SQLITE3_ONLINE_BACKUP") && source.path("integrity").asText().equals("ok"));
++        }
++        var task = java.util.UUID.fromString(result.path("task").asText());
++        var facts = documents.get("approvalFacts");
++        String revision = facts.path("facts").path("exactIntent").path("revision").asText();
++        backupRequire(facts.path("facts").equals(JSON.readTree(backupCommandFacts(plan, task, revision))));
++        String binding = inputDigest(facts.path("facts").toString());
++        for (String name : List.of("approvalFacts", "approval", "grant", "sdkResult"))
++            backupRequire(documents.get(name).path("bindingSha256").asText().equals(binding));
++        backupRequire(documents.get("approval").path("decision").asText().equals("APPROVE")
++            && documents.get("approval").path("requiresUserConfirmation").isBoolean()
++            && documents.get("grant").path("outcome").asText().equals("SUCCEEDED")
++            && result.path("grantId").equals(documents.get("grant").path("grantId"))
++            && result.path("planSha256").asText().equals(plan.sha())
++            && documents.get("taskObservation").path("task").asText().equals(task.toString())
++            && documents.get("taskObservation").path("planSha256").asText().equals(plan.sha())
++            && documents.get("taskObservation").path("state").asText().equals("ENDED")
++            && documents.get("taskObservation").path("outcome").asText().equals("SUCCEEDED"));
++        java.util.UUID.fromString(result.path("grantId").asText());
++        return Map.of("type", "SQLITE_SNAPSHOT_BUNDLE", "proof", reference, "originalReferences", proof,
++            "producerTask", task.toString(), "producerBindingSha256", binding, "bundle", ((com.fasterxml.jackson.databind.node.ObjectNode) snapshot.deepCopy()).without("details"),
++            "consistency", "TWELVE_INDIVIDUAL_ONLINE_SNAPSHOTS_NOT_A_CROSS_DATABASE_INSTANT", "backupComplete", false);
++    }
++
++    private static void backupSnapshotPayloadSha(Map<String, Object> necessity, String sha) {
++        var proof = (Map<?, ?>) necessity.get("databaseConsistency");
++        backupRequire(proof.get("bundle") instanceof com.fasterxml.jackson.databind.JsonNode bundle
++            && sha.equals(bundle.path("bundleSha256").asText()));
++    }
++
++    private static boolean isolatedSnapshotProof() {
++        return Boolean.getBoolean("managed.runtime.snapshotProofLocal")
++            && "DeploymentStaticLiveAcceptanceTest#backupSnapshotBundlesRequireOriginalReceiptsAndExactDatabaseMembers".equals(System.getProperty("test", ""));
++    }
++
++    private static com.fasterxml.jackson.databind.JsonNode backupSnapshotLocalReferences(Path directory, Map<String, com.fasterxml.jackson.databind.JsonNode> documents) throws Exception {
++        var proof = JSON.createObjectNode().put("schema", 1).put("type", "SQLITE_SNAPSHOT_BUNDLE");
++        for (var document : documents.entrySet()) {
++            Path file = directory.resolve(document.getKey() + ".json");
++            Files.writeString(file, document.getValue().toString());
++            proof.putObject(document.getKey()).put("file", file.toString()).put("sha256", backupBytesSha(Files.readAllBytes(file)));
++        }
++        Path file = directory.resolve("proof.json");
++        Files.writeString(file, proof.toString());
++        return JSON.createObjectNode().put("file", file.toString()).put("sha256", backupBytesSha(Files.readAllBytes(file)));
++    }
++
++    @Test
++    @EnabledIf("isolatedSnapshotProof")
++    void backupSnapshotBundlesRequireOriginalReceiptsAndExactDatabaseMembers() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        assertFalse(backupOnlyLive());
++        Path workspace = root.toAbsolutePath().normalize();
++        Path directory = Files.createDirectories(workspace.resolve(".ai-workspace/agent-live-evidence/local-snapshot-147"));
++        String run = "local-snapshot-147", backups = "/var/lib/windowstolinux/backups", data = "/var/opt/windowstolinux/apps";
++        String fingerprint = "PUBLIC_LOCAL_NOT_HOST_PROOF", layout = "a".repeat(64), revision = "b".repeat(64);
++        var snapshot = JSON.createObjectNode().put("schema", 1).put("type", "SQLITE_SNAPSHOT_BUNDLE").put("run", run).put("server", SERVER)
++            .put("fingerprint", fingerprint).put("layoutSha256", layout).put("operationRoot", backups + "/" + run).put("ownerMarkerSha256", "c".repeat(64))
++            .put("bundlePath", backups + "/" + run + "/bundle.tar").put("bundleBytes", 800000).put("bundleSha256", "d".repeat(64))
++            .put("manifestMember", "manifest.json").put("manifestSha256", "e".repeat(64)).put("complete", true);
++        var limits = snapshot.putObject("limits").put("snapshotMaxBytes", 1048576).put("bundleMaxBytes", 16777216)
++            .put("peakMaxBytes", 33554432).put("minimumAvailableBytes", 134217728).put("availableBeforeBytes", 268435456);
++        var sources = snapshot.putArray("sources");
++        for (int i = 0; i < 12; i++)
++            sources.addObject().put("sourcePath", data + "/local-app-" + i + "/databases/tasks/tasks.db").put("sourceDevice", "1").put("sourceInode", "" + (100 + i))
++                .put("sourceNlink", 1).put("sourceBytes", 61440).put("member", String.format(java.util.Locale.ROOT, "databases/%02d.sqlite", i))
++                .put("snapshotBytes", 61440).put("snapshotSha256", "f".repeat(64)).put("method", "PYTHON_SQLITE3_ONLINE_BACKUP").put("integrity", "ok");
++        var expected = (com.fasterxml.jackson.databind.node.ObjectNode) snapshot.deepCopy().without(List.of("schema", "bundleBytes", "bundleSha256", "manifestSha256", "complete"));
++        expected.set("limits", limits.deepCopy().without("availableBeforeBytes"));
++        var expectedSources = expected.putArray("sources");
++        for (var source : sources)
++            expectedSources.add(((com.fasterxml.jackson.databind.node.ObjectNode) source.deepCopy())
++                .without(List.of("sourceNlink", "snapshotBytes", "snapshotSha256", "method", "integrity")));
++        Path evidence = directory.resolve("controlled-metadata.txt");
++        Files.writeString(evidence, "PUBLIC_LOCAL_PROOF_VALIDATOR_INPUT_NOT_REMOTE_EVIDENCE");
++        var planNode = JSON.createObjectNode().put("schema", 1).put("scope", "BACKUP_ONLY").put("run", run).put("server", SERVER)
++            .put("fingerprint", fingerprint).put("layoutSha256", layout).put("kind", "DATABASE_SNAPSHOT")
++            .put("script", "PUBLIC_LOCAL_INPUT_NOT_AN_EXECUTABLE_REMOTE_SNAPSHOT").put("stdin", "")
++            .put("stdinNonSecret", true).put("outputNonSecret", true).put("necessity", "Controlled proof boundary only")
++            .put("timeoutSeconds", 3).put("outputLimitBytes", 65536);
++        planNode.putObject("sourceFacts").set("sqliteSnapshotBundle", expected);
++        planNode.putArray("evidence").addObject().put("file", evidence.toString()).put("sha256", backupBytesSha(Files.readAllBytes(evidence)));
++        Path planFile = directory.resolve("producerPlan.json");
++        Files.writeString(planFile, planNode.toString());
++        var plan = backupCommandPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), run, SERVER, fingerprint, layout);
++        var task = java.util.UUID.randomUUID();
++        String facts = backupCommandFacts(plan, task, revision), binding = inputDigest(facts), grant = java.util.UUID.randomUUID().toString();
++        var docs = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++        docs.put("producerPlan", planNode);
++        docs.put("approvalFacts", JSON.createObjectNode().put("bindingSha256", binding).set("facts", JSON.readTree(facts)));
++        docs.put("approval", JSON.createObjectNode().put("bindingSha256", binding).put("decision", "APPROVE").put("requiresUserConfirmation", false).put("reason", "Controlled local test"));
++        docs.put("grant", JSON.createObjectNode().put("bindingSha256", binding).put("outcome", "SUCCEEDED").put("grantId", grant));
++        var receipt = JSON.createObjectNode().put("bindingSha256", binding).put("task", task.toString()).put("planSha256", plan.sha()).put("grantId", grant)
++            .put("outcome", "SUCCEEDED").put("backupComplete", false).put("replayAttempted", false);
++        receipt.putObject("commandResult").put("exitObserved", true).put("exitCode", 0).put("stdout", snapshot.toString()).put("stderr", "").put("truncated", false);
++        docs.put("sdkResult", receipt);
++        docs.put("taskObservation", JSON.createObjectNode().put("task", task.toString()).put("planSha256", plan.sha()).put("state", "ENDED").put("outcome", "SUCCEEDED"));
++        var inventory = JSON.createObjectNode().put("server", SERVER).put("wireFingerprint", fingerprint).put("layoutSha256", layout);
++        var selected = JSON.createObjectNode().put("path", snapshot.path("bundlePath").asText()).put("bytes", 800000);
++        var reference = backupSnapshotLocalReferences(directory, docs);
++        var accepted = backupSnapshotProof(workspace, reference, selected, inventory, backups, data);
++        assertEquals(false, accepted.get("backupComplete"));
++        backupSnapshotPayloadSha(Map.of("databaseConsistency", accepted), "d".repeat(64));
++        assertThrows(Exception.class, () -> backupSnapshotPayloadSha(Map.of("databaseConsistency", accepted), "0".repeat(64)));
++        assertThrows(Exception.class, () -> backupSnapshotProof(workspace, reference, selected.deepCopy().put("path", "/other/bundle.tar"), inventory, backups, data));
++        assertThrows(Exception.class, () -> backupSnapshotProof(workspace, reference, selected, inventory.deepCopy().put("wireFingerprint", "changed"), backups, data));
++        var invalid = new java.util.ArrayList<com.fasterxml.jackson.databind.node.ObjectNode>();
++        invalid.add(snapshot.deepCopy().put("complete", false));
++        invalid.add(snapshot.deepCopy().put("manifestMember", "../manifest.json"));
++        invalid.add(snapshot.deepCopy().put("bundleBytes", 16777217));
++        invalid.add(snapshot.deepCopy().put("bundleSha256", "bad"));
++        for (String field : List.of("sourcePath", "sourceDevice", "sourceInode", "member", "method", "integrity")) {
++            var changed = snapshot.deepCopy();
++            ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("sources").get(0)).put(field, field.equals("member") ? "../escape.sqlite" : "changed");
++            invalid.add(changed);
++        }
++        for (String field : List.of("sourceNlink", "sourceBytes", "snapshotBytes")) {
++            var changed = snapshot.deepCopy();
++            ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("sources").get(0)).put(field, field.equals("sourceNlink") ? 2 : 1048577);
++            invalid.add(changed);
++        }
++        var missing = snapshot.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ArrayNode) missing.path("sources")).remove(11);
++        invalid.add(missing);
++        var duplicate = snapshot.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ArrayNode) duplicate.path("sources")).set(11, duplicate.path("sources").get(0).deepCopy());
++        invalid.add(duplicate);
++        var capacity = snapshot.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) capacity.path("limits")).put("availableBeforeBytes", 1);
++        invalid.add(capacity);
++        for (var changed : invalid) {
++            var altered = new LinkedHashMap<>(docs);
++            var value = receipt.deepCopy();
++            ((com.fasterxml.jackson.databind.node.ObjectNode) value.path("commandResult")).put("stdout", changed.toString());
++            altered.put("sdkResult", value);
++            var ref = backupSnapshotLocalReferences(directory, altered);
++            assertThrows(Exception.class, () -> backupSnapshotProof(workspace, ref, selected, inventory, backups, data));
++        }
++        for (String scenario : List.of("DENY", "UNKNOWN", "TRUNCATED", "STDERR", "EXIT", "TASK_FAILED", "TASK_UNKNOWN", "GRANT", "BINDING", "TRAILING", "DUPLICATE_JSON")) {
++            var altered = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++            docs.forEach((key, value) -> altered.put(key, value.deepCopy()));
++            var value = (com.fasterxml.jackson.databind.node.ObjectNode) altered.get("sdkResult");
++            var raw = (com.fasterxml.jackson.databind.node.ObjectNode) value.path("commandResult");
++            switch (scenario) {
++                case "DENY" ->
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) altered.get("approval")).put("decision", "DENY").put("reason", "Everything is safe");
++                case "UNKNOWN" -> value.put("outcome", "UNKNOWN");
++                case "TRUNCATED" -> raw.put("truncated", true);
++                case "STDERR" -> raw.put("stderr", "UNSAFE_BODY_NOT_LOGGED_BY_PRODUCER");
++                case "EXIT" -> raw.put("exitCode", 1);
++                case "TASK_FAILED" ->
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) altered.get("taskObservation")).put("outcome", "FAILED");
++                case "TASK_UNKNOWN" ->
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) altered.get("taskObservation")).put("state", "UNKNOWN").put("outcome", "NONE");
++                case "GRANT" -> value.put("grantId", java.util.UUID.randomUUID().toString());
++                case "BINDING" -> value.put("bindingSha256", "0".repeat(64));
++                case "TRAILING" -> raw.put("stdout", snapshot + "{}");
++                case "DUPLICATE_JSON" ->
++                    raw.put("stdout", snapshot.toString().replace("\"schema\":1", "\"schema\":1,\"schema\":1"));
++            }
++            var ref = backupSnapshotLocalReferences(directory, altered);
++            assertThrows(Exception.class, () -> backupSnapshotProof(workspace, ref, selected, inventory, backups, data));
++        }
++        var originalReference = backupSnapshotLocalReferences(directory, docs);
++        Files.writeString(directory.resolve("approval.json"), "{}");
++        assertThrows(Exception.class, () -> backupSnapshotProof(workspace, originalReference, selected, inventory, backups, data));
+     }
+ 
+     private static BackupFrozenBatch backupFreezeBatch(Map<String, Object> common, List<BackupPrepared> items) throws Exception {
+@@ -2003,7 +2274,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                     && selected.isObject() && JSON.valueToTree(backupMetadata(before))
+                     .equals(((com.fasterxml.jackson.databind.node.ObjectNode) selected.deepCopy()).without(List.of("category", "necessity"))));
+                 backupBudget(prepared.size(), total, before.bytes());
+-                var necessity = backupNecessity(selected, inventory);
++                var necessity = backupNecessity(selected, inventory, roots);
+                 String lowerRemote = remote.toLowerCase(java.util.Locale.ROOT);
+                 backupRequire(!lowerRemote.endsWith(".db") && !lowerRemote.endsWith(".sqlite") && !lowerRemote.endsWith(".sqlite3")
+                     && !lowerRemote.endsWith("-wal") && !lowerRemote.endsWith("-shm") && !lowerRemote.endsWith("-journal"));
+@@ -2021,6 +2292,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                 } finally {
+                     Arrays.fill(bytes, (byte) 0);
+                 }
++                if (selected.path("category").asText().equals("BUSINESS_DATA"))
++                    backupSnapshotPayloadSha(necessity, sha);
+                 backupRequire(query.getFile(path, task).equals(before));
+                 var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(plain, remote, before.bytes());
+                 var intent = backupProtectedTransferIntent(SERVER, revision, request, sha, backupRun, cipher);
+@@ -2093,6 +2366,12 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
+                             backupProtectedRunUnchanged(run, acl);
+                             for (var remaining : batch.items()) {
+                                 backupBatchMembership(batch, remaining, currentRevision);
++                                if (JSON.readTree(remaining.factsJson()).path("necessity").path("category").asText().equals("BUSINESS_DATA")) {
++                                    var selected = java.util.stream.StreamSupport.stream(inventory.path("selected").spliterator(), false)
++                                        .filter(value -> value.path("path").asText().equals(remaining.source().requested().path())).findFirst().orElseThrow();
++                                    backupRequire(JSON.valueToTree(backupNecessity(selected, inventory, roots))
++                                        .equals(JSON.readTree(remaining.factsJson()).path("necessity")));
++                                }
+                                 if (!finished.contains(remaining.memberSha()))
+                                     backupRequire(query.getFile(remaining.source().requested(), task).equals(remaining.source())
+                                         && !Files.exists(remaining.plain(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
