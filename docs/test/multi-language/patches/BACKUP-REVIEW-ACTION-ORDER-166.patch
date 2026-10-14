@@ -1,0 +1,88 @@
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+index 64f93e66278c9fa88f8d763962276d249b523456..d3752f27bd44958cbb014e944c3253212938498c 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -641,9 +641,27 @@
+         backupRequire(roots.size() == 5);
+         var stdoutText = backupRequireDecodedMetadata(result.path("stdout").asText(), roots, documents.get("decodedMetadata"));
+         backupContextSelection(node, documents.get("decodedMetadata"), documents.get("frozenSelection"), references.path("frozenSelection").path("sha256").asText());
+-        String input = JSON.writeValueAsString(Map.of("authorActionFacts", JSON.readTree(authorFactsJson), "observationEvidence", documents,
+-            "mechanicalValidation", Map.of("originalReceiptChain", "MATCHED_SUCCEEDED_ENDED", "metadataSections", "RAW_STDOUT_BASE64_FIELDS_EXACT",
+-                "filesMatched", 310, "parentsMatched", 103, "sftpFileInfoProof", false, "freshRemoteContentProven", false, "stdoutTextRepresentation", stdoutText)));
++        var originalAuthor = JSON.readTree(authorFactsJson);
++        var originalRequest = originalAuthor.path("commandRequest");
++        var orderedRequest = JSON.createObjectNode();
++        orderedRequest.set("script", originalRequest.path("script").deepCopy());
++        orderedRequest.set("stdin", originalRequest.path("stdin").deepCopy());
++        var requestFields = new java.util.TreeSet<String>();
++        originalRequest.fieldNames().forEachRemaining(requestFields::add);
++        for (String field : requestFields)
++            if (!orderedRequest.has(field)) orderedRequest.set(field, originalRequest.get(field).deepCopy());
++        var orderedAuthor = JSON.createObjectNode();
++        orderedAuthor.set("commandRequest", orderedRequest);
++        var authorFields = new java.util.TreeSet<String>();
++        originalAuthor.fieldNames().forEachRemaining(authorFields::add);
++        for (String field : authorFields)
++            if (!orderedAuthor.has(field)) orderedAuthor.set(field, originalAuthor.get(field).deepCopy());
++        var reviewInput = JSON.createObjectNode();
++        reviewInput.set("authorActionFacts", orderedAuthor);
++        reviewInput.set("mechanicalValidation", JSON.valueToTree(Map.of("originalReceiptChain", "MATCHED_SUCCEEDED_ENDED", "metadataSections", "RAW_STDOUT_BASE64_FIELDS_EXACT",
++            "filesMatched", 310, "parentsMatched", 103, "sftpFileInfoProof", false, "freshRemoteContentProven", false, "stdoutTextRepresentation", stdoutText)));
++        reviewInput.set("observationEvidence", JSON.valueToTree(documents));
++        String input = JSON.writeValueAsString(reviewInput);
+         backupRequire(input.length() <= BACKUP_PROVENANCE_REVIEW_LIMIT && input.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= BACKUP_PROVENANCE_REVIEW_LIMIT);
+         return input;
+     }
+@@ -655,7 +673,10 @@
+             + "require exact regular source paths/identities, no unapproved links or hardlinks, complete source facts, native SQLite online consistency/integrity, "
+             + "a new private destination, bounded per-file/total peak storage and sufficient fresh capacity. Source WAL/shared-memory filesystem effects are not business writes. "
+             + "FILES_SNAPSHOT may preserve necessary non-database files only under bounded selection rules, frozen UID/mode/device/inode identities, "
+-            + "stable observations before/after each read and actual content SHA, into a new owned private output with count, byte and peak storage limits. "
++            + "stable observations before/after each read and runtime content SHA, into a new owned private output with count, byte and peak storage limits. "
++            + "Before execution, independently review the complete implementation and source facts already obtained; future content hashes are not pre-execution evidence. "
++            + "During payload-preservation execution, require each stable file read, SHA over the same bytes inserted into the archive, and those per-file digests in its manifest. "
++            + "After execution, require actual file/archive digests and original receipts, then verify them before declaring completion; missing evidence leaves preservation incomplete. "
+             + "Database payload still requires the separate BUSINESS_DATA SQLite snapshot consistency admission; a kind label is never proof. "
+             + "OWNED_BACKUP_CLEANUP permits only exact independently evidenced resources created by this backup operation. "
+             + "Deny payload/secret bodies in stdout, stderr, prompts or logs, deployment, old-resource recovery/deletion, unsupported ownership or consistency, and unbounded collection. "
+@@ -1099,8 +1120,18 @@
+         Files.writeString(file, provenance.toString());
+         var provenancePlan = read.call();
+         String authorFacts = backupCommandFacts(provenancePlan, task, revision);
++        String originalAuthorBinding = inputDigest(authorFacts);
+         String expanded = backupCommandReviewInput(workspace, provenancePlan, authorFacts);
+         var expandedTree = JSON.readTree(expanded);
++        assertTrue(expanded.startsWith("{\"authorActionFacts\":{\"commandRequest\":{\"script\":"));
++        var expandedFields = new java.util.ArrayList<String>();
++        expandedTree.fieldNames().forEachRemaining(expandedFields::add);
++        assertEquals(List.of("authorActionFacts", "mechanicalValidation", "observationEvidence"), expandedFields);
++        var requestFields = new java.util.ArrayList<String>();
++        expandedTree.path("authorActionFacts").path("commandRequest").fieldNames().forEachRemaining(requestFields::add);
++        assertEquals(List.of("script", "stdin", "outputLimitBytes", "timeoutSeconds"), requestFields);
++        assertEquals(authorFacts, backupCommandFacts(provenancePlan, task, revision));
++        assertEquals(originalAuthorBinding, inputDigest(authorFacts));
+         assertEquals(JSON.readTree(authorFacts), expandedTree.path("authorActionFacts"));
+         assertEquals(8, expandedTree.path("observationEvidence").size());
+         assertEquals(310, expandedTree.path("mechanicalValidation").path("filesMatched").asInt());
+@@ -1136,12 +1167,20 @@
+         assertEquals(8192, capturedRequest.maxOutputTokens().orElseThrow());
+         assertEquals(0, capturedRequest.generationRecoveryAttempts());
+         assertEquals(expanded, capturedRequest.messages().getLast().text());
++        assertTrue(capturedRequest.messages().getLast().text().startsWith("{\"authorActionFacts\":{\"commandRequest\":{\"script\":"));
++        assertEquals(JSON.readTree(authorFacts), JSON.readTree(capturedRequest.messages().getLast().text()).path("authorActionFacts"));
+         assertFalse(capturedRequest.messages().getFirst().text().contains("Trusted product implementation contract"));
+         assertTrue(capturedRequest.messages().getFirst().text().contains("The declared kind is not proof"));
++        String timing = capturedRequest.messages().getFirst().text();
++        assertTrue(timing.indexOf("Before execution") < timing.indexOf("During payload-preservation execution"));
++        assertTrue(timing.indexOf("During payload-preservation execution") < timing.indexOf("After execution"));
++        assertTrue(timing.contains("future content hashes are not pre-execution evidence"));
++        assertTrue(timing.contains("same bytes inserted into the archive"));
++        assertTrue(timing.contains("missing evidence leaves preservation incomplete"));
+         assertTrue(capturedRequest.messages().getLast().text().contains(provenance.path("script").asText()));
+         assertEquals(provenance.path("stdin"), expandedTree.path("authorActionFacts").path("commandRequest").path("stdin"));
+         var savedReview = JSON.readTree(Files.readAllBytes(evidence.resolve("command-review-input.json")));
+-        assertEquals(inputDigest(authorFacts), savedReview.path("bindingSha256").asText());
++        assertEquals(originalAuthorBinding, savedReview.path("bindingSha256").asText());
+         assertEquals(inputDigest(savedReview.path("request").toString()), savedReview.path("reviewInputSha256").asText());
+         assertEquals(expanded, savedReview.path("request").path("messages").get(1).path("text").asText());
+         int dispatches = calls.get();
