@@ -1,0 +1,570 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommands.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommands.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommands.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommands.java
+@@ -176,7 +176,9 @@
+                     confirmed = false;
+                 }
+             }
+-            programState.finish(retained, result, confirmed, receipt, !dispatchBoundary[0]);
++            var refusal = dispatchBoundary[0] ? DeploymentAgentToolchainFailureEvidence.precreationRefusal(retained,
++                phase, operation, programState.taskId(), server, layout, request, result).orElse(null) : null;
++            programState.finish(retained, result, confirmed, receipt, !dispatchBoundary[0], refusal);
+             var reported = !confirmed && result.outcome() == TaskResult.SUCCEEDED ? DeploymentAgentToolchainProgramStore.unconfirmed() : result;
+             if (Set.of("prepare", "bind").contains(phase))
+                 reported = DeploymentAgentToolchainFailureEvidence.retain(reported, phase, server, operation);
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramState.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramState.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramState.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramState.java
+@@ -104,6 +104,11 @@
+     }
+ 
+     void finish(Action action, OperationResult<CommandResult> result, boolean confirmed, JsonNode receipt, boolean notDispatched) throws ApiException {
++        finish(action, result, confirmed, receipt, notDispatched, null);
++    }
++
++    void finish(Action action, OperationResult<CommandResult> result, boolean confirmed, JsonNode receipt, boolean notDispatched,
++                DeploymentAgentToolchainFailureEvidence.PrecreationRefusal refusal) throws ApiException {
+         try {
+             var before = action.checkpoint().snapshot();
+             var body = (ObjectNode) JSON.readTree(before.payload());
+@@ -113,6 +118,8 @@
+                 throw new IllegalArgumentException("Unconfirmed SDK command cannot release occupancy");
+             if (notDispatched && (confirmed || result.value().isPresent()))
+                 throw new IllegalArgumentException("A dispatched result cannot be marked not sent");
++            if (refusal != null && (confirmed || notDispatched || receipt != null || result.outcome() != TaskResult.FAILED))
++                throw new IllegalArgumentException("A precreation refusal is neither success nor an undispatched action");
+             String phase = body.path("index").path("phase").asText();
+             if (confirmed && Set.of("READINESS", "INSTALL").contains(phase) && receipt == null)
+                 throw new IllegalArgumentException("Controller store identity requires its complete original receipt");
+@@ -132,11 +139,18 @@
+                 body.put("stdoutCharacters", value.stdout().length()).put("stderrCharacters", value.stderr().length());
+             });
+             if (receipt != null) body.set("receipt", receipt.deepCopy());
++            if (refusal != null) {
++                var proof = refusal.evidence();
++                body.set(DeploymentAgentToolchainFailureEvidence.PRECREATION, proof);
++                body.put("confirmationMeaning", proof.path("meaning").asText());
++                if (!DeploymentAgentToolchainFailureEvidence.releasedPrecreationRefusal(action.id(), body.path("index"), body))
++                    throw new IllegalArgumentException("Precreation refusal differs from this original action and result");
++            }
+             String payload = bounded(body);
+             action.checkpoint().advance(before, payload);
+             recorder.event(RESULT, action.id(), JSON.writeValueAsString(Map.of("state", body.path("state").asText(),
+                 "payloadSha256", DeploymentAgentToolchainPrograms.sha256(payload))));
+-            if (confirmed || notDispatched) action.checkpoint().close();
++            if (confirmed || notDispatched || refusal != null) action.checkpoint().close();
+         } catch (ApiException failure) {
+             throw failure;
+         } catch (Exception failure) {
+@@ -183,7 +197,10 @@
+                 throw new IllegalArgumentException("Original controller checkpoint identity changed");
+             if (saved.released()) {
+                 var ended = events.stream().filter(e -> e.type().equals(RESULT) && e.action().equals(event.action())).toList();
+-                if (!Set.of("CONFIRMED", "NOT_SENT").contains(payload.path("state").asText()) || ended.size() != 1 || ended.getFirst().id() <= event.id()
++                boolean refusal = DeploymentAgentToolchainFailureEvidence.releasedPrecreationRefusal(event.action(), index, payload);
++                if ((!Set.of("CONFIRMED", "NOT_SENT").contains(payload.path("state").asText()) && !refusal)
++                    || payload.has(DeploymentAgentToolchainFailureEvidence.PRECREATION) && !refusal
++                    || ended.size() != 1 || ended.getFirst().id() <= event.id()
+                     || JSON.readTree(ended.getFirst().detail()).size() != 2
+                     || !JSON.readTree(ended.getFirst().detail()).path("state").asText().equals(payload.path("state").asText())
+                     || !JSON.readTree(ended.getFirst().detail()).path("payloadSha256").asText().equals(DeploymentAgentToolchainPrograms.sha256(saved.payload())))
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainFailureEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainFailureEvidence.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainFailureEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainFailureEvidence.java
+@@ -4,9 +4,13 @@
+ import java.util.regex.Pattern;
+ 
+ import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.JsonNode;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+ 
+ /** Preserves only this dispatched Agent program's bounded failure evidence. / 仅保留本次已发送 Agent 程序的有界失败依据。 */
+ public final class DeploymentAgentToolchainFailureEvidence {
+@@ -63,6 +67,134 @@
+         "USER_MODE");
+ 
+     private DeploymentAgentToolchainFailureEvidence() {
++    }
++
++    static final String PRECREATION = "precreationRefusal";
++
++    private static final String PRECREATION_FORMAT = "WTL_AGENT_CONTROLLER_PRECREATION_REFUSAL_1";
++
++    // Only the reviewed VOLUME refusal before operation-private resource creation is eligible, not future rendered sources.
++    private static final String PRECREATION_SOURCE_SHA256 = "2f82c5c50834f747ff005832edafbc47e9bed72103a98a538a8242d8ed4f3c19";
++
++    private static final int PRECREATION_SOURCE_BYTES = 101904;
++
++    private static final String PRECREATION_MEANING = "ONLY_THIS_OPERATION_PRIVATE_RESOURCES_NOT_CREATED; SHARED_DIRECTORIES_AND_PREPARE_LOCK_RETAINED; NOT_CLEANUP_COMPLETE";
++
++    static final class PrecreationRefusal {
++        private final JsonNode evidence;
++
++        private PrecreationRefusal(JsonNode evidence) {
++            this.evidence = evidence.deepCopy();
++        }
++
++        JsonNode evidence() {
++            return evidence.deepCopy();
++        }
++    }
++
++    /** Mints evidence only from the original live INTENT and the exact pinned invocation's current result. */
++    static Optional<PrecreationRefusal> precreationRefusal(DeploymentAgentToolchainProgramState.Action action,
++                                                           String phase, String operation, String task, ServerId server,
++                                                           DeploymentRemoteLayout layout, CommandRequest request,
++                                                           OperationResult<CommandResult> result) {
++        if (!Set.of("prepare", "bind").contains(phase) || result.outcome() != TaskResult.FAILED || result.value().isEmpty())
++            return Optional.empty();
++        var command = result.value().orElseThrow();
++        if (!command.exitCode().equals(Optional.of(65)) || command.truncated() || !command.stderr().isEmpty()
++            || precreationDiagnostic(command.stdout(), operation).isEmpty())
++            return Optional.empty();
++        byte[] stdin = request.stdin();
++        try {
++            if (stdin.length != 0 || !action.id().matches("[0-9a-f]{32}")
++                || !DeploymentAgentToolchainProgramStore.sourceSha256(layout).equals(PRECREATION_SOURCE_SHA256)
++                || DeploymentAgentToolchainPrograms.controller(layout).getBytes(java.nio.charset.StandardCharsets.UTF_8).length != PRECREATION_SOURCE_BYTES)
++                return Optional.empty();
++            var argv = DeploymentAgentToolchainProgramStore.arguments(request.script(), layout);
++            if (argv.size() != (phase.equals("prepare") ? 11 : 7) || !argv.getFirst().equals("invoke")
++                || !argv.get(1).equals(task) || !argv.get(2).equals(operation) || !argv.get(3).equals(phase)
++                || !argv.get(phase.equals("prepare") ? 9 : 6).equals(operation))
++                return Optional.empty();
++            var snapshot = action.checkpoint().snapshot();
++            var payload = JSON.readTree(snapshot.payload());
++            var index = payload.path("index");
++            var expected = JSON.createObjectNode().put("key", "agent-controller-program." + action.id()).put("task", task)
++                .put("server", server.id()).put("layoutSha256", layout.digest()).put("phase", phase.toUpperCase(Locale.ROOT))
++                .put("operation", operation).put("version", DeploymentAgentToolchainProgramStore.version(layout))
++                .put("path", DeploymentAgentToolchainProgramStore.path(layout)).put("sourceSha256", DeploymentAgentToolchainProgramStore.sourceSha256(layout))
++                .put("requestSha256", DeploymentAgentToolchainPrograms.sha256(RemoteActions.command(server, "controller-action-state", request).exactAction()));
++            if (snapshot.released() || !payload.path("format").asText().equals("WTL_AGENT_CONTROLLER_ACTION_1")
++                || !payload.path("state").asText().equals("INTENT") || !index.equals(expected))
++                return Optional.empty();
++            var proof = JSON.createObjectNode().put("format", PRECREATION_FORMAT).put("action", action.id())
++                .put("stdout", command.stdout()).put("meaning", PRECREATION_MEANING).put("sourceBytes", PRECREATION_SOURCE_BYTES);
++            proof.set("index", index.deepCopy());
++            return Optional.of(new PrecreationRefusal(proof));
++        } catch (ApiException | java.io.IOException | IllegalArgumentException invalid) {
++            return Optional.empty();
++        } finally {
++            Arrays.fill(stdin, (byte) 0);
++        }
++    }
++
++    /** Revalidates retained evidence without applying today's controller version to a historical record. */
++    static boolean releasedPrecreationRefusal(String action, JsonNode index, JsonNode payload) {
++        var proof = payload.path(PRECREATION);
++        var fields = new HashSet<String>();
++        proof.fieldNames().forEachRemaining(fields::add);
++        String stdout = proof.path("stdout").asText();
++        return proof.isObject() && fields.equals(Set.of("format", "action", "stdout", "meaning", "index", "sourceBytes"))
++            && proof.path("format").isTextual() && proof.path("format").asText().equals(PRECREATION_FORMAT)
++            && proof.path("action").isTextual() && proof.path("action").asText().equals(action)
++            && proof.path("stdout").isTextual() && proof.path("meaning").isTextual()
++            && proof.path("meaning").asText().equals(PRECREATION_MEANING) && proof.path("index").equals(index)
++            && index.path("sourceSha256").asText().equals(PRECREATION_SOURCE_SHA256)
++            && proof.path("sourceBytes").isIntegralNumber() && proof.path("sourceBytes").canConvertToInt()
++            && proof.path("sourceBytes").intValue() == PRECREATION_SOURCE_BYTES
++            && Set.of("PREPARE", "BIND").contains(index.path("phase").asText())
++            && precreationDiagnostic(stdout, index.path("operation").asText()).isPresent()
++            && payload.path("state").asText().equals("FAILED") && payload.path("transportOutcome").asText().equals("FAILED")
++            && payload.path("confirmationMeaning").asText().equals(PRECREATION_MEANING)
++            && payload.path("exitObserved").isBoolean() && payload.path("exitObserved").booleanValue()
++            && payload.path("exit").isIntegralNumber() && payload.path("exit").canConvertToInt() && payload.path("exit").intValue() == 65
++            && payload.path("truncated").isBoolean() && !payload.path("truncated").booleanValue()
++            && payload.path("stdoutCharacters").isIntegralNumber() && payload.path("stdoutCharacters").canConvertToLong() && payload.path("stdoutCharacters").longValue() == stdout.length()
++            && payload.path("stderrCharacters").isIntegralNumber() && payload.path("stderrCharacters").canConvertToLong() && payload.path("stderrCharacters").longValue() == 0
++            && payload.path("stdoutSha256").asText().equals(DeploymentAgentToolchainPrograms.sha256(stdout))
++            && payload.path("stderrSha256").asText().equals(DeploymentAgentToolchainPrograms.sha256(""));
++    }
++
++    private static Optional<JsonNode> precreationDiagnostic(String stdout, String operation) {
++        String prefix = "TOOLCHAIN_FAILURE=isolation:HOST_SPACE_REQUIRED\nTOOLCHAIN_DIAGNOSTIC=";
++        if (!operation.matches("[0-9a-f]{32}") || !stdout.startsWith(prefix) || !stdout.endsWith("\n") || stdout.length() > 2048)
++            return Optional.empty();
++        String text = stdout.substring(prefix.length(), stdout.length() - 1);
++        try {
++            var value = JSON.readTree(text);
++            var fields = new HashSet<String>();
++            if (value == null || !value.isObject()) return Optional.empty();
++            value.fieldNames().forEachRemaining(fields::add);
++            if (!fields.equals(Set.of("operation", "phase", "stage", "availableBytes", "requiredBytes", "reserveBytes"))
++                || !value.path("operation").isTextual() || !value.path("operation").asText().equals(operation)
++                || !value.path("phase").isTextual() || !value.path("phase").asText().equals("HOST_SPACE_REQUIRED")
++                || !value.path("stage").isTextual() || !value.path("stage").asText().equals("VOLUME"))
++                return Optional.empty();
++            long reserve = 1024L * 1024 * 1024;
++            var canonical = new TreeMap<String, Object>();
++            for (String field : fields) {
++                if (Set.of("availableBytes", "requiredBytes", "reserveBytes").contains(field)) {
++                    if (!value.path(field).isIntegralNumber() || !value.path(field).canConvertToLong())
++                        return Optional.empty();
++                    canonical.put(field, value.path(field).longValue());
++                } else canonical.put(field, value.path(field).textValue());
++            }
++            if (value.path("reserveBytes").longValue() != reserve || value.path("requiredBytes").longValue() != 9 * reserve
++                || value.path("availableBytes").longValue() < 0 || value.path("availableBytes").longValue() >= 9 * reserve
++                || !JSON.writeValueAsString(canonical).equals(text))
++                return Optional.empty();
++            return Optional.of(value);
++        } catch (java.io.IOException invalid) {
++            return Optional.empty();
++        }
+     }
+ 
+     static OperationResult<CommandResult> retain(OperationResult<CommandResult> result, String phase,
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommandsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommandsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommandsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommandsTest.java
+@@ -12,6 +12,7 @@
+ import java.util.UUID;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.function.Function;
++import java.util.function.Supplier;
+ 
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+@@ -244,6 +245,43 @@
+         assertNotEquals(fixture.grants.get(1), otherTask.grants.get(1));
+     }
+ 
++    @Test
++    void livePrecreationRefusalRetainsFailureAndRequiresFreshReviewedAction() throws Exception {
++        var operations = new AtomicInteger();
++        var invocations = new AtomicInteger();
++        var fixture = new Fixture(true, request -> {
++            if (request.stdin().length != 0) {
++                var argv = DeploymentAgentToolchainPrograms.arguments(request.script());
++                return reply("TOOLCHAIN_RELEASE=" + DeploymentAgentToolchainReleaseTest.encoded(argv.get(1), argv.get(2), argv.get(3), argv.get(5)) + "\n");
++            }
++            var argv = DeploymentAgentToolchainProgramStore.arguments(request.script(), DeploymentAgentToolchainProgramStateTest.LAYOUT);
++            return invocations.getAndIncrement() == 0 ? DeploymentAgentToolchainProgramStateTest.volumeRefusal(argv.get(2)) : reply("prepared\n");
++        }, () -> String.format("%032x", operations.incrementAndGet()));
++        var refused = fixture.agent.prepare(DeploymentToolchainType.JAVA, "21", "21.0.12.1+1", 100, "-");
++        assertEquals(TaskResult.FAILED, refused.outcome());
++        assertTrue(DeploymentAgentToolchainFailureEvidence.observation(refused.problem()).contains("HOST_SPACE_REQUIRED"));
++        var rows = DeploymentAgentToolchainProgramState.snapshot(fixture.memory.tasks, fixture.memory.task, SERVER.id(),
++            DeploymentAgentToolchainProgramStateTest.LAYOUT, fixture.memory.events);
++        var first = (com.fasterxml.jackson.databind.JsonNode) rows.getLast().get("payload");
++        var original = first.deepCopy();
++        assertEquals("FAILED", first.path("state").asText());
++        assertTrue((Boolean) rows.getLast().get("released"));
++        assertEquals(DeploymentAgentToolchainProgramStateTest.volumeRefusal(first.at("/index/operation").asText()).value().orElseThrow().stdout(),
++            first.path(DeploymentAgentToolchainFailureEvidence.PRECREATION).path("stdout").asText());
++        assertFalse(DeploymentAgentToolchainProgramState.hasUnconfirmed(fixture.memory.tasks, fixture.memory.task, SERVER.id(),
++            DeploymentAgentToolchainProgramStateTest.LAYOUT, fixture.memory.events));
++        assertEquals(TaskResult.SUCCEEDED, fixture.agent.prepare(DeploymentToolchainType.RUST, "1.95", "1.95.0", 100, "-").outcome());
++        assertEquals(5, fixture.requests.size());
++        assertEquals(5, new java.util.HashSet<>(fixture.grants).size(), "Every channel request obtains a fresh reviewed grant; no action is replayed");
++        assertEquals(DeploymentAgentToolchainProgramStore.PREFIX + "prepare.v1", fixture.intents.get(2).semantics().orElseThrow().operation());
++        assertEquals(DeploymentAgentToolchainProgramStore.PREFIX + "prepare.v1", fixture.intents.get(4).semantics().orElseThrow().operation());
++        assertNotEquals(fixture.intents.get(2).exactAction(), fixture.intents.get(4).exactAction());
++        var current = DeploymentAgentToolchainProgramState.snapshot(fixture.memory.tasks, fixture.memory.task, SERVER.id(),
++            DeploymentAgentToolchainProgramStateTest.LAYOUT, fixture.memory.events);
++        assertEquals(original, current.get(1).get("payload"), "A later successful action must not rewrite the original failed receipt");
++        assertNotEquals(first.at("/index/operation").asText(), ((com.fasterxml.jackson.databind.JsonNode) current.getLast().get("index")).path("operation").asText());
++    }
++
+     private static void assertController(CommandRequest request) {
+         assertTrue(request.script().startsWith("/usr/bin/python3 -I -S -c "));
+         assertTrue(request.script().contains("PROGRAM_SOURCE"));
+@@ -306,6 +344,10 @@
+         final DeploymentAgentToolchainCommands agent;
+ 
+         Fixture(boolean approved, Function<CommandRequest, OperationResult<CommandResult>> response) {
++            this(approved, response, () -> OPERATION);
++        }
++
++        Fixture(boolean approved, Function<CommandRequest, OperationResult<CommandResult>> response, Supplier<String> operations) {
+             this.approved = approved;
+             var session = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+                 if (!method.getName().equals("execute")) throw new AssertionError("Unexpected session call");
+@@ -343,7 +385,7 @@
+                 }
+             };
+             channel = new DeploymentBuildCommandChannel(session, interaction, SERVER, task, "a".repeat(64), new DeploymentBuildBudget(120));
+-            agent = new DeploymentAgentToolchainCommands(channel, SERVER, () -> OPERATION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), memory.state(SERVER, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()));
++            agent = new DeploymentAgentToolchainCommands(channel, SERVER, operations, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), memory.state(SERVER, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()));
+         }
+     }
+ }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramStateTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramStateTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramStateTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainProgramStateTest.java
+@@ -1,6 +1,7 @@
+ package gold.debug.windowstolinux.mod.deployment.service.agent.toolchain;
+ 
+ import java.lang.reflect.Proxy;
++import java.time.Duration;
+ import java.util.*;
+ 
+ import com.fasterxml.jackson.databind.*;
+@@ -11,9 +12,13 @@
+ import gold.debug.windowstolinux.appapi.task.result.*;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
+ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
+ 
+ import static org.junit.jupiter.api.Assertions.*;
+ 
+@@ -90,6 +95,190 @@
+         assertFalse(DeploymentAgentToolchainProgramState.hasUnconfirmed(retained.tasks, retained.task, SERVER.id(), LAYOUT, retained.events), "retained old versions remain valid original evidence");
+     }
+ 
++    @Test
++    void precreationRefusalReleasesOnlyAfterDurableOriginalResultAndRetainsFailure() throws Exception {
++        var memory = new Memory();
++        String operation = "a".repeat(32);
++        var state = memory.state(SERVER, LAYOUT);
++        try (var request = precreationRequest(memory, operation)) {
++            var result = volumeRefusal(operation);
++            var action = state.begin("PREPARE", operation, exact(request), null);
++            var proof = DeploymentAgentToolchainFailureEvidence.precreationRefusal(action, "prepare", operation,
++                memory.id.toString(), SERVER, LAYOUT, request, result).orElseThrow();
++            memory.transitions.clear();
++            state.finish(action, result, false, null, false, proof);
++            assertEquals(List.of("ADVANCE", "RESULT", "CLOSE"), memory.transitions);
++            assertTrue(action.checkpoint().snapshot().released());
++            var original = JSON.readTree(action.checkpoint().snapshot().payload());
++            assertEquals("FAILED", original.path("state").asText());
++            assertEquals("FAILED", original.path("transportOutcome").asText());
++            assertTrue(original.path("confirmationMeaning").asText().contains("NOT_CLEANUP_COMPLETE"));
++            assertFalse(DeploymentAgentToolchainProgramState.hasUnconfirmed(memory.tasks, memory.task, SERVER.id(), LAYOUT, memory.events));
++            var foreign = new Memory();
++            var other = foreign.state(SERVER, LAYOUT).begin("PREPARE", operation, exact(request), null);
++            assertThrows(ApiException.class, () -> foreign.state(SERVER, LAYOUT).finish(other, result, false, null, false, proof));
++            assertFalse(other.checkpoint().snapshot().released());
++            assertTrue(DeploymentAgentToolchainProgramState.hasUnconfirmed(foreign.tasks, foreign.task, SERVER.id(), LAYOUT, foreign.events));
++            var checkpoint = memory.checkpoints.get("agent-controller-program." + action.id());
++            var saved = checkpoint.snapshot();
++            var indexed = memory.events.getFirst();
++            var ended = memory.events.getLast();
++            for (String change : List.of("proofIndex", "futureSource", "sourceBytes", "stdout", "missingProof", "extraProofField", "missingResult", "wrongResultHash")) {
++                var altered = (ObjectNode) original.deepCopy();
++                var bound = (ObjectNode) altered.path(DeploymentAgentToolchainFailureEvidence.PRECREATION);
++                if (change.equals("proofIndex")) ((ObjectNode) bound.path("index")).put("task", foreign.id.toString());
++                if (change.equals("futureSource")) {
++                    ((ObjectNode) altered.path("index")).put("sourceSha256", "f".repeat(64));
++                    ((ObjectNode) bound.path("index")).put("sourceSha256", "f".repeat(64));
++                    memory.events.set(0, new DeploymentAgentActionLog.Event(indexed.id(), indexed.type(), indexed.action(), altered.path("index").toString()));
++                }
++                if (change.equals("sourceBytes")) bound.put("sourceBytes", 101905);
++                if (change.equals("stdout")) bound.put("stdout", result.value().orElseThrow().stdout() + "extra\n");
++                if (change.equals("missingProof")) altered.remove(DeploymentAgentToolchainFailureEvidence.PRECREATION);
++                if (change.equals("extraProofField")) bound.put("cleanupComplete", true);
++                String payload = altered.toString();
++                checkpoint.value = new TaskCheckpoint.Snapshot(saved.revision(), payload, true);
++                memory.events.removeLast();
++                if (!change.equals("missingResult"))
++                    memory.events.add(new DeploymentAgentActionLog.Event(ended.id(), ended.type(), ended.action(), JSON.writeValueAsString(Map.of(
++                        "state", "FAILED", "payloadSha256", change.equals("wrongResultHash") ? "f".repeat(64) : DeploymentAgentToolchainPrograms.sha256(payload)))));
++                assertTrue(DeploymentAgentToolchainProgramState.hasUnconfirmed(memory.tasks, memory.task, SERVER.id(), LAYOUT, memory.events), change);
++                if (!change.equals("missingResult")) memory.events.removeLast();
++                memory.events.add(ended);
++                memory.events.set(0, indexed);
++                checkpoint.value = saved;
++            }
++            var historical = (ObjectNode) original.deepCopy();
++            var retainedIndex = (ObjectNode) historical.path("index");
++            retainedIndex.put("version", "e".repeat(64)).put("path", LAYOUT.toolchains() + "/agent-controller-programs/" + "e".repeat(64));
++            ((ObjectNode) historical.path(DeploymentAgentToolchainFailureEvidence.PRECREATION)).set("index", retainedIndex.deepCopy());
++            checkpoint.value = new TaskCheckpoint.Snapshot(saved.revision(), historical.toString(), true);
++            memory.events.set(0, new DeploymentAgentActionLog.Event(indexed.id(), indexed.type(), indexed.action(), retainedIndex.toString()));
++            memory.events.set(memory.events.size() - 1, new DeploymentAgentActionLog.Event(ended.id(), ended.type(), ended.action(), JSON.writeValueAsString(Map.of(
++                "state", "FAILED", "payloadSha256", DeploymentAgentToolchainPrograms.sha256(historical.toString())))));
++            assertFalse(DeploymentAgentToolchainProgramState.hasUnconfirmed(memory.tasks, memory.task, SERVER.id(), LAYOUT, memory.events), "Retained reviewed source is not compared with today's version");
++            checkpoint.value = saved;
++            memory.events.set(0, indexed);
++            memory.events.set(memory.events.size() - 1, ended);
++            state.begin("PREPARE", "b".repeat(32), "new exact request", null);
++            assertEquals(original, JSON.readTree(action.checkpoint().snapshot().payload()));
++        }
++        for (String failure : List.of("ADVANCE", "RESULT", "CLOSE")) {
++            var broken = new Memory();
++            var originalState = broken.state(SERVER, LAYOUT);
++            try (var request = precreationRequest(broken, operation)) {
++                var action = originalState.begin("PREPARE", operation, exact(request), null);
++                var result = volumeRefusal(operation);
++                var proof = DeploymentAgentToolchainFailureEvidence.precreationRefusal(action, "prepare", operation,
++                    broken.id.toString(), SERVER, LAYOUT, request, result).orElseThrow();
++                broken.failAdvance = failure.equals("ADVANCE");
++                broken.failResult = failure.equals("RESULT");
++                broken.failClose = failure.equals("CLOSE");
++                assertThrows(ApiException.class, () -> originalState.finish(action, result, false, null, false, proof), failure);
++                assertFalse(action.checkpoint().snapshot().released());
++                assertTrue(DeploymentAgentToolchainProgramState.hasUnconfirmed(broken.tasks, broken.task, SERVER.id(), LAYOUT, broken.events));
++                assertThrows(ApiException.class, () -> originalState.begin("PREPARE", "b".repeat(32), "another exact request", null));
++            }
++        }
++        var binding = new Memory();
++        var bindingState = binding.state(SERVER, LAYOUT);
++        try (var request = new CommandRequest(DeploymentAgentToolchainProgramStore.command("bind", binding.id.toString(), operation,
++            List.of("bind", DeploymentAgentToolchainCommandsTest.binding(), "85", operation), LAYOUT), new byte[0], Duration.ofSeconds(100), 65536)) {
++            var action = bindingState.begin("BIND", operation, exact(request), null);
++            var result = volumeRefusal(operation);
++            var proof = DeploymentAgentToolchainFailureEvidence.precreationRefusal(action, "bind", operation,
++                binding.id.toString(), SERVER, LAYOUT, request, result).orElseThrow();
++            bindingState.finish(action, result, false, null, false, proof);
++            assertTrue(action.checkpoint().snapshot().released());
++            assertFalse(DeploymentAgentToolchainProgramState.hasUnconfirmed(binding.tasks, binding.task, SERVER.id(), LAYOUT, binding.events));
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"DUPLICATE_KEYS", "EXTRA_FIELD", "TRAILING_JSON", "WRONG_OPERATION", "REQUEST", "VERSION", "SOURCE", "TASK",
++        "PHASE", "PROMOTION", "INSTALL", "CANCELLED", "UNKNOWN", "SUCCEEDED", "NO_EXIT", "TRUNCATED", "STDERR", "EXTRA_LINE",
++        "OTHER_FAILURE", "NO_VALUE", "EXIT70", "NONCANONICAL", "AVAILABLE", "RESERVE", "REQUIRED", "FRACTION", "ACTION", "ARGV",
++        "OLD_FAILED", "SERVER", "LAYOUT"})
++    void precreationProofRejectsUnboundMalformedAndUncertainResults(String change) throws Exception {
++        var memory = new Memory();
++        String operation = "a".repeat(32);
++        var state = memory.state(SERVER, LAYOUT);
++        try (var original = precreationRequest(memory, operation);
++             var request = new CommandRequest(change.equals("ARGV") ? original.script().replace("'" + operation + "'", "'" + "b".repeat(32) + "'") : original.script(),
++                 new byte[0], Duration.ofSeconds(change.equals("REQUEST") ? 99 : 100), 65536)) {
++            var action = state.begin("PREPARE", operation, exact(change.equals("REQUEST") ? original : request), null);
++            var result = volumeRefusal(operation);
++            var command = result.value().orElseThrow();
++            String stdout = command.stdout();
++            stdout = switch (change) {
++                case "DUPLICATE_KEYS" ->
++                    stdout.replace("\"stage\":\"VOLUME\"", "\"stage\":\"VOLUME\",\"stage\":\"VOLUME\"");
++                case "EXTRA_FIELD" -> stdout.replace("}\n", ",\"extra\":true}\n");
++                case "TRAILING_JSON" -> stdout.replace("}\n", "}{}\n");
++                case "WRONG_OPERATION" -> stdout.replace(operation, "b".repeat(32));
++                case "PROMOTION" -> stdout.replace("VOLUME", "PROMOTION");
++                case "OTHER_FAILURE" -> stdout.replace("isolation:HOST_SPACE_REQUIRED", "unknown:HOST_SPACE_REQUIRED");
++                case "EXTRA_LINE" -> stdout + "extra\n";
++                case "NONCANONICAL" -> stdout.replace("{\"", "{ \"");
++                case "AVAILABLE" -> stdout.replace("\"availableBytes\":7", "\"availableBytes\":9663676416");
++                case "RESERVE" -> stdout.replace("1073741824", "1073741823");
++                case "REQUIRED" -> stdout.replace("9663676416", "9663676415");
++                case "FRACTION" -> stdout.replace("\"availableBytes\":7", "\"availableBytes\":7.0");
++                default -> stdout;
++            };
++            var outcome = switch (change) {
++                case "CANCELLED" -> TaskResult.CANCELLED;
++                case "UNKNOWN" -> TaskResult.UNKNOWN;
++                case "SUCCEEDED" -> TaskResult.SUCCEEDED;
++                default -> TaskResult.FAILED;
++            };
++            var actual = new OperationResult<CommandResult>(outcome, change.equals("NO_VALUE") ? Optional.empty() : Optional.of(new CommandResult(
++                change.equals("NO_EXIT") ? Optional.empty() : Optional.of(change.equals("EXIT70") ? 70 : 65), stdout,
++                change.equals("STDERR") ? " " : "", change.equals("TRUNCATED"))), outcome == TaskResult.SUCCEEDED ? Optional.empty() : result.problem());
++            if (Set.of("VERSION", "SOURCE").contains(change)) {
++                var checkpoint = memory.checkpoints.get("agent-controller-program." + action.id());
++                var body = (ObjectNode) JSON.readTree(checkpoint.value.payload());
++                ((ObjectNode) body.path("index")).put(change.equals("VERSION") ? "version" : "sourceSha256", "f".repeat(64));
++                checkpoint.value = new TaskCheckpoint.Snapshot(0, body.toString(), false);
++            }
++            if (change.equals("OLD_FAILED")) state.finish(action, result, false, null);
++            var supplied = change.equals("ACTION") ? new DeploymentAgentToolchainProgramState.Action("f".repeat(32), action.checkpoint()) : action;
++            var proof = DeploymentAgentToolchainFailureEvidence.precreationRefusal(supplied,
++                change.equals("INSTALL") ? "install" : change.equals("PHASE") ? "bind" : "prepare", operation,
++                change.equals("TASK") ? UUID.randomUUID().toString() : memory.id.toString(), change.equals("SERVER") ? new ServerId("foreign-server") : SERVER,
++                change.equals("LAYOUT") ? DeploymentRemoteLayout.decode(LAYOUT.canonical().replace("/var/lib/windowstolinux", "/var/lib/foreign-controller")) : LAYOUT,
++                request, actual);
++            assertTrue(proof.isEmpty(), change);
++            if (!change.equals("OLD_FAILED")) state.finish(action, actual, false, null);
++            assertFalse(action.checkpoint().snapshot().released());
++            assertTrue(DeploymentAgentToolchainProgramState.hasUnconfirmed(memory.tasks, memory.task, SERVER.id(), LAYOUT, memory.events));
++            assertThrows(ApiException.class, () -> state.begin("PREPARE", "b".repeat(32), "new request", null));
++        }
++    }
++
++    static CommandRequest precreationRequest(Memory memory, String operation) throws Exception {
++        var arguments = List.of("prepare", "JAVA", "21", "21.0.12.1+1", "85", "-", operation,
++            DeploymentAgentToolchainReleaseTest.encoded("JAVA", "21", "21.0.12.1+1", operation));
++        return new CommandRequest(DeploymentAgentToolchainProgramStore.command("prepare", memory.id.toString(), operation, arguments, LAYOUT),
++            new byte[0], Duration.ofSeconds(100), 65536);
++    }
++
++    private static String exact(CommandRequest request) {
++        return RemoteActions.command(SERVER, "controller-action-state", request).exactAction();
++    }
++
++    static OperationResult<CommandResult> volumeRefusal(String operation) {
++        try {
++            var fields = new TreeMap<String, Object>(Map.of("operation", operation, "phase", "HOST_SPACE_REQUIRED", "stage", "VOLUME",
++                "availableBytes", 7, "requiredBytes", 9L * 1024 * 1024 * 1024, "reserveBytes", 1024L * 1024 * 1024));
++            return new OperationResult<>(TaskResult.FAILED, Optional.of(new CommandResult(Optional.of(65),
++                "TOOLCHAIN_FAILURE=isolation:HOST_SPACE_REQUIRED\nTOOLCHAIN_DIAGNOSTIC=" + JSON.writeValueAsString(fields) + "\n", "", false)),
++                Optional.of(new Problem(ProblemCode.IO_FAILURE, "SSH_COMMAND_NONZERO", "controlled original exit", Map.of(), Optional.empty())));
++        } catch (java.io.IOException failure) {
++            throw new AssertionError(failure);
++        }
++    }
++
+     static OperationResult<CommandResult> success(String stdout) {
+         return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new CommandResult(Optional.of(0), stdout, "", false)), Optional.empty());
+     }
+@@ -109,7 +298,9 @@
+ 
+         final Map<String, Checkpoint> checkpoints = new LinkedHashMap<>();
+ 
+-        boolean failBegin, failResult;
++        boolean failBegin, failResult, failAdvance, failClose;
++
++        final List<String> transitions = new ArrayList<>();
+ 
+         public final TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(), new Class<?>[]{TaskContext.class}, (p, m, a) -> {
+             if (m.getName().equals("id")) return identity();
+@@ -121,7 +312,7 @@
+             if (m.getName().equals("findCheckpoint")) return Optional.ofNullable(checkpoints.get(a[1]));
+             if (m.getName().equals("beginCheckpoint")) {
+                 if (failBegin) throw new IllegalStateException("controlled persistence failure");
+-                var value = new Checkpoint((String) a[2]);
++                var value = new Checkpoint((String) a[2], this);
+                 assertNull(checkpoints.putIfAbsent((String) a[1], value));
+                 return value;
+             }
+@@ -132,6 +323,7 @@
+             return new DeploymentAgentToolchainProgramState(tasks, task, server, layout, (type, action, detail) -> {
+                 if (failResult && type.equals("CONTROLLER_PROGRAM_RESULT"))
+                     throw new IllegalStateException("controlled journal failure");
++                if (type.equals("CONTROLLER_PROGRAM_RESULT")) transitions.add("RESULT");
+                 events.add(new DeploymentAgentActionLog.Event(events.size() + 1L, type, action, detail));
+             }, () -> List.copyOf(events));
+         }
+@@ -162,7 +354,10 @@
+     static final class Checkpoint implements TaskCheckpoint {
+         Snapshot value;
+ 
+-        Checkpoint(String payload) {
++        private final Memory memory;
++
++        Checkpoint(String payload, Memory memory) {
++            this.memory = memory;
+             value = new Snapshot(0, payload, false);
+         }
+ 
+@@ -171,12 +366,16 @@
+         }
+ 
+         public Snapshot advance(Snapshot expected, String next) {
++            if (memory.failAdvance) throw new IllegalStateException("controlled checkpoint failure");
+             assertEquals(value, expected);
+             assertFalse(value.released());
++            memory.transitions.add("ADVANCE");
+             return value = new Snapshot(value.revision() + 1, next, false);
+         }
+ 
+         public void close() {
++            if (memory.failClose) throw new IllegalStateException("controlled release failure");
++            memory.transitions.add("CLOSE");
+             value = new Snapshot(value.revision() + 1, value.payload(), true);
+         }
+     }

@@ -20,3 +20,5 @@ docs/test/multi-language/patches/AGENT-EVIDENCE-EFFICIENCY-195.patch -text
 docs/test/multi-language/patches/AGENT-CONTROLLER-VERSIONED-196.patch -text
 
 docs/test/multi-language/patches/AGENT-ARCHIVE-OBSERVATION-198.patch -text
+
+docs/test/multi-language/patches/AGENT-CONTROLLER-PRECREATION-200.patch -text
