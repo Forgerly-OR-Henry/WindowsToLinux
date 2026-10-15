@@ -26,3 +26,5 @@ docs/test/multi-language/patches/AGENT-CONTROLLER-PRECREATION-200.patch -text
 docs/test/multi-language/patches/AGENT-CACHED-PROBE-CAPACITY-203.patch -text
 
 docs/test/multi-language/patches/AGENT-OPEN-PHASE-EVIDENCE-205.patch -text
+
+docs/test/multi-language/patches/AGENT-APPROVAL-PROTOCOL-RECOVERY-210.patch -text

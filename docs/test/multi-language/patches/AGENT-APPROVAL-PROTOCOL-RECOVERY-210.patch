@@ -1,0 +1,246 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -18,6 +18,7 @@
+ import com.fasterxml.jackson.databind.JsonNode;
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.ai.model.AiMessage;
+ import gold.debug.windowstolinux.appapi.ai.model.AiPurpose;
+ import gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition;
+ import gold.debug.windowstolinux.appapi.ai.model.AiToolResult;
+@@ -385,6 +386,8 @@
+             var definitions = definitions(!sources.isEmpty());
+             var seenIds = new HashSet<String>();
+             String pendingBatchFeedback = null;
++            String pendingProtocolFeedback = null;
++            AiMessage pendingProtocolResponse = null;
+             int corrections = 0;
+             String session = java.util.UUID.randomUUID().toString();
+             var skills = new DeploymentAgentSkills(task, DeploymentAgentSkills.Role.APPROVAL);
+@@ -397,6 +400,8 @@
+                 currentInput.put("maxCallsPerBatch", MAX_CALLS_PER_BATCH).put("submitResultMustBeAlone", true);
+                 currentInput.put("maxCallsThisBatch", Math.min(MAX_CALLS_PER_BATCH, DeploymentToolBudget.remaining()));
+                 currentInput.set("reviewMemory", JSON.valueToTree(memory.projection()));
++                if (pendingProtocolFeedback != null)
++                    currentInput.set("protocolFeedback", JSON.readTree(pendingProtocolFeedback));
+                 input = JSON.writeValueAsString(currentInput);
+                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+                 check(binding, revision, sources, receipts, identities, intent);
+@@ -404,18 +409,32 @@
+                 var messages = history.agentMessages(policy, stableEvidence, skills.system(), input);
+                 if (pendingBatchFeedback != null && !history.visibleToolResult(pendingBatchFeedback))
+                     throw new DeploymentCommandReviewModel.Failure(stage, "", new IOException("Complete batch feedback is outside current context"));
++                if (pendingProtocolResponse != null && (Thread.currentThread().isInterrupted() || !messages.contains(pendingProtocolResponse)))
++                    throw new DeploymentCommandReviewModel.Failure(stage, "", new IOException("Complete protocol response is unavailable for correction"));
+                 pendingBatchFeedback = null;
+                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
+                 var response = ai.call(AiPurpose.APPROVAL, messages, definitions, revision, task, false);
+                 stage = DeploymentCommandReviewModel.FailureStage.BINDING_SNAPSHOT;
+                 check(binding, revision, sources, receipts, identities, intent);
++                pendingProtocolFeedback = null;
++                pendingProtocolResponse = null;
+                 if (messages.size() < 2 || messages.get(1).role() != gold.debug.windowstolinux.appapi.ai.model.AiRole.USER
+                     || !messages.get(1).text().equals(stableEvidence))
+                     throw new IOException("Complete fixed approval evidence was not present in the successful request");
+                 coverage.delivered(stableInput, history::visibleToolResult);
+                 stage = DeploymentCommandReviewModel.FailureStage.RESPONSE_CHECK;
+-                if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
+-                    throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_BATCH_INCOMPLETE", new IOException("Incomplete native batch"));
++                if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty()) {
++                    if (!response.finishReason().equals("stop") || !response.toolCalls().isEmpty() || response.text().isBlank()
++                        || response.continuation().isPresent() || Thread.currentThread().isInterrupted() || corrections++ >= 1)
++                        throw new DeploymentCommandReviewModel.Failure(stage, "", "NATIVE_BATCH_INCOMPLETE", new IOException("Incomplete native batch"));
++                    pendingProtocolFeedback = JSON.writeValueAsString(Map.of("error", "NATIVE_SUBMISSION_REQUIRED", "reviewBinding", bound,
++                        "authorizationIssued", false, "remainingCorrections", 0,
++                        "meaning", "The preceding assistant text is not a verdict submission and grants no authority. Use the offered read-only tools as needed; submit_result must be alone. Review the complete current input independently."));
++                    stage = DeploymentCommandReviewModel.FailureStage.HISTORY_RETAIN;
++                    history.retain(input, response, List.of());
++                    pendingProtocolResponse = AiMessage.assistant(response);
++                    continue;
++                }
+                 if (!DeploymentToolBudget.consume(response.toolCalls().stream().map(call ->
+                     new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("approval_" + sha(session + ":" + call.id()), call.name(), call.arguments())).toList()))
+                     throw new DeploymentCommandReviewModel.Failure(stage, "", "TASK_TOOL_BUDGET_EXHAUSTED", new IOException("Task tool budget unavailable"));
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -1900,6 +1900,159 @@
+         assertEquals(0, f.grants.size());
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {"APPROVE", "DENY"})
++    void plainTextVerdictGetsOneProtocolCorrectionAndOnlyOppositeNativeVerdictCanAuthorize(String textDecision) throws Exception {
++        var f = new Frame();
++        String original = textDecision.equals("APPROVE") ? APPROVE : DENY;
++        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(original,
++            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(textDecision.equals("APPROVE") ? DENY : APPROVE, Map.class)));
++        f.afterCall = () -> assertTrue(f.grants.isEmpty());
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            if (textDecision.equals("APPROVE")) {
++                var refusal = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", refusal.problem().eventCode());
++            } else {
++                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task).outcome());
++                assertEquals(List.of(f.intent(request, "deployment.helper.probe.v1").exactAction()), f.grants);
++            }
++        }
++        assertEquals(textDecision.equals("APPROVE") ? 0 : 1, f.grants.size());
++        assertEquals(2, f.fixture.requests.size());
++        var first = f.fixture.requests.getFirst();
++        var corrected = f.fixture.requests.getLast();
++        assertEquals(first.messages().getFirst(), corrected.messages().getFirst());
++        assertEquals(first.messages().get(1), corrected.messages().get(1));
++        assertTrue(corrected.messages().stream().anyMatch(message -> message.role() == AiRole.ASSISTANT
++            && message.text().equals(original) && message.toolCalls().isEmpty()));
++        assertTrue(corrected.messages().stream().noneMatch(message -> message.toolResult().isPresent()));
++        var feedback = JSON.readTree(corrected.messages().getLast().text()).path("protocolFeedback");
++        assertEquals("NATIVE_SUBMISSION_REQUIRED", feedback.path("error").asText());
++        assertEquals(currentReview(first).path("reviewBinding"), feedback.path("reviewBinding"));
++        assertFalse(feedback.path("authorizationIssued").asBoolean());
++        assertEquals(0, feedback.path("remainingCorrections").asInt());
++        assertEquals(first.tools(), corrected.tools());
++        assertTrue(corrected.requiredToolName().isEmpty());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"TEXT_TEXT", "TEXT_SCHEMA", "SCHEMA_TEXT"})
++    void protocolAndVerdictSchemaFailuresShareOneCorrectionBudget(String sequence) throws Exception {
++        var f = new Frame();
++        for (String part : sequence.split("_")) {
++            if (part.equals("TEXT"))
++                f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
++                    "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++            else f.fixture.nativeReply(call("submit_result", Map.of("decision", "APPROVE")));
++        }
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertEquals(sequence.endsWith("SCHEMA") ? "VERDICT_SCHEMA_INVALID" : "NATIVE_BATCH_INCOMPLETE", failure.problem().context().get("reviewCode"));
++        }
++        assertEquals(2, f.fixture.requests.size());
++        assertTrue(f.grants.isEmpty());
++        assertFalse(f.fixture.replies.isEmpty());
++    }
++
++    @Test
++    void protocolCorrectionCannotSatisfyMissingExecutableCoverage() throws Exception {
++        var f = new Frame();
++        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
++            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(DENY, Map.class)));
++        assertEquals("DENY", f.review(Map.of("completeExecutableInput", "x".repeat(9000))).decision().decision());
++        assertEquals(3, f.fixture.requests.size());
++        var feedback = JSON.readTree(lastToolResult(f.fixture.requests.getLast()).text());
++        assertEquals("EXECUTABLE_INPUT_NOT_DELIVERED", feedback.path("error").asText());
++        assertFalse(feedback.path("authorizationIssued").asBoolean());
++        assertFalse(feedback.at("/coverage/missingRanges").isEmpty());
++        assertTrue(f.grants.isEmpty());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"CANCEL", "RECEIPT", "INTERRUPT"})
++    void changedBindingCancellationAndInterruptCannotStartProtocolCorrection(String boundary) throws Exception {
++        var f = new Frame();
++        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
++            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        f.afterCall = () -> {
++            if (boundary.equals("CANCEL")) f.cancelled.set(true);
++            else if (boundary.equals("RECEIPT")) f.receipt = "changed receipt not reviewed";
++            else Thread.currentThread().interrupt();
++        };
++        try {
++            try (var request = f.command("printf actual", "")) {
++                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++                assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            }
++            if (boundary.equals("INTERRUPT")) assertTrue(Thread.currentThread().isInterrupted());
++        } finally {
++            if (boundary.equals("INTERRUPT")) Thread.interrupted();
++        }
++        assertEquals(1, f.fixture.requests.size());
++        assertTrue(f.grants.isEmpty());
++        assertFalse(f.fixture.replies.isEmpty());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"HISTORY_RETAIN", "HISTORY_CONTEXT"})
++    void completePlainTextResponseMustFitAndRemainVisibleBeforeCorrection(String boundary) throws Exception {
++        var f = new Frame();
++        int limit = DeploymentConfigLoader.current().ai().history().characters();
++        f.model = request -> {
++            int fixed = request.messages().stream().mapToInt(message -> message.text().length()).sum();
++            String text = "x".repeat(boundary.equals("HISTORY_RETAIN") ? limit + 1 : limit - fixed + 1);
++            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(text,
++                "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++            return List.of();
++        };
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertFailureDiagnostics(f, failure, boundary, boundary.equals("HISTORY_RETAIN") ? "IllegalArgumentException" : "IOException");
++        }
++        assertEquals(1, f.fixture.requests.size());
++        assertTrue(f.grants.isEmpty());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"BLANK", "CONTINUATION"})
++    void blankOrContinuingResponseCannotEnterPlainTextCorrection(String boundary) throws Exception {
++        var f = new Frame();
++        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(boundary.equals("BLANK") ? "  " : APPROVE,
++            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), List.of(),
++            boundary.equals("CONTINUATION") ? Optional.of(new gold.debug.windowstolinux.appapi.ai.model.AiContinuation(UUID.randomUUID(), 1)) : Optional.empty())), Optional.empty()));
++        try (var request = f.command("printf actual", "")) {
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++            var failure = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(request, "deployment.helper.probe.v1"), request, f.task));
++            assertEquals("NATIVE_BATCH_INCOMPLETE", failure.problem().context().get("reviewCode"));
++        }
++        assertEquals(1, f.fixture.requests.size());
++        assertTrue(f.grants.isEmpty());
++    }
++
++    @Test
++    void protocolCorrectionDoesNotReplenishFiniteNativeToolBudget() throws Exception {
++        var f = new Frame();
++        f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse(APPROVE,
++            "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++        f.fixture.nativeReply(call("request", Map.of("part", "script", "offset", 0, "limit", 100)));
++        f.fixture.nativeReply(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++        try (var budget = DeploymentToolBudget.open(1)) {
++            assertThrows(IOException.class, () -> f.review(Map.of()));
++            assertEquals(0, DeploymentToolBudget.remaining());
++        }
++        assertEquals(2, f.fixture.requests.size());
++        assertTrue(f.grants.isEmpty());
++        assertFalse(f.fixture.replies.isEmpty());
++    }
++
+     @Test
+     void completeChangedCommandOrInputCannotUseOldReviewBinding() throws Exception {
+         var f = new Frame();
+@@ -2156,8 +2309,9 @@
+         String type;
+         if (stage.equals("RESPONSE_CHECK")) {
+             type = "IOException";
+-            f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("FAKE_PASSWORD_MARKER",
+-                "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
++            for (int i = 0; i < 2; i++)
++                f.fixture.replies.add(new OperationResult<>(TaskResult.SUCCEEDED, Optional.of(new AiResponse("FAKE_PASSWORD_MARKER",
++                    "controlled", "stop", new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()))), Optional.empty()));
+         } else {
+             Path member = root.resolve("FAKE_PASSWORD_MARKER.txt");
+             if (stage.equals("EVIDENCE_READ")) {
+@@ -2185,7 +2339,7 @@
+             if (stage.equals("EVIDENCE_READ"))
+                 assertEquals("source_read", rejected.problem().context().get("reviewTool"));
+         }
+-        assertEquals(1, f.fixture.requests.size());
++        assertEquals(stage.equals("RESPONSE_CHECK") ? 2 : 1, f.fixture.requests.size());
+         assertEquals(0, f.grants.size());
+     }
+ 
