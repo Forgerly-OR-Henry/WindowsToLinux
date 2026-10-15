@@ -1,0 +1,400 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -57,6 +57,11 @@
+ 
+     private static final String POLICY = DeploymentSkillResources.text(DeploymentAgentApproval.class, "approval-agent.md");
+ 
++    private static final String AGENT_OPEN_FIELD = "agentOpenPhaseEvidence";
++
++    // These phase claims describe this reviewed helper source, not future contract revisions.
++    private static final String AGENT_OPEN_HELPER_SHA = "90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d";
++
+     private static final Set<String> SOURCE_DEPENDENT_EVENTS = Set.of("PREPARE_EXECUTING", "COMMAND_EXECUTING", "PATCH_EXECUTING",
+         "SEAL_EXECUTING", "DELIVERY_EXECUTING", "CAPABILITY_EXECUTING", "PLAN", "PLAN_APPLICATION", "AGENT_QUERY",
+         "AGENT_OBSERVATION", "AGENT_ASSESSMENT", "DECISION", "HELPER_READINESS_OBSERVED", "DERIVATIVE_SOURCE", "CURRENT_SOURCE");
+@@ -297,7 +302,8 @@
+             }
+             ObjectNode current = JSON.valueToTree(facts);
+             if (current.has(DeploymentAgentToolchainInputEvidence.FIELD)
+-                || current.has(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.FIELD))
++                || current.has(gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.FIELD)
++                || current.has(AGENT_OPEN_FIELD))
+                 throw new IllegalArgumentException("Product inline input binding cannot be supplied by the caller");
+             var layout = DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+             JsonNode receipts = JSON.valueToTree(evidence.receipts());
+@@ -324,6 +330,8 @@
+                 : DeploymentHelperReviewContract.text(layout) + (inline.isPresent()
+                 ? "\n" + DeploymentSkillResources.text(DeploymentAgentToolchainPrograms.class, "inline-program-review.md") : "");
+             JsonNode identities = identityRoles(sources, revision, intent);
++            JsonNode opening = agentOpenPhase(current, intent, request, layout, identities, binding);
++            if (opening != null) current.set(AGENT_OPEN_FIELD, opening);
+             String bound = sha(JSON.writeValueAsString(Map.of("task", task.id().toString(), "binding", binding,
+                 "request", intent.exactAction(), "revision", revision, "facts", current, "sources", sourceRevisions, "receipts", receipts,
+                 "identityRoles", identities)));
+@@ -518,6 +526,76 @@
+         }
+     }
+ 
++    /** Describes only a complete original opening frame; it does not observe the remote candidate. */
++    private JsonNode agentOpenPhase(JsonNode current, ActionIntent intent, CommandRequest request,
++                                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
++                                    JsonNode identities, Binding binding) {
++        if (!AGENT_OPEN_HELPER_SHA.equals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.EXPECTED_SHA256))
++            return null;
++        DeploymentHelperReviewContract.text(layout);
++        final String invocation;
++        try {
++            invocation = DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
++        } catch (IllegalArgumentException unmatched) {
++            return null;
++        }
++        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "'")
++            + " 'agent-open' '([a-z0-9][a-z0-9-]{0,62})' '([a-z0-9][a-z0-9-]{0,79})' '([0-9a-f-]{36})' '([0-9a-f]{64})'").matcher(invocation);
++        if (!match.matches()) return null;
++        byte[] input = request.stdin();
++        boolean empty = input.length == 0;
++        java.util.Arrays.fill(input, (byte) 0);
++        if (!empty || !request.timeout().equals(java.time.Duration.ofMinutes(2)) || request.outputLimitBytes() != 4096
++            || !task.id().toString().equals(match.group(3))
++            || !identities.path("originalArchiveSha256").asText().equals(match.group(4))
++            || !intent.serverIds().equals(List.of(binding.server())) || intent.semantics().isEmpty()
++            || !intent.semantics().orElseThrow().operation().equals("deployment.agent.helper.v1")
++            || !intent.exactAction().equals(current.path("exactAction").asText())
++            || !intent.exactAction().equals(RemoteActions.command(new ServerId(binding.server()), intent.revision(), request).exactAction())
++            || !intent.revision().equals(current.path("businessRevision").asText())
++            || !current.path("operation").asText().equals("deployment.agent.helper.v1")
++            || !current.path("inputKind").asText().equals("EMPTY")
++            || !current.path("installedHelperPath").asText().equals(layout.helperPath())
++            || !current.path("installedHelperSha256").asText().equals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout))
++            || !current.path("platformContractRevision").asText().equals(DeploymentHelperReviewContract.REVISION))
++            return null;
++        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(
++            match.group(1), match.group(4), layout);
++        if (!workspace.candidateId().equals(match.group(2))) return null;
++        String resource = sha(request.script() + "\n" + sha(""));
++        var expectedTargets = Set.of(new ActionTarget(binding.server(), "deployment-agent", resource));
++        if (!intent.semantics().orElseThrow().targets().equals(expectedTargets)
++            || !JSON.valueToTree(List.copyOf(expectedTargets)).equals(current.path("resourceTargets"))
++            || !JSON.valueToTree(intent.serverIds()).equals(current.path("serverTargets"))) return null;
++        var result = JSON.createObjectNode().put("formatVersion", 1).put("authority", "NONE")
++            .put("phase", "BEFORE_PROTECTED_SOURCE_CREATION").put("remoteObserved", false)
++            .put("phaseMeaning", "Stage requested by this matched command, not a measurement that the remote candidate is unopened");
++        result.set("implementation", JSON.valueToTree(Map.of("contractRevision", DeploymentHelperReviewContract.REVISION,
++            "reviewedDefaultHelperSha256", AGENT_OPEN_HELPER_SHA, "helperPath", layout.helperPath(),
++            "renderedHelperSha256", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout),
++            "layoutSha256", layout.digest())));
++        result.set("arguments", JSON.valueToTree(Map.of("application", workspace.applicationId(), "candidate", workspace.candidateId(),
++            "task", task.id().toString(), "compressedArchiveSha256", workspace.archiveSha256())));
++        result.set("paths", JSON.valueToTree(Map.of("candidateRoot", workspace.candidateRoot(),
++            "archive", workspace.candidateRoot() + "/mutable/source.tar.gz", "protectedSource", workspace.candidateRoot() + "/mutable/input-source")));
++        result.set("request", JSON.valueToTree(Map.of("exactActionSha256", sha(intent.exactAction()), "scriptSha256", sha(request.script()),
++            "stdinBytes", 0, "stdinSha256", sha(""), "timeoutSeconds", request.timeout().getSeconds(), "outputLimitBytes", request.outputLimitBytes())));
++        result.set("resourceBinding", JSON.valueToTree(Map.of("kind", "EXACT_GUARDED_REQUEST_DIGEST", "originalTargetId", resource,
++            "meaning", "The original target is an opaque exact-request identity, not a remote path. Paths above are derived from the matched invocation, not a remote observation.")));
++        result.set("checksAtExecution", JSON.valueToTree(List.of("assert_task_candidate: exact app/candidate/task, protected .deployer and .agent-task",
++            "agent_candidate: existing protected candidate and original loop/image/mount/purpose",
++            "source-operations open: rehash compressed archive against the fourth argument before creating input-source")));
++        result.set("effectsAtExecution", JSON.valueToTree(List.of("Stop only the matched candidate build; remount its volume writable with nodev/nosuid",
++            "After remount, install a freeze EXIT trap; extract checked regular members as protected data; create source and .agent-mode; attempt normal freeze. Failure never proves cleanup")));
++        result.set("postconditions", JSON.valueToTree(Map.of("projectBodyExecuted", false,
++            "sourceRevision", "SOURCE_REVISION reports the newly extracted tree digest; it is not the compressed archive digest",
++            "currentSourceEvent", "CURRENT_SOURCE is recorded by the client only after successful prepare/open; no such event is invented before this action",
++            "buildEntry", "Not called by agent-open; later project execution requires its own checked build-entry and independent review")));
++        result.set("remoteState", JSON.valueToTree(Map.of("candidateExists", "UNKNOWN", "ownershipCheckPassed", "UNKNOWN",
++            "volumeCheckPassed", "UNKNOWN", "archiveComparisonPassed", "UNKNOWN", "openingSucceeded", "UNKNOWN")));
++        return result;
++    }
++
+     private void check(Binding binding, String revision, Map<String, DeploymentSourceBrowser> sources, JsonNode receipts,
+                        JsonNode identities, ActionIntent intent) throws Exception {
+         if (task.cancelToken().requested()) throw new IOException("Approval cancelled before authorization");
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/review/approval-agent.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/review/approval-agent.md
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/review/approval-agent.md
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/review/approval-agent.md
+@@ -5,6 +5,8 @@
+ Review the current action's actually reachable effects and the evidence for its authorization, paths, disclosure, writes and execution. Distinguish a remote observer that collects facts from a client that consumes its response. Where original capabilities and the complete current request bind a verified client consumer, account for comparisons enforced by that consumer; do not assume a comparison is absent merely because it is outside the remote script. A consumer label, expected value or captured specification does not prove that the observation or comparison has succeeded. Read-only access still requires independent review.
+ 
+ Keep data-management identity, filesystem writability and project execution identity distinct. A root-owned managed archive establishes neither root project execution nor adequate isolation. Review actual reachable execution and enforced bounds in the action that performs it. Later modification, extraction or execution requires its own prerequisites and independent authorization; require those prerequisites for a current observation only when a concrete effect or dependency makes them relevant. No observation, prior verdict or consumer description authorizes a later action or requires APPROVE.
++
++When the product-derived currentRequest.agentOpenPhaseEvidence is present, it describes a matched original agent-open frame and the independently source-pinned implementation, not a remote observation. Its checksAtExecution and effectsAtExecution describe checks and effects that would occur only if this complete action is authorized and dispatched. Review them, the actual arguments, target binding and all reachable effects. The fourth argument binds the compressed archive; a protected tree revision and the client's CURRENT_SOURCE event are later results of successful opening, not measurements supplied by this description. Project execution and its build-entry prerequisites belong to a later separately reviewed action when reachable. Candidate existence, ownership, volume integrity, archive comparison, success and cleanup remain unobserved here; neither a phase label nor this description requires APPROVE or substitutes for actual result evidence.
+ 
+ The fixed current evidence USER message immediately after the base SYSTEM contains identityRoles; it contains product-captured identities for different objects: originalArchiveSha256 is the compressed archive; originalSnapshotManifestSha256 and currentReadableSourceRevision identify platform source snapshots; protectedTreeRevision comes only from recorded CURRENT_SOURCE receipts and is unknown when absent. originalConfig is the retained task configuration, currentReviewConfig is this review's frozen route, and requestBusinessRevision is the actual intent's author-owned business identity, independent of BUSINESS.md text versions. Compare each object with its own bound expected value; different roles need not be equal. comparedMetadataRelationships lists only actual local metadata comparisons, not recomputed archive bytes, remote checks, safety or permission. Role labels and model-authored claims never waive existing integrity, route, ownership or independent review requirements.
+ 
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -121,6 +121,149 @@
+         return fixed;
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void agentOpenPhaseUsesSourcePinnedOriginalFrameAndEveryChangedActionNeedsANewReview(boolean customLayout) throws Exception {
++        var f = new Frame();
++        var layout = customLayout ? inlineLayout() : DeploymentRemoteLayout.original();
++        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
++        var agent = openingAgent(f);
++        var scope = new DeploymentCommandReviewScope(f.context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
++            null, DeploymentCurrentCommandEvidence.NONE, () -> agent);
++        var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
++        int[] calls = {0};
++        String[] fixed = {""}, policy = {""}, previousBinding = {""};
++        for (String application : List.of("first-app", "second-app")) {
++            var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(application, "b".repeat(64), layout);
++            String script = openingScript(f, layout, application, f.task.id().toString(), "b".repeat(64));
++            int before = f.grants.size();
++            f.model = request -> {
++                var current = currentReview(request);
++                var phase = current.at("/currentRequest/agentOpenPhaseEvidence");
++                assertEquals("BEFORE_PROTECTED_SOURCE_CREATION", phase.path("phase").asText());
++                assertFalse(phase.path("remoteObserved").asBoolean());
++                assertFalse(phase.at("/postconditions/projectBodyExecuted").asBoolean());
++                assertTrue(phase.at("/postconditions/buildEntry").asText().startsWith("Not called by agent-open"));
++                assertEquals("NONE", phase.path("authority").asText());
++                assertEquals(layout.digest(), phase.at("/implementation/layoutSha256").asText());
++                assertEquals("90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d", phase.at("/implementation/reviewedDefaultHelperSha256").asText());
++                assertEquals(workspace.candidateId(), phase.at("/arguments/candidate").asText());
++                assertEquals("b".repeat(64), phase.at("/arguments/compressedArchiveSha256").asText());
++                assertEquals(f.task.id().toString(), phase.at("/arguments/task").asText());
++                assertEquals(workspace.candidateRoot(), phase.at("/paths/candidateRoot").asText());
++                assertEquals(120, phase.at("/request/timeoutSeconds").asLong());
++                assertEquals(4096, phase.at("/request/outputLimitBytes").asLong());
++                assertEquals(0, phase.at("/request/stdinBytes").asLong());
++                assertEquals(script, current.at("/executableInput/script/text").asText());
++                assertEquals("EMPTY", current.at("/currentRequest/inputKind").asText());
++                assertFalse(current.has("CURRENT_SOURCE"));
++                for (var value : phase.path("remoteState")) assertEquals("UNKNOWN", value.asText());
++                assertEquals(before, f.grants.size());
++                assertTrue(request.messages().getFirst().text().contains("not a remote observation"));
++                assertFalse(JSON.readTree(request.messages().getLast().text()).has("agentOpenPhaseEvidence"));
++                if (calls[0]++ % 2 == 0) {
++                    assertNotEquals(previousBinding[0], current.path("reviewBinding").asText());
++                    previousBinding[0] = current.path("reviewBinding").asText();
++                    fixed[0] = request.messages().get(1).text();
++                    if (!policy[0].isEmpty()) assertEquals(policy[0], request.messages().getFirst().text());
++                    policy[0] = request.messages().getFirst().text();
++                    return List.of(call("contract", Map.of("offset", 0, "limit", 8000)));
++                }
++                assertEquals(fixed[0], request.messages().get(1).text());
++                assertEquals(policy[0], request.messages().getFirst().text());
++                return List.of(call("submit_result", JSON.readValue(APPROVE, Map.class)));
++            };
++            try (var request = new CommandRequest(script, new byte[0], Duration.ofMinutes(2), 4096)) {
++                assertEquals(TaskResult.SUCCEEDED, review.approveCommand(openingIntent(f, request), request, f.task).outcome());
++            }
++            assertEquals(before + 1, f.grants.size());
++        }
++        assertEquals(4, calls[0]);
++        assertNotEquals(f.grants.getFirst(), f.grants.getLast());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"append", "guard", "pin", "task", "archive", "candidate", "targets", "layout", "stdin", "operation", "verb", "exactAction", "field", "timeout", "output"})
++    void agentOpenPhaseRejectsChangedOriginalBindingsWithoutGrantingOrInventingObservations(String changed) throws Exception {
++        var f = new Frame();
++        var layout = DeploymentRemoteLayout.original();
++        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, changed.equals("layout") ? inlineLayout() : layout);
++        String script = openingScript(f, layout, "first-app", changed.equals("task") ? UUID.randomUUID().toString() : f.task.id().toString(),
++            changed.equals("archive") ? "c".repeat(64) : "b".repeat(64));
++        if (changed.equals("append")) script += "\nprintf extra";
++        if (changed.equals("guard")) script = script.replace("-perm /022", "-perm /000");
++        if (changed.equals("pin"))
++            script = script.replace("90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d", "a".repeat(64));
++        if (changed.equals("candidate"))
++            script = script.replace("first-app-bbbbbbbbbbbbbbbb", "first-app-cccccccccccccccc");
++        if (changed.equals("verb")) script = script.replace("'agent-open'", "'agent-read'");
++        try (var request = new CommandRequest(script, changed.equals("stdin") ? new byte[]{1} : new byte[0],
++            Duration.ofSeconds(changed.equals("timeout") ? 121 : 120), changed.equals("output") ? 8192 : 4096)) {
++            var intent = openingIntent(f, request);
++            if (changed.equals("targets"))
++                intent = intent.withSemantics(new ActionSemantics("deployment.agent.helper.v1",
++                    Set.of(new ActionTarget(SERVER.id(), "deployment-agent", "foreign"))));
++            if (changed.equals("operation"))
++                intent = intent.withSemantics(new ActionSemantics("deployment.helper.probe.v1", intent.semantics().orElseThrow().targets()));
++            var facts = new java.util.LinkedHashMap<String, Object>();
++            facts.put("operation", intent.semantics().orElseThrow().operation());
++            facts.put("serverTargets", intent.serverIds());
++            facts.put("resourceTargets", List.copyOf(intent.semantics().orElseThrow().targets()));
++            facts.put("businessRevision", intent.revision());
++            facts.put("exactAction", intent.exactAction());
++            facts.put("inputKind", changed.equals("stdin") ? "OPAQUE_BOUND_DATA" : "EMPTY");
++            facts.put("installedHelperPath", layout.helperPath());
++            facts.put("installedHelperSha256", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout));
++            facts.put("platformContractRevision", DeploymentHelperReviewContract.REVISION);
++            if (changed.equals("exactAction")) facts.put("exactAction", intent.exactAction() + " changed");
++            if (changed.equals("field")) facts.put("agentOpenPhaseEvidence", Map.of("remoteObserved", true));
++            f.model = nativeRequest -> {
++                assertTrue(currentReview(nativeRequest).at("/currentRequest/agentOpenPhaseEvidence").isMissingNode());
++                return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++            };
++            var agent = openingAgent(f);
++            if (changed.equals("field")) {
++                var rejected = assertThrows(Exception.class, () -> agent.review("Review exact current input", facts, openingIntent(f, request), request, REVISION, f.task));
++                assertTrue(f.fixture.requests.isEmpty());
++                assertTrue(rejected.getCause() != null || rejected.getMessage() != null);
++            } else
++                assertEquals("DENY", agent.review("Review exact current input", facts, intent, request, REVISION, f.task).decision().decision());
++        }
++        assertTrue(f.grants.isEmpty());
++    }
++
++    private DeploymentAgentApproval openingAgent(Frame f) {
++        return new DeploymentAgentApproval(f.context, f.task, new DeploymentAgentApproval.Evidence() {
++            public DeploymentAgentApproval.Binding binding() {
++                return new DeploymentAgentApproval.Binding(SERVER.id(), "verified-target", REVISION);
++            }
++
++            public Map<String, DeploymentSourceBrowser> sources() {
++                return Map.of();
++            }
++
++            public Object receipts() {
++                return Map.of("events", List.of());
++            }
++
++            public Map<String, ?> identityRoles(Map<String, DeploymentSourceBrowser> sources) {
++                return Map.of("originalArchiveSha256", "b".repeat(64), "protectedTreeAvailability", "NO_CURRENT_SOURCE_RECEIPT");
++            }
++        });
++    }
++
++    private static String openingScript(Frame f, DeploymentRemoteLayout layout, String application, String task, String archive) {
++        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace(application, archive, layout);
++        String body = "'" + layout.helperPath() + "' 'agent-open' '" + application + "' '" + workspace.candidateId() + "' '" + task + "' '" + archive + "'";
++        return gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(body, layout);
++    }
++
++    private static ActionIntent openingIntent(Frame f, CommandRequest request) {
++        String resource = DeploymentAgentInputs.hash(request.script() + "\n" + DeploymentAgentInputs.hash(""));
++        return RemoteActions.command(SERVER, REVISION, request).withSemantics(new ActionSemantics("deployment.agent.helper.v1",
++            Set.of(new ActionTarget(SERVER.id(), "deployment-agent", resource))));
++    }
++
+     @Test
+     void approvalSkillResultsReferenceOneActiveSystemBodyWithoutChangingOtherRoles() throws Exception {
+         var f = new Frame();
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+@@ -51,16 +51,31 @@
+     private boolean diagnosticCandidateSessionIdentityJourney;
+ 
+     enum VerificationMode {
+-        APPROVE, DENY, INLINE_INPUT, CONFIGURATION_CHANGED, CAPACITY_LOW, CAPACITY_TRUNCATED, CAPACITY_CANCELLED, CAPACITY_MISSING, CAPACITY_UNSETTLED, BUILD_SMALL, BUILD_LARGE, CAPACITY_AFTER_INSTALL, CAPACITY_INSTALL_UNKNOWN;
++        APPROVE, DENY, INLINE_INPUT, CONFIGURATION_CHANGED, CAPACITY_LOW, CAPACITY_TRUNCATED, CAPACITY_CANCELLED, CAPACITY_MISSING, CAPACITY_UNSETTLED, BUILD_SMALL, BUILD_LARGE, CAPACITY_AFTER_INSTALL, CAPACITY_INSTALL_UNKNOWN,
++        OPEN_APPROVE, OPEN_DENY, OPEN_CONFIGURATION_CHANGED;
+ 
+         boolean confirmedRefusal() {
+             return this == CAPACITY_LOW || this == CAPACITY_AFTER_INSTALL;
++        }
++
++        boolean verified() {
++            return this == APPROVE || this == INLINE_INPUT || name().startsWith("BUILD_") || name().startsWith("OPEN_");
++        }
++
++        boolean opened() {
++            return verified() && this != OPEN_DENY && this != OPEN_CONFIGURATION_CHANGED;
+         }
+     }
+ 
+     @ParameterizedTest
+     @EnumSource(value = VerificationMode.class, names = {"APPROVE", "DENY", "INLINE_INPUT", "CONFIGURATION_CHANGED"})
+     void uploadedArchiveConsumerEvidenceReachesNativeReviewBeforeVerifyAndOpen(VerificationMode mode) throws Exception {
++        runVerification(mode, false);
++    }
++
++    @ParameterizedTest
++    @EnumSource(value = VerificationMode.class, names = {"OPEN_APPROVE", "OPEN_DENY", "OPEN_CONFIGURATION_CHANGED"})
++    void agentOpenPhaseEvidenceReachesNativeReviewWithoutInventingCurrentSource(VerificationMode mode) throws Exception {
+         runVerification(mode, false);
+     }
+ 
+@@ -167,7 +182,9 @@
+ 
+         String pageBinding = "";
+ 
+-        int decisions, approvalCalls, pages, creates, uploads, verifyGrants, verifySends, opens, verifyVerdicts, capacityReads, readinessReads, installs;
++        int decisions, approvalCalls, pages, creates, uploads, verifyGrants, verifySends, opens, verifyVerdicts, capacityReads, readinessReads, installs, openReviews;
++
++        String openEvidence = "", openPolicy = "";
+ 
+         long selectedQuota;
+ 
+@@ -209,7 +226,7 @@
+                 if (m.getName().equals("approveReviewedAction")) {
+                     var intent = (ActionIntent) a[0];
+                     if (intent.semantics().orElseThrow().operation().equals("deployment.candidate.verify.v1")) {
+-                        assertTrue(mode == VerificationMode.APPROVE || mode == VerificationMode.INLINE_INPUT || mode.name().startsWith("BUILD_"));
++                        assertTrue(mode.verified());
+                         assertEquals(1, verifyVerdicts);
+                         assertEquals(1, creates);
+                         assertEquals(1, uploads);
+@@ -294,15 +311,16 @@
+                         + " evidenceChanged=" + "DEPLOYMENT_AGENT_VERIFICATION_EVIDENCE_CHANGED".equals(event)
+                         + " verifyGrants=" + verifyGrants + " verifySends=" + verifySends + " opens=" + opens);
+                 }
+-                assertEquals(mode == VerificationMode.APPROVE || mode == VerificationMode.INLINE_INPUT || mode.name().startsWith("BUILD_") ? 1 : 0, verifyGrants);
++                assertEquals(mode.verified() ? 1 : 0, verifyGrants);
+                 assertEquals(verifyGrants, verifySends);
+-                assertEquals(verifySends, opens);
++                assertEquals(mode.opened() ? 1 : 0, opens);
++                if (mode.name().startsWith("OPEN_")) assertEquals(2, openReviews);
+                 if (mode == VerificationMode.INLINE_INPUT) assertTrue(inlineInputObserved);
+                 else assertTrue(pages > 0, "This controlled model chooses an explicit request reread");
+                 var events = journal.events(task);
+                 assertEquals(1, events.stream().filter(e -> e.type().equals("PREPARE_EXECUTING")).count());
+                 assertFalse(events.stream().anyMatch(e -> Set.of("PREPARE_NOT_SENT", "PREPARE_DISPATCH_NOT_SENT").contains(e.type())));
+-                if (mode == VerificationMode.APPROVE || mode == VerificationMode.INLINE_INPUT || mode.name().startsWith("BUILD_")) {
++                if (mode.opened()) {
+                     assertSame(stop, error);
+                     assertTrue(events.stream().anyMatch(e -> e.type().equals("PREPARE_RESULT")));
+                     assertTrue(events.stream().anyMatch(e -> e.type().equals("CURRENT_SOURCE")));
+@@ -355,7 +373,7 @@
+                     }
+                 } else {
+                     var api = assertInstanceOf(ApiException.class, error);
+-                    assertEquals(mode == VerificationMode.CONFIGURATION_CHANGED ? "DEPLOYMENT_COMMAND_CONFIGURATION_CHANGED" : "DEPLOYMENT_COMMAND_REVIEW_DENIED", api.problem().eventCode());
++                    assertEquals(mode == VerificationMode.CONFIGURATION_CHANGED || mode == VerificationMode.OPEN_CONFIGURATION_CHANGED ? "DEPLOYMENT_COMMAND_CONFIGURATION_CHANGED" : "DEPLOYMENT_COMMAND_REVIEW_DENIED", api.problem().eventCode());
+                     assertTrue(events.stream().anyMatch(e -> e.type().equals("STATE") && e.detail().equals("UNKNOWN")));
+                     assertFalse(DeploymentAgentActionLog.effectsSettled(events));
+                     assertFalse(events.stream().anyMatch(e -> Set.of("PREPARE_RESULT", "CANDIDATE", "CURRENT_SOURCE").contains(e.type())));
+@@ -426,6 +444,38 @@
+             assertEquals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM", dynamic.path("currentEvidence").asText());
+             var input = (ObjectNode) JSON.readTree(request.messages().get(1).text());
+             input.setAll(dynamic);
++            if (mode.name().startsWith("OPEN_") && input.at("/currentRequest/agentOpenPhaseEvidence").isObject()) {
++                var opening = input.at("/currentRequest/agentOpenPhaseEvidence");
++                assertEquals("BEFORE_PROTECTED_SOURCE_CREATION", opening.path("phase").asText());
++                assertFalse(opening.path("remoteObserved").asBoolean());
++                assertFalse(opening.at("/postconditions/projectBodyExecuted").asBoolean());
++                assertTrue(opening.at("/postconditions/buildEntry").asText().startsWith("Not called by agent-open"));
++                assertEquals(task.id().toString(), opening.at("/arguments/task").asText());
++                assertEquals(workspace.applicationId(), opening.at("/arguments/application").asText());
++                assertEquals(workspace.candidateId(), opening.at("/arguments/candidate").asText());
++                assertEquals(archive.sha256(), opening.at("/arguments/compressedArchiveSha256").asText());
++                assertEquals(workspace.candidateRoot(), opening.at("/paths/candidateRoot").asText());
++                assertEquals("NO_CURRENT_SOURCE_RECEIPT", input.at("/identityRoles/protectedTreeAvailability").asText());
++                assertEquals("EMPTY", input.at("/currentRequest/inputKind").asText());
++                assertEquals(opening.at("/request/scriptSha256").asText(), HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
++                    .digest(input.at("/executableInput/script/text").asText().getBytes(StandardCharsets.UTF_8))));
++                assertTrue(input.at("/executableInput/script/text").asText().contains("'agent-open'"));
++                assertEquals(1, verifySends);
++                assertEquals(0, opens);
++                assertFalse(journal.events(task).stream().anyMatch(event -> Set.of("PREPARE_RESULT", "CANDIDATE", "CURRENT_SOURCE").contains(event.type())));
++                assertFalse(dynamic.has("agentOpenPhaseEvidence"));
++                for (var value : opening.path("remoteState")) assertEquals("UNKNOWN", value.asText());
++                if (openReviews++ == 0) {
++                    openEvidence = request.messages().get(1).text();
++                    openPolicy = request.messages().getFirst().text();
++                    assertTrue(openPolicy.contains("not a remote observation"));
++                    return nativeCall("open_contract_" + approvalCalls, "contract", JSON.createObjectNode().put("offset", 0).put("limit", 8000));
++                }
++                assertEquals(openEvidence, request.messages().get(1).text());
++                assertEquals(openPolicy, request.messages().getFirst().text());
++                if (mode == VerificationMode.OPEN_CONFIGURATION_CHANGED) revision.set("e".repeat(64));
++                return verdict(mode == VerificationMode.OPEN_DENY ? "DENY" : "APPROVE");
++            }
+             boolean verification = input.at("/currentRequest/operation").asText().equals("deployment.candidate.verify.v1");
+             if (verification) {
+                 var facts = input.at("/currentRequest/currentCommandEvidence");
