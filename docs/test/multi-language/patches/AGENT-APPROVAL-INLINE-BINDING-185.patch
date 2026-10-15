@@ -1,0 +1,282 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApproval.java
+@@ -22,6 +22,8 @@
+ import gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition;
+ import gold.debug.windowstolinux.appapi.ai.model.AiToolResult;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.task.action.ActionIntent;
+@@ -44,6 +46,8 @@
+ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.skill.DeploymentAgentSkills;
++import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainInputEvidence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms;
+ 
+ /** Independent, read-only native approval Agent. No remote execution or host authority is exposed. */
+ public final class DeploymentAgentApproval implements DeploymentCommandReviewModel {
+@@ -283,7 +287,25 @@
+                 entry.getValue().verify();
+                 sourceRevisions.put(entry.getKey(), entry.getValue().revision());
+             }
+-            JsonNode current = JSON.valueToTree(facts);
++            ObjectNode current = JSON.valueToTree(facts);
++            if (current.has(DeploymentAgentToolchainInputEvidence.FIELD))
++                throw new IllegalArgumentException("Product inline input binding cannot be supplied by the caller");
++            var layout = DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++            var inline = DeploymentAgentToolchainInputEvidence.select(current, layout);
++            if (inline.isPresent()) {
++                var semantics = intent.semantics().orElseThrow();
++                var targets = semantics.targets().stream().sorted(java.util.Comparator.comparing(ActionTarget::serverId)
++                    .thenComparing(ActionTarget::kind).thenComparing(ActionTarget::id)).toList();
++                if (!intent.exactAction().equals(current.path("exactAction").asText())
++                    || !intent.exactAction().equals(RemoteActions.command(new ServerId(binding.server()), intent.revision(), request).exactAction())
++                    || !intent.revision().equals(current.path("businessRevision").asText())
++                    || !semantics.operation().equals(current.path("operation").asText())
++                    || !JSON.valueToTree(targets).equals(current.path("resourceTargets")))
++                    throw new IllegalArgumentException("Inline input evidence differs from the original command intent");
++                current.set(DeploymentAgentToolchainInputEvidence.FIELD, JSON.valueToTree(inline.orElseThrow().facts()));
++            }
++            String contract = DeploymentHelperReviewContract.text(layout) + (inline.isPresent()
++                ? "\n" + DeploymentSkillResources.text(DeploymentAgentToolchainPrograms.class, "inline-program-review.md") : "");
+             JsonNode receipts = JSON.valueToTree(evidence.receipts());
+             JsonNode identities = identityRoles(sources, revision, intent);
+             String bound = sha(JSON.writeValueAsString(Map.of("task", task.id().toString(), "binding", binding,
+@@ -332,8 +354,7 @@
+                 Map.entry("discussion", discussionMetadata), Map.entry("skills", DeploymentAgentSkills.catalog(DeploymentAgentSkills.Role.APPROVAL)),
+                 Map.entry("executableInput", coverage.inlineInput()));
+             String input = JSON.writeValueAsString(initial);
+-            String policy = POLICY + "\n" + instructions + "\n" + DeploymentHelperReviewContract.text(
+-                DeploymentConfigCapture.originalTaskLayout(context.tasks(), task));
++            String policy = POLICY + "\n" + instructions + "\n" + contract;
+             var history = new DeploymentNativeHistory();
+             var definitions = definitions(!sources.isEmpty());
+             var seenIds = new HashSet<String>();
+@@ -432,7 +453,7 @@
+                             exact(args, Set.of("reviewBinding", "notes"));
+                             value = memory.saveNotes(text(args, "reviewBinding", 64), text(args, "notes", DeploymentAgentReviewMemory.NOTES_CHARACTERS));
+                         } else
+-                            value = read(call.name(), args, request, current, sources, receipts);
++                            value = read(call.name(), args, request, current, sources, receipts, contract);
+                         String text = JSON.writeValueAsString(Map.of("trust", call.name().equals("skill") ? "PRODUCT_SKILL"
+                                 : call.name().equals("save_review_notes") ? "MODEL_AUTHORED_DATA" : "UNTRUSTED_DATA",
+                             "reviewBinding", bound, "value", value));
+@@ -484,7 +505,7 @@
+     }
+ 
+     private Object read(String name, JsonNode args, CommandRequest request, JsonNode facts,
+-                        Map<String, DeploymentSourceBrowser> sources, JsonNode receipts) throws Exception {
++                        Map<String, DeploymentSourceBrowser> sources, JsonNode receipts, String contract) throws Exception {
+         boolean sourceTool = Set.of("source_list", "source_read", "source_search").contains(name);
+         int offset = number(args, "offset", 0, sourceTool ? 1000000 : 1048576), limit = number(args, "limit", 1, sourceTool ? 100 : 8000);
+         switch (name) {
+@@ -522,7 +543,7 @@
+             }
+             case "contract" -> {
+                 exact(args, Set.of("offset", "limit"));
+-                return page(DeploymentHelperReviewContract.text(DeploymentConfigCapture.originalTaskLayout(context.tasks(), task)), offset, limit);
++                return page(contract, offset, limit);
+             }
+             case "source_list", "source_read", "source_search" -> {
+                 exact(args, Set.of("component", "sourceRevision", "subject", "offset", "limit"));
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -15,6 +15,9 @@
+ import java.time.Duration;
+ import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.HashSet;
++import java.util.Base64;
++import java.util.TreeMap;
+ import java.util.List;
+ import java.util.Locale;
+ import java.util.Map;
+@@ -58,6 +61,13 @@
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence;
+ import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
++import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainInputEvidence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms;
+ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser;
+ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive;
+ import gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial;
+@@ -102,6 +112,139 @@
+ 
+     @TempDir
+     Path root;
++
++    @Test
++    void independentNativeToolchainReviewReceivesDerivedInputAndTheSameApplicableContract() throws Exception {
++        for (String phase : List.of("prepare", "resolve")) {
++            var f = new Frame();
++            var layout = phase.equals("prepare") ? inlineLayout() : DeploymentRemoteLayout.original();
++            DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
++            String rule = DeploymentSkillResources.text(DeploymentAgentToolchainPrograms.class, "inline-program-review.md");
++            String contract = DeploymentHelperReviewContract.text(layout) + "\n" + rule;
++            int[] calls = {0};
++            try (var command = inlineCommand(phase, layout)) {
++                var intent = inlineIntent(phase, command, layout);
++                f.model = request -> {
++                    assertTrue(request.messages().stream().anyMatch(message -> message.role() == AiRole.SYSTEM
++                        && message.text().contains(contract)));
++                    if (calls[0]++ == 0) {
++                        var input = JSON.readTree(request.messages().getLast().text());
++                        var typed = input.path("currentRequest").path(DeploymentAgentToolchainInputEvidence.FIELD);
++                        assertEquals(phase, typed.path("phase").asText());
++                        assertEquals("d".repeat(64), typed.path("businessRevision").asText());
++                        assertNotEquals(REVISION, typed.path("businessRevision").asText());
++                        assertEquals("NODE", typed.path("profile").asText());
++                        assertEquals(layout.canonical(), typed.at("/originalRemoteLayout/canonical").asText());
++                        assertEquals(layout.digest(), typed.at("/originalRemoteLayout/sha256").asText());
++                        assertTrue(typed.path("inputMatchesRenderer").asBoolean());
++                        assertTrue(typed.path("launcherAndArgumentsMatch").asBoolean());
++                        assertTrue(typed.path("targetsMatchTypedArguments").asBoolean());
++                        assertEquals(DeploymentAgentInputs.hash(new String(command.stdin(), StandardCharsets.UTF_8)),
++                            typed.path("stdinSha256").asText());
++                        assertEquals(DeploymentAgentInputs.hash(intent.exactAction()), typed.path("exactActionSha256").asText());
++                        return List.of(call("contract", Map.of("offset", DeploymentHelperReviewContract.text(layout).length() + 1, "limit", 8000)));
++                    }
++                    assertEquals(rule.substring(0, Math.min(rule.length(), 8000)),
++                        JSON.readTree(lastToolResult(request).text()).at("/value/text").asText());
++                    return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++                };
++                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++                assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
++                assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
++            }
++            assertEquals(2, calls[0], "A CLOSED denial is not automatically reopened");
++            assertTrue(f.grants.isEmpty());
++        }
++    }
++
++    @Test
++    void toolchainInputMismatchAndCallerMarkersFailBeforeNativeReviewOrGrant() throws Exception {
++        for (String mutation : List.of("body", "argv", "targets", "layout", "marker", "exactAction", "intentTargets", "request")) {
++            var f = new Frame();
++            DeploymentConfigCapture.remoteLayout(f.tasks, f.task, mutation.equals("layout") ? inlineLayout() : DeploymentRemoteLayout.original());
++            DeploymentCommandReviewModel model = (instructions, facts, intent, request, revision, task) -> {
++                var changed = JSON.valueToTree(facts);
++                var object = (com.fasterxml.jackson.databind.node.ObjectNode) changed;
++                switch (mutation) {
++                    case "body" ->
++                        object.put("completeExecutableInput", object.path("completeExecutableInput").asText() + "\n#changed");
++                    case "argv" ->
++                        object.put("exactAction", object.path("exactAction").asText().replace(" -I -S ", " -I "));
++                    case "targets" -> object.withArray("resourceTargets").remove(0);
++                    case "marker" ->
++                        object.putObject(DeploymentAgentToolchainInputEvidence.FIELD).put("inputMatchesRenderer", true);
++                    case "exactAction" -> object.put("exactAction", object.path("exactAction").asText() + "\n");
++                    case "intentTargets" ->
++                        intent = intent.withSemantics(new ActionSemantics(intent.semantics().orElseThrow().operation(),
++                            Set.of(new ActionTarget(SERVER.id(), "task", task.id().toString()))));
++                    default -> {
++                    }
++                }
++                Map<String, Object> supplied = JSON.convertValue(object, Map.class);
++                if (mutation.equals("request")) {
++                    try (var foreign = f.command("printf changed", "printf changed")) {
++                        return f.agent.review(instructions, supplied, intent, foreign, revision, task);
++                    }
++                }
++                return f.agent.review(instructions, supplied, intent, request, revision, task);
++            };
++            var scoped = new DeploymentCommandReviewScope(f.context, f.host, f.task, "AUTOMATIC", false, () -> REVISION,
++                null, DeploymentCurrentCommandEvidence.NONE, () -> model);
++            try (var command = inlineCommand("prepare", DeploymentRemoteLayout.original())) {
++                var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scoped.interaction();
++                assertThrows(ApiException.class, () -> review.approveCommand(inlineIntent("prepare", command, DeploymentRemoteLayout.original()), command, f.task), mutation);
++            }
++            assertTrue(f.fixture.requests.isEmpty(), mutation);
++            assertTrue(f.grants.isEmpty(), mutation);
++        }
++        var arbitrary = new Frame();
++        arbitrary.model = request -> {
++            assertTrue(request.messages().stream().filter(message -> message.role() == AiRole.SYSTEM)
++                .noneMatch(message -> message.text().contains("Agent inline-program applicability:")));
++            assertFalse(JSON.readTree(request.messages().getLast().text()).path("currentRequest").has(DeploymentAgentToolchainInputEvidence.FIELD));
++            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++        };
++        assertEquals("DENY", arbitrary.review(Map.of("notes", "deployment.agent.toolchain.prepare.v1")).decision().decision());
++        var forged = new Frame();
++        assertThrows(IOException.class, () -> forged.review(Map.of(DeploymentAgentToolchainInputEvidence.FIELD, Map.of("inputMatchesRenderer", true))));
++        assertTrue(forged.fixture.requests.isEmpty());
++        assertTrue(forged.grants.isEmpty());
++    }
++
++    private static DeploymentRemoteLayout inlineLayout() {
++        return new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths("/srv/inline/lib", "/srv/inline/apps", "/srv/inline/state", "/srv/inline/config", "/srv/inline/data"));
++    }
++
++    private static CommandRequest inlineCommand(String phase, DeploymentRemoteLayout layout) throws Exception {
++        String operation = "b".repeat(32);
++        String source = phase.equals("resolve") ? DeploymentAgentToolchainPrograms.resolver(layout) : DeploymentAgentToolchainPrograms.controller(layout);
++        var arguments = new ArrayList<>(List.of(phase, "NODE", "24", "24.0.0", "60"));
++        if (phase.equals("prepare")) arguments.add("-");
++        arguments.add(operation);
++        if (phase.equals("prepare")) {
++            var release = new TreeMap<String, String>(Map.ofEntries(Map.entry("format", "WTL_AGENT_RELEASE_1"), Map.entry("operation", operation),
++                Map.entry("ecosystem", "NODE"), Map.entry("branch", "24"), Map.entry("requestedExact", "24.0.0"), Map.entry("version", "24.0.0"),
++                Map.entry("url", "https://nodejs.org/dist/v24.0.0/node-v24.0.0-linux-x64.tar.xz"), Map.entry("algorithm", "sha256"),
++                Map.entry("digest", "c".repeat(64)), Map.entry("layout", "archive"), Map.entry("platform", "linux-x86_64"),
++                Map.entry("resolverSourceSha256", DeploymentAgentInputs.hash(DeploymentAgentToolchainPrograms.resolver()))));
++            arguments.add(Base64.getEncoder().encodeToString(JSON.writeValueAsBytes(release)));
++        }
++        return new CommandRequest(DeploymentAgentToolchainPrograms.command(arguments), source.getBytes(StandardCharsets.UTF_8), Duration.ofSeconds(75), 65536);
++    }
++
++    private static ActionIntent inlineIntent(String phase, CommandRequest request, DeploymentRemoteLayout layout) {
++        var targets = new HashSet<ActionTarget>();
++        if (phase.equals("resolve")) {
++            targets.add(new ActionTarget(SERVER.id(), "deployment-host", SERVER.id()));
++            targets.add(new ActionTarget(SERVER.id(), "toolchain-source", "NODE:24:24.0.0"));
++        } else {
++            String base = layout.toolchains();
++            for (String path : List.of(base, base + "/versions", base + "/bindings", base + "/work/agent-" + "b".repeat(32), base + "/.prepare.lock"))
++                targets.add(new ActionTarget(SERVER.id(), "deployment-build", path));
++            targets.add(new ActionTarget(SERVER.id(), "systemd-unit", "windowstolinux-toolchain-" + "b".repeat(32) + ".service"));
++        }
++        return RemoteActions.command(SERVER, "d".repeat(64), request).withSemantics(new ActionSemantics("deployment.agent.toolchain." + phase + ".v1", targets));
++    }
+ 
+     @Test
+     void goalIsolatesActualApprovalToolsAndChargesActualNestedLoopOnce() throws Exception {
+@@ -2259,6 +2402,8 @@
+ 
+         TaskCheckpoint checkpoint;
+ 
++        final Map<String, TaskCheckpoint> otherCheckpoints = new HashMap<>();
++
+         Runnable afterCall = () -> {
+         };
+ 
+@@ -2280,9 +2425,9 @@
+         final TaskService tasks = proxy(TaskService.class, (p, m, a) -> {
+             assertTrue(a[0] == task);
+             if (m.getName().equals("findCheckpoint"))
+-                return DeploymentModelCommandRunner.KEY.equals(a[1]) ? Optional.ofNullable(checkpoint) : Optional.empty();
++                return Optional.ofNullable(DeploymentModelCommandRunner.KEY.equals(a[1]) ? checkpoint : otherCheckpoints.get((String) a[1]));
+             if (m.getName().equals("beginCheckpoint")) {
+-                checkpoint = new TaskCheckpoint() {
++                var created = new TaskCheckpoint() {
+                     private Snapshot snapshot = new Snapshot(0, (String) a[2], false);
+ 
+                     public Snapshot snapshot() {
+@@ -2298,7 +2443,9 @@
+                         snapshot = new Snapshot(snapshot.revision() + 1, snapshot.payload(), true);
+                     }
+                 };
+-                return checkpoint;
++                if (DeploymentModelCommandRunner.KEY.equals(a[1])) checkpoint = created;
++                else otherCheckpoints.put((String) a[1], created);
++                return created;
+             }
+             throw new AssertionError(m.getName());
+         });

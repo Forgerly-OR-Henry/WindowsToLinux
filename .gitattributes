@@ -13,3 +13,4 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 docs/test/multi-language/patches/MODEL-HTTP-OBSERVATION-182.patch -text
+docs/test/multi-language/patches/AGENT-APPROVAL-INLINE-BINDING-185.patch -text
