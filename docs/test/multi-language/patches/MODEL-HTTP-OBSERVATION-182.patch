@@ -1,0 +1,771 @@
+diff --git a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCall.java b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCall.java
+--- a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCall.java
++++ b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCall.java
+@@ -1,272 +1,287 @@
+-package gold.debug.windowstolinux.app.ai.model;
+-
+-import java.io.IOException;
+-import java.net.URI;
+-import java.net.http.*;
+-import java.time.Duration;
+-import java.util.*;
+-import java.util.concurrent.*;
+-
+-import gold.debug.windowstolinux.app.ai.http.HttpUrlChecker;
+-import gold.debug.windowstolinux.app.ai.http.LimitedHttpBodySubscriber;
+-import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
+-import gold.debug.windowstolinux.appapi.task.result.OperationResult;
+-import gold.debug.windowstolinux.appapi.task.result.Problem;
+-import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
+-import gold.debug.windowstolinux.appapi.task.result.TaskResult;
+-import gold.debug.windowstolinux.appapi.task.run.CancelToken;
+-
+-/** Owns one non-replayed HTTP model request and its actual client shutdown. / 持有一个不重放的 HTTP 模型请求及其实际客户端关闭。 */
+-public final class ModelHttpCall implements AutoCloseable {
+-
+-    /** Exact request with redirects disabled. / 禁止重定向的精确请求。 */
+-    private final HttpRequest request;
+-
+-    /** Per-operation client whose physical lifetime can be checked. / 可核对物理寿命的单操作客户端。 */
+-    private final HttpClient client;
+-
+-    /** Owned request bytes, cleared only after client termination. / 仅在客户端终止后清除的所属请求字节。 */
+-    private final byte[] body;
+-
+-    /** Selected platform model identity. / 所选平台模型身份。 */
+-    private final String modelId;
+-
+-    /** Requested response object format. / 请求的响应对象格式。 */
+-    private final boolean jsonObject;
+-
+-    private final ModelProtocol protocol;
+-
+-    private String continuation;
+-
+-    public String continuation() {
+-        return continuation;
+-    }
+-
+-    /** Overall transport time allowance. / 整体传输时限。 */
+-    private final long timeoutNanos;
+-
+-    /** Start of client construction within the transport deadline. / 传输期限内开始构造客户端的时间。 */
+-    private final long createdAt = System.nanoTime();
+-
+-    /** Whether the single send was already consumed. / 单次发送是否已消费。 */
+-    private boolean started;
+-
+-    /** Whether teardown sealed new sends. / 拆除是否封闭新发送。 */
+-    private boolean closing;
+-
+-    /** Current request future, when created. / 已创建时的当前请求 Future。 */
+-    private volatile CompletableFuture<HttpResponse<byte[]>> response;
+-
+-    /**
+-     * Takes ownership of prepared request bytes without sending. / 接管准备好的请求字节，不发送。
+-     * @param endpoint exact configured complete endpoint / 精确配置的完整端点
+-     * @param apiKey temporary credential copied by the JDK header API / JDK 请求头 API 复制的临时凭据
+-     * @param body prepared bytes whose ownership transfers on successful construction / 构造成功后转移归属的准备字节
+-     * @param timeout positive transport deadline / 正的传输期限
+-     * @param modelId platform model identity / 平台模型身份
+-     * @param jsonObject whether object output is required / 是否要求对象输出
+-     */
+-    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
+-                         boolean jsonObject) {
+-        this(endpoint, apiKey, body, timeout, modelId, jsonObject,
+-            gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().connectSeconds());
+-    }
+-
+-    /** Captures the startup configuration. / 捕获启动配置。
+-     * @param endpoint supplied startup dependency / 启动依赖
+-     * @param apiKey supplied startup dependency / 启动依赖
+-     * @param body supplied startup dependency / 启动依赖
+-     * @param timeout supplied startup dependency / 启动依赖
+-     * @param modelId supplied startup dependency / 启动依赖
+-     * @param jsonObject supplied startup dependency / 启动依赖
+-     * @param connectSeconds supplied startup dependency / 启动依赖
+-     */
+-    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
+-                         boolean jsonObject, int connectSeconds) {
+-        this(endpoint, apiKey, body, timeout, modelId, jsonObject, connectSeconds, ModelProtocol.OPENAI_CHAT_COMPLETIONS);
+-    }
+-
+-    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
+-                         boolean jsonObject, int connectSeconds, ModelProtocol protocol) {
+-        if (connectSeconds < 1) throw new IllegalArgumentException("Connect timeout must be positive");
+-        HttpUrlChecker.validate(endpoint);
+-        if (apiKey == null || apiKey.length == 0)
+-            throw new IllegalArgumentException("Model credential is absent");
+-        this.body = Objects.requireNonNull(body);
+-        this.modelId = Objects.requireNonNull(modelId);
+-        this.jsonObject = jsonObject;
+-        this.protocol = Objects.requireNonNull(protocol);
+-        timeoutNanos = timeout.toNanos();
+-        if (timeoutNanos <= 0)
+-            throw new IllegalArgumentException("Model timeout must be positive");
+-        var builder = HttpRequest.newBuilder(endpoint).timeout(timeout).header("Content-Type", "application/json");
+-        if (protocol == ModelProtocol.ANTHROPIC_MESSAGES)
+-            builder.header("x-api-key", new String(apiKey)).header("anthropic-version", "2023-06-01");
+-        else builder.header("Authorization", "Bearer " + new String(apiKey));
+-        request = builder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+-        client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).followRedirects(HttpClient.Redirect.NEVER)
+-            .connectTimeout(timeout.compareTo(Duration.ofSeconds(connectSeconds)) < 0 ? timeout : Duration.ofSeconds(connectSeconds))
+-            .build();
+-    }
+-
+-    /**
+-     * Sends at most once, treating post-send cancellation or transport loss as unknown. / 最多发送一次，将发送后的取消或传输丢失视为未知。
+-     * @param cancellation original task cancellation / 原任务取消
+-     * @return complete response, known HTTP failure or explicit uncertainty / 完整响应、已知 HTTP 失败或明确不确定性
+-     */
+-    public OperationResult<AiResponse> execute(CancelToken cancellation) {
+-        synchronized (this) {
+-            if (started || closing)
+-                throw new IllegalStateException("Model request is no longer available");
+-            started = true;
+-        }
+-        if (cancellation.requested() || Thread.currentThread().isInterrupted())
+-            return failure(TaskResult.CANCELLED, ProblemCode.CANCELLED, "AI_CANCELLED_BEFORE_SEND",
+-                "Model request was cancelled before sending", Map.of());
+-        if (System.nanoTime() - createdAt >= timeoutNanos)
+-            return failure(TaskResult.FAILED, ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
+-                "The deadline expired before sending", Map.of());
+-        try {
+-            response = client.sendAsync(request,
+-                ignored -> new LimitedHttpBodySubscriber(ModelMessageCodec.MAX_RESPONSE_BYTES));
+-            for (; ; ) {
+-                if (cancellation.requested() || Thread.currentThread().isInterrupted()) {
+-                    response.cancel(true);
+-                    return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "AI_CANCELLED_AFTER_SEND",
+-                        "The provider may have processed the cancelled request", Map.of());
+-                }
+-                long remaining = timeoutNanos - (System.nanoTime() - createdAt);
+-                if (remaining <= 0) {
+-                    response.cancel(true);
+-                    return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "AI_TIMEOUT",
+-                        "The provider outcome is unknown after the deadline", Map.of("timeoutPhase", "REQUEST_BUDGET"));
+-                }
+-                try {
+-                    var result = response.get(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(25)),
+-                        TimeUnit.NANOSECONDS);
+-                    byte[] bytes = result.body();
+-                    try {
+-                        if (result.statusCode() < 200 || result.statusCode() >= 300)
+-                            return failure(TaskResult.FAILED, ProblemCode.IO_FAILURE, "AI_HTTP_REJECTED",
+-                                "The selected provider rejected the request",
+-                                Map.of("httpStatus", Integer.toString(result.statusCode())));
+-                        try {
+-                            var decoded = ModelProtocolCodec.forProtocol(protocol).decode(bytes, modelId, jsonObject);
+-                            continuation = decoded.continuation();
+-                            return new OperationResult<>(TaskResult.SUCCEEDED,
+-                                Optional.of(decoded.response()),
+-                                Optional.empty());
+-                        } catch (IOException invalid) {
+-                            return failure(TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID",
+-                                "The provider response does not satisfy the requested format", ModelProtocolDiagnostics.shape(protocol, bytes));
+-                        }
+-                    } finally {
+-                        Arrays.fill(bytes, (byte) 0);
+-                    }
+-                } catch (TimeoutException waiting) {
+-                    /* Recheck the original deadline and cancellation. / 重新核对原期限和取消。 */
+-                }
+-            }
+-        } catch (InterruptedException interrupted) {
+-            Thread.currentThread().interrupt();
+-            if (response != null)
+-                response.cancel(true);
+-            return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "AI_INTERRUPTED",
+-                "The interrupted provider outcome is unknown", Map.of());
+-        } catch (ExecutionException failure) {
+-            if (transportCause(failure) instanceof HttpTimeoutException)
+-                return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "AI_TIMEOUT",
+-                    "The provider outcome is unknown after the deadline", transportDetails(failure));
+-            return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
+-                "The provider outcome could not be established", transportDetails(failure));
+-        } catch (RuntimeException failure) {
+-            return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
+-                "The provider outcome could not be established", transportDetails(failure));
+-        }
+-    }
+-
+-    /** Keeps only bounded standard cause identities and fixed transport categories. / 仅保留有界标准异常链与固定传输类别。
+-     * @param failure transport failure without exposing its message / 不披露消息的传输异常
+-     * @return bounded diagnostic metadata / 有界诊断元数据 */
+-    static Map<String, String> transportDetails(Throwable failure) {
+-        Throwable cause = transportCause(failure);
+-        String type = cause.getClass().getName();
+-        var details = new HashMap<String, String>();
+-        details.put("transportFailureType", type.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}") ? type : "OTHER");
+-        if (cause instanceof HttpConnectTimeoutException) details.put("timeoutPhase", "HTTP_CONNECT");
+-        else if (cause instanceof HttpTimeoutException) details.put("timeoutPhase", "HTTP_REQUEST");
+-        var chain = new ArrayList<String>();
+-        var visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
+-        for (Throwable current = cause; current != null && chain.size() < 8 && visited.add(current); current = current.getCause()) {
+-            String name = current.getClass().getName();
+-            boolean standard = name.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}");
+-            chain.add(standard ? name : "OTHER");
+-            String message = standard ? current.getMessage() : null;
+-            if (message == null || details.containsKey("transportFailureKind")) continue;
+-            if (message.equals("HTTP/1.1 header parser received no bytes"))
+-                details.put("transportFailureKind", "HTTP_HEADERS_EMPTY");
+-            else if (message.matches("fixed content-length: [0-9]+, bytes received: [0-9]+"))
+-                details.put("transportFailureKind", "HTTP_BODY_INCOMPLETE");
+-            else if (message.matches("chunked transfer encoding, state: [A-Z_]+"))
+-                details.put("transportFailureKind", "HTTP_CHUNK_INCOMPLETE");
+-            else if (message.equals("AI response exceeded the configured transport limit"))
+-                details.put("transportFailureKind", "RESPONSE_BYTE_LIMIT");
+-        }
+-        if (chain.size() > 1) details.put("transportCauseTypes", String.join(">", chain));
+-        return Map.copyOf(details);
+-    }
+-
+-    /** Unwraps only bounded asynchronous transport wrappers. / 仅有界展开异步传输包装。
+-     * @param failure original failure / 原异常
+-     * @return concrete transport cause or the remaining wrapper / 具体传输原因或剩余包装 */
+-    private static Throwable transportCause(Throwable failure) {
+-        Throwable cause = failure;
+-        for (int depth = 0; depth < 8 && (cause instanceof ExecutionException || cause instanceof CompletionException)
+-            && cause.getCause() != null && cause.getCause() != cause; depth++)
+-            cause = cause.getCause();
+-        return cause;
+-    }
+-
+-    /**
+-     * Stops the owned client and verifies physical termination before releasing request bytes. / 停止所属客户端并核对物理终止，随后释放请求字节。
+-     * @throws IOException if actual transport work still remains / 仍有实际传输操作时
+-     */
+-    @Override
+-    public void close() throws IOException {
+-        synchronized (this) {
+-            closing = true;
+-        }
+-        boolean interrupted = Thread.interrupted();
+-        try {
+-            var pending = response;
+-            if (pending != null && !pending.isDone())
+-                pending.cancel(true);
+-            client.shutdownNow();
+-            if (!client.awaitTermination(Duration.ofSeconds(2)))
+-                throw new IOException("Model HTTP client is still terminating");
+-            Arrays.fill(body, (byte) 0);
+-            continuation = null;
+-        } catch (InterruptedException waiting) {
+-            interrupted = true;
+-            throw new IOException("Model client termination was interrupted");
+-        } finally {
+-            if (interrupted)
+-                Thread.currentThread().interrupt();
+-        }
+-    }
+-
+-    /** Creates a diagnostic without provider payload or credential text. / 构造不含提供者载荷或凭据文本的诊断。
+-     * @param outcome operation outcome / 操作结果
+-     * @param code safe category / 安全类别
+-     * @param event stable event identity / 稳定事件身份
+-     * @param message safe explanation / 安全说明
+-     * @param context bounded non-secret details / 有界非秘密详情
+-     * @return classified public result / 已分类公开结果 */
+-    private OperationResult<AiResponse> failure(TaskResult outcome, ProblemCode code, String event, String message,
+-                                                Map<String, String> context) {
+-        var details = new HashMap<>(context);
+-        details.put("modelId", modelId);
+-        return new OperationResult<>(outcome, Optional.empty(),
+-            Optional.of(new Problem(code, event, message, details, Optional.empty())));
+-    }
+-}
++package gold.debug.windowstolinux.app.ai.model;
++
++import java.io.IOException;
++import java.net.URI;
++import java.net.http.*;
++import java.time.Duration;
++import java.util.*;
++import java.util.concurrent.*;
++
++import gold.debug.windowstolinux.app.ai.http.HttpUrlChecker;
++import gold.debug.windowstolinux.app.ai.http.LimitedHttpBodySubscriber;
++import gold.debug.windowstolinux.appapi.ai.model.AiResponse;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.Problem;
++import gold.debug.windowstolinux.appapi.task.result.ProblemCode;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.task.run.CancelToken;
++
++/** Owns one non-replayed HTTP model request and its actual client shutdown. / 持有一个不重放的 HTTP 模型请求及其实际客户端关闭。 */
++public final class ModelHttpCall implements AutoCloseable {
++
++    /** Exact request with redirects disabled. / 禁止重定向的精确请求。 */
++    private final HttpRequest request;
++
++    /** Per-operation client whose physical lifetime can be checked. / 可核对物理寿命的单操作客户端。 */
++    private final HttpClient client;
++
++    /** Owned request bytes, cleared only after client termination. / 仅在客户端终止后清除的所属请求字节。 */
++    private final byte[] body;
++
++    /** Selected platform model identity. / 所选平台模型身份。 */
++    private final String modelId;
++
++    /** Requested response object format. / 请求的响应对象格式。 */
++    private final boolean jsonObject;
++
++    private final ModelProtocol protocol;
++
++    private String continuation;
++
++    public String continuation() {
++        return continuation;
++    }
++
++    /** Overall transport time allowance. / 整体传输时限。 */
++    private final long timeoutNanos;
++
++    /** Start of client construction within the transport deadline. / 传输期限内开始构造客户端的时间。 */
++    private final long createdAt = System.nanoTime();
++
++    /** Whether the single send was already consumed. / 单次发送是否已消费。 */
++    private boolean started;
++
++    /** Whether teardown sealed new sends. / 拆除是否封闭新发送。 */
++    private boolean closing;
++
++    /** Current request future, when created. / 已创建时的当前请求 Future。 */
++    private volatile CompletableFuture<HttpResponse<byte[]>> response;
++
++    /** Bounded body observer published before the actual response status. / 在实际响应码之前发布的有界正文观察器。 */
++    private volatile LimitedHttpBodySubscriber responseBody;
++
++    /** Final response status observed by BodyHandler; zero means no such observation yet. / BodyHandler实际观察的最终响应码，零表示尚未观察到。 */
++    private volatile int responseStatus;
++
++    /**
++     * Takes ownership of prepared request bytes without sending. / 接管准备好的请求字节，不发送。
++     * @param endpoint exact configured complete endpoint / 精确配置的完整端点
++     * @param apiKey temporary credential copied by the JDK header API / JDK 请求头 API 复制的临时凭据
++     * @param body prepared bytes whose ownership transfers on successful construction / 构造成功后转移归属的准备字节
++     * @param timeout positive transport deadline / 正的传输期限
++     * @param modelId platform model identity / 平台模型身份
++     * @param jsonObject whether object output is required / 是否要求对象输出
++     */
++    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
++                         boolean jsonObject) {
++        this(endpoint, apiKey, body, timeout, modelId, jsonObject,
++            gold.debug.windowstolinux.app.config.AppConfig.defaultsConfig().ai().connectSeconds());
++    }
++
++    /** Captures the startup configuration. / 捕获启动配置。
++     * @param endpoint supplied startup dependency / 启动依赖
++     * @param apiKey supplied startup dependency / 启动依赖
++     * @param body supplied startup dependency / 启动依赖
++     * @param timeout supplied startup dependency / 启动依赖
++     * @param modelId supplied startup dependency / 启动依赖
++     * @param jsonObject supplied startup dependency / 启动依赖
++     * @param connectSeconds supplied startup dependency / 启动依赖
++     */
++    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
++                         boolean jsonObject, int connectSeconds) {
++        this(endpoint, apiKey, body, timeout, modelId, jsonObject, connectSeconds, ModelProtocol.OPENAI_CHAT_COMPLETIONS);
++    }
++
++    public ModelHttpCall(URI endpoint, char[] apiKey, byte[] body, Duration timeout, String modelId,
++                         boolean jsonObject, int connectSeconds, ModelProtocol protocol) {
++        if (connectSeconds < 1) throw new IllegalArgumentException("Connect timeout must be positive");
++        HttpUrlChecker.validate(endpoint);
++        if (apiKey == null || apiKey.length == 0)
++            throw new IllegalArgumentException("Model credential is absent");
++        this.body = Objects.requireNonNull(body);
++        this.modelId = Objects.requireNonNull(modelId);
++        this.jsonObject = jsonObject;
++        this.protocol = Objects.requireNonNull(protocol);
++        timeoutNanos = timeout.toNanos();
++        if (timeoutNanos <= 0)
++            throw new IllegalArgumentException("Model timeout must be positive");
++        var builder = HttpRequest.newBuilder(endpoint).timeout(timeout).header("Content-Type", "application/json");
++        if (protocol == ModelProtocol.ANTHROPIC_MESSAGES)
++            builder.header("x-api-key", new String(apiKey)).header("anthropic-version", "2023-06-01");
++        else builder.header("Authorization", "Bearer " + new String(apiKey));
++        request = builder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
++        client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).followRedirects(HttpClient.Redirect.NEVER)
++            .connectTimeout(timeout.compareTo(Duration.ofSeconds(connectSeconds)) < 0 ? timeout : Duration.ofSeconds(connectSeconds))
++            .build();
++    }
++
++    /**
++     * Sends at most once, treating post-send cancellation or transport loss as unknown. / 最多发送一次，将发送后的取消或传输丢失视为未知。
++     * @param cancellation original task cancellation / 原任务取消
++     * @return complete response, known HTTP failure or explicit uncertainty / 完整响应、已知 HTTP 失败或明确不确定性
++     */
++    public OperationResult<AiResponse> execute(CancelToken cancellation) {
++        synchronized (this) {
++            if (started || closing)
++                throw new IllegalStateException("Model request is no longer available");
++            started = true;
++        }
++        if (cancellation.requested() || Thread.currentThread().isInterrupted())
++            return failure(TaskResult.CANCELLED, ProblemCode.CANCELLED, "AI_CANCELLED_BEFORE_SEND",
++                "Model request was cancelled before sending", Map.of());
++        if (System.nanoTime() - createdAt >= timeoutNanos)
++            return failure(TaskResult.FAILED, ProblemCode.TIMEOUT, "AI_BEFORE_SEND_TIMEOUT",
++                "The deadline expired before sending", Map.of());
++        try {
++            response = client.sendAsync(request, info -> {
++                var subscriber = new LimitedHttpBodySubscriber(ModelMessageCodec.MAX_RESPONSE_BYTES);
++                responseBody = subscriber;
++                responseStatus = info.statusCode();
++                return subscriber;
++            });
++            for (; ; ) {
++                if (cancellation.requested() || Thread.currentThread().isInterrupted()) {
++                    response.cancel(true);
++                    return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "AI_CANCELLED_AFTER_SEND",
++                        "The provider may have processed the cancelled request", Map.of());
++                }
++                long remaining = timeoutNanos - (System.nanoTime() - createdAt);
++                if (remaining <= 0) {
++                    response.cancel(true);
++                    return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "AI_TIMEOUT",
++                        "The provider outcome is unknown after the deadline", Map.of("timeoutPhase", "REQUEST_BUDGET"));
++                }
++                try {
++                    var result = response.get(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(25)),
++                        TimeUnit.NANOSECONDS);
++                    byte[] bytes = result.body();
++                    try {
++                        if (result.statusCode() < 200 || result.statusCode() >= 300)
++                            return failure(TaskResult.FAILED, ProblemCode.IO_FAILURE, "AI_HTTP_REJECTED",
++                                "The selected provider rejected the request",
++                                Map.of("httpStatus", Integer.toString(result.statusCode())));
++                        try {
++                            var decoded = ModelProtocolCodec.forProtocol(protocol).decode(bytes, modelId, jsonObject);
++                            continuation = decoded.continuation();
++                            return new OperationResult<>(TaskResult.SUCCEEDED,
++                                Optional.of(decoded.response()),
++                                Optional.empty());
++                        } catch (IOException invalid) {
++                            return failure(TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID",
++                                "The provider response does not satisfy the requested format", ModelProtocolDiagnostics.shape(protocol, bytes));
++                        }
++                    } finally {
++                        Arrays.fill(bytes, (byte) 0);
++                    }
++                } catch (TimeoutException waiting) {
++                    /* Recheck the original deadline and cancellation. / 重新核对原期限和取消。 */
++                }
++            }
++        } catch (InterruptedException interrupted) {
++            Thread.currentThread().interrupt();
++            if (response != null)
++                response.cancel(true);
++            return failure(TaskResult.UNKNOWN, ProblemCode.CANCELLED, "AI_INTERRUPTED",
++                "The interrupted provider outcome is unknown", Map.of());
++        } catch (ExecutionException failure) {
++            if (transportCause(failure) instanceof HttpTimeoutException)
++                return failure(TaskResult.UNKNOWN, ProblemCode.TIMEOUT, "AI_TIMEOUT",
++                    "The provider outcome is unknown after the deadline", transportDetails(failure));
++            return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
++                "The provider outcome could not be established", transportDetails(failure));
++        } catch (RuntimeException failure) {
++            return failure(TaskResult.UNKNOWN, ProblemCode.IO_FAILURE, "AI_TRANSPORT_UNKNOWN",
++                "The provider outcome could not be established", transportDetails(failure));
++        }
++    }
++
++    /** Keeps only bounded standard cause identities and fixed transport categories. / 仅保留有界标准异常链与固定传输类别。
++     * @param failure transport failure without exposing its message / 不披露消息的传输异常
++     * @return bounded diagnostic metadata / 有界诊断元数据 */
++    static Map<String, String> transportDetails(Throwable failure) {
++        Throwable cause = transportCause(failure);
++        String type = cause.getClass().getName();
++        var details = new HashMap<String, String>();
++        details.put("transportFailureType", type.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}") ? type : "OTHER");
++        if (cause instanceof HttpConnectTimeoutException) details.put("timeoutPhase", "HTTP_CONNECT");
++        else if (cause instanceof HttpTimeoutException) details.put("timeoutPhase", "HTTP_REQUEST");
++        var chain = new ArrayList<String>();
++        var visited = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>());
++        for (Throwable current = cause; current != null && chain.size() < 8 && visited.add(current); current = current.getCause()) {
++            String name = current.getClass().getName();
++            boolean standard = name.matches("(?:java|javax|jdk)[.][A-Za-z0-9_.$]{1,180}");
++            chain.add(standard ? name : "OTHER");
++            String message = standard ? current.getMessage() : null;
++            if (message == null || details.containsKey("transportFailureKind")) continue;
++            if (message.equals("HTTP/1.1 header parser received no bytes"))
++                details.put("transportFailureKind", "HTTP_HEADERS_EMPTY");
++            else if (message.matches("fixed content-length: [0-9]+, bytes received: [0-9]+"))
++                details.put("transportFailureKind", "HTTP_BODY_INCOMPLETE");
++            else if (message.matches("chunked transfer encoding, state: [A-Z_]+"))
++                details.put("transportFailureKind", "HTTP_CHUNK_INCOMPLETE");
++            else if (message.equals("AI response exceeded the configured transport limit"))
++                details.put("transportFailureKind", "RESPONSE_BYTE_LIMIT");
++        }
++        if (chain.size() > 1) details.put("transportCauseTypes", String.join(">", chain));
++        return Map.copyOf(details);
++    }
++
++    /** Unwraps only bounded asynchronous transport wrappers. / 仅有界展开异步传输包装。
++     * @param failure original failure / 原异常
++     * @return concrete transport cause or the remaining wrapper / 具体传输原因或剩余包装 */
++    private static Throwable transportCause(Throwable failure) {
++        Throwable cause = failure;
++        for (int depth = 0; depth < 8 && (cause instanceof ExecutionException || cause instanceof CompletionException)
++            && cause.getCause() != null && cause.getCause() != cause; depth++)
++            cause = cause.getCause();
++        return cause;
++    }
++
++    /**
++     * Stops the owned client and verifies physical termination before releasing request bytes. / 停止所属客户端并核对物理终止，随后释放请求字节。
++     * @throws IOException if actual transport work still remains / 仍有实际传输操作时
++     */
++    @Override
++    public void close() throws IOException {
++        synchronized (this) {
++            closing = true;
++        }
++        boolean interrupted = Thread.interrupted();
++        try {
++            var pending = response;
++            if (pending != null && !pending.isDone())
++                pending.cancel(true);
++            client.shutdownNow();
++            if (!client.awaitTermination(Duration.ofSeconds(2)))
++                throw new IOException("Model HTTP client is still terminating");
++            Arrays.fill(body, (byte) 0);
++            continuation = null;
++        } catch (InterruptedException waiting) {
++            interrupted = true;
++            throw new IOException("Model client termination was interrupted");
++        } finally {
++            if (interrupted)
++                Thread.currentThread().interrupt();
++        }
++    }
++
++    /** Creates a diagnostic without provider payload or credential text. / 构造不含提供者载荷或凭据文本的诊断。
++     * @param outcome operation outcome / 操作结果
++     * @param code safe category / 安全类别
++     * @param event stable event identity / 稳定事件身份
++     * @param message safe explanation / 安全说明
++     * @param context bounded non-secret details / 有界非秘密详情
++     * @return classified public result / 已分类公开结果 */
++    private OperationResult<AiResponse> failure(TaskResult outcome, ProblemCode code, String event, String message,
++                                                Map<String, String> context) {
++        var details = new HashMap<>(context);
++        int status = responseStatus;
++        details.put("httpHeadersReceived", Boolean.toString(status != 0));
++        if (status != 0)
++            details.put("httpStatus", Integer.toString(status));
++        details.put("httpBodyBytesAccepted", Integer.toString(status == 0 ? 0 : responseBody.acceptedBytes()));
++        details.put("modelId", modelId);
++        return new OperationResult<>(outcome, Optional.empty(),
++            Optional.of(new Problem(code, event, message, details, Optional.empty())));
++    }
++}
+diff --git a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriber.java b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriber.java
+--- a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriber.java
++++ b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriber.java
+@@ -34,10 +34,10 @@
+     private Flow.Subscription subscription;
+ 
+     /**
+-     * Bytes received so far against the output bound.
+-     * <p>当前已计入输出边界的接收字节数。
++     * Bytes in complete batches accepted within the output bound, visible to observers.
++     * <p>完整批次通过输出边界后接受的累计字节数，对观察线程可见。
+      */
+-    private int received;
++    private volatile int received;
+ 
+     /**
+      * Binds the supplied dependencies and state for limited http body subscriber.
+@@ -66,6 +66,12 @@
+         return body;
+     }
+ 
++    /** Returns accepted body bytes, excluding headers and rejected batches; completion is not implied. / 返回已接受正文字节，不含响应头或被拒批次，不表示正文已完整。
++     * @return cumulative bytes accepted by the bounded subscriber / 有界接收器已接受的累计字节数 */
++    public int acceptedBytes() {
++        return received;
++    }
++
+     /**
+      * Connects upstream cancellation to the delegate. / 将上游取消连接到接收器。
+      *
+@@ -86,14 +92,16 @@
+     public void onNext(List<ByteBuffer> buffers) {
+         if (body.isDone())
+             return;
++        int batchBytes = 0;
+         for (ByteBuffer buffer : buffers) {
+-            if (buffer.remaining() > maxBytes - received) {
++            if (buffer.remaining() > maxBytes - received - batchBytes) {
+                 subscription.cancel();
+                 delegate.onError(new IOException("AI response exceeded the configured transport limit"));
+                 return;
+             }
+-            received += buffer.remaining();
++            batchBytes += buffer.remaining();
+         }
++        received += batchBytes;
+         delegate.onNext(buffers);
+     }
+ 
+diff --git a/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCallTest.java b/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCallTest.java
+--- a/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCallTest.java
++++ b/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCallTest.java
+@@ -11,8 +11,11 @@
+ import java.nio.charset.StandardCharsets;
+ import java.time.Duration;
+ import java.util.Map;
++import java.util.Set;
+ import java.util.concurrent.CompletionException;
++import java.util.concurrent.CountDownLatch;
+ import java.util.concurrent.ExecutionException;
++import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.concurrent.atomic.AtomicReference;
+ 
+@@ -51,6 +54,9 @@
+                 assertEquals(TaskResult.UNKNOWN, result.outcome(), result::toString);
+                 var problem = result.problem().orElseThrow();
+                 assertEquals("AI_TRANSPORT_UNKNOWN", problem.eventCode());
++                assertEquals("true", problem.context().get("httpHeadersReceived"));
++                assertEquals("200", problem.context().get("httpStatus"));
++                assertEquals(Integer.toString("private-provider-body".getBytes(StandardCharsets.UTF_8).length), problem.context().get("httpBodyBytesAccepted"));
+                 assertTrue(problem.context().get("transportFailureType").matches("java[.](?:io|net)[.][A-Za-z0-9_.$]+"), problem::toString);
+                 assertFalse(problem.toString().contains("private"), problem::toString);
+                 assertEquals(1, calls.get());
+@@ -64,6 +70,98 @@
+             assertNull(peerFailure.get());
+             for (byte value : owned)
+                 assertEquals(0, value, "Owned request bytes must be cleared after physical client shutdown");
++        }
++    }
++
++    @Test
++    void deadlineBeforeResponseHeadersRecordsNoHeaderObservationWithoutReplay() throws Exception {
++        assertStalledResponseObservation(false, false);
++    }
++
++    @Test
++    void deadlineAfterResponseHeadersRecordsAcceptedBodyBytesWithoutReplay() throws Exception {
++        assertStalledResponseObservation(true, false);
++    }
++
++    @Test
++    void cancellationBeforeResponseHeadersRetainsUnknownAndClosesWithoutReplay() throws Exception {
++        assertStalledResponseObservation(false, true);
++    }
++
++    private void assertStalledResponseObservation(boolean sendHeaders, boolean cancelAfterRequest) throws Exception {
++        var calls = new AtomicInteger();
++        var received = new CountDownLatch(1);
++        var release = new CountDownLatch(1);
++        var peerFailure = new AtomicReference<Throwable>();
++        byte[] owned = "private-request".getBytes(StandardCharsets.UTF_8);
++        byte[] partial = "private-provider-body".getBytes(StandardCharsets.UTF_8);
++        try (var server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
++            Thread peer = Thread.ofPlatform().daemon(true).start(() -> {
++                try (var socket = server.accept()) {
++                    calls.incrementAndGet();
++                    socket.setSoTimeout(5000);
++                    var input = socket.getInputStream();
++                    var headers = new StringBuilder();
++                    while (!headers.toString().endsWith("\r\n\r\n") && headers.length() < 8192) {
++                        int next = input.read();
++                        if (next < 0) throw new IOException("Fixture request ended before its headers");
++                        headers.append((char) next);
++                    }
++                    if (input.readNBytes(owned.length).length != owned.length)
++                        throw new IOException("Fixture request body was incomplete");
++                    received.countDown();
++                    if (sendHeaders) {
++                        socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n".getBytes(StandardCharsets.UTF_8));
++                        socket.getOutputStream().write(partial);
++                        socket.getOutputStream().flush();
++                    }
++                    if (!release.await(10, TimeUnit.SECONDS))
++                        throw new IOException("Fixture release was not confirmed");
++                } catch (IOException | InterruptedException failure) {
++                    peerFailure.set(failure);
++                }
++            });
++            try {
++                if (cancelAfterRequest) {
++                    byte[] unsent = "private-unsent".getBytes(StandardCharsets.UTF_8);
++                    try (var call = new ModelHttpCall(URI.create("http://127.0.0.1:" + server.getLocalPort() + "/private-endpoint"),
++                        "private-key".toCharArray(), unsent, Duration.ofSeconds(2), "test-model", true)) {
++                        var result = call.execute(() -> true);
++                        assertEquals(TaskResult.CANCELLED, result.outcome());
++                        assertEquals("AI_CANCELLED_BEFORE_SEND", result.problem().orElseThrow().eventCode());
++                        assertEquals("false", result.problem().orElseThrow().context().get("httpHeadersReceived"));
++                        assertEquals("0", result.problem().orElseThrow().context().get("httpBodyBytesAccepted"));
++                        assertFalse(result.problem().orElseThrow().context().containsKey("httpStatus"));
++                        assertEquals(0, calls.get());
++                    }
++                    for (byte value : unsent) assertEquals(0, value);
++                }
++                try (var call = new ModelHttpCall(URI.create("http://127.0.0.1:" + server.getLocalPort() + "/private-endpoint"),
++                    "private-key".toCharArray(), owned, Duration.ofSeconds(2), "test-model", true)) {
++                    var result = call.execute(() -> cancelAfterRequest && received.getCount() == 0);
++                    assertEquals(TaskResult.UNKNOWN, result.outcome(), result::toString);
++                    var problem = result.problem().orElseThrow();
++                    assertEquals(cancelAfterRequest ? "AI_CANCELLED_AFTER_SEND" : "AI_TIMEOUT", problem.eventCode());
++                    if (!cancelAfterRequest)
++                        assertTrue(Set.of("REQUEST_BUDGET", "HTTP_REQUEST").contains(problem.context().get("timeoutPhase")));
++                    assertEquals(Boolean.toString(sendHeaders), problem.context().get("httpHeadersReceived"));
++                    assertEquals(Integer.toString(sendHeaders ? partial.length : 0), problem.context().get("httpBodyBytesAccepted"));
++                    if (sendHeaders) assertEquals("200", problem.context().get("httpStatus"));
++                    else assertFalse(problem.context().containsKey("httpStatus"));
++                    assertFalse(problem.toString().contains("private"), problem::toString);
++                    assertEquals(0, received.getCount());
++                    assertEquals(1, calls.get());
++                    assertThrows(IllegalStateException.class, () -> call.execute(() -> false));
++                    assertEquals(1, calls.get());
++                }
++            } finally {
++                release.countDown();
++                server.close();
++                peer.join(5000);
++                assertFalse(peer.isAlive(), "The task-owned HTTP fixture must exit");
++            }
++            assertNull(peerFailure.get());
++            for (byte value : owned) assertEquals(0, value, "Only confirmed client shutdown clears the owned bytes");
+         }
+     }
+ 
+diff --git a/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriberTest.java b/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriberTest.java
+--- a/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriberTest.java
++++ b/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/http/LimitedHttpBodySubscriberTest.java
+@@ -24,9 +24,23 @@
+         });
+         body.onNext(List.of(ByteBuffer.allocate(512 * 1024)));
+         assertFalse(cancelled.get());
++        assertEquals(512 * 1024, body.acceptedBytes());
+         body.onNext(List.of(ByteBuffer.wrap(new byte[]{1})));
+         assertTrue(cancelled.get());
++        assertEquals(512 * 1024, body.acceptedBytes(), "A rejected batch must not count as accepted body bytes");
+         assertTrue(body.getBody().toCompletableFuture().isCompletedExceptionally());
++
++        var rejectedBatch = new LimitedHttpBodySubscriber(3);
++        rejectedBatch.onSubscribe(new Flow.Subscription() {
++            public void request(long count) {
++            }
++
++            public void cancel() {
++            }
++        });
++        rejectedBatch.onNext(List.of(ByteBuffer.wrap(new byte[]{1, 2}), ByteBuffer.wrap(new byte[]{3, 4})));
++        assertEquals(0, rejectedBatch.acceptedBytes(), "No part of an oversized batch was accepted");
++        assertTrue(rejectedBatch.getBody().toCompletableFuture().isCompletedExceptionally());
+         body.onComplete();
+         assertTrue(body.getBody().toCompletableFuture().isCompletedExceptionally());
+     }
+@@ -43,6 +57,7 @@
+             }
+         });
+         body.onNext(List.of(ByteBuffer.wrap(new byte[]{1, 2}), ByteBuffer.wrap(new byte[]{3})));
++        assertEquals(3, body.acceptedBytes());
+         body.onComplete();
+         assertArrayEquals(new byte[]{1, 2, 3}, body.getBody().toCompletableFuture().join());
+     }
