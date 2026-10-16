@@ -1,0 +1,31 @@
+# Agent容量规划依据补正237
+
+2026-10-17。本轮只补足模型规划依据，未修改容量门禁、配额、保留空间、helper或工具链的效果顺序与恢复合同。没有真实模型、SSH、新FULL或CSV部署。原234已由236正式结清归档，不再恢复；原194不再恢复，旧221不自动恢复。两个所选项目仍为八次实际FULL、零完整业务通过。
+
+## 依据及最小修正
+
+234账本确认backend候选先准备，随后工具链两次INSTALL容量拒绝；最终AI_TIMEOUT/UNKNOWN与该前置阻点分别保留。不能据此推断已释放字节或下一次一定成功。Sol XHigh及Astra High针对准备顺序的只读判断否决直接延后prepare：它会改变helper可信前置和原PREPARE恢复边界；原候选容量拒绝回执的精确公式也不能加入工具链常数，两个容量观测尚无可直接合并的文件系统身份。新增正式联合准入涉及独立观测和结清合同，本轮未实现。
+
+在既有autonomous-deployment协议的工具链存储说明后补充实际语义：
+
+- 组件尚无候选时，prepare_tools先准备候选；已有候选复用。
+- 计划容量准入包含候选预算和保留空间，不代表后续工具链存储准入；已建候选不能通过replan缩小物理配额或证明释放空间。
+- 依据当前观测和已确认的文件系统关系评估累计压力。配额不是实测占用，新鲜available已含既有占用，不能重复扣减或机械叠加保留空间；文件系统关系及精确安装匹配未知时仍保持未知。
+
+原8GiB INSTALL、64MiB PROBE及1GiB保留策略不变；没有指定远端命令或推荐配额、自动清理、重试，也没有代替模型选择路线。每个完整动作仍须独立APP审批和新grant。
+
+## 实际验证与局部失败
+
+唯一局部测试为`DeploymentAgentSkillSessionTest#actualSessionRejectsForeignSkillThenActivatesSelectedGuidanceWithoutRemoteEffectsOrSourceEvidence`。首次1失败、0错误、0跳过：旧DeliveryPort测试替身未实现纯reconnectAvailable状态查询，在协议加载前把它误判为远端能力；原日志与JUnit保留，打包未执行。只补该查询返回false，所有真实远端能力仍受原拒绝断言约束。
+
+独立attempt02重跑同一方法，1通过、0失败、0错误、0跳过，Maven退出0；随后显式`-DskipTests package`退出0。没有扩大为全模块或全项目测试，也未新增仅复述文本的测试。
+
+源码3310项中只变更协议资源及上述测试替身，其余3308项与原冻结来源一致；after manifest SHA256为`5d53bf56e2c9a024ae33a9a2fbee18d1eb3efe44e823db921f518e97d2238f97`。协议源码/target/JAR字节相同，协议SHA256为`f4d90242bced855f38ecfb040a5de0952f30f9a90bbe1095b208759e795e8365`，新deployment.jar SHA256为`c6b4637cbc83551c421bf3086b1facb5853f870c00e4b57c2a9a33269e465e74`。30部署组、3AI族、4平台族及5完整宿主模块来源与打包核验通过；五个宿主JAR全字节未变，实际局部JUnit JVM的54个有效CP入口、3210文件已重新绑定，仅协议资源和该测试class与236不同。这不是实服业务或JVM逐类CodeSource验证。
+
+离线包核验首次路径比较未规范化`..`，第二次严格字符串又受Java目录大小写影响；保留两份失败脚本后改用Windows规范路径及samefile身份核验，通过后没有重跑Maven或产品。终态正常用户CIM核32组已观察精确PID/创建时间均退出，没有强杀；仅按原marker、绝对路径和无重解析检查清除四个自有TMP/UDS目录。
+
+## 交付与下一步
+
+实际源码位于用户既有未提交迁移树。为隔离本轮增量，提交`patches/AGENT-CAPACITY-PLANNING-237.patch`和本记录，不整份暂存未跟踪源码或吞入迁移；patch对当前工作树reverse check通过。原字节、3310项前后清单、失败证据、定点报告、新包metadata与CP位于`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/agent-capacity-planning-237/`。
+
+238仅准备一个File Transfer FULL入口，执行开关仍关闭，必须用本轮新源码、包、CP及当前直接真人授权重新绑定后才能运行；不复用234计划或恢复已结任务。模型自行观察当前容量并规划，每个动作独批、新grant；浏览器和BUSINESS.md标准业务、持久化及产品STOP/DISABLE仍待实服验证，原自动64KiB smoke不能替代64MiB完整标准。两项目完成后分别核FULL/cache/APP，再按原阈值讨论；最终同一冻结版本、全新服务器八项目无中途改代码复验目标未变。
