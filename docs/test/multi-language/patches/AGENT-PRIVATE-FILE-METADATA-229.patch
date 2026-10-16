@@ -1,0 +1,541 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+@@ -103,6 +103,151 @@
+             var reason = Reason.valueOf(fields[2].substring("REASON=".length()));
+             if (stage != reason.stage) return Optional.empty();
+             return Optional.of(new Rejection(stage, reason));
++        } catch (IllegalArgumentException invalid) {
++            return Optional.empty();
++        }
++    }
++
++    public enum FileRole {DEPLOYER, AGENT_TASK, WORKSPACE_DEVICE, WORKSPACE_LIMIT, PURPOSE, WORKSPACE_IMAGE, AGENT_MODE, SOURCE_ARCHIVE}
++
++    public enum MetadataStatus {OBSERVED, UNOBSERVED, UNCONFIRMED}
++
++    public enum FileKind {REGULAR, DIRECTORY, SYMLINK, OTHER, UNCONFIRMED}
++
++    public enum RootOwner {ROOT, NON_ROOT, UNCONFIRMED}
++
++    public enum GroupOtherWrite {NO, YES, UNCONFIRMED}
++
++    public enum FileLinks {SINGLE, MULTIPLE, UNCONFIRMED}
++
++    /** New-time metadata only; neither ownership admission nor a compensation receipt. */
++    public record FileMetadata(FileRole role, MetadataStatus status, FileKind kind, RootOwner owner,
++                               GroupOtherWrite groupOtherWrite, FileLinks links) {
++        public FileMetadata {
++            java.util.Objects.requireNonNull(role);
++            java.util.Objects.requireNonNull(status);
++            java.util.Objects.requireNonNull(kind);
++            java.util.Objects.requireNonNull(owner);
++            java.util.Objects.requireNonNull(groupOtherWrite);
++            java.util.Objects.requireNonNull(links);
++            if (status == MetadataStatus.OBSERVED
++                ? kind == FileKind.UNCONFIRMED || owner == RootOwner.UNCONFIRMED || groupOtherWrite == GroupOtherWrite.UNCONFIRMED || links == FileLinks.UNCONFIRMED
++                : kind != FileKind.UNCONFIRMED || owner != RootOwner.UNCONFIRMED || groupOtherWrite != GroupOtherWrite.UNCONFIRMED || links != FileLinks.UNCONFIRMED)
++                throw new IllegalArgumentException("Invalid private-file metadata classification");
++        }
++
++        private String line() {
++            return "ROLE=" + role + ";STATUS=" + status + ";KIND=" + kind + ";OWNER=" + owner + ";GROUP_OTHER_WRITE=" + groupOtherWrite + ";LINKS=" + links;
++        }
++
++        private boolean accepted() {
++            return status == MetadataStatus.OBSERVED && kind == FileKind.REGULAR && owner == RootOwner.ROOT
++                && groupOtherWrite == GroupOtherWrite.NO && links == FileLinks.SINGLE;
++        }
++    }
++
++    public static CommandRequest fileMetadataRequest(DeploymentAgentPreparationCompensation.Captured captured) {
++        byte[] input = fileMetadataScript(captured).getBytes(StandardCharsets.UTF_8);
++        try {
++            return new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, input, Duration.ofSeconds(30), 4096);
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
++    }
++
++    public static String fileMetadataRequestDigest(DeploymentAgentPreparationCompensation.Captured captured) {
++        try (var request = fileMetadataRequest(captured)) {
++            return DeploymentAgentPreparationAbsence.hash(RemoteActions.command(new ServerId(captured.snapshot().identity().server()),
++                captured.snapshot().identity().configurationDigest(), request).exactAction());
++        }
++    }
++
++    /** Keeps the original probe and its persisted request digests byte-for-byte unchanged. */
++    public static String fileMetadataScript(DeploymentAgentPreparationCompensation.Captured captured) {
++        String original = DeploymentAgentPreparationProbe.script(captured.absenceBinding());
++        String declaration = "candidate='" + captured.workspace().candidateRoot() + "'";
++        int end = original.indexOf(declaration);
++        if (end < 1 || original.indexOf(declaration, end + 1) >= 0)
++            throw new IllegalStateException("Fixed metadata guards are unavailable");
++        return original.substring(0, end) + declaration + "\n" + """
++            # Companion observation only: no original preparation or cleanup admission.
++            exec 2>/dev/null
++            parent_ok=1
++            for tool in /usr/bin/stat /usr/bin/readlink /usr/bin/id; do
++              trusted_executable "$tool"
++              [ "$checked" = SAFE ] || parent_ok=0
++            done
++            if [ "$parent_ok" = 1 ]; then
++              [ "$(/usr/bin/id -u)" = 0 ] && [ "${SUDO_USER:-root}" = root ] || parent_ok=0
++              managed_parents "$candidate"
++              [ "$checked" = SAFE ] || parent_ok=0
++              path_metadata "$candidate" directory
++              [ "$checked" = SAFE ] || parent_ok=0
++            fi
++            mutable_ok=0
++            if [ "$parent_ok" = 1 ]; then
++              path_metadata "$candidate/mutable" directory
++              [ "$checked" != SAFE ] || mutable_ok=1
++            fi
++            printf 'FORMAT=WTL_AGENT_PRIVATE_FILE_METADATA_1\\n'
++            metadata_exit=0
++            metadata_file() {
++              local role="$1" file="$2" allowed="$3" record= status=UNCONFIRMED kind=UNCONFIRMED owner=UNCONFIRMED group_other_write=UNCONFIRMED links=UNCONFIRMED
++              local raw_kind= raw_uid= raw_gid= raw_mode= raw_links=
++              if [ "$allowed" = 1 ]; then
++                if record=$(LC_ALL=C /usr/bin/stat -c '%F:%u:%g:%a:%h' -- "$file"); then
++                  if [ "${#record}" -le 256 ] && [[ "$record" != *$'\\n'* ]] && [[ "$record" != *$'\\r'* ]] &&
++                    [[ "$record" =~ ^[^:]+:(0|[1-9][0-9]{0,19}):(0|[1-9][0-9]{0,19}):[0-7]{3,4}:[1-9][0-9]{0,19}$ ]]; then
++                    IFS=: read -r raw_kind raw_uid raw_gid raw_mode raw_links <<< "$record"
++                    status=OBSERVED
++                    case "$raw_kind" in 'regular file' | 'regular empty file') kind=REGULAR ;; directory) kind=DIRECTORY ;; 'symbolic link') kind=SYMLINK ;; *) kind=OTHER ;; esac
++                    owner=NON_ROOT; [ "$raw_uid:$raw_gid" != 0:0 ] || owner=ROOT
++                    group_other_write=YES; (( (8#$raw_mode & 022) != 0 )) || group_other_write=NO
++                    links=MULTIPLE; [ "$raw_links" != 1 ] || links=SINGLE
++                  fi
++                else
++                  status=UNOBSERVED
++                fi
++              fi
++              if [ "$status:$kind:$owner:$group_other_write:$links" != OBSERVED:REGULAR:ROOT:NO:SINGLE ]; then metadata_exit=64; fi
++              printf 'ROLE=%s;STATUS=%s;KIND=%s;OWNER=%s;GROUP_OTHER_WRITE=%s;LINKS=%s\\n' "$role" "$status" "$kind" "$owner" "$group_other_write" "$links"
++            }
++            metadata_file DEPLOYER "$candidate/.deployer" "$parent_ok"
++            metadata_file AGENT_TASK "$candidate/.agent-task" "$parent_ok"
++            metadata_file WORKSPACE_DEVICE "$candidate/.workspace-device" "$parent_ok"
++            metadata_file WORKSPACE_LIMIT "$candidate/.workspace-limit" "$parent_ok"
++            metadata_file PURPOSE "$candidate/.purpose" "$parent_ok"
++            metadata_file WORKSPACE_IMAGE "$candidate/.workspace.ext4" "$parent_ok"
++            metadata_file AGENT_MODE "$candidate/.agent-mode" "$parent_ok"
++            metadata_file SOURCE_ARCHIVE "$candidate/mutable/source.tar.gz" "$mutable_ok"
++            exit "$metadata_exit"
++            """;
++    }
++
++    /** Strict finite protocol; raw values and parser exceptions never leave this method. */
++    public static Optional<java.util.List<FileMetadata>> fileMetadata(CommandResult result) {
++        if (result == null || result.truncated() || result.exitCode().isEmpty() || !result.stderr().isEmpty()
++            || result.stdout().length() > 4096 || !java.util.Set.of(0, 64).contains(result.exitCode().orElseThrow()))
++            return Optional.empty();
++        String[] lines = result.stdout().split("\n", -1);
++        if (lines.length != FileRole.values().length + 2 || !lines[0].equals("FORMAT=WTL_AGENT_PRIVATE_FILE_METADATA_1")
++            || !lines[lines.length - 1].isEmpty()) return Optional.empty();
++        try {
++            var rows = new java.util.ArrayList<FileMetadata>();
++            for (var role : FileRole.values()) {
++                String[] fields = lines[role.ordinal() + 1].split(";", -1);
++                if (fields.length != 6 || !fields[0].equals("ROLE=" + role)
++                    || !fields[1].startsWith("STATUS=") || !fields[2].startsWith("KIND=") || !fields[3].startsWith("OWNER=")
++                    || !fields[4].startsWith("GROUP_OTHER_WRITE=") || !fields[5].startsWith("LINKS="))
++                    return Optional.empty();
++                var row = new FileMetadata(role, MetadataStatus.valueOf(fields[1].substring(7)), FileKind.valueOf(fields[2].substring(5)),
++                    RootOwner.valueOf(fields[3].substring(6)), GroupOtherWrite.valueOf(fields[4].substring(18)), FileLinks.valueOf(fields[5].substring(6)));
++                if (!row.line().equals(lines[role.ordinal() + 1])) return Optional.empty();
++                rows.add(row);
++            }
++            if (result.exitCode().orElseThrow() != (rows.stream().allMatch(FileMetadata::accepted) ? 0 : 64))
++                return Optional.empty();
++            return Optional.of(java.util.List.copyOf(rows));
+         } catch (IllegalArgumentException invalid) {
+             return Optional.empty();
+         }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -416,6 +416,7 @@
+                 allowed.add(DeploymentAgentPartialPreparationProbe.requestDigest(view, true));
+                 allowed.add(DeploymentAgentProjectChannel.originalCleanupRequestDigest(task.id(), server.id(), saved.identity().configurationDigest(), member.workspace()));
+             }
++            allowed.add(DeploymentAgentPartialPreparationProbe.fileMetadataRequestDigest(captured.view(captured.pending())));
+             var evidence = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence() {
+                 public Map<String, ?> facts(gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
+                                             gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext actual) throws ApiException {
+@@ -429,8 +430,8 @@
+ 
+                 public String reviewInstructions() {
+                     return "Review this complete exact original-task candidate-set observation or compensation. Each action requires its own independent decision and new grant. "
+-                        + "Only bounded original ownership/absence observations and original candidate cleanup are eligible; active or unconfirmed ownership remains UNKNOWN. "
+-                        + "Archive SHA, frozen source SHA and original plan/configuration have distinct roles. No prepare, build, publication or persistent/shared data deletion is authorized. "
++                        + "Only bounded original ownership/absence observations, a separately reviewed companion file-metadata observation, and original candidate cleanup are eligible; active or unconfirmed ownership remains UNKNOWN. "
++                        + "Companion metadata describes only its new observation time and cannot settle an earlier refusal or authorize cleanup. Archive SHA, frozen source SHA and original plan/configuration have distinct roles. No prepare, build, publication or persistent/shared data deletion is authorized. "
+                         + "The bound set and product consumer do not assert remote success or authorize an action.";
+                 }
+ 
+@@ -530,7 +531,7 @@
+             public String reviewInstructions() {
+                 return "Review the complete fixed product request for this single original failed preparation. Archive SHA identifies tar.gz bytes; "
+                     + "snapshot SHA identifies the frozen source tree; configuration SHA identifies model policy. They have distinct roles. "
+-                    + "Only read-only bounded ownership/absence observations and the exact original candidate cleanup are admitted. "
++                    + "Only read-only bounded ownership/absence observations, a separately reviewed new-time file-metadata observation that cannot authorize cleanup, and the exact original candidate cleanup are admitted. "
+                     + "No preparation, build, publication, application or persistent/shared data changes are authorized. "
+                     + "Missing/partial/mismatched archive, active build or unknown ownership remains UNKNOWN.";
+             }
+@@ -541,6 +542,7 @@
+                 String digest = DeploymentAgentPreparationAbsence.hash(gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(
+                     server, captured.snapshot().identity().configurationDigest(), request).exactAction());
+                 if (actual != task || !Set.of(DeploymentAgentPartialPreparationProbe.requestDigest(captured, false),
++                    DeploymentAgentPartialPreparationProbe.fileMetadataRequestDigest(captured),
+                     DeploymentAgentPartialPreparationProbe.requestDigest(captured, true), DeploymentAgentProjectChannel.originalCleanupRequestDigest(
+                         task.id(), server.id(), captured.snapshot().identity().configurationDigest(), captured.workspace())).contains(digest))
+                     throw new ApiException(problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_PARTIAL_REQUEST_CHANGED"));
+@@ -589,13 +591,78 @@
+                 step = "EXECUTE";
+                 executeInvoked = true;
+                 result = session.execute(request, grant.value().orElseThrow());
+-                return result != null && result.outcome() == TaskResult.SUCCEEDED ? result.value().orElse(null) : null;
+             } catch (Exception unavailable) {
+                 failure = unavailable;
+                 throw unavailable;
+             } finally {
+                 partialObservationDiagnostic(task, captured, after, DeploymentAgentPreparationAbsence.hash(intent.exactAction()),
+                     approved, executeInvoked, result, step, failure);
++            }
++            if (!after && result != null && result.outcome() == TaskResult.FAILED && result.value().isPresent()
++                && !task.cancelToken().requested() && !Thread.currentThread().isInterrupted()
++                && DeploymentAgentPartialPreparationProbe.rejection(result.value().orElseThrow())
++                .filter(value -> value.stage() == DeploymentAgentPartialPreparationProbe.Stage.FILES
++                    && value.reason() == DeploymentAgentPartialPreparationProbe.Reason.NON_PRIVATE_FILE).isPresent())
++                observePrivateFileMetadata(task, captured, session, server, reviewed, guard, DeploymentAgentPreparationAbsence.hash(intent.exactAction()));
++            return result != null && result.outcome() == TaskResult.SUCCEEDED ? result.value().orElse(null) : null;
++        }
++    }
++
++    /** A separately reviewed new-time observation; never changes the original result or progress. */
++    private void observePrivateFileMetadata(TaskContext task, DeploymentAgentPreparationCompensation.Captured captured, RemoteSession session,
++                                            ServerId server, ModContext reviewed,
++                                            gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard,
++                                            String originalRequestSha256) {
++        OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> approved = null;
++        OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> result = null;
++        boolean executeInvoked = false;
++        boolean bindingVerified = false;
++        String requestSha256 = "UNCONFIRMED";
++        try (var request = DeploymentAgentPartialPreparationProbe.fileMetadataRequest(captured)) {
++            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, captured.snapshot().identity().configurationDigest(), request)
++                .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPartialPreparationProbe.OPERATION, Set.of(
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "directory", captured.workspace().candidateRoot()),
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "host-prerequisites", "fixed-system-metadata-only"))));
++            requestSha256 = DeploymentAgentPreparationAbsence.hash(intent.exactAction());
++            guard.verify();
++            approved = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
++            if (approved.outcome() != TaskResult.SUCCEEDED || approved.value().isEmpty() || task.cancelToken().requested() || Thread.currentThread().isInterrupted())
++                return;
++            guard.verify();
++            executeInvoked = true;
++            var grant = approved.value().orElseThrow();
++            result = session.execute(request, grant);
++            guard.verify();
++            bindingVerified = true;
++        } catch (Exception unavailable) {
++            if (unavailable instanceof InterruptedException) Thread.currentThread().interrupt();
++            // Diagnostic failure cannot replace the original refusal or authorize cleanup.
++        } finally {
++            try {
++                var details = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
++                details.put("task", task.id().toString()).put("prepareEvent", captured.preparation().id())
++                    .put("originalRequestSha256", originalRequestSha256).put("requestSha256", requestSha256)
++                    .put("observationTime", "NEW_COMPANION_OBSERVATION").put("cleanupEvidence", false)
++                    .put("approveOutcome", approved == null ? "NOT_RETURNED" : approved.outcome().name())
++                    .put("executeInvoked", executeInvoked).put("executeOutcome", result == null ? "NOT_RETURNED" : result.outcome().name())
++                    .put("bindingVerified", bindingVerified);
++                if (bindingVerified && result != null && (result.outcome() == TaskResult.SUCCEEDED || result.outcome() == TaskResult.FAILED) && result.value().isPresent()) {
++                    var observed = result.value().orElseThrow();
++                    details.put("stdoutSha256", DeploymentAgentPreparationAbsence.hash(observed.stdout()))
++                        .put("stderrSha256", DeploymentAgentPreparationAbsence.hash(observed.stderr()));
++                    DeploymentAgentPartialPreparationProbe.fileMetadata(observed).ifPresent(rows -> {
++                        var items = details.putArray("files");
++                        for (var row : rows)
++                            items.addObject().put("role", row.role().name()).put("status", row.status().name())
++                                .put("kind", row.kind().name()).put("owner", row.owner().name()).put("groupOtherWrite", row.groupOtherWrite().name()).put("links", row.links().name());
++                    });
++                }
++                var target = context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
++                context.logs().write(target, new LogEvent(LogLevel.INFO, "DEPLOYMENT_AGENT_PARTIAL_FILE_METADATA", "partial.metadata",
++                    Optional.of(details.toString()), Optional.of(task.id()), Optional.of(task.id()),
++                    result == null ? Optional.empty() : Optional.of(result.outcome())));
++            } catch (Exception unavailable) {
++                // Do not alter original refusal, cancellation or progress when storage fails.
+             }
+         }
+     }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+@@ -323,6 +323,116 @@
+         return DeploymentAgentPreparationCompensation.capture(task, new DeploymentAgentActionLog.Snapshot(identity, "UNKNOWN", 4), layout, events).orElseThrow();
+     }
+ 
++    @Test
++    void privateFileMetadataObservationReportsOnlyFixedSameCallFacts() throws Exception {
++        var captured = captured();
++        String originalDigest = DeploymentAgentPartialPreparationProbe.requestDigest(captured, false);
++        for (String condition : List.of("SAFE", "DIRECTORY", "SYMLINK", "HARDLINK", "MISSING", "MODE", "OWNER", "STAT_FAIL", "MALFORMED", "MUTABLE_LINK", "PARENTS")) {
++            String name = "metadata-" + UUID.randomUUID();
++            String prefix = """
++                candidate="$fixture_path/CASE_NAME"
++                calls="$fixture_path/CASE_NAME.calls"
++                mkdir -p "$candidate/mutable"
++                for file in .deployer .agent-task .workspace-device .workspace-limit .purpose .workspace.ext4 .agent-mode mutable/source.tar.gz; do
++                  printf 'public-body-FAKE_SECRET_MARKER' > "$candidate/$file"
++                done
++                condition='CONDITION'
++                case "$condition" in
++                  DIRECTORY) rm "$candidate/.deployer"; mkdir "$candidate/.deployer" ;;
++                  SYMLINK) rm "$candidate/.agent-task"; ln -s .purpose "$candidate/.agent-task" ;;
++                  HARDLINK) rm "$candidate/.workspace.ext4"; ln "$candidate/.purpose" "$candidate/.workspace.ext4" ;;
++                  MISSING) rm "$candidate/.purpose" ;;
++                  MUTABLE_LINK) mv "$candidate/mutable" "$candidate/other"; ln -s other "$candidate/mutable" ;;
++                esac
++                trusted_executable() { checked=SAFE; }
++                fixture_id() { printf '0\\n'; }
++                managed_parents() { checked=SAFE; [ "$condition" != PARENTS ] || checked=UNSAFE; }
++                path_metadata() { checked=UNSAFE; [ ! -L "$1" ] && [ -d "$1" ] && checked=SAFE; return 0; }
++                fixture_stat() {
++                  printf '1\\n' >> "$calls"
++                  if [ "$condition" = STAT_FAIL ] && [[ "$4" = */.workspace.ext4 ]]; then printf 'FAKE_SECRET_MARKER' >&2; return 1; fi
++                  if [ "$condition" = MALFORMED ] && [[ "$4" = */.workspace.ext4 ]]; then printf 'FAKE_SECRET_MARKER\\n'; return 0; fi
++                  local value kind uid gid mode links
++                  value=$(/usr/bin/stat "$@") || return 1
++                  IFS=: read -r kind uid gid mode links <<< "$value"
++                  # Windows/root and mode are explicit fixture substitutes; type and nlink use real GNU stat.
++                  uid=0; gid=0; mode=444
++                  if [ "$condition" = MODE ] && [[ "$4" = */.workspace.ext4 ]]; then mode=777; fi
++                  if [ "$condition" = OWNER ] && [[ "$4" = */.workspace.ext4 ]]; then uid=42; fi
++                  printf '%s:%s:%s:%s:%s\\n' "$kind" "$uid" "$gid" "$mode" "$links"
++                }
++                """.replace("CASE_NAME", name).replace("CONDITION", condition);
++            String script = "fixture_path=$(pwd -P)\n" + DeploymentAgentPartialPreparationProbe.fileMetadataScript(captured)
++                .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/id", "fixture_id")
++                .replace("# Companion observation only:", prefix + "\n# Companion observation only:");
++            var result = bash(script, false, true);
++            var observed = new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
++            var rows = DeploymentAgentPartialPreparationProbe.fileMetadata(observed).orElseThrow(() -> new AssertionError(condition + ":" + result));
++            assertEquals(8, rows.size());
++            assertFalse(DeploymentAgentPartialPreparationProbe.present(captured, observed));
++            assertFalse(DeploymentAgentPartialPreparationProbe.absent(captured, observed));
++            assertFalse(result.output().contains("FAKE_SECRET_MARKER"));
++            assertEquals("", result.error());
++            assertFalse(result.output().contains(name));
++            var image = rows.get(5);
++            switch (condition) {
++                case "SAFE" -> assertEquals(0, result.exitCode());
++                case "DIRECTORY" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.FileKind.DIRECTORY, rows.get(0).kind());
++                case "SYMLINK" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.FileKind.SYMLINK, rows.get(1).kind());
++                case "HARDLINK" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.FileLinks.MULTIPLE, image.links());
++                case "MISSING" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.MetadataStatus.UNOBSERVED, rows.get(4).status());
++                case "MODE" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.GroupOtherWrite.YES, image.groupOtherWrite());
++                case "OWNER" -> assertEquals(DeploymentAgentPartialPreparationProbe.RootOwner.NON_ROOT, image.owner());
++                case "STAT_FAIL" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.MetadataStatus.UNOBSERVED, image.status());
++                case "MALFORMED" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.MetadataStatus.UNCONFIRMED, image.status());
++                case "MUTABLE_LINK" ->
++                    assertEquals(DeploymentAgentPartialPreparationProbe.MetadataStatus.UNCONFIRMED, rows.get(7).status());
++                case "PARENTS" ->
++                    assertTrue(rows.stream().allMatch(row -> row.status() == DeploymentAgentPartialPreparationProbe.MetadataStatus.UNCONFIRMED));
++                default -> throw new AssertionError(condition);
++            }
++            if (!condition.equals("SAFE")) assertEquals(64, result.exitCode());
++            var counter = root.resolve(name + ".calls");
++            assertEquals(condition.equals("PARENTS") ? 0 : condition.equals("MUTABLE_LINK") ? 7 : 8,
++                Files.exists(counter) ? Files.readAllLines(counter).size() : 0, "One lstat per permitted role, no re-query");
++            Files.deleteIfExists(counter);
++        }
++        assertEquals(originalDigest, DeploymentAgentPartialPreparationProbe.requestDigest(captured, false));
++    }
++
++    @Test
++    void privateFileMetadataProtocolRejectsMalformedAndForeignOutput() {
++        String output = privateMetadataOutput();
++        var good = new CommandResult(Optional.of(0), output, "", false);
++        assertTrue(DeploymentAgentPartialPreparationProbe.fileMetadata(good).isPresent());
++        String rejected = output.replaceFirst("KIND=REGULAR", "KIND=SYMLINK");
++        assertTrue(DeploymentAgentPartialPreparationProbe.fileMetadata(new CommandResult(Optional.of(64), rejected, "", false)).isPresent());
++        for (String invalid : List.of(output + "password=FAKE_SECRET_MARKER\n", output.replace("DEPLOYER", "OTHER_ROLE"),
++            output.replace("KIND=REGULAR", "KIND=FAKE_SECRET_MARKER"), output.replace("STATUS=OBSERVED", "STATUS=UNOBSERVED"),
++            output.replace("ROLE=AGENT_TASK", "ROLE=DEPLOYER"), output.replace("GROUP_OTHER_WRITE=NO", "GROUP_OTHER_WRITE=NO;RAW=password"),
++            output.replace("\n", "\r\n"), output.stripTrailing(), output.replace("ROOT", "ROOT\u0000"), output.repeat(8)))
++            assertTrue(DeploymentAgentPartialPreparationProbe.fileMetadata(new CommandResult(Optional.of(0), invalid, "", false)).isEmpty());
++        for (var invalid : List.of(new CommandResult(Optional.empty(), output, "", false), new CommandResult(Optional.of(1), output, "", false),
++            new CommandResult(Optional.of(64), output, "", false), new CommandResult(Optional.of(0), output, "password=FAKE_SECRET_MARKER", false),
++            new CommandResult(Optional.of(0), output, "", true)))
++            assertTrue(DeploymentAgentPartialPreparationProbe.fileMetadata(invalid).isEmpty());
++    }
++
++    private static String privateMetadataOutput() {
++        var output = new StringBuilder("FORMAT=WTL_AGENT_PRIVATE_FILE_METADATA_1\n");
++        for (var role : DeploymentAgentPartialPreparationProbe.FileRole.values())
++            output.append("ROLE=").append(role)
++                .append(";STATUS=OBSERVED;KIND=REGULAR;OWNER=ROOT;GROUP_OTHER_WRITE=NO;LINKS=SINGLE\n");
++        return output.toString();
++    }
++
+     private Result bash(String input, boolean syntaxOnly) throws Exception {
+         return bash(input, syntaxOnly, false);
+     }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+@@ -797,6 +797,59 @@
+         events.add(new DeploymentAgentActionLog.Event(events.size() + 1L, type, action, detail));
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {"OBSERVED", "DENY", "GUARD_CHANGED", "EXECUTE_UNKNOWN", "DIAGNOSTIC_LOG_FAILURE"})
++    void companionMetadataObservationKeepsFrozenProgressAndRequiresFreshIndependentReview(String condition) throws Exception {
++        for (String scenario : condition.equals("GUARD_CHANGED") ? List.of("GUARD_CHANGED", "GUARD_AFTER_SDK") : List.of(condition)) {
++            for (boolean multi : condition.equals("OBSERVED") ? List.of(true, false) : List.of(true)) {
++                try (var f = new Frame(DeploymentRemoteLayout.original(), multi)) {
++                    f.metadataCondition = scenario;
++                    var events = f.journal.events(f.task);
++                    var captured = multi ? f.multiCapture().view(f.multiCapture().pending()) : f.capture();
++                    f.metadataRequestSha = DeploymentAgentPartialPreparationProbe.fileMetadataRequestDigest(captured);
++                    f.metadataStdinSha = DeploymentAgentPreparationAbsence.hash(DeploymentAgentPartialPreparationProbe.fileMetadataScript(captured));
++                    String originalRequest = DeploymentAgentPartialPreparationProbe.requestDigest(captured, false);
++                    TaskCheckpoint.Snapshot frozen = null;
++                    if (multi) {
++                        var all = f.multiCapture();
++                        var progress = DeploymentAgentMultiPreparationCompensation.Progress.open(f.context, f.task, all);
++                        progress.before(all.members().getFirst(), new CommandResult(Optional.of(0), "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n", "", false));
++                        frozen = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot();
++                    }
++                    var result = f.recover();
++                    assertEquals(TaskResult.UNKNOWN, result.outcome(), f.reviewDiagnostic(result));
++                    assertEquals(events, f.journal.events(f.task));
++                    assertEquals(0, f.deletes);
++                    assertEquals(originalRequest, DeploymentAgentPartialPreparationProbe.requestDigest(captured, false));
++                    assertFalse(originalRequest.equals(f.metadataRequestSha));
++                    assertTrue(f.metadataReviewCalls > 0, "A new independent review must read this distinct exact request");
++                    assertEquals(scenario.equals("DENY") || scenario.equals("GUARD_CHANGED") ? 0 : 1, f.metadataExecutions);
++                    if (f.metadataExecutions > 0) assertFalse(f.originalPrivateGrant.equals(f.metadataSdkGrant));
++                    if (multi) {
++                        var retained = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot();
++                        assertEquals(frozen.payload(), retained.payload());
++                        assertEquals(frozen.revision() + 1, retained.revision(), "Only the ordinary completed-member before observation advances; companion never writes progress");
++                        assertFalse(retained.released());
++                    }
++                    assertTrue(f.partialDiagnostics().stream().anyMatch(e -> e.details().orElse("").contains("NON_PRIVATE_FILE")));
++                    assertEquals(1, f.metadataDiagnosticAttempts);
++                    var diagnostics = f.nativeAi.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_FILE_METADATA")).toList();
++                    if (condition.equals("DIAGNOSTIC_LOG_FAILURE")) assertTrue(diagnostics.isEmpty());
++                    else {
++                        assertEquals(1, diagnostics.size());
++                        var data = JSON.readTree(diagnostics.getFirst().details().orElseThrow());
++                        assertEquals("NEW_COMPANION_OBSERVATION", data.path("observationTime").asText());
++                        assertFalse(data.path("cleanupEvidence").asBoolean());
++                        assertEquals(originalRequest, data.path("originalRequestSha256").asText());
++                        assertEquals(f.metadataRequestSha, data.path("requestSha256").asText());
++                        assertEquals(condition.equals("OBSERVED"), data.has("files"));
++                        assertFalse(data.toString().contains("FAKE_SECRET_MARKER"));
++                    }
++                }
++            }
++        }
++    }
++
+     static final class Frame implements AutoCloseable {
+         final NativeAiFixture nativeAi = new NativeAiFixture();
+ 
+@@ -847,6 +900,22 @@
+         int partialExecutions;
+ 
+         String observationCondition = "";
++
++        String metadataCondition = "";
++
++        String metadataRequestSha = "";
++
++        String metadataStdinSha = "";
++
++        int metadataExecutions;
++
++        int metadataReviewCalls;
++
++        int metadataDiagnosticAttempts;
++
++        UUID originalPrivateGrant;
++
++        UUID metadataSdkGrant;
+ 
+         boolean failPartialDiagnostic;
+ 
+@@ -973,6 +1042,8 @@
+                     }
+                     UUID grant = UUID.randomUUID();
+                     if (multi) multiGrantIds.add(grant);
++                    if (!metadataRequestSha.isEmpty() && metadataRequestSha.equals(DeploymentAgentPreparationAbsence.hash(intent.exactAction())) && metadataCondition.equals("GUARD_CHANGED"))
++                        observedFingerprint = "changed-fingerprint";
+                     if (multi && intent.exactAction().contains("candidate-query-task") && multiCondition.equals("STATUS_AFTER_APPROVAL"))
+                         journal.event(task, "AGENT_OBSERVATION", "", "changed");
+                     yield success(new ApprovalGrant(grant));
+@@ -989,6 +1060,25 @@
+                     if (body.isEmpty() && request.script().contains("' probe"))
+                         yield success(new CommandResult(Optional.of(0), "HELPER=1\nPROTOCOL=" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PROTOCOL_VERSION
+                             + "\nSHA256=" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.helperSha256(layout) + "\n", "", false));
++
++                    if (body.contains("FORMAT=WTL_AGENT_PRIVATE_FILE_METADATA_1")) {
++                        metadataExecutions++;
++                        assertEquals(metadataRequestSha, DeploymentAgentPreparationAbsence.hash(gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request).exactAction()));
++                        metadataSdkGrant = ((ApprovalGrant) args[1]).id();
++                        var output = new StringBuilder("FORMAT=WTL_AGENT_PRIVATE_FILE_METADATA_1\n");
++                        for (var role : DeploymentAgentPartialPreparationProbe.FileRole.values())
++                            output.append("ROLE=").append(role)
++                                .append(";STATUS=OBSERVED;KIND=REGULAR;OWNER=ROOT;GROUP_OTHER_WRITE=NO;LINKS=SINGLE\n");
++                        var value = new CommandResult(Optional.of(0), output.toString(), "", false);
++                        if (metadataCondition.equals("GUARD_AFTER_SDK")) observedFingerprint = "changed-fingerprint";
++                        yield metadataCondition.equals("EXECUTE_UNKNOWN") ? new OperationResult<>(TaskResult.UNKNOWN, Optional.of(value), Optional.of(observationProblem())) : success(value);
++                    }
++                    if (!metadataCondition.isEmpty() && body.contains("WTL_AGENT_UPLOADED_PREPARATION_1")) {
++                        originalPrivateGrant = ((ApprovalGrant) args[1]).id();
++                        observedCommand = new CommandResult(Optional.of(64), "", "FORMAT=WTL_AGENT_PARTIAL_REJECTION_1\nSTAGE=FILES\nREASON=NON_PRIVATE_FILE\n", false);
++                        yield new OperationResult<>(TaskResult.FAILED, Optional.of(observedCommand), Optional.of(observationProblem()));
++                    }
++
+                     if (multi) yield multiExecute(request, body);
+                     if (request.script().contains("'candidate-cleanup-task'")) {
+                         deletes++;
+@@ -1070,9 +1160,12 @@
+                                     .put("part", part).put("offset", offset).put("limit", 2500).toString()));
+                         }
+                     }
++                    boolean metadataReview = !metadataStdinSha.isEmpty() && metadataStdinSha.equals(input.path("executableInput").path("stdin").path("sha256").asText());
++                    if (metadataReview) metadataReviewCalls++;
+                     if (calls.isEmpty()) {
+                         String decision = denyCleanup && deletes == 0 && sent == 2 || observationCondition.equals("MODEL_DENY") && sent == 1
+-                            || multi && multiCondition.equals("DENY") && input.path("executableInput").path("script").path("text").asText().contains("candidate-cleanup-task") ? "DENY" : "APPROVE";
++                            || multi && multiCondition.equals("DENY") && input.path("executableInput").path("script").path("text").asText().contains("candidate-cleanup-task")
++                            || metadataReview && metadataCondition.equals("DENY") ? "DENY" : "APPROVE";
+                         calls.add(new AiToolCall(UUID.randomUUID().toString(), "submit_result", "{\"decision\":\"" + decision
+                             + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled complete fixed request\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
+                     }
+@@ -1097,6 +1190,11 @@
+                 case "register" -> nativeAi.context.logs().register((LogCategory) args[0]);
+                 case "write" -> {
+                     var event = (LogEvent) args[1];
++                    if (event.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_FILE_METADATA")) {
++                        metadataDiagnosticAttempts++;
++                        if (metadataCondition.equals("DIAGNOSTIC_LOG_FAILURE"))
++                            throw new IllegalStateException("password=FAKE_SECRET_MARKER");
++                    }
+                     if (event.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_OBSERVATION")) {
+                         partialDiagnosticAttempts++;
+                         if (failPartialDiagnostic) throw new IllegalStateException("password=FAKE_PASSWORD_MARKER");

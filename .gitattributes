@@ -39,3 +39,5 @@ docs/test/multi-language/patches/MODEL-COMMAND-RECEIPT-CONTRACT-222.patch -text
 docs/test/multi-language/patches/AGENT-MULTIPREPARE-RECOVERY-224.patch -text
 
 docs/test/multi-language/patches/AGENT-RECOVERY-CHECKPOINT-CONTRACT-227.patch -text
+
+docs/test/multi-language/patches/AGENT-PRIVATE-FILE-METADATA-229.patch -text
