@@ -1,0 +1,231 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainInputEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainInputEvidence.java
+@@ -49,7 +49,7 @@
+     private DeploymentAgentToolchainInputEvidence() {
+     }
+ 
+-    /** Derived metadata only; complete executable bytes remain in the current request. / 仅派生元数据，完整可执行字节保留在当前请求中。 */
++    /** Product-derived bindings and the pinned source for installed invocations; no safety verdict or permission. / 产品派生绑定及已安装调用的固定源，不代表安全裁决或许可。 */
+     public record Evidence(Map<String, Object> facts) {
+         public Evidence {
+             facts = Map.copyOf(facts);
+@@ -281,6 +281,16 @@
+             facts.put("decodedTypedInput", decoded);
+             facts.put("originalAction", pending.deepCopy());
+             facts.put("sourcePointer", phase.equals("install") ? "/completeExecutableInput" : "/exactAction");
++            if (phase.equals("prepare") || phase.equals("bind")) {
++                String source = DeploymentAgentToolchainPrograms.controller(layout);
++                byte[] sourceBytes = source.getBytes(StandardCharsets.UTF_8);
++                String sourceSha = sha256(sourceBytes);
++                if (!sourceSha.equals(facts.get("sourceSha256")) || !sourceSha.equals(index.path("sourceSha256").asText())
++                    || !Integer.valueOf(sourceBytes.length).equals(facts.get("sourceBytes")))
++                    throw new IllegalArgumentException("Rendered installed source differs from its original binding");
++                facts.put("controllerSource", Map.of("text", source, "sha256", sourceSha, "utf8Bytes", sourceBytes.length,
++                    "evidencePointer", "/" + DeploymentAgentToolchainProgramStore.FIELD + "/controllerSource/text"));
++            }
+             facts.put("exactActionSha256", sha256(exact.getBytes(StandardCharsets.UTF_8)));
+             return Optional.of(new Evidence(facts));
+         } finally {
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainInputEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainInputEvidenceTest.java
+@@ -27,26 +27,54 @@
+ 
+     private static final String OPERATION = "a".repeat(32);
+ 
+-    @Test
+-    void installedEntrypointsRequireOriginalActionObservationAndEveryExactInput() throws Exception {
+-        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void installedEntrypointsRequireOriginalActionObservationAndEveryExactInput(boolean customLayout) throws Exception {
++        var originalLayout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        var layout = customLayout ? new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++            new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
++                "/srv/source-evidence/lib", "/srv/source-evidence/apps", "/srv/source-evidence/state",
++                "/srv/source-evidence/config", "/srv/source-evidence/data")) : originalLayout;
++        if (customLayout) assertThrows(IllegalArgumentException.class, () ->
++            new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
++                "/srv/源码/lib", "/srv/源码/apps", "/srv/源码/state", "/srv/源码/config", "/srv/源码/data"));
++        var release = (ObjectNode) JSON.readTree(java.util.Base64.getDecoder().decode(
++            DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION)));
++        release.put("resolverSourceSha256", DeploymentAgentToolchainPrograms.sha256(DeploymentAgentToolchainPrograms.resolver(layout)));
++        String encodedRelease = java.util.Base64.getEncoder().encodeToString(JSON.writeValueAsBytes(release));
++        String encodedBinding = java.util.Base64.getEncoder().encodeToString(new String(
++            java.util.Base64.getDecoder().decode(DeploymentAgentToolchainCommandsTest.binding()), StandardCharsets.UTF_8)
++            .replace(originalLayout.toolchains(), layout.toolchains()).getBytes(StandardCharsets.UTF_8));
+         for (String phase : List.of("readiness", "install", "prepare", "bind")) {
+             var memory = new DeploymentAgentToolchainProgramStateTest.Memory();
+             var state = memory.state(SERVER, layout);
+             com.fasterxml.jackson.databind.JsonNode installation = null;
+             if (!phase.equals("readiness")) {
+                 var prior = state.begin("READINESS", "e".repeat(32), "original-readiness", null);
+-                installation = DeploymentAgentToolchainProgramStoreTest.observation(memory.id.toString(), "e".repeat(32), !phase.equals("install"));
++                installation = DeploymentAgentToolchainProgramStoreTest.observation(memory.id.toString(), "e".repeat(32), !phase.equals("install"), layout);
+                 state.finish(prior, DeploymentAgentToolchainProgramStateTest.success("AGENT_CONTROLLER_STORE=" + installation + "\n"), true, installation);
+             }
+-            List<String> args = phase.equals("prepare") ? List.of("prepare", "RUST", "1.95", "1.95.0", "100", "-", OPERATION, DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", OPERATION))
+-                : phase.equals("bind") ? List.of("bind", DeploymentAgentToolchainCommandsTest.binding(), "100", OPERATION) : List.of();
++            List<String> args = phase.equals("prepare") ? List.of("prepare", "RUST", "1.95", "1.95.0", "100", "-", OPERATION, encodedRelease)
++                : phase.equals("bind") ? List.of("bind", encodedBinding, "100", OPERATION) : List.of();
+             var current = DeploymentAgentToolchainProgramStoreTest.current(phase, memory.id.toString(), OPERATION, args, layout);
+             state.begin(phase.toUpperCase(java.util.Locale.ROOT), OPERATION, current.path("exactAction").asText(), installation);
+             var receipts = JSON.valueToTree(memory.receipts(SERVER, layout));
+             var selected = DeploymentAgentToolchainInputEvidence.selectInstalled(current, layout, receipts, memory.id.toString()).orElseThrow().facts();
+             assertEquals(phase, selected.get("phase"));
+             assertFalse(selected.containsKey("approved"));
++            if (phase.equals("prepare") || phase.equals("bind")) {
++                var source = JSON.valueToTree(selected).path("controllerSource");
++                byte[] expected = DeploymentAgentToolchainPrograms.controller(layout).getBytes(StandardCharsets.UTF_8);
++                assertArrayEquals(expected, source.path("text").asText().getBytes(StandardCharsets.UTF_8));
++                String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(expected));
++                assertEquals(digest, source.path("sha256").asText());
++                assertEquals(selected.get("sourceSha256"), source.path("sha256").asText());
++                assertEquals(expected.length, source.path("utf8Bytes").asInt());
++                assertEquals("/" + DeploymentAgentToolchainProgramStore.FIELD + "/controllerSource/text", source.path("evidencePointer").asText());
++                assertEquals("/exactAction", selected.get("sourcePointer"));
++                if (customLayout)
++                    assertNotEquals(DeploymentAgentToolchainPrograms.controller(), source.path("text").asText());
++            } else assertFalse(selected.containsKey("controllerSource"));
+             for (String mutation : List.of("script", "stdin", "target", "version", "source", "task", "receipt", "kind")) {
+                 var changed = current.deepCopy();
+                 var changedReceipts = receipts.deepCopy();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -724,6 +724,137 @@
+         assertEquals(1, f.grants.size());
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {"prepare", "bind"})
++    void installedControllerSourcePagesReachOnlyItsMatchedIndependentReview(String phase) throws Exception {
++        var f = new Frame();
++        var layout = DeploymentRemoteLayout.original();
++        DeploymentConfigCapture.remoteLayout(f.tasks, f.task, layout);
++        Files.writeString(root.resolve("README.md"), "application source only\n");
++        f.sources.put("original", new DeploymentSourceBrowser(root, REVISION));
++        String action = "a".repeat(32);
++        List<String> arguments = phase.equals("prepare")
++            ? List.of("prepare", "RUST", "1.95", "1.95.0", "100", "-", action,
++            gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainReleaseTest.encoded("RUST", "1.95", "1.95.0", action))
++            : List.of("bind", gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.binding(), "100", action);
++        var current = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.current(
++            phase, f.task.id().toString(), action, arguments, layout, SERVER);
++        var retained = new gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStateTest.Memory(f.task.id());
++        var observation = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.observation(
++            f.task.id().toString(), "e".repeat(32), true);
++        retained.observed(SERVER, layout, observation);
++        retained.pending(SERVER, layout, phase.toUpperCase(java.util.Locale.ROOT), action, current.path("exactAction").asText(), observation);
++        f.retainedReceipts = retained.receipts(SERVER, layout);
++        String field = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStore.FIELD;
++        String pointer = "/" + field + "/controllerSource/text";
++        String expected = DeploymentAgentToolchainPrograms.controller(layout);
++        byte[] expectedBytes = expected.getBytes(StandardCharsets.UTF_8);
++        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(expectedBytes));
++        String script = current.path("exactAction").asText().split("\\nscript:\\n", 2)[1];
++        var collected = new StringBuilder();
++        int[] calls = {0}, offset = {0};
++        String[] pending = {""};
++        f.model = request -> {
++            assertTrue(f.grants.isEmpty());
++            var fixed = currentReview(request);
++            var source = fixed.path("currentRequest").path(field).path("controllerSource");
++            var descriptor = fixed.path("evidencePages").path(pointer);
++            assertEquals(descriptor, source.path("text"));
++            assertEquals("evidence", descriptor.path("tool").asText());
++            assertEquals(pointer, descriptor.at("/arguments/pointer").asText());
++            assertEquals(pointer, source.path("evidencePointer").asText());
++            assertEquals("UTF16_CODE_UNITS", descriptor.path("cursorUnit").asText());
++            assertEquals(expected.length(), descriptor.path("characters").asInt());
++            assertEquals(digest, descriptor.path("sha256").asText());
++            assertEquals(digest, source.path("sha256").asText());
++            assertEquals(expectedBytes.length, source.path("utf8Bytes").asInt());
++            assertEquals("/exactAction", fixed.path("currentRequest").path(field).path("sourcePointer").asText());
++            assertEquals(observation.path("version"), fixed.path("currentRequest").path(field).path("originalAction").path("index").path("version"));
++            if (calls[0]++ == 0) {
++                assertFalse(request.messages().stream().anyMatch(message -> message.text().contains(expected)));
++                return List.of(
++                    call("source_list", Map.of("component", "original", "sourceRevision", REVISION, "subject", "", "offset", 0, "limit", 100)),
++                    call("source_search", Map.of("component", "original", "sourceRevision", REVISION, "subject", "PROGRAM_SOURCE", "offset", 0, "line", 0, "limit", 100)),
++                    call("request", Map.of("part", "script", "offset", 0, "limit", 8000)),
++                    call("request", Map.of("part", "stdin", "offset", 0, "limit", 1)));
++            }
++            if (calls[0] == 2) {
++                var results = request.messages().stream().flatMap(message -> message.toolResult().stream()).toList();
++                var index = JSON.readTree(results.get(results.size() - 4).text()).path("value");
++                assertEquals(List.of("README.md"), JSON.convertValue(index.path("paths"), List.class));
++                assertTrue(index.path("metadataOnly").asBoolean());
++                assertTrue(JSON.readTree(results.get(results.size() - 3).text()).at("/value/matches").isEmpty());
++                assertEquals("", JSON.readTree(results.getLast().text()).at("/value/text").asText());
++                var page = JSON.readTree(results.get(results.size() - 2).text()).path("value");
++                assertEquals(script.substring(0, Math.min(8000, script.length())), page.path("text").asText());
++                if (page.path("hasMore").asBoolean()) {
++                    pending[0] = "SCRIPT";
++                    return List.of(call("request", Map.of("part", "script", "offset", page.path("next").asInt(), "limit", 8000)));
++                }
++            } else if (pending[0].equals("SCRIPT")) {
++                var page = JSON.readTree(lastToolResult(request).text()).path("value");
++                assertFalse(page.path("hasMore").asBoolean());
++                assertEquals(script.substring(8000), page.path("text").asText());
++            } else {
++                assertEquals("SOURCE", pending[0]);
++                var page = JSON.readTree(lastToolResult(request).text()).path("value");
++                assertEquals(offset[0], page.path("offset").asInt());
++                assertEquals(digest, page.path("sha256").asText());
++                assertEquals(expected.length(), page.path("total").asInt());
++                collected.append(page.path("text").asText());
++                offset[0] = page.path("next").asInt();
++                assertEquals(collected.length(), offset[0]);
++            }
++            if (offset[0] < expected.length()) {
++                pending[0] = "SOURCE";
++                return List.of(call(descriptor.path("tool").asText(),
++                    Map.of("pointer", pointer, "offset", offset[0], "limit", 4000)));
++            }
++            assertEquals(expected, collected.toString());
++            assertTrue(java.util.Arrays.equals(expectedBytes, collected.toString().getBytes(StandardCharsets.UTF_8)));
++            assertEquals(digest, DeploymentAgentInputs.hash(collected.toString()));
++            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++        };
++        var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) f.scope(true).interaction();
++        var targets = new HashSet<ActionTarget>();
++        for (var item : current.path("resourceTargets")) targets.add(JSON.treeToValue(item, ActionTarget.class));
++        try (var command = new CommandRequest(script, new byte[0], Duration.ofSeconds(60), 65536)) {
++            var intent = RemoteActions.command(SERVER, "c".repeat(64), command).withSemantics(new ActionSemantics(current.path("operation").asText(), targets));
++            var denied = assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
++            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
++            int completedCalls = f.fixture.requests.size();
++            assertThrows(ApiException.class, () -> review.approveCommand(intent, command, f.task));
++            assertEquals(completedCalls, f.fixture.requests.size(), "An unchanged CLOSED denial is not reopened");
++            var changedArguments = new ArrayList<>(arguments);
++            changedArguments.set(phase.equals("prepare") ? 4 : 2, "101");
++            var changed = gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainProgramStoreTest.current(
++                phase, f.task.id().toString(), action, changedArguments, layout, SERVER);
++            try (var changedCommand = new CommandRequest(changed.path("exactAction").asText().split("\\nscript:\\n", 2)[1],
++                new byte[0], Duration.ofSeconds(60), 65536)) {
++                var changedIntent = RemoteActions.command(SERVER, "c".repeat(64), changedCommand)
++                    .withSemantics(new ActionSemantics(changed.path("operation").asText(), targets));
++                assertThrows(ApiException.class, () -> review.approveCommand(changedIntent, changedCommand, f.task));
++                assertEquals(completedCalls, f.fixture.requests.size(), "Changed argv cannot borrow the old action's observation or grant");
++            }
++        }
++        assertEquals(expected, collected.toString());
++        assertTrue(f.grants.isEmpty());
++        int completedCalls = f.fixture.requests.size();
++        f.model = request -> {
++            var fixed = currentReview(request);
++            assertFalse(fixed.path("currentRequest").has(field));
++            assertFalse(fixed.path("evidencePages").has(pointer));
++            assertFalse(request.messages().stream().anyMatch(message -> message.text().contains(expected)));
++            return List.of(call("submit_result", JSON.readValue(DENY, Map.class)));
++        };
++        try (var unrelated = f.command("printf unrelated", "")) {
++            var denied = assertThrows(ApiException.class, () -> review.approveCommand(f.intent(unrelated, "deployment.helper.probe.v1"), unrelated, f.task));
++            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", denied.problem().eventCode());
++        }
++        assertEquals(completedCalls + 1, f.fixture.requests.size());
++        assertTrue(f.grants.isEmpty());
++    }
++
+     private static DeploymentRemoteLayout inlineLayout() {
+         return new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths("/srv/inline/lib", "/srv/inline/apps", "/srv/inline/state", "/srv/inline/config", "/srv/inline/data"));
+     }
