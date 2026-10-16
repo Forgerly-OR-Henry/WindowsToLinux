@@ -1,0 +1,979 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/contract/DeploymentAgentInputs.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/contract/DeploymentAgentInputs.java
+index 988cb1fd054ac4fae28884b4541a877118d43ebf..45e88bebca057efa28465368071d71908c832c25 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/contract/DeploymentAgentInputs.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/contract/DeploymentAgentInputs.java
+@@ -6,6 +6,8 @@
+ import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAuthorizationPolicy;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+ 
+ /** Immutable agent input and original target identity helpers. / 不可变Agent输入及原目标身份工具。 */
+ public final class DeploymentAgentInputs {
+@@ -71,6 +73,12 @@
+         }
+     }
+ 
++    /** Preserves the original Agent release derivation; the artifact and release identify different objects. */
++    public static String publicationReleaseIdentity(String artifact, String sourceRevision, String configuration,
++                                                     DeploymentRuntimeDefinition runtime, DeploymentResourceBindings resources) {
++        return hash("agent-release:" + artifact + ":" + sourceRevision + ":" + configuration + ":" + runtime + ":" + resources);
++    }
++
+     /** Builds a stable physical target description from the original host facts. / 从原主机事实建立稳定物理目标说明。
+      * @param server exact original target server / 精确原目标服务器
+      * @return stable original physical target description / 稳定原物理目标说明 */
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentPublicationEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentPublicationEvidence.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d71277d04f50dd587d0da2d11e98844964ea8784
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentPublicationEvidence.java
+@@ -0,0 +1,327 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.review;
++
++import java.time.Duration;
++import java.util.*;
++import java.util.stream.Collectors;
++
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.*;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract;
++import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishArguments;
++import gold.debug.windowstolinux.mod.deployment.linux.runtime.*;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts;
++import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentWorkspaceBinding;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.secret.DeploymentSecretRef;
++import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
++
++/** Invocation-local identities from the actual original publication objects; never a verdict or remote observation. */
++public final class DeploymentAgentPublicationEvidence implements DeploymentCurrentCommandEvidence {
++    private static final String PUBLISH = "deployment.publication.publish.v1";
++
++    private final DeploymentCommandReviewScope original;
++    private final RemoteSession session;
++    private final ServerId server;
++    private final TaskContext task;
++    private final String configuration;
++    private final DeploymentRemoteLayout layout;
++    private final DeploymentAgentActionLog journal;
++    private final DeploymentAgentActionLog.Snapshot snapshot;
++    private final DeploymentAgentActionLog.Event source;
++    private final String profile;
++    private final Map<String, Selection> selections;
++    private Pending pending;
++    private boolean stopped;
++
++    private record Selection(DeploymentApplicationGraph.Part part, DeploymentUnitCommit commit,
++                             DeploymentGraphPublisher.Candidate candidate, DeploymentRemoteWorkspace workspace,
++                             Map<String, DeploymentAgentActionLog.Event> receipts) {
++    }
++
++    private record Pending(ActionIntent intent, String component) {
++    }
++
++    public DeploymentAgentPublicationEvidence(DeploymentCommandReviewScope original, RemoteSession session, ServerId server,
++                                                TaskContext task, String configuration, DeploymentPublishResult proposal,
++                                                Map<String, DeploymentGraphPublisher.Candidate> candidates,
++                                                Map<String, DeploymentRemoteWorkspace> workspaces,
++                                                DeploymentAgentActionLog journal) throws Exception {
++        this.original = Objects.requireNonNull(original);
++        this.session = Objects.requireNonNull(session);
++        this.server = Objects.requireNonNull(server);
++        this.task = Objects.requireNonNull(task);
++        this.configuration = Objects.requireNonNull(configuration);
++        this.journal = Objects.requireNonNull(journal);
++        layout = proposal.graph().components().getFirst().unit().layout();
++        snapshot = journal.find(task).orElseThrow();
++        var events = journal.events(task);
++        source = originalSource(events);
++        profile = profile(events);
++        var selected = new LinkedHashMap<String, Selection>();
++        for (var part : proposal.graph().components()) {
++            var commit = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
++            var candidate = Objects.requireNonNull(candidates.get(part.componentId()));
++            var workspace = Objects.requireNonNull(workspaces.get(part.componentId()));
++            require(part.unit().server().equals(server) && part.unit().layout().equals(layout)
++                && part.unit().equals(DeploymentUnitIdentity.forManaged(part.unit().id(), server, part.unit().ownershipManifestSha256(), layout))
++                && commit.release().unitId().equals(part.unit().id()), "Publication unit changed");
++            selected.put(part.componentId(), new Selection(part, commit, candidate, workspace, receipts(events, part, candidate)));
++        }
++        require(selected.keySet().equals(candidates.keySet()) && selected.keySet().equals(workspaces.keySet())
++            && proposal.units().size() == selected.size(), "Publication graph changed");
++        selections = Map.copyOf(selected);
++        requireBinding();
++    }
++
++    @Override
++    public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
++        pending = null;
++        if (!covered(intent)) return Map.of();
++        try {
++            require(supplied == task, "Foreign publication task");
++            requireBinding();
++            var selected = select(intent, request);
++            pending = new Pending(intent, selected.part().componentId());
++            var unit = selected.part().unit();
++            var candidate = selected.candidate();
++            var facts = new LinkedHashMap<String, Object>();
++            facts.put("phase", "PRE_EXECUTION_PUBLICATION_IDENTITY");
++            facts.put("authority", "NONE");
++            facts.put("task", task.id().toString());
++            facts.put("server", server.id());
++            facts.put("component", selected.part().componentId());
++            facts.put("candidateRoot", selected.workspace().candidateRoot());
++            facts.put("layoutSha256", layout.digest());
++            facts.put("exactActionSha256", DeploymentAgentInputs.hash(intent.exactAction()));
++            facts.put("operation", PUBLISH);
++            facts.put("resourceTarget", Map.of("kind", "deployment-release", "id", unit.releaseRoot()));
++            facts.put("positionalArguments", List.of(argument(1, "applicationId", unit.id()),
++                argument(2, "candidateId", candidate.candidateId()), argument(3, "releaseSha256", selected.commit().release().sha256()),
++                argument(4, "expectedOwnershipManifestSha256", unit.ownershipManifestSha256())));
++            facts.put("ownerMeaning", "Expected owner value in this original proposal, whether newly proposed or reused; not an observation that the remote owner exists or matches");
++            facts.put("businessRevisionRole", "The selected sealed artifact is used as this publication command's businessRevision; equality here is intentional");
++            facts.put("sourceArchiveSha256", source.action());
++            facts.put("originalSnapshotManifestSha256", source.detail());
++            facts.put("sourceEventId", source.id());
++            facts.put("currentProtectedTreeRevision", candidate.sourceRevision());
++            facts.put("sealedArtifactSha256", candidate.artifactSha256());
++            facts.put("toolchainBindingSha256", candidate.toolchainBindingSha256());
++            facts.put("configurationSha256", selected.commit().configuration().sha256());
++            facts.put("runtimeSha256", DeploymentAgentInputs.hash(selected.part().reviewedRuntime().toString()));
++            facts.put("resourcesSha256", DeploymentAgentInputs.hash(selected.part().resources().toString()));
++            facts.put("releaseSha256", selected.commit().release().sha256());
++            facts.put("releaseDerivation", "SHA256 UTF-8(agent-release: + artifact + : + currentSource + : + configuration + : + original runtime.toString() + : + original resources.toString())");
++            facts.put("receiptEventIds", selected.receipts().entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, value -> value.getValue().id())));
++            facts.put("comparedMetadataRelationships", List.of("command application/candidate/release/owner == this selected original proposal",
++                "command config/runtime/resource/tool arguments == this selected original proposal",
++                "command businessRevision == selected sealed artifact == SEALED_ARTIFACT.detail",
++                "candidate sourceRevision == CURRENT_SOURCE.detail; seal execution/result bind that same revision and artifact",
++                "workspace archive == SOURCE.action; SOURCE.detail is a separate snapshot-manifest identity",
++                "proposal release == recomputed original Agent release derivation"));
++            facts.put("completedLocalChecks", "MATCHED_CURRENT_ORIGINAL_PUBLICATION_OBJECTS_AND_RETAINED_RECEIPTS");
++            facts.put("independentAppReview", "NOT_DECIDED_BY_THIS_PROJECTION");
++            facts.put("hostSingleUseGrant", "NOT_GRANTED_BY_THIS_PROJECTION");
++            facts.put("remoteOwnerAndCurrent", "UNKNOWN_FOR_THIS_PENDING_REQUEST");
++            facts.put("publicationResult", "NO_RESULT_FOR_THIS_PENDING_REQUEST");
++            facts.put("secretBindingScope", "Only literal reference/revision/digest framing is matched; no secret plaintext is read and this projection does not verify secret contents or replace staging checks");
++            facts.put("stdinBytes", request.stdin().length);
++            return Map.of("publicationIdentity", Map.copyOf(facts));
++        } catch (Exception invalid) {
++            throw stop();
++        }
++    }
++
++    @Override
++    public void verify(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
++        if (!covered(intent)) return;
++        try {
++            require(supplied == task && pending != null && pending.intent().equals(intent), "Publication review changed");
++            requireBinding();
++            require(select(intent, request).part().componentId().equals(pending.component()), "Publication component changed");
++        } catch (Exception invalid) {
++            throw stop();
++        }
++    }
++
++    /** Called by the original send guard, after its existing checks and before the actual transport. */
++    public void verifyPendingBinding() throws ApiException {
++        if (pending != null) requireBinding();
++    }
++
++    @Override
++    public String reviewInstructions() {
++        if (pending == null || stopped) return "";
++        return "The product-owned currentCommandEvidence.publicationIdentity describes completed local comparisons for this exact pending original publication. "
++            + "After publish-deployment/container the first four arguments are application, candidate, derived release and expected ownership manifest. "
++            + "The release is derived from the sealed artifact, current source, configuration, runtime and resources; it need not equal the artifact or owner. "
++            + "The command businessRevision deliberately equals its selected sealed artifact. Owner is a proposal value, not observed remote ownership. "
++            + "SOURCE archive, snapshot manifest and CURRENT_SOURCE protected tree identify different objects. This evidence is not remote success, secret verification, an APP verdict or host authority. "
++            + "Review the complete command and remaining staging/ownership/runtime checks independently; APP may still DENY and every accepted action still needs its own host grant.";
++    }
++
++    private Selection select(ActionIntent intent, CommandRequest request) {
++        require(request.timeout().equals(Duration.ofSeconds(120)) && request.outputLimitBytes() == 4096 && request.stdin().length == 0,
++            "Publication request frame changed");
++        String body = DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
++        var words = literalWords(body);
++        require(words.size() >= 11 && words.getFirst().equals(layout.helperPath()), "Publication invocation changed");
++        var selected = selections.values().stream().filter(value -> value.part().unit().id().equals(words.get(2))).findFirst().orElseThrow();
++        var unit = selected.part().unit();
++        var candidate = selected.candidate();
++        var runtime = selected.part().reviewedRuntime();
++        String verb = runtime instanceof DeploymentRuntimeDefinition.Container ? "publish-container" : "publish-deployment";
++        require(words.get(1).equals(verb), "Publication backend changed");
++        int count = canonicalCount(words.get(10));
++        require(count == selected.commit().secrets().size() && count <= (words.size() - 11) / 3, "Publication secret references changed");
++        var secrets = new LinkedHashMap<DeploymentSecretRef, String>();
++        for (int index = 0; index < count; index++) {
++            int offset = 11 + index * 3;
++            String revision = words.get(offset + 1), digest = words.get(offset + 2);
++            require(revision.matches("[1-9][0-9]*") && digest.matches("[0-9a-f]{64}"), "Publication secret framing changed");
++            var reference = new DeploymentSecretRef(words.get(offset), Long.parseLong(revision));
++            require(secrets.put(reference, digest) == null, "Duplicate publication secret reference");
++        }
++        require(secrets.keySet().equals(Set.copyOf(selected.commit().secrets())), "Publication secret references changed");
++        var expected = new ArrayList<>(List.of(layout.helperPath(), verb, unit.id(), candidate.candidateId(), selected.commit().release().sha256(),
++            unit.ownershipManifestSha256(), "identity-v2", runtime.identityPolicy().name(), DeploymentWorkloadArguments.payload(runtime)));
++        expected.addAll(DeploymentPublishArguments.inputs(selected.commit().configuration().sha256(), secrets));
++        expected.addAll(DeploymentPublishArguments.content(unit.id(), selected.part().resources(), layout));
++        if (candidate.hasTools()) expected.addAll(List.of("tools-v1", candidate.toolchainBindingSha256()));
++        if (runtime instanceof DeploymentRuntimeDefinition.Container container) expected.addAll(DeploymentContainerArguments.from(container));
++        else expected.addAll(DeploymentRuntimeArguments.from(null, runtime));
++        require(words.equals(expected), "Publication arguments differ from original objects");
++        var expectedIntent = RemoteActions.command(server, candidate.artifactSha256(), request).withSemantics(new ActionSemantics(PUBLISH,
++            Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
++        require(expectedIntent.equals(intent), "Publication intent differs from original objects");
++        return selected;
++    }
++
++    private void requireBinding() throws ApiException {
++        try {
++            require(!stopped, "Publication evidence stopped");
++            var saved = journal.find(task).orElseThrow();
++            var events = journal.events(task);
++            require(snapshot.identity().equals(saved.identity()) && snapshot.executionSemantics() == saved.executionSemantics()
++                && saved.identity().server().equals(server.id()) && saved.identity().configurationDigest().equals(configuration)
++                && saved.identity().targetDigest().equals(DeploymentAgentInputs.targetDigest(server, session))
++                && profile.equals(DeploymentAgentInputs.targetProfile(original.servers().get(server, task)))
++                && profile.equals(profile(events)) && source.equals(originalSource(events))
++                && layout.equals(DeploymentAgentLayouts.original(original, task, saved.identity(), events)), "Original publication identity changed");
++            DeploymentFixedCommandApproval.requireRoute(original, task, configuration);
++            for (var selected : selections.values()) {
++                String component = selected.part().componentId();
++                require(selected.receipts().equals(receipts(events, selected.part(), selected.candidate()))
++                    && selected.workspace().equals(DeploymentAgentWorkspaceBinding.workspace(task.id(), saved, events,
++                        selected.part().unit().id(), source.action(), layout))
++                    && selected.workspace().candidateId().equals(selected.candidate().candidateId())
++                    && selected.commit().release().sha256().equals(DeploymentAgentInputs.publicationReleaseIdentity(
++                        selected.candidate().artifactSha256(), selected.candidate().sourceRevision(), selected.commit().configuration().sha256(),
++                        selected.part().reviewedRuntime(), selected.part().resources())), "Original component publication binding changed: " + component);
++            }
++        } catch (Exception changed) {
++            throw stop();
++        }
++    }
++
++    private static Map<String, DeploymentAgentActionLog.Event> receipts(List<DeploymentAgentActionLog.Event> events,
++                                                                       DeploymentApplicationGraph.Part part, DeploymentGraphPublisher.Candidate candidate) {
++        String component = part.componentId();
++        var values = new LinkedHashMap<String, DeploymentAgentActionLog.Event>();
++        for (String type : List.of("CANDIDATE", "CURRENT_SOURCE", "SEALED_ARTIFACT", "SEALED_TOOLS"))
++            values.put(type, latest(events, type, component));
++        String seal = DeploymentAgentInputs.hash(component + ":" + candidate.sourceRevision() + ":seal");
++        values.put("SEAL_EXECUTING", latest(events, "SEAL_EXECUTING", seal));
++        values.put("SEAL_RESULT", latest(events, "SEAL_RESULT", seal));
++        require(values.get("CANDIDATE").detail().equals(candidate.candidateId())
++            && values.get("CURRENT_SOURCE").detail().equals(candidate.sourceRevision())
++            && values.get("SEALED_ARTIFACT").detail().equals(candidate.artifactSha256())
++            && values.get("SEALED_TOOLS").detail().equals(candidate.toolchainBindingSha256() + ":" + candidate.hasTools())
++            && values.get("SEAL_EXECUTING").detail().equals(candidate.sourceRevision())
++            && values.get("SEAL_RESULT").detail().equals(candidate.artifactSha256())
++            && values.get("CANDIDATE").id() < values.get("CURRENT_SOURCE").id()
++            && values.get("CURRENT_SOURCE").id() < values.get("SEAL_EXECUTING").id()
++            && values.get("SEAL_EXECUTING").id() < values.get("SEAL_RESULT").id()
++            && values.get("SEAL_RESULT").id() < values.get("SEALED_ARTIFACT").id()
++            && values.get("SEALED_ARTIFACT").id() < values.get("SEALED_TOOLS").id(), "Original sealing receipts differ");
++        return Map.copyOf(values);
++    }
++
++    private static DeploymentAgentActionLog.Event latest(List<DeploymentAgentActionLog.Event> events, String type, String action) {
++        return events.stream().filter(value -> value.type().equals(type) && value.action().equals(action)).reduce((left, right) -> right).orElseThrow();
++    }
++
++    private static DeploymentAgentActionLog.Event originalSource(List<DeploymentAgentActionLog.Event> events) {
++        var sources = events.stream().filter(value -> value.type().equals("SOURCE")).toList();
++        require(sources.size() == 1 && sources.getFirst().action().matches("[0-9a-f]{64}") && sources.getFirst().detail().matches("[0-9a-f]{64}"),
++            "Original source receipt missing or conflicting");
++        return sources.getFirst();
++    }
++
++    private static String profile(List<DeploymentAgentActionLog.Event> events) {
++        return events.stream().filter(value -> value.type().equals("TARGET_PROFILE")).map(DeploymentAgentActionLog.Event::detail).distinct()
++            .reduce((left, right) -> { throw new IllegalStateException("Conflicting target profiles"); }).orElseThrow();
++    }
++
++    /** Only decodes the product's canonical shellQuote sequence; no general shell evaluation or whitespace tolerance. */
++    private static List<String> literalWords(String body) {
++        var words = new ArrayList<String>();
++        int offset = 0;
++        while (offset < body.length()) {
++            require(body.charAt(offset++) == '\'', "Noncanonical publication literal");
++            var value = new StringBuilder();
++            boolean closed = false;
++            while (offset < body.length()) {
++                if (body.startsWith("'\"'\"'", offset)) {
++                    value.append('\'');
++                    offset += 5;
++                } else if (body.charAt(offset) == '\'') {
++                    offset++;
++                    closed = true;
++                    break;
++                } else value.append(body.charAt(offset++));
++            }
++            require(closed, "Unclosed publication literal");
++            words.add(value.toString());
++            if (offset < body.length()) require(body.charAt(offset++) == ' ' && offset < body.length(), "Noncanonical publication separator");
++        }
++        require(!words.isEmpty() && body.equals(words.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(Collectors.joining(" "))),
++            "Noncanonical publication invocation");
++        return List.copyOf(words);
++    }
++
++    private static int canonicalCount(String value) {
++        require(value.matches("0|[1-9][0-9]*"), "Invalid publication count");
++        return Integer.parseInt(value);
++    }
++
++    private static Map<String, Object> argument(int position, String role, String value) {
++        return Map.of("position", position, "role", role, "value", value);
++    }
++
++    private static boolean covered(ActionIntent intent) {
++        return intent.semantics().map(value -> value.operation().equals(PUBLISH)).orElse(false);
++    }
++
++    private static void require(boolean condition, String message) {
++        if (!condition) throw new IllegalArgumentException(message);
++    }
++
++    private ApiException stop() {
++        stopped = true;
++        return new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_PUBLICATION_BINDING_CHANGED",
++            "Original publication identity or exact pending request could not be confirmed", Map.of("task", task.id().toString()), Optional.empty()));
++    }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+index c424349479dfd452d1addc470a93f840877d5db4..60b7b6011807c2fa268d71bbc86d450f4db6c4e0 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -1017,9 +1017,18 @@
+         var intent = new DeploymentPublishPlan(UUID.randomUUID(), project, plan.applicationId(), server,
+             DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, binding,
+             DeploymentOriginalPublishCommit.references(server, proposal, credentials), Instant.now());
+-        var outcome = originalCommit.execute(intent, proposal, ignored -> DeploymentAgentPublishRunner.run(
+-            context, session, server, original, configurationRevision, proposal, neutral, journal, beforeSend, remainingDecisions,
+-            resourceTools::releaseKnown, accepted -> failedPublication = new FailedPublication(accepted, proposal, neutral)), original);
++        var outcome = originalCommit.execute(intent, proposal, ignored -> {
++            var workspaces = new LinkedHashMap<String, DeploymentRemoteWorkspace>();
++            selected.forEach((id, candidate) -> workspaces.put(id, candidate.workspace()));
++            var evidence = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentPublicationEvidence(
++                context, session, server, original, configurationRevision, proposal, neutral, workspaces, journal);
++            return DeploymentAgentPublishRunner.run(context.withCurrentEvidence(evidence), session, server, original,
++                configurationRevision, proposal, neutral, journal, () -> {
++                    beforeSend.verify();
++                    evidence.verifyPendingBinding();
++                }, remainingDecisions, resourceTools::releaseKnown,
++                accepted -> failedPublication = new FailedPublication(accepted, proposal, neutral));
++        }, original);
+         if (outcome.outcome() != TaskResult.SUCCEEDED)
+             return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
+         return new OperationResult<>(TaskResult.SUCCEEDED,
+@@ -1086,8 +1095,8 @@
+                 runtime.identityPolicy(), runtime.workload());
+             var config = DeploymentConfigSnapshot.create(unit.id(), configs.nextRevision(task, unit.id()),
+                 "agent", now, DeploymentAgentRuntimeEnvironment.entries(runtime, component.configuration(), buildTools.executed(id)));
+-            String release = sha256("agent-release:" + artifacts.get(id) + ":" + revisions.get(id) + ":"
+-                + config.sha256() + ":" + runtime + ":" + component.resources());
++            String release = gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs.publicationReleaseIdentity(
++                artifacts.get(id), revisions.get(id), config.sha256(), runtime, component.resources());
+             graph.add(new DeploymentApplicationGraph.Part(id, unit, activation, component.dependencies(), runtime,
+                 component.resources().fileBindings().stream().map(DeploymentFileBinding::dataPath).toList(),
+                 component.resources()));
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentHealthEvidenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentHealthEvidenceTest.java
+index bfea5eee0e5dc59c3b65c7123f090270a396dd1a..05247c139c2db7fc9426d7342cd92ad1c66ee17f 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentHealthEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentHealthEvidenceTest.java
+@@ -47,6 +47,9 @@
+ import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
+ import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishChannel;
++import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentPublishArguments;
++import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentContainerArguments;
++import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentRuntimeArguments;
+ import gold.debug.windowstolinux.mod.deployment.linux.runtime.DeploymentWorkloadArguments;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentRecovery;
+@@ -54,6 +57,7 @@
+ import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
+ import gold.debug.windowstolinux.mod.deployment.service.core.delivery.*;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.*;
+ import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
+@@ -75,6 +79,125 @@
+     private static final String RELEASE = "e".repeat(64);
+ 
+     private static final String DENIAL = "Controlled original health target denial";
++
++    @Test
++    void publicationIdentityBindsDistinctDigestsWithoutClaimingObservedOwner() throws Exception {
++        for (String kind : List.of("HTTP", "CONTAINER")) {
++            var layout = kind.equals("CONTAINER") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
++                "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data")) : DeploymentRemoteLayout.original();
++            try (var frame = new Frame(kind, null, layout, true);
++                 var request = frame.publicationRequest("none")) {
++                var scope = frame.publicationScope();
++                var evidence = frame.publicationEvidence(scope);
++                var intent = frame.publicationIntent(request, "none");
++                var current = JSON.valueToTree(evidence.facts(intent, request, frame.task)).path("publicationIdentity");
++                var candidate = frame.candidates.get("backend");
++                var part = frame.part("backend");
++                var commit = frame.proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
++                assertEquals(DeploymentAgentInputs.hash("agent-release:" + candidate.artifactSha256() + ":" + candidate.sourceRevision()
++                    + ":" + commit.configuration().sha256() + ":" + part.reviewedRuntime() + ":" + part.resources()), frame.release("backend"));
++                assertNotEquals(frame.release("backend"), candidate.artifactSha256());
++                assertNotEquals(frame.release("backend"), part.unit().ownershipManifestSha256());
++                assertEquals(candidate.artifactSha256(), intent.revision());
++                assertEquals(SOURCE, current.path("originalSnapshotManifestSha256").asText());
++                assertEquals("6".repeat(64), current.path("currentProtectedTreeRevision").asText());
++                assertNotEquals(current.path("originalSnapshotManifestSha256"), current.path("currentProtectedTreeRevision"));
++                assertEquals(frame.release("backend"), current.path("positionalArguments").get(2).path("value").asText());
++                assertEquals("expectedOwnershipManifestSha256", current.path("positionalArguments").get(3).path("role").asText());
++                assertTrue(current.path("ownerMeaning").asText().contains("not an observation"));
++                assertEquals("NONE", current.path("authority").asText());
++                assertEquals("NO_RESULT_FOR_THIS_PENDING_REQUEST", current.path("publicationResult").asText());
++                assertEquals("NOT_DECIDED_BY_THIS_PROJECTION", current.path("independentAppReview").asText());
++                assertEquals("NOT_GRANTED_BY_THIS_PROJECTION", current.path("hostSingleUseGrant").asText());
++                assertEquals(6, current.path("receiptEventIds").size());
++                frame.journal.event(frame.task, "DECISION", "review", "APPROVE");
++                frame.journal.event(frame.task, "AGENT_ASSESSMENT", "publish", "Controlled append only bookkeeping");
++                evidence.verify(intent, request, frame.task);
++                evidence.verifyPendingBinding();
++                try (var second = frame.publicationRequest("frontend", "none")) {
++                    var next = frame.publicationIntent(second, "frontend", "none");
++                    assertEquals("frontend", JSON.valueToTree(evidence.facts(next, second, frame.task)).at("/publicationIdentity/component").asText());
++                    evidence.verify(next, second, frame.task);
++                    evidence.verifyPendingBinding();
++                }
++                try (var other = frame.healthRequest("none")) {
++                    assertTrue(evidence.facts(frame.healthIntent(other, "none"), other, frame.task).isEmpty());
++                    assertEquals("", evidence.reviewInstructions());
++                }
++                assertEquals(0, frame.aiRequests.size());
++                assertEquals(0, frame.hostAuthorizations);
++                assertEquals(0, frame.remoteExecutions);
++            }
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"missing-seal", "CURRENT_SOURCE", "SEALED_ARTIFACT", "CANDIDATE", "SEALED_TOOLS", "profile", "route",
++        "release", "owner", "candidate", "configuration", "runtime", "resources", "script", "server", "target", "task", "business", "noncanonical-unit", "layout"})
++    void publicationIdentityRejectsMissingOrChangedOriginalBindings(String change) throws Exception {
++        var layout = change.equals("layout") ? new DeploymentRemoteLayout(new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(
++            "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data")) : DeploymentRemoteLayout.original();
++        try (var frame = new Frame("HTTP", null, layout, true);
++             var request = frame.publicationRequest(change)) {
++            if (change.equals("noncanonical-unit")) {
++                var old = frame.part("backend");
++                var unit = old.unit();
++                var wrong = new DeploymentUnitIdentity(unit.id(), unit.server(), frame.part("frontend").unit().systemdUnit(), unit.releaseRoot(), unit.ownershipManifestSha256(), unit.layout());
++                var parts = frame.proposal.graph().components().stream().map(part -> part.componentId().equals("backend")
++                    ? new DeploymentApplicationGraph.Part(part.componentId(), wrong, part.runtime(), part.dependencies(), part.reviewedRuntime(), part.dataPaths(), part.resources()) : part).toList();
++                var commits = frame.proposal.units().stream().map(commit -> commit.unit().equals(unit)
++                    ? new DeploymentUnitCommit(wrong, commit.runtime(), commit.release(), commit.configuration(), commit.secrets()) : commit).toList();
++                var graph = frame.proposal.graph();
++                var changed = new DeploymentPublishResult(new DeploymentApplicationGraph(graph.applicationId(), graph.healthComponentId(), graph.healthCheck(), parts), commits);
++                assertThrows(IllegalArgumentException.class, () -> frame.publicationEvidence(frame.publicationScope(), changed));
++                assertTrue(frame.aiRequests.isEmpty());
++                assertEquals(0, frame.hostAuthorizations);
++                assertEquals(0, frame.remoteExecutions);
++                return;
++            }
++            var evidence = frame.publicationEvidence(frame.publicationScope());
++            if (change.equals("missing-seal")) {
++                try (var delete = frame.retained.prepareStatement("DELETE FROM deployment_agent_event WHERE task_id=? AND event_type='SEAL_RESULT'")) {
++                    delete.setString(1, frame.task.id().toString());
++                    delete.executeUpdate();
++                }
++            } else if (Set.of("CURRENT_SOURCE", "SEALED_ARTIFACT", "CANDIDATE", "SEALED_TOOLS", "profile", "route").contains(change))
++                frame.changeBinding(change);
++            else if (change.equals("layout")) frame.capturedLayout = DeploymentRemoteLayout.original();
++            var supplied = change.equals("task") ? proxy(TaskContext.class, (name, args) -> frame.task.id()) : frame.task;
++            assertThrows(ApiException.class, () -> evidence.facts(frame.publicationIntent(request, change), request, supplied));
++            assertEquals(0, frame.aiRequests.size());
++            assertEquals(0, frame.hostAuthorizations);
++            assertEquals(0, frame.remoteExecutions);
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"APP", "HOST", "SEND"})
++    void publicationBindingsAreRecheckedAfterAppHostAndBeforeSend(String boundary) throws Exception {
++        try (var frame = new Frame("HTTP", null, DeploymentRemoteLayout.original(), true);
++             var request = frame.publicationRequest("none")) {
++            var scope = frame.publicationScope();
++            var evidence = frame.publicationEvidence(scope);
++            var review = (DeploymentCommandReview) scope.withCurrentEvidence(evidence).interaction();
++            var intent = frame.publicationIntent(request, "none");
++            if (boundary.equals("APP")) frame.onPublicationReview = ignored -> frame.changeBinding("CURRENT_SOURCE");
++            if (boundary.equals("HOST")) frame.onPublicationHost = () -> frame.changeBinding("profile");
++            if (boundary.equals("SEND")) {
++                var grant = review.approveCommand(intent, request, frame.task);
++                assertEquals(TaskResult.SUCCEEDED, grant.outcome());
++                frame.changeBinding("SEALED_ARTIFACT");
++                assertThrows(ApiException.class, evidence::verifyPendingBinding);
++            } else {
++                assertThrows(ApiException.class, () -> review.approveCommand(intent, request, frame.task));
++                if (boundary.equals("APP")) assertEquals(0, frame.hostAuthorizations);
++            }
++            assertEquals(1, frame.aiRequests.size());
++            assertEquals(0, frame.remoteExecutions);
++            assertEquals(0, frame.healthDispatches);
++            assertEquals(0, frame.events("AI_PUBLICATION_VERIFIED"));
++        }
++    }
+ 
+     @Test
+     void localCompletionIsProducedByFactsBeforeAnyVerificationOrIndependentReview() throws Exception {
+@@ -1561,6 +1684,12 @@
+         private Runnable onStatusHost = () -> {
+         };
+ 
++        private Consumer<JsonNode> onPublicationReview = ignored -> {
++        };
++
++        private Runnable onPublicationHost = () -> {
++        };
++
+         private int statusQueries;
+ 
+         private int healthDispatches;
+@@ -1600,6 +1729,10 @@
+         }
+ 
+         Frame(String healthKind, DeploymentHealthCheck selectedHealth, DeploymentRemoteLayout layout) throws Exception {
++            this(healthKind, selectedHealth, layout, false);
++        }
++
++        Frame(String healthKind, DeploymentHealthCheck selectedHealth, DeploymentRemoteLayout layout, boolean publication) throws Exception {
+             this.layout = layout;
+             this.capturedLayout = layout;
+             try (var source = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
+@@ -1676,6 +1809,7 @@
+                 String operation = facts.path("operation").asText();
+                 if (operation.equals("deployment.publication.original-status.v1")) onStatusReview.accept(facts);
+                 if (operation.equals("deployment.publication.health.v1")) onHealthReview.accept(facts);
++                if (operation.equals("deployment.publication.publish.v1")) onPublicationReview.accept(facts);
+                 if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(operation))
+                     onRuntimeReview.accept(facts);
+                 if (reviewCallFailure != null) return reviewCallFailure;
+@@ -1700,6 +1834,8 @@
+                     onStatusHost.run();
+                 if (reviewFacts.getLast().path("operation").asText().equals("deployment.publication.health.v1"))
+                     onHealthHost.run();
++                if (reviewFacts.getLast().path("operation").asText().equals("deployment.publication.publish.v1"))
++                    onPublicationHost.run();
+                 if (Set.of("deployment.publication.inspect.v1", "deployment.publication.observe.v1").contains(
+                     reviewFacts.getLast().path("operation").asText())) onRuntimeHost.run();
+                 if (hostOutcome != TaskResult.SUCCEEDED)
+@@ -1774,30 +1910,41 @@
+                     ? new DeploymentRuntimeDefinition.Container(DeploymentRuntimeDefinition.ContainerEngineType.DOCKER, Map.of(18101, 18101), List.of(), health, policy, workload)
+                     : new DeploymentRuntimeDefinition.ManagedProcess(health, policy, workload);
+                 var config = new DeploymentUnitRuntimeConfig(health, Optional.empty(), policy, workload);
+-                parts.add(new DeploymentApplicationGraph.Part(component, unit, config, List.of(), runtime, List.of(),
+-                    new DeploymentResourceBindings(List.of(), Optional.of(List.of()))));
+-                units.add(new DeploymentUnitCommit(unit, config, new DeploymentCurrentRelease(unit.id(), backend ? RELEASE : "7".repeat(64), Instant.EPOCH),
+-                    DeploymentConfigSnapshot.create(unit.id(), 1, "v1", Instant.EPOCH, List.of()), List.of()));
+-                candidates.put(component, new DeploymentGraphPublisher.Candidate(unit.id() + "-0123456789abcdef", backend ? ARTIFACT : "8".repeat(64), SOURCE, "0".repeat(64), false, Map.of()));
++                var resources = new DeploymentResourceBindings(List.of(), Optional.of(List.of()));
++                var configuration = DeploymentConfigSnapshot.create(unit.id(), 1, "v1", Instant.EPOCH, List.of());
++                String artifact = backend ? ARTIFACT : "8".repeat(64), currentSource = publication ? "6".repeat(64) : SOURCE;
++                String release = publication ? DeploymentAgentInputs.publicationReleaseIdentity(artifact, currentSource, configuration.sha256(), runtime, resources)
++                    : backend ? RELEASE : "7".repeat(64);
++                parts.add(new DeploymentApplicationGraph.Part(component, unit, config, List.of(), runtime, List.of(), resources));
++                units.add(new DeploymentUnitCommit(unit, config, new DeploymentCurrentRelease(unit.id(), release, Instant.EPOCH), configuration, List.of()));
++                candidates.put(component, new DeploymentGraphPublisher.Candidate(unit.id() + "-0123456789abcdef", artifact, currentSource, "0".repeat(64), false, Map.of()));
+             }
+             var whole = new DeploymentHealthCheck.Http(URI.create("http://127.0.0.1:18100/"), 200, 120);
+             proposal = new DeploymentPublishResult(new DeploymentApplicationGraph("controlled", "frontend", whole, parts), units);
+-            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), DeploymentAgentInputs.targetDigest(server, remote), REVISION, "FULL_CONTROL", true));
++            journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), DeploymentAgentInputs.targetDigest(server, remote), REVISION,
++                publication ? "AUTOMATIC" : "FULL_CONTROL", !publication));
+             if (!layout.equals(DeploymentRemoteLayout.original()))
+                 gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.record(journal, task, server, layout);
+             journal.event(task, "TARGET_PROFILE", "", DeploymentAgentInputs.targetProfile(profile));
+             journal.event(task, "SOURCE", ARCHIVE, SOURCE);
+             for (String component : candidates.keySet()) {
+                 journal.event(task, "CANDIDATE", component, candidates.get(component).candidateId());
+-                journal.event(task, "CURRENT_SOURCE", component, SOURCE);
++                journal.event(task, "CURRENT_SOURCE", component, candidates.get(component).sourceRevision());
++                if (publication) {
++                    String seal = DeploymentAgentInputs.hash(component + ":" + candidates.get(component).sourceRevision() + ":seal");
++                    journal.event(task, "SEAL_EXECUTING", seal, candidates.get(component).sourceRevision());
++                    journal.event(task, "SEAL_RESULT", seal, candidates.get(component).artifactSha256());
++                }
+                 journal.event(task, "SEALED_ARTIFACT", component, candidates.get(component).artifactSha256());
+                 journal.event(task, "SEALED_TOOLS", component, "0".repeat(64) + ":false");
+             }
+             journal.event(task, "DELIVERY_EXECUTING", "f".repeat(64), "1");
+             journal.event(task, "AI_PUBLICATION", "controlled", "MODEL_GENERATED_COMMANDS");
+-            journal.event(task, "AI_PUBLICATION_VERIFIED", "controlled", "HEALTHY");
+-            journal.event(task, "AI_PUBLICATION_FINISHED", "controlled", "MODEL_ACCEPTED_VERIFIED_RESULT");
+-            journal.event(task, "CANDIDATE_CLEANUP_EXECUTING", "backend", candidates.get("backend").candidateId());
++            if (!publication) {
++                journal.event(task, "AI_PUBLICATION_VERIFIED", "controlled", "HEALTHY");
++                journal.event(task, "AI_PUBLICATION_FINISHED", "controlled", "MODEL_ACCEPTED_VERIFIED_RESULT");
++                journal.event(task, "CANDIDATE_CLEANUP_EXECUTING", "backend", candidates.get("backend").candidateId());
++            }
+             var executions = new DeploymentExecutionStore(db);
+             var id = new DeploymentExecutionIdentity(UUID.randomUUID(), taskId, Optional.empty(), "controlled", server, DeploymentExecutionIdentity.DeploymentExecutionMode.AGENT, SOURCE);
+             var references = DeploymentOriginalPublishCommit.references(server, proposal, Map.of());
+@@ -1806,9 +1953,67 @@
+                 executions.recordReference(task, id.executionId(), reference, UUID.randomUUID(), Instant.EPOCH);
+             executions.startEffects(task, id.executionId(), Instant.EPOCH.plusSeconds(1));
+             executions.recordPublicationTemplate(task, id.executionId(), new DeploymentPublishProposal(proposal.graph(), proposal.units()), Instant.EPOCH.plusSeconds(2));
+-            executions.recordUncommittedOutcome(task, id.executionId(), TaskResult.UNKNOWN,
+-                new Problem(ProblemCode.UNKNOWN, "CLEANUP_UNCONFIRMED", "Retained original cleanup", Map.of(), Optional.empty()), Instant.EPOCH.plusSeconds(3));
+-            journal.state(task, "UNKNOWN");
++            if (!publication) {
++                executions.recordUncommittedOutcome(task, id.executionId(), TaskResult.UNKNOWN,
++                    new Problem(ProblemCode.UNKNOWN, "CLEANUP_UNCONFIRMED", "Retained original cleanup", Map.of(), Optional.empty()), Instant.EPOCH.plusSeconds(3));
++                journal.state(task, "UNKNOWN");
++            }
++        }
++
++        DeploymentCommandReviewScope publicationScope() throws Exception {
++            return new DeploymentCommandReviewScope(context, context.interaction(), task, "AUTOMATIC", false, () -> REVISION);
++        }
++
++        DeploymentAgentPublicationEvidence publicationEvidence(DeploymentCommandReviewScope scope) throws Exception {
++            return publicationEvidence(scope, proposal);
++        }
++
++        DeploymentAgentPublicationEvidence publicationEvidence(DeploymentCommandReviewScope scope, DeploymentPublishResult selected) throws Exception {
++            var workspaces = new LinkedHashMap<String, DeploymentRemoteWorkspace>();
++            for (var part : selected.graph().components())
++                workspaces.put(part.componentId(), new DeploymentRemoteWorkspace(part.unit().id(), ARCHIVE, layout));
++            return new DeploymentAgentPublicationEvidence(scope, remote, server, task, REVISION, selected, candidates, workspaces, journal);
++        }
++
++        CommandRequest publicationRequest(String change) {
++            return publicationRequest("backend", change);
++        }
++
++        CommandRequest publicationRequest(String component, String change) {
++            var part = part(component);
++            var candidate = candidates.get(component);
++            var commit = proposal.units().stream().filter(value -> value.unit().equals(part.unit())).findFirst().orElseThrow();
++            var runtime = part.reviewedRuntime();
++            var values = new ArrayList<>(List.of(layout.helperPath(), runtime instanceof DeploymentRuntimeDefinition.Container ? "publish-container" : "publish-deployment",
++                part.unit().id(), candidate.candidateId(), commit.release().sha256(), part.unit().ownershipManifestSha256(),
++                "identity-v2", runtime.identityPolicy().name(), DeploymentWorkloadArguments.payload(runtime)));
++            values.addAll(DeploymentPublishArguments.inputs(commit.configuration().sha256(), Map.of()));
++            values.addAll(DeploymentPublishArguments.content(part.unit().id(), part.resources(), layout));
++            if (runtime instanceof DeploymentRuntimeDefinition.Container container) values.addAll(DeploymentContainerArguments.from(container));
++            else values.addAll(DeploymentRuntimeArguments.from(null, runtime));
++            switch (change) {
++                case "release" -> values.set(4, "f".repeat(64));
++                case "owner" -> values.set(5, "f".repeat(64));
++                case "candidate" -> values.set(3, part.unit().id() + "-fedcba9876543210");
++                case "configuration" -> values.set(9, "f".repeat(64));
++                case "runtime" -> values.set(7, "CONTAINER_NON_ROOT");
++                case "resources" -> values.set(11, "foreign-application");
++                default -> { }
++            }
++            String body = values.stream().map(DeploymentBuildCommandChannel::shellQuote).collect(java.util.stream.Collectors.joining(" "));
++            if (change.equals("script")) body += "; printf unexpected";
++            return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(body, layout), new byte[0], Duration.ofSeconds(120), 4096);
++        }
++
++        ActionIntent publicationIntent(CommandRequest request, String change) {
++            return publicationIntent(request, "backend", change);
++        }
++
++        ActionIntent publicationIntent(CommandRequest request, String component, String change) {
++            var actualServer = change.equals("server") ? new ServerId("foreign") : server;
++            return RemoteActions.command(actualServer, change.equals("business") ? "f".repeat(64) : candidates.get(component).artifactSha256(), request).withSemantics(new ActionSemantics(
++                "deployment.publication.publish.v1", Set.of(new ActionTarget(actualServer.id(), "deployment-release",
++                    change.equals("target") ? "/opt/foreign" : part(component).unit().releaseRoot()))));
+         }
+ 
+         DeploymentAgentHealthEvidence evidence() throws Exception {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
+index 3d218a2c08eaa4718c7071845cca9be6ca67e5cc..099c00d4a23e3f6eef382db396ff52c808fefb40 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPublishRunnerTest.java
+@@ -3,6 +3,7 @@
+ import static org.junit.jupiter.api.Assertions.*;
+ 
+ import java.lang.reflect.Proxy;
++import java.io.InputStreamReader;
+ import java.nio.charset.StandardCharsets;
+ import java.sql.*;
+ import java.time.Instant;
+@@ -14,10 +15,14 @@
+ import gold.debug.windowstolinux.appapi.ai.AiService;
+ import gold.debug.windowstolinux.appapi.ai.model.*;
+ import gold.debug.windowstolinux.appapi.db.ModDatabase;
++import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+ import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
++import gold.debug.windowstolinux.appapi.linux.session.RemoteFacts;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.server.model.ServerInfo;
++import gold.debug.windowstolinux.appapi.server.ServerService;
+ import gold.debug.windowstolinux.appapi.task.TaskService;
+ import gold.debug.windowstolinux.appapi.task.action.*;
+ import gold.debug.windowstolinux.appapi.task.log.*;
+@@ -27,10 +32,15 @@
+ import gold.debug.windowstolinux.appapi.ui.page.UiEnvironment;
+ import gold.debug.windowstolinux.mod.deployment.ai.agent.*;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
++import gold.debug.windowstolinux.mod.deployment.db.schema.DeploymentSchemaIdentity;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentPublicationEvidence;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
+ import gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.*;
+ import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishResult;
+@@ -228,6 +238,39 @@
+             assertEquals(6, frame.executed);
+             assertEquals(1, frame.count("GRAPH_ROLLBACK_RESULT"));
+             assertEquals(0, frame.releases);
++        }
++    }
++
++    @Test
++    void actualBuiltInPublishReceivesIdentityEvidenceAndStillNeedsIndependentDecision() throws Exception {
++        for (boolean approve : List.of(false, true)) {
++            try (var frame = new Frame(true)) {
++                frame.nativeApproval = true;
++                frame.publicationDecision = approve ? "APPROVE" : "DENY";
++                for (String output : List.of("INPUT_STAGED=1\n", "INPUT_STAGED=1\n", "PREVIOUS=0\n"))
++                    frame.remoteReplies.add(new CommandResult(Optional.of(0), output, "", false));
++                if (approve) {
++                    frame.remoteReplies.add(new CommandResult(Optional.of(0), "PUBLISHED=1\n", "", false));
++                    for (int index = 0; index < 3; index++)
++                        frame.remoteReplies.add(new CommandResult(Optional.of(0), "HEALTHY=1\n", "", false));
++                }
++                frame.script = (request, turn) -> turn == 0 ? calls(turn, "publish", assessed(Map.of(), "o1"))
++                    : calls(turn, "unable", Map.of("reason", "Controlled publication review only; do not finish"));
++                assertEquals(TaskResult.UNKNOWN, frame.run(78).outcome());
++                assertEquals(1, frame.publicationReviewFacts.size());
++                var identity = frame.publicationReviewFacts.getFirst();
++                assertEquals("component", identity.path("component").asText());
++                assertEquals("NONE", identity.path("authority").asText());
++                assertEquals("d".repeat(64), identity.path("sealedArtifactSha256").asText());
++                assertNotEquals(identity.path("releaseSha256").asText(), identity.path("sealedArtifactSha256").asText());
++                assertEquals("expectedOwnershipManifestSha256", identity.path("positionalArguments").get(3).path("role").asText());
++                assertEquals(approve ? 1 : 0, frame.publicationSends);
++                assertEquals(frame.executed, frame.approvals);
++                assertEquals(frame.approvals, new HashSet<>(frame.hostGrants).size(), "Every sent action uses a distinct host grant");
++                assertEquals(approve ? frame.executed : frame.executed + 1, frame.nativeReviews);
++                assertEquals(0, frame.releases);
++                assertEquals(0, frame.count("AI_PUBLICATION_FINISHED"));
++            }
+         }
+     }
+ 
+@@ -609,6 +652,9 @@
+     }
+ 
+     private static final class Frame implements AutoCloseable {
++        private static final String ARCHIVE = "0123456789abcdef" + "0".repeat(48);
++
++        private final boolean publicationIdentity;
+         private final UUID taskId = UUID.randomUUID();
+ 
+         private final String jdbc = "jdbc:h2:mem:" + UUID.randomUUID();
+@@ -617,6 +663,8 @@
+ 
+         private final ServerId server = new ServerId("controlled-publish");
+ 
++        private final ServerInfo profile = new ServerInfo(server, "controlled", "controlled-host", 22, "root", Optional.empty(), Optional.empty());
++
+         private final AtomicInteger decisions = new AtomicInteger();
+ 
+         private final TaskContext task;
+@@ -655,6 +703,16 @@
+ 
+         private int nativeReviews;
+ 
++        private String publicationDecision = "APPROVE";
++
++        private int publicationSends;
++
++        private final List<JsonNode> publicationReviewFacts = new ArrayList<>();
++
++        private final List<ApprovalGrant> hostGrants = new ArrayList<>();
++
++        private final Set<ApprovalGrant> consumedGrants = new HashSet<>();
++
+         private boolean partialModelCommand;
+ 
+         private int modelDispatches, modelReceiptQueries;
+@@ -668,10 +726,21 @@
+         private String componentId = "component";
+ 
+         Frame() throws Exception {
+-            try (var sql = retained.createStatement()) {
+-                sql.execute("CREATE TABLE deployment_agent_task(task_id VARCHAR(36) PRIMARY KEY)");
+-                sql.execute("CREATE TABLE deployment_agent_event(event_id BIGINT GENERATED BY DEFAULT AS IDENTITY,task_id VARCHAR(36),action_id VARCHAR(128),event_type VARCHAR(48),event_detail VARCHAR(4096),created_at BIGINT)");
+-                sql.execute("INSERT INTO deployment_agent_task VALUES('" + taskId + "')");
++            this(false);
++        }
++
++        Frame(boolean publicationIdentity) throws Exception {
++            this.publicationIdentity = publicationIdentity;
++            if (publicationIdentity) {
++                try (var source = new InputStreamReader(Objects.requireNonNull(getClass().getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/db/schema-v1.sql")), StandardCharsets.UTF_8)) {
++                    org.h2.tools.RunScript.execute(retained, source);
++                }
++            } else {
++                try (var sql = retained.createStatement()) {
++                    sql.execute("CREATE TABLE deployment_agent_task(task_id VARCHAR(36) PRIMARY KEY)");
++                    sql.execute("CREATE TABLE deployment_agent_event(event_id BIGINT GENERATED BY DEFAULT AS IDENTITY,task_id VARCHAR(36),action_id VARCHAR(128),event_type VARCHAR(48),event_detail VARCHAR(4096),created_at BIGINT)");
++                    sql.execute("INSERT INTO deployment_agent_task VALUES('" + taskId + "')");
++                }
+             }
+             task = proxy(TaskContext.class, (method, args) -> switch (method) {
+                 case "id" -> taskId;
+@@ -679,7 +748,8 @@
+                 case "progress" -> null;
+                 default -> throw new AssertionError(method);
+             });
+-            var db = proxy(ModDatabase.class, (method, args) -> DriverManager.getConnection(jdbc));
++            var db = proxy(ModDatabase.class, (method, args) -> method.equals("identity")
++                ? new SchemaIdentity(DeploymentSchemaIdentity.OWNER, DeploymentSchemaIdentity.VERSION, taskId) : DriverManager.getConnection(jdbc));
+             journal = new DeploymentAgentActionLog(db);
+             var ai = proxy(AiService.class, (method, args) -> {
+                 if (method.equals("configurationRevision")) return modelRevision;
+@@ -687,7 +757,19 @@
+                 if (nativeApproval && request.purpose() == AiPurpose.APPROVAL) {
+                     nativeReviews++;
+                     assertTrue(request.tools().stream().anyMatch(tool -> tool.name().equals("request")));
+-                    return success(calls(nativeReviews, "submit_result", Map.of("decision", nativeDecision, "requiresUserConfirmation", false,
++                    String decision = nativeDecision;
++                    if (publicationIdentity) {
++                        var dynamic = JSON.readTree(request.messages().getLast().text());
++                        var current = dynamic.path("currentEvidence").asText().equals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM")
++                            ? JSON.readTree(request.messages().get(1).text()) : dynamic;
++                        if (current.at("/currentRequest/operation").asText().equals("deployment.publication.publish.v1")) {
++                            var identity = current.at("/currentRequest/currentCommandEvidence/publicationIdentity");
++                            assertFalse(identity.isMissingNode(), "The actual native APP receives the publication projection");
++                            publicationReviewFacts.add(identity);
++                            decision = publicationDecision;
++                        }
++                    }
++                    return success(calls(nativeReviews, "submit_result", Map.of("decision", decision, "requiresUserConfirmation", false,
+                         "reason", nativeReason, "missingEvidence", List.of(), "adjustments", List.of(), "candidateCommands", List.of())));
+                 }
+                 return success(script.reply(request, decisions.getAndIncrement()));
+@@ -696,7 +778,9 @@
+                 if (method.equals("approve") || nativeApproval && method.equals("approveReviewedAction")) {
+                     if (approvalFailure != null) throw approvalFailure;
+                     approvals++;
+-                    return success(new ApprovalGrant(UUID.randomUUID()));
++                    var grant = new ApprovalGrant(UUID.randomUUID());
++                    hostGrants.add(grant);
++                    return success(grant);
+                 }
+                 if (method.equals("requestText")) return success("secret=synthetic-private-value\npublic intent");
+                 throw new AssertionError(method);
+@@ -725,6 +809,10 @@
+                 assertEquals("environment", method);
+                 return new UiEnvironment(Locale.SIMPLIFIED_CHINESE, "LIGHT", false);
+             });
++            var servers = proxy(ServerService.class, (method, args) -> {
++                assertEquals("get", method);
++                return profile;
++            });
+             context = proxy(ModContext.class, (method, args) -> switch (method) {
+                 case "ai" -> ai;
+                 case "db" -> db;
+@@ -732,13 +820,19 @@
+                 case "tasks" -> tasks;
+                 case "logs" -> logs;
+                 case "ui" -> ui;
++                case "servers" -> servers;
+                 default -> throw new AssertionError(method);
+             });
+             session = proxy(RemoteSession.class, (method, args) -> {
+-                if (partialModelCommand && method.equals("facts"))
++                if ((partialModelCommand || publicationIdentity) && method.equals("facts"))
+                     return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("linux", "x86_64", "SHA256:controlled");
+                 assertEquals("execute", method);
+                 executed++;
++                if (publicationIdentity) {
++                    assertEquals(hostGrants.getLast(), args[1]);
++                    assertTrue(consumedGrants.add((ApprovalGrant) args[1]), "An earlier grant cannot authorize another action");
++                    if (((gold.debug.windowstolinux.appapi.linux.command.CommandRequest) args[0]).script().contains("'publish-deployment'")) publicationSends++;
++                }
+                 if (partialModelCommand) {
+                     var request = (gold.debug.windowstolinux.appapi.linux.command.CommandRequest) args[0];
+                     if (request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.LAUNCHER)) {
+@@ -793,14 +887,31 @@
+             var graph = new DeploymentApplicationGraph("controlled", componentId, health, List.of(new DeploymentApplicationGraph.Part(
+                 componentId, unit, config, List.of(), runtime, List.of(), new DeploymentResourceBindings(List.of(), Optional.of(List.of())))));
+             var snapshot = DeploymentConfigSnapshot.create(unit.id(), 1, "v1", Instant.EPOCH, List.of());
++            String release = publicationIdentity ? DeploymentAgentInputs.publicationReleaseIdentity("d".repeat(64), "e".repeat(64),
++                snapshot.sha256(), runtime, graph.components().getFirst().resources()) : "c".repeat(64);
+             var proposal = new DeploymentPublishResult(graph, List.of(new DeploymentUnitCommit(unit, config,
+-                new DeploymentCurrentRelease(unit.id(), "c".repeat(64), Instant.EPOCH), snapshot, List.of())));
++                new DeploymentCurrentRelease(unit.id(), release, Instant.EPOCH), snapshot, List.of())));
+             var candidate = new DeploymentGraphPublisher.Candidate("controlled-0123456789abcdef", "d".repeat(64), "e".repeat(64), "0".repeat(64), false, Map.of());
++            if (publicationIdentity) {
++                journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), DeploymentAgentInputs.targetDigest(server, session), REVISION, "AUTOMATIC", false));
++                journal.event(task, "TARGET_PROFILE", "", DeploymentAgentInputs.targetProfile(profile));
++                journal.event(task, "SOURCE", ARCHIVE, "9".repeat(64));
++                journal.event(task, "CANDIDATE", componentId, candidate.candidateId());
++                journal.event(task, "CURRENT_SOURCE", componentId, candidate.sourceRevision());
++                String seal = DeploymentAgentInputs.hash(componentId + ":" + candidate.sourceRevision() + ":seal");
++                journal.event(task, "SEAL_EXECUTING", seal, candidate.sourceRevision());
++                journal.event(task, "SEAL_RESULT", seal, candidate.artifactSha256());
++                journal.event(task, "SEALED_ARTIFACT", componentId, candidate.artifactSha256());
++                journal.event(task, "SEALED_TOOLS", componentId, candidate.toolchainBindingSha256() + ":false");
++            }
+             try (var shared = DeploymentToolBudget.open(80)) {
+                 assertTrue(DeploymentToolBudget.consume(List.of(new AiToolCall("outer-1", "read", "{}"), new AiToolCall("outer-2", "deliver", "{}"))));
+                 ModContext reviewed = context;
+                 if (nativeApproval) {
+-                    var agent = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(context, task,
++                    gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval agent;
++                    if (publicationIdentity)
++                        agent = gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.forTask(context, task);
++                    else agent = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(context, task,
+                         new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence() {
+                             public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding() {
+                                 return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(server.id(), "b".repeat(64), "d".repeat(64));
+@@ -817,8 +928,16 @@
+                     reviewed = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(context, context.interaction(), task,
+                         "AUTOMATIC", false, () -> REVISION, null, gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> agent);
+                 }
++                DeploymentSendGuard guard = DeploymentSendGuard.NONE;
++                if (publicationIdentity) {
++                    var scope = (DeploymentCommandReviewScope) reviewed;
++                    var evidence = new DeploymentAgentPublicationEvidence(scope, session, server, task, REVISION, proposal,
++                        Map.of(componentId, candidate), Map.of(componentId, new DeploymentRemoteWorkspace(unit.id(), ARCHIVE)), journal);
++                    reviewed = scope.withCurrentEvidence(evidence);
++                    guard = evidence::verifyPendingBinding;
++                }
+                 return DeploymentAgentPublishRunner.run(reviewed, session, server, task, REVISION, proposal, Map.of(componentId, candidate),
+-                    journal, DeploymentSendGuard.NONE, budget, () -> {
++                    journal, guard, budget, () -> {
+                         releases++;
+                         if (resourceReleaseFailure != null) throw resourceReleaseFailure;
+                     });
