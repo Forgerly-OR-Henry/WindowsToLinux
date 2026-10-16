@@ -37,3 +37,5 @@ docs/test/multi-language/patches/AGENT-BUILD-STORAGE-CONTRACT-220.patch -text
 docs/test/multi-language/patches/MODEL-COMMAND-RECEIPT-CONTRACT-222.patch -text
 
 docs/test/multi-language/patches/AGENT-MULTIPREPARE-RECOVERY-224.patch -text
+
+docs/test/multi-language/patches/AGENT-RECOVERY-CHECKPOINT-CONTRACT-227.patch -text

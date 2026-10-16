@@ -1,0 +1,780 @@
+diff --git a/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskService.java b/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskService.java
+--- a/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskService.java
++++ b/src/appapi/src/main/java/gold/debug/windowstolinux/appapi/task/TaskService.java
+@@ -87,6 +87,25 @@
+      * @throws ApiException if the caller or persisted identity cannot be verified / 无法核实调用者或持久身份时 */
+     Optional<TaskCheckpoint> findCheckpoint(TaskContext task, String key) throws ApiException;
+ 
++    /** Creates bounded recovery progress only in the authenticated original root's current explicit reconciliation.
++     * This is new recovery evidence, not an execution checkpoint or authority to replay an effect.
++     * / 仅在已认证原根所有者当前显式核对中创建有界恢复进度；它不是原执行检查点或重放权限。
++     * @param task authentic original reconciling context / 真实原核对上下文
++     * @param key stable owner-local single-use key / 稳定且仅可创建一次的所属键
++     * @param initial non-secret object of at most 12,000 UTF-8 bytes / 最多12000 UTF-8字节的非秘密对象
++     * @return handle confined to this reconciliation / 仅限本次核对的句柄
++     * @throws ApiException if scope, key or persistence cannot be confirmed / 作用域、键或持久化无法确认时 */
++    TaskCheckpoint beginRecoveryCheckpoint(TaskContext task, String key, String initial) throws ApiException;
++
++    /** Finds recovery progress in its distinct host namespace, including released evidence before archival.
++     * Every handle operation requires the same active reconciliation; author rows are never imported.
++     * / 在独立宿主命名空间查找恢复进度，包括归档前已释放依据；每次句柄操作均要求同次核对，不导入作者行。
++     * @param task authentic original reconciling context / 真实原核对上下文
++     * @param key stable owner-local key / 稳定的所属键
++     * @return original recovery row or absence / 原恢复行或不存在
++     * @throws ApiException if the caller, scope or stored identity differs / 调用方、作用域或存储身份不符时 */
++    Optional<TaskCheckpoint> findRecoveryCheckpoint(TaskContext task, String key) throws ApiException;
++
+     /**
+      * Registers manual reconciliation for retained tasks of the given type. / 为指定类型保留任务登记人工核对逻辑。
+      * @param taskType owner-local type of recoverable task / 所有者内部可恢复任务的类型
+diff --git a/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskAuthorCheckpoint.java b/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskAuthorCheckpoint.java
+--- a/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskAuthorCheckpoint.java
++++ b/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskAuthorCheckpoint.java
+@@ -24,6 +24,9 @@
+     /** Fixed host-controlled envelope, never supplied by a Mod. / 固定宿主控制封套，绝不由 Mod 指定。 */
+     private static final String PROTOCOL = "author-checkpoint.v1";
+ 
++    /** Fixed purpose for facts first created during explicit recovery. / 显式恢复中新建依据的固定用途。 */
++    private static final String RECOVERY_PROTOCOL = "recovery-checkpoint.v1";
++
+     /** Bounded author JSON before it enters the platform ledger. / 进入平台账本前有界的作者 JSON。 */
+     private static final int MAX_PAYLOAD_BYTES = 12000;
+ 
+@@ -38,7 +41,23 @@
+     /** Binds the original exclusive platform generation. / 绑定原独占平台代次。
+      * @param database actual platform engine / 实际平台引擎 */
+     public TaskAuthorCheckpoint(PlatformDatabase database) {
++        this(database, false);
++    }
++
++    /** Whether this store accepts only root-owned recovery facts. / 是否仅接纳根所有者恢复依据。 */
++    private final boolean recovery;
++
++    private TaskAuthorCheckpoint(PlatformDatabase database, boolean recovery) {
+         this.database = Objects.requireNonNull(database);
++        this.recovery = recovery;
++    }
++
++    /** Selects a fixed recovery purpose without caller-selected protocol or namespace.
++     * / 选择固定恢复用途，不接收调用方自选的协议或命名空间。
++     * @param database original platform engine / 原平台引擎
++     * @return root-only recovery store / 仅根所有者可用的恢复存储 */
++    public static TaskAuthorCheckpoint recovery(PlatformDatabase database) {
++        return new TaskAuthorCheckpoint(database, true);
+     }
+ 
+     /** Persisted exact author row. / 已持久化的精确作者行。
+@@ -173,12 +192,12 @@
+         new TaskLedger(database).release(task, lease);
+     }
+ 
+-    /** Uses only one fixed namespace for author facts. / 作者依据只使用一个固定命名空间。
++    /** Uses the host-selected fixed purpose namespace. / 使用宿主所选用途的固定命名空间。
+      * @param owner bound owner / 绑定所有者
+      * @param key validated stable key / 已验证稳定键
+      * @return exact task resource identity / 精确任务资源身份 */
+-    private static String resourceId(String owner, String key) {
+-        return owner + "/checkpoint/" + key;
++    private String resourceId(String owner, String key) {
++        return owner + (recovery ? "/recovery-checkpoint/" : "/checkpoint/") + key;
+     }
+ 
+     /** Validates the key without exposing a host protocol name. / 校验键且不暴露宿主协议名。
+@@ -212,9 +231,9 @@
+      * @param revision monotone revision / 单调修订
+      * @param payload author value / 作者值
+      * @return exact host envelope / 精确宿主封套 */
+-    private static ResourceRecovery facts(UUID task, String owner, String version, String key, long revision,
+-                                          String payload) {
+-        return new ResourceRecovery(PROTOCOL, Map.of("taskId", task.toString(), "ownerId", owner, "ownerVersion",
++    private ResourceRecovery facts(UUID task, String owner, String version, String key, long revision,
++                                   String payload) {
++        return new ResourceRecovery(recovery ? RECOVERY_PROTOCOL : PROTOCOL, Map.of("taskId", task.toString(), "ownerId", owner, "ownerVersion",
+             version, "key", key, "revision", Long.toString(revision), "payload", payload));
+     }
+ 
+@@ -227,12 +246,12 @@
+      * @param released actual release column / 实际释放列
+      * @return validated public snapshot / 已核验的公开快照
+      * @throws SQLException if any fact differs / 任一依据不符时 */
+-    private static TaskCheckpoint.Snapshot decode(String value, UUID task, String owner, String version, String key,
+-                                                  boolean released) throws SQLException {
++    private TaskCheckpoint.Snapshot decode(String value, UUID task, String owner, String version, String key,
++                                           boolean released) throws SQLException {
+         try {
+             var decoded = ResourceRecovery.decode(value);
+             var fields = decoded.fields();
+-            if (!decoded.protocol().equals(PROTOCOL)
++            if (!decoded.protocol().equals(recovery ? RECOVERY_PROTOCOL : PROTOCOL)
+                 || !fields.keySet()
+                 .equals(Set.of("taskId", "ownerId", "ownerVersion", "key", "revision", "payload"))
+                 || !fields.get("taskId").equals(task.toString()) || !fields.get("ownerId").equals(owner)
+@@ -255,7 +274,7 @@
+      * @param owner bound owner / 绑定所有者
+      * @param version bound release / 绑定发布
+      * @throws SQLException if identity differs / 身份不符时 */
+-    private static void requireTask(Connection connection, UUID task, String owner, String version)
++    private void requireTask(Connection connection, UUID task, String owner, String version)
+         throws SQLException {
+         try (var query = connection
+             .prepareStatement("SELECT owner_id,owner_version,recovery_json FROM platform_task WHERE task_id=?")) {
+@@ -263,6 +282,7 @@
+             try (var rows = query.executeQuery()) {
+                 if (!rows.next()) throw new SQLException("Original checkpoint task is absent");
+                 if (owner.equals(rows.getString(1)) && version.equals(rows.getString(2))) return;
++                if (recovery) throw new SQLException("Recovery checkpoint root identity differs");
+                 try {
+                     var document = JSON.readTree(rows.getString(3));
+                     if (document.path("formatVersion").asInt() != 3)
+diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java
+--- a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java
++++ b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java
+@@ -398,6 +398,9 @@
+     /** Owner-bound author facts retained on the original task ledger. / 保留在原任务账本上的所有者绑定作者依据。 */
+     private final TaskAuthorCheckpoint authorCheckpoints;
+ 
++    /** Separate root-only recovery purpose over the same checkpoint storage. / 同一检查点存储中的独立根恢复用途。 */
++    private final TaskAuthorCheckpoint recoveryCheckpoints;
++
+     /** Actual boot that owns newly created physical clients, including recovery clients. / 持有新物理客户端的实际启动代次，包括恢复客户端。 */
+     private final UUID bootId;
+ 
+@@ -470,6 +473,7 @@
+         ledger = new TaskLedger(database);
+         resourceObservation = new TaskResourceObservation(database);
+         authorCheckpoints = new TaskAuthorCheckpoint(database);
++        recoveryCheckpoints = TaskAuthorCheckpoint.recovery(database);
+         bootId = database.bootId();
+         this.admission = Objects.requireNonNull(admission);
+         this.security = Objects.requireNonNull(security);
+@@ -1108,8 +1112,18 @@
+                         result = task.finalization != null
+                             ? new OperationResult<>(task.observed.outcome(), Optional.empty(),
+                             task.observed.problem())
+-                            : task.authorization.execute(
+-                            () -> Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context)));
++                            : task.authorization.execute(() -> {
++                            synchronized (this) {
++                                task.recoveryScope = new Object();
++                            }
++                            try {
++                                return Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context));
++                            } finally {
++                                synchronized (this) {
++                                    task.recoveryScope = null;
++                                }
++                            }
++                        });
+                         if (task.finalization == null && result.outcome() != TaskResult.UNKNOWN)
+                             closeDependencyResources(task.context, task.snapshot.ownerId(),
+                                 task.snapshot.ownerVersion());
+@@ -1532,7 +1546,63 @@
+             }
+         }
+ 
+-        /** Exact original-task author checkpoint handle. / 精确原任务作者检查点句柄。 */
++        /** Requires the real root and one current explicit reconciliation before every recovery operation.
++         * / 每次恢复操作均要求真实根所有者与同次当前显式核对。
++         * @param task authentic original context / 真实原上下文
++         * @param expectedScope optional original handle scope / 可选的原句柄作用域
++         * @return current host-only scope token / 当前仅宿主持有的作用域标识
++         * @throws ApiException if ownership, activation or callback lifetime differs / 归属、启用或回调生命周期不符时 */
++        private Object requireRecoveryCheckpoint(TaskContext task, Object expectedScope) throws ApiException {
++            if (revoked)
++                throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
++                    "The owning Mod activation has closed");
++            var original = requireCleanup(task, owner, version);
++            if (!original.ownerId().equals(owner) || !original.ownerVersion().equals(version)
++                || !dependencyStack.get().isEmpty())
++                throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_RECOVERY_CHECKPOINT_CALLER",
++                    "Recovery progress belongs only to the original root Mod release");
++            var execution = executions.get(original.id());
++            if (closing || !execution.reconciling || execution.recoveryScope == null
++                || expectedScope != null && expectedScope != execution.recoveryScope)
++                throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_RECOVERY_CHECKPOINT_SCOPE",
++                    "Recovery progress requires its current original reconciliation");
++            return execution.recoveryScope;
++        }
++
++        @Override
++        public TaskCheckpoint beginRecoveryCheckpoint(TaskContext task, String key, String initial) throws ApiException {
++            if (javax.swing.SwingUtilities.isEventDispatchThread())
++                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
++            synchronized (PlatformTaskRuntime.this) {
++                var scope = requireRecoveryCheckpoint(task, null);
++                try {
++                    var entry = recoveryCheckpoints.begin(task.id(), owner, version, key, initial);
++                    return new BoundCheckpoint(task, key, entry.lease(), scope);
++                } catch (TaskAuthorCheckpoint.RejectedException rejected) {
++                    throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_RECOVERY_CHECKPOINT_INPUT", "Recovery checkpoint input is invalid");
++                } catch (SQLException failure) {
++                    reportUncertainEffect(task);
++                    throw TaskConclusion.error(ProblemCode.UNKNOWN, "TASK_RECOVERY_CHECKPOINT_BEGIN", "Recovery progress creation could not be confirmed");
++                }
++            }
++        }
++
++        @Override
++        public Optional<TaskCheckpoint> findRecoveryCheckpoint(TaskContext task, String key) throws ApiException {
++            if (javax.swing.SwingUtilities.isEventDispatchThread())
++                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
++            synchronized (PlatformTaskRuntime.this) {
++                var scope = requireRecoveryCheckpoint(task, null);
++                try {
++                    return recoveryCheckpoints.find(task.id(), owner, version, key)
++                        .map(entry -> new BoundCheckpoint(task, key, entry.lease(), scope));
++                } catch (SQLException failure) {
++                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_RECOVERY_CHECKPOINT_READ", "Original recovery progress could not be read");
++                }
++            }
++        }
++
++        /** Exact original-task author or recovery checkpoint handle. / 精确原任务作者或恢复检查点句柄。 */
+         private final class BoundCheckpoint implements TaskCheckpoint {
+             /** Original authentic context. / 原真实上下文。 */
+             private final TaskContext task;
+@@ -1548,9 +1618,26 @@
+              * @param key owner-local key / 所有者内部键
+              * @param lease original lease / 原占用 */
+             private BoundCheckpoint(TaskContext task, String key, UUID lease) {
++                this(task, key, lease, null);
++            }
++
++            /** Null for author facts, otherwise confined to one reconciliation. / 作者依据为null，否则仅限同次核对。 */
++            private final Object recoveryScope;
++
++            /** Fixed host-selected purpose. / 固定的宿主所选用途。 */
++            private final TaskAuthorCheckpoint store;
++
++            private BoundCheckpoint(TaskContext task, String key, UUID lease, Object recoveryScope) {
+                 this.task = task;
+                 this.key = key;
+                 this.lease = lease;
++                this.recoveryScope = recoveryScope;
++                this.store = recoveryScope == null ? authorCheckpoints : recoveryCheckpoints;
++            }
++
++            private void requireScope() throws ApiException {
++                if (recoveryScope == null) requireCleanup(task, owner, version);
++                else requireRecoveryCheckpoint(task, recoveryScope);
+             }
+ 
+             /** Reads original durable evidence. / 读取原持久依据。
+@@ -1565,9 +1652,9 @@
+                     if (revoked)
+                         throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                             "The owning Mod activation has closed");
+-                    requireCleanup(task, owner, version);
++                    requireScope();
+                     try {
+-                        var entry = authorCheckpoints.find(task.id(), owner, version, key).orElseThrow();
++                        var entry = store.find(task.id(), owner, version, key).orElseThrow();
+                         if (!entry.lease().equals(lease))
+                             throw new SQLException("Original checkpoint lease differs");
+                         return entry.snapshot();
+@@ -1592,9 +1679,9 @@
+                     if (revoked)
+                         throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                             "The owning Mod activation has closed");
+-                    requireCleanup(task, owner, version);
++                    requireScope();
+                     try {
+-                        return authorCheckpoints.advance(task.id(), owner, version, key, lease, expected, next);
++                        return store.advance(task.id(), owner, version, key, lease, expected, next);
+                     } catch (TaskAuthorCheckpoint.RejectedException rejected) {
+                         throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "TASK_CHECKPOINT_COMPARE",
+                             "Original author checkpoint expected value differs");
+@@ -1617,9 +1704,9 @@
+                     if (revoked)
+                         throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                             "The owning Mod activation has closed");
+-                    requireCleanup(task, owner, version);
++                    requireScope();
+                     try {
+-                        authorCheckpoints.release(task.id(), owner, version, key, lease);
++                        store.release(task.id(), owner, version, key, lease);
+                     } catch (SQLException failure) {
+                         reportUncertainEffect(task);
+                         throw TaskConclusion.error(ProblemCode.UNKNOWN, "TASK_CHECKPOINT_RELEASE",
+@@ -1687,6 +1774,9 @@
+ 
+         /** Whether explicit reconciliation currently owns this context. / 显式核对当前是否持有此上下文。 */
+         private volatile boolean reconciling;
++
++        /** One host-only token while the explicit recovery callback actually runs. / 仅显式恢复回调实际运行期间有效的宿主标识。 */
++        private Object recoveryScope;
+ 
+         /** Whether this execution observed an unreconciled external effect. / 此次执行是否观察到尚未核对的外部副作用。 */
+         private boolean uncertainEffect;
+diff --git a/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java b/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java
+--- a/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java
++++ b/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java
+@@ -372,6 +372,16 @@
+             return delegate.findCheckpoint(task, key);
+         }
+ 
++        @Override
++        public TaskCheckpoint beginRecoveryCheckpoint(TaskContext task, String key, String initial) throws ApiException {
++            return delegate.beginRecoveryCheckpoint(task, key, initial);
++        }
++
++        @Override
++        public Optional<TaskCheckpoint> findRecoveryCheckpoint(TaskContext task, String key) throws ApiException {
++            return delegate.findRecoveryCheckpoint(task, key);
++        }
++
+         /** Cleans only original host-owned connections before one explicit author callback. / 一次显式作者回调前仅清理原宿主连接。
+          * @param taskType original owner-local task type / 原所属任务类型
+          * @param recovery original author recovery / 原作者恢复
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java
+@@ -295,11 +295,13 @@
+ 
+         public static Progress open(ModContext context, TaskContext task, Captured c, boolean retainedProof) throws Exception {
+             if (!task.id().equals(c.task())) throw new IllegalArgumentException("Foreign cleanup progress");
+-            var retained = context.tasks().findCheckpoint(task, KEY);
++            if (context.tasks().findCheckpoint(task, KEY).isPresent())
++                throw new IllegalStateException("Original author checkpoint cannot become recovery progress");
++            var retained = context.tasks().findRecoveryCheckpoint(task, KEY);
+             if (retainedProof && retained.isEmpty())
+                 throw new IllegalStateException("Original cleanup checkpoint missing");
+             return new Progress(c, retained.isPresent() ? retained.orElseThrow()
+-                : context.tasks().beginCheckpoint(task, KEY, bounded(progress(c, rows(c)), 12000)));
++                : context.tasks().beginRecoveryCheckpoint(task, KEY, bounded(progress(c, rows(c)), 12000)));
+         }
+ 
+         public void verify() throws Exception {
+diff --git a/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/TaskAuthorCheckpointTest.java b/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/TaskAuthorCheckpointTest.java
+--- a/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/TaskAuthorCheckpointTest.java
++++ b/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/TaskAuthorCheckpointTest.java
+@@ -34,6 +34,90 @@
+             List.of(new TaskResource("MOD", OWNER, OWNER, false)));
+         assertTrue(ledger.tryStart(id));
+         return id;
++    }
++
++    @Test
++    void recoveryCheckpointRetainsDistinctProtocolAndExactCasAcrossReopen() throws Exception {
++        UUID task;
++        UUID authorLease;
++        UUID recoveryLease;
++        var json = new ObjectMapper();
++        try (var db = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
++            task = started(db);
++            var author = new TaskAuthorCheckpoint(db);
++            var recovery = TaskAuthorCheckpoint.recovery(db);
++            authorLease = author.begin(task, OWNER, VERSION, "progress", "{\"origin\":\"author\"}").lease();
++            assertTrue(recovery.find(task, OWNER, VERSION, "progress").isEmpty());
++            var entry = recovery.begin(task, OWNER, VERSION, "progress", "{\"phase\":\"INTENT\"}");
++            recoveryLease = entry.lease();
++            assertNotEquals(authorLease, recoveryLease);
++            var committed = recovery.advance(task, OWNER, VERSION, "progress", recoveryLease, entry.snapshot(), "{\"phase\":\"DISPATCHED\"}");
++            assertEquals(1, committed.revision());
++            assertThrows(TaskAuthorCheckpoint.RejectedException.class,
++                () -> recovery.advance(task, OWNER, VERSION, "progress", recoveryLease, entry.snapshot(), "{}"));
++            assertThrows(SQLException.class,
++                () -> recovery.advance(task, OWNER, VERSION, "progress", authorLease, committed, "{}"));
++            assertThrows(SQLException.class, () -> recovery.find(task, OWNER, "2.0.0", "progress"));
++            assertThrows(SQLException.class, () -> recovery.begin(task, "foreign.owner", VERSION, "progress", "{}"));
++            assertThrows(SQLException.class, () -> recovery.release(task, OWNER, VERSION, "progress", authorLease));
++            for (String invalid : List.of("{\"x\":1,\"x\":2}", "{} {}", "{\"x\":\"" + "中".repeat(4001) + "\"}"))
++                assertThrows(TaskAuthorCheckpoint.RejectedException.class,
++                    () -> recovery.begin(task, OWNER, VERSION, "invalid", invalid));
++            try (var connection = db.openConnection();
++                 var query = connection.prepareStatement("SELECT resource_id,recovery_json FROM platform_task_resource WHERE lease_id=?")) {
++                for (UUID lease : List.of(authorLease, recoveryLease)) {
++                    query.setObject(1, lease);
++                    try (var row = query.executeQuery()) {
++                        assertTrue(row.next());
++                        boolean original = lease.equals(authorLease);
++                        assertEquals(OWNER + (original ? "/checkpoint/" : "/recovery-checkpoint/") + "progress", row.getString(1));
++                        assertEquals(original ? "author-checkpoint.v1" : "recovery-checkpoint.v1", ResourceRecovery.decode(row.getString(2)).protocol());
++                    }
++                }
++            }
++            new TaskLedger(db).retain(task, new TaskResource("CUSTOM", OWNER + "/recovery-checkpoint/impostor", OWNER, false));
++            assertThrows(SQLException.class, () -> recovery.find(task, OWNER, VERSION, "impostor"), "Raw EXPLICIT is not a host envelope or absence");
++        }
++        try (var reopened = PlatformDatabase.open(root, PlatformDatabaseTest.TEST_PROTECTION)) {
++            var author = new TaskAuthorCheckpoint(reopened);
++            var recovery = TaskAuthorCheckpoint.recovery(reopened);
++            var entry = recovery.find(task, OWNER, VERSION, "progress").orElseThrow();
++            assertEquals(recoveryLease, entry.lease());
++            assertEquals(new TaskCheckpoint.Snapshot(1, "{\"phase\":\"DISPATCHED\"}", false), entry.snapshot());
++            assertEquals(authorLease, author.find(task, OWNER, VERSION, "progress").orElseThrow().lease());
++            assertEquals("{\"origin\":\"author\"}", author.find(task, OWNER, VERSION, "progress").orElseThrow().snapshot().payload());
++            String encoded;
++            try (var connection = reopened.openConnection(); var query = connection.prepareStatement("SELECT recovery_json FROM platform_task_resource WHERE lease_id=?")) {
++                query.setObject(1, recoveryLease);
++                try (var row = query.executeQuery()) {
++                    assertTrue(row.next());
++                    encoded = row.getString(1);
++                }
++            }
++            var extra = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(encoded);
++            ((com.fasterxml.jackson.databind.node.ObjectNode) extra.path("fields")).put("authority", "APPROVE");
++            for (String invalid : List.of(encoded.replace("recovery-checkpoint.v1", "author-checkpoint.v1"),
++                "{\"release\":\"EXPLICIT\"}", encoded + " {}", encoded.replace("\"release\":", "\"release\":\"EXPLICIT\",\"release\":"), extra.toString())) {
++                try (var connection = reopened.openConnection(); var update = connection.prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
++                    update.setString(1, invalid);
++                    update.setObject(2, recoveryLease);
++                    assertEquals(1, update.executeUpdate());
++                }
++                assertThrows(SQLException.class, () -> recovery.find(task, OWNER, VERSION, "progress"));
++                assertThrows(SQLException.class, () -> recovery.release(task, OWNER, VERSION, "progress", recoveryLease));
++            }
++            try (var connection = reopened.openConnection(); var update = connection.prepareStatement("UPDATE platform_task_resource SET recovery_json=? WHERE lease_id=?")) {
++                update.setString(1, encoded);
++                update.setObject(2, recoveryLease);
++                assertEquals(1, update.executeUpdate());
++            }
++            recovery.release(task, OWNER, VERSION, "progress", recoveryLease);
++            var released = recovery.find(task, OWNER, VERSION, "progress").orElseThrow().snapshot();
++            assertTrue(released.released());
++            assertThrows(SQLException.class, () -> recovery.advance(task, OWNER, VERSION, "progress", recoveryLease, released, "{}"));
++            assertThrows(SQLException.class, () -> recovery.begin(task, OWNER, VERSION, "progress", "{}"));
++            assertFalse(author.find(task, OWNER, VERSION, "progress").orElseThrow().snapshot().released());
++        }
+     }
+ 
+     @Test
+diff --git a/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntimeTest.java b/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntimeTest.java
+--- a/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntimeTest.java
++++ b/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntimeTest.java
+@@ -12,6 +12,7 @@
+ import gold.debug.windowstolinux.app.db.init.DatabaseProtection;
+ import gold.debug.windowstolinux.app.db.task.TaskLedger;
+ import gold.debug.windowstolinux.app.db.task.TaskResource;
++import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+ import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+ import gold.debug.windowstolinux.appapi.task.model.TaskState;
+ import gold.debug.windowstolinux.appapi.task.result.ApiException;
+@@ -81,6 +82,174 @@
+ 
+     static <T> OperationResult<T> result(TaskHandle<T> task) throws Exception {
+         return task.completion().toCompletableFuture().get(8, TimeUnit.SECONDS);
++    }
++
++    @Test
++    void recoveryCheckpointUsesAuthenticOriginalReconciliationAcrossAttempts() throws Exception {
++        try (var db = PlatformDatabase.open(root, PROTECTION);
++             var security = security(db);
++             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
++            var service = runtime.bind("example.owner", "1.0.0", false);
++            var recovery = runtime.bind("example.owner", "1.0.0", true);
++            var context = new AtomicReference<TaskContext>();
++            var lease = new AtomicReference<ResourceLease>();
++            var calls = new AtomicInteger();
++            var first = new AtomicReference<TaskCheckpoint>();
++            var committed = new AtomicReference<TaskCheckpoint.Snapshot>();
++            var failure = new AtomicReference<Throwable>();
++            var task = service.submit(request(), original -> {
++                calls.incrementAndGet();
++                context.set(original);
++                lease.set(original.retain("file", "original", "Original unresolved fixture"));
++                throw new IOException("Controlled original failure");
++            });
++            state(task, TaskState.UNKNOWN);
++            assertThrows(ApiException.class, () -> recovery.beginRecoveryCheckpoint(context.get(), "progress", "{}"));
++            assertThrows(ApiException.class, () -> recovery.findRecoveryCheckpoint(context.get(), "progress"));
++            var attempts = new AtomicInteger();
++            try (var registered = recovery.registerRecovery("fixture", (previous, original) -> {
++                try {
++                    assertSame(context.get(), original);
++                    assertEquals(task.id(), previous.id());
++                    if (attempts.incrementAndGet() == 1) {
++                        assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class,
++                            () -> recovery.beginCheckpoint(original, "forbidden", "{}")).problem().eventCode());
++                        assertEquals("TASK_CHECKPOINT_RECOVERY_CREATE", assertThrows(ApiException.class,
++                            () -> service.beginCheckpoint(original, "forbidden", "{}")).problem().eventCode());
++                        assertTrue(recovery.findRecoveryCheckpoint(original, "progress").isEmpty());
++                        var value = recovery.beginRecoveryCheckpoint(original, "progress", "{\"phase\":\"INTENT\"}");
++                        first.set(value);
++                        var before = value.snapshot();
++                        // Inject an ACK loss after a real host/DB CAS; no physical SDK is represented by this counter.
++                        var afterPersistence = new TaskCheckpoint() {
++                            public Snapshot snapshot() throws ApiException {
++                                return value.snapshot();
++                            }
++
++                            public Snapshot advance(Snapshot expected, String next) throws ApiException {
++                                value.advance(expected, next);
++                                throw new ApiException(recoveryUncertain().problem().orElseThrow());
++                            }
++
++                            public void close() throws ApiException {
++                                value.close();
++                            }
++                        };
++                        var wouldDispatch = new AtomicInteger();
++                        assertThrows(ApiException.class, () -> {
++                            afterPersistence.advance(before, "{\"phase\":\"DISPATCHED\"}");
++                            wouldDispatch.incrementAndGet();
++                        });
++                        assertEquals(0, wouldDispatch.get());
++                        var after = value.snapshot();
++                        committed.set(after);
++                        assertEquals(1, after.revision());
++                        assertEquals("TASK_CHECKPOINT_COMPARE", assertThrows(ApiException.class,
++                            () -> value.advance(before, "{\"phase\":\"stale\"}")).problem().eventCode());
++                        assertFalse(recovery.resourcesReleased(original));
++                        return recoveryUncertain();
++                    }
++                    assertCheckpointDenied(first.get(), committed.get());
++                    var reopened = recovery.findRecoveryCheckpoint(original, "progress").orElseThrow();
++                    assertEquals(committed.get(), reopened.snapshot());
++                    reopened.close();
++                    assertTrue(reopened.snapshot().released());
++                    assertThrows(ApiException.class, () -> reopened.advance(reopened.snapshot(), "{}"));
++                    assertFalse(recovery.resourcesReleased(original), "Releasing progress does not release the original effect");
++                    lease.get().close();
++                    assertTrue(recovery.resourcesReleased(original));
++                    return success(null);
++                } catch (Exception | AssertionError problem) {
++                    failure.set(problem);
++                    throw problem;
++                }
++            })) {
++                assertEquals(TaskState.UNKNOWN, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
++                if (failure.get() != null) throw new AssertionError("First recovery failed", failure.get());
++                assertCheckpointDenied(first.get(), committed.get());
++                assertEquals(TaskState.ENDED, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
++                if (failure.get() != null) throw new AssertionError("Second recovery failed", failure.get());
++            }
++            assertEquals(2, attempts.get());
++            assertEquals(1, calls.get(), "Explicit reconciliation never replays the original callback");
++        }
++    }
++
++    @Test
++    void recoveryCheckpointRejectsEscapedRevokedForeignAndRawClaims() throws Exception {
++        try (var db = PlatformDatabase.open(root, PROTECTION);
++             var security = security(db);
++             var runtime = new PlatformTaskRuntime(db, PlatformTaskRuntimeTest::claims, security)) {
++            var service = runtime.bind("example.owner", "1.0.0", false);
++            var recovery = runtime.bind("example.owner", "1.0.0", true);
++            var provider = runtime.bind("example.provider", "1.0.0", true);
++            var otherVersion = runtime.bind("example.owner", "2.0.0", true);
++            var originalContext = new AtomicReference<TaskContext>();
++            var retained = new AtomicReference<ResourceLease>();
++            var handle = new AtomicReference<TaskCheckpoint>();
++            var snapshot = new AtomicReference<TaskCheckpoint.Snapshot>();
++            var callbackFailure = new AtomicReference<Throwable>();
++            var task = service.submit(request(), original -> {
++                originalContext.set(original);
++                assertThrows(ApiException.class, () -> service.beginRecoveryCheckpoint(original, "progress", "{}"));
++                assertThrows(ApiException.class, () -> service.findRecoveryCheckpoint(original, "progress"));
++                assertThrows(ApiException.class, () -> original.retain("recovery-checkpoint", "progress", "Cannot claim a host namespace"));
++                retained.set(original.retain("recovery_checkpoint", "progress", "Near spelling remains an ordinary resource"));
++                throw new IOException("Controlled original failure");
++            });
++            state(task, TaskState.UNKNOWN);
++            var attempt = new AtomicInteger();
++            try (var registered = recovery.registerRecovery("fixture", (previous, original) -> {
++                try {
++                    var copied = (TaskContext) java.lang.reflect.Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
++                        new Class<?>[]{TaskContext.class}, (proxy, method, args) -> method.getName().equals("id") ? original.id() : null);
++                    assertThrows(ApiException.class, () -> recovery.beginRecoveryCheckpoint(copied, "progress", "{}"));
++                    assertThrows(ApiException.class, () -> recovery.findRecoveryCheckpoint(copied, "progress"));
++                    assertThrows(ApiException.class, () -> provider.beginRecoveryCheckpoint(original, "progress", "{}"));
++                    assertThrows(ApiException.class, () -> provider.findRecoveryCheckpoint(original, "progress"));
++                    assertThrows(ApiException.class, () -> otherVersion.findRecoveryCheckpoint(original, "progress"));
++                    if (attempt.incrementAndGet() == 1) {
++                        assertTrue(recovery.findRecoveryCheckpoint(original, "progress").isEmpty(), "A raw near-spelling claim is not host progress");
++                        handle.set(recovery.beginRecoveryCheckpoint(original, "progress", "{}"));
++                        snapshot.set(handle.get().snapshot());
++                        return recoveryUncertain();
++                    }
++                    assertCheckpointDenied(handle.get(), snapshot.get());
++                    var current = recovery.findRecoveryCheckpoint(original, "progress").orElseThrow();
++                    current.close();
++                    retained.get().close();
++                    return success(null);
++                } catch (Exception | AssertionError problem) {
++                    callbackFailure.set(problem);
++                    throw problem;
++                }
++            })) {
++                assertEquals(TaskState.UNKNOWN, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
++                if (callbackFailure.get() != null) throw new AssertionError(callbackFailure.get());
++                assertCheckpointDenied(handle.get(), snapshot.get());
++                assertEquals(TaskState.ENDED, runtime.reconcile(task.id()).toCompletableFuture().get(8, TimeUnit.SECONDS).state());
++                if (callbackFailure.get() != null) throw new AssertionError(callbackFailure.get());
++            }
++            runtime.revokeOwnerServices("example.owner", "1.0.0");
++            assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class, () -> handle.get().snapshot()).problem().eventCode());
++            assertCheckpointDenied(handle.get(), snapshot.get());
++            assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class,
++                () -> recovery.beginRecoveryCheckpoint(originalContext.get(), "later", "{}")).problem().eventCode());
++            assertEquals("MOD_TASK_BINDING_CLOSED", assertThrows(ApiException.class,
++                () -> recovery.findRecoveryCheckpoint(originalContext.get(), "progress")).problem().eventCode());
++        }
++    }
++
++    private static OperationResult<Void> recoveryUncertain() {
++        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(
++            new gold.debug.windowstolinux.appapi.task.result.Problem(ProblemCode.UNKNOWN, "FIXTURE_UNCONFIRMED",
++                "Controlled recovery remains unconfirmed", Map.of(), Optional.empty())));
++    }
++
++    private static void assertCheckpointDenied(TaskCheckpoint checkpoint, TaskCheckpoint.Snapshot expected) {
++        assertThrows(ApiException.class, checkpoint::snapshot);
++        assertThrows(ApiException.class, () -> checkpoint.advance(expected, "{}"));
++        assertThrows(ApiException.class, checkpoint::close);
+     }
+ 
+     @Test
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationRecoveryTest.java
+@@ -9,16 +9,20 @@
+ import java.util.concurrent.TimeUnit;
+ 
+ import gold.debug.windowstolinux.appapi.linux.LinuxService;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
+ import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
+ import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.appapi.task.run.ResourceLease;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+ import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture;
+ import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Event;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentMultiPreparationCompensation;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentPrepareNotSentException;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
+ import org.junit.jupiter.api.Test;
+@@ -34,6 +38,110 @@
+     private static final String REVISION = "a".repeat(64);
+ 
+     private static final DeploymentAgentActionLog.Identity IDENTITY = new DeploymentAgentActionLog.Identity("server", "d".repeat(64), REVISION, "FULL_CONTROL", true);
++
++    @Test
++    void multiPreparationProgressUsesHostRecoveryCheckpointAndReleasesOnlyAfterProof() throws Exception {
++        enable();
++        try (var runtime = open()) {
++            start(runtime, true);
++            var actual = runtime.modContexts().get(OWNER).context();
++            assertTrue(actual.tasks().getClass().getName().endsWith("PlatformModContext$RecoveryTasks"));
++            var layout = DeploymentRemoteLayout.original();
++            var json = new com.fasterxml.jackson.databind.ObjectMapper();
++            var legacy = actual.tasks().submit(new TaskRequest("checkpoint-legacy-conflict", "Reject a retained author checkpoint", List.of(), false), original -> {
++                try (var checkpoint = actual.tasks().beginCheckpoint(original, DeploymentAgentMultiPreparationCompensation.KEY, "{}")) {
++                    var captured = new DeploymentAgentMultiPreparationCompensation.Captured(original.id(),
++                        new DeploymentAgentActionLog.Snapshot(IDENTITY, "UNKNOWN", 4), layout, List.of(), List.of());
++                    var failure = assertThrows(IllegalStateException.class,
++                        () -> DeploymentAgentMultiPreparationCompensation.Progress.open(actual, original, captured));
++                    assertEquals("Original author checkpoint cannot become recovery progress", failure.getMessage());
++                    assertFalse(checkpoint.snapshot().released());
++                }
++                return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++            });
++            assertEquals(TaskResult.SUCCEEDED, legacy.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
++            var context = new java.util.concurrent.atomic.AtomicReference<TaskContext>();
++            var originalLease = new java.util.concurrent.atomic.AtomicReference<ResourceLease>();
++            var originalCalls = new java.util.concurrent.atomic.AtomicInteger();
++            var callbackFailure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
++            var journal = new DeploymentAgentActionLog(actual.db());
++            var handle = actual.tasks().submit(new TaskRequest("checkpoint-host-integration", "Retain a synthetic original candidate set", List.of(), false), original -> {
++                originalCalls.incrementAndGet();
++                context.set(original);
++                originalLease.set(original.retain("file", "synthetic-original", "Controlled original resource"));
++                DeploymentConfigCapture.remoteLayout(actual.tasks(), original, layout);
++                journal.create(original, IDENTITY, Optional.of("f".repeat(64)));
++                var events = DeploymentAgentPreparationCompensationTest.multipleEvents(original.id(), IDENTITY, layout, "e".repeat(64), "f".repeat(64));
++                for (var event : events.subList(2, events.size()))
++                    journal.event(original, event.type(), event.action(), event.detail());
++                journal.state(original, "UNKNOWN");
++                throw new java.io.IOException("Controlled original business failure");
++            });
++            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
++            while (handle.snapshot().state() != gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN && System.nanoTime() < deadline)
++                Thread.sleep(5);
++            assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN, handle.snapshot().state());
++            try (var registered = actual.tasks().registerRecovery("checkpoint-host-integration", (previous, original) -> {
++                try {
++                    assertSame(context.get(), original);
++                    assertTrue(runtime.tasks().reconciling(original));
++                    var captured = DeploymentAgentMultiPreparationCompensation.capture(original.id(), journal.find(original).orElseThrow(), layout, journal.events(original)).orElseThrow();
++                    assertTrue(actual.tasks().findRecoveryCheckpoint(original, DeploymentAgentMultiPreparationCompensation.KEY).isEmpty());
++                    assertThrows(IllegalStateException.class,
++                        () -> DeploymentAgentMultiPreparationCompensation.Progress.open(actual, original, captured, true));
++                    assertTrue(actual.tasks().findRecoveryCheckpoint(original, DeploymentAgentMultiPreparationCompensation.KEY).isEmpty(), "A missing proof checkpoint must not be fabricated");
++                    var progress = DeploymentAgentMultiPreparationCompensation.Progress.open(actual, original, captured);
++                    var checkpoint = actual.tasks().findRecoveryCheckpoint(original, DeploymentAgentMultiPreparationCompensation.KEY).orElseThrow();
++                    assertThrows(IllegalArgumentException.class, progress::proof);
++                    assertFalse(checkpoint.snapshot().released());
++                    for (int index = 0; index < captured.members().size(); index++) {
++                        var member = captured.members().get(index);
++                        // Public, synthetic receipts exercise the client consumer, not a Linux or SSH execution.
++                        var absent = new CommandResult(Optional.of(0), DeploymentAgentPartialPreparationProbe.absentOutput(captured.view(member)), "", false);
++                        var before = member.pending() ? absent : new CommandResult(Optional.of(0), "CANDIDATE_STATE=absent\nBUILD_ACTIVE=no\n", "", false);
++                        assertFalse(progress.before(member, before));
++                        progress.after(member, absent);
++                        assertFalse(checkpoint.snapshot().released());
++                        if (index + 1 < captured.members().size())
++                            assertThrows(IllegalArgumentException.class, progress::proof);
++                    }
++                    String proof = progress.proof();
++                    assertEquals(captured.members().size(), json.readTree(proof).path("members").size());
++                    assertTrue(journal.events(original).stream().noneMatch(e -> e.type().equals(DeploymentAgentMultiPreparationCompensation.EVENT)));
++                    assertFalse(checkpoint.snapshot().released(), "Complete absence alone is not a durable Mod proof");
++                    journal.preparationsCompensated(original, captured, progress, proof);
++                    var retained = journal.events(original);
++                    var event = retained.stream().filter(e -> e.type().equals(DeploymentAgentMultiPreparationCompensation.EVENT)).findFirst().orElseThrow();
++                    assertTrue(DeploymentAgentMultiPreparationCompensation.matches(event, retained));
++                    assertFalse(checkpoint.snapshot().released(), "Committing the proof does not implicitly release the host occupancy");
++                    progress.release(event, retained);
++                    assertTrue(checkpoint.snapshot().released());
++                    var retainedProof = DeploymentAgentMultiPreparationCompensation.retained(original.id(), captured.saved(), layout, retained).orElseThrow();
++                    var reopened = DeploymentAgentMultiPreparationCompensation.Progress.open(actual, original, retainedProof, true);
++                    reopened.release(event, retained);
++                    assertEquals(retained, journal.events(original), "Reopening a committed proof must not append or repeat cleanup");
++                    assertFalse(actual.tasks().resourcesReleased(original));
++                    originalLease.get().close();
++                    assertTrue(actual.tasks().resourcesReleased(original));
++                    journal.event(original, "AI_RECOVERY_SETTLED", original.id().toString(), "FAILED:COMMAND_NATIVE_DATABASE_SECRET_CANDIDATE_SOURCE_SETTLED");
++                    journal.state(original, "FAILED");
++                    assertTrue(DeploymentAgentActionLog.effectsSettled(journal.events(original)));
++                    return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
++                        ProblemCode.IO_FAILURE, "FIXTURE_ORIGINAL_FAILED", "Original failure retained after synthetic absence", Map.of(), Optional.empty())));
++                } catch (Exception | AssertionError failure) {
++                    callbackFailure.set(failure);
++                    throw failure;
++                }
++            })) {
++                var ended = reconcileReady(runtime, handle);
++                if (callbackFailure.get() != null)
++                    throw new AssertionError("Actual host/Mod recovery checkpoint failed", callbackFailure.get());
++                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, ended.state());
++                assertEquals(TaskResult.FAILED, handle.completion().toCompletableFuture().get(15, TimeUnit.SECONDS).outcome());
++            }
++            assertEquals(1, originalCalls.get());
++        }
++    }
+ 
+     @ParameterizedTest
+     @ValueSource(booleans = {false, true})
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+@@ -916,8 +916,12 @@
+             TaskCheckpoint checkpoint = proxy(TaskCheckpoint.class, (name, args) -> new TaskCheckpoint.Snapshot(0, capturedLayout.toString(), true));
+             checkpoints.put("deployment.config.remote-layout.v1", checkpoint);
+             var tasks = proxy(TaskService.class, (name, args) -> switch (name) {
+-                case "findCheckpoint" -> Optional.ofNullable(checkpoints.get((String) args[1]));
+-                case "beginCheckpoint" -> {
++                case "findCheckpoint" -> DeploymentAgentMultiPreparationCompensation.KEY.equals(args[1])
++                    ? Optional.empty() : Optional.ofNullable(checkpoints.get((String) args[1]));
++                case "findRecoveryCheckpoint" -> DeploymentAgentMultiPreparationCompensation.KEY.equals(args[1])
++                    ? Optional.ofNullable(checkpoints.get((String) args[1])) : Optional.empty();
++                case "beginCheckpoint", "beginRecoveryCheckpoint" -> {
++                    assertEquals(name.equals("beginRecoveryCheckpoint"), DeploymentAgentMultiPreparationCompensation.KEY.equals(args[1]));
+                     var created = new MemoryCheckpoint((String) args[2]) {
+                         public Snapshot advance(Snapshot expected, String payload) {
+                             if (multi && payload.contains("DISPATCHED") && multiCondition.equals("DISPATCH_WRITE")) {
