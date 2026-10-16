@@ -1,0 +1,382 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentFeedback.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentFeedback.java
+@@ -10,6 +10,10 @@
+ 
+ /** Projects product reference metadata separately from untrusted output. / 将产品引用元数据与不可信输出分开投影。 */
+ public final class DeploymentAgentFeedback {
++    private static final String ALTERNATIVE_PREFIX = "APPROVAL_DENIED: the exact action was not sent. Independent review feedback DATA:\n";
++
++    private static final String ALTERNATIVE_AUTHORITY = "NONE; every replacement needs fresh exact independent review";
++
+     /** Prevents construction. / 禁止构造。 */
+     private DeploymentAgentFeedback() {
+     }
+@@ -21,6 +25,13 @@
+      * @throws Exception malformed product metadata / 产品元数据错误 */
+     public static String safe(String tool, String output) throws Exception {
+         if (tool.equals("OBSERVATION")) return output;
++        if (tool.equals("ALTERNATIVE_REQUIRED")) {
++            try {
++                return alternativeRequired(output);
++            } catch (Exception invalid) {
++                throw new IllegalArgumentException("Invalid alternative refusal feedback");
++            }
++        }
+         if (Set.of("TOOL_database_inspect", "TOOL_database_select_source").contains(tool) && output.startsWith("{"))
+             return databaseMetadata(tool, output);
+         if (Set.of("TOOL_secrets", "TOOL_secret_select", "TOOL_secret_create").contains(tool)
+@@ -44,6 +55,65 @@
+         }
+         return output.replaceAll("(?im)^.*(?:password|passwd|secret|token|api[_-]?key|private[_-]?key).*[:=].*$",
+             "[credential content excluded]");
++    }
++
++    /** Redacts untrusted refusal leaves, not their fixed non-authorizing JSON envelope. / 脱敏不可信拒绝叶文本，不抹去固定且不授权的JSON封装。
++     * @param output fixed product refusal envelope / 固定产品拒绝封装
++     * @return bounded structured data, never an approval / 有界结构化数据，绝非批准
++     * @throws Exception malformed or oversized refusal / 拒绝结构错误或越界 */
++    private static String alternativeRequired(String output) throws Exception {
++        if (!output.startsWith(ALTERNATIVE_PREFIX) || output.length() - ALTERNATIVE_PREFIX.length() > 6000)
++            throw new IllegalArgumentException("Invalid alternative refusal envelope");
++        var json = new ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++            .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++        var root = json.readTree(output.substring(ALTERNATIVE_PREFIX.length()));
++        DeploymentJsonFields.exact(root, Set.of("outcome", "dispatch", "reason", "suggestions", "authority"));
++        if (!DeploymentJsonFields.text(root, "outcome", 4).equals("DENY")
++            || !DeploymentJsonFields.text(root, "dispatch", 8).equals("NOT_SENT")
++            || !DeploymentJsonFields.text(root, "authority", ALTERNATIVE_AUTHORITY.length()).equals(ALTERNATIVE_AUTHORITY))
++            throw new IllegalArgumentException("Alternative refusal cannot authorize an action");
++        String reason = DeploymentJsonFields.text(root, "reason", 512);
++        var suggestions = root.get("suggestions");
++        Set<String> allowed = Set.of("task", "missingEvidence", "adjustments", "candidateCommands", "reviewBinding", "discussionStatus");
++        if (!suggestions.isObject() || suggestions.size() > allowed.size())
++            throw new IllegalArgumentException("Invalid alternative refusal suggestions");
++        var keys = new HashSet<String>();
++        suggestions.fieldNames().forEachRemaining(keys::add);
++        if (!allowed.containsAll(keys)) throw new IllegalArgumentException("Unexpected alternative refusal fields");
++        String task = DeploymentJsonFields.text(suggestions, "task", 36);
++        if (!UUID.fromString(task).toString().equals(task)) throw new IllegalArgumentException("Invalid refusal task");
++        var safeSuggestions = json.createObjectNode().put("task", task);
++        if (suggestions.has("reviewBinding")) {
++            String binding = DeploymentJsonFields.text(suggestions, "reviewBinding", 64);
++            if (!binding.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid refusal binding");
++            safeSuggestions.put("reviewBinding", binding);
++        }
++        if (suggestions.has("discussionStatus")) {
++            String status = DeploymentJsonFields.text(suggestions, "discussionStatus", 6);
++            if (!Set.of("OPEN", "CLOSED").contains(status))
++                throw new IllegalArgumentException("Invalid refusal discussion status");
++            safeSuggestions.put("discussionStatus", status);
++        }
++        for (String key : List.of("missingEvidence", "adjustments", "candidateCommands")) {
++            if (!suggestions.has(key)) continue;
++            var values = json.readTree(DeploymentJsonFields.text(suggestions, key, 6000));
++            if (!values.isArray() || values.size() > 4)
++                throw new IllegalArgumentException("Invalid refusal suggestion list");
++            var safeValues = json.createArrayNode();
++            for (var value : values) {
++                if (!value.isTextual() || value.textValue().isBlank() || value.textValue().length() > 512 || value.textValue().indexOf(0) >= 0)
++                    throw new IllegalArgumentException("Invalid refusal suggestion");
++                safeValues.add(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReview.denialReason(value.textValue()));
++            }
++            safeSuggestions.put(key, json.writeValueAsString(safeValues));
++        }
++        var safe = json.createObjectNode().put("outcome", "DENY").put("dispatch", "NOT_SENT")
++            .put("reason", gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReview.denialReason(reason));
++        safe.set("suggestions", safeSuggestions);
++        safe.put("authority", ALTERNATIVE_AUTHORITY);
++        String result = json.writeValueAsString(safe);
++        if (result.length() > 6000) throw new IllegalArgumentException("Alternative refusal exceeds feedback budget");
++        return ALTERNATIVE_PREFIX + result;
+     }
+ 
+     /** Checks nonsecret declaration and inventory fields without hiding credential variable names. / 校验非秘密声明与库存字段，不隐藏凭据变量名称。
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentFeedbackTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentFeedbackTest.java
+@@ -2,9 +2,196 @@
+ 
+ import static org.junit.jupiter.api.Assertions.*;
+ 
++import java.util.*;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
++import gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentReview;
+ import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
+ 
+ class DeploymentAgentFeedbackTest {
++    private static final String ALTERNATIVE_PREFIX = "APPROVAL_DENIED: the exact action was not sent. Independent review feedback DATA:\n";
++
++    @Test
++    void alternativeRefusalPreservesNonsecretDataAndRedactsOnlyCredentialLeaves() throws Exception {
++        var json = new ObjectMapper();
++        var task = refusalTask();
++        String reason = "getent passwd is an identity observation; independently review any replacement action.";
++        var lists = Map.of(
++            "missingEvidence", List.of("Confirm the runtime isolation.", "API_TOKEN is only a variable name."),
++            "adjustments", List.of("Keep bounded source checks.", "secret=protected-adjustment\nThis separate line is still data."),
++            "candidateCommands", List.of("getent passwd", "TOKEN=protected-fixture", "printf bounded-metadata"));
++        var context = new HashMap<String, String>();
++        lists.forEach((key, values) -> context.put(key, json.valueToTree(values).toString()));
++        context.put("task", task.id().toString());
++        context.put("reviewReason", reason);
++        context.put("reviewBinding", "a".repeat(64));
++        context.put("discussionStatus", "OPEN");
++        var denied = new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED",
++            "Independent action denied", context, Optional.of(task.id())));
++        var refusal = DeploymentAlternativeRequiredException.fromReview(task, denied);
++        String original = refusal.feedback();
++        String safe = DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED", ALTERNATIVE_PREFIX + original);
++        assertTrue(safe.startsWith(ALTERNATIVE_PREFIX));
++        var data = json.readTree(safe.substring(ALTERNATIVE_PREFIX.length()));
++        assertEquals("DENY", data.path("outcome").asText());
++        assertEquals("NOT_SENT", data.path("dispatch").asText());
++        assertEquals("NONE; every replacement needs fresh exact independent review", data.path("authority").asText());
++        assertEquals(reason, data.path("reason").asText());
++        assertEquals(task.id().toString(), data.path("suggestions").path("task").asText());
++        assertEquals("a".repeat(64), data.path("suggestions").path("reviewBinding").asText());
++        assertEquals("OPEN", data.path("suggestions").path("discussionStatus").asText());
++        for (var entry : lists.entrySet()) {
++            var values = json.readTree(data.path("suggestions").path(entry.getKey()).textValue());
++            assertEquals(entry.getValue().size(), values.size());
++            for (int i = 0; i < values.size(); i++)
++                assertEquals(DeploymentAgentReview.denialReason(entry.getValue().get(i)), values.get(i).textValue());
++        }
++        assertEquals("getent passwd", json.readTree(data.path("suggestions").path("candidateCommands").textValue()).get(0).textValue());
++        assertEquals("[credential content excluded]", json.readTree(data.path("suggestions").path("candidateCommands").textValue()).get(1).textValue());
++        assertFalse(safe.contains("protected-fixture"));
++        assertFalse(safe.contains("protected-adjustment"));
++        assertEquals(original, refusal.feedback(), "Projection never rewrites the original refusal or its receipt data");
++        assertEquals(safe, DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED", safe));
++        assertEquals(data, json.readTree(DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED", ALTERNATIVE_PREFIX
++            + DeploymentAlternativeRequiredException.beforePreparation(task, refusal).feedback()).substring(ALTERNATIVE_PREFIX.length())));
++        for (String tool : List.of("READ", "COMMAND_OUTPUT", "ALTERNATIVE_REQUIRED_OTHER")) {
++            String raw = DeploymentAgentFeedback.safe(tool, ALTERNATIVE_PREFIX + original);
++            assertFalse(raw.contains("protected-fixture"));
++            assertFalse(raw.contains("Confirm the runtime isolation."), "A label embedded in arbitrary output cannot bypass the original line filter");
++            assertTrue(raw.contains("[credential content excluded]"));
++        }
++        var minimal = new DeploymentAlternativeRequiredException(task, "A distinct action needs independent review");
++        var minimalData = json.readTree(DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED", ALTERNATIVE_PREFIX
++            + minimal.feedback()).substring(ALTERNATIVE_PREFIX.length()));
++        assertEquals(json.valueToTree(Map.of("task", task.id().toString())), minimalData.path("suggestions"));
++        var bounded = (ObjectNode) minimalData.deepCopy();
++        bounded.put("reason", "r".repeat(512));
++        var boundedSuggestions = (ObjectNode) bounded.path("suggestions");
++        boundedSuggestions.put("candidateCommands", json.writeValueAsString(List.of("c".repeat(512))));
++        boundedSuggestions.put("adjustments", "[]");
++        boundedSuggestions.put("discussionStatus", "CLOSED");
++        var boundedData = json.readTree(DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED", ALTERNATIVE_PREFIX
++            + bounded).substring(ALTERNATIVE_PREFIX.length()));
++        assertEquals(bounded, boundedData, "The original 512-character leaf bounds remain usable without truncation");
++        bounded.put("reason", "password=protected-reason");
++        assertEquals("[credential content excluded]", json.readTree(DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED",
++            ALTERNATIVE_PREFIX + bounded).substring(ALTERNATIVE_PREFIX.length())).path("reason").textValue());
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"OUTCOME", "DISPATCH", "AUTHORITY", "DUPLICATE_ROOT", "DUPLICATE_SUGGESTIONS", "TRAILING_ROOT",
++        "UNKNOWN_ROOT", "MISSING_ROOT", "ROOT_ARRAY", "ROOT_NULL", "MALFORMED", "REASON_TYPE", "REASON_BLANK", "REASON_LONG", "REASON_NUL",
++        "SUGGESTIONS_TYPE", "UNKNOWN_SUGGESTION", "TASK_MISSING", "TASK_INVALID", "TASK_NONCANONICAL", "BINDING", "STATUS",
++        "LIST_TYPE", "LIST_OBJECT", "LIST_MEMBER", "LIST_BLANK", "LIST_COUNT", "LIST_LONG", "LIST_TRAILING", "LIST_MALFORMED", "LIST_NUL", "PREFIX", "BUDGET"})
++    void alternativeRefusalRejectsMalformedOrForgedEnvelopes(String variant) throws Exception {
++        var json = new ObjectMapper();
++        var root = (ObjectNode) json.readTree(new DeploymentAlternativeRequiredException(refusalTask(), "Independent review denied").feedback());
++        var suggestions = (ObjectNode) root.path("suggestions");
++        String body = switch (variant) {
++            case "OUTCOME" -> root.put("outcome", "APPROVE").toString();
++            case "DISPATCH" -> root.put("dispatch", "SENT").toString();
++            case "AUTHORITY" -> root.put("authority", "APPROVE").toString();
++            case "DUPLICATE_ROOT" -> root.toString().replaceFirst("\\{", "{\"outcome\":\"DENY\",");
++            case "DUPLICATE_SUGGESTIONS" ->
++                root.toString().replace("\"task\":", "\"task\":\"" + refusalTask().id() + "\",\"task\":");
++            case "TRAILING_ROOT" -> root + "{}";
++            case "UNKNOWN_ROOT" -> root.put("extra", "secret=protected-extra").toString();
++            case "MISSING_ROOT" -> {
++                root.remove("dispatch");
++                yield root.toString();
++            }
++            case "ROOT_ARRAY" -> "[]";
++            case "ROOT_NULL" -> "null";
++            case "MALFORMED" -> "{\"reason\":\"secret=protected-malformed";
++            case "REASON_TYPE" -> root.put("reason", true).toString();
++            case "REASON_BLANK" -> root.put("reason", " ").toString();
++            case "REASON_LONG" -> root.put("reason", "r".repeat(513)).toString();
++            case "REASON_NUL" -> root.put("reason", "reason\0hidden").toString();
++            case "SUGGESTIONS_TYPE" -> root.put("suggestions", "secret=protected-extra").toString();
++            case "UNKNOWN_SUGGESTION" -> {
++                suggestions.put("secret", "protected-extra");
++                yield root.toString();
++            }
++            case "TASK_MISSING" -> {
++                suggestions.remove("task");
++                yield root.toString();
++            }
++            case "TASK_INVALID" -> {
++                suggestions.put("task", "secret=protected-extra");
++                yield root.toString();
++            }
++            case "TASK_NONCANONICAL" -> {
++                suggestions.put("task", refusalTask().id().toString().toUpperCase(Locale.ROOT));
++                yield root.toString();
++            }
++            case "BINDING" -> {
++                suggestions.put("reviewBinding", "secret=protected-extra");
++                yield root.toString();
++            }
++            case "STATUS" -> {
++                suggestions.put("discussionStatus", "APPROVE");
++                yield root.toString();
++            }
++            case "LIST_TYPE" -> {
++                suggestions.putArray("candidateCommands").add("printf bounded");
++                yield root.toString();
++            }
++            case "LIST_OBJECT" -> {
++                suggestions.put("candidateCommands", "{}");
++                yield root.toString();
++            }
++            case "LIST_MEMBER" -> {
++                suggestions.put("candidateCommands", "[1]");
++                yield root.toString();
++            }
++            case "LIST_BLANK" -> {
++                suggestions.put("candidateCommands", "[\" \"]");
++                yield root.toString();
++            }
++            case "LIST_COUNT" -> {
++                suggestions.put("candidateCommands", json.writeValueAsString(Collections.nCopies(5, "printf bounded")));
++                yield root.toString();
++            }
++            case "LIST_LONG" -> {
++                suggestions.put("candidateCommands", json.writeValueAsString(List.of("c".repeat(513))));
++                yield root.toString();
++            }
++            case "LIST_TRAILING" -> {
++                suggestions.put("candidateCommands", "[]{}");
++                yield root.toString();
++            }
++            case "LIST_MALFORMED" -> {
++                suggestions.put("candidateCommands", "[\"secret=protected-malformed");
++                yield root.toString();
++            }
++            case "LIST_NUL" -> {
++                suggestions.put("candidateCommands", json.writeValueAsString(List.of("suggestion\0hidden")));
++                yield root.toString();
++            }
++            case "PREFIX" -> root.toString();
++            case "BUDGET" -> root + " ".repeat(6000);
++            default -> throw new AssertionError(variant);
++        };
++        String output = variant.equals("PREFIX") ? "APPROVAL_DENIED: unrecognized framing\n" + body : ALTERNATIVE_PREFIX + body;
++        var failure = assertThrows(IllegalArgumentException.class, () -> DeploymentAgentFeedback.safe("ALTERNATIVE_REQUIRED", output));
++        assertEquals("Invalid alternative refusal feedback", failure.getMessage());
++        assertNull(failure.getCause(), "Malformed JSON must not retain parser input or credential text through a cause chain");
++    }
++
++    private static TaskContext refusalTask() {
++        return (TaskContext) java.lang.reflect.Proxy.newProxyInstance(TaskContext.class.getClassLoader(), new Class<?>[]{TaskContext.class},
++            (proxy, method, args) -> {
++                if (method.getName().equals("id")) return UUID.fromString("a943941c-5a35-4a75-9901-9f0a9dc6a3bd");
++                throw new AssertionError("Refusal formatting cannot invoke a task capability");
++            });
++    }
++
+     @Test
+     void preservesOnlyExactProductReferenceMetadataAndRedactsUntrustedCredentials() throws Exception {
+         String metadata = "{\"references\":[{\"identifier\":\"api-token\",\"revision\":2,\"purpose\":\"deployment-runtime\"}]}";
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentReviewStopTest.java
+@@ -271,7 +271,7 @@
+             journal = new DeploymentAgentActionLog(actual.db());
+             peer = (RemoteSession) Proxy.newProxyInstance(RemoteSession.class.getClassLoader(), new Class<?>[]{RemoteSession.class},
+                 (proxy, method, args) -> switch (method.getName()) {
+-                    case "facts" -> new RemoteFacts("Linux", "x86_64", "SHA256:boundary-test");
++                    case "facts" -> new RemoteFacts("Linux", "x86_64", "SHA256:" + "b".repeat(43));
+                     case "close" -> null;
+                     case "execute" -> execute((CommandRequest) args[0]);
+                     default -> throw new AssertionError("No real SSH operation: " + method.getName());
+@@ -652,6 +652,17 @@
+         OperationResult<AiResponse> review(AiRequest request) throws Exception {
+             assertEquals(AiPurpose.APPROVAL, request.purpose());
+             var input = json.readTree(request.messages().getLast().text());
++            if (boundary.inspection()) {
++                assertEquals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM", input.path("currentEvidence").asText());
++                assertFalse(input.has("currentRequest"), "The final USER contains dynamic review state, not the immutable action");
++                assertEquals(AiRole.USER, request.messages().get(1).role());
++                var fixed = json.readTree(request.messages().get(1).text());
++                assertEquals(task.id().toString(), fixed.path("task").asText());
++                assertEquals(fixed.path("reviewBinding"), input.path("reviewBinding"));
++                assertTrue(fixed.path("reviewBinding").asText().matches("[0-9a-f]{64}"));
++                assertEquals(json.valueToTree(List.of(server.id())), fixed.at("/currentRequest/serverTargets"));
++                input = fixed;
++            }
+             var facts = input.has("currentRequest") ? input.path("currentRequest") : input;
+             assertEquals(server.id(), facts.path("serverTargets").get(0).asText());
+             if (boundary.inspection()) return inspectionReview(request, input, facts);
+@@ -775,6 +786,8 @@
+ 
+         final Map<String, String> pageParts = new java.util.HashMap<>();
+ 
++        final Map<String, StringBuilder> inspectionPageText = new java.util.HashMap<>();
++
+         int bodyPageCalls;
+ 
+         private OperationResult<AiResponse> executablePage(AiRequest request, JsonNode input) throws Exception {
+@@ -783,6 +796,7 @@
+                 pageBinding = binding;
+                 pageOffsets.clear();
+                 pageParts.clear();
++                inspectionPageText.clear();
+             }
+             var prior = request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((a, b) -> b);
+             if (prior.isPresent() && pageParts.containsKey(prior.orElseThrow().callId())) {
+@@ -794,11 +808,43 @@
+                 var original = input.path("executableInput").path(part);
+                 assertEquals(original.path("sha256"), envelope.at("/value/sha256"));
+                 assertEquals(original.path("total"), envelope.at("/value/total"));
++                if (boundary.inspection()) {
++                    var value = envelope.path("value");
++                    assertTrue(value.path("text").isTextual());
++                    assertTrue(value.path("offset").isIntegralNumber() && value.path("next").isIntegralNumber());
++                    int offset = value.path("offset").asInt(), next = value.path("next").asInt();
++                    assertEquals(pageOffsets.getOrDefault(part, 0).intValue(), offset);
++                    assertTrue(next > offset && next <= original.path("total").asInt());
++                    assertEquals(next - offset, value.path("text").textValue().length());
++                    assertTrue(next - offset <= 8000, "The fake reviewer requests only bounded original body pages");
++                    var seen = inspectionPageText.computeIfAbsent(part, ignored -> new StringBuilder());
++                    assertEquals(offset, seen.length());
++                    seen.append(value.path("text").textValue());
++                }
+                 pageOffsets.put(part, envelope.at("/value/next").asInt());
+             }
+             for (String part : List.of("script", "stdin")) {
+                 var original = input.path("executableInput").path(part);
+                 int offset = pageOffsets.getOrDefault(part, 0);
++                if (boundary.inspection()) {
++                    if (original.isMissingNode()) {
++                        assertEquals("stdin", part);
++                        assertEquals("EMPTY", input.at("/currentRequest/inputKind").asText());
++                        continue;
++                    }
++                    assertTrue(original.isObject() && original.path("total").isIntegralNumber());
++                    assertTrue(original.path("sha256").asText().matches("[0-9a-f]{64}"));
++                    if (original.has("text")) {
++                        assertTrue(original.path("text").isTextual());
++                        assertEquals(original.path("total").asInt(), original.path("text").textValue().length());
++                        assertEquals(original.path("sha256").asText(), hash(original.path("text").textValue()));
++                    } else if (offset >= original.path("total").asInt()) {
++                        String seen = inspectionPageText.getOrDefault(part, new StringBuilder()).toString();
++                        assertEquals(original.path("total").asInt(), offset);
++                        assertEquals(offset, seen.length());
++                        assertEquals(original.path("sha256").asText(), hash(seen));
++                    }
++                }
+                 if (original.has("text") || offset >= original.path("total").asInt()) continue;
+                 String id = "body_" + ++bodyPageCalls;
+                 pageParts.put(id, part);
