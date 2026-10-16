@@ -1,0 +1,425 @@
+--- a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/NativeModelCodec.java
++++ b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/NativeModelCodec.java
+@@ -18,6 +18,36 @@
+             .maxStringLength(ModelMessageCodec.MAX_RESPONSE_BYTES).maxNumberLength(32).build()).build())
+         .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++
++    /** Stable diagnostic wire codes: never reorder, reuse, or derive them from ordinal. */
++    enum ValidationCode {
++        OTHER(0), RESPONSE_SIZE(1), RESPONSE_JSON(2), RESPONSE_ROOT(3), CHOICES(4), MESSAGE(5),
++        TOOL_ARRAY(6), TOOL_TYPE(7), CALL_ID_FIELD(8), CALL_NAME_FIELD(9), CALL_ARGUMENTS_FIELD(10),
++        CALL_IDENTITY(11), NATIVE_BATCH(12), CONTENT(13), FINISH(14), OBJECT_FORMAT(15);
++
++        private final String wire;
++
++        ValidationCode(int value) {
++            wire = Integer.toString(value);
++        }
++    }
++
++    private static final class ValidationFailure extends IOException {
++        private final ValidationCode code;
++
++        private ValidationFailure(ValidationCode code) {
++            super("Invalid native model response");
++            this.code = code;
++        }
++    }
++
++    static IOException invalid(ValidationCode code) {
++        return new ValidationFailure(code);
++    }
++
++    static String validationCode(IOException failure) {
++        return failure instanceof ValidationFailure invalid ? invalid.code.wire : ValidationCode.OTHER.wire;
++    }
+ 
+     abstract ObjectNode body(String model, AiRequest request, int effectiveMaxOutputTokens, ModelReasoningLevel effort, Map<UUID, String> states);
+ 
+@@ -107,16 +137,27 @@
+ 
+     static JsonNode root(byte[] bytes) throws IOException {
+         if (bytes.length > ModelMessageCodec.MAX_RESPONSE_BYTES)
+-            throw new IOException("Model response exceeds its byte limit");
+-        var value = JSON.readTree(bytes);
+-        if (value == null || !value.isObject()) throw new IOException("Invalid provider response envelope");
++            throw invalid(ValidationCode.RESPONSE_SIZE);
++        JsonNode value;
++        try {
++            value = JSON.readTree(bytes);
++        } catch (IOException rejected) {
++            throw invalid(ValidationCode.RESPONSE_JSON);
++        }
++        if (value == null || !value.isObject()) throw invalid(ValidationCode.RESPONSE_ROOT);
+         return value;
+     }
+ 
+     static String text(JsonNode node, String field) throws IOException {
+         var value = node.path(field);
+         if (!value.isTextual() || value.textValue().isBlank())
+-            throw new IOException("Provider field is incomplete: " + field);
++            throw invalid(switch (field) {
++                case "id" -> ValidationCode.CALL_ID_FIELD;
++                case "name" -> ValidationCode.CALL_NAME_FIELD;
++                case "arguments" -> ValidationCode.CALL_ARGUMENTS_FIELD;
++                case "finish_reason" -> ValidationCode.FINISH;
++                default -> ValidationCode.OTHER;
++            });
+         return value.textValue();
+     }
+ 
+@@ -130,22 +171,27 @@
+         try {
+             return new AiToolCall(id, name, arguments);
+         } catch (IllegalArgumentException invalid) {
+-            throw new IOException("Invalid provider native call identity", invalid);
++            throw invalid(ValidationCode.CALL_IDENTITY);
+         }
+     }
+ 
+     static ModelDecodedResponse result(String content, String modelId, String finish, AiUsage usage,
+                                        List<AiToolCall> calls, JsonNode state, boolean object) throws IOException {
+-        if (finish.isBlank() || finish.length() > 128) throw new IOException("Invalid provider finish reason");
++        if (finish.isBlank() || finish.length() > 128) throw invalid(ValidationCode.FINISH);
+         if (object) {
+-            var value = JSON.readTree(content);
+-            if (value == null || !value.isObject()) throw new IOException("Model response is not a JSON object");
++            JsonNode value;
++            try {
++                value = JSON.readTree(content);
++            } catch (IOException rejected) {
++                throw invalid(ValidationCode.OBJECT_FORMAT);
++            }
++            if (value == null || !value.isObject()) throw invalid(ValidationCode.OBJECT_FORMAT);
+         }
+         try {
+             return new ModelDecodedResponse(new AiResponse(content, modelId, finish, usage, calls, Optional.empty()),
+                 JSON.writeValueAsString(state));
+         } catch (IllegalArgumentException invalid) {
+-            throw new IOException("Invalid provider native call batch", invalid);
++            throw invalid(ValidationCode.NATIVE_BATCH);
+         }
+     }
+ 
+--- a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ChatCompletionsCodec.java
++++ b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ChatCompletionsCodec.java
+@@ -48,22 +48,22 @@
+     public ModelDecodedResponse decode(byte[] bytes, String modelId, boolean object) throws IOException {
+         var root = root(bytes);
+         var choices = root.path("choices");
+-        if (!choices.isArray() || choices.isEmpty()) throw new IOException("Model response has no complete choice");
++        if (!choices.isArray() || choices.isEmpty()) throw invalid(ValidationCode.CHOICES);
+         var choice = choices.get(0);
+         var message = choice.path("message");
+-        if (!message.isObject()) throw new IOException("Model response choice is incomplete");
++        if (!message.isObject()) throw invalid(ValidationCode.MESSAGE);
+         var calls = new ArrayList<AiToolCall>();
+         var wireCalls = message.path("tool_calls");
+         if (!wireCalls.isMissingNode() && !wireCalls.isNull() && !wireCalls.isArray())
+-            throw new IOException("Invalid tool call array");
++            throw invalid(ValidationCode.TOOL_ARRAY);
+         for (var item : wireCalls) {
+-            if (!item.path("type").asText().equals("function")) throw new IOException("Unsupported tool call type");
++            if (!item.path("type").asText().equals("function")) throw invalid(ValidationCode.TOOL_TYPE);
+             var function = item.path("function");
+             calls.add(call(text(item, "id"), text(function, "name"), text(function, "arguments")));
+         }
+         var content = message.path("content");
+         if (!content.isTextual() && !(content.isNull() && !calls.isEmpty()))
+-            throw new IOException("Model response choice is incomplete");
++            throw invalid(ValidationCode.CONTENT);
+         String finish = text(choice, "finish_reason");
+         if (message.path("refusal").isTextual() && !message.path("refusal").asText().isBlank()) finish = "refusal";
+         return result(content.isTextual() ? content.asText() : "", modelId, finish, ModelMessageCodec.usage(root), calls, message, object);
+--- a/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCall.java
++++ b/src/app/ai/src/main/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCall.java
+@@ -167,8 +167,10 @@
+                                 Optional.of(decoded.response()),
+                                 Optional.empty());
+                         } catch (IOException invalid) {
++                            var details = new HashMap<>(ModelProtocolDiagnostics.shape(protocol, bytes));
++                            details.put("nativeValidationCode", NativeModelCodec.validationCode(invalid));
+                             return failure(TaskResult.FAILED, ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID",
+-                                "The provider response does not satisfy the requested format", ModelProtocolDiagnostics.shape(protocol, bytes));
++                                "The provider response does not satisfy the requested format", details);
+                         }
+                     } finally {
+                         Arrays.fill(bytes, (byte) 0);
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentCandidateChannel.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentCandidateChannel.java
+@@ -327,10 +327,26 @@
+         var result = commands.send("deployment.candidate.verify.v1", "deployment-candidate",
+             specification.workspace().candidateRoot(), specification.script(), new byte[0], Duration.ofSeconds(30), 4096);
+         if (!complete(result))
+-            return unknown("DEPLOYMENT_UPLOAD_REMOTE_UNCONFIRMED");
++            return unconfirmedVerification(result);
+         return result.value().orElseThrow().stdout().equals(specification.expectedOutput())
+             ? success(specification.workspace())
+             : unknown("DEPLOYMENT_UPLOAD_REMOTE_CONFLICT");
++    }
++
++    private static OperationResult<DeploymentRemoteWorkspace> unconfirmedVerification(OperationResult<CommandResult> result) {
++        var details = new LinkedHashMap<String, String>();
++        details.put("causeOutcome", result.outcome().name());
++        details.put("causeCode", result.problem().map(value -> value.code().name()).orElse("ABSENT"));
++        details.put("causeEvent", result.problem().map(value -> value.eventCode().equals("AI_RESPONSE_INVALID")
++            ? "AI_RESPONSE_INVALID" : "OTHER").orElse("ABSENT"));
++        result.problem().filter(value -> value.code() == ProblemCode.CONTRACT_VIOLATION
++            && value.eventCode().equals("AI_RESPONSE_INVALID")).ifPresent(value -> {
++            String code = value.context().get("nativeValidationCode");
++            // Deliberate finite wire domain; no dependency on the app-ai implementation enum.
++            details.put("causeNativeValidationCode", code != null && code.length() <= 2 && code.matches("0|[1-9]|1[0-5]") ? code : "OTHER");
++        });
++        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
++            "DEPLOYMENT_UPLOAD_REMOTE_UNCONFIRMED", "Reviewed candidate evidence could not be confirmed", details, Optional.empty())));
+     }
+ 
+     /** Immutable fixed protocol minted by the real producer, never an observation or permission. */
+--- a/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelProtocolCodecTest.java
++++ b/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelProtocolCodecTest.java
+@@ -11,6 +11,94 @@
+ import gold.debug.windowstolinux.appapi.ai.vision.AiImage;
+ 
+ class ModelProtocolCodecTest {
++    @Test
++    void chatNativeValidationCodesIdentifyOnlyOriginalFailingGuards() throws Exception {
++        record Rejected(String name, String code, byte[] body, boolean object) {
++        }
++        var cases = new ArrayList<Rejected>();
++        cases.add(new Rejected("response limit", "1", new byte[ModelMessageCodec.MAX_RESPONSE_BYTES + 1], false));
++        cases.add(new Rejected("malformed envelope", "2", bytes("{"), false));
++        cases.add(new Rejected("duplicate envelope keys", "2", bytes("{\"choices\":[],\"choices\":[]}"), false));
++        cases.add(new Rejected("trailing envelope token", "2", bytes("{} {}"), false));
++        cases.add(new Rejected("non-object envelope", "3", bytes("[]"), false));
++        cases.add(new Rejected("missing choices", "4", bytes("{}"), false));
++        cases.add(new Rejected("empty choices", "4", bytes("{\"choices\":[]}"), false));
++        cases.add(new Rejected("message type", "5", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0")).putArray("message")), false));
++        cases.add(new Rejected("tool array type", "6", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).putObject("tool_calls")), false));
++        cases.add(new Rejected("tool type", "7", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0")).put("type", "secretmarker")), false));
++        cases.add(new Rejected("id field", "8", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0")).put("id", 123)), false));
++        cases.add(new Rejected("name field", "9", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0/function")).put("name", " ")), false));
++        cases.add(new Rejected("arguments type", "10", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0/function")).putArray("arguments")), false));
++        cases.add(new Rejected("arguments empty", "10", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0/function")).put("arguments", "")), false));
++        cases.add(new Rejected("call identity", "11", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message/tool_calls/0")).put("id", "secretmarker/path")), false));
++        cases.add(new Rejected("duplicate call ids", "12", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ArrayNode) root.at("/choices/0/message/tool_calls"))
++            .add(root.at("/choices/0/message/tool_calls/0").deepCopy())), false));
++        cases.add(new Rejected("content type", "13", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).putObject("content")), false));
++        cases.add(new Rejected("null content without calls", "13", chatResponse(root -> {
++            var message = (com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message");
++            message.putNull("content");
++            message.remove("tool_calls");
++        }), false));
++        cases.add(new Rejected("finish field", "14", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0")).remove("finish_reason")), false));
++        cases.add(new Rejected("finish length", "14", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0")).put("finish_reason", "x".repeat(129))), false));
++        cases.add(new Rejected("object content shape", "15", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).put("content", "[]")), true));
++        cases.add(new Rejected("object content parse", "15", chatResponse(root -> ((com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message")).put("content", "{")), true));
++        cases.add(new Rejected("unclassified usage", "0", chatResponse(root -> {
++            var usage = (com.fasterxml.jackson.databind.node.ObjectNode) root.get("usage");
++            usage.putObject("prompt_tokens_details").put("cached_tokens", 1);
++            usage.put("prompt_cache_hit_tokens", 2);
++        }), false));
++        assertEquals(23, cases.size(), "These are table scenarios inside one JUnit case");
++        var codec = ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_CHAT_COMPLETIONS);
++        for (var example : cases) {
++            var invalid = assertThrows(java.io.IOException.class, () -> codec.decode(example.body(), "fixture", example.object()), example.name());
++            assertEquals(example.code(), NativeModelCodec.validationCode(invalid), example.name());
++            assertFalse(invalid.getMessage().contains("secretmarker"));
++            assertEquals("0", NativeModelCodec.validationCode(new java.io.IOException("secretmarker", invalid)), "No message or cause-chain guessing");
++        }
++        assertEquals("0", NativeModelCodec.validationCode(new java.io.IOException("secretmarker")));
++    }
++
++    @org.junit.jupiter.params.ParameterizedTest
++    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
++    void chatNativeCallsAcceptNullOrEmptyContentWithoutJsonObjectCoercion(boolean nullContent) throws Exception {
++        byte[] body = chatResponse(root -> {
++            var message = (com.fasterxml.jackson.databind.node.ObjectNode) root.at("/choices/0/message");
++            if (nullContent) message.putNull("content");
++            else message.put("content", "");
++        });
++        var codec = ModelProtocolCodec.forProtocol(ModelProtocol.OPENAI_CHAT_COMPLETIONS);
++        var decoded = codec.decode(body, "fixture", false);
++        assertEquals("tool_calls", decoded.response().finishReason());
++        assertEquals("", decoded.response().text());
++        assertEquals(List.of(new AiToolCall("call_1", "echo", "{}")), decoded.response().toolCalls());
++        assertEquals(Optional.of(7L), decoded.response().usage().inputTokens());
++        assertEquals(Optional.of(3L), decoded.response().usage().outputTokens());
++        var original = json.readTree(body).at("/choices/0/message");
++        assertEquals(original, json.readTree(decoded.continuation()));
++        var handle = new AiContinuation(UUID.randomUUID(), bytes(decoded.continuation()).length);
++        var response = decoded.response();
++        var retained = new AiResponse(response.text(), response.modelId(), response.finishReason(), response.usage(), response.toolCalls(), Optional.of(handle));
++        var messages = List.of(new AiMessage(AiRole.USER, "public request", List.of()), AiMessage.assistant(retained),
++            AiMessage.result(new AiToolResult("call_1", "public result", false)));
++        var wire = json.readTree(codec.encode("fixture", request(messages), 128, ModelReasoningLevel.DEFAULT, Map.of(handle.id(), decoded.continuation())));
++        assertEquals(original, wire.at("/messages/1"));
++        if (!nullContent)
++            assertEquals("NON_OBJECT", ModelProtocolDiagnostics.shape(ModelProtocol.OPENAI_CHAT_COMPLETIONS, body).get("jsonFailureKind"),
++                "A content-shape projection is not a native decoder rejection");
++    }
++
++    private byte[] chatResponse(java.util.function.Consumer<com.fasterxml.jackson.databind.node.ObjectNode> change) throws Exception {
++        var root = json.createObjectNode();
++        var message = root.putArray("choices").addObject().put("finish_reason", "tool_calls").putObject("message")
++            .put("role", "assistant").put("content", "");
++        message.putArray("tool_calls").addObject().put("type", "function").put("id", "call_1")
++            .putObject("function").put("name", "echo").put("arguments", "{}");
++        root.putObject("usage").put("prompt_tokens", 7).put("completion_tokens", 3);
++        change.accept(root);
++        return json.writeValueAsBytes(root);
++    }
++
+     @Test
+     void explicitNoneUsesEachProtocolsDisabledReasoningFieldWithoutChangingDefault() throws Exception {
+         var request = new AiRequest(AiPurpose.APPROVAL,
+--- a/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCallTest.java
++++ b/src/app/ai/src/test/java/gold/debug/windowstolinux/app/ai/model/ModelHttpCallTest.java
+@@ -23,6 +23,68 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class ModelHttpCallTest {
++    @Test
++    void invalidNativeBodyRetainsFailedUsageAndFixedValidationCodeWithoutReplay() throws Exception {
++        var calls = new AtomicInteger();
++        var peerFailure = new AtomicReference<Throwable>();
++        byte[] owned = "{\"secretmarker-request\":true}".getBytes(StandardCharsets.UTF_8);
++        byte[] reply = """
++            {"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":"","tool_calls":[{"type":"function","id":123,"function":{"name":"echo","arguments":"secretmarker-body"}}]}}],"usage":{"prompt_tokens":17,"completion_tokens":5,"prompt_cache_hit_tokens":10,"prompt_cache_miss_tokens":7}}
++            """.getBytes(StandardCharsets.UTF_8);
++        try (var server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
++            Thread peer = Thread.ofPlatform().daemon(true).start(() -> {
++                try (var socket = server.accept()) {
++                    calls.incrementAndGet();
++                    socket.setSoTimeout(5000);
++                    var input = socket.getInputStream();
++                    var headers = new StringBuilder();
++                    while (!headers.toString().endsWith("\r\n\r\n") && headers.length() < 8192) {
++                        int next = input.read();
++                        if (next < 0) throw new IOException("Fixture request ended before headers");
++                        headers.append((char) next);
++                    }
++                    if (input.readNBytes(owned.length).length != owned.length)
++                        throw new IOException("Fixture request body was incomplete");
++                    socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: " + reply.length
++                        + "\r\nX-Private-Fixture: secretmarker-header\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
++                    socket.getOutputStream().write(reply);
++                    socket.getOutputStream().flush();
++                } catch (IOException failure) {
++                    peerFailure.set(failure);
++                }
++            });
++            try (var call = new ModelHttpCall(URI.create("http://127.0.0.1:" + server.getLocalPort() + "/secretmarker-endpoint"),
++                "secretmarker-key".toCharArray(), owned, Duration.ofSeconds(5), "fixture", false)) {
++                var result = call.execute(() -> false);
++                assertEquals(TaskResult.FAILED, result.outcome());
++                assertTrue(result.value().isEmpty());
++                var problem = result.problem().orElseThrow();
++                assertEquals(gold.debug.windowstolinux.appapi.task.result.ProblemCode.CONTRACT_VIOLATION, problem.code());
++                assertEquals("AI_RESPONSE_INVALID", problem.eventCode());
++                assertEquals("8", problem.context().get("nativeValidationCode"));
++                assertEquals("17", problem.context().get("inputTokens"));
++                assertEquals("5", problem.context().get("outputTokens"));
++                assertEquals("10", problem.context().get("cachedInputTokens"));
++                assertEquals("7", problem.context().get("cacheMissInputTokens"));
++                assertEquals("true", problem.context().get("httpHeadersReceived"));
++                assertEquals("200", problem.context().get("httpStatus"));
++                assertEquals(Integer.toString(reply.length), problem.context().get("httpBodyBytesAccepted"));
++                assertFalse(problem.toString().contains("secretmarker"));
++                assertNull(call.continuation());
++                assertEquals(1, calls.get());
++                assertThrows(IllegalStateException.class, () -> call.execute(() -> false));
++                assertEquals(1, calls.get());
++            } finally {
++                server.close();
++                peer.join(5000);
++                assertFalse(peer.isAlive(), "The owned loopback peer must exit");
++            }
++            assertNull(peerFailure.get());
++            for (byte value : owned)
++                assertEquals(0, value, "Confirmed physical close clears only the owned request bytes");
++        }
++    }
++
+     @Test
+     void incompleteRealResponseRemainsUnknownAndCannotBeSentAgain() throws Exception {
+         var calls = new AtomicInteger();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentCandidateChannelTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentCandidateChannelTest.java
+@@ -156,6 +156,76 @@
+         }
+     }
+ 
++    @Test
++    void failedConfirmationReviewRetainsOnlySafeCauseAndNeverExecutes() throws Exception {
++        record ReviewCase(String name, TaskResult outcome, Optional<Problem> problem, Map<String, String> expected) {
++        }
++        var cases = new ArrayList<ReviewCase>();
++        var expected = Map.of("causeOutcome", "FAILED", "causeCode", "CONTRACT_VIOLATION", "causeEvent", "AI_RESPONSE_INVALID");
++        var nativeCodes = new ArrayList<String>();
++        for (int code = 0; code <= 15; code++) nativeCodes.add(Integer.toString(code));
++        nativeCodes.addAll(List.of("", "00", "01", "+1", "-1", "16", "100", "١", "1\n", "secretmarker"));
++        for (int index = 0; index < nativeCodes.size(); index++) {
++            String code = nativeCodes.get(index);
++            var context = new LinkedHashMap<>(Map.of("nativeValidationCode", code, "causeOutcome", "secretmarker",
++                "causeCode", "secretmarker", "causeEvent", "secretmarker", "causeNativeValidationCode", "secretmarker",
++                "message", "secretmarker", "modelId", "secretmarker", "endpoint", "secretmarker", "header", "secretmarker", "body", "secretmarker"));
++            context.put("httpStatus", "secretmarker");
++            var projected = new LinkedHashMap<>(expected);
++            projected.put("causeNativeValidationCode", index < 16 ? code : "OTHER");
++            cases.add(new ReviewCase("native code " + index, TaskResult.FAILED,
++                Optional.of(new Problem(ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID", "secretmarker", context, Optional.empty())), projected));
++        }
++        cases.add(new ReviewCase("no problem", TaskResult.CANCELLED, Optional.empty(),
++            Map.of("causeOutcome", "CANCELLED", "causeCode", "ABSENT", "causeEvent", "ABSENT")));
++        cases.add(new ReviewCase("foreign event", TaskResult.FAILED,
++            Optional.of(new Problem(ProblemCode.IO_FAILURE, "secretmarker", "secretmarker", Map.of("nativeValidationCode", "8"), Optional.empty())),
++            Map.of("causeOutcome", "FAILED", "causeCode", "IO_FAILURE", "causeEvent", "OTHER")));
++        cases.add(new ReviewCase("foreign problem code", TaskResult.FAILED,
++            Optional.of(new Problem(ProblemCode.IO_FAILURE, "AI_RESPONSE_INVALID", "secretmarker", Map.of("nativeValidationCode", "8"), Optional.empty())),
++            Map.of("causeOutcome", "FAILED", "causeCode", "IO_FAILURE", "causeEvent", "AI_RESPONSE_INVALID")));
++        var noNative = new LinkedHashMap<>(expected);
++        noNative.put("causeNativeValidationCode", "OTHER");
++        cases.add(new ReviewCase("missing native code", TaskResult.FAILED,
++            Optional.of(new Problem(ProblemCode.CONTRACT_VIOLATION, "AI_RESPONSE_INVALID", "secretmarker", Map.of("body", "secretmarker"), Optional.empty())), noNative));
++        cases.add(new ReviewCase("original uncertainty", TaskResult.UNKNOWN,
++            Optional.of(new Problem(ProblemCode.UNKNOWN, "secretmarker", "secretmarker", Map.of("nativeValidationCode", "8"), Optional.empty())),
++            Map.of("causeOutcome", "UNKNOWN", "causeCode", "UNKNOWN", "causeEvent", "OTHER")));
++        assertEquals(31, cases.size(), "These are table scenarios inside one JUnit case");
++        for (var example : cases) {
++            var fixture = new VerificationFixture(true, VerificationReply.EXACT);
++            var reviews = new AtomicInteger();
++            var executes = new AtomicInteger();
++            OperationResult<ApprovalGrant> refused = new OperationResult<>(example.outcome(), Optional.empty(), example.problem());
++            InteractionService interaction = (InteractionService) Proxy.newProxyInstance(getClass().getClassLoader(),
++                new Class<?>[]{gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class}, (p, method, args) -> {
++                    assertEquals("approveCommand", method.getName());
++                    assertSame(fixture.task, args[args.length - 1]);
++                    assertEquals("deployment.candidate.verify.v1", ((ActionIntent) args[0]).semantics().orElseThrow().operation());
++                    assertEquals(0, ((CommandRequest) args[1]).stdin().length);
++                    reviews.incrementAndGet();
++                    return refused;
++                });
++            RemoteSession session = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (p, method, args) -> {
++                executes.incrementAndGet();
++                throw new AssertionError("No remote method may run after an unsuccessful confirmation review");
++            });
++            var channel = new DeploymentCandidateChannel(session, interaction, fixture.server, fixture.task, "f".repeat(64), new DeploymentBuildBudget(3600));
++            var observed = channel.verify(fixture.workspace, fixture.archive);
++            assertEquals(TaskResult.UNKNOWN, observed.outcome(), example.name());
++            assertTrue(observed.value().isEmpty());
++            var problem = observed.problem().orElseThrow();
++            assertEquals(ProblemCode.UNKNOWN, problem.code());
++            assertEquals("DEPLOYMENT_UPLOAD_REMOTE_UNCONFIRMED", problem.eventCode());
++            assertEquals(example.expected(), problem.context(), example.name());
++            assertFalse(problem.toString().contains("secretmarker"));
++            assertEquals(example.outcome(), refused.outcome());
++            assertEquals(example.problem(), refused.problem(), "Retain the original failure; it is not a cleanup or not-sent proof");
++            assertEquals(1, reviews.get());
++            assertEquals(0, executes.get());
++        }
++    }
++
+     /** Refuses an overflowing host capacity observation. / 拒绝溢出的主机容量观测。 */
+     @Test
+     void capacityRequiresExistingParentAndBoundedNumber() throws Exception {
