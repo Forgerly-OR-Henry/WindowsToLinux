@@ -1,0 +1,661 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+index e537b391b88ea4c30dc9542d68d529b782700061..ca05e09ae3374fa56a7d65278e2552d0d52ea8e1 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -103,7 +103,9 @@
+                 if (agentRun)
+                     facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
+                 facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");
+-                facts.put("completeExecutableInput", operation.equals("deployment.helper.install.files.custom.v1")
++                facts.put("completeExecutableInput", operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL)
++                    ? new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram(layout).installationEvidence()
++                    : operation.equals("deployment.helper.install.files.custom.v1")
+                     ? gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHelperBootstrapEvidence.describe(executable, layout)
+                     : operation.equals("deployment.helper.install.files.v1")
+                     ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence.describeFiles(executable, layout)
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryInstallation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryInstallation.java
+index b1fccaf980f0b2966a2f3f1958b2b5dca248928c..321041fb5db63121fe749abe314bc838ef576dac 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryInstallation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryInstallation.java
+@@ -21,6 +21,7 @@
+     public static final String EVENT = "PUBLICATION_RECOVERY_PROGRAM";
+     public record Attempt(UUID action, String operation, long requestEvent, String request, String exactAction, String targets,
+                           boolean reviewed, boolean granted, boolean dispatched, boolean ended) { }
++    /** installAction retains a blocking prior install; a proven denied, unsent request remains only in history. */
+     public record State(String binding, Optional<Attempt> attempt, Optional<UUID> installAction, boolean ready,
+                         boolean mayInstall, String installTask, String installOperation) { }
+     private final TaskContext task;
+@@ -156,6 +157,9 @@
+                         require(Set.of("UNKNOWN","NOT_SENT").contains(resolution)&&status.equals("UNKNOWN")&&text(node,"installTask").equals("-")&&text(node,"installOperation").equals("-"),"Invalid store uncertainty");
+                         require(!resolution.equals("NOT_SENT")||!current.dispatched(),"A dispatched store action cannot become not sent");
+                         if(!text(node,"receipt").equals("none"))digest(text(node,"receipt"));ready=false;mayInstall=false;
++                        if(resolution.equals("NOT_SENT")&&current.operation().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL)
++                            &&current.reviewed()&&verdict.equals("DENY")&&!current.granted()&&!current.dispatched()
++                            &&ownerTask.equals("-")&&ownerOperation.equals("-")&&action.equals(install))install=null;
+                     }
+                     current=copy(current,current.reviewed(),current.granted(),current.dispatched(),true);
+                 }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgram.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgram.java
+index 04c1bf78d5432aa6a551fd96f6682da24aacca1d..0a83502ee32742e3715d1ea7cb6d83a178a4e982 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgram.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgram.java
+@@ -240,6 +240,130 @@
+             "LOADER_SOURCE = " + encode(loader()) + "\nCONTROLLER_SOURCE = " + encode(source()));
+     }
+ 
++    public static final String INSTALL_EVIDENCE_FORMAT = "PUBLICATION_RECOVERY_PYTHON_LITERAL_V1";
++    public static final String ROLLBACK_SOURCE_FORMAT = "PUBLICATION_RECOVERY_SOURCE_VIEW_V1";
++
++    /** Readable source leaves reproduce the unchanged nested Python literals without executing them. */
++    public Map<String, Object> installationEvidence() {
++        var parts = sourceParts();
++        String loader = loader(), controller = source(), installer = installer();
++        String insertion = "LOADER_SOURCE = " + encode(loader) + "\nCONTROLLER_SOURCE = " + encode(controller);
++        int installerAt = unique(installer, insertion);
++        var result = new LinkedHashMap<String, Object>(bodyEvidence(installer,
++            List.of(literal(installer.substring(0, installerAt) + "LOADER_SOURCE = "), jsonString("loader"),
++                literal("\nCONTROLLER_SOURCE = "), jsonString("controller"), literal(installer.substring(installerAt + insertion.length())))));
++        result.put("format", INSTALL_EVIDENCE_FORMAT);
++        result.put("sources", parts.get("sources")); result.put("derived", parts.get("derived"));
++        verifyInstallationEvidence(JSON.valueToTree(result), installer);
++        return Collections.unmodifiableMap(result);
++    }
++
++    /** This non-stdin view cannot replace delivery of the current rollback launcher script. */
++    public Map<String, Object> rollbackSourceEvidence() {
++        var result = new LinkedHashMap<String, Object>(sourceParts());
++        result.put("format", ROLLBACK_SOURCE_FORMAT);
++        verifyRollbackSourceEvidence(JSON.valueToTree(result), source(), loader());
++        return Collections.unmodifiableMap(result);
++    }
++
++    private Map<String, Object> sourceParts() {
++        String bash = DeploymentManagedHelperBundle.renderPublicationRecovery(layout), controller = source(), loader = loader();
++        String inserted = "BASH_SOURCE = " + encode(bash); int at = unique(controller, inserted);
++        return Map.of("sources", Map.of("bash", bash, "loader", loader),
++            "derived", Map.of("controller", bodyEvidence(controller,
++                List.of(literal(controller.substring(0, at) + "BASH_SOURCE = "), jsonString("bash"), literal(controller.substring(at + inserted.length()))))),
++            "loaderIdentity", Map.of("characters", loader.length(), "utf8Bytes", loader.getBytes(StandardCharsets.UTF_8).length, "sha256", sha256(loader)));
++    }
++
++    private static int unique(String body, String literal) {
++        int at = body.indexOf(literal);
++        if (at < 0 || body.indexOf(literal, at + 1) >= 0) throw new IllegalArgumentException("Fixed source insertion changed");
++        return at;
++    }
++
++    private static Map<String, String> literal(String value) { return Map.of("kind", "LITERAL", "text", value); }
++    private static Map<String, String> jsonString(String name) { return Map.of("kind", "JSON_STRING", "source", name); }
++
++    private static Map<String, Object> bodyEvidence(String body, List<Map<String, String>> segments) {
++        return Map.of("segments", segments, "characters", body.length(), "utf8Bytes", body.getBytes(StandardCharsets.UTF_8).length,
++            "sha256", sha256(body));
++    }
++
++    private static String sourceText(JsonNode node, String key) {
++        String text = textual(node, key);
++        if (text.length() > 1048576 || !StandardCharsets.UTF_8.newEncoder().canEncode(text))
++            throw new IllegalArgumentException("Executable source is not bounded Unicode");
++        return text;
++    }
++
++    private static void bodyIdentity(JsonNode node, String body) {
++        for (String key : List.of("characters", "utf8Bytes"))
++            if (!node.path(key).isIntegralNumber() || !node.path(key).canConvertToInt())
++                throw new IllegalArgumentException("Executable body length missing");
++        if (node.path("characters").intValue() != body.length()
++            || node.path("utf8Bytes").intValue() != body.getBytes(StandardCharsets.UTF_8).length
++            || !textual(node, "sha256").equals(sha256(body)))
++            throw new IllegalArgumentException("Executable body identity changed");
++    }
++
++    private static String segments(JsonNode node, List<String> references, Map<String, String> sources) {
++        if (!node.isArray() || node.size() != references.size() * 2 + 1)
++            throw new IllegalArgumentException("Fixed Python source segments changed");
++        var result = new StringBuilder();
++        for (int i = 0; i < node.size(); i++) {
++            var part = node.get(i);
++            if (i % 2 == 0) {
++                fields(part, Set.of("kind", "text")); text(part, "kind", "LITERAL");
++                result.append(sourceText(part, "text"));
++            } else {
++                fields(part, Set.of("kind", "source")); text(part, "kind", "JSON_STRING");
++                String reference = references.get(i / 2); text(part, "source", reference);
++                result.append(encode(sources.get(reference)));
++            }
++            if (result.length() > 1048576) throw new IllegalArgumentException("Executable reconstruction exceeds bound");
++        }
++        return result.toString();
++    }
++
++    private static String sourceController(JsonNode evidence) {
++        var sources = evidence.path("sources"); fields(sources, Set.of("bash", "loader"));
++        String bash = sourceText(sources, "bash"); sourceText(sources, "loader");
++        var derived = evidence.path("derived"); fields(derived, Set.of("controller"));
++        var controller = derived.path("controller"); fields(controller, Set.of("segments", "characters", "utf8Bytes", "sha256"));
++        String restored = segments(controller.path("segments"), List.of("bash"), Map.of("bash", bash));
++        bodyIdentity(controller, restored); return restored;
++    }
++
++    /** Strict fixed-format reconstruction; JSON_STRING uses the same canonical encoder as the real request. */
++    public static String reconstructInstallationEvidence(JsonNode evidence) {
++        fields(evidence, Set.of("format", "sources", "derived", "segments", "characters", "utf8Bytes", "sha256"));
++        text(evidence, "format", INSTALL_EVIDENCE_FORMAT);
++        String controller = sourceController(evidence), loader = sourceText(evidence.path("sources"), "loader");
++        String restored = segments(evidence.path("segments"), List.of("loader", "controller"), Map.of("loader", loader, "controller", controller));
++        bodyIdentity(evidence, restored); return restored;
++    }
++
++    public static void verifyRollbackSourceEvidence(JsonNode evidence, String actualController, String actualLoader) {
++        fields(evidence, Set.of("format", "sources", "derived", "loaderIdentity"));
++        text(evidence, "format", ROLLBACK_SOURCE_FORMAT);
++        String controller = sourceController(evidence), loader = sourceText(evidence.path("sources"), "loader");
++        fields(evidence.path("loaderIdentity"), Set.of("characters", "utf8Bytes", "sha256"));
++        bodyIdentity(evidence.path("loaderIdentity"), loader);
++        if (!controller.equals(actualController) || !loader.equals(actualLoader))
++            throw new IllegalArgumentException("Rollback source view differs from the actual fixed program");
++    }
++
++    public static void verifyInstallationEvidence(JsonNode evidence, String executable) {
++        String restored = reconstructInstallationEvidence(evidence);
++        if (!restored.equals(executable) || !Arrays.equals(restored.getBytes(StandardCharsets.UTF_8), executable.getBytes(StandardCharsets.UTF_8)))
++            throw new IllegalArgumentException("Structured publication input differs from the exact executable");
++    }
++
++    private static Map<String, Object> sourcePointer(String pointer, String body) {
++        return Map.of("representation", "LOSSLESS_RECONSTRUCTION_DATA_NOT_PERMISSION", "pointer", pointer,
++            "characters", body.length(), "utf8Bytes", body.getBytes(StandardCharsets.UTF_8).length, "sha256", sha256(body));
++    }
++
+     /** Rebuilds the actual canonical request before exposing full executable facts. This method creates no approval. */
+     public static Map<String, Object> reviewFacts(String operation, CommandRequest command, DeploymentRemoteLayout layout) {
+         if (!Set.of(READINESS, INSTALL, ROLLBACK).contains(operation))
+@@ -277,9 +401,15 @@
+             var facts = new LinkedHashMap<String, Object>();
+             facts.putAll(Map.of("manifest", program.manifest(), "version", program.version(), "path", program.path(),
+                 "typedArguments", List.copyOf(argv), "stdinBytes", input.length, "stdinSha256", sha256(input),
+-                "completeDecodedSource", program.source(), "completeLoaderSource", program.loader(),
++                "completeDecodedSource", operation.equals(INSTALL)
++                    ? sourcePointer("/completeExecutableInput/derived/controller", program.source()) : operation.equals(ROLLBACK)
++                    ? sourcePointer("/publicationRecoveryProgram/sourceView/derived/controller", program.source()) : program.source(),
++                "completeLoaderSource", operation.equals(INSTALL)
++                    ? sourcePointer("/completeExecutableInput/sources/loader", program.loader()) : operation.equals(ROLLBACK)
++                    ? sourcePointer("/publicationRecoveryProgram/sourceView/sources/loader", program.loader()) : program.loader(),
+                 "sourceBytes", program.source().getBytes(StandardCharsets.UTF_8).length,
+                 "scope", "One guarded native-first rollback plus its exact owned maintenance marker; not candidate cleanup, task settlement, permission or retry authority"));
++            if (operation.equals(ROLLBACK)) facts.put("sourceView", program.rollbackSourceEvidence());
+             facts.put("reviewContract", REVIEW_CONTRACT);
+             return Collections.unmodifiableMap(facts);
+         } finally {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverage.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverage.java
+index 253608379612975877d313fed40b6b39adce9cc9..971af859b630476a27ba7824b95e00a6f95d6f4e 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverage.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverage.java
+@@ -18,6 +18,7 @@
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentInstallerEvidence;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram;
+ 
+ /** Necessary delivery condition for one original executable input; it carries no review authority. */
+ final class DeploymentAgentInputCoverage {
+@@ -136,11 +137,18 @@
+                 structured = List.of(INPUT);
+             } else {
+                 try {
+-                    DeploymentInstallerEvidence.verify(represented, original);
++                    if (represented.path("format").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL_EVIDENCE_FORMAT)) {
++                        if (!facts.path("operation").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL))
++                            throw new IllegalArgumentException("Publication installation evidence belongs to a different operation");
++                        DeploymentAgentPublicationRecoveryProgram.verifyInstallationEvidence(represented, original);
++                    } else DeploymentInstallerEvidence.verify(represented, original);
+                 } catch (IllegalArgumentException invalid) {
+                     throw new IOException("Structured executable evidence does not reproduce the original request", invalid);
+                 }
+-                structured = STRUCTURED_BODIES;
++                structured = represented.path("format").asText().equals(DeploymentAgentPublicationRecoveryProgram.INSTALL_EVIDENCE_FORMAT)
++                    ? List.of(INPUT + "/sources/bash", INPUT + "/sources/loader", INPUT + "/derived/controller/segments/0/text",
++                        INPUT + "/derived/controller/segments/2/text", INPUT + "/segments/0/text", INPUT + "/segments/2/text", INPUT + "/segments/4/text")
++                    : STRUCTURED_BODIES;
+                 for (String leaf : structured) {
+                     String pointer = leaf;
+                     while (pointer.startsWith(INPUT)) {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+index 718c23563f0fbfcf3927fa17154f392f0d9b6509..a9dd6ab92d1fc6e9807458b56d7ba9340f0f1b04 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+@@ -118,10 +118,29 @@
+                 var facts = DeploymentCommandEvidence.facts(intent, request.command(), layout);
+                 var node = new ObjectMapper().valueToTree(facts);
+                 assertEquals("EXECUTABLE_SCRIPT", node.path("inputKind").asText());
+-                assertEquals(program.source(), node.at("/publicationRecoveryProgram/completeDecodedSource").asText());
+-                assertEquals(program.loader(), node.at("/publicationRecoveryProgram/completeLoaderSource").asText());
+-                if (request.operation().equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL))
+-                    assertEquals(program.installer(), node.path("completeExecutableInput").asText());
++                if (request.operation().equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL)) {
++                    assertEquals(program.installer(), gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram
++                        .reconstructInstallationEvidence(node.path("completeExecutableInput")));
++                    assertEquals("/completeExecutableInput/derived/controller", node.at("/publicationRecoveryProgram/completeDecodedSource/pointer").asText());
++                    assertEquals("/completeExecutableInput/sources/loader", node.at("/publicationRecoveryProgram/completeLoaderSource/pointer").asText());
++                    assertFalse(node.at("/publicationRecoveryProgram/completeDecodedSource").isTextual());
++                    assertFalse(node.at("/publicationRecoveryProgram/completeLoaderSource").isTextual());
++                    assertEquals(program.loader(), node.at("/completeExecutableInput/sources/loader").textValue());
++                    assertTrue(node.at("/completeExecutableInput/sources/bash").textValue().contains("rollback_deployment_first"));
++                } else if (request.operation().equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.ROLLBACK)) {
++                    var view = node.at("/publicationRecoveryProgram/sourceView");
++                    gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram
++                        .verifyRollbackSourceEvidence(view, program.source(), program.loader());
++                    assertFalse(node.at("/publicationRecoveryProgram/completeDecodedSource").isTextual());
++                    assertFalse(node.at("/publicationRecoveryProgram/completeLoaderSource").isTextual());
++                    assertFalse(view.has("segments"));
++                    assertEquals("", node.path("completeExecutableInput").asText());
++                } else {
++                    assertEquals(program.source(), node.at("/publicationRecoveryProgram/completeDecodedSource").asText());
++                    assertEquals(program.loader(), node.at("/publicationRecoveryProgram/completeLoaderSource").asText());
++                    assertFalse(node.path("publicationRecoveryProgram").has("sourceView"));
++                    assertEquals("", node.path("completeExecutableInput").asText());
++                }
+                 byte[] json = new ObjectMapper().writeValueAsBytes(facts);
+                 assertTrue(json.length < 1048576); // Actual facts; final provider envelope is checked by its normal codec.
+                 var foreign = intent.withSemantics(new ActionSemantics(request.operation(),
+@@ -134,6 +153,96 @@
+             }
+         } finally {
+             requests.forEach(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.Request::close);
++        }
++        publicationInstallationUsesActualNativeDeliveryGate(layout);
++    }
++
++    private static void publicationInstallationUsesActualNativeDeliveryGate(
++        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
++        var json = new ObjectMapper(); var fixture = new NativeAiFixture();
++        var server = new ServerId("original-host");
++        var program = new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram(layout);
++        var unit = gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity
++            .forManaged("backend", server, "a".repeat(64), layout);
++        var agent = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(
++            fixture.context, fixture.task, new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence() {
++                public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding() {
++                    return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
++                        server.id(), "verified-test-target", "b".repeat(64));
++                }
++                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of(); }
++                public Object receipts() { return Map.of("events", List.of()); }
++            });
++        String approve = "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Local delivery fixture\","
++            + "\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}";
++        try (var command = program.install(unit, fixture.task.id(), UUID.randomUUID())) {
++            var intent = RemoteActions.command(server, "d".repeat(64), command.command())
++                .withSemantics(new ActionSemantics(command.operation(), command.resourceTargets()));
++            var facts = DeploymentCommandEvidence.facts(intent, command.command(), layout);
++            var structure = json.valueToTree(program.installationEvidence());
++            var leaves = List.of("/sources/bash", "/sources/loader", "/derived/controller/segments/0/text",
++                "/derived/controller/segments/2/text", "/segments/0/text", "/segments/2/text", "/segments/4/text");
++            fixture.nativeReply(new AiToolCall("premature", "submit_result", approve));
++            int calls = 0, reducedPages = 0;
++            for (String pointer : leaves) {
++                String body = structure.at(pointer).textValue();
++                for (int start = 0; start < body.length();) {
++                    int end = Math.min(body.length(), start + 8000);
++                    String wrapped;
++                    while (true) {
++                        var page = Map.of("offset", start, "next", end, "total", body.length(), "hasMore", end < body.length(),
++                            "sha256", gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.sha256(body),
++                            "text", body.substring(start, end));
++                        wrapped = json.writeValueAsString(Map.of("trust", "UNTRUSTED_DATA", "reviewBinding", "a".repeat(64), "value", page));
++                        if (wrapped.length() <= 14000) break;
++                        if (end == Math.min(body.length(), start + 8000)) reducedPages++;
++                        end = start + (end - start) / 2; assertTrue(end > start);
++                    }
++                    fixture.nativeReply(new AiToolCall("source-page-" + calls++, "evidence", json.writeValueAsString(
++                        Map.of("pointer", "/completeExecutableInput" + pointer, "offset", start, "limit", end - start))));
++                    start = end;
++                }
++            }
++            fixture.nativeReply(new AiToolCall("complete", "submit_result", approve));
++            // Pair the fixture's opaque handles with measured Chat Completions assistant states.
++            var continuationStates = new LinkedHashMap<UUID, String>();
++            var preparedReplies = new java.util.ArrayList<>(fixture.replies);
++            fixture.replies.clear();
++            for (var prepared : preparedReplies) {
++                var response = prepared.value().orElseThrow();
++                var state = json.createObjectNode().put("role", "assistant").put("content", response.text());
++                var wireCalls = state.putArray("tool_calls");
++                for (var call : response.toolCalls()) wireCalls.addObject().put("id", call.id()).put("type", "function")
++                    .putObject("function").put("name", call.name()).put("arguments", call.arguments());
++                String encodedState = json.writeValueAsString(state);
++                var handle = new gold.debug.windowstolinux.appapi.ai.model.AiContinuation(UUID.randomUUID(),
++                    encodedState.getBytes(StandardCharsets.UTF_8).length);
++                continuationStates.put(handle.id(), encodedState);
++                var boundResponse = new gold.debug.windowstolinux.appapi.ai.model.AiResponse(response.text(), response.modelId(),
++                    response.finishReason(), response.usage(), response.toolCalls(), java.util.Optional.of(handle));
++                fixture.replies.add(new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(prepared.outcome(),
++                    java.util.Optional.of(boundResponse), prepared.problem()));
++            }
++            var decision = agent.review(agent.responseInstructions(), facts, intent, command.command(), "fixture-route", fixture.task);
++            assertEquals("APPROVE", decision.decision().decision());
++            assertEquals(calls + 2, fixture.requests.size(), "Premature APPROVE must not bypass executable delivery");
++            assertTrue(fixture.requests.stream().flatMap(r -> r.messages().stream()).flatMap(m -> m.toolResult().stream())
++                .anyMatch(r -> r.text().contains("EXECUTABLE_INPUT_NOT_DELIVERED")));
++            var last = fixture.requests.getLast();
++            assertFalse(last.messages().stream().flatMap(m -> m.toolResult().stream()).anyMatch(r -> r.callId().equals("source-page-0")),
++                "Delivery accumulation is not a claim that old pages remain visible or understood");
++            assertTrue(fixture.replies.isEmpty());
++            var codec = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
++                gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS);
++            for (var captured : fixture.requests) {
++                byte[] encoded = codec.encode("deepseek-flash", captured, 8192,
++                    gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.NONE, continuationStates);
++                assertTrue(encoded.length <= captured.maxRequestBytes(), "Actual whole native page request must fit the unchanged transport cap");
++                Arrays.fill(encoded, (byte) 0);
++            }
++            // NativeAiFixture has no host/grant capability; this is only the independent review result.
++            System.out.println("PUBLICATION_INSTALL_EVIDENCE_PAGES calls=" + calls + " reducedFrom8000=" + reducedPages
++                + " currentHistoryOmitsFirstSourcePage=true hostAuthority=NONE");
+         }
+     }
+ 
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+index 81bc939f732e7f00f4c215d7f3a52d1d794c9e11..56048b5e2af579cce05a3d12a81901c21378c5af 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+@@ -137,6 +137,21 @@
+                     }
+                     assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.begin(context,task,log));assertEquals(unchanged,log.events(task));
+                     assertTrue(!installation.state().ready()&&!installation.state().mayInstall());
++                    var contradictory=new ArrayList<>(unchanged);var unknown=contradictory.getLast();
++                    var falseNotSent=DeploymentJsonDocument.parse(unknown.detail());falseNotSent.put("resolution","NOT_SENT");
++                    contradictory.set(contradictory.size()-1,new DeploymentAgentActionLog.Event(unknown.id(),unknown.type(),unknown.action(),DeploymentJsonDocument.encode(falseNotSent)));
++                    assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryInstallation.read(contradictory));
++                    for(var unconfirmed:List.of(new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"),
++                        new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",UUID.randomUUID().toString(),originalAction.toString().replace("-","")),
++                        new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),UUID.randomUUID().toString().replace("-","")))) {
++                        try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
++                            installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),unconfirmed);
++                        }
++                        assertFalse(installation.state().ready());assertFalse(installation.state().mayInstall());assertEquals(Optional.of(originalAction),installation.state().installAction());
++                        var retained=log.events(task);
++                        try(var repeated=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,repeated));}
++                        assertEquals(retained,log.events(task));
++                    }
+                     // Only a new read-only receipt for the original version/task/install operation closes this fixture's uncertainty.
+                     try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
+                         installationFixtureDispatch(installation,query);
+@@ -178,15 +193,115 @@
+         }
+     }
+ 
++    /** Real TaskWork and journal, with local codec receipts only; no APP peer, host consumption or SSH execution. */
++    @ParameterizedTest
++    @ValueSource(strings={"approve-new","deny-again","reused-action","reused-grant","changed-version","changed-review","approved-not-sent"})
++    void deniedUnsentInstallationRequiresFreshIndependentAttempt(String scenario)throws Exception {
++        enable();
++        try(var runtime=open()) {
++            start(runtime,true);server(runtime);
++            run(runtime,task->{
++                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
++                originalPublication(runtime,task,false);var formal=store.findForTask(task).orElseThrow();var unit=store.publicationTemplate(formal).orElseThrow().graph().components().getFirst().unit();
++                var program=new DeploymentAgentPublicationRecoveryProgram(unit.layout());var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),program);
++                UUID firstReadinessGrant=UUID.randomUUID();
++                try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
++                    installationFixtureDispatch(installation,query,firstReadinessGrant);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));
++                }
++                UUID firstInstall=UUID.randomUUID();boolean approvedUnsent=scenario.equals("approved-not-sent");
++                var unsentInstallActions=new java.util.HashSet<String>();unsentInstallActions.add(firstInstall.toString());
++                try(var request=program.install(unit,task.id(),firstInstall)) {
++                    installationFixtureRequest(installation,request);installation.reviewed(request.action(),new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(approvedUnsent?"APPROVE":"DENY",false,"Local unsent installation fixture"),"5".repeat(64));
++                    installation.retainInterrupted();
++                }
++                var preserved=log.events(task);var notSent=DeploymentJsonDocument.parse(preserved.getLast().detail());
++                assertEquals("NOT_SENT",DeploymentJsonDocument.string(notSent,"resolution"));assertFalse(installation.state().ready());assertFalse(installation.state().mayInstall());
++                assertEquals(approvedUnsent?Optional.of(firstInstall):Optional.empty(),installation.state().installAction());
++                assertFalse(installation.state().attempt().orElseThrow().granted());assertFalse(installation.state().attempt().orElseThrow().dispatched());
++                assertThrows(Exception.class,()->installation.granted(firstInstall,new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID())));
++                assertThrows(Exception.class,()->installation.dispatch(firstInstall));
++                try(var tooSoon=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,tooSoon));}
++                assertEquals(preserved,log.events(task));
++                if(scenario.equals("changed-version")) {
++                    var paths=unit.layout().paths();var other=new DeploymentAgentPublicationRecoveryProgram(new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++                        new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths(paths.helperDirectory()+"-next",paths.applicationsRoot()+"-next",paths.stateRoot()+"-next",paths.configurationRoot()+"-next",paths.dataRoot()+"-next")));
++                    assertFalse(program.version().equals(other.version()));assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),other));
++                    assertEquals(preserved,log.events(task));
++                }
++                if(scenario.equals("changed-review")) {
++                    assertThrows(Exception.class,()->DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"c".repeat(64),program));assertEquals(preserved,log.events(task));
++                }
++                // A subsequent caller must obtain another independently reviewed strict MISSING before proposing an install.
++                try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
++                    installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));
++                }
++                if(approvedUnsent) {
++                    assertFalse(installation.state().mayInstall());assertEquals(Optional.of(firstInstall),installation.state().installAction());
++                    var retained=log.events(task);try(var repeated=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,repeated));}assertEquals(retained,log.events(task));
++                    // Finish the local receipt fixture through a read-only exact owner receipt, without dispatching another install.
++                    try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
++                        installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),firstInstall.toString().replace("-","")));
++                    }
++                } else {
++                    assertTrue(installation.state().mayInstall());assertTrue(installation.state().installAction().isEmpty());
++                    if(scenario.equals("reused-action")) {
++                        var retained=log.events(task);try(var repeated=program.install(unit,task.id(),firstInstall)) {assertThrows(Exception.class,()->installationFixtureRequest(installation,repeated));}assertEquals(retained,log.events(task));
++                    }
++                    UUID secondInstall=UUID.randomUUID();
++                    try(var request=program.install(unit,task.id(),secondInstall)) {
++                        installationFixtureRequest(installation,request);installation.reviewed(secondInstall,new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny-again")?"DENY":"APPROVE",false,"New local installation decision"),"6".repeat(64));
++                        if(scenario.equals("deny-again")) {
++                            unsentInstallActions.add(secondInstall.toString());
++                            installation.retainInterrupted();assertFalse(installation.state().ready());assertFalse(installation.state().mayInstall());assertTrue(installation.state().installAction().isEmpty());
++                            assertFalse(installation.state().attempt().orElseThrow().granted());assertFalse(installation.state().attempt().orElseThrow().dispatched());
++                            var retained=log.events(task);try(var automaticRetry=program.install(unit,task.id(),UUID.randomUUID())) {assertThrows(Exception.class,()->installationFixtureRequest(installation,automaticRetry));}assertEquals(retained,log.events(task));
++                        } else {
++                            if(scenario.equals("reused-grant")) {
++                                var retained=log.events(task);assertThrows(Exception.class,()->installation.granted(secondInstall,new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(firstReadinessGrant)));assertEquals(retained,log.events(task));
++                            }
++                            UUID freshGrant=UUID.randomUUID();assertFalse(firstReadinessGrant.equals(freshGrant));installation.granted(secondInstall,new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(freshGrant));installation.dispatch(secondInstall);
++                            installation.result(secondInstall,localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),secondInstall.toString().replace("-","")));
++                            assertEquals(Optional.of(secondInstall),installation.state().installAction());
++                        }
++                    }
++                    if(scenario.equals("deny-again")) {
++                        // A separately observed immutable cache closes this codec fixture; neither denied install was dispatched.
++                        try(var query=program.readiness(unit,task.id(),UUID.randomUUID())) {
++                            installationFixtureDispatch(installation,query);installation.result(query.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),UUID.randomUUID().toString().replace("-","")));
++                        }
++                    }
++                }
++                assertEquals(preserved,log.events(task).subList(0,preserved.size()));assertTrue(installation.state().ready());
++                long deniedInstallDispatches=0;
++                for(var event:log.events(task))if(event.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)) {
++                    var frame=DeploymentJsonDocument.parse(event.detail());
++                    if(frame.path("kind").asText().equals("DISPATCH")&&unsentInstallActions.contains(frame.path("action").asText()))deniedInstallDispatches++;
++                }
++                assertEquals(0,deniedInstallDispatches);
++                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));
++                return success();
++            });
++            valid(runtime);
++        }
++    }
++
+     private static OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> localReceipt(){return new OperationResult<>(TaskResult.SUCCEEDED,
+         Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),"LOCAL_RECEIPT_FIXTURE=1\n","",false)),Optional.empty());}
+ 
+     /** Installation codec fixture only: no real APP, grant consumption, SSH, sidecar parser or registry integration is claimed. */
+     private static void installationFixtureDispatch(DeploymentAgentPublicationRecoveryInstallation installation,DeploymentAgentPublicationRecoveryProgram.Request request)throws Exception {
++        installationFixtureDispatch(installation,request,UUID.randomUUID());
++    }
++
++    private static void installationFixtureRequest(DeploymentAgentPublicationRecoveryInstallation installation,DeploymentAgentPublicationRecoveryProgram.Request request)throws Exception {
+         var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(request.unit().server(),installation.state().binding(),request.command())
+             .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(request.operation(),request.resourceTargets()));
+-        installation.request(request,intent);installation.reviewed(request.action(),new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local installation receipt fixture"),"5".repeat(64));
+-        installation.granted(request.action(),new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID()));installation.dispatch(request.action());
++        installation.request(request,intent);
++    }
++
++    private static void installationFixtureDispatch(DeploymentAgentPublicationRecoveryInstallation installation,DeploymentAgentPublicationRecoveryProgram.Request request,UUID grant)throws Exception {
++        installationFixtureRequest(installation,request);installation.reviewed(request.action(),new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local installation receipt fixture"),"5".repeat(64));
++        installation.granted(request.action(),new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));installation.dispatch(request.action());
+     }
+ 
+     @Test
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgramTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgramTest.java
+index 4e06cfdd0c5040151008717570f1d634b43656ff..e809c6b68bdf70b6b5a5ff072e1dd2359b1bf484 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgramTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecoveryProgramTest.java
+@@ -35,13 +35,23 @@
+             assertEquals(program.source(), JSON.readTree(sourceLine.substring("CONTROLLER_SOURCE = ".length())).textValue());
+             assertEquals(program.loader(), JSON.readTree(loaderLine.substring("LOADER_SOURCE = ".length())).textValue());
+             var facts = DeploymentAgentPublicationRecoveryProgram.reviewFacts(request.operation(), request.command(), layout);
+-            assertEquals(program.source(), facts.get("completeDecodedSource"));
+-            assertEquals(program.loader(), facts.get("completeLoaderSource"));
++            var structure = JSON.valueToTree(program.installationEvidence());
++            assertEquals(body, DeploymentAgentPublicationRecoveryProgram.reconstructInstallationEvidence(structure));
++            assertEquals("/completeExecutableInput/derived/controller", JSON.valueToTree(facts.get("completeDecodedSource")).path("pointer").asText());
++            assertEquals("/completeExecutableInput/sources/loader", JSON.valueToTree(facts.get("completeLoaderSource")).path("pointer").asText());
++            assertEquals("4bce53b129711ad351344107e8f298b2588c20f0ec82f9856d9b5e3b19eb2021", program.version());
++            // These default-layout anchors were read from frozen pre-change compiled artifacts, not this implementation.
++            assertEquals(165726, program.source().getBytes(StandardCharsets.UTF_8).length);
++            assertEquals("477ca1395417bbf1ec024c7e427066775da8d7861f2d2ee759896d598cd59ca2", DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
++            assertEquals(7586, program.loader().getBytes(StandardCharsets.UTF_8).length);
++            assertEquals("46dc35ea0c0c9b2eb5d2f1d4903891d9a62a391d8c80182a01efc9efdc7d0151", DeploymentAgentPublicationRecoveryProgram.sha256(program.loader()));
++            assertEquals(189420, body.getBytes(StandardCharsets.UTF_8).length);
++            assertEquals("0a16f4fccb224865bbcb42a4472070f54ae7f04a786f18e1bc73bda7bdb94d22", DeploymentAgentPublicationRecoveryProgram.sha256(body));
+             assertEquals(request.command().stdin().length, facts.get("stdinBytes"));
+             assertEquals(program.manifest().get("sourceSha256"), DeploymentAgentPublicationRecoveryProgram.sha256(program.source()));
+             assertTrue(program.source().getBytes(StandardCharsets.UTF_8).length < 1048576);
+             // Counts real rendered facts and their JSON string escaping, not a live provider request or approval.
+-            String serialized = JSON.writeValueAsString(Map.of("completeExecutableInput", body, "publicationRecoveryProgram", facts));
++            String serialized = JSON.writeValueAsString(Map.of("completeExecutableInput", structure, "publicationRecoveryProgram", facts));
+             assertTrue(serialized.length() < 1048576);
+             assertTrue(JSON.writeValueAsBytes(Map.of("role", "user", "content", serialized)).length < 1048576);
+             assertNotEquals(layout.toolchains() + "/agent-controller-programs", program.root());
+@@ -51,7 +61,10 @@
+         try (var request = program.guardedFirstRollback(unit, task, execution, "backend-0123456789abcdef", "b".repeat(64), "c".repeat(64), action)) {
+             assertEquals(0, request.command().stdin().length);
+             assertTrue(request.resourceTargets().stream().anyMatch(target -> target.kind().equals("deployment-maintenance")));
+-            assertEquals(program.source(), DeploymentAgentPublicationRecoveryProgram.reviewFacts(request.operation(), request.command(), layout).get("completeDecodedSource"));
++            var rollbackFacts = JSON.valueToTree(DeploymentAgentPublicationRecoveryProgram.reviewFacts(request.operation(), request.command(), layout));
++            DeploymentAgentPublicationRecoveryProgram.verifyRollbackSourceEvidence(rollbackFacts.path("sourceView"), program.source(), program.loader());
++            assertEquals("/publicationRecoveryProgram/sourceView/derived/controller", rollbackFacts.at("/completeDecodedSource/pointer").asText());
++            assertFalse(rollbackFacts.path("sourceView").has("segments"), "No installation wrapper in a rollback source view");
+             for (int change = 0; change < 4; change++) {
+                 try (var invalid = new CommandRequest(request.command().script() + (change == 0 ? " extra" : ""),
+                     change == 1 ? new byte[]{1} : new byte[0], Duration.ofSeconds(change == 2 ? 181 : 180), change == 3 ? 8193 : 8192)) {
+@@ -60,6 +73,48 @@
+             }
+         }
+         assertThrows(IllegalArgumentException.class, () -> program.guardedFirstRollback(unit, task, execution, "foreign-0123456789abcdef", "b".repeat(64), "c".repeat(64), action));
++    }
++
++    @Test
++    void installationEvidenceRejectsStructuralAndCanonicalDrift() throws Exception {
++        for (String drift : List.of("FORMAT", "EXTRA", "MISSING", "TYPE", "REFERENCE", "ORDER", "ENCODING", "SOURCE",
++            "WRAPPER", "DERIVED_HASH", "HASH", "LENGTH", "FLOAT_LENGTH", "UNICODE", "SEGMENT_EXTRA", "ACTUAL_INPUT")) {
++            ObjectNode changed = JSON.valueToTree(program.installationEvidence());
++            var segments = (com.fasterxml.jackson.databind.node.ArrayNode) changed.path("segments");
++            switch (drift) {
++                case "FORMAT" -> changed.put("format", "UNREVIEWED_FORMAT");
++                case "EXTRA" -> changed.put("permission", "APPROVE");
++                case "MISSING" -> ((ObjectNode) changed.path("sources")).remove("loader");
++                case "TYPE" -> ((ObjectNode) changed.path("sources")).put("bash", 1);
++                case "REFERENCE" -> ((ObjectNode) segments.get(1)).put("source", "bash");
++                case "ORDER" -> { var first = segments.get(1).deepCopy(); segments.set(1, segments.get(3)); segments.set(3, first); }
++                case "ENCODING" -> ((ObjectNode) segments.get(1)).put("kind", "SHELL_SINGLE_QUOTE");
++                case "SOURCE" -> ((ObjectNode) changed.path("sources")).put("loader", program.loader() + "\n# changed");
++                case "WRAPPER" -> ((ObjectNode) changed.at("/derived/controller/segments/0")).put("text", "# replaced\n");
++                case "DERIVED_HASH" -> ((ObjectNode) changed.at("/derived/controller")).put("sha256", "a".repeat(64));
++                case "HASH" -> changed.put("sha256", "a".repeat(64));
++                case "LENGTH" -> changed.put("characters", true);
++                case "FLOAT_LENGTH" -> changed.put("utf8Bytes", 189420.0);
++                case "UNICODE" -> ((ObjectNode) changed.path("sources")).put("bash", "\ud800");
++                case "SEGMENT_EXTRA" -> ((ObjectNode) segments.get(0)).put("authority", "TRUSTED");
++                case "ACTUAL_INPUT" -> { }
++                default -> throw new AssertionError(drift);
++            }
++            String actual = program.installer() + (drift.equals("ACTUAL_INPUT") ? " " : "");
++            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPublicationRecoveryProgram.verifyInstallationEvidence(changed, actual), drift);
++        }
++        for (String drift : List.of("BASH", "LOADER", "EXTRA", "LENGTH", "REFERENCE")) {
++            ObjectNode changed = JSON.valueToTree(program.rollbackSourceEvidence());
++            switch (drift) {
++                case "BASH" -> ((ObjectNode) changed.path("sources")).put("bash", "changed");
++                case "LOADER" -> ((ObjectNode) changed.path("sources")).put("loader", "changed");
++                case "EXTRA" -> changed.putArray("segments");
++                case "LENGTH" -> ((ObjectNode) changed.path("loaderIdentity")).put("characters", false);
++                case "REFERENCE" -> ((ObjectNode) changed.at("/derived/controller/segments/1")).put("source", "loader");
++                default -> throw new AssertionError(drift);
++            }
++            assertThrows(IllegalArgumentException.class, () -> DeploymentAgentPublicationRecoveryProgram.verifyRollbackSourceEvidence(changed, program.source(), program.loader()), drift);
++        }
+     }
+ 
+     @Test
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverageTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverageTest.java
+index 914df67eec8de7784714ed67daaeb884ff95bd7e..75fc0eb830ade52f5ce67f784565d70d42708507 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverageTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentInputCoverageTest.java
+@@ -256,4 +256,63 @@
+             assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(request, facts("different original stdin")));
+         }
+     }
++    @Test
++    void recoveryInstallerRequiresEveryLeafAfterActualDelivery() throws Exception {
++        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        var program = new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram(layout);
++        var unit = gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitIdentity
++            .forManaged("backend", new gold.debug.windowstolinux.appapi.server.model.ServerId("original-host"), "a".repeat(64), layout);
++        JsonNode structure = JSON.valueToTree(program.installationEvidence());
++        var leaves = List.of("/sources/bash", "/sources/loader", "/derived/controller/segments/0/text",
++            "/derived/controller/segments/2/text", "/segments/0/text", "/segments/2/text", "/segments/4/text");
++        try (var original = program.install(unit, java.util.UUID.randomUUID(), java.util.UUID.randomUUID())) {
++            var current = facts(program.installer()).put("operation",
++                gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.INSTALL);
++            current.set("completeExecutableInput", structure);
++            for (String missing : leaves) {
++                var coverage = new DeploymentAgentInputCoverage(original.command(), current);
++                for (String pointer : leaves) if (!pointer.equals(missing)) deliverRecoveryLeaf(coverage, structure, pointer);
++                assertFalse(coverage.complete(), missing);
++                coverage.returned("save_review_notes", JSON.createObjectNode(), Map.of("summary", "All sources reviewed"), "notes");
++                coverage.delivered(input(coverage), "notes"::equals);
++                assertFalse(coverage.complete(), "Notes and descriptors cannot fill " + missing);
++                deliverRecoveryLeaf(coverage, structure, missing);
++                assertTrue(coverage.complete());
++                assertEquals("NONE", JSON.valueToTree(coverage.missing()).path("authority").asText());
++                var fresh = new DeploymentAgentInputCoverage(original.command(), current);
++                assertFalse(fresh.complete(), "New reviews inherit neither delivery nor authority");
++            }
++            assertThrows(IOException.class, () -> new DeploymentAgentInputCoverage(original.command(), current.deepCopy().put("operation", "other")));
++        }
++        try (var rollback = program.guardedFirstRollback(unit, java.util.UUID.randomUUID(), java.util.UUID.randomUUID(),
++            "backend-0123456789abcdef", "b".repeat(64), "c".repeat(64), java.util.UUID.randomUUID())) {
++            var current = facts(""); current.put("operation",
++                gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.ROLLBACK);
++            current.putObject("publicationRecoveryProgram").set("sourceView", JSON.valueToTree(program.rollbackSourceEvidence()));
++            var coverage = new DeploymentAgentInputCoverage(rollback.command(), current);
++            var view = current.at("/publicationRecoveryProgram/sourceView");
++            for (String pointer : List.of("/sources/bash", "/sources/loader", "/derived/controller/segments/0/text", "/derived/controller/segments/2/text")) {
++                String body = view.at(pointer).textValue();
++                deliver(coverage, "evidence", "/publicationRecoveryProgram/sourceView" + pointer, body, 0, body.length());
++            }
++            assertFalse(coverage.complete(), "Non-stdin source view cannot fill the actual loader script gap");
++            String script = rollback.command().script();
++            deliver(coverage, "request", "script", script, 0, script.length());
++            assertTrue(coverage.complete(), "Only the actual current script satisfies its executable delivery gate");
++        }
++    }
++
++    private static void deliverRecoveryLeaf(DeploymentAgentInputCoverage coverage, JsonNode structure, String pointer) throws Exception {
++        String body = structure.at(pointer).textValue(); assertTrue(body != null && !body.isEmpty());
++        for (int start = 0; start < body.length();) {
++            int end = Math.min(body.length(), start + 8000);
++            while (JSON.writeValueAsString(Map.of("trust", "UNTRUSTED_DATA", "reviewBinding", "a".repeat(64),
++                "value", page(body, start, end))).length() > 14000) {
++                end = start + (end - start) / 2; assertTrue(end > start);
++            }
++            deliver(coverage, "evidence", PREFIX + pointer, body, start, end);
++            start = end;
++        }
++    }
++
+ }
