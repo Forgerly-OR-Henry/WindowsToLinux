@@ -32,3 +32,4 @@ docs/test/multi-language/patches/AGENT-CONTROLLER-SOURCE-EVIDENCE-213.patch -tex
 docs/test/multi-language/patches/AGENT-APPROVAL-CONTINUATION-CONTRACT-215.patch -text
 docs/test/multi-language/patches/AGENT-NATIVE-VALIDATION-DIAGNOSTICS-217.patch -text
 docs/test/multi-language/patches/AGENT-APPROVAL-DENIAL-FEEDBACK-219.patch -text
+docs/test/multi-language/patches/AGENT-BUILD-STORAGE-CONTRACT-220.patch -text
