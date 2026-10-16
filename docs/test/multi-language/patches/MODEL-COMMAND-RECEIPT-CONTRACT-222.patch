@@ -1,0 +1,976 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentModelCommandIdentity.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentModelCommandIdentity.java
+@@ -1,151 +1,216 @@
+-package gold.debug.windowstolinux.mod.deployment.linux.command.contract;
+-
+-import java.nio.charset.StandardCharsets;
+-import java.util.*;
+-
+-import com.fasterxml.jackson.databind.ObjectMapper;
+-import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
+-import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission;
+-import gold.debug.windowstolinux.appapi.linux.command.*;
+-import gold.debug.windowstolinux.appapi.task.action.*;
+-import gold.debug.windowstolinux.appapi.task.result.*;
+-import gold.debug.windowstolinux.mod.deployment.ai.json.DeploymentJsonFields;
+-import gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe;
+-
+-/** Pure model command identity and executable evidence envelope. / 纯模型命令身份及可执行依据封套。 */
+-public final class DeploymentModelCommandIdentity {
+-    /** Binds only the original inputs and capabilities owned by this adapter. / 仅绑定当前适配所属的原输入及能力。 */
+-    private DeploymentModelCommandIdentity() {
+-    }
+-
+-    /** Strict duplicate and trailing-token rejecting JSON codec. / 拒绝重复字段及尾随内容的严格 JSON 编解码器。 */
+-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper()
+-        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+-        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+-
+-    /** Fixed isolated environment for model command execution. / 模型命令执行的固定隔离环境。 */
+-    public static final String ENVIRONMENT = "/usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C HOME=/dev/null";
+-
+-    /** Fixed launcher accepting the reviewed executable body. / 接收已审阅可执行正文的固定启动器。 */
+-    public static final String LAUNCHER = "exec " + ENVIRONMENT + " /bin/bash --noprofile --norc -s";
+-
+-    /** Canonical model command evidence metadata prefix. / 规范模型命令依据元数据前缀。 */
+-    public static final String METADATA = "# WTL_MODEL_COMMAND ";
+-
+-    /** Verifies the full model executable envelope before exposing command evidence. / 在暴露命令依据前核实完整模型可执行封套。
+-     * @param executable complete model command envelope / 完整模型命令封套
+-     * @return verified exact executable evidence / 已核实精确可执行依据
+-     * @throws java.io.IOException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+-    public static Map<String, Object> executableFacts(String executable) throws java.io.IOException {
+-        return executableFacts(executable, DeploymentRemoteLayout.original());
+-    }
+-
+-    public static Map<String, Object> executableFacts(String executable, DeploymentRemoteLayout layout) throws java.io.IOException {
+-        int firstLine = executable.indexOf('\n');
+-        if (!executable.startsWith(METADATA) || firstLine < 0 || firstLine > 20000)
+-            throw new IllegalArgumentException("Model command metadata is absent");
+-        String encoded = executable.substring(METADATA.length(), firstLine);
+-        byte[] bytes = Base64.getDecoder().decode(encoded);
+-        try {
+-            if (!Base64.getEncoder().encodeToString(bytes).equals(encoded))
+-                throw new IllegalArgumentException("Model command metadata is not canonical");
+-            var metadata = JSON.readTree(bytes);
+-            var fields = new HashSet<>(Set.of("task", "operation", "bodySha256", "rationale"));
+-            if (!layout.equals(DeploymentRemoteLayout.original())) fields.add("remoteLayout");
+-            DeploymentJsonFields.exact(metadata, fields);
+-            if (!layout.equals(DeploymentRemoteLayout.original())
+-                && !layout.canonical().equals(DeploymentJsonFields.text(metadata, "remoteLayout", 4096)))
+-                throw new IllegalArgumentException("Model command original layout changed");
+-            UUID task = UUID.fromString(DeploymentJsonFields.text(metadata, "task", 36));
+-            UUID operation = UUID.fromString(DeploymentJsonFields.text(metadata, "operation", 36));
+-            String body = DeploymentJsonFields.text(metadata, "bodySha256", 64);
+-            String rationale = DeploymentJsonFields.text(metadata, "rationale", 2000);
+-            String delimiter = "WTL_MODEL_" + operation.toString().replace("-", "");
+-            String begin = " /bin/bash --noprofile --norc -se <<'" + delimiter + "'\n"
+-                + "cd -- /\n" + DeploymentPlatformCapabilityProbe.probeGuards();
+-            int start = executable.indexOf(begin);
+-            if (start < 0) throw new IllegalArgumentException("Model command body is absent");
+-            start += begin.length();
+-            int end = executable.indexOf("\n" + delimiter + "\n", start);
+-            if (end < 0) throw new IllegalArgumentException("Model command body is incomplete");
+-            String script = executable.substring(start, end);
+-            if (!body.equals(digest(script)) || !executable.equals(envelope(task, operation, body, script, rationale, layout)))
+-                throw new IllegalArgumentException("Model command executable binding changed");
+-            return Map.of("task", task.toString(), "operation", operation.toString(), "bodySha256", body,
+-                "rationale", rationale, "modelScript", script, "productReceiptDirectory", layout.modelCommandOperationsRoot());
+-        } finally {
+-            Arrays.fill(bytes, (byte) 0);
+-        }
+-    }
+-
+-    /** Computes the canonical SHA256 identity of the original content. / 计算原内容的规范 SHA256 身份。
+-     * @param s original content included in the digest or shell literal / 摘要或 Shell 字面量包含的原内容
+-     * @return canonical lowercase SHA256 / 规范小写 SHA256 */
+-    public static String digest(String s) {
+-        try {
+-            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));
+-        } catch (java.security.NoSuchAlgorithmException unavailable) {
+-            throw new IllegalStateException("SHA-256 unavailable", unavailable);
+-        }
+-    }
+-
+-    /** Original durable model operation receipt directory. / 原持久模型操作回执目录。 */
+-    public static final String DIRECTORY = "/var/lib/windowstolinux/model-command-operations";
+-
+-    /** Renders the original isolated model command and durable receipt protocol. / 生成原隔离模型命令及持久回执协议。
+-     * @param task original admitted task / 原已准入任务
+-     * @param operation original operation receipt identity / 原操作回执身份
+-     * @param digest exact reviewed executable content digest / 精确已审阅可执行内容摘要
+-     * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
+-     * @param rationale bounded reason bound to the exact model body / 绑定精确模型正文的有界理由
+-     * @return complete original guarded executable body / 完整原受保护可执行正文 */
+-    public static String envelope(UUID task, UUID operation, String digest, String script, String rationale) {
+-        return envelope(task, operation, digest, script, rationale, DeploymentRemoteLayout.original());
+-    }
+-
+-    public static String envelope(UUID task, UUID operation, String digest, String script, String rationale,
+-                                  DeploymentRemoteLayout layout) {
+-        String delimiter = "WTL_MODEL_" + operation.toString().replace("-", "");
+-        if (script.contains(delimiter)) throw new IllegalArgumentException("Model command delimiter conflict");
+-        if (rationale.isBlank() || rationale.length() > 2000)
+-            throw new IllegalArgumentException("Model command rationale invalid");
+-        var data = JSON.createObjectNode().put("task", task.toString()).put("operation", operation.toString())
+-            .put("bodySha256", digest).put("rationale", rationale);
+-        if (!layout.equals(DeploymentRemoteLayout.original())) data.put("remoteLayout", layout.canonical());
+-        String metadata = data.toString();
+-        return METADATA + Base64.getEncoder().encodeToString(metadata.getBytes(StandardCharsets.UTF_8))
+-            + "\nset -euo pipefail\nexport LC_ALL=C\n"
+-            + DeploymentRemoteLayoutAdmission.initialize(layout)
+-            + "for p in " + String.join(" ", DeploymentRemoteLayoutAdmission.ancestors(layout.paths().stateRoot()).stream()
+-                .map(DeploymentModelCommandIdentity::quote).toList())
+-            + "; do if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then /usr/bin/install -d -o root -g root -m 700 -- \"$p\"; fi; [ ! -L \"$p\" ] && [ -d \"$p\" ] && [ \"$(/usr/bin/stat -c '%u:%g' \"$p\")\" = 0:0 ] || exit 64; m=$(/usr/bin/stat -c '%a' \"$p\"); (( (8#$m & 022) == 0 )) || exit 64; done\n"
+-            + "d=" + quote(layout.modelCommandOperationsRoot()) + "; if [ -e \"$d\" ] || [ -L \"$d\" ]; then [ ! -L \"$d\" ] && [ \"$(/usr/bin/stat -c '%u:%g:%a' \"$d\")\" = 0:0:700 ] || exit 64; else /usr/bin/install -d -o root -g root -m 700 -- \"$d\"; fi\n"
+-            + "umask 077\nr=\"$d/" + operation + ".receipt\"\n(set -C; printf '%s' " + quote(header(task, operation, digest, layout) + "STARTED=1\n") + " >\"$r\") || exit 64\n/usr/bin/sync -f \"$r\"\n/usr/bin/sync -f \"$d\"\n"
+-            + "set +e\n" + ENVIRONMENT + " /bin/bash --noprofile --norc -se <<'" + delimiter + "'\n"
+-            + "cd -- /\n" + DeploymentPlatformCapabilityProbe.probeGuards() + script + "\n" + delimiter
+-            + "\ne=$?\nset -e\nt=$(/usr/bin/mktemp \"$d/.terminal.XXXXXX\")\nprintf '%sEXIT=%s\\n' "
+-            + quote(header(task, operation, digest, layout)) + " \"$e\" >\"$t\"\n/usr/bin/sync -f \"$t\"\n/usr/bin/mv -fT -- \"$t\" \"$r\"\n/usr/bin/sync -f \"$d\"\n";
+-    }
+-
+-    /** Renders the original task, operation and body digest receipt header. / 生成原任务、操作及正文摘要回执头。
+-     * @param task original admitted task / 原已准入任务
+-     * @param operation original operation receipt identity / 原操作回执身份
+-     * @param body original executable body digest / 原可执行正文摘要
+-     * @return exact original durable receipt header / 精确原持久回执头 */
+-    public static String header(UUID task, UUID operation, String body) {
+-        return header(task, operation, body, DeploymentRemoteLayout.original());
+-    }
+-
+-    public static String header(UUID task, UUID operation, String body, DeploymentRemoteLayout layout) {
+-        return "FORMAT=" + (layout.equals(DeploymentRemoteLayout.original()) ? "1" : "2") + "\nTASK=" + task
+-            + "\nOPERATION=" + operation + "\nBODY_SHA256=" + body + "\n"
+-            + (layout.equals(DeploymentRemoteLayout.original()) ? "" : "LAYOUT_SHA256=" + layout.digest() + "\n");
+-    }
+-
+-    /** Quotes one literal for the fixed Bash protocol without evaluating it. / 将一个字面量引用到固定 Bash 协议中，不求值。
+-     * @param s original content included in the digest or shell literal / 摘要或 Shell 字面量包含的原内容
+-     * @return quoted literal without shell expansion / 不含 Shell 展开的引用字面量 */
+-    public static String quote(String s) {
+-        return "'" + s.replace("'", "'\\''") + "'";
+-    }
+-}
++package gold.debug.windowstolinux.mod.deployment.linux.command.contract;
++
++import java.nio.charset.StandardCharsets;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentRemoteLayoutAdmission;
++import gold.debug.windowstolinux.appapi.linux.command.*;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.mod.deployment.ai.json.DeploymentJsonFields;
++import gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe;
++
++/** Pure model command identity and executable evidence envelope. / 纯模型命令身份及可执行依据封套。 */
++public final class DeploymentModelCommandIdentity {
++    /** Binds only the original inputs and capabilities owned by this adapter. / 仅绑定当前适配所属的原输入及能力。 */
++    private DeploymentModelCommandIdentity() {
++    }
++
++    /** Strict duplicate and trailing-token rejecting JSON codec. / 拒绝重复字段及尾随内容的严格 JSON 编解码器。 */
++    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper()
++        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++
++    /** Fixed isolated environment for model command execution. / 模型命令执行的固定隔离环境。 */
++    public static final String ENVIRONMENT = "/usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C HOME=/dev/null";
++
++    /** Fixed launcher accepting the reviewed executable body. / 接收已审阅可执行正文的固定启动器。 */
++    public static final String LAUNCHER = "exec " + ENVIRONMENT + " /bin/bash --noprofile --norc -s";
++
++    /** Canonical model command evidence metadata prefix. / 规范模型命令依据元数据前缀。 */
++    public static final String METADATA = "# WTL_MODEL_COMMAND ";
++
++    /** Verifies the full model executable envelope before exposing command evidence. / 在暴露命令依据前核实完整模型可执行封套。
++     * @param executable complete model command envelope / 完整模型命令封套
++     * @return verified exact executable evidence / 已核实精确可执行依据
++     * @throws java.io.IOException if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
++    public static Map<String, Object> executableFacts(String executable) throws java.io.IOException {
++        return executableFacts(executable, DeploymentRemoteLayout.original());
++    }
++
++    public static Map<String, Object> executableFacts(String executable, DeploymentRemoteLayout layout) throws java.io.IOException {
++        int firstLine = executable.indexOf('\n');
++        if (!executable.startsWith(METADATA) || firstLine < 0 || firstLine > 20000)
++            throw new IllegalArgumentException("Model command metadata is absent");
++        String encoded = executable.substring(METADATA.length(), firstLine);
++        byte[] bytes = Base64.getDecoder().decode(encoded);
++        try {
++            if (!Base64.getEncoder().encodeToString(bytes).equals(encoded))
++                throw new IllegalArgumentException("Model command metadata is not canonical");
++            var metadata = JSON.readTree(bytes);
++            var fields = new HashSet<>(Set.of("task", "operation", "bodySha256", "rationale"));
++            if (!layout.equals(DeploymentRemoteLayout.original())) fields.add("remoteLayout");
++            DeploymentJsonFields.exact(metadata, fields);
++            if (!layout.equals(DeploymentRemoteLayout.original())
++                && !layout.canonical().equals(DeploymentJsonFields.text(metadata, "remoteLayout", 4096)))
++                throw new IllegalArgumentException("Model command original layout changed");
++            UUID task = UUID.fromString(DeploymentJsonFields.text(metadata, "task", 36));
++            UUID operation = UUID.fromString(DeploymentJsonFields.text(metadata, "operation", 36));
++            String body = DeploymentJsonFields.text(metadata, "bodySha256", 64);
++            String rationale = DeploymentJsonFields.text(metadata, "rationale", 2000);
++            String delimiter = "WTL_MODEL_" + operation.toString().replace("-", "");
++            String begin = " /bin/bash --noprofile --norc -se <<'" + delimiter + "'\n"
++                + "cd -- /\n" + DeploymentPlatformCapabilityProbe.probeGuards();
++            int start = executable.indexOf(begin);
++            if (start < 0) throw new IllegalArgumentException("Model command body is absent");
++            start += begin.length();
++            int end = executable.indexOf("\n" + delimiter + "\n", start);
++            if (end < 0) throw new IllegalArgumentException("Model command body is incomplete");
++            String script = executable.substring(start, end);
++            if (!body.equals(digest(script)) || !executable.equals(envelope(task, operation, body, script, rationale, layout)))
++                throw new IllegalArgumentException("Model command executable binding changed");
++            return Map.of("task", task.toString(), "operation", operation.toString(), "bodySha256", body,
++                "rationale", rationale, "modelScript", script, "productReceiptDirectory", layout.modelCommandOperationsRoot());
++        } finally {
++            Arrays.fill(bytes, (byte) 0);
++        }
++    }
++
++    /** Computes the canonical SHA256 identity of the original content. / 计算原内容的规范 SHA256 身份。
++     * @param s original content included in the digest or shell literal / 摘要或 Shell 字面量包含的原内容
++     * @return canonical lowercase SHA256 / 规范小写 SHA256 */
++    public static String digest(String s) {
++        try {
++            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8)));
++        } catch (java.security.NoSuchAlgorithmException unavailable) {
++            throw new IllegalStateException("SHA-256 unavailable", unavailable);
++        }
++    }
++
++    /** Original durable model operation receipt directory. / 原持久模型操作回执目录。 */
++    public static final String DIRECTORY = "/var/lib/windowstolinux/model-command-operations";
++
++    /** Renders the original isolated model command and durable receipt protocol. / 生成原隔离模型命令及持久回执协议。
++     * @param task original admitted task / 原已准入任务
++     * @param operation original operation receipt identity / 原操作回执身份
++     * @param digest exact reviewed executable content digest / 精确已审阅可执行内容摘要
++     * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
++     * @param rationale bounded reason bound to the exact model body / 绑定精确模型正文的有界理由
++     * @return complete original guarded executable body / 完整原受保护可执行正文 */
++    public static String envelope(UUID task, UUID operation, String digest, String script, String rationale) {
++        return envelope(task, operation, digest, script, rationale, DeploymentRemoteLayout.original());
++    }
++
++    public static String envelope(UUID task, UUID operation, String digest, String script, String rationale,
++                                  DeploymentRemoteLayout layout) {
++        String delimiter = "WTL_MODEL_" + operation.toString().replace("-", "");
++        if (script.contains(delimiter)) throw new IllegalArgumentException("Model command delimiter conflict");
++        if (rationale.isBlank() || rationale.length() > 2000)
++            throw new IllegalArgumentException("Model command rationale invalid");
++        var data = JSON.createObjectNode().put("task", task.toString()).put("operation", operation.toString())
++            .put("bodySha256", digest).put("rationale", rationale);
++        if (!layout.equals(DeploymentRemoteLayout.original())) data.put("remoteLayout", layout.canonical());
++        String metadata = data.toString();
++        return METADATA + Base64.getEncoder().encodeToString(metadata.getBytes(StandardCharsets.UTF_8))
++            + "\nset -euo pipefail\nexport LC_ALL=C\n"
++            + DeploymentRemoteLayoutAdmission.initialize(layout)
++            + "for p in " + String.join(" ", DeploymentRemoteLayoutAdmission.ancestors(layout.paths().stateRoot()).stream()
++            .map(DeploymentModelCommandIdentity::quote).toList())
++            + "; do if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then /usr/bin/install -d -o root -g root -m 700 -- \"$p\"; fi; [ ! -L \"$p\" ] && [ -d \"$p\" ] && [ \"$(/usr/bin/stat -c '%u:%g' \"$p\")\" = 0:0 ] || exit 64; m=$(/usr/bin/stat -c '%a' \"$p\"); (( (8#$m & 022) == 0 )) || exit 64; done\n"
++            + "d=" + quote(layout.modelCommandOperationsRoot()) + "; if [ -e \"$d\" ] || [ -L \"$d\" ]; then [ ! -L \"$d\" ] && [ \"$(/usr/bin/stat -c '%u:%g:%a' \"$d\")\" = 0:0:700 ] || exit 64; else /usr/bin/install -d -o root -g root -m 700 -- \"$d\"; fi\n"
++            + "umask 077\nr=\"$d/" + operation + ".receipt\"\n(set -C; printf '%s' " + quote(header(task, operation, digest, layout) + "STARTED=1\n") + " >\"$r\") || exit 64\n/usr/bin/sync -f \"$r\"\n/usr/bin/sync -f \"$d\"\n"
++            + "set +e\n" + ENVIRONMENT + " /bin/bash --noprofile --norc -se <<'" + delimiter + "'\n"
++            + "cd -- /\n" + DeploymentPlatformCapabilityProbe.probeGuards() + script + "\n" + delimiter
++            + "\ne=$?\nset -e\nt=$(/usr/bin/mktemp \"$d/.terminal.XXXXXX\")\nprintf '%sEXIT=%s\\n' "
++            + quote(header(task, operation, digest, layout)) + " \"$e\" >\"$t\"\n/usr/bin/sync -f \"$t\"\n/usr/bin/mv -fT -- \"$t\" \"$r\"\n/usr/bin/sync -f \"$d\"\n";
++    }
++
++    /** Renders the original task, operation and body digest receipt header. / 生成原任务、操作及正文摘要回执头。
++     * @param task original admitted task / 原已准入任务
++     * @param operation original operation receipt identity / 原操作回执身份
++     * @param body original executable body digest / 原可执行正文摘要
++     * @return exact original durable receipt header / 精确原持久回执头 */
++    public static String header(UUID task, UUID operation, String body) {
++        return header(task, operation, body, DeploymentRemoteLayout.original());
++    }
++
++    public static String header(UUID task, UUID operation, String body, DeploymentRemoteLayout layout) {
++        return "FORMAT=" + (layout.equals(DeploymentRemoteLayout.original()) ? "1" : "2") + "\nTASK=" + task
++            + "\nOPERATION=" + operation + "\nBODY_SHA256=" + body + "\n"
++            + (layout.equals(DeploymentRemoteLayout.original()) ? "" : "LAYOUT_SHA256=" + layout.digest() + "\n");
++    }
++
++    /** Reads only a finite, original-identity receipt protocol; arbitrary file bytes never become output. / 仅读取有限原身份回执协议，任意文件字节不成为输出。
++     * @param task original task / 原任务
++     * @param operation original operation / 原操作
++     * @param body original executable digest / 原可执行摘要
++     * @param layout captured original layout / 捕获的原目录
++     * @return complete independently reviewable reader / 完整可独立审阅的读取器 */
++    public static String receiptStatus(UUID task, UUID operation, String body, DeploymentRemoteLayout layout) {
++        Objects.requireNonNull(task);
++        Objects.requireNonNull(operation);
++        Objects.requireNonNull(layout);
++        if (body == null || !body.matches("[0-9a-f]{64}"))
++            throw new IllegalArgumentException("Original receipt identity is invalid");
++        String header = header(task, operation, body, layout);
++        String reader = """
++            set -euo pipefail
++            export LC_ALL=C
++            for p in @PARENTS@ @DIRECTORY@; do
++              [ ! -L "$p" ] && [ -d "$p" ] || exit 3
++              [ "$(/usr/bin/stat -c '%u:%g' -- "$p")" = '0:0' ] || exit 3
++              m=$(/usr/bin/stat -c '%a' -- "$p")
++              [[ "$m" =~ ^[0-7]{3,4}$ ]] && (( (8#$m & 022) == 0 )) || exit 3
++            done
++            [ "$(/usr/bin/stat -c '%u:%g:%a' -- @DIRECTORY@)" = '0:0:700' ] || exit 3
++            r=@RECEIPT@
++            [ ! -L "$r" ] && [ -f "$r" ] || exit 3
++            format='%f:%u:%g:%a:%h:%s:%d:%i:%y:%z'
++            before=$(/usr/bin/stat -c "$format" -- "$r")
++            exec 9< "$r"
++            opened=$(/usr/bin/stat -Lc "$format" -- /proc/self/fd/9)
++            [ "$before" = "$opened" ] || exit 3
++            IFS=: read -r kind uid gid mode links bytes device inode times <<< "$opened"
++            [[ "$kind" =~ ^[0-9a-f]+$ && "$bytes" =~ ^(0|[1-9][0-9]{0,3})$ ]] || exit 3
++            (( (16#$kind & 0170000) == 0100000 )) || exit 3
++            [ "$uid:$gid:$mode:$links" = '0:0:600:1' ] && (( bytes <= 1024 )) || exit 3
++            hex=$(/usr/bin/od -An -v -tx1 -N1025 <&9)
++            after=$(/usr/bin/stat -Lc "$format" -- /proc/self/fd/9)
++            [ ! -L "$r" ] && [ -f "$r" ] || exit 3
++            [ "$opened" = "$after" ] && [ "$opened" = "$(/usr/bin/stat -c "$format" -- "$r")" ] || exit 3
++            hex=${hex// /}
++            hex=${hex//$'\\n'/}
++            [[ "$hex" =~ ^[0-9a-f]+$ ]] && (( ${#hex} == bytes * 2 )) || exit 3
++            prefix=@HEADER_HEX@
++            [[ "$hex" == "$prefix"* ]] || exit 3
++            tail=${hex:${#prefix}}
++            if [ "$tail" = '535441525445443d310a' ]; then
++              builtin printf '%sSTARTED=1\\n' @HEADER@
++            elif [[ "$tail" =~ ^455849543d(3[0-9]){1,3}0a$ ]]; then
++              digits=${tail:10:${#tail}-12}
++              code=''
++              while [ -n "$digits" ]; do code+=${digits:1:1}; digits=${digits:2}; done
++              [[ "$code" =~ ^(0|[1-9][0-9]{0,2})$ ]] && (( 10#$code <= 255 )) || exit 3
++              builtin printf '%sEXIT=%s\\n' @HEADER@ "$code"
++            else
++              exit 3
++            fi
++            """.replace("@PARENTS@", String.join(" ", DeploymentRemoteLayoutAdmission.ancestors(layout.paths().stateRoot()).stream()
++                .map(DeploymentModelCommandIdentity::quote).toList()))
++            .replace("@DIRECTORY@", quote(layout.modelCommandOperationsRoot()))
++            .replace("@RECEIPT@", quote(layout.modelCommandOperationsRoot() + "/" + operation + ".receipt"))
++            .replace("@HEADER_HEX@", quote(HexFormat.of().formatHex(header.getBytes(StandardCharsets.UTF_8))))
++            .replace("@HEADER@", quote(header));
++        // A clean nested shell also prevents inherited xtrace/BASH_ENV from exposing internal hex. / 干净的内层Shell同时防止继承跟踪或启动脚本暴露内部hex。
++        return "exec " + ENVIRONMENT + " /bin/bash --noprofile --norc -c " + quote(reader) + " 2>/dev/null";
++    }
++
++    /** Quotes one literal for the fixed Bash protocol without evaluating it. / 将一个字面量引用到固定 Bash 协议中，不求值。
++     * @param s original content included in the digest or shell literal / 摘要或 Shell 字面量包含的原内容
++     * @return quoted literal without shell expansion / 不含 Shell 展开的引用字面量 */
++    public static String quote(String s) {
++        return "'" + s.replace("'", "'\\''") + "'";
++    }
++}
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunner.java
+@@ -20,7 +20,6 @@
+ import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentFixedCommandApproval;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
+-import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperInstallerScript;
+ 
+ /** Original task-bound model command runner with durable receipt reconciliation. / 带持久回执核对的原任务绑定模型命令执行器。 */
+ public final class DeploymentModelCommandRunner {
+@@ -309,6 +308,87 @@
+         return (com.fasterxml.jackson.databind.node.ObjectNode) facts;
+     }
+ 
++    /** Derives finite receipt-read evidence from the original dispatched checkpoint and exact request. / 从原已发送检查点和精确请求派生有限回执读取依据。
++     * @param context original owner / 原所有者
++     * @param task original task / 原任务
++     * @param intent exact status intent / 精确状态意图
++     * @param request complete status request / 完整状态请求
++     * @param layout captured original layout / 捕获的原目录
++     * @return original journal-bound read scope, without the author body / 原账本绑定的读取范围，不含作者正文
++     * @throws ApiException if original task evidence is unavailable / 原任务依据不可用时
++     * @throws java.io.IOException if any status binding is invalid / 任一状态绑定无效时 */
++    public static Map<String, Object> receiptStatusEvidence(ModContext context, TaskContext task, ActionIntent intent,
++                                                            CommandRequest request,
++                                                            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout)
++        throws ApiException, java.io.IOException {
++        try {
++            var captured = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++            var checkpoint = context.tasks().findCheckpoint(task, KEY).orElseThrow();
++            var snapshot = checkpoint.snapshot();
++            var facts = read(checkpoint, task);
++            var server = new ServerId(facts.path("server").asText());
++            var actual = RemoteActions.command(server, facts.path("modelRevision").asText(), request);
++            var semantics = intent.semantics().orElseThrow();
++            byte[] input = request.stdin();
++            try {
++                if (snapshot.released() || !snapshot.equals(checkpoint.snapshot()) || !captured.equals(layout)
++                    || !intent.type().equals(actual.type()) || !intent.serverIds().equals(actual.serverIds())
++                    || !intent.target().equals(actual.target()) || !intent.revision().equals(actual.revision())
++                    || !intent.exactAction().equals(actual.exactAction()) || !intent.effectSummary().equals(actual.effectSummary())
++                    || !semantics.operation().equals("deployment.model.command.status.v1")
++                    || !semantics.targets().equals(Set.of(new ActionTarget(server.id(), "task", task.id().toString())))
++                    || input.length != 0 || !request.timeout().equals(Duration.ofSeconds(30)) || request.outputLimitBytes() != 1024)
++                    throw new IllegalArgumentException();
++            } finally {
++                Arrays.fill(input, (byte) 0);
++            }
++            com.fasterxml.jackson.databind.JsonNode matched = null;
++            for (var entry : facts.path("commands")) {
++                if (!entry.path("phase").asText().equals("DISPATCHED")) continue;
++                UUID operation = UUID.fromString(entry.path("operation").asText());
++                if (!operation.toString().equals(entry.path("operation").asText()))
++                    throw new IllegalArgumentException();
++                if (request.script().equals(DeploymentModelCommandIdentity.receiptStatus(task.id(), operation, entry.path("body").asText(), layout))) {
++                    if (matched != null) throw new IllegalArgumentException();
++                    matched = entry;
++                }
++            }
++            if (matched == null) throw new IllegalArgumentException();
++            var evidence = new LinkedHashMap<String, Object>();
++            evidence.put("protocol", "MODEL_COMMAND_FILTERED_STATUS_1");
++            evidence.put("task", task.id().toString());
++            evidence.put("server", server.id());
++            evidence.put("fingerprint", facts.path("fingerprint").asText());
++            evidence.put("businessRevision", facts.path("modelRevision").asText());
++            evidence.put("operation", matched.path("operation").asText());
++            evidence.put("bodySha256", matched.path("body").asText());
++            evidence.put("layoutSha256", layout.digest());
++            evidence.put("receiptPath", layout.modelCommandOperationsRoot() + "/" + matched.path("operation").asText() + ".receipt");
++            evidence.put("checkpointRevision", snapshot.revision());
++            evidence.put("checkpointSha256", DeploymentModelCommandIdentity.digest(snapshot.payload()));
++            evidence.put("localPhase", "DISPATCHED");
++            evidence.put("remoteObserved", false);
++            evidence.put("authority", "NONE");
++            evidence.put("outputContract", Map.of(
++                "read", "The exact reader compares bounded bytes with this original task/operation/body/layout header and only STARTED=1 or canonical EXIT=0..255 followed by one LF.",
++                "output", "It reconstructs only those known ASCII fields; arbitrary receipt bytes and hex are never output.",
++                "identityLimits", "Root ownership, single-link and before/after same-FD/path identity checks bind the observation, not absolute protection against concurrent trusted root changes.",
++                "settlement", "Missing, malformed, changed or STARTED receipts do not settle the author operation.",
++                "meaning", "This describes the implementation, not a remote observation or approval."));
++            return Collections.unmodifiableMap(evidence);
++        } catch (ApiException unavailable) {
++            throw unavailable;
++        } catch (java.util.concurrent.CancellationException cancelled) {
++            throw cancelled;
++        } catch (InterruptedException interrupted) {
++            Thread.currentThread().interrupt();
++            throw new java.io.IOException("Original model command receipt binding is invalid");
++        } catch (Exception invalid) {
++            // Never retain parser messages, receipt bytes or input fragments. / 绝不保留解析消息、回执字节或输入片段。
++            throw new java.io.IOException("Original model command receipt binding is invalid");
++        }
++    }
++
+     /** Reads bounded protocol evidence for the original operation. / 读取原操作的有界协议依据。
+      * @param context original Mod capabilities / 原 Mod 能力
+      * @param session original session bound to this operation / 当前操作绑定的原session值
+@@ -320,18 +400,44 @@
+      * @throws Exception if original input, admission or evidence validation fails / 原输入、准入或依据校验失败时 */
+     private static String query(ModContext context, RemoteSession session, ServerId server, TaskContext task,
+                                 String revision, UUID operation) throws Exception {
+-        // The installer receipt reader already enforces root ownership and safe ancestor directories.
+-        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
+-        String script = DeploymentHelperInstallerScript.renderReceiptStatus(operation, layout, layout.modelCommandOperationsRoot());
++        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout;
++        String script;
++        try {
++            layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++            var checkpoint = context.tasks().findCheckpoint(task, KEY).orElseThrow();
++            var original = read(checkpoint, task);
++            var entry = original.path("commands").findParents("operation").stream()
++                .filter(item -> item.path("operation").asText().equals(operation.toString())).findFirst().orElseThrow();
++            script = DeploymentModelCommandIdentity.receiptStatus(task.id(), operation, entry.path("body").asText(), layout);
++        } catch (ApiException unavailable) {
++            throw unavailable;
++        } catch (java.util.concurrent.CancellationException cancelled) {
++            throw cancelled;
++        } catch (InterruptedException interrupted) {
++            Thread.currentThread().interrupt();
++            throw new java.io.IOException("Original model command receipt binding is invalid");
++        } catch (Exception invalid) {
++            throw new java.io.IOException("Original model command receipt binding is invalid");
++        }
+         try (var request = new CommandRequest(script, new byte[0], Duration.ofSeconds(30), 1024)) {
+             var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
+                 "deployment.model.command.status.v1", Set.of(new ActionTarget(server.id(), "task", task.id().toString()))));
++            var binding = receiptStatusEvidence(context, task, intent, request, layout);
++            if (!session.facts().fingerprint().equals(binding.get("fingerprint")))
++                throw new SecurityException("Original receipt session changed");
+             var grant = DeploymentCommandReviewRouter.approve(context.interaction(), intent, request, task);
+             if (grant.outcome() != TaskResult.SUCCEEDED)
+                 throw new DeploymentAiJson.CapabilityOutcomeException(grant.outcome(), grant.problem());
++            if (!binding.equals(receiptStatusEvidence(context, task, intent, request, layout))
++                || !session.facts().fingerprint().equals(binding.get("fingerprint")))
++                throw new SecurityException("Original receipt evidence changed");
++            if (task.cancelToken().requested()) throw new java.util.concurrent.CancellationException();
+             var result = session.execute(request, grant.value().orElseThrow());
++            if (!binding.equals(receiptStatusEvidence(context, task, intent, request, layout)))
++                throw new SecurityException("Original receipt evidence changed");
+             if (result.outcome() != TaskResult.SUCCEEDED || result.value().isEmpty()
+-                || result.value().orElseThrow().truncated() || result.value().orElseThrow().exitCode().orElse(-1) != 0)
++                || result.value().orElseThrow().truncated() || result.value().orElseThrow().exitCode().orElse(-1) != 0
++                || !result.value().orElseThrow().stderr().isEmpty())
+                 throw new IllegalStateException("Original model command receipt unknown");
+             return result.value().orElseThrow().stdout();
+         }
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -117,6 +117,19 @@
+         return java.util.Collections.unmodifiableMap(facts);
+     }
+ 
++    /** Adds only status facts cross-checked against the original task journal. / 仅增加与原任务账本交叉核对的状态事实。 */
++    static Map<String, Object> facts(ActionIntent intent, CommandRequest request,
++                                     gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,
++                                     gold.debug.windowstolinux.appapi.mod.ModContext context,
++                                     gold.debug.windowstolinux.appapi.task.run.TaskContext task)
++        throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
++        var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
++        if (intent.semantics().orElseThrow().operation().equals("deployment.model.command.status.v1"))
++            result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
++                .receiptStatusEvidence(context, task, intent, request, layout));
++        return java.util.Collections.unmodifiableMap(result);
++    }
++
+     /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
+      * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
+      * @return decoded original toolchain binding evidence / 已解码原工具链绑定依据
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -98,7 +98,7 @@
+         try {
+             DeploymentCommandStaticGate.requireFixedAllowed(request.script());
+             var facts = new LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request,
+-                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task)));
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task), context, task));
+             facts.put("authorizationPolicy", policy);
+             facts.put("effectSummary", intent.effectSummary());
+             facts.put("presentationLocale", context.ui().environment().locale().toLanguageTag());
+@@ -138,10 +138,12 @@
+             currentEvidence.reviewed(intent, request, task, review);
+             requireRoute(context, task, revision);
+             currentEvidence.verify(intent, request, task);
++            verifyReceiptStatus(context, task, intent, request, facts);
+             diagnostic.put("validationStage", "rememberAuthorization");
+             var grant = DeploymentAuthorizationPolicy.authorize(host, intent, Optional.of(request), task, policy, rememberAuthorization, review);
+             requireRoute(context, task, revision);
+             currentEvidence.verify(intent, request, task);
++            verifyReceiptStatus(context, task, intent, request, facts);
+             return grant;
+         } catch (DeploymentAiJson.CapabilityOutcomeException outcome) {
+             return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
+@@ -154,6 +156,15 @@
+             error.initCause(invalid);
+             throw error;
+         }
++    }
++
++    private static void verifyReceiptStatus(ModContext context, TaskContext task, ActionIntent intent,
++                                            CommandRequest request, Map<String, Object> facts) throws ApiException, IOException {
++        if (intent.semantics().orElseThrow().operation().equals("deployment.model.command.status.v1")
++            && !java.util.Objects.equals(facts.get("modelCommandReceiptStatus"),
++            gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.receiptStatusEvidence(context, task,
++                intent, request, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task))))
++            throw new IOException("Original model command receipt evidence changed");
+     }
+ 
+     /** Requires both original model roles without silently adopting a new route. / 要求两个原模型角色，不默默采用新路由。
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunnerTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/command/DeploymentModelCommandRunnerTest.java
+@@ -25,6 +25,8 @@
+ import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.io.TempDir;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
+ 
+ class DeploymentModelCommandRunnerTest {
+     private static final ObjectMapper JSON = new ObjectMapper();
+@@ -57,6 +59,16 @@
+     private boolean truncatedReply, truncatedReceipt, unknownExit, queryException;
+ 
+     private String changedReceiptField;
++
++    private boolean denyStatus;
++
++    private Runnable afterStatusApproval = () -> {
++    };
++
++    private Runnable afterStatusExecute = () -> {
++    };
++
++    private final AtomicInteger statusApprovals = new AtomicInteger();
+ 
+     private final List<String> commandSequence = new ArrayList<>();
+ 
+@@ -294,6 +306,145 @@
+         assertEquals(2, queries.get());
+         DeploymentModelCommandRunner.releaseKnown(context, task);
+         assertTrue(checkpoint.snapshot().released());
++    }
++
++    @Test
++    void receiptStatusRequiresDispatchedCheckpointBeforeEveryFreshGrant() throws Exception {
++        for (String change : List.of("DENY", "APPROVAL_CHANGE", "RESULT_CHANGE")) {
++            boolean mutate = !change.equals("DENY");
++            var f = new DeploymentModelCommandRunnerTest();
++            var context = f.context();
++            f.loseReply = true;
++            assertThrows(Exception.class, () -> DeploymentModelCommandRunner.execute(context, f.session(), f.server, f.task,
++                REVISION, "exit 7", 10, "Original lost reply"));
++            String original = f.checkpoint.snapshot().payload();
++            f.loseReply = false;
++            Runnable mutation = () -> {
++                try {
++                    var changed = (com.fasterxml.jackson.databind.node.ObjectNode) f.facts();
++                    changed.put("fingerprint", "changed-target");
++                    f.checkpoint.advance(f.checkpoint.snapshot(), changed.toString());
++                } catch (Exception failure) {
++                    throw new AssertionError(failure);
++                }
++            };
++            if (change.equals("APPROVAL_CHANGE")) f.afterStatusApproval = mutation;
++            else if (change.equals("RESULT_CHANGE")) f.afterStatusExecute = mutation;
++            else f.denyStatus = true;
++            assertThrows(Exception.class, () -> DeploymentModelCommandRunner.reconcile(context, f.task));
++            assertEquals(1, f.sends.get());
++            assertEquals(change.equals("RESULT_CHANGE") ? 1 : 0, f.queries.get());
++            assertEquals(1, f.statusApprovals.get());
++            assertFalse(f.checkpoint.snapshot().released());
++            assertEquals("DISPATCHED", f.facts().path("commands").get(0).path("phase").asText());
++            if (!mutate) {
++                assertEquals(original, f.checkpoint.snapshot().payload());
++                f.denyStatus = false;
++                assertTrue(DeploymentModelCommandRunner.reconcile(context, f.task));
++                assertEquals(2, f.statusApprovals.get(), "A refusal does not authorize the later status request");
++                assertEquals(1, f.queries.get());
++                assertEquals(1, f.sends.get(), "The original author body is not replayed");
++            }
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void actualBashReceiptStatusProjectsOnlyCanonicalBoundBytes(boolean customLayout, @TempDir Path directory) throws Exception {
++        Path bash = Path.of("E:/Program/Git/bin/bash.exe");
++        org.junit.jupiter.api.Assumptions.assumeTrue(Files.isRegularFile(bash));
++        var layout = customLayout ? new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++            new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths("/srv/receipt/lib", "/srv/receipt/apps",
++                "/srv/receipt/state", "/srv/receipt/config", "/srv/receipt/data"))
++            : gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        String root = "/" + Character.toLowerCase(directory.toString().charAt(0)) + directory.toString().substring(2).replace('\\', '/');
++        Path receiptFile = directory.resolve("receipt");
++        Path metadataFile = directory.resolve("metadata");
++        String fixedMetadata = "8180:0:0:600:1:";
++        Path stat = directory.resolve("stat-fixture.sh");
++        // Only ownership/type/inode metadata and protected ancestors are emulated on Windows; od and Bash consume the real bytes.
++        Files.writeString(stat, """
++            #!/bin/bash
++            if [ "$2" = '%u:%g' ]; then printf '0:0\n'
++            elif [ "$2" = '%a' ]; then printf '700\n'
++            elif [ "$2" = '%u:%g:%a' ]; then printf '0:0:700\n'
++            else
++              line=$(/usr/bin/cat -- '@ROOT@/metadata')
++              count=0
++              if [ -f '@ROOT@/stat-count' ]; then read -r count < '@ROOT@/stat-count'; fi
++              count=$((count + 1)); printf '%s\n' "$count" > '@ROOT@/stat-count'
++              if [ -f '@ROOT@/race' ] && [ "$count" -eq 3 ]; then line=${line/:1:2:/:1:3:}; fi
++              printf '%s\n' "$line"
++            fi
++            """.replace("@ROOT@", root));
++        UUID operation = UUID.randomUUID();
++        String header = DeploymentModelCommandIdentity.header(taskId, operation, "b".repeat(64), layout);
++        String canonical = DeploymentModelCommandIdentity.receiptStatus(taskId, operation, "b".repeat(64), layout);
++        String prefix = "exec " + DeploymentModelCommandIdentity.ENVIRONMENT + " /bin/bash --noprofile --norc -c ";
++        String literal = canonical.substring(prefix.length(), canonical.length() - " 2>/dev/null".length());
++        String reader = literal.substring(1, literal.length() - 1).replace("'\\''", "'");
++        assertEquals(canonical, prefix + DeploymentModelCommandIdentity.quote(reader) + " 2>/dev/null");
++        reader = reader.replace("[ ! -L \"$p\" ] && [ -d \"$p\" ]", ":")
++            .replace(layout.modelCommandOperationsRoot() + "/" + operation + ".receipt", root + "/receipt")
++            .replace("/usr/bin/stat", "/bin/bash " + DeploymentModelCommandIdentity.quote(root + "/stat-fixture.sh"));
++        Path script = directory.resolve("reader.sh");
++        Files.writeString(script, prefix + DeploymentModelCommandIdentity.quote(reader) + " 2>/dev/null");
++        String secret = "CREDENTIAL_SENTINEL_DO_NOT_OUTPUT";
++        var inputs = new LinkedHashMap<String, Boolean>();
++        for (String status : List.of("STARTED=1\n", "EXIT=0\n", "EXIT=7\n", "EXIT=255\n"))
++            inputs.put(header + status, true);
++        for (String invalid : List.of(header + "EXIT=00\n", header + "EXIT=256\n", header + "EXIT=-1\n",
++            header + "EXIT=7", header + "EXIT=7\r\n", header + "EXIT=7\n\n", header + "EXIT=7\n" + secret,
++            header + "EXIT=7\0" + secret + "\n", header.replace(taskId.toString(), UUID.randomUUID().toString()) + "EXIT=7\n",
++            header.replace("b".repeat(64), "c".repeat(64)) + "EXIT=7\n",
++            header.replace(operation.toString(), UUID.randomUUID().toString()) + "EXIT=7\n",
++            header.replaceFirst("FORMAT=[12]", "FORMAT=9") + "EXIT=7\n", header + header + "EXIT=7\n",
++            header + "LAYOUT_SHA256=" + "c".repeat(64) + "\nEXIT=7\n", secret.repeat(40)))
++            inputs.put(invalid, false);
++        if (customLayout) inputs.put(header.replace(layout.digest(), "c".repeat(64)) + "EXIT=7\n", false);
++        for (var entry : inputs.entrySet()) {
++            byte[] bytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
++            Files.write(receiptFile, bytes);
++            Files.writeString(metadataFile, fixedMetadata + bytes.length + ":1:2:stable:stable\n");
++            assertReceiptReader(bash, script, entry.getValue() ? entry.getKey() : null, secret);
++        }
++        Files.writeString(receiptFile, header + "EXIT=7\n");
++        long size = Files.size(receiptFile);
++        for (String changed : List.of("8180:1:0:600:1:", "8180:0:0:640:1:", "8180:0:0:600:2:", "1180:0:0:600:1:")) {
++            Files.writeString(metadataFile, changed + size + ":1:2:stable:stable\n");
++            assertReceiptReader(bash, script, null, secret);
++        }
++        Files.writeString(metadataFile, fixedMetadata + size + ":1:2:stable:stable\n");
++        Files.writeString(directory.resolve("race"), "public controlled after-read identity change");
++        Files.deleteIfExists(directory.resolve("stat-count"));
++        assertReceiptReader(bash, script, null, secret);
++        Files.delete(directory.resolve("race"));
++        Files.delete(receiptFile);
++        assertReceiptReader(bash, script, null, secret);
++    }
++
++    private static void assertReceiptReader(Path bash, Path script, String expected, String secret) throws Exception {
++        var process = new ProcessBuilder(bash.toString(), "--noprofile", "--norc", script.toString()).start();
++        try {
++            assertTrue(process.waitFor(15, TimeUnit.SECONDS));
++            String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
++            String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
++            assertEquals("", stderr);
++            assertFalse(stdout.contains(secret));
++            assertFalse(stderr.contains(secret));
++            if (expected != null) {
++                assertEquals(0, process.exitValue());
++                assertEquals(expected, stdout);
++            } else {
++                assertNotEquals(0, process.exitValue());
++                assertEquals("", stdout);
++            }
++        } finally {
++            if (process.isAlive()) {
++                process.destroyForcibly();
++                assertTrue(process.waitFor(5, TimeUnit.SECONDS));
++            }
++        }
+     }
+ 
+     @Test
+@@ -364,7 +515,15 @@
+                 assertTrue(executable.contains("OPERATION=" + item.path("operation").asText()));
+                 if (deny)
+                     return new OperationResult<ApprovalGrant>(TaskResult.FAILED, Optional.empty(), Optional.empty());
+-            } else assertEquals("deployment.model.command.status.v1", intent.semantics().orElseThrow().operation());
++            } else {
++                assertEquals("deployment.model.command.status.v1", intent.semantics().orElseThrow().operation());
++                statusApprovals.incrementAndGet();
++                assertEquals("DISPATCHED", DeploymentModelCommandRunner.receiptStatusEvidence(context(), task, intent, request,
++                    commandLayout).get("localPhase"));
++                if (denyStatus)
++                    return new OperationResult<ApprovalGrant>(TaskResult.FAILED, Optional.empty(), Optional.empty());
++                afterStatusApproval.run();
++            }
+             var grant = new ApprovalGrant(UUID.randomUUID());
+             exactGrants.put(grant.id(), intent.exactAction());
+             return success(grant);
+@@ -414,6 +573,7 @@
+                     yield loseReply ? new OperationResult<CommandResult>(TaskResult.UNKNOWN, Optional.empty(), Optional.empty()) : success(new CommandResult(unknownExit ? Optional.empty() : Optional.of(0), "actual output", "", truncatedReply));
+                 }
+                 queries.incrementAndGet();
++                afterStatusExecute.run();
+                 commandSequence.add("QUERY");
+                 assertTrue(request.script().contains(item.path("operation").asText()), "Query must target only the original operation");
+                 if (queryException) throw new IllegalStateException("Controlled receipt query exception");
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+@@ -19,6 +19,118 @@
+ 
+ class DeploymentCommandEvidenceTest {
+     private static final String PREFIX = "'" + DeploymentManagedHelperBundle.PATH + "' prepare-toolchains 'bind' '";
++
++    @Test
++    void modelReceiptStatusFactsBindExactRequestAndOriginalCheckpoint() throws Exception {
++        var json = new ObjectMapper();
++        UUID taskId = UUID.randomUUID(), operation = UUID.fromString("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
++        var server = new ServerId("receipt-host");
++        String revision = "a".repeat(64), body = "b".repeat(64), marker = "PASSWORD_SENTINEL_NEVER_RETAIN";
++        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        var original = json.createObjectNode().put("version", 1).put("task", taskId.toString()).put("server", server.id())
++            .put("fingerprint", "verified-host").put("modelRevision", revision);
++        original.putArray("commands").addObject().put("operation", operation.toString()).put("body", body).put("seconds", 10).put("phase", "DISPATCHED");
++        var snapshot = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot[]{
++            new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, original.toString(), false)};
++        var checkpoint = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint() {
++            public Snapshot snapshot() {
++                return snapshot[0];
++            }
++
++            public Snapshot advance(Snapshot expected, String payload) {
++                throw new AssertionError("Read evidence cannot advance state");
++            }
++
++            public void close() {
++                throw new AssertionError("Read evidence cannot release state");
++            }
++        };
++        var task = (gold.debug.windowstolinux.appapi.task.run.TaskContext) java.lang.reflect.Proxy.newProxyInstance(
++            getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.task.run.TaskContext.class},
++            (p0, method, args) -> {
++                assertEquals("id", method.getName());
++                return taskId;
++            });
++        var tasks = (gold.debug.windowstolinux.appapi.task.TaskService) java.lang.reflect.Proxy.newProxyInstance(
++            getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.task.TaskService.class}, (p0, method, args) -> {
++                assertEquals("findCheckpoint", method.getName());
++                assertSame(task, args[0]);
++                return gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY.equals(args[1])
++                    ? java.util.Optional.of(checkpoint) : java.util.Optional.empty();
++            });
++        var context = (gold.debug.windowstolinux.appapi.mod.ModContext) java.lang.reflect.Proxy.newProxyInstance(
++            getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.mod.ModContext.class},
++            (p0, method, args) -> {
++                assertEquals("tasks", method.getName());
++                return tasks;
++            });
++        String script = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity
++            .receiptStatus(taskId, operation, body, layout);
++        var targets = Set.of(new ActionTarget(server.id(), "task", taskId.toString()));
++        try (var request = new CommandRequest(script, new byte[0], Duration.ofSeconds(30), 1024)) {
++            var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics("deployment.model.command.status.v1", targets));
++            var facts = json.valueToTree(DeploymentCommandEvidence.facts(intent, request, layout, context, task));
++            var receipt = facts.path("modelCommandReceiptStatus");
++            assertEquals(taskId.toString(), receipt.path("task").asText());
++            assertEquals(operation.toString(), receipt.path("operation").asText());
++            assertEquals(body, receipt.path("bodySha256").asText());
++            assertEquals(revision, receipt.path("businessRevision").asText());
++            assertEquals(layout.digest(), receipt.path("layoutSha256").asText());
++            assertEquals("DISPATCHED", receipt.path("localPhase").asText());
++            assertFalse(receipt.path("remoteObserved").asBoolean());
++            assertEquals("NONE", receipt.path("authority").asText());
++            assertEquals("EMPTY", facts.path("inputKind").asText());
++            assertFalse(facts.has("modelCommand"));
++            assertFalse(facts.has("completeExecutableInput"));
++            assertTrue(receipt.at("/outputContract/output").asText().contains("arbitrary receipt bytes and hex are never output"));
++            for (String invalid : java.util.List.of("INTENT", "ENDED", "FOREIGN_TASK", "RELEASED", "BODY", "SERVER", "REVISION", "NONCANONICAL_OPERATION", "DUPLICATE", "MALFORMED")) {
++                var changed = original.deepCopy();
++                boolean released = false;
++                switch (invalid) {
++                    case "INTENT" ->
++                        ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("commands").get(0)).put("phase", "INTENT");
++                    case "ENDED" ->
++                        ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("commands").get(0)).put("phase", "ENDED").put("exit", "0");
++                    case "FOREIGN_TASK" -> changed.put("task", UUID.randomUUID().toString());
++                    case "RELEASED" -> released = true;
++                    case "BODY" ->
++                        ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("commands").get(0)).put("body", "c".repeat(64));
++                    case "SERVER" -> changed.put("server", "other-host");
++                    case "REVISION" -> changed.put("modelRevision", "c".repeat(64));
++                    case "NONCANONICAL_OPERATION" ->
++                        ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("commands").get(0))
++                            .put("operation", operation.toString().toUpperCase(java.util.Locale.ROOT));
++                    case "DUPLICATE" ->
++                        ((com.fasterxml.jackson.databind.node.ArrayNode) changed.path("commands")).add(changed.path("commands").get(0).deepCopy());
++                    default -> {
++                    }
++                }
++                snapshot[0] = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(3,
++                    invalid.equals("MALFORMED") ? "{\"password\":\"" + marker : changed.toString(), released);
++                var failure = assertThrows(java.io.IOException.class, () -> DeploymentCommandEvidence.facts(intent, request, layout, context, task), invalid);
++                assertEquals("Original model command receipt binding is invalid", failure.getMessage());
++                assertNull(failure.getCause());
++                assertFalse(failure.toString().contains(marker));
++            }
++            snapshot[0] = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, original.toString(), false);
++            var foreign = intent.withSemantics(new ActionSemantics("deployment.model.command.status.v1",
++                Set.of(new ActionTarget(server.id(), "task", UUID.randomUUID().toString()))));
++            assertThrows(java.io.IOException.class, () -> DeploymentCommandEvidence.facts(foreign, request, layout, context, task));
++            for (int change = 0; change < 5; change++) {
++                try (var changed = new CommandRequest(change == 0 ? script + "\nprintf extra" : script,
++                    change == 1 ? marker.getBytes(StandardCharsets.UTF_8) : new byte[0],
++                    Duration.ofSeconds(change == 2 ? 31 : 30), change == 3 ? 1025 : 1024)) {
++                    var changedIntent = RemoteActions.command(server, change == 4 ? "c".repeat(64) : revision, changed)
++                        .withSemantics(new ActionSemantics("deployment.model.command.status.v1", targets));
++                    assertThrows(java.io.IOException.class, () -> DeploymentCommandEvidence.facts(changedIntent, changed, layout, context, task));
++                }
++            }
++            var different = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++                new gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig.RemotePaths("/srv/receipt/lib", "/srv/receipt/apps",
++                    "/srv/receipt/state", "/srv/receipt/config", "/srv/receipt/data"));
++            assertThrows(java.io.IOException.class, () -> DeploymentCommandEvidence.facts(intent, request, different, context, task));
++        }
++    }
+ 
+     @Test
+     void versionedControllerInstallerKeepsCompleteExecutableInputAndReadinessHasEmptyStdin() throws Exception {
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/review/DeploymentAgentApprovalTest.java
+@@ -123,6 +123,74 @@
+ 
+     @ParameterizedTest
+     @ValueSource(booleans = {false, true})
++    void boundReceiptStatusReachesNativeReviewBeforeItsNewGrant(boolean approve) throws Exception {
++        var layout = DeploymentRemoteLayout.original();
++        int[] calls = {0};
++        int totalGrants = 0;
++        String[] binding = {""}, exact = {""};
++        for (int attempt = 0; attempt < 2; attempt++) {
++            var f = new Frame();
++            var scope = f.scope(true);
++            var review = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction();
++            UUID operation = UUID.randomUUID();
++            String body = "b".repeat(64);
++            var journal = JSON.createObjectNode().put("version", 1).put("task", f.task.id().toString())
++                .put("server", SERVER.id()).put("fingerprint", "verified-target").put("modelRevision", REVISION);
++            journal.putArray("commands").addObject().put("operation", operation.toString()).put("body", body)
++                .put("seconds", 10).put("phase", "DISPATCHED");
++            f.tasks.beginCheckpoint(f.task, DeploymentModelCommandRunner.KEY, journal.toString());
++            String script = gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity
++                .receiptStatus(f.task.id(), operation, body, layout);
++            int grantsBefore = f.grants.size();
++            f.model = request -> {
++                var current = currentReview(request);
++                var evidence = current.at("/currentRequest/modelCommandReceiptStatus");
++                assertEquals(f.task.id().toString(), evidence.path("task").asText());
++                assertEquals(operation.toString(), evidence.path("operation").asText());
++                assertEquals(body, evidence.path("bodySha256").asText());
++                assertEquals("DISPATCHED", evidence.path("localPhase").asText());
++                assertEquals(REVISION, evidence.path("businessRevision").asText());
++                assertFalse(evidence.path("remoteObserved").asBoolean());
++                assertEquals("NONE", evidence.path("authority").asText());
++                assertTrue(evidence.at("/outputContract/meaning").asText().contains("not a remote observation or approval"));
++                assertEquals(script, current.at("/executableInput/script/text").asText());
++                assertEquals("EMPTY", current.at("/currentRequest/inputKind").asText());
++                assertFalse(current.at("/currentRequest").has("modelCommand"));
++                assertEquals(grantsBefore, f.grants.size());
++                assertNotEquals(binding[0], current.path("reviewBinding").asText());
++                assertNotEquals(exact[0], current.at("/currentRequest/exactAction").toString());
++                binding[0] = current.path("reviewBinding").asText();
++                exact[0] = current.at("/currentRequest/exactAction").toString();
++                calls[0]++;
++                return List.of(call("submit_result", JSON.readValue(approve ? APPROVE : DENY, Map.class)));
++            };
++            try (var request = new CommandRequest(script, new byte[0], Duration.ofSeconds(30), 1024)) {
++                var intent = f.intent(request, "deployment.model.command.status.v1");
++                if (approve) {
++                    assertEquals(TaskResult.SUCCEEDED, review.approveCommand(intent, request, f.task).outcome());
++                    assertEquals(grantsBefore + 1, f.grants.size());
++                    assertEquals(intent.exactAction(), f.grants.getLast());
++                } else {
++                    var failure = assertThrows(ApiException.class, () -> review.approveCommand(intent, request, f.task));
++                    assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", failure.problem().eventCode());
++                    assertEquals(grantsBefore, f.grants.size());
++                }
++                try (var changed = new CommandRequest(script + "\nprintf extra", new byte[0], Duration.ofSeconds(30), 1024)) {
++                    assertThrows(ApiException.class, () -> review.approveCommand(f.intent(changed, "deployment.model.command.status.v1"), changed, f.task));
++                    assertEquals(attempt + 1, calls[0], "An unbound status script cannot reach the model or receive a grant");
++                }
++            }
++            totalGrants += f.grants.size();
++            assertFalse(f.checkpoint.snapshot().released());
++            assertEquals("DISPATCHED", JSON.readTree(f.checkpoint.snapshot().payload()).path("commands").get(0).path("phase").asText());
++        }
++        assertEquals(2, calls[0]);
++        assertEquals(approve ? 2 : 0, totalGrants);
++        // Frame has no Linux capability: these are native reviews and fresh host grants, not remote execution.
++    }
++
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
+     void agentOpenPhaseUsesSourcePinnedOriginalFrameAndEveryChangedActionNeedsANewReview(boolean customLayout) throws Exception {
+         var f = new Frame();
+         var layout = customLayout ? inlineLayout() : DeploymentRemoteLayout.original();
