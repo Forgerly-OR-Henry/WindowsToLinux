@@ -35,3 +35,5 @@ docs/test/multi-language/patches/AGENT-APPROVAL-DENIAL-FEEDBACK-219.patch -text
 docs/test/multi-language/patches/AGENT-BUILD-STORAGE-CONTRACT-220.patch -text
 
 docs/test/multi-language/patches/MODEL-COMMAND-RECEIPT-CONTRACT-222.patch -text
+
+docs/test/multi-language/patches/AGENT-MULTIPREPARE-RECOVERY-224.patch -text
