@@ -1,0 +1,33 @@
+# 原238有界产品协调：261
+
+261仅对原File Transfer任务运行一次产品协调，实际结束仍UNKNOWN，未新增FULL、BUSINESS通过或CSV部署。不能据Maven失败或本轮用量判断新诊断是否发送、APP是否批准或远端检查结果；这些须后续只读账本证据确认。原194/234不恢复，221不自动恢复。
+
+原Task为`072bc074-4bce-4c14-b425-f2ff965c7d40`，execution为`45e3a9a4-a6b8-403a-89f5-605e11eeeca0`，原Runtime为`src/app/db/data/agent-live-file-transfer-8pqtfa76o`，应用为`wtl-agent-file-transfer-8pqtgvbwc`。本轮沿用原保存模型与目标，不重新配置模型，不恢复其它任务，不直接SSH，不向产品喂部署命令或审批答案。
+
+## 实际入口与范围
+
+新260修正版已本地提交`75101c57f270cda259563fcc7541b6943e4a823e`、封存105文件，seal SHA256 `eb7a4ebe8cae27bd06847077ca16f0ee5197561cb3bfc171440e22f2a9927431`。本轮fresh核3323源码、51部署归属族、3AI族、4平台族、5完整宿主模块及54个实际JUnit classpath入口/3258文件，五个宿主JAR不变；不冒称JVM CodeSource。
+
+source manifest SHA256为`5eb223372f680068188312ca6ee8c7b7b1c71bc9b87bf06308bd53a279ac037f`；deployment.jar为3954103字节/SHA256 `f6fba9e3669dcdff4b9039212fe7bb6dd761c15e76c3c31b9fc4c932b24c69d5`；metadata为`e96baa97ce29b35b3b84e1e29828b515b5f20d53c171974407829d461cd4c213`，classpath为`5cc1a34ec7557019414708895b92dc540dd5cac1218bf16ca8a0b26aeac6597f`。旧installed program身份沿260 proof `590287ab5d32e78df3381c534813bf36c027e4c373e4c67a21ff221d577d2c73`保持不变。
+
+fresh preflight绑定259完整观测289–298、backend goal仍未成、原READY安装266、原Plan267–270及FAILED/UNKNOWN pending271/272，并确认原账本没有诊断尝试。正常预期新诊断后本次UNKNOWN返回；实际调用仍是通用`runtime.tasks().reconcile`的有界协调，不是强制纯读取。它保留原model/resource settle及状态漂移后的守门观察、cleanup和最终核验可能；每个完整远端动作仍独立APP及fresh grant，原UNKNOWN回滚不重发，READY安装不重装。
+
+首fresh capture exit0，但offline exit1：共享proof校验函数调用`files`，第二消费者只有seal函数内部的同名局部函数。父保留首capture、preimages及实际NameError观测，补入已审模块的纯枚举函数，更新精确helper pins，再执行第二fresh capture。只修本地辅助工具，未改产品源码或封存260。三份函数体AST相同的静态检查未覆盖消费者全局依赖，不能将其表述为offline通过。
+
+第二fresh capture exit0，baseline SHA256 `996b88404cc32a494f68cf0bd55159141cfd691178253c07cf3c6b5a2ab4cef3`；offline exit0，SHA256 `cc48da61947bc8f1d418d43c12adae52896df09e276f8064c1ff8810266331dc`。进入产品前，原DB、bootstrap及空锁创建时间仍与259一致。字节工具未打开DB、解密凭据、启动Java或访问模型/SSH；真实产品运行另行释放。
+
+## 实际结果与收尾
+
+唯一session为99793，运行`original238-coordinate-261-01`，UTC窗口为`2026-10-16T23:37:15.9586377Z`至`2026-10-16T23:38:19.8786911Z`。Maven exit1，before/after source capture均exit0，sampler Completed，无自动重试。只执行`DeploymentStaticLiveAcceptanceTest#reconcilesOriginalTaskThroughProduct`；保留原ENDED断言，JUnit为1F/0E/0skip，实际TaskSnapshot仍UNKNOWN，progress为`AI_RECOVERY_ORIGINAL_HOST_VERIFIED`，outcome为空。
+
+result SHA256 `e13cf85e860ec407f6f390ca547f4a8d8a11379f6754c713bbb25f4bd40f9698`；stdout为220239字节/SHA256 `a7cf7c9a479703fc95005feb628ffb33e056a5c5767b00c6dfd773e339c62453`；after metadata SHA256 `820bd36788e96ebe7189fbe7d4e23deb68660c37a24143aa2a90a50290ba3304`。
+
+after原DB为193339392字节/SHA256 `b94474969e87c1b090c856d86314495f0489a405f417fd78dad876d25c910c99`；bootstrap仍358字节/SHA256 `81c546baf9dc3e7632155d86c8ae6d657109f82f1608e01006ca97ec07f7bd8b`。原空锁创建时间连续，原Runtime保留。normal close exit0核15个产品精确PID/创建时间pair退出并删除本轮2个有标记TMP/UDS；父独立normal CIM连同两次capture核19个已记录pair全退。close工具自身exit0由父实际观察，未将其未记录PID算入19。capture、product、monitor、close及usage执行开关现均false，无强杀或原数据删除。
+
+## 本轮用量边界
+
+实际解析和父独立原行SHA/CRLF/JSON/算术审计均通过。97条bounded使用记录中，本轮为5个APP generation，历史排除92个：248为5、252为26、256为55、258为6；不能把generation数称为动作数、批准数或HTTP数。
+
+本轮known input为59193、output为3011、IO为62204，hit为40576、miss为18617，缓存率`hit/input`为68.54864595475817%，APP占known完整IO为100%。reasoning五项未知；完整generation、物理HTTP、额外probe及账单覆盖均UNKNOWN，未知不补零。summary SHA256 `c04a04fd2f5ef26a0f7947e4663d5b171d8bbaa60cae15fb0f8aea1bc0669150`。此为原任务恢复协调的独立窗口，不并入FULL或BUSINESS趋势，不推算费用节省。
+
+当前仍9个历史FULL（File Transfer八次、CSV Inspector历史208一次）、零完整BUSINESS。继续先处理原238真实账本与File Transfer验收，随后严格串行处理CSV Inspector；二者完整BUSINESS v2、真实浏览器及必要产品收尾后暂停，分项目报FULL审批IO占比和缓存率及known/unknown，失败FULL与恢复窗口分列，等待真人决定方向，不自动第三项目。证据根为`.ai-workspace/agent-live-evidence/agent-autonomy-20261012/file-transfer-original238-readonly-diagnostic-261/`。
