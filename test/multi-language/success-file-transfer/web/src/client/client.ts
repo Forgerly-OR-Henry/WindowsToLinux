@@ -1,4 +1,5 @@
 import { api, element, cell, action, showError } from "./ui.js";
+import { sha256Blob } from "./sha256.js";
 type Version = {
   id: string;
   number: number;
@@ -120,9 +121,7 @@ async function page() {
 }
 async function upload(file: File, resume: string) {
   element("progress-text").textContent = `计算 ${file.name} 的 SHA-256…`;
-  const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())))
-    .map((x) => x.toString(16).padStart(2, "0"))
-    .join("");
+  const sha256 = await sha256Blob(file);
   let u: Session;
   if (resume) {
     u = await api<Session>(`/api/uploads/${resume}`);
