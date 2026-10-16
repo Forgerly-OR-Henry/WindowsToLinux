@@ -1,0 +1,955 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbe.java
+@@ -251,6 +251,134 @@
+         } catch (IllegalArgumentException invalid) {
+             return Optional.empty();
+         }
++    }
++
++    public enum PreparationStage {UPLOADED, CREATED_WITHOUT_ARCHIVE, ABSENT}
++
++    public static String stageOutput(DeploymentAgentPreparationCompensation.Captured captured, PreparationStage stage) {
++        String status = switch (stage) {
++            case UPLOADED -> "OWNED_UPLOADED_INACTIVE";
++            case CREATED_WITHOUT_ARCHIVE -> "OWNED_CREATED_WITHOUT_ARCHIVE_INACTIVE";
++            case ABSENT -> "ABSENT";
++        };
++        return "FORMAT=WTL_AGENT_PREPARATION_STAGE_1\nTASK=" + captured.task() + "\nPREPARE_EVENT=" + captured.preparation().id()
++            + "\nCANDIDATE=" + captured.workspace().candidateId() + "\nLAYOUT_SHA256=" + captured.layout().digest()
++            + "\nEVENTS_SHA256=" + DeploymentAgentPreparationAbsence.digest(captured.events())
++            + "\nEXPECTED_ARCHIVE_SHA256=" + captured.workspace().archiveSha256() + "\nSTATUS=" + status + "\n";
++    }
++
++    public static Optional<PreparationStage> stage(DeploymentAgentPreparationCompensation.Captured captured, CommandResult result) {
++        if (result == null || result.truncated() || !result.exitCode().equals(Optional.of(0)) || !result.stderr().isEmpty())
++            return Optional.empty();
++        return Arrays.stream(PreparationStage.values()).filter(value -> stageOutput(captured, value).equals(result.stdout())).findFirst();
++    }
++
++    public static CommandRequest stageRequest(DeploymentAgentPreparationCompensation.Captured captured, long workspaceBytes) {
++        byte[] input = stageScript(captured, workspaceBytes).getBytes(StandardCharsets.UTF_8);
++        try {
++            return new CommandRequest(DeploymentAgentHelperInstallerScript.LAUNCHER, input, Duration.ofSeconds(30), 4096);
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
++    }
++
++    public static String stageRequestDigest(DeploymentAgentPreparationCompensation.Captured captured, long workspaceBytes) {
++        try (var request = stageRequest(captured, workspaceBytes)) {
++            return DeploymentAgentPreparationAbsence.hash(RemoteActions.command(new ServerId(captured.snapshot().identity().server()),
++                captured.snapshot().identity().configurationDigest(), request).exactAction());
++        }
++    }
++
++    /** One complete new observation; legacy probe bytes and all legacy receipts remain unchanged. */
++    public static String stageScript(DeploymentAgentPreparationCompensation.Captured captured, long workspaceBytes) {
++        if (workspaceBytes < 67108864L || workspaceBytes > 137438953472L)
++            throw new IllegalArgumentException("Original workspace quota is outside helper bounds");
++        String original = script(captured, false);
++        String typed = replaceOne(original, "printf '%s' '" + absentOutput(captured) + "'\n",
++            "printf '%s' '" + stageOutput(captured, PreparationStage.ABSENT) + "'\n");
++        typed = replaceOne(typed, "/usr/bin/sha256sum /usr/bin/findmnt", "/usr/bin/sha256sum /usr/bin/od /usr/bin/findmnt");
++        String inventory = """
++            # Hex records preserve filename boundaries, including embedded newlines; no raw names are emitted.
++            exact_entries() {
++              local directory="$1" kind="$2" encoded byte name=
++              encoded=$(/usr/bin/find -P "$directory" -mindepth 1 -maxdepth 1 -printf '%f\\0' | /usr/bin/od -An -v -tx1) || reject WORKSPACE MUTABLE_LIST_FAILED
++              [ "${#encoded}" -le 32768 ] || reject WORKSPACE MUTABLE_LIST_LIMIT
++              for byte in $encoded; do
++                [[ "$byte" =~ ^[0-9a-f]{2}$ ]] || reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY
++                if [ "$byte" = 00 ]; then
++                  case "$kind:$name" in
++            """;
++        for (String name : java.util.List.of(".deployer", ".agent-task", ".workspace-device", ".workspace-limit", ".purpose", ".workspace.ext4", "mutable"))
++            inventory += "ROOT:" + java.util.HexFormat.of().formatHex(name.getBytes(StandardCharsets.UTF_8)) + ") ;;\n";
++        inventory += "MUTABLE:" + java.util.HexFormat.of().formatHex("lost+found".getBytes(StandardCharsets.UTF_8)) + ") ;;\n" + """
++                    *) reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY ;;
++                  esac
++                  name=
++                else name="$name$byte"; [ "${#name}" -le 510 ] || reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY
++                fi
++              done
++              [ -z "$name" ] || reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY
++            }
++            control_stamps() {
++              local control
++              for control in .deployer .agent-task .workspace-device .workspace-limit .purpose .workspace.ext4; do
++                /usr/bin/stat -c '%d:%i:%f:%u:%g:%a:%h:%s:%y:%z' -- "$candidate/$control" || return 1
++              done
++            }
++            """;
++        String initial = """
++            path_metadata "$candidate/mutable" directory
++            # Stamp the same controls before their content checks.
++            [ "$checked" = SAFE ] || reject WORKSPACE UNSAFE_MUTABLE
++            candidate_stamp=$(/usr/bin/stat -c '%d:%i:%f:%u:%g:%a:%h:%s:%y:%z' -- "$candidate") || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
++            mutable_stamp=$(/usr/bin/stat -c '%d:%i:%f:%u:%g:%a:%h:%s:%y:%z' -- "$candidate/mutable") || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
++            original_controls=$(control_stamps) || reject FILES NON_PRIVATE_FILE
++            [ "${#candidate_stamp}" -le 256 ] && [ "${#mutable_stamp}" -le 256 ] && [ "${#original_controls}" -le 2048 ] || reject WORKSPACE STANDARD_DIRECTORY_METADATA_UNCONFIRMED
++            """;
++        typed = replaceOne(typed, "private_file() {\n", inventory + initial + "private_file() {\n");
++        String createdAdmission = """
++            preparation_form=UPLOADED
++            confirm_absent "$candidate/mutable/source.tar.gz"
++            if [ "$checked" = MISSING ]; then
++              preparation_form=CREATED_WITHOUT_ARCHIVE
++              exact_entries "$candidate" ROOT
++              exact_entries "$candidate/mutable" MUTABLE
++              confirm_absent "$candidate/.agent-mode"
++              [ "$checked" = MISSING ] || reject WORKSPACE MODE_MISMATCH
++            """
++            + "  [[ \"$device\" =~ ^/dev/loop(0|[1-9][0-9]*)$ ]] && [ \"$limit\" = '" + workspaceBytes + "' ] || reject WORKSPACE DEVICE_OR_LIMIT_INVALID\n"
++            + "  [ \"$(/usr/bin/stat -c '%s' -- \"$candidate/.workspace-device\")\" = \"$((${#device} + 1))\" ] && [ \"$(/usr/bin/stat -c '%s' -- \"$candidate/.workspace-limit\")\" = \"$((${#limit} + 1))\" ] || reject WORKSPACE DEVICE_OR_LIMIT_INVALID\nfi\n";
++        String mutableGuard = "path_metadata \"$candidate/mutable\" directory\n[ \"$checked\" = SAFE ] || reject WORKSPACE UNSAFE_MUTABLE\n";
++        typed = replaceOne(typed, mutableGuard, mutableGuard + createdAdmission);
++        typed = replaceOne(typed, "while IFS= read -r child; do\n  case \"$child\" in\n    source.tar.gz | input-source | source) ;;\n",
++            "if [ -n \"$children\" ]; then\nwhile IFS= read -r child; do\n  case \"$child\" in\n    source.tar.gz | input-source | source) [ \"$preparation_form\" = UPLOADED ] || reject WORKSPACE UNEXPLAINED_MUTABLE_ENTRY ;;\n");
++        typed = replaceOne(typed, "done <<< \"$children\"\nprivate_file \"$candidate/mutable/source.tar.gz\"\n",
++            "done <<< \"$children\"\nfi\nif [ \"$preparation_form\" = UPLOADED ]; then private_file \"$candidate/mutable/source.tar.gz\"; fi\n");
++        String archive = "archive=$(/usr/bin/sha256sum -- \"$candidate/mutable/source.tar.gz\") || reject ARCHIVE ARCHIVE_READ_FAILED\n"
++            + "[ \"${archive%% *}\" = '" + captured.workspace().archiveSha256() + "' ] || reject ARCHIVE ARCHIVE_SHA_MISMATCH\n";
++        typed = replaceOne(typed, archive, "if [ \"$preparation_form\" = UPLOADED ]; then\n" + archive + "fi\n");
++        String finalChecks = """
++            if [ "$preparation_form" = CREATED_WITHOUT_ARCHIVE ]; then
++              exact_entries "$candidate" ROOT
++              exact_entries "$candidate/mutable" MUTABLE
++              confirm_absent "$candidate/.agent-mode"
++              [ "$checked" = MISSING ] || reject WORKSPACE MODE_MISMATCH
++              confirm_absent "$candidate/mutable/source.tar.gz"
++              [ "$checked" = MISSING ] || reject FILES NON_PRIVATE_FILE
++              [ "$candidate_stamp" = "$(/usr/bin/stat -c '%d:%i:%f:%u:%g:%a:%h:%s:%y:%z' -- "$candidate")" ] &&
++                [ "$mutable_stamp" = "$(/usr/bin/stat -c '%d:%i:%f:%u:%g:%a:%h:%s:%y:%z' -- "$candidate/mutable")" ] &&
++                [ "$original_controls" = "$(control_stamps)" ] || reject WORKSPACE STANDARD_DIRECTORY_CHANGED
++            """
++            + "printf '%s' '" + stageOutput(captured, PreparationStage.CREATED_WITHOUT_ARCHIVE) + "'\nelse\n"
++            + "printf '%s' '" + stageOutput(captured, PreparationStage.UPLOADED) + "'\nfi\n";
++        return replaceOne(typed, "printf '%s' '" + presentOutput(captured) + "'\n", finalChecks);
++    }
++
++    private static String replaceOne(String source, String original, String replacement) {
++        int first = source.indexOf(original);
++        if (first < 0 || source.indexOf(original, first + 1) >= 0)
++            throw new IllegalStateException("Fixed preparation-stage source is unavailable");
++        return source.substring(0, first) + replacement + source.substring(first + original.length());
+     }
+ 
+     public static String script(DeploymentAgentPreparationCompensation.Captured captured, boolean after) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -417,6 +417,7 @@
+                 allowed.add(DeploymentAgentProjectChannel.originalCleanupRequestDigest(task.id(), server.id(), saved.identity().configurationDigest(), member.workspace()));
+             }
+             allowed.add(DeploymentAgentPartialPreparationProbe.fileMetadataRequestDigest(captured.view(captured.pending())));
++            allowed.add(DeploymentAgentMultiPreparationCompensation.typedRequestDigest(captured));
+             var evidence = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence() {
+                 public Map<String, ?> facts(gold.debug.windowstolinux.appapi.task.action.ActionIntent intent,
+                                             gold.debug.windowstolinux.appapi.linux.command.CommandRequest request, TaskContext actual) throws ApiException {
+@@ -432,6 +433,8 @@
+                     return "Review this complete exact original-task candidate-set observation or compensation. Each action requires its own independent decision and new grant. "
+                         + "Only bounded original ownership/absence observations, a separately reviewed companion file-metadata observation, and original candidate cleanup are eligible; active or unconfirmed ownership remains UNKNOWN. "
+                         + "Companion metadata describes only its new observation time and cannot settle an earlier refusal or authorize cleanup. Archive SHA, frozen source SHA and original plan/configuration have distinct roles. No prepare, build, publication or persistent/shared data deletion is authorized. "
++                        + "The new typed observation distinguishes uploaded, created-without-archive and absent only through its complete strict consumer. "
++                        + "EXPECTED_ARCHIVE_SHA256 is the original source binding; created-without-archive does not assert remote archive content. "
+                         + "The bound set and product consumer do not assert remote success or authorize an action.";
+                 }
+ 
+@@ -447,15 +450,26 @@
+                 saved.identity().approvalMode(), saved.identity().rememberAuthorization(), () -> revision, evidence);
+             var channel = new DeploymentAgentProjectChannel(session, reviewed.interaction(), server, task,
+                 saved.identity().configurationDigest(), () -> revision, layout);
++            // An uncertain prior send is settled only by its original after observation, never another cleanup.
++            for (var member : captured.members())
++                if (progress.requiresAfter(member)) {
++                    guard.verify();
++                    progress.after(member, observePartial(task, captured.view(member), session, server, reviewed, guard, true));
++                }
++            progress.enableTyped();
+             var present = new LinkedHashMap<DeploymentAgentMultiPreparationCompensation.Member, Boolean>();
+             // Freeze every before observation before the first cleanup; no completed candidate is omitted.
+             for (var member : captured.members()) {
++                if (progress.finished(member)) continue;
+                 guard.verify();
+-                var before = member.pending() ? observePartial(task, captured.view(member), session, server, reviewed, guard, false)
++                var before = member.pending() ? progress.typed()
++                    ? observePreparationStage(task, captured.view(member), DeploymentAgentMultiPreparationCompensation.pendingWorkspaceBytes(captured), session, server, reviewed, guard)
++                    : observePartial(task, captured.view(member), session, server, reviewed, guard, false)
+                     : channel.candidateStatusReceipt(task.id(), member.workspace(), guard);
+                 present.put(member, progress.before(member, before));
+             }
+             for (var member : captured.members()) {
++                if (progress.finished(member)) continue;
+                 if (present.get(member)) {
+                     var receipt = channel.compensateOriginalCandidate(member.workspace(), guard, () -> {
+                         guard.verify();
+@@ -567,6 +581,43 @@
+         guard.verify();
+         journal.preparationCompensated(task, captured, DeploymentAgentPreparationCompensation.proof(captured, present, cleanup, cleanupRequest));
+         return true;
++    }
++
++    /** Typed observation has its own complete request, decision and single-use grant; no companion retry. */
++    private gold.debug.windowstolinux.appapi.linux.command.CommandResult observePreparationStage(TaskContext task,
++                                                                                                 DeploymentAgentPreparationCompensation.Captured captured, long workspaceBytes, RemoteSession session, ServerId server, ModContext reviewed,
++                                                                                                 gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard guard) throws Exception {
++        try (var request = DeploymentAgentPartialPreparationProbe.stageRequest(captured, workspaceBytes)) {
++            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, captured.snapshot().identity().configurationDigest(), request)
++                .withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPartialPreparationProbe.OPERATION, Set.of(
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "directory", captured.workspace().candidateRoot()),
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "host-prerequisites", "fixed-system-metadata-only"))));
++            OperationResult<?> approved = null;
++            OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> result = null;
++            boolean invoked = false;
++            String step = "APPROVE";
++            Exception failure = null;
++            try {
++                guard.verify();
++                var grant = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(reviewed.interaction(), intent, request, task);
++                approved = grant;
++                if (grant.outcome() != TaskResult.SUCCEEDED || grant.value().isEmpty()) return null;
++                step = "GUARD";
++                guard.verify();
++                step = "EXECUTE";
++                invoked = true;
++                result = session.execute(request, grant.value().orElseThrow());
++                step = "POST_GUARD";
++                guard.verify();
++                return result != null && result.outcome() == TaskResult.SUCCEEDED ? result.value().orElse(null) : null;
++            } catch (Exception unavailable) {
++                failure = unavailable;
++                throw unavailable;
++            } finally {
++                partialObservationDiagnostic(task, captured, false, DeploymentAgentPreparationAbsence.hash(intent.exactAction()),
++                    approved, invoked, result, step, failure);
++            }
++        }
+     }
+ 
+     private gold.debug.windowstolinux.appapi.linux.command.CommandResult observePartial(TaskContext task,
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/evidence/DeploymentAgentMultiPreparationCompensation.java
+@@ -263,6 +263,88 @@
+         return n;
+     }
+ 
++    private static final Set<String> OBSERVATION = Set.of("candidate", "phase", "form", "beforeRequest", "beforeResult", "afterResult");
++
++    public static long pendingWorkspaceBytes(Captured c) throws Exception {
++        return DeploymentAgentPreparationBinding.quotaJson(c.pending().quota().detail()).path("workspaceBytes").longValue();
++    }
++
++    public static String typedRequestDigest(Captured c) throws Exception {
++        return DeploymentAgentPartialPreparationProbe.stageRequestDigest(c.view(c.pending()), pendingWorkspaceBytes(c));
++    }
++
++    private static ObjectNode observation(Captured c) throws Exception {
++        return JSON.createObjectNode().put("candidate", c.pending().workspace().candidateId()).put("phase", "INTENT")
++            .put("form", "UNOBSERVED").put("beforeRequest", typedRequestDigest(c)).put("beforeResult", "").put("afterResult", "");
++    }
++
++    private static ObjectNode progress2(Captured c, JsonNode rows, JsonNode observation) {
++        var n = progress(c, rows).put("format", "WTL_AGENT_SET_PROGRESS_2");
++        n.set("pendingObservation", observation.deepCopy());
++        return n;
++    }
++
++    private static ObjectNode proof2(Captured c, JsonNode rows, JsonNode observation) {
++        var n = proofNode(c, rows).put("formatVersion", 2)
++            .put("progressSha256", DeploymentAgentPreparationAbsence.hash(progress2(c, rows, observation).toString()));
++        n.set("pendingObservation", observation.deepCopy());
++        return n;
++    }
++
++    private static void requireTypedBounds(Captured c, JsonNode rows) throws Exception {
++        var worst = (ArrayNode) rows.deepCopy();
++        for (int i = 0; i < c.members().size(); i++)
++            if (!c.members().get(i).pending())
++                ((ObjectNode) worst.get(i)).put("phase", "RECONCILED_ABSENT").put("before", "PRESENT")
++                    .put("beforeResult", "f".repeat(64)).put("afterResult", "f".repeat(64));
++        var sidecar = observation(c).put("phase", "ABSENT_WITHOUT_DISPATCH").put("form", "CREATED_WITHOUT_ARCHIVE")
++            .put("beforeResult", "f".repeat(64)).put("afterResult", "f".repeat(64));
++        bounded(progress2(c, worst, sidecar), 12000);
++        bounded(proof2(c, worst, sidecar), 8192);
++    }
++
++    private static void validateV2(Captured c, JsonNode rows, JsonNode sidecar, boolean ended) throws Exception {
++        validateRows(c, rows, false);
++        var legacy = rows.get(c.members().indexOf(c.pending()));
++        if (!legacy.path("phase").asText().equals("INTENT") || !legacy.path("afterResult").asText().isEmpty())
++            throw new IllegalArgumentException("Dispatched legacy preparation cannot be upgraded");
++        DeploymentJsonDocument.fields(sidecar, OBSERVATION);
++        for (String key : OBSERVATION) if (!sidecar.path(key).isTextual()) throw new IllegalArgumentException();
++        if (!sidecar.path("candidate").asText().equals(c.pending().workspace().candidateId())
++            || !sidecar.path("beforeRequest").asText().equals(typedRequestDigest(c)))
++            throw new IllegalArgumentException();
++        String phase = sidecar.path("phase").asText(), form = sidecar.path("form").asText(), before = sidecar.path("beforeResult").asText(), after = sidecar.path("afterResult").asText();
++        if (!Set.of("INTENT", "DISPATCHED", "SUCCEEDED", "ABSENT", "RECONCILED_ABSENT", "ABSENT_WITHOUT_DISPATCH").contains(phase))
++            throw new IllegalArgumentException();
++        boolean unobserved = form.equals("UNOBSERVED");
++        if (unobserved) {
++            if (!phase.equals("INTENT") || !before.isEmpty() || !after.isEmpty()) throw new IllegalArgumentException();
++        } else {
++            var type = DeploymentAgentPartialPreparationProbe.PreparationStage.valueOf(form);
++            if (!before.equals(DeploymentAgentPreparationAbsence.hash(DeploymentAgentPartialPreparationProbe.stageOutput(c.view(c.pending()), type))))
++                throw new IllegalArgumentException();
++            if (type == DeploymentAgentPartialPreparationProbe.PreparationStage.ABSENT
++                ? !Set.of("INTENT", "ABSENT").contains(phase) : phase.equals("ABSENT"))
++                throw new IllegalArgumentException();
++            if (!after.isEmpty() && !after.equals(DeploymentAgentPreparationAbsence.hash(DeploymentAgentPartialPreparationProbe.absentOutput(c.view(c.pending())))))
++                throw new IllegalArgumentException();
++            if (Set.of("INTENT", "DISPATCHED").contains(phase) && !after.isEmpty()
++                || Set.of("ABSENT", "RECONCILED_ABSENT", "ABSENT_WITHOUT_DISPATCH").contains(phase) && after.isEmpty())
++                throw new IllegalArgumentException();
++        }
++        if (ended) {
++            if (unobserved || !Set.of("SUCCEEDED", "ABSENT", "RECONCILED_ABSENT", "ABSENT_WITHOUT_DISPATCH").contains(phase) || after.isEmpty())
++                throw new IllegalArgumentException();
++            for (int i = 0; i < c.members().size(); i++)
++                if (!c.members().get(i).pending()) {
++                    var r = rows.get(i);
++                    if (!Set.of("SUCCEEDED", "ABSENT", "RECONCILED_ABSENT").contains(r.path("phase").asText())
++                        || r.path("before").asText().equals("UNOBSERVED") || r.path("afterResult").asText().isEmpty())
++                        throw new IllegalArgumentException();
++                }
++        }
++    }
++
+     /** Only TaskService owns the checkpoint; Mod JDBC never opens platform checkpoint tables. */
+     public static final class Progress {
+         private final Captured captured;
+@@ -284,8 +366,9 @@
+             } catch (Exception invalid) {
+                 throw new IllegalArgumentException("Original cleanup progress is malformed");
+             }
+-            validateRows(c, payload.path("members"), false);
+-            if (!progress(c, payload.path("members")).toString().equals(expected.payload()))
++            if (typed()) validateV2(c, payload.path("members"), payload.path("pendingObservation"), false);
++            else validateRows(c, payload.path("members"), false);
++            if (!(typed() ? progress2(c, payload.path("members"), payload.path("pendingObservation")) : progress(c, payload.path("members"))).toString().equals(expected.payload()))
+                 throw new IllegalArgumentException("Original cleanup progress changed");
+         }
+ 
+@@ -309,6 +392,41 @@
+                 throw new IllegalStateException("Original cleanup progress changed");
+         }
+ 
++        public boolean typed() {
++            return payload.path("format").asText().equals("WTL_AGENT_SET_PROGRESS_2");
++        }
++
++        /** CAS adds only one sidecar; no legacy row or request is rewritten. */
++        public boolean enableTyped() throws Exception {
++            verify();
++            if (typed()) return true;
++            if (!row(captured.pending()).path("phase").asText().equals("INTENT")
++                || !row(captured.pending()).path("afterResult").asText().isEmpty()) return false;
++            for (var member : captured.members()) if (!member.pending() && requiresAfter(member)) return false;
++            requireTypedBounds(captured, payload.path("members"));
++            save(progress2(captured, payload.path("members"), observation(captured)));
++            return true;
++        }
++
++        private ObjectNode active(Member m) {
++            return typed() && m.pending() ? (ObjectNode) payload.path("pendingObservation") : row(m);
++        }
++
++        private ObjectNode active(ObjectNode next, Member m) {
++            return typed() && m.pending() ? (ObjectNode) next.path("pendingObservation")
++                : (ObjectNode) next.path("members").get(captured.members().indexOf(m));
++        }
++
++        public boolean finished(Member m) {
++            var r = active(m);
++            return Set.of("SUCCEEDED", "ABSENT", "RECONCILED_ABSENT", "ABSENT_WITHOUT_DISPATCH").contains(r.path("phase").asText())
++                && !r.path("afterResult").asText().isEmpty();
++        }
++
++        public boolean requiresAfter(Member m) {
++            return Set.of("DISPATCHED", "SUCCEEDED").contains(active(m).path("phase").asText()) && !finished(m);
++        }
++
+         private ObjectNode row(Member m) {
+             return (ObjectNode) payload.path("members").get(captured.members().indexOf(m));
+         }
+@@ -323,6 +441,24 @@
+         public boolean before(Member m, CommandResult result) throws Exception {
+             verify();
+             boolean present;
++            if (m.pending() && typed()) {
++                var value = DeploymentAgentPartialPreparationProbe.stage(captured.view(m), result)
++                    .orElseThrow(() -> new IllegalArgumentException("Original typed preparation observation is incomplete"));
++                var sidecar = active(m);
++                if (!sidecar.path("phase").asText().equals("INTENT"))
++                    throw new IllegalStateException("Dispatched cleanup cannot be replayed");
++                String form = sidecar.path("form").asText();
++                if (!form.equals("UNOBSERVED") && !form.equals(value.name())) {
++                    if (value == DeploymentAgentPartialPreparationProbe.PreparationStage.ABSENT) return false;
++                    throw new IllegalArgumentException("Original preparation stage changed");
++                }
++                if (form.equals("UNOBSERVED")) {
++                    var next = payload.deepCopy();
++                    active(next, m).put("form", value.name()).put("beforeResult", DeploymentAgentPreparationAbsence.hash(result.stdout()));
++                    save(next);
++                }
++                return value != DeploymentAgentPartialPreparationProbe.PreparationStage.ABSENT;
++            }
+             if (m.pending()) {
+                 present = DeploymentAgentPartialPreparationProbe.present(captured.view(m), result);
+                 if (!present && !DeploymentAgentPartialPreparationProbe.absent(captured.view(m), result))
+@@ -345,20 +481,23 @@
+ 
+         public void dispatched(Member m) throws Exception {
+             verify();
+-            if (!row(m).path("phase").asText().equals("INTENT") || !row(m).path("before").asText().equals("PRESENT"))
++            var selected = active(m);
++            boolean present = typed() && m.pending() ? Set.of("UPLOADED", "CREATED_WITHOUT_ARCHIVE").contains(selected.path("form").asText())
++                : selected.path("before").asText().equals("PRESENT");
++            if (!selected.path("phase").asText().equals("INTENT") || !present)
+                 throw new IllegalStateException("Original cleanup cannot dispatch");
+             var next = payload.deepCopy();
+-            ((ObjectNode) next.path("members").get(captured.members().indexOf(m))).put("phase", "DISPATCHED");
++            active(next, m).put("phase", "DISPATCHED");
+             save(next);
+         }
+ 
+         public void result(Member m, boolean succeeded) throws Exception {
+             verify();
+-            if (!row(m).path("phase").asText().equals("DISPATCHED"))
++            if (!active(m).path("phase").asText().equals("DISPATCHED"))
+                 throw new IllegalStateException("Cleanup send boundary missing");
+             if (succeeded) {
+                 var next = payload.deepCopy();
+-                ((ObjectNode) next.path("members").get(captured.members().indexOf(m))).put("phase", "SUCCEEDED");
++                active(next, m).put("phase", "SUCCEEDED");
+                 save(next);
+             }
+         }
+@@ -368,8 +507,17 @@
+             if (!DeploymentAgentPartialPreparationProbe.absent(captured.view(m), result))
+                 throw new IllegalArgumentException("Original candidate absence is incomplete");
+             var next = payload.deepCopy();
+-            var r = (ObjectNode) next.path("members").get(captured.members().indexOf(m));
++            var r = active(next, m);
+             String phase = r.path("phase").asText();
++            if (typed() && m.pending()) {
++                String form = r.path("form").asText();
++                if (form.equals("UNOBSERVED")) throw new IllegalArgumentException("Original typed observation missing");
++                r.put("phase", phase.equals("DISPATCHED") ? "RECONCILED_ABSENT" : phase.equals("INTENT")
++                        ? form.equals("ABSENT") ? "ABSENT" : "ABSENT_WITHOUT_DISPATCH" : phase)
++                    .put("afterResult", DeploymentAgentPreparationAbsence.hash(result.stdout()));
++                save(next);
++                return;
++            }
+             if (phase.equals("INTENT") && !r.path("before").asText().equals("ABSENT"))
+                 throw new IllegalArgumentException("Original cleanup receipt missing");
+             r.put("phase", phase.equals("DISPATCHED") ? "RECONCILED_ABSENT" : phase.equals("INTENT") ? "ABSENT" : phase)
+@@ -379,6 +527,10 @@
+ 
+         public String proof() throws Exception {
+             verify();
++            if (typed()) {
++                validateV2(captured, payload.path("members"), payload.path("pendingObservation"), true);
++                return bounded(proof2(captured, payload.path("members"), payload.path("pendingObservation")), 8192);
++            }
+             validateRows(captured, payload.path("members"), true);
+             return bounded(proofNode(captured, payload.path("members")), 8192);
+         }
+@@ -441,8 +593,16 @@
+             var c = capture(task, new DeploymentAgentActionLog.Snapshot(identity, n.path("state").asText(), n.path("semantics").asInt()), layout, prefix).orElseThrow();
+             var rows = JSON.createArrayNode();
+             for (var m : n.path("members")) rows.add(m.path("receipt"));
+-            validateRows(c, rows, true);
+-            if (!event.action().equals(c.pending().preparation().action()) || !proofNode(c, rows).toString().equals(event.detail()))
++            if (!n.path("formatVersion").isInt()) return false;
++            ObjectNode canonical;
++            if (n.path("formatVersion").intValue() == 2) {
++                validateV2(c, rows, n.path("pendingObservation"), true);
++                canonical = proof2(c, rows, n.path("pendingObservation"));
++            } else {
++                validateRows(c, rows, true);
++                canonical = proofNode(c, rows);
++            }
++            if (!event.action().equals(c.pending().preparation().action()) || !canonical.toString().equals(event.detail()))
+                 return false;
+             var suffix = events.stream().filter(e -> e.id() > event.id()).toList();
+             String outcome = c.saved().state().equals("CANCELLED") ? "CANCELLED" : "FAILED";
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPartialPreparationProbeTest.java
+@@ -96,8 +96,68 @@
+         }
+     }
+ 
++    @ParameterizedTest
++    @ValueSource(strings = {"OWNED", "MISSING_ARCHIVE", "ABSENT", "LF_CREATED"})
++    void stageObservationDistinguishesUploadedCreatedAndAbsent(String condition) throws Exception {
++        var c = captured();
++        var result = fixture(c, condition, true);
++        var expected = condition.equals("OWNED") ? DeploymentAgentPartialPreparationProbe.PreparationStage.UPLOADED
++            : condition.equals("ABSENT") ? DeploymentAgentPartialPreparationProbe.PreparationStage.ABSENT
++            : DeploymentAgentPartialPreparationProbe.PreparationStage.CREATED_WITHOUT_ARCHIVE;
++        assertEquals(Optional.of(expected), DeploymentAgentPartialPreparationProbe.stage(c, result), result.stdout() + result.stderr());
++        assertEquals(DeploymentAgentPartialPreparationProbe.stageOutput(c, expected), result.stdout());
++        assertFalse(DeploymentAgentPartialPreparationProbe.present(c, result));
++        assertFalse(DeploymentAgentPartialPreparationProbe.absent(c, result));
++        if (expected == DeploymentAgentPartialPreparationProbe.PreparationStage.CREATED_WITHOUT_ARCHIVE) {
++            assertEquals("", result.stderr());
++            assertEquals(64, fixture(c, condition).exitCode().orElseThrow(), "The original uploaded-only producer remains unchanged");
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"CREATED_PART", "CREATED_SOURCE", "CREATED_NEWLINE", "CREATED_MODE", "CREATED_QUOTA", "CREATED_STAT_FAILED", "FOREIGN_TASK", "SHARED_DEVICE", "ACTIVE_BUILD"})
++    void createdStageRejectsUnboundOrUncertainState(String condition) throws Exception {
++        var c = captured();
++        var result = fixture(c, condition, true);
++        assertEquals(Optional.empty(), DeploymentAgentPartialPreparationProbe.stage(c, result), condition);
++        assertEquals(64, result.exitCode().orElseThrow(), result.stderr());
++        assertEquals("", result.stdout());
++        assertFalse(result.stderr().contains(root.toString()));
++    }
++
++    @Test
++    void stageConsumerRetainsExactOutputAndEmptyStderrBoundaries() throws Exception {
++        var c = captured();
++        String output = DeploymentAgentPartialPreparationProbe.stageOutput(c, DeploymentAgentPartialPreparationProbe.PreparationStage.CREATED_WITHOUT_ARCHIVE);
++        for (var bad : List.of(new CommandResult(Optional.of(0), output + "\n", "", false),
++            new CommandResult(Optional.of(0), output.stripTrailing(), "", false),
++            new CommandResult(Optional.of(0), output.replace(c.task().toString(), UUID.randomUUID().toString()), "", false),
++            new CommandResult(Optional.of(0), output.replace(c.layout().digest(), "0".repeat(64)), "", false),
++            new CommandResult(Optional.of(0), output.replace("STATUS=OWNED_CREATED_WITHOUT_ARCHIVE_INACTIVE", "STATUS=UNOBSERVED"), "", false),
++            new CommandResult(Optional.of(0), output, "FAKE_SECRET_MARKER", false),
++            new CommandResult(Optional.of(64), output, "", false), new CommandResult(Optional.empty(), output, "", false),
++            new CommandResult(Optional.of(0), output, "", true)))
++            assertTrue(DeploymentAgentPartialPreparationProbe.stage(c, bad).isEmpty());
++        for (String condition : List.of("LEGACY_EXTRA_LF", "LEGACY_STDERR", "LEGACY_NUL")) {
++            var actual = fixture(c, condition, true);
++            assertTrue(DeploymentAgentPartialPreparationProbe.stage(c, actual).isEmpty(), condition);
++            if (condition.equals("LEGACY_EXTRA_LF")) assertTrue(actual.stdout().endsWith("\n\n"));
++            else assertFalse(actual.stderr().isEmpty(), "Actual producer stderr must reach the strict consumer");
++        }
++        try (var old = DeploymentAgentPartialPreparationProbe.request(c, false);
++             var typed = DeploymentAgentPartialPreparationProbe.stageRequest(c, 67108864L)) {
++            assertFalse(Arrays.equals(old.stdin(), typed.stdin()));
++            assertFalse(DeploymentAgentPartialPreparationProbe.requestDigest(c, false)
++                .equals(DeploymentAgentPartialPreparationProbe.stageRequestDigest(c, 67108864L)));
++        }
++    }
++
+     private CommandResult fixture(DeploymentAgentPreparationCompensation.Captured c, String condition) throws Exception {
+-        String script = DeploymentAgentPartialPreparationProbe.script(c, false)
++        return fixture(c, condition, false);
++    }
++
++    private CommandResult fixture(DeploymentAgentPreparationCompensation.Captured c, String condition, boolean typed) throws Exception {
++        String script = (typed ? DeploymentAgentPartialPreparationProbe.stageScript(c, 67108864L) : DeploymentAgentPartialPreparationProbe.script(c, false))
+             .replace("candidate='" + c.workspace().candidateRoot() + "'", "candidate=\"$fixture_path/candidate\"")
+             .replace("/usr/bin/stat", "fixture_stat").replace("/usr/bin/id -u", "fixture_id -u")
+             .replace("/usr/bin/systemctl", "fixture_systemctl").replace("/usr/bin/findmnt", "fixture_findmnt")
+@@ -120,10 +180,18 @@
+               case "$condition" in
+                 FOREIGN_TASK | LF_FOREIGN_TASK) printf '00000000-0000-0000-0000-000000000000\n' > "$fixture_path/candidate/.agent-task" ;;
+                 SAME_PREFIX | LF_ARCHIVE) printf 'changed archive\n' > "$fixture_path/candidate/mutable/source.tar.gz" ;;
+-                MISSING_ARCHIVE) rm -- "$fixture_path/candidate/mutable/source.tar.gz" ;;
++                MISSING_ARCHIVE | CREATED_* | LF_CREATED) rm -- "$fixture_path/candidate/mutable/source.tar.gz" ;;
+                 BUILDER) : > "$fixture_path/candidate/.builder-intent" ;;
+                 IMAGE) : > "$fixture_path/candidate/.image-engine" ;;
+                 RESTORE) mkdir -- "$fixture_path/candidate/mutable/restore-activation" ;;
++              esac
++              case "$condition" in
++                CREATED_PART) : > "$fixture_path/candidate/mutable/.wtl-transfer-controlled.part" ;;
++                CREATED_SOURCE) mkdir -- "$fixture_path/candidate/mutable/input-source" ;;
++                CREATED_NEWLINE) : > "$fixture_path/candidate/"$'.purpose\\n.deployer' ;;
++                CREATED_MODE) printf 'protected-source\\n' > "$fixture_path/candidate/.agent-mode" ;;
++                CREATED_QUOTA) printf '134217728\\n' > "$fixture_path/candidate/.workspace-limit" ;;
++                LEGACY_NUL) printf '%s\\0' "$expected_task" > "$fixture_path/candidate/.agent-task" ;;
+               esac
+               if [[ "$condition" = LF_* ]]; then
+                 case "$condition" in
+@@ -159,6 +227,7 @@
+                     return 0 ;;
+                 esac
+               fi
++              if [ "$condition" = CREATED_STAT_FAILED ] && [ "$2" = '%s' ] && [[ "$4" = */.workspace-limit ]]; then return 1; fi
+               if [ "$2" = '%u:%g' ]; then printf '0:0\n'
+               elif [ "$2" = '%a' ]; then printf '755\n'
+               elif [ "$2" = '%d' ] && [[ "$4" = */mutable ]]; then printf '12345\n'
+@@ -203,6 +272,13 @@
+               return 0
+             }
+             """;
++        if (typed && condition.equals("LEGACY_EXTRA_LF")) {
++            String footer = "printf '%s' '" + DeploymentAgentPartialPreparationProbe.stageOutput(c, DeploymentAgentPartialPreparationProbe.PreparationStage.UPLOADED) + "'\n";
++            assertEquals(1, script.split(java.util.regex.Pattern.quote(footer), -1).length - 1);
++            script = script.replace(footer, footer + "printf '\\n'\n");
++        }
++        if (typed && condition.equals("LEGACY_STDERR"))
++            script += "printf 'FAKE_SECRET_MARKER\\n' >&2\n";
+         String directory = "case-" + UUID.randomUUID();
+         var result = bash("mkdir -- '" + directory + "' || exit 69\ncd -- '" + directory + "' || exit 69\n" + fixture + script, false, condition.equals("LF_SYMLINK"));
+         return new CommandResult(Optional.of(result.exitCode()), result.output(), result.error(), false);
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPreparationCompensationTest.java
+@@ -739,11 +739,12 @@
+             var resumed = f.recover();
+             assertEquals(TaskResult.FAILED, resumed.outcome(), f.reviewDiagnostic(resumed));
+             assertEquals(2, f.deletes);
+-            if (durable)
++            if (durable) {
+                 assertEquals(beforeRetry, f.sent, "Durable proof reentry cannot issue even a new remote observation");
+-            else {
+-                assertTrue(f.grants > grantsBeforeRetry);
+-                f.assertFreshReviewsRereadPages();
++                assertEquals(grantsBeforeRetry, f.grants);
++            } else {
++                assertEquals(beforeRetry + 1, f.sent, "Only the existing helper readiness probe remains; complete candidate progress is not repeated");
++                assertEquals(grantsBeforeRetry + 1, f.grants);
+             }
+             var events = f.journal.events(f.task);
+             assertEquals(1, events.stream().filter(e -> e.type().equals(DeploymentAgentMultiPreparationCompensation.EVENT)).count());
+@@ -751,6 +752,159 @@
+             assertTrue(f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot().released());
+             assertEquals(TaskResult.FAILED, new DeploymentAgentHistoryArchive(f.context).settle(f.task, new OperationResult<Void>(TaskResult.FAILED,
+                 Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE, "CONTROLLED_FAILURE", "Controlled", Map.of(), Optional.empty())))).outcome());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"UPLOADED", "CREATED_WITHOUT_ARCHIVE", "ABSENT"})
++    void typedPreparationUpgradePreservesLegacyRowsAndSettlesCompleteSet(String form) throws Exception {
++        try (var f = new Frame(DeploymentRemoteLayout.original(), true)) {
++            var c = f.multiCapture();
++            var original = c.events();
++            var progress = DeploymentAgentMultiPreparationCompensation.Progress.open(f.context, f.task, c);
++            progress.before(c.members().getFirst(), new CommandResult(Optional.of(0), "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n", "", false));
++            var checkpoint = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY);
++            var before = checkpoint.snapshot();
++            var frozenPending = JSON.readTree(before.payload()).path("members").get(1).deepCopy();
++            f.typedForm = DeploymentAgentPartialPreparationProbe.PreparationStage.valueOf(form);
++            f.multiPresent.put(c.pending().workspace().candidateId(), !form.equals("ABSENT"));
++            var result = f.recover();
++            assertEquals(TaskResult.FAILED, result.outcome(), f.reviewDiagnostic(result));
++            assertEquals(form.equals("ABSENT") ? 1 : 2, f.deletes);
++            var after = checkpoint.snapshot();
++            assertTrue(after.released());
++            var payload = JSON.readTree(after.payload());
++            assertEquals("WTL_AGENT_SET_PROGRESS_2", payload.path("format").asText());
++            assertEquals(frozenPending, payload.path("members").get(1), "All legacy pending request/result bytes remain frozen");
++            assertEquals(form, payload.path("pendingObservation").path("form").asText());
++            assertEquals(DeploymentAgentMultiPreparationCompensation.typedRequestDigest(c), payload.path("pendingObservation").path("beforeRequest").asText());
++            assertFalse(frozenPending.path("beforeRequest").equals(payload.path("pendingObservation").path("beforeRequest")));
++            assertTrue(after.payload().getBytes(StandardCharsets.UTF_8).length <= 12000);
++            var events = f.journal.events(f.task);
++            assertEquals(original, events.subList(0, original.size()));
++            var proof = events.stream().filter(e -> e.type().equals(DeploymentAgentMultiPreparationCompensation.EVENT)).findFirst().orElseThrow();
++            assertEquals(2, JSON.readTree(proof.detail()).path("formatVersion").asInt());
++            assertTrue(DeploymentAgentMultiPreparationCompensation.matches(proof, events));
++            assertTrue(proof.detail().getBytes(StandardCharsets.UTF_8).length <= 8192);
++            assertTrue(DeploymentAgentActionLog.effectsSettled(events));
++            assertTrue(f.multiTrace.indexOf("BEFORE:frontend") < f.multiTrace.indexOf("DELETE:backend"));
++            assertEquals(1, f.typedExecutions);
++            assertTrue(f.typedReviewCalls > 0);
++            assertEquals(0, f.metadataReviewCalls);
++            assertEquals(0, f.metadataExecutions);
++            assertEquals(0, f.metadataDiagnosticAttempts);
++            assertEquals(f.grants, new java.util.HashSet<>(f.multiGrantIds).size());
++            assertEquals(TaskResult.FAILED, new DeploymentAgentHistoryArchive(f.context).settle(f.task, result).outcome());
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"UPGRADE_CAS", "UPGRADE_ACK", "BEFORE_CAS", "TYPED_DENY", "TYPED_UNKNOWN", "POST_RESULT_CHANGE"})
++    void typedUpgradeOrAdmissionFailureCannotDispatchCleanup(String condition) throws Exception {
++        try (var f = new Frame(DeploymentRemoteLayout.original(), true)) {
++            var c = f.multiCapture();
++            var original = c.events();
++            f.typedCondition = condition;
++            var result = f.recover();
++            assertEquals(TaskResult.UNKNOWN, result.outcome(), f.reviewDiagnostic(result));
++            assertEquals(0, f.deletes);
++            assertEquals(condition.startsWith("UPGRADE_") || condition.equals("TYPED_DENY") ? 0 : 1, f.typedExecutions);
++            assertEquals(original, f.journal.events(f.task));
++            assertEquals(0, f.metadataExecutions);
++            assertEquals(0, f.metadataReviewCalls);
++            var retained = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot();
++            assertFalse(retained.released());
++            assertEquals(condition.equals("UPGRADE_CAS") ? "WTL_AGENT_SET_PROGRESS_1" : "WTL_AGENT_SET_PROGRESS_2", JSON.readTree(retained.payload()).path("format").asText());
++            if (condition.equals("UPGRADE_CAS") || condition.equals("UPGRADE_ACK")) {
++                assertEquals(0, f.typedReviewCalls, "No new typed review may precede an acknowledged upgrade CAS");
++                int count = f.checkpoints.size();
++                f.typedCondition = "";
++                assertEquals(TaskResult.FAILED, f.recover().outcome());
++                assertEquals(count, f.checkpoints.size(), "Acknowledgement loss reuses the one actual checkpoint");
++                assertEquals(2, f.deletes);
++            }
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"PENDING_UNKNOWN_PRESENT", "PENDING_UNKNOWN_ABSENT"})
++    void typedPendingDispatchReentryOnlyObservesAbsenceAndNeverRepeatsCleanup(String condition) throws Exception {
++        try (var f = new Frame(DeploymentRemoteLayout.original(), true)) {
++            f.typedCondition = condition;
++            var first = f.recover();
++            assertEquals(condition.endsWith("ABSENT") ? TaskResult.FAILED : TaskResult.UNKNOWN, first.outcome(), f.reviewDiagnostic(first));
++            assertEquals(2, f.deletes);
++            int typedReads = f.typedExecutions;
++            var snapshot = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot();
++            assertEquals(condition.endsWith("ABSENT") ? "RECONCILED_ABSENT" : "DISPATCHED", JSON.readTree(snapshot.payload()).path("pendingObservation").path("phase").asText());
++            if (condition.endsWith("PRESENT")) {
++                f.typedCondition = "";
++                assertEquals(TaskResult.UNKNOWN, f.recover().outcome());
++                assertEquals(2, f.deletes);
++                f.multiPresent.replaceAll((k, v) -> false);
++            }
++            assertEquals(TaskResult.FAILED, f.recover().outcome());
++            assertEquals(2, f.deletes);
++            assertEquals(typedReads, f.typedExecutions, "A dispatched sidecar can only acquire the original after absence receipt");
++            assertTrue(f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot().released());
++        }
++    }
++
++    @Test
++    void typedProofRejectsChangedSidecarAndFrozenLegacyRows() throws Exception {
++        try (var f = new Frame(DeploymentRemoteLayout.original(), true)) {
++            assertEquals(TaskResult.FAILED, f.recover().outcome());
++            var events = f.journal.events(f.task);
++            var proof = events.stream().filter(e -> e.type().equals(DeploymentAgentMultiPreparationCompensation.EVENT)).findFirst().orElseThrow();
++            var n = JSON.readTree(proof.detail());
++            for (String change : List.of("BEFORE_REQUEST", "LEGACY_REQUEST", "CANDIDATE", "FORM", "BEFORE_RESULT", "AFTER_RESULT", "PHASE", "EXTRA", "VERSION", "DUPLICATE", "TRAILING")) {
++                var changed = (com.fasterxml.jackson.databind.node.ObjectNode) n.deepCopy();
++                var sidecar = (com.fasterxml.jackson.databind.node.ObjectNode) changed.path("pendingObservation");
++                switch (change) {
++                    case "BEFORE_REQUEST" -> sidecar.put("beforeRequest", "0".repeat(64));
++                    case "LEGACY_REQUEST" ->
++                        ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("members").get(1).path("receipt")).put("beforeRequest", "0".repeat(64));
++                    case "CANDIDATE" -> sidecar.put("candidate", "foreign");
++                    case "FORM" -> sidecar.put("form", "ABSENT");
++                    case "BEFORE_RESULT" -> sidecar.put("beforeResult", "0".repeat(64));
++                    case "AFTER_RESULT" -> sidecar.put("afterResult", "0".repeat(64));
++                    case "PHASE" -> sidecar.put("phase", "INTENT");
++                    case "EXTRA" -> sidecar.put("authority", "APPROVED");
++                    case "VERSION" -> changed.put("formatVersion", 3);
++                }
++                String text = change.equals("DUPLICATE") ? changed.toString().replace("\"formatVersion\":2", "\"formatVersion\":2,\"formatVersion\":2")
++                    : change.equals("TRAILING") ? changed + " {}" : changed.toString();
++                var invalid = new DeploymentAgentActionLog.Event(proof.id(), proof.type(), proof.action(), text);
++                var revised = new ArrayList<>(events);
++                revised.set(revised.indexOf(proof), invalid);
++                assertFalse(DeploymentAgentMultiPreparationCompensation.matches(invalid, revised), change);
++            }
++        }
++    }
++
++    @Test
++    void legacyProgressRetainsOriginalProofAndNeverUpgradesDispatchedRows() throws Exception {
++        try (var f = new Frame(DeploymentRemoteLayout.original(), true)) {
++            var c = f.multiCapture();
++            var progress = DeploymentAgentMultiPreparationCompensation.Progress.open(f.context, f.task, c);
++            for (var member : c.members()) {
++                String before = member.pending() ? DeploymentAgentPartialPreparationProbe.presentOutput(c.view(member)) : "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n";
++                assertTrue(progress.before(member, new CommandResult(Optional.of(0), before, "", false)));
++                progress.dispatched(member);
++                if (member.pending())
++                    assertFalse(progress.enableTyped(), "An actual old send is not an upgradeable intent");
++                progress.result(member, true);
++                progress.after(member, new CommandResult(Optional.of(0), DeploymentAgentPartialPreparationProbe.absentOutput(c.view(member)), "", false));
++            }
++            String proof = progress.proof();
++            assertEquals(1, JSON.readTree(proof).path("formatVersion").asInt());
++            assertFalse(proof.contains("pendingObservation"));
++            f.journal.preparationsCompensated(f.task, c, progress, proof);
++            var events = f.journal.events(f.task);
++            var committed = events.getLast();
++            assertTrue(DeploymentAgentMultiPreparationCompensation.matches(committed, events));
++            progress.release(committed, events);
++            assertTrue(f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot().released());
+         }
+     }
+ 
+@@ -801,50 +955,35 @@
+     @ValueSource(strings = {"OBSERVED", "DENY", "GUARD_CHANGED", "EXECUTE_UNKNOWN", "DIAGNOSTIC_LOG_FAILURE"})
+     void companionMetadataObservationKeepsFrozenProgressAndRequiresFreshIndependentReview(String condition) throws Exception {
+         for (String scenario : condition.equals("GUARD_CHANGED") ? List.of("GUARD_CHANGED", "GUARD_AFTER_SDK") : List.of(condition)) {
+-            for (boolean multi : condition.equals("OBSERVED") ? List.of(true, false) : List.of(true)) {
+-                try (var f = new Frame(DeploymentRemoteLayout.original(), multi)) {
+-                    f.metadataCondition = scenario;
+-                    var events = f.journal.events(f.task);
+-                    var captured = multi ? f.multiCapture().view(f.multiCapture().pending()) : f.capture();
+-                    f.metadataRequestSha = DeploymentAgentPartialPreparationProbe.fileMetadataRequestDigest(captured);
+-                    f.metadataStdinSha = DeploymentAgentPreparationAbsence.hash(DeploymentAgentPartialPreparationProbe.fileMetadataScript(captured));
+-                    String originalRequest = DeploymentAgentPartialPreparationProbe.requestDigest(captured, false);
+-                    TaskCheckpoint.Snapshot frozen = null;
+-                    if (multi) {
+-                        var all = f.multiCapture();
+-                        var progress = DeploymentAgentMultiPreparationCompensation.Progress.open(f.context, f.task, all);
+-                        progress.before(all.members().getFirst(), new CommandResult(Optional.of(0), "CANDIDATE_STATE=owned\nBUILD_ACTIVE=no\n", "", false));
+-                        frozen = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot();
+-                    }
+-                    var result = f.recover();
+-                    assertEquals(TaskResult.UNKNOWN, result.outcome(), f.reviewDiagnostic(result));
+-                    assertEquals(events, f.journal.events(f.task));
+-                    assertEquals(0, f.deletes);
+-                    assertEquals(originalRequest, DeploymentAgentPartialPreparationProbe.requestDigest(captured, false));
+-                    assertFalse(originalRequest.equals(f.metadataRequestSha));
+-                    assertTrue(f.metadataReviewCalls > 0, "A new independent review must read this distinct exact request");
+-                    assertEquals(scenario.equals("DENY") || scenario.equals("GUARD_CHANGED") ? 0 : 1, f.metadataExecutions);
+-                    if (f.metadataExecutions > 0) assertFalse(f.originalPrivateGrant.equals(f.metadataSdkGrant));
+-                    if (multi) {
+-                        var retained = f.checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot();
+-                        assertEquals(frozen.payload(), retained.payload());
+-                        assertEquals(frozen.revision() + 1, retained.revision(), "Only the ordinary completed-member before observation advances; companion never writes progress");
+-                        assertFalse(retained.released());
+-                    }
+-                    assertTrue(f.partialDiagnostics().stream().anyMatch(e -> e.details().orElse("").contains("NON_PRIVATE_FILE")));
+-                    assertEquals(1, f.metadataDiagnosticAttempts);
+-                    var diagnostics = f.nativeAi.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_FILE_METADATA")).toList();
+-                    if (condition.equals("DIAGNOSTIC_LOG_FAILURE")) assertTrue(diagnostics.isEmpty());
+-                    else {
+-                        assertEquals(1, diagnostics.size());
+-                        var data = JSON.readTree(diagnostics.getFirst().details().orElseThrow());
+-                        assertEquals("NEW_COMPANION_OBSERVATION", data.path("observationTime").asText());
+-                        assertFalse(data.path("cleanupEvidence").asBoolean());
+-                        assertEquals(originalRequest, data.path("originalRequestSha256").asText());
+-                        assertEquals(f.metadataRequestSha, data.path("requestSha256").asText());
+-                        assertEquals(condition.equals("OBSERVED"), data.has("files"));
+-                        assertFalse(data.toString().contains("FAKE_SECRET_MARKER"));
+-                    }
++            try (var f = new Frame(DeploymentRemoteLayout.original(), false)) {
++                f.metadataCondition = scenario;
++                var events = f.journal.events(f.task);
++                var captured = f.capture();
++                f.metadataRequestSha = DeploymentAgentPartialPreparationProbe.fileMetadataRequestDigest(captured);
++                f.metadataStdinSha = DeploymentAgentPreparationAbsence.hash(DeploymentAgentPartialPreparationProbe.fileMetadataScript(captured));
++                String originalRequest = DeploymentAgentPartialPreparationProbe.requestDigest(captured, false);
++                var result = f.recover();
++                assertEquals(TaskResult.UNKNOWN, result.outcome(), f.reviewDiagnostic(result));
++                assertEquals(events, f.journal.events(f.task));
++                assertEquals(0, f.deletes);
++                assertEquals(originalRequest, DeploymentAgentPartialPreparationProbe.requestDigest(captured, false));
++                assertFalse(originalRequest.equals(f.metadataRequestSha));
++                assertTrue(f.metadataReviewCalls > 0, "A new independent review must read this distinct exact request");
++                assertEquals(scenario.equals("DENY") || scenario.equals("GUARD_CHANGED") ? 0 : 1, f.metadataExecutions);
++                if (f.metadataExecutions > 0) assertFalse(f.originalPrivateGrant.equals(f.metadataSdkGrant));
++                assertTrue(f.partialDiagnostics().stream().anyMatch(e -> e.details().orElse("").contains("NON_PRIVATE_FILE")));
++                assertEquals(1, f.metadataDiagnosticAttempts);
++                var diagnostics = f.nativeAi.events.stream().filter(e -> e.eventCode().equals("DEPLOYMENT_AGENT_PARTIAL_FILE_METADATA")).toList();
++                if (condition.equals("DIAGNOSTIC_LOG_FAILURE")) assertTrue(diagnostics.isEmpty());
++                else {
++                    assertEquals(1, diagnostics.size());
++                    var data = JSON.readTree(diagnostics.getFirst().details().orElseThrow());
++                    assertEquals("NEW_COMPANION_OBSERVATION", data.path("observationTime").asText());
++                    assertFalse(data.path("cleanupEvidence").asBoolean());
++                    assertEquals(originalRequest, data.path("originalRequestSha256").asText());
++                    assertEquals(f.metadataRequestSha, data.path("requestSha256").asText());
++                    assertEquals(condition.equals("OBSERVED"), data.has("files"));
++                    assertFalse(data.toString().contains("FAKE_SECRET_MARKER"));
+                 }
+             }
+         }
+@@ -902,6 +1041,16 @@
+         String observationCondition = "";
+ 
+         String metadataCondition = "";
++
++        String typedCondition = "";
++
++        String typedStdinSha = "";
++
++        int typedExecutions;
++
++        int typedReviewCalls;
++
++        DeploymentAgentPartialPreparationProbe.PreparationStage typedForm = DeploymentAgentPartialPreparationProbe.PreparationStage.UPLOADED;
+ 
+         String metadataRequestSha = "";
+ 
+@@ -997,7 +1146,15 @@
+                                 multiCondition = "";
+                                 throw new IllegalStateException("Controlled checkpoint write failure");
+                             }
++                            boolean upgrade = payload.contains("WTL_AGENT_SET_PROGRESS_2") && !expected.payload().contains("WTL_AGENT_SET_PROGRESS_2");
++                            boolean beforeTypedResult = payload.contains("WTL_AGENT_SET_PROGRESS_2")
++                                && !typedBefore(payload).isEmpty()
++                                && typedBefore(expected.payload()).isEmpty();
++                            if (upgrade && typedCondition.equals("UPGRADE_CAS") || beforeTypedResult && typedCondition.equals("BEFORE_CAS"))
++                                throw new IllegalStateException("Controlled typed progress CAS failure");
+                             var result = super.advance(expected, payload);
++                            if (upgrade && typedCondition.equals("UPGRADE_ACK"))
++                                throw new IllegalStateException("Controlled typed upgrade acknowledgement loss");
+                             if (multi && payload.contains("DISPATCHED") && multiCondition.equals("POST_PERSIST_CHANGE")) {
+                                 multiCondition = "";
+                                 try {
+@@ -1162,10 +1319,12 @@
+                     }
+                     boolean metadataReview = !metadataStdinSha.isEmpty() && metadataStdinSha.equals(input.path("executableInput").path("stdin").path("sha256").asText());
+                     if (metadataReview) metadataReviewCalls++;
++                    boolean typedReview = !typedStdinSha.isEmpty() && typedStdinSha.equals(input.path("executableInput").path("stdin").path("sha256").asText());
++                    if (typedReview) typedReviewCalls++;
+                     if (calls.isEmpty()) {
+                         String decision = denyCleanup && deletes == 0 && sent == 2 || observationCondition.equals("MODEL_DENY") && sent == 1
+                             || multi && multiCondition.equals("DENY") && input.path("executableInput").path("script").path("text").asText().contains("candidate-cleanup-task")
+-                            || metadataReview && metadataCondition.equals("DENY") ? "DENY" : "APPROVE";
++                            || metadataReview && metadataCondition.equals("DENY") || typedReview && typedCondition.equals("TYPED_DENY") ? "DENY" : "APPROVE";
+                         calls.add(new AiToolCall(UUID.randomUUID().toString(), "submit_result", "{\"decision\":\"" + decision
+                             + "\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled complete fixed request\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}"));
+                     }
+@@ -1230,6 +1389,17 @@
+                 for (var event : multipleEvents(id, identity, layout, DeploymentAgentInputs.targetProfile(profile), DeploymentAgentInputs.physicalTarget(profile)))
+                     journal.event(task, event.type(), event.action(), event.detail());
+                 for (var member : multiCapture().members()) multiPresent.put(member.workspace().candidateId(), true);
++                var c = multiCapture();
++                typedStdinSha = DeploymentAgentPreparationAbsence.hash(DeploymentAgentPartialPreparationProbe.stageScript(c.view(c.pending()),
++                    DeploymentAgentMultiPreparationCompensation.pendingWorkspaceBytes(c)));
++            }
++        }
++
++        private String typedBefore(String payload) {
++            try {
++                return JSON.readTree(payload).path("pendingObservation").path("beforeResult").asText();
++            } catch (Exception malformed) {
++                throw new AssertionError(malformed);
+             }
+         }
+ 
+@@ -1272,14 +1442,34 @@
+                 assertTrue(payload.contains("DISPATCHED"), "Durable send boundary must precede SDK");
+                 multiTrace.add("DELETE:" + component);
+                 deletes++;
+-                if (!multiCondition.equals("UNKNOWN_PRESENT")) multiPresent.put(candidate, false);
+-                if (multiCondition.startsWith("UNKNOWN_")) throw new ApiException(processProblem(ProblemCode.UNKNOWN));
++                boolean pendingUnknown = member.pending() && typedCondition.startsWith("PENDING_UNKNOWN_");
++                if (!multiCondition.equals("UNKNOWN_PRESENT") && !(member.pending() && typedCondition.equals("PENDING_UNKNOWN_PRESENT")))
++                    multiPresent.put(candidate, false);
++                if (multiCondition.startsWith("UNKNOWN_") || pendingUnknown)
++                    throw new ApiException(processProblem(ProblemCode.UNKNOWN));
+                 return success(new CommandResult(Optional.of(0), "CANDIDATE_CLEANED=1\n", "", false));
+             }
+             if (request.script().contains("candidate-query-task")) {
+                 multiTrace.add("BEFORE:" + component);
+                 if (multiCondition.equals("STATUS_AFTER_SDK")) journal.event(task, "AGENT_OBSERVATION", "", "changed");
+                 return success(new CommandResult(Optional.of(0), "CANDIDATE_STATE=" + (present ? "owned" : "absent") + "\nBUILD_ACTIVE=" + (multiCondition.equals("ACTIVE") ? "yes" : "no") + "\n", "", false));
++            }
++            if (body.contains("FORMAT=WTL_AGENT_PREPARATION_STAGE_1")) {
++                assertTrue(member.pending());
++                typedExecutions++;
++                assertTrue(checkpoints.get(DeploymentAgentMultiPreparationCompensation.KEY).snapshot().payload().contains("WTL_AGENT_SET_PROGRESS_2"),
++                    "The v2 CAS must complete before the new observation SDK boundary");
++                assertEquals(DeploymentAgentMultiPreparationCompensation.typedRequestDigest(captured),
++                    DeploymentAgentPreparationAbsence.hash(gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request).exactAction()));
++                multiTrace.add("BEFORE:" + component);
++                var form = present ? typedForm : DeploymentAgentPartialPreparationProbe.PreparationStage.ABSENT;
++                var value = new CommandResult(Optional.of(0), DeploymentAgentPartialPreparationProbe.stageOutput(captured.view(member), form), "", false);
++                if (typedCondition.equals("POST_RESULT_CHANGE")) observedFingerprint = "changed-fingerprint";
++                if (typedCondition.equals("TYPED_UNKNOWN"))
++                    return new OperationResult<>(TaskResult.UNKNOWN, Optional.of(value), Optional.of(processProblem(ProblemCode.UNKNOWN)));
++                if (multiCondition.equals("PARTIAL"))
++                    return success(new CommandResult(Optional.of(0), "UNKNOWN\n", "", false));
++                return success(value);
+             }
+             assertTrue(body.contains("WTL_AGENT_PREPARATION_ABSENCE_1"));
+             boolean pre = body.contains("WTL_AGENT_UPLOADED_PREPARATION_1");

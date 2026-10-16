@@ -1,0 +1,62 @@
+# 原194准备阶段恢复231
+
+2026-10-16，本地实现并验证来源绑定的准备阶段观测：12个明确方法、48个定点用例全部通过，跳测打包通过。原194仍UNKNOWN；本轮没有调用真实模型、SSH或产品恢复入口，没有结清远端资源、完成业务验收或新增FULL。
+
+## 原因与实现
+
+230确认了可达的阶段合同缺口：PREPARE_EXECUTING覆盖create、upload、verifyUploaded及open，而旧Partial Probe只接受完整上传的archive。create完成、上传前的合法状态不能由旧观测准入。230的UNOBSERVED本身不证明原194远端处在该状态；本次修复也不追补旧日志或改写原UNKNOWN。
+
+采用同一个恢复checkpoint的明确v2进度，保留原key、lease、外围recovery-checkpoint.v1和数据库版本1。没有新增检查点、宿主API、依赖或共享helper改动。生产仅涉及DeploymentAgentPartialPreparationProbe、DeploymentAgentMultiPreparationCompensation、DeploymentAgentRecovery，另改两个对应既有测试文件。STATIC、ASSISTED及审批策略保持。
+
+新的完整只读动作使用WTL_AGENT_PREPARATION_STAGE_1，严格区分UPLOADED、CREATED_WITHOUT_ARCHIVE、ABSENT；exit0、空stderr、未截断、完整绑定输出缺一不可。它从原固定脚本直接派生，不通过子Bash或截断尾换行映射旧输出。UPLOADED沿原完整archive准入，ABSENT沿原完整absence守门。
+
+CREATED分支必须核当前可信父目录、原task、六个私有控制文件及内容/大小、冻结quota、镜像大小与设备、唯一loop和ext4挂载、无active build；镜像不做数GB内容摘要。archive与agent-mode严格确认缺席，不能把stat失败当不存在。root、mutable检查完整条目集合，只允许安全空lost+found；part、source、未知或含换行的额外条目、身份不明及扫描失败均拒绝。关键目录及control元数据再次核同。该阶段mutable可以rw。EXPECTED_ARCHIVE_SHA256仅表示原压缩源身份，CREATED不声称远端已有该内容。
+
+新WTL_AGENT_SET_PROGRESS_2只CAS增加一个pendingObservation。旧pending行、旧before/cleanup/after请求摘要及既有回执保持原值，completed行仍按原协议推进。只有pending为INTENT、after为空且无其它未结发送时才升级。最坏形状仍受12000字节进度、8192字节证明限制，超界在新typed审批/cleanup前拒绝；原helper或资源审阅更早，不声称整个恢复零审批。两成员夹具不证明所有16成员布局都能容纳。
+
+所有候选的before先于首次cleanup。每个完整动作仍须独立审批和新grant，SDK前后核原身份、事件、配置、路由、进度及业务引用。沿原cleanup请求，先持久DISPATCHED再最终guard和SDK；不明发送只补原after absence，不重复cleanup。DISPATCHED并不证明载荷实际送达。新时点从present变absence且未发送用ABSENT_WITHOUT_DISPATCH，不能冒充成功回执。
+
+proof2从原事件前缀和全部成员独立严格重建，旧proof1消费者不放宽。全体结清后才在原Mod事务提交证明，然后幂等释放同一平台lease；两者不是跨库原子事务。证明提交/回执或释放失败重入不重复删除。ActionLog源码保持不变。
+
+## 定点验证
+
+基线HEAD为3eb7bbe4267815cd9df62e53b0a6d87b41f79c17、index空，实际3310项源码逐SHA同229最终清单，六JAR及原4319/886必要pair同230终态。正常工作目录新核Java21.0.10、Maven3.9.12、Python3.12.10。Astra High仅完成一次有界持久协议设计，Sol XHigh实现、Sol High准备工具，父审查后执行。
+
+唯一格式write/check及前后源检查均0。父在格式前后核旧Partial三个原方法片段及HelperReadiness、PreparationProbe、ProjectChannel、helper20/21/22全文件不变。只格式化五owner。
+
+唯一java-01明确限定以下方法，Maven/before/after均0、testsVerified=true；父独读同轮两份原XML，按方法/参数核48P、0F、0E、0Skip。显式使用当前E:/Program/Git/bin/bash.exe，SHA9aa00217a92def5fed1b15c6e2b34a7f89e3781af822ecc00960fe5340df093e。
+
+| 方法 | JUnit case |
+| --- | ---: |
+| stageObservationDistinguishesUploadedCreatedAndAbsent | 4 |
+| createdStageRejectsUnboundOrUncertainState | 9 |
+| stageConsumerRetainsExactOutputAndEmptyStderrBoundaries | 1 |
+| typedPreparationUpgradePreservesLegacyRowsAndSettlesCompleteSet | 3 |
+| typedUpgradeOrAdmissionFailureCannotDispatchCleanup | 6 |
+| typedPendingDispatchReentryOnlyObservesAbsenceAndNeverRepeatsCleanup | 2 |
+| typedProofRejectsChangedSidecarAndFrozenLegacyRows | 1 |
+| legacyProgressRetainsOriginalProofAndNeverUpgradesDispatchedRows | 1 |
+| multiPreparationCleansAllCandidatesBeforeDurableProofAndArchivesFailed | 2 |
+| multiPreparationDispatchAndReentryNeverRepeatUnknownCleanup | 9 |
+| multiPreparationProofCommitAndFinalStateFailuresRemainIdempotent | 5 |
+| companionMetadataObservationKeepsFrozenProgressAndRequiresFreshIndependentReview | 5 |
+
+两类为DeploymentAgentPartialPreparationProbeTest和DeploymentAgentPreparationCompensationTest，Maven使用-pl src/mod/deployment -am、上述精确-Dtest方法选择器及-Dsurefire.failIfNoSpecifiedTests=false。不是模块全量。原multi三方法16参数直接受影响；companion五参数现在明确保留single/legacy路由及原断言，新multi另核零机械companion调用。其余229十四个已过case复用，未重复执行。方法内循环或Bash场景不额外计JUnit数量。
+
+Bash实际执行本地脚本，但root/权限、mount/loop/helper是受控替身。Mod H2事务、NativeAiFixture及MemoryCheckpoint/CAS是本地接线与故障重入证据，不证明真实Linux、平台重启、SDK或原194恢复成功。
+
+唯一-B -pl src/mod/deployment -am -DskipTests package通过。源码3310项只有五owner变化，无新增/删除，最终manifest SHA30569190ae41ff690f56ebc901d7fb0397fd3a42d50161a629a8fc3fe3f4cf68。deployment.jar为3755629字节、SHA1299e3225748d0019a60097a610990c4dbee0613e9812a5ea4069066dd050ca2；另五JAR保持229值。包后核部署30组、69个class成员及8资源，AI3族、平台4族、五宿主完整target/JAR内容。元数据SHA5f3129d1dc7dcb471ffe1e4dda9e44dc9c9c61c4cb5e98d4ae1708cb921b2817。这是静态绑定，不是JVM CodeSource。
+
+父绑定工具首调误按数组读取origins外层对象，TypeError在任何释放前退出。保留原工具后只纠正实际helpers/sourceFile/savedSource/helper字段访问，并逐SHA核验；未降低检查或重跑业务。这是本地执行器错误，不是服务器失败。原准备报告保留当时状态，实际以上述执行记录为准。
+
+## 交付与后续
+
+正常Close及父独立CIM核303组精确PID/创建时间全部退出，本轮五个TMP/UDS路径不存在，共享格式缓存保留。原DB76132352字节/SHA4319925cce479f0aae6b4770a393eac3a3a07d777a67da1e23655f3c3bb53ca5、bootstrap358字节/SHA886b792519a8fe8ed0dc5ac894eef95c3ca1856617f0448ccafe3bba4b133f8e保持；原UNKNOWN、检查点、资源、私有备份及调查证据保留。未打开原库、DPAPI或产品Runtime。
+
+[精确源码增量](patches/AGENT-CREATED-STAGE-RECOVERY-231.patch) SHA73811197f77fea88bbc6209349073d3f96875be0c2669538a2552f6e288f998d已在带所有权标记的自有副本真实git apply正反并逐字节匹配，当前源reverse-check通过，副本已清。增量基于保留的实际dirty输入；不能声称干净HEAD可构建。只将该patch、本文及单路径-text属性本地提交，不推送。
+
+证据根：.ai-workspace/agent-live-evidence/agent-autonomy-20261012/original194-created-stage-recovery-231；入口为baseline、parent-design-decision、implementation/test-plan、parent-legacy-after-format、parent-unit/package-verification、parent-process-closure及implementation/patch-byte-verification。230及此前封存证据未改。
+
+下一步重新核实际源码/JAR/当前必要pair，正常用户私有保全后仅通过原Task产品入口取得新完整观测，仍由产品及独立审批决定动作；Root不接手SSH。不得预判当前远端是CREATED、复用旧grant或自动回滚数据库。
+
+CSV Inspector、File Transfer继续严格逐个部署和调试。两者调整及真实业务完成后分别核FULL审批/cache与已知未知，审批仍高则暂停讨论。本轮无真实provider usage、缓存或审批收益；历史纯恢复窗口不混入FULL趋势。当前两个项目累计7FULL仍无完整业务通过；冻结八项目、非默认目录、整机重启及其它模式动态容量仍未验证。
