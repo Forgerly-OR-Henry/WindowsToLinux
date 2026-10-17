@@ -1,0 +1,35 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1034,0 +1035,4 @@
++        var verifiedFacts = SDK_METADATA_JSON.readTree(backupCommandFacts(new BackupCommandPlan(evidence.resolve("sizing-only.json"), "a".repeat(64), producer.toString()), java.util.UUID.randomUUID(), "b".repeat(64))).path("verifiedCurrentContentEvidence");
++        assertEquals(1, verifiedFacts.path("selectedCount").asInt()); assertEquals(1, verifiedFacts.path("observedCount").asInt());
++        assertEquals(1, verifiedFacts.path("orderedHashCount").asInt()); assertTrue(verifiedFacts.path("allSelectionDigestBindingsEqual").asBoolean());
++        assertEquals(observed, verifiedFacts.path("completeObservationReceipt"));
+@@ -1317 +1321 @@
+-            var facts = Map.<String, Object>ofEntries(Map.entry("scope", "BACKUP_ONLY"), Map.entry("task", task.toString()),
++            var facts = new LinkedHashMap<String, Object>(Map.<String, Object>ofEntries(Map.entry("scope", "BACKUP_ONLY"), Map.entry("task", task.toString()),
+@@ -1324 +1328,23 @@
+-                Map.entry("replayAllowed", false), Map.entry("backupComplete", false));
++                Map.entry("replayAllowed", false), Map.entry("backupComplete", false)));
++            if (currentBackupFormat(node) && node.path("kind").asText().equals("FILES_SNAPSHOT")
++                && node.path("sourceFacts").has("currentContentObservation")) {
++                var layout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
++                Path evidenceWorkspace = plan.file().toAbsolutePath().normalize().getParent();
++                while (evidenceWorkspace != null && (evidenceWorkspace.getFileName() == null || !evidenceWorkspace.getFileName().toString().equals(".ai-workspace"))) evidenceWorkspace = evidenceWorkspace.getParent();
++                evidenceWorkspace = Objects.requireNonNull(evidenceWorkspace, "Bound backup evidence workspace is required").getParent();
++                var selection = currentBackupSelection(evidenceWorkspace, node, layout);
++                var observed = currentContentProof(evidenceWorkspace, node.path("sourceFacts").path("currentContentObservation"), layout).receipt();
++                var hashes = node.path("sourceFacts").path("currentContentFacts").path("hashes");
++                var distinct = new java.util.HashSet<String>(); hashes.forEach(value -> distinct.add(value.asText()));
++                String stdinSha = backupBytesSha(node.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8));
++                facts.put("verifiedCurrentContentEvidence", Map.ofEntries(
++                    Map.entry("meaning", "Deterministic local validation of the full six-chain and each ordered source/metadata/bytes/hash; independent APP may still refuse. Distinct hashes are not the member count; repeated and empty payloads are permitted."),
++                    Map.entry("selectedCount", selection.path("items").size()), Map.entry("observedCount", observed.path("items").size()),
++                    Map.entry("orderedHashCount", hashes.size()), Map.entry("distinctContentHashCount", distinct.size()),
++                    Map.entry("orderedSourceMetadataExtentHashMismatches", 0), Map.entry("rawStdinSha256", stdinSha),
++                    Map.entry("observerSelectionSha256", observed.path("selectionSha256").asText()),
++                    Map.entry("allSelectionDigestBindingsEqual", stdinSha.equals(observed.path("selectionSha256").asText())
++                        && stdinSha.equals(node.path("sourceFacts").path("currentContentFacts").path("selectionSha256").asText())),
++                    Map.entry("originalProofReference", node.path("sourceFacts").path("currentContentObservation")),
++                    Map.entry("completeObservationReceipt", observed)));
++            }

@@ -1,0 +1,9 @@
+# 重装前文件备份的完整审核证据299
+
+297新FILES动作被APP拒绝且无grant，理由称276选择与摘要数量不匹配。实际解析保存的完整模型USER输入：276选择、276有序摘要、276真实观察项，source/SHA不匹配为0，原始stdin72427B及selection/observer/intent摘要完全一致。不同内容SHA仅156，空文件及重复内容可有相同摘要；这可能是误读来源，不能认定模型实际推理原因。完整DENY和旧动作保持结束，不重放。
+
+最小改动只在Live的精确FILES/currentContentObservation分支，通过现有全六链及逐项校验后，为APP增加完整真实观察回执、276/276/276机械计数、不同SHA计数、原始stdin与观察摘要等式、原proof引用。保留完整命令/stdin/原件和512KiB审核上限，不要求模型批准，不减少独立APP或新grant。原producer、DB证明、生产API和STATIC/ASSISTED不变。
+
+新run/nonce改变selection，使用新独立observer后再新FILES APP，不借旧观察冒充新selection。原本已成功DB密文及独立内存恢复不重跑。仅现有content一个方法定点：首次新静态上下文编译问题，第二次隔离证据根边界问题，修正后test03通过/0.960s。没有全量、package或复跑EOL/恢复/DB/Python已过组。20代码路径及原JAR属性稳定，提交阶段仅本次窄源码和文档摘要。
+
+此提交仍非备份完成。普通文件备份/独立内存验证及最终覆盖收尾完成前，goalactive/test/data NOT_READY；全部完成后paused才是用户约定可重装信号。旧七UNKNOWN及194不改，业务FT→CSV验收仍未完成。
