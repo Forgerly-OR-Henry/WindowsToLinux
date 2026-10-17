@@ -1,0 +1,5 @@
+90f63c74384469958aed9cc8bd4f45fbaeb09ec578524093bcf6ae5150cf3bd1  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+a858d53b93f06240697048c0d6f0ebf16bf2ed26520a16f24e62bed1be9ba255  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
+b18dc330a47002045ba9ce8dbfacc4f93a77c8146d6c5a38d7fce4b43975d947  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/block-filesystem-layout-observation.py
+7de411cedb73456d043cddd297d0cc25c5ba06636a811dfc1f74b218abfe9524  docs/test/multi-language/DEPLOYMENT-AGENT-BLOCK-FILESYSTEM-LAYOUT-OBSERVATION-294.patch
+068cb4c46fed02358d8b0cd8bc83082c40f6ba97fd8cf7ad2eceec2deca13b62  docs/test/multi-language/DEPLOYMENT-AGENT-BLOCK-FILESYSTEM-LAYOUT-OBSERVATION-294.md

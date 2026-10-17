@@ -1,0 +1,444 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -6189,6 +6189,118 @@
+     }
+ 
+     @Test
++    @EnabledIfSystemProperty(named = "managed.runtime.blockFilesystemLayoutObservation", matches = "true")
++    void observesBlockFilesystemLayoutThroughNativeApproval() throws Exception {
++        assertEquals("DeploymentStaticLiveAcceptanceTest#observesBlockFilesystemLayoutThroughNativeApproval", System.getProperty("test"));
++        root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
++        assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
++        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
++        assertEquals(java.util.UUID.fromString("05b481d0-fe1b-42bc-b4a6-4ca855f43b05"), original);
++        connectionOnly = false; aiEnabled = true; agentMode = true; agentApproval = "AUTOMATIC"; agentRemember = false;
++        try (var runtime = open()) {
++            start(runtime, true);
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            var observed = completed(context.tasks().<com.fasterxml.jackson.databind.JsonNode>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "deployment-block-filesystem-layout-observation", "METADATA_ONLY: captured-state filesystem and root block topology/partition geometry; one pure command", List.of(SERVER), true), task -> {
++                var prior = context.tasks().findArchived(original, task).orElseThrow();
++                assertEquals("deployment-system-go-capacity-observation", prior.type());
++                assertEquals(OWNER, prior.ownerId()); assertEquals(VERSION, prior.ownerVersion());
++                assertEquals(Optional.of(TaskResult.SUCCEEDED), prior.outcome());
++                var server = new ServerId(SERVER);
++                var profile = context.servers().get(server, task);
++                assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
++                String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
++                var selected = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++                    gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, selected);
++                var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++                assertEquals(selected, layout);
++                String stateRoot = layout.paths().stateRoot();
++                Path source = workspace().resolve("src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard");
++                var selection = context.file().sources().selectDirectory(source, task);
++                try (var snapshot = context.file().snapshots().snapshot(selection,
++                    new gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest(List.of("system-go-capacity-observation.py", "block-filesystem-layout-observation.py"), 65536), task)) {
++                    var browser = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser(snapshot.directory(), snapshot.sha256());
++                    String observer = "__name__ = 'trusted_resolver_definitions'\n"
++                        + Files.readString(snapshot.directory().resolve("system-go-capacity-observation.py"), java.nio.charset.StandardCharsets.UTF_8)
++                        + "\n__name__ = '__main__'\nCAPTURED_STATE_ROOT = " + JSON.writeValueAsString(stateRoot) + "\n"
++                        + Files.readString(snapshot.directory().resolve("block-filesystem-layout-observation.py"), java.nio.charset.StandardCharsets.UTF_8);
++                    try (var authority = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
++                        context, task, server, revision, "AUTOMATIC", false,
++                        "New METADATA_ONLY request: captured stateRoot fstatvfs and expected 253:1 block metadata; fixed read-only lsblk/findmnt and at most one existing sfdisk --json of an unambiguously derived physical parent. Trusted SSH/OS baseline, bounded output/time, no SDK execution/PROBE/install/prepare, no grow/format/migration/layout or remote receipt/setup writes; not READY");
++                         var session = context.linux().connect(server, task)) {
++                        assertEquals(Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint")), session.facts().fingerprint());
++                        var approval = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(context, task,
++                            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence() {
++                                public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding() {
++                                    return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
++                                        server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
++                                }
++                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-block-filesystem-observer", browser); }
++                                public Object receipts() { return Map.of("purpose", "BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY", "prerequisiteTask", original.toString(),
++                                    "prerequisiteResult", "SUCCEEDED:SYSTEM_GO_CAPACITY_METADATA_ONLY", "capturedStateRoot", stateRoot, "capturedLayoutSha256", layout.digest(),
++                                    "expectedMajorMinor", "253:1", "expectedDevice", "0xfd01", "sdkExecutions", 0,
++                                    "meaning", "Read-only standard OS utilities under existing OS trust; no raw UUID/serial/options output and no resize authorization"); }
++                                public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
++                                    return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(),
++                                        "publicSourceSnapshotId", snapshot.id().toString(), "capturedLayoutSha256", layout.digest());
++                                }
++                            });
++                        var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(
++                            context, context.interaction(), task, "AUTOMATIC", false, () -> revision, null,
++                            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> approval);
++                        try (var request = sdkMetadataRequest(observer)) {
++                            var targets = new java.util.HashSet<gold.debug.windowstolinux.appapi.task.action.ActionTarget>();
++                            targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", task.id().toString()));
++                            targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "captured-fs-root", stateRoot));
++                            targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "block-topology-root", "/dev/block/253:1"));
++                            for (String utility : List.of("/usr/bin/lsblk", "/usr/bin/findmnt", "/usr/sbin/sfdisk", "/usr/bin/sfdisk"))
++                                targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "readonly-os-utility", utility));
++                            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, revision, request).withSemantics(
++                                new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("deployment.candidate.host-probe.v1", targets));
++                            OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> review;
++                            try {
++                                review = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(
++                                    reviewed.interaction(), intent, request, task);
++                            } catch (ApiException denied) {
++                                if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
++                                    || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
++                                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, denied);
++                                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
++                            }
++                            if (review.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
++                            if (review.value().isEmpty()) return sdkMetadataUnknown();
++                            System.out.println("BLOCK_FILESYSTEM_LAYOUT_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
++                            var result = session.execute(request, review.value().orElseThrow());
++                            if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
++                            if (result.value().isEmpty()) return sdkMetadataUnknown();
++                            var value = result.value().orElseThrow();
++                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty()) return sdkMetadataUnknown();
++                            if (value.exitCode().orElseThrow() != 0)
++                                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
++                                    "BLOCK_FILESYSTEM_LAYOUT_METADATA_NONZERO", "The pure metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
++                            var lines = value.stdout().lines().toList();
++                            if (lines.size() != 1 || !lines.getFirst().startsWith("BLOCK_FILESYSTEM_LAYOUT_METADATA=")) return sdkMetadataUnknown();
++                            var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("BLOCK_FILESYSTEM_LAYOUT_METADATA=".length()));
++                            gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
++                                Set.of("schema", "mode", "status", "capturedStateRoot", "filesystem", "mount", "topology", "partitionTable", "sdkExecutions", "meaning"));
++                            if (!metadata.path("schema").isInt() || metadata.path("schema").intValue() != 1
++                                || !metadata.path("mode").asText().equals("METADATA_ONLY") || !metadata.path("status").asText().equals("OBSERVED")
++                                || !metadata.path("capturedStateRoot").asText().equals(stateRoot) || !metadata.path("sdkExecutions").isInt()
++                                || metadata.path("sdkExecutions").intValue() != 0 || !metadata.path("filesystem").path("state").asText().equals("OBSERVED")
++                                || !metadata.path("filesystem").path("device").asText().equals("0x000000000000fd01")
++                                || !metadata.path("filesystem").path("majorMinor").asText().equals("253:1")) return sdkMetadataUnknown();
++                            return success(metadata);
++                        }
++                    }
++                } finally { context.file().closeTaskResources(task); }
++            }), 20);
++            assertEquals(1, reviewedActions.get(), "One full script requires one independent native approval and fresh exact grant");
++            System.out.println("BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
++        }
++    }
++
++    @Test
+     void observesCandidateCapacityThroughProduct() throws Exception {
+         connectionOnly = false;
+         enable();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
+@@ -180,4 +180,75 @@
+             if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, TimeUnit.SECONDS)); }
+         }
+     }
++    @Test
++    void blockFilesystemObserverBoundsVendorMetadataAndPreservesUnknown() throws Exception {
++        var resolver = Path.of(getClass().getResource("system-go-capacity-observation.py").toURI());
++        var observer = Path.of(getClass().getResource("block-filesystem-layout-observation.py").toURI());
++        var process = new ProcessBuilder(System.getProperty("managed.python.executable", "python"), "-I", "-S", "-B", "-", resolver.toString(), observer.toString())
++            .redirectErrorStream(true).start();
++        try {
++            try (var input = process.getOutputStream()) {
++                input.write("""
++                    import json, os, pathlib, stat, sys, types
++                    from contextlib import ExitStack
++                    from unittest.mock import Mock, patch
++                    def rejected(action):
++                        try: action()
++                        except (ValueError, KeyError): return
++                        raise AssertionError('Invalid vendor metadata was accepted')
++                    with ExitStack() as stack:
++                        for index, flag in enumerate(('O_DIRECTORY', 'O_NOFOLLOW', 'O_CLOEXEC', 'O_NONBLOCK', 'O_PATH', 'ST_RDONLY')):
++                            stack.enter_context(patch.object(os, flag, 1 << (20 + index), create=True))
++                        n = {'__name__': 'synthetic_block_observation'}
++                        for path in sys.argv[1:]: exec(compile(pathlib.Path(path).read_bytes(), '<public-observer>', 'exec'), n)
++                        disk = dict(name='vda', kname='vda', pkname=None, **{'maj:min': '252:0'}, size=1073741824, type='disk', ro=False, serial='PRIVATE_SERIAL')
++                        part = dict(name='vda1', kname='vda1', pkname='vda', **{'maj:min': '252:1'}, size=536870912, type='part', ro=False, children=[disk])
++                        root = dict(name='vg-root', kname='dm-1', pkname='vda1', **{'maj:min': '253:1'}, size=268435456, type='lvm', ro=False, children=[part])
++                        topology = n['block_topology']({'blockdevices': [root]})
++                        selected = n['unique_physical_disk'](topology)
++                        assert selected['kname'] == 'vda' and 'PRIVATE_SERIAL' not in json.dumps(topology)
++                        geometry = {'partitiontable': dict(device='/dev/vda', unit='sectors', sectorsize=512, label='gpt', id='PRIVATE_GUID',
++                            partitions=[dict(node='/dev/vda1', start=2048, size=100000, uuid='PRIVATE_UUID', name='PRIVATE_LABEL')])}
++                        projected = n['partition_projection'](geometry, selected)
++                        assert projected['uncoveredByListedPartitionBytes'] == 1022541824 and 'PRIVATE_' not in json.dumps(projected)
++                        mount = n['mount_projection']({'filesystems': [{'target': '/', 'fstype': 'ext4', 'maj:min': '253:1', 'options': 'PRIVATE_OPTIONS'}]}, '/captured/state')
++                        assert 'PRIVATE_OPTIONS' not in json.dumps(mount)
++                        for data in (b'{"x":1,"x":2}', b'{"x":1} {}', b'{"x":NaN}', b'{"x":1.5}', b' ' * 65537):
++                            rejected(lambda data=data: n['strict_json'](data))
++                        rejected(lambda: n['integer'](1 << 63))
++                        rejected(lambda: n['block_topology']({'blockdevices': [dict(root, kname='dm-1;id')]}))
++                        rejected(lambda: n['block_topology']({'blockdevices': [dict(root, children=[root])]}))
++                        rejected(lambda: n['partition_projection']({'partitiontable': dict(geometry['partitiontable'], sectorsize=None)}, selected))
++                        rejected(lambda: n['partition_projection']({'partitiontable': dict(geometry['partitiontable'], partitions=[dict(node='/dev/vda1', start=(1 << 62), size=2)])}, selected))
++                        rejected(lambda: n['unique_physical_disk'](n['block_topology']({'blockdevices': [dict(root, children=[])]})))
++                        sample = types.SimpleNamespace(f_fsid=(1 << 63) + 7, f_frsize=4096, f_flag=0, f_blocks=100, f_bfree=30, f_bavail=20)
++                        measured = n['filesystem_projection'](sample, types.SimpleNamespace(**dict(vars(sample), f_bavail=19)), 64769)
++                        assert measured['availableBytesMinimum'] == 77824 and measured['samples'][0]['totalBytes'] == 409600
++                        rejected(lambda: n['filesystem_projection'](sample, types.SimpleNamespace(**dict(vars(sample), f_blocks=1 << 62)), 64769))
++                        binding_info = types.SimpleNamespace(st_mode=stat.S_IFBLK | 0o660, st_uid=0, st_gid=6, st_rdev=64769,
++                            st_dev=2, st_ino=3, st_nlink=1, st_size=0, st_mtime_ns=1, st_ctime_ns=1)
++                        directory = types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_dev=64769)
++                        fake = types.SimpleNamespace(resolve=lambda path: dict(exists=True, fd=7, info=directory), fds=[], entries=[], verify=Mock(), close=Mock())
++                        fake_os = types.SimpleNamespace(O_PATH=1, O_NOFOLLOW=2, O_CLOEXEC=4, ST_RDONLY=os.ST_RDONLY, open=Mock(return_value=9),
++                            stat=Mock(return_value=binding_info), fstat=Mock(return_value=binding_info), makedev=lambda major, minor: major * 256 + minor)
++                        with patch.dict(n, os=fake_os):
++                            bindings = []; n['block_binding'](fake, 'dm-1', '253:1', bindings)
++                            assert bindings == [(9, 7, 'dm-1', 64769)]
++                        fake_os.fstat = lambda fd: directory
++                        fake_os.fstatvfs = lambda fd: sample
++                        with patch.dict(n, os=fake_os, Observer=lambda: fake, root_alias=Mock(side_effect=ValueError), utility_json=Mock(side_effect=ValueError)):
++                            unknown = n['block_observation']('/captured/state')
++                        assert all(unknown[key]['state'] == 'UNKNOWN' and 'byteSize' not in unknown[key] for key in ('mount', 'topology', 'partitionTable'))
++                        assert unknown['filesystem']['samples'][0]['availableBytes'] == 81920 and fake.close.call_count == 1
++                    print('BLOCK_FILESYSTEM_METADATA_SYNTHETIC_OK')
++                    """.getBytes(StandardCharsets.UTF_8));
++            }
++            assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Synthetic protocol must exit within its local bound");
++            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
++            assertEquals(0, process.exitValue(), output);
++            assertEquals("BLOCK_FILESYSTEM_METADATA_SYNTHETIC_OK", output.strip());
++        } finally {
++            if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, TimeUnit.SECONDS)); }
++        }
++    }
+ }
+--- /dev/null
++++ b/src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/block-filesystem-layout-observation.py
+@@ -0,0 +1,242 @@
++"""Requires the public 293 Observer definitions; read-only OS metadata, never a grow authorization."""
++import selectors
++import signal
++import subprocess
++import time
++
++EXPECTED_MM = '253:1'
++SAFE_NAME = r'[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}'
++
++
++def integer(value):
++    if isinstance(value, str):
++        need(re.fullmatch(r'0|[1-9][0-9]{0,18}', value), 'INTEGER')
++        value = int(value)
++    return long_value(value)
++
++
++def major_minor(value):
++    need(isinstance(value, str) and re.fullmatch(r'(0|[1-9][0-9]{0,6}):(0|[1-9][0-9]{0,6})', value), 'DEVICE_NUMBER')
++    return value
++
++
++def strict_json(data):
++    need(isinstance(data, bytes) and 0 < len(data) <= 65536, 'JSON_BOUND')
++    def pairs(items):
++        result = {}
++        for key, value in items:
++            need(key not in result, 'DUPLICATE_JSON_FIELD')
++            result[key] = value
++        return result
++    def invalid(value):
++        raise ValueError('NON_INTEGER_JSON_NUMBER')
++    return json.loads(data.decode('utf-8'), object_pairs_hook=pairs, parse_constant=invalid, parse_float=invalid)
++
++
++def block_topology(value):
++    need(isinstance(value, dict) and isinstance(value.get('blockdevices'), list) and len(value['blockdevices']) == 1, 'TOPOLOGY_ROOT')
++    nodes, edges, seen = [], [], set()
++    def visit(row, depth):
++        need(isinstance(row, dict) and depth <= 8 and len(nodes) < 32, 'TOPOLOGY_BOUND')
++        name, kname, mm = row.get('name'), row.get('kname'), major_minor(row.get('maj:min'))
++        need(isinstance(name, str) and re.fullmatch(SAFE_NAME, name) and isinstance(kname, str) and re.fullmatch(SAFE_NAME, kname), 'BLOCK_NAME')
++        need(mm not in seen and not any(item['kname'] == kname for item in nodes), 'TOPOLOGY_DUPLICATE')
++        seen.add(mm)
++        kind, ro, pkname = row.get('type'), row.get('ro'), row.get('pkname')
++        need(isinstance(kind, str) and re.fullmatch(r'[a-z0-9_-]{1,24}', kind), 'BLOCK_TYPE')
++        need(type(ro) is bool or type(ro) is int and ro in (0, 1) or isinstance(ro, str) and ro in ('0', '1'), 'READONLY')
++        need(pkname is None or isinstance(pkname, str) and re.fullmatch(SAFE_NAME, pkname), 'BLOCK_PARENT')
++        nodes.append({'name': name, 'kname': kname, 'majorMinor': mm, 'byteSize': integer(row.get('size')), 'type': kind,
++                      'readOnly': ro in (True, 1, '1'), 'parentKname': pkname})
++        children = row.get('children', [])
++        need(isinstance(children, list) and len(children) <= 8, 'TOPOLOGY_BOUND')
++        for child in children:
++            child_mm = visit(child, depth + 1)
++            edges.append({'dependent': mm, 'parent': child_mm})
++        return mm
++    need(visit(value['blockdevices'][0], 0) == EXPECTED_MM, 'ROOT_DEVICE_CHANGED')
++    return {'state': 'OBSERVED', 'devices': nodes, 'parentEdges': edges}
++
++
++def unique_physical_disk(topology):
++    nodes = {row['majorMinor']: row for row in topology['devices']}
++    current, visited = EXPECTED_MM, set()
++    while current not in visited:
++        visited.add(current)
++        row = nodes[current]
++        parents = [edge['parent'] for edge in topology['parentEdges'] if edge['dependent'] == current]
++        if not parents:
++            need(row['type'] == 'disk' and row['parentKname'] is None and len(visited) == len(nodes), 'PHYSICAL_DISK_UNCONFIRMED')
++            return row
++        need(len(parents) == 1 and row['type'] in ('part', 'lvm', 'crypt', 'dm')
++             and row['parentKname'] == nodes[parents[0]]['kname'], 'PHYSICAL_DISK_UNCONFIRMED')
++        current = parents[0]
++    raise ValueError('PHYSICAL_DISK_UNCONFIRMED')
++
++
++def mount_projection(value, state_root):
++    rows = value.get('filesystems') if isinstance(value, dict) else None
++    need(isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict), 'MOUNT_BOUND')
++    row = rows[0]
++    target, kind = row.get('target'), row.get('fstype')
++    need(isinstance(target, str) and re.fullmatch(r'/[A-Za-z0-9._+/-]*', target) and len(target) <= 4096, 'MOUNT_TARGET')
++    need(state_root == target or state_root.startswith(target.rstrip('/') + '/'), 'MOUNT_COVERAGE')
++    need(isinstance(kind, str) and re.fullmatch(r'[a-zA-Z0-9_.+-]{1,32}', kind) and major_minor(row.get('maj:min')) == EXPECTED_MM, 'MOUNT_IDENTITY')
++    return {'state': 'OBSERVED', 'requestedStateRoot': state_root, 'mountpoint': target, 'fsType': kind, 'majorMinor': EXPECTED_MM}
++
++
++def partition_projection(value, disk):
++    table = value.get('partitiontable') if isinstance(value, dict) else None
++    need(isinstance(table, dict) and table.get('device') == '/dev/' + disk['kname'] and table.get('unit') == 'sectors'
++         and table.get('label') in ('gpt', 'dos'), 'PARTITION_TABLE')
++    sector = integer(table.get('sectorsize'))
++    need(512 <= sector <= 65536 and sector & (sector - 1) == 0, 'SECTOR_SIZE_REQUIRED')
++    rows = table.get('partitions')
++    need(isinstance(rows, list) and len(rows) <= 32, 'PARTITION_BOUND')
++    result, names = [], set()
++    for row in rows:
++        need(isinstance(row, dict), 'PARTITION_ROW')
++        node = row.get('node')
++        need(isinstance(node, str) and re.fullmatch('/dev/' + SAFE_NAME, node) and node not in names, 'PARTITION_NODE')
++        names.add(node)
++        start, size = integer(row.get('start')), integer(row.get('size'))
++        end = long_value(start + size)
++        need(size > 0 and long_value(end * sector) <= disk['byteSize'], 'PARTITION_GEOMETRY')
++        result.append({'node': node, 'startSector': start, 'sizeSectors': size})
++    ordered = sorted(result, key=lambda row: row['startSector'])
++    need(all(a['startSector'] + a['sizeSectors'] <= b['startSector'] for a, b in zip(ordered, ordered[1:])), 'OVERLAPPING_PARTITIONS')
++    covered = long_value(sum(row['sizeSectors'] * sector for row in result))
++    return {'state': 'OBSERVED', 'diskKname': disk['kname'], 'diskBytes': disk['byteSize'], 'tableKind': table['label'],
++            'sectorSize': sector, 'partitions': result, 'uncoveredByListedPartitionBytes': long_value(disk['byteSize'] - covered),
++            'meaning': 'Uncovered bytes include metadata/reserved gaps; not allocatable space or evidence that growing any layer is safe.'}
++
++
++def filesystem_projection(before, after, device):
++    need(unsigned_hex(before.f_fsid) == unsigned_hex(after.f_fsid) and before.f_frsize == after.f_frsize
++         and bool(before.f_flag & os.ST_RDONLY) == bool(after.f_flag & os.ST_RDONLY), 'FILESYSTEM_CHANGED')
++    fragment = long_value(before.f_frsize)
++    need(fragment > 0, 'CAPACITY_INTEGER')
++    samples = []
++    for sample in (before, after):
++        blocks, free, available = (integer(getattr(sample, key)) for key in ('f_blocks', 'f_bfree', 'f_bavail'))
++        need(available <= free <= blocks, 'CAPACITY_INTEGER')
++        samples.append({'blocks': blocks, 'bfree': free, 'bavail': available, 'totalBytes': long_value(blocks * fragment),
++                        'freeBytes': long_value(free * fragment), 'availableBytes': long_value(available * fragment)})
++    return {'state': 'OBSERVED', 'device': unsigned_hex(device), 'majorMinor': EXPECTED_MM, 'fsid': unsigned_hex(before.f_fsid),
++            'frsize': fragment, 'readOnly': bool(before.f_flag & os.ST_RDONLY), 'samples': samples,
++            'availableBytesMinimum': min(row['availableBytes'] for row in samples), 'meaning': 'Two point samples, not a reservation.'}
++
++
++def block_binding(observer, kname, mm, bindings):
++    need(isinstance(kname, str) and re.fullmatch(SAFE_NAME, kname), 'BLOCK_NAME')
++    parent = observer.resolve('/dev')
++    need(parent['exists'] and stat.S_ISDIR(parent['info'].st_mode), 'DEVICE_PARENT')
++    info = os.stat(kname, dir_fd=parent['fd'], follow_symlinks=False)
++    expected = os.makedev(*(int(part) for part in major_minor(mm).split(':')))
++    need(stat.S_ISBLK(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o002 and info.st_rdev == expected, 'BLOCK_BINDING')
++    fd = os.open(kname, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent['fd'])
++    observer.fds.append(fd)
++    observer.entries.append((parent['fd'], kname, fd, signature(info)))
++    need(signature(info) == signature(os.fstat(fd)) and os.fstat(fd).st_rdev == expected, 'BLOCK_BINDING')
++    bindings.append((fd, parent['fd'], kname, expected))
++
++
++def root_alias(observer, bindings):
++    parent = observer.resolve('/dev/block')
++    need(parent['exists'], 'ROOT_BLOCK_ALIAS')
++    info = os.stat(EXPECTED_MM, dir_fd=parent['fd'], follow_symlinks=False)
++    need(stat.S_ISLNK(info.st_mode) and info.st_uid == 0, 'ROOT_BLOCK_ALIAS')
++    target = os.readlink(EXPECTED_MM, dir_fd=parent['fd'])
++    match = re.fullmatch(r'(?:\.\./|/dev/)(' + SAFE_NAME + ')', target)
++    need(match is not None, 'ROOT_BLOCK_ALIAS')
++    observer.links.append((parent['fd'], EXPECTED_MM, signature(info), target))
++    block_binding(observer, match.group(1), EXPECTED_MM, bindings)
++
++
++def utility_json(observer, argv):
++    resolved = observer.resolve(argv[0])
++    need(resolved['exists'] and stat.S_ISREG(resolved['info'].st_mode) and resolved['info'].st_mode & 0o111, 'UTILITY_UNAVAILABLE')
++    observer.verify()
++    selector = selectors.DefaultSelector()
++    try:
++        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
++                                   env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}, close_fds=True, start_new_session=True)
++    except Exception:
++        selector.close()
++        raise
++    buffers = [bytearray(), bytearray()]
++    try:
++        selector.register(process.stdout, selectors.EVENT_READ, 0)
++        selector.register(process.stderr, selectors.EVENT_READ, 1)
++        deadline = time.monotonic() + 10
++        while selector.get_map():
++            need(time.monotonic() < deadline, 'UTILITY_TIMEOUT')
++            for key, _ in selector.select(min(0.1, max(0, deadline - time.monotonic()))):
++                chunk = os.read(key.fileobj.fileno(), 4096)
++                need(sum(map(len, buffers)) + len(chunk) <= 65536, 'UTILITY_OUTPUT_BOUND')
++                if chunk: buffers[key.data].extend(chunk)
++                else: selector.unregister(key.fileobj)
++        need(process.wait(timeout=max(0.01, deadline - time.monotonic())) == 0 and not buffers[1], 'UTILITY_RESULT')
++        observer.verify()
++        value = strict_json(bytes(buffers[0]))
++        return value
++    finally:
++        try:
++            if process.poll() is None:
++                try: os.killpg(process.pid, signal.SIGKILL)
++                except ProcessLookupError: pass
++            process.stdout.close(); process.stderr.close()
++            process.wait(timeout=3)
++        except Exception:
++            raise RuntimeError('UTILITY_CLEANUP_UNCONFIRMED') from None
++        finally:
++            selector.close()
++
++
++def block_observation(state_root):
++    observer, bindings = Observer(), []
++    unknown = {'state': 'UNKNOWN', 'meaning': 'Not observed or not uniquely/credibly established; no zero-capacity inference.'}
++    try:
++        root = observer.resolve(state_root)
++        need(root['exists'] and stat.S_ISDIR(root['info'].st_mode), 'CAPTURED_STATE_ROOT')
++        device = os.fstat(root['fd']).st_dev
++        need(device == os.makedev(253, 1), 'CAPTURED_ROOT_DEVICE_CHANGED')
++        before = os.fstatvfs(root['fd'])
++        topology, mount, partitions = dict(unknown), dict(unknown), dict(unknown)
++        try:
++            root_alias(observer, bindings)
++            topology = block_topology(utility_json(observer, ['/usr/bin/lsblk', '-b', '--json', '--inverse', '-o', 'NAME,KNAME,PKNAME,MAJ:MIN,SIZE,TYPE,RO', '/dev/block/253:1']))
++            disk = unique_physical_disk(topology)
++            block_binding(observer, disk['kname'], disk['majorMinor'], bindings)
++            utility = None
++            for candidate in ('/usr/sbin/sfdisk', '/usr/bin/sfdisk'):
++                if observer.resolve(candidate)['exists']:
++                    utility = candidate
++                    break
++            if utility is not None:
++                partitions = partition_projection(utility_json(observer, [utility, '--json', '/dev/' + disk['kname']]), disk)
++        except (OSError, ValueError, KeyError, AttributeError, RecursionError, subprocess.SubprocessError):
++            pass
++        try:
++            mount = mount_projection(utility_json(observer, ['/usr/bin/findmnt', '--json', '--target', state_root, '-o', 'TARGET,FSTYPE,MAJ:MIN']), state_root)
++        except (OSError, ValueError, KeyError, AttributeError, RecursionError, subprocess.SubprocessError):
++            pass
++        filesystem = filesystem_projection(before, os.fstatvfs(root['fd']), device)
++        observer.verify()
++        need(all(os.fstat(fd).st_rdev == expected and os.stat(name, dir_fd=parent, follow_symlinks=False).st_rdev == expected
++                 for fd, parent, name, expected in bindings), 'BLOCK_BINDING_CHANGED')
++        return {'schema': 1, 'mode': 'METADATA_ONLY', 'status': 'OBSERVED', 'capturedStateRoot': state_root,
++                'filesystem': filesystem, 'mount': mount, 'topology': topology, 'partitionTable': partitions,
++                'sdkExecutions': 0, 'meaning': 'Trusted SSH/OS startup baseline and stable path attributes; no OS content-integrity proof. Read-only standard OS utilities, no SDK execution or remote writes. Geometry does not authorize grow/format/migration/layout changes.'}
++    finally:
++        observer.close()
++
++
++if __name__ == '__main__':
++    try:
++        output = json.dumps(block_observation(CAPTURED_STATE_ROOT), sort_keys=True, separators=(',', ':'))
++        need(len(output.encode('utf-8')) <= 60000, 'OUTPUT_BOUND')
++        print('BLOCK_FILESYSTEM_LAYOUT_METADATA=' + output)
++    except (OSError, ValueError, UnicodeError, KeyError, AttributeError, RecursionError, subprocess.SubprocessError):
++        print('BLOCK_FILESYSTEM_LAYOUT_METADATA={"schema":1,"mode":"METADATA_ONLY","status":"UNCONFIRMED"}')
++        sys.exit(65)
