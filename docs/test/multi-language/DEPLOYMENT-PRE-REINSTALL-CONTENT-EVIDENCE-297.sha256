@@ -1,0 +1,4 @@
+d62b6c5d131b9a5c58818ef1b970fb72e3d9232fcfe9adc8120f5693e2ad1ca4  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+df378c8f92e925bd3e54b92c15ad9ec76d0ddf89efc1a55290fbef8ba1567c9a  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-content-digest.py
+994358f4df070b9473a439ebc106da88aa5462a3a3a1169ca81c560156a811ca  docs/test/multi-language/DEPLOYMENT-PRE-REINSTALL-CONTENT-EVIDENCE-297.patch
+861b1e2622c71152352d3c4ec8493ad42f0bfd27d9c464118e2137a22172e4da  docs/test/multi-language/DEPLOYMENT-PRE-REINSTALL-CONTENT-EVIDENCE-297.md

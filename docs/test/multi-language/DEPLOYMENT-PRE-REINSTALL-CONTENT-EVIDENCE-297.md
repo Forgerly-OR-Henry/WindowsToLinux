@@ -1,0 +1,11 @@
+# 当前必要数据备份补充内容证据297
+
+296两个SQLite远端在线快照成功，FILES动作被独立APP拒绝，随后DB下载新385在APP前UNKNOWN，无本地备份。完整失败原件保留，不重放。297增加独立FILES_CONTENT_DIGEST公开只读动作，以真实276文件745663B摘要、父目录信任、容量与nonce不存在事实，再为新FILES run及nonce分别审批生成和下载。完整原生APP及全新精确单次grant不变。
+
+仅Live测试fixture和新公开摘要resource改变，296 producer保持原字节，生产API及STATIC/ASSISTED逻辑不变。摘要六原件链机械核验，实际FILES manifest接受及下载前逐项比对路径、元数据、长度及SHA；不声称跨文件原子性或永久稳定，读取可能更新atime。
+
+历史保护能力六方法仅LF和CRLF不同，生产CurrentUserProtection源码摘要未变。只规范CRLF为LF进行method比较；所有原件/生产摘要仍严格核验，token变化或裸CR拒绝。新385只在原claim、真实成功DB proof、释放物理资源、精确layout checkpoint及实际无本地产物均通过后走原生FAILED结清，事实为NO_VERIFIED_LOCAL_BACKUP，不声称从未SSH/派发。旧七UNKNOWN及194不变。
+
+test01新测试ObjectNode类型推断编译失败，未进入测试。修正后test02三个新增定点方法均通过，JUnit0.765s/Maven13.158s，包括实际96581B计划及72427B stdin。没有全量、package或复跑旧组。18直接代码路径与4253951B生产JAR属性稳定，自有测试临时目录已清。296内存校验器六定点既有通过未重复执行。
+
+本提交仅代表本地实现通过。实际385结清、两份原生下载/DPAPI保护、独立内存恢复、最终必要数据覆盖和临时进程收尾未完成前，test/data保持IN_PROGRESS_NOT_READY且目标active；全部完成才paused，用户以paused作为可重装信号。本轮不执行重装，FT→CSV完整验收仍未完成。
