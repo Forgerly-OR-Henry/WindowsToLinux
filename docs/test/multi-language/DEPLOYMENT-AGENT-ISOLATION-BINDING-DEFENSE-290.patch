@@ -1,0 +1,105 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
+@@ -19,7 +19,7 @@
+     private static final Duration TIMEOUT=Duration.ofSeconds(30);
+     private static final long LIMIT=32768;
+     public enum Mode {ADMISSION,PROTECTED_RECHECK}
+-    private static final String SUFFIX="\nset -fu\nLC_ALL=C\nbuiltin export LC_ALL\nif [[ ${BASH_ENV+x} != x || ${ENV+x} != x || \"$BASH_ENV\" != /dev/null || \"$ENV\" != /dev/null || ${LD_PRELOAD+x} || ${LD_LIBRARY_PATH+x} ]]; then exit 65; fi\nbuiltin unset BASH_ENV ENV || exit 65\nexec /usr/bin/python3 -I -S - \"$wtl_isolation\"\n";
++    private static final String SUFFIX="\nset -fu\nLC_ALL=C\nbuiltin export LC_ALL\nif [[ ${BASH_ENV+x} != x || ${ENV+x} != x || \"$BASH_ENV\" != /dev/null || \"$ENV\" != /dev/null || ${LD_PRELOAD+x} || ${LD_LIBRARY_PATH+x} ]]; then exit 65; fi\nbuiltin unset BASH_ENV ENV || exit 65\nexec /usr/bin/python3 -I -S - \"${wtl_isolation:?}\"\n";
+     private final DeploymentAgentIsolationPolicy policy;
+     public record Request(CommandRequest command,Set<ActionTarget> resourceTargets,DeploymentAgentIsolationPolicy policy,
+         PlannedScope scope,UUID action,String bindingSha256,Mode mode,UUID queryTask)implements AutoCloseable {
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
+@@ -83,6 +83,49 @@
+             var missing=ready.deepCopy();missing.putArray("protectedMetadata");assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,missing.toString()));
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,ready.deepCopy().put("permissionGranted",true).toString()));
+             assertTrue(probe.source().contains("os.O_RDONLY"));assertTrue(probe.source().contains("['/usr/bin/systemctl','show'"));assertFalse(probe.source().contains("os.unlink"));assertFalse(probe.source().contains("os.system"));
++        }
++    }
++
++    @Test void isolationShellRejectsMissingOrEmptyBindingBeforeInterpreter()throws Exception{
++        var policy=sevenRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++        try(var request=probe.request(scope(policy,"a"),UUID.randomUUID())){
++            String script=request.command().script();int newline=script.indexOf('\n');assertTrue(newline>0);
++            String suffix=script.substring(newline);
++            for(String initialization:List.of("builtin unset wtl_isolation\n","wtl_isolation=''\n")){
++                var observed=runIsolationShell(initialization+suffix,new byte[0]);
++                assertNotEquals(0,observed.exitCode(),observed.output());
++                assertFalse(observed.output().contains("ISOLATION_TEST_INTERPRETER"),observed.output());
++                assertTrue(observed.output().contains("wtl_isolation"),observed.output());
++            }
++        }
++    }
++
++    @Test void isolationShellPassesCompleteFixedBindingAndStdin()throws Exception{
++        var policy=sevenRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++        try(var request=probe.request(scope(policy,"a"),UUID.randomUUID())){
++            var command=request.command();String script=command.script();int newline=script.indexOf('\n');
++            assertTrue(script.startsWith("wtl_isolation='"));assertEquals('\'',script.charAt(newline-1));
++            String originalArgument=script.substring("wtl_isolation='".length(),newline-1);
++            var observed=runIsolationShell(script,command.stdin());assertEquals(0,observed.exitCode(),observed.output());
++            String[] captured=observed.output().split(String.valueOf((char)0),7);assertEquals(7,captured.length);
++            assertEquals(List.of("ISOLATION_TEST_INTERPRETER","/usr/bin/python3","-I","-S","-"),Arrays.asList(captured).subList(0,5));
++            assertEquals(originalArgument,captured[5]);assertArrayEquals(command.stdin(),captured[6].getBytes(StandardCharsets.UTF_8));
++            var envelope=JSON.readTree(captured[5]);var binding=envelope.path("binding");
++            assertEquals(JSON.readTree(policy.document().toString()),binding.path("policy"));assertEquals(JSON.readTree(DeploymentAgentIsolationPolicy.scope(request.scope()).toString()),binding.path("scope"));
++            assertEquals(request.mode().name(),binding.path("mode").textValue());assertEquals(request.queryTask().toString(),binding.path("queryTask").textValue());
++            assertEquals(request.action().toString(),envelope.path("action").textValue());assertEquals(probe.sourceVersion(),envelope.path("sourceVersion").textValue());
++            assertEquals(request.bindingSha256(),envelope.path("bindingSha256").textValue());
++            try(var decoded=DeploymentAgentIsolationProbe.decode(command,layout)){
++                assertEquals(request.scope(),decoded.scope());assertEquals(request.action(),decoded.action());assertEquals(request.bindingSha256(),decoded.bindingSha256());
++                assertEquals(script,decoded.command().script());assertArrayEquals(command.stdin(),decoded.command().stdin());
++            }
++            String changedDigest=(request.bindingSha256().startsWith("0")?"1":"0")+request.bindingSha256().substring(1);
++            for(String changed:List.of(script.replace(request.bindingSha256(),changedDigest),script.replace("${wtl_isolation:?}","$wtl_isolation"))){
++                assertNotEquals(script,changed);
++                try(var tampered=new CommandRequest(changed,command.stdin(),command.timeout(),command.outputLimitBytes())){
++                    assertThrows(IllegalArgumentException.class,()->DeploymentAgentIsolationProbe.decode(tampered,layout));
++                }
++            }
+         }
+     }
+ 
+@@ -298,6 +341,41 @@
+         }
+     }
+ 
++    private record IsolationShellObservation(int exitCode,String output){}
++    private IsolationShellObservation runIsolationShell(String script,byte[] stdin)throws Exception{
++        String capture="""
++            builtin enable -n exec
++            exec() {
++                builtin printf '%s\\0' 'ISOLATION_TEST_INTERPRETER' "$@"
++                local line=''
++                while IFS= builtin read -r line || [[ -n "$line" ]]; do builtin printf '%s\\n' "$line"; done
++            }
++            """;
++        var scriptFile=java.nio.file.Files.createTempFile("iso-",".sh");
++        try{
++            java.nio.file.Files.write(scriptFile,(capture+script).getBytes(StandardCharsets.UTF_8));
++            var builder=new ProcessBuilder(System.getProperty("managed.test.bash","/bin/bash"),"--noprofile","--norc",scriptFile.toAbsolutePath().toString().replace('\\','/')).redirectErrorStream(true);
++            builder.environment().keySet().removeIf(key->key.startsWith("BASH_FUNC_")||Set.of("SHELLOPTS","BASHOPTS","LD_PRELOAD","LD_LIBRARY_PATH").contains(key));
++            builder.environment().put("BASH_ENV","/dev/null");builder.environment().put("ENV","/dev/null");
++            var process=builder.start();var reader=java.util.concurrent.Executors.newSingleThreadExecutor();
++            var output=reader.submit(()->process.getInputStream().readNBytes(65537));
++            try{
++                try(var out=process.getOutputStream()){out.write(stdin);}
++                assertTrue(process.waitFor(10,java.util.concurrent.TimeUnit.SECONDS),"controlled isolation shell did not exit");
++                byte[] bytes=output.get(5,java.util.concurrent.TimeUnit.SECONDS);assertTrue(bytes.length<=65536);
++                return new IsolationShellObservation(process.exitValue(),new String(bytes,StandardCharsets.UTF_8));
++            }finally{
++                try{
++                    if(process.isAlive()){process.destroyForcibly();assertTrue(process.waitFor(10,java.util.concurrent.TimeUnit.SECONDS));}
++                }finally{
++                    reader.shutdownNow();assertTrue(reader.awaitTermination(10,java.util.concurrent.TimeUnit.SECONDS));assertFalse(process.isAlive());
++                }
++            }
++        }finally{
++            java.nio.file.Files.deleteIfExists(scriptFile);
++        }
++    }
++
+     private String runFixedPython(String fixture,ObjectNode input)throws Exception{
+         var process=new ProcessBuilder(System.getProperty("managed.test.python","python"),"-I","-S","-c",fixture).redirectErrorStream(true).start();
+         var reader=java.util.concurrent.Executors.newSingleThreadExecutor();var bytes=reader.submit(()->process.getInputStream().readNBytes(131073));
