@@ -1,0 +1,490 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
+@@ -104,7 +104,9 @@
+     private static UUID uuid(String value){try{UUID id=UUID.fromString(value);if(!id.toString().equals(value))throw invalid();return id;}catch(RuntimeException malformed){throw invalid();}}
+ 
+     private static final String SOURCE="""
+-        import os,sys,stat,json,re,hashlib,subprocess
++        import os,sys,stat,json,re,hashlib,subprocess,time
++        # Cooperative budget; blocking filesystem calls are not preempted.
++        deadline=time.monotonic()+20.0
+         def pairs(rows):
+             d={}
+             for k,v in rows:
+@@ -118,9 +120,14 @@
+         class Refused(Exception): pass
+         class Observed(Exception): pass
+         def refuse(code): raise Refused(code)
++        def remaining_budget():
++            remaining=deadline-time.monotonic()
++            if remaining<=0: refuse('UNCONFIRMED')
++            return remaining
+         fds={};missing=set();markers={};tables={}
+         def identity(st): return (st.st_dev,st.st_ino,st.st_mode,st.st_uid,st.st_gid)
+         def open_path(path):
++            remaining_budget()
+             if path in fds: return fds[path]
+             if len(fds)>=512: refuse('LIMIT')
+             if path=='/':
+@@ -140,6 +147,7 @@
+                 if not stat.S_ISREG(os.fstat(fd).st_mode): refuse('UNCONFIRMED')
+                 data=bytearray()
+                 while len(data)<=limit:
++                    remaining_budget()
+                     chunk=os.read(fd,min(65536,limit+1-len(data)))
+                     if not chunk: return bytes(data)
+                     data.extend(chunk)
+@@ -164,41 +172,52 @@
+                 lines=bounded('/proc/net/'+name,4194304).decode('ascii').splitlines()
+                 if not lines or 'local_address' not in lines[0] or len(lines)>65537: refuse('PORTS_UNCONFIRMED')
+                 for line in lines[1:]:
++                    remaining_budget()
+                     fields=line.split()
+                     if len(fields)<10 or not re.fullmatch('[0-9A-Fa-f]{8,32}:[0-9A-Fa-f]{4}',fields[1]) or not re.fullmatch('[0-9A-Fa-f]{2}',fields[3]): refuse('PORTS_UNCONFIRMED')
+                     port=int(fields[1].split(':')[1],16)
+                     if port and (protocol=='UDP' or fields[3].upper()=='0A'): used.add((protocol,port))
+             return used
+-        def matching(directory,prefix):
++        def directory_entries(directory):
+             row=open_path(directory)
+             if row is None: return []
+             if not stat.S_ISDIR(os.fstat(row[0]).st_mode): refuse('PATH_UNSAFE')
+-            result=[];count=0
++            names=[]
+             with os.scandir(row[0]) as entries:
+                 for entry in entries:
+-                    count+=1
+-                    if count>4096: refuse('LIMIT')
+-                    if entry.name.startswith(prefix):
+-                        if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,127}',entry.name): refuse('PATH_UNSAFE')
+-                        result.append(entry.name)
+-                        if len(result)>16: refuse('LIMIT')
++                    remaining_budget()
++                    names.append(entry.name)
++                    if len(names)>4096: refuse('LIMIT')
++            return names
++        def matching(directory,prefix,names=None):
++            result=[]
++            for name in directory_entries(directory) if names is None else names:
++                remaining_budget()
++                if name.startswith(prefix):
++                    if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,127}',name): refuse('PATH_UNSAFE')
++                    result.append(name)
++                    if len(result)>16: refuse('LIMIT')
+             return sorted(result)
+         def protected():
+             roots=p['layout']['remote'];paths=set();work=roots['stateRoot']+'/work'
++            work_names=directory_entries(work)
+             for old in p['protectedApplications']:
++                remaining_budget()
+                 for unit in old['units']:
+                     root=roots['applicationsRoot']+'/'+unit;lock=roots['stateRoot']+'/application-locks/'+unit
+                     paths.update((root,root+'/current',roots['configurationRoot']+'/'+unit,roots['dataRoot']+'/'+unit,lock,lock+'/maintenance',roots['stateRoot']+'/snapshots/'+unit+'-'+old['task'],'/etc/systemd/system/windowstolinux-'+unit+'.service'))
+                     for release in matching(root+'/releases',''):
+                         if not re.fullmatch('[0-9a-f]{64}',release): refuse('PATH_UNSAFE')
+                         paths.update((root+'/releases/'+release,root+'/releases/'+release+'/.windowstolinux-owner'))
+-                candidates=set(old['candidates'])|set(matching(work,old['application']+'-'))
+-                for unit in old['units']: candidates.update(matching(work,unit+'-'))
++                candidates=set(old['candidates'])|set(matching(work,old['application']+'-',work_names))
++                for unit in old['units']: candidates.update(matching(work,unit+'-',work_names))
+                 if len(candidates)>16: refuse('LIMIT')
+                 for candidate in candidates: paths.update((work+'/'+candidate,work+'/'+candidate+'/.agent-task','/etc/systemd/system/windowstolinux-build-'+candidate+'.service'))
+             if not paths or len(paths)>96: refuse('LIMIT')
++            unit_states=unit_metadata(sorted(path.rsplit('/',1)[1] for path in paths if path.startswith('/etc/systemd/system/windowstolinux-') and path.endswith('.service')))
+             result=[]
+             for path in sorted(paths):
++                remaining_budget()
+                 parent,name=path.rsplit('/',1);base=open_path(parent)
+                 try: st=None if base is None else os.stat(name,dir_fd=base[0],follow_symlinks=False)
+                 except FileNotFoundError: st=None
+@@ -219,38 +238,49 @@
+                             data['metadataContentSha256']=hashlib.sha256(raw).hexdigest()
+                         finally: os.close(fd)
+                 if path.startswith('/etc/systemd/system/windowstolinux-') and path.endswith('.service'):
+-                    data['unitMetadata']=unit_metadata(name)
++                    data['unitMetadata']=unit_states[name]
+                 result.append(dict(path=path,kind=kind,identitySha256=digest(data)))
+             return result
+         def stable_paths():
+             for path,(fd,before) in fds.items():
++                remaining_budget()
+                 if identity(os.fstat(fd))!=before or identity(os.stat(path,follow_symlinks=False))!=before: refuse('DRIFT')
+             for path in missing:
++                remaining_budget()
+                 if os.path.lexists(path): refuse('DRIFT')
+-        def unit_absent(unit):
+-            if open_path('/usr/bin/systemctl') is None: refuse('UNITS_UNCONFIRMED')
+-            for root in ('/etc/systemd/system','/run/systemd/system','/usr/local/lib/systemd/system','/usr/lib/systemd/system','/etc/systemd/system.control','/run/systemd/system.control'):
+-                if open_path(root+'/'+unit+'.d') is not None: refuse('UNIT_EXISTS')
+-            observed=subprocess.run(['/usr/bin/systemctl','show',unit,'--property=LoadState','--value'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=2,env={'PATH':'/usr/bin:/usr/sbin','LC_ALL':'C'},check=False)
+-            if observed.returncode!=0 or observed.stderr or len(observed.stdout)>256: refuse('UNITS_UNCONFIRMED')
+-            if observed.stdout!=b'not-found\\n': refuse('UNIT_EXISTS')
+-        def unit_metadata(unit):
++        def units_absent(units):
++            for unit in units:
++                for root in ('/etc/systemd/system','/run/systemd/system','/usr/local/lib/systemd/system','/usr/lib/systemd/system','/etc/systemd/system.control','/run/systemd/system.control'):
++                    if open_path(root+'/'+unit+'.d') is not None: refuse('UNIT_EXISTS')
++            if any(row['LoadState']!='not-found' for row in unit_metadata(units).values()): refuse('UNIT_EXISTS')
++        def unit_metadata(units):
++            if not units or len(units)>96 or len(set(units))!=len(units): refuse('UNITS_UNCONFIRMED')
+             if open_path('/usr/bin/systemctl') is None: refuse('UNITS_UNCONFIRMED')
+             keys={'LoadState','ActiveState','SubState','UnitFileState'}
+-            observed=subprocess.run(['/usr/bin/systemctl','show',unit,'--property=LoadState,ActiveState,SubState,UnitFileState'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=2,env={'PATH':'/usr/bin:/usr/sbin','LC_ALL':'C'},check=False)
+-            if observed.returncode!=0 or observed.stderr or len(observed.stdout)>1024: refuse('UNITS_UNCONFIRMED')
+-            result={}
+-            for line in observed.stdout.decode('ascii').splitlines():
++            try:
++                observed=subprocess.run(['/usr/bin/systemctl','show',*sorted(units),'--property=Id,LoadState,ActiveState,SubState,UnitFileState'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=min(2.0,remaining_budget()),env={'PATH':'/usr/bin:/usr/sbin','LC_ALL':'C'},check=False)
++            except subprocess.TimeoutExpired: refuse('UNCONFIRMED')
++            remaining_budget()
++            if observed.returncode!=0 or observed.stderr or len(observed.stdout)>1024*len(units): refuse('UNITS_UNCONFIRMED')
++            result={};row={};expected=set(units)
++            for line in observed.stdout.decode('ascii').splitlines()+['']:
++                remaining_budget()
++                if not line:
++                    if row:
++                        if set(row)!=keys|{'Id'} or row['Id'] not in expected or row['Id'] in result: refuse('UNITS_UNCONFIRMED')
++                        result[row['Id']]={key:row[key] for key in sorted(keys)};row={}
++                    continue
+                 key,separator,value=line.partition('=')
+-                if not separator or key not in keys or key in result or not re.fullmatch('[A-Za-z0-9_-]{0,64}',value): refuse('UNITS_UNCONFIRMED')
+-                result[key]=value
+-            if set(result)!=keys: refuse('UNITS_UNCONFIRMED')
+-            return dict(sorted(result.items()))
++                if not separator or key not in keys|{'Id'} or key in row or (key!='Id' and not re.fullmatch('[A-Za-z0-9_-]{0,64}',value)): refuse('UNITS_UNCONFIRMED')
++                row[key]=value
++            if set(result)!=expected: refuse('UNITS_UNCONFIRMED')
++            return result
+         def memory_available():
+             selected=[x for x in bounded('/proc/meminfo',65536).decode('ascii').splitlines() if x.startswith('MemAvailable:')]
+             if len(selected)!=1 or not re.fullmatch(r'MemAvailable:\\s+[0-9]+ kB',selected[0]): refuse('UNCONFIRMED')
+             return int(selected[0].split()[1])*1024
+         try:
++            remaining_budget()
+             env=list(os.environ.items())
+             if len(env)>1024 or sum(len(k)+len(v) for k,v in env)>262144 or any(k in ('BASH_ENV','ENV','LD_PRELOAD','LD_LIBRARY_PATH') or k.startswith('BASH_FUNC_') for k,v in env): refuse('ENVIRONMENT')
+             if os.geteuid()!=0 or digest(b)!=e['bindingSha256']: refuse('UNCONFIRMED')
+@@ -258,6 +288,7 @@
+             if b['mode']=='PROTECTED_RECHECK':
+                 if protected()!=out['protectedMetadata']: refuse('DRIFT')
+                 stable_paths()
++                remaining_budget()
+                 out.update(status='OBSERVED',reason='OBSERVED',stable=True)
+                 raise Observed()
+             if b['mode']!='ADMISSION' or b['queryTask']!=s['task']: refuse('UNCONFIRMED')
+@@ -274,14 +305,14 @@
+                 row=open_path(path)
+                 if row is not None and not any(owned and (path==root or path.startswith(root+'/')) for root,owned in own.items()): refuse('PATH_EXISTS')
+                 out['pathsChecked']+=1
+-            for component in s['components']:
+-                unit_absent('windowstolinux-'+component['unit']+'.service');out['unitsChecked']+=1
+-                unit_absent('windowstolinux-build-'+component['candidate']+'.service');out['unitsChecked']+=1
++            new_units=sorted(unit for component in s['components'] for unit in ('windowstolinux-'+component['unit']+'.service','windowstolinux-build-'+component['candidate']+'.service'))
++            units_absent(new_units);out['unitsChecked']=len(new_units)
+             used=port_scan()
+             if ports & used: refuse('PORT_BUSY')
+             out['portsChecked']=len(ports)
+             budgets={};budgetfds={}
+             def budget(path,amount,reserve):
++                remaining_budget()
+                 fd=anchor(path);device=str(os.fstat(fd).st_dev);v=os.fstatvfs(fd);available=v.f_bavail*v.f_frsize
+                 if amount<0 or reserve<1073741824: refuse('UNCONFIRMED')
+                 row=budgets.setdefault(device,dict(device=device,availableBytes=available,requiredBytes=0,reserveBytes=0))
+@@ -303,8 +334,7 @@
+             out['cpuCount']=cpus
+             if cpus<s['minimumCpuCount']: refuse('CPU')
+             if ports & port_scan(): refuse('DRIFT')
+-            for component in s['components']:
+-                unit_absent('windowstolinux-'+component['unit']+'.service');unit_absent('windowstolinux-build-'+component['candidate']+'.service')
++            units_absent(new_units)
+             stable_paths()
+             for path,before in markers.items():
+                 st=os.fstat(fds[path][0])
+@@ -319,6 +349,7 @@
+             if not isinstance(current_cpu,int) or current_cpu<1: refuse('UNCONFIRMED')
+             out['cpuCount']=min(out['cpuCount'],current_cpu)
+             if out['cpuCount']<s['minimumCpuCount']: refuse('CPU')
++            remaining_budget()
+             out.update(status='READY',reason='READY',stable=True)
+         except Observed:
+             pass
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
+@@ -86,8 +86,8 @@
+         }
+     }
+ 
+-    @Test void completeFourRetainedNamespacesStayWithinBoundedReceipt(){
+-        var policy=fourRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++    @Test void completeFiveRetainedNamespacesStayWithinBoundedReceipt(){
++        var policy=fiveRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
+         try(var request=probe.request(scope(policy,"a"),UUID.randomUUID())){
+             assertEquals(24576,request.command().outputLimitBytes());
+             try(var oldLimit=new CommandRequest(request.command().script(),request.command().stdin(),request.command().timeout(),16384)){
+@@ -95,20 +95,21 @@
+             }
+             var ready=receipt(request,true);var rows=ready.withArray("protectedMetadata");
+             for(String path:discoveredRetainedPaths())rows.addObject().put("path",path).put("kind","DIRECTORY").put("identitySha256","d".repeat(64));
+-            sortProtectedRows(ready);assertEquals(78,ready.path("protectedMetadata").size());
++            sortProtectedRows(ready);assertEquals(94,ready.path("protectedMetadata").size());
+             assertTrue((DeploymentAgentIsolationProbe.FRAME+ready+"\n").getBytes(StandardCharsets.UTF_8).length<24576);
+             assertEquals(ready.toString(),probe.parse(request,actual(ready)).canonicalJson());
+             var missing=ready.deepCopy();missing.withArray("protectedMetadata").remove(0);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,missing.toString()));
+-            var excess=ready.deepCopy();for(int i=0;i<19;i++)excess.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot("wtl-agent-file-transfer-v0wjwq48s-backend")+"/extra-"+i).put("kind","ABSENT").put("identitySha256","d".repeat(64));
++            var excess=ready.deepCopy();for(int i=0;i<3;i++)excess.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot("wtl-agent-file-transfer-v0wjwq48s-backend")+"/extra-"+i).put("kind","ABSENT").put("identitySha256","d".repeat(64));
+             sortProtectedRows(excess);assertEquals(97,excess.path("protectedMetadata").size());assertTrue(excess.toString().getBytes(StandardCharsets.UTF_8).length<24576);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,excess.toString()));
+             var foreign=ready.deepCopy();((ObjectNode)foreign.path("protectedMetadata").get(0)).put("path","/foreign/namespace");sortProtectedRows(foreign);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,foreign.toString()));
+             var unsorted=ready.deepCopy();var first=unsorted.withArray("protectedMetadata").remove(0);unsorted.withArray("protectedMetadata").add(first);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,unsorted.toString()));
+-            var oversized=ready.deepCopy();for(int i=0;i<18;i++)oversized.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot("wtl-agent-file-transfer-3g6o4vqic-backend")+"/oversize-"+i+"x".repeat(400)).put("kind","ABSENT").put("identitySha256","d".repeat(64));
+-            sortProtectedRows(oversized);assertEquals(96,oversized.path("protectedMetadata").size());
++            var oversized=ready.deepCopy();var splitFilesystems=oversized.putArray("filesystems");
++            for(int i=0;i<64;i++)splitFilesystems.addObject().put("device","100000000000000000"+String.format(Locale.ROOT,"%02d",i)).put("availableBytes",10*reserve).put("requiredBytes",2*workspace/64).put("reserveBytes",reserve);
++            assertEquals(94,oversized.path("protectedMetadata").size());
+             for(var row:oversized.path("protectedMetadata")){String path=row.path("path").textValue();DeploymentAgentIsolationPolicy.path(path);assertTrue(policy.protects(path));}
+             assertTrue(oversized.toString().getBytes(StandardCharsets.UTF_8).length>24576);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,oversized.toString()));
+@@ -119,40 +120,42 @@
+     }
+ 
+     @Test void fixedPythonProtectedProbeUsesSameFiniteMetadataBound()throws Exception{
+-        var policy=fourRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++        var policy=fiveRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
+         String fixture="""
+             import ast,sys,json,hashlib,re
+             data=json.load(sys.stdin)
+             tree=ast.parse(data['source'])
+-            selected=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in ('canonical','digest','protected')]
+-            assert len(selected)==3
++            selected=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in ('canonical','digest','protected','matching')]
++            assert len(selected)==4
+             class Refused(Exception): pass
+             def refuse(code): raise Refused(code)
+-            extra_releases=0
++            extra_candidate=False
+             reads=0
++            scans=0
+             roots=data['policy']['layout']['remote']
+-            def matching(root,prefix):
+-                if root==roots['stateRoot']+'/work' and prefix=='wtl-agent-file-transfer-8pqtgvbwc-':
+-                    return ['wtl-agent-file-transfer-8pqtgvbwc-web-525f7bab44afa87d']
+-                if extra_releases and root==roots['stateRoot']+'/work' and prefix=='wtl-agent-file-transfer-3g6o4vqic-':
+-                    return ['wtl-agent-file-transfer-3g6o4vqic-web-525f7bab44afa87d']
++            def directory_entries(root):
++                global scans
++                if root==roots['stateRoot']+'/work':
++                    scans+=1
++                    return ['wtl-agent-file-transfer-8pqtgvbwc-web-525f7bab44afa87d']+(['wtl-agent-file-transfer-46xyx53kc-web-525f7bab44afa87d'] if extra_candidate else [])
+                 if root==roots['applicationsRoot']+'/wtl-agent-file-transfer-8pqtgvbwc-backend/releases':
+-                    return ['39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597']+[format(i,'064x') for i in range(extra_releases)]
++                    return ['39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597']
+                 return []
+             def open_path(path):
+                 global reads
+                 reads+=1
+                 return None
+-            namespace=dict(p=data['policy'],json=json,hashlib=hashlib,re=re,refuse=refuse,matching=matching,open_path=open_path,unit_metadata=lambda name:{'LoadState':'not-found'})
++            states={'LoadState':'not-found','ActiveState':'inactive','SubState':'dead','UnitFileState':''}
++            namespace=dict(p=data['policy'],json=json,hashlib=hashlib,re=re,refuse=refuse,directory_entries=directory_entries,remaining_budget=lambda:20,open_path=open_path,unit_metadata=lambda units:{unit:states for unit in units})
+             exec(compile(ast.Module(body=selected,type_ignores=[]),'<fixed-protected-probe>','exec'),namespace)
+             rows=namespace['protected']()
+-            assert len(rows)==78 and [row['path'] for row in rows]==sorted(data['paths'])
++            assert len(rows)==94 and [row['path'] for row in rows]==sorted(data['paths']) and scans==1
+             before=reads
+-            extra_releases=8
++            extra_candidate=True
+             try: namespace['protected']()
+             except Refused as error: assert str(error)=='LIMIT'
+             else: raise AssertionError('97 protected rows were accepted')
+-            assert reads==before, 'over-limit enumeration must refuse before metadata reads'
++            assert reads==before and scans==2, 'over-limit enumeration must refuse before metadata reads and refresh its directory scan'
+             print(json.dumps(rows,separators=(',',':')))
+             """;
+         var paths=new TreeSet<>(policy.protectedMandatoryPaths());paths.addAll(discoveredRetainedPaths());
+@@ -165,7 +168,7 @@
+             String output=new String(outputBytes.get(5,java.util.concurrent.TimeUnit.SECONDS),StandardCharsets.UTF_8);assertEquals(0,process.exitValue(),output);
+             try(var request=probe.requestProtectedRecheck(scope(policy,"a"),UUID.randomUUID(),UUID.randomUUID())){
+                 var observed=receipt(request,false);observed.set("protectedMetadata",JSON.readTree(output));
+-                assertEquals(78,observed.path("protectedMetadata").size());assertEquals(observed.toString(),probe.parse(request,actual(observed)).canonicalJson());
++                assertEquals(94,observed.path("protectedMetadata").size());assertEquals(observed.toString(),probe.parse(request,actual(observed)).canonicalJson());
+             }
+         }finally{
+             if(process.isAlive()){process.destroyForcibly();assertTrue(process.waitFor(10,java.util.concurrent.TimeUnit.SECONDS));}
+@@ -173,12 +176,141 @@
+         }
+     }
+ 
+-    private DeploymentAgentIsolationPolicy fourRetainedNamespaces(){
++    @Test void fixedPythonUnitBatchesRequireCompleteExactIdentityMaps()throws Exception{
++        String fixture="""
++            import ast,json,sys,re,types,subprocess
++            data=json.load(sys.stdin);tree=ast.parse(data['source'])
++            selected=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in ('unit_metadata','remaining_budget')]
++            assert len(selected)==2
++            class Refused(Exception): pass
++            def refuse(code): raise Refused(code)
++            units=['windowstolinux-old-backend.service','windowstolinux-build-old-backend-source.service']
++            def block(unit): return chr(10).join(['Id='+unit,'LoadState=not-found','ActiveState=inactive','SubState=dead','UnitFileState='])
++            valid=(chr(10)*2).join(block(unit) for unit in reversed(units))
++            output=valid;code=0;errors=b'';calls=0
++            def run(argv,**options):
++                global calls
++                calls+=1
++                assert argv==['/usr/bin/systemctl','show',*sorted(units),'--property=Id,LoadState,ActiveState,SubState,UnitFileState']
++                assert options==dict(stdin=-3,stdout=-1,stderr=-1,timeout=2.0,env={'PATH':'/usr/bin:/usr/sbin','LC_ALL':'C'},check=False)
++                return types.SimpleNamespace(returncode=code,stdout=output.encode('ascii'),stderr=errors)
++            namespace=dict(re=re,deadline=20,time=types.SimpleNamespace(monotonic=lambda:0),refuse=refuse,open_path=lambda path:(1,None),subprocess=types.SimpleNamespace(run=run,DEVNULL=-3,PIPE=-1,TimeoutExpired=subprocess.TimeoutExpired))
++            exec(compile(ast.Module(body=selected,type_ignores=[]),'<fixed-unit-batch>','exec'),namespace)
++            observed=namespace['unit_metadata'](units)
++            assert set(observed)==set(units)
++            assert all(set(row)=={'LoadState','ActiveState','SubState','UnitFileState'} and 'Id' not in row for row in observed.values())
++            malformed=[block(units[0]),valid+chr(10)*2+block(units[0]),valid.replace(units[0],'foreign.service'),valid.replace('ActiveState=inactive',''),valid.replace('SubState=dead','SubState=dead'+chr(10)+'SubState=dead'),valid+chr(10)+'Foreign=value',valid.replace('Id='+units[0],'Id='),valid+'x'*2049]
++            for output in malformed:
++                try: namespace['unit_metadata'](units)
++                except Refused as error: assert str(error)=='UNITS_UNCONFIRMED'
++                else: raise AssertionError('incomplete or foreign unit batch accepted')
++            output=valid
++            for code,errors in [(1,b''),(0,b'failure')]:
++                try: namespace['unit_metadata'](units)
++                except Refused as error: assert str(error)=='UNITS_UNCONFIRMED'
++                else: raise AssertionError('failed unit command accepted')
++            before=calls
++            try: namespace['unit_metadata']([units[0],units[0]])
++            except Refused as error: assert str(error)=='UNITS_UNCONFIRMED'
++            else: raise AssertionError('duplicate requested identity accepted')
++            assert calls==before
++            print(json.dumps(dict(valid=True,rejected=len(malformed)+3,calls=calls)))
++            """;
++        var input=JSON.createObjectNode().put("source",new DeploymentAgentIsolationProbe(fiveRetainedNamespaces()).source());
++        var result=JSON.readTree(runFixedPython(fixture,input));assertTrue(result.path("valid").booleanValue());assertEquals(11,result.path("rejected").intValue());assertEquals(11,result.path("calls").intValue());
++    }
++
++    @Test void fixedPythonProbeKeepsFreshBatchesWithinAggregateBudget()throws Exception{
++        var policy=fiveRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++        String fixture="""
++            import ast,json,sys,re,types,subprocess,hashlib,io
++            data=json.load(sys.stdin);tree=ast.parse(data['source'])
++            names={'canonical','digest','refuse','remaining_budget','matching','protected','unit_metadata','units_absent','stable_paths'}
++            selected=[node for node in tree.body if isinstance(node,ast.FunctionDef) and node.name in names or isinstance(node,ast.ClassDef) and node.name in ('Refused','Observed')]
++            assert len(selected)==len(names)+2
++            main=[node for node in tree.body if isinstance(node,ast.Try)]
++            assert len(main)==1
++            def run_case(mode):
++                clock={'now':0.0};calls=[];timeouts=[];scans=0;output=io.StringIO()
++                roots=data['policy']['layout']['remote']
++                def directory_entries(root):
++                    nonlocal scans
++                    if root==roots['stateRoot']+'/work':
++                        scans+=1
++                        if mode=='budget': clock['now']+=18.5
++                        return ['wtl-agent-file-transfer-8pqtgvbwc-web-525f7bab44afa87d']
++                    if root==roots['applicationsRoot']+'/wtl-agent-file-transfer-8pqtgvbwc-backend/releases':
++                        return ['39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597']
++                    return []
++                def run(argv,**options):
++                    units=argv[2:-1];calls.append(list(units));timeouts.append(options['timeout'])
++                    assert len(set(units))==len(units) and units==sorted(units)
++                    assert argv[:2]==['/usr/bin/systemctl','show'] and argv[-1]=='--property=Id,LoadState,ActiveState,SubState,UnitFileState'
++                    assert 0<options['timeout']<=min(2.0,20.0-clock['now'])
++                    if mode=='budget':
++                        duration=min(1.0,options['timeout']);clock['now']+=duration
++                        if options['timeout']<1.0: raise subprocess.TimeoutExpired(argv,options['timeout'])
++                    blocks=[]
++                    for index,unit in enumerate(reversed(units)):
++                        state='active' if mode=='drift' and len(calls)==4 and index==0 else 'inactive'
++                        blocks.append(chr(10).join(['Id='+unit,'LoadState=not-found','ActiveState='+state,'SubState=dead','UnitFileState=']))
++                    return types.SimpleNamespace(returncode=0,stdout=(chr(10)*2).join(blocks).encode(),stderr=b'')
++                operating=types.SimpleNamespace(environ={},geteuid=lambda:0,cpu_count=lambda:2,fstat=lambda fd:types.SimpleNamespace(st_dev=7),fstatvfs=lambda fd:types.SimpleNamespace(f_bavail=10737418240,f_frsize=1))
++                namespace=dict(json=json,hashlib=hashlib,re=re,deadline=20.0,time=types.SimpleNamespace(monotonic=lambda:clock['now']),os=operating,sys=types.SimpleNamespace(stdout=output,exit=lambda code:(_ for _ in ()).throw(AssertionError('unexpected output cap exit'))),subprocess=types.SimpleNamespace(run=run,DEVNULL=-3,PIPE=-1,TimeoutExpired=subprocess.TimeoutExpired),fds={},missing=set(),markers={},tables={},directory_entries=directory_entries,open_path=lambda path:(1,None) if path=='/usr/bin/systemctl' else None,port_scan=lambda:set(),anchor=lambda path:1,memory_available=lambda:10737418240)
++                exec(compile(ast.Module(body=selected,type_ignores=[]),'<fixed-isolation-functions>','exec'),namespace)
++                namespace.update(p=data['policy'],s=data['scope'],b=dict(policy=data['policy'],scope=data['scope'],mode='ADMISSION',queryTask=data['scope']['task']),out=json.loads(json.dumps(data['initial'])))
++                namespace['e']={'bindingSha256':namespace['digest'](namespace['b'])}
++                exec(compile(ast.Module(body=main+tree.body[-3:],type_ignores=[]),'<fixed-isolation-main>','exec'),namespace)
++                frame=output.getvalue()
++                assert frame.startswith('AGENT_ISOLATION_PREFLIGHT=') and frame.endswith(chr(10)) and len(frame.encode())<=24576
++                receipt=json.loads(frame[len('AGENT_ISOLATION_PREFLIGHT='):])
++                assert all('Id' not in row for row in receipt['protectedMetadata'])
++                if mode in ('ready','drift'):
++                    assert len(calls)==4 and scans==2 and calls[0]==calls[3] and calls[1]==calls[2]
++                    assert len(calls[0])==14 and len(calls[1])==2
++                else: assert len(calls)==2 and scans==1 and timeouts==[1.5,0.5] and clock['now']==20.0
++                return dict(receipt=receipt,calls=len(calls),scans=scans,time=clock['now'],timeouts=timeouts)
++            result={mode:run_case(mode) for mode in ('ready','drift','budget')}
++            assert result['ready']['receipt']['status']=='READY'
++            assert result['drift']['receipt']['status']=='UNKNOWN' and result['drift']['receipt']['reason']=='DRIFT'
++            assert result['budget']['receipt']['status']=='UNKNOWN' and result['budget']['receipt']['reason']=='UNCONFIRMED'
++            print(json.dumps(result,separators=(',',':')))
++            """;
++        try(var request=probe.request(scope(policy,"a"),UUID.randomUUID())){
++            var initial=receipt(request,true).put("status","UNKNOWN").put("reason","UNCONFIRMED").put("stable",false).put("pathsChecked",0).put("unitsChecked",0).put("portsChecked",0).putNull("memoryAvailableBytes").putNull("cpuCount");
++            initial.putArray("allocatedCandidates");initial.putArray("filesystems");initial.putArray("protectedMetadata");
++            var input=JSON.createObjectNode().put("source",probe.source());input.set("policy",policy.document());input.set("scope",DeploymentAgentIsolationPolicy.scope(request.scope()));input.set("initial",initial);
++            var result=JSON.readTree(runFixedPython(fixture,input));
++            for(String mode:List.of("ready","drift","budget")){
++                var row=(ObjectNode)result.path(mode).path("receipt");assertEquals(row.toString(),probe.parse(request,actual(row)).canonicalJson());
++                assertEquals(mode.equals("ready")?"READY":"UNKNOWN",row.path("status").textValue());
++            }
++            assertEquals(4,result.path("ready").path("calls").intValue());assertEquals(2,result.path("ready").path("scans").intValue());
++            assertEquals("DRIFT",result.path("drift").path("receipt").path("reason").textValue());
++            assertEquals(20.0,result.path("budget").path("time").doubleValue());assertFalse(result.path("budget").path("receipt").path("stable").booleanValue());
++        }
++    }
++
++    private String runFixedPython(String fixture,ObjectNode input)throws Exception{
++        var process=new ProcessBuilder(System.getProperty("managed.test.python","python"),"-I","-S","-c",fixture).redirectErrorStream(true).start();
++        var reader=java.util.concurrent.Executors.newSingleThreadExecutor();var bytes=reader.submit(()->process.getInputStream().readNBytes(131073));
++        try{
++            try(var out=process.getOutputStream()){out.write(JSON.writeValueAsBytes(input));}
++            assertTrue(process.waitFor(30,java.util.concurrent.TimeUnit.SECONDS),"controlled fixed Python did not exit");
++            byte[] result=bytes.get(5,java.util.concurrent.TimeUnit.SECONDS);String output=new String(result,StandardCharsets.UTF_8);
++            assertEquals(0,process.exitValue(),output);assertTrue(result.length<=131072);return output;
++        }finally{
++            if(process.isAlive()){process.destroyForcibly();assertTrue(process.waitFor(10,java.util.concurrent.TimeUnit.SECONDS));}
++            reader.shutdownNow();assertTrue(reader.awaitTermination(10,java.util.concurrent.TimeUnit.SECONDS));assertFalse(process.isAlive());
++        }
++    }
++
++    private DeploymentAgentIsolationPolicy fiveRetainedNamespaces(){
+         var applications=new ArrayList<ProtectedApplication>();
+-        String[] names={"wtl-agent-file-transfer-8pqtgvbwc","wtl-agent-file-transfer-ufjfoeitg","wtl-agent-file-transfer-v0wjwq48s","wtl-agent-file-transfer-3g6o4vqic"};
+-        String[] tasks={"072bc074-4bce-4c14-b425-f2ff965c7d40","4255f545-7acb-4b47-a331-45c977d086dd","c236a665-56e5-44b3-8acb-bfe167d97b97","d8de6c5a-2b8c-42bd-8628-4bba4f88216b"};
+-        for(int i=0;i<names.length;i++)applications.add(new ProtectedApplication(UUID.fromString(tasks[i]),names[i],layout.digest(),Set.of(names[i]+"-backend",names[i]+"-web"),i==1?Set.of():Set.of(names[i]+"-backend-525f7bab44afa87d"),Map.of(),Set.of()));
+-        return DeploymentAgentIsolationPolicy.trusted("four-retained-namespaces",application,layout,applications).requiringPorts(ports).minimumResources(memory,1);
++        String[] names={"wtl-agent-file-transfer-8pqtgvbwc","wtl-agent-file-transfer-ufjfoeitg","wtl-agent-file-transfer-v0wjwq48s","wtl-agent-file-transfer-3g6o4vqic","wtl-agent-file-transfer-46xyx53kc"};
++        String[] tasks={"072bc074-4bce-4c14-b425-f2ff965c7d40","4255f545-7acb-4b47-a331-45c977d086dd","c236a665-56e5-44b3-8acb-bfe167d97b97","d8de6c5a-2b8c-42bd-8628-4bba4f88216b","af2f6e5b-08c1-4977-beae-533e7fa679f9"};
++        for(int i=0;i<names.length;i++)applications.add(new ProtectedApplication(UUID.fromString(tasks[i]),names[i],layout.digest(),Set.of(names[i]+"-backend",names[i]+"-web"),i==1||i==4?Set.of():Set.of(names[i]+"-backend-525f7bab44afa87d"),Map.of(),Set.of()));
++        return DeploymentAgentIsolationPolicy.trusted("five-retained-namespaces",application,layout,applications).requiringPorts(ports).minimumResources(memory,1);
+     }
+     private Set<String> discoveredRetainedPaths(){
+         String unit="wtl-agent-file-transfer-8pqtgvbwc-web",candidate=unit+"-525f7bab44afa87d",release=layout.applicationRoot("wtl-agent-file-transfer-8pqtgvbwc-backend")+"/releases/39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597";
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -6671,6 +6671,8 @@
+             "The interrupted candidate must keep both earlier UNKNOWN protection sets");
+         assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown282") || Boolean.getBoolean("managed.live.isolatedUnknown281"),
+             "The prepared candidate must keep all earlier UNKNOWN protection sets");
++        assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown283") || Boolean.getBoolean("managed.live.isolatedUnknown282"),
++            "The timed-out probe must keep all earlier UNKNOWN protection sets");
+         var isolation = selectedMode == Mode.AGENT ? retainedUnknownIsolation(project, id, webPort) : null;
+         Map<String, String> requirements = selectedMode == Mode.AGENT ? liveAgentRequirements(project, id, host, webPort) : Map.of();
+         Path source = copyFixture(project);
+@@ -6965,6 +6967,16 @@
+                 Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49284),
+                     new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49285))));
+         }
++        if (Boolean.getBoolean("managed.live.isolatedUnknown283")) {
++            String retainedApplication = "wtl-agent-file-transfer-46xyx53kc";
++            protectedApplications.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.ProtectedApplication(
++                java.util.UUID.fromString("af2f6e5b-08c1-4977-beae-533e7fa679f9"), retainedApplication, oldLayout,
++                Set.of(retainedApplication + "-backend", retainedApplication + "-web"), Set.of(),
++                Map.of("accepted-plan", "b62ab9d8f8977e69488a943dd7de98f19520d62f29330adf36c4097e9798f579",
++                    "source", "296967551e9c7a93b61165be8d03198192c94f4b1544f41e5d16ae75e8672fd3"),
++                Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49286),
++                    new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49287))));
++        }
+         var ports = new java.util.HashSet<gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port>();
+         ports.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", webPort));
+         if (project.equals("file-transfer")) {
