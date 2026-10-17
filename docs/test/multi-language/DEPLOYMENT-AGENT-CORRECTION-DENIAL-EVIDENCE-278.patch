@@ -1,0 +1,95 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
+@@ -488,7 +488,12 @@
+     @Override public void reviewed(ActionIntent intent,CommandRequest request,TaskContext supplied,DeploymentReviewDecision decision)throws ApiException {
+         verify(intent,request,supplied);
+         pending.decision=decision;
+-        if(pending.correction!=null)try {pending.correction.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
++        if(pending.correction!=null)try {
++            pending.correction.reviewed(decision,pending.evidence);
++            if(decision.decision().equals("DENY"))
++                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentReviewDenied(
++                    original,task,"COMMAND",DeploymentAgentInputs.hash(intent.exactAction()),decision.reason());
++        }catch(Exception invalid){throw stop();}
+         if(pending.contractFollowup!=null)try {pending.contractFollowup.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.contractDiagnostic!=null)try {pending.contractDiagnostic.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.continuation!=null)try {pending.continuation.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+@@ -406,8 +406,17 @@
+ 
+     /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+     @ParameterizedTest
+-    @ValueSource(strings={"complete","unknown","timeout","deny","goal-already"})
++    @ValueSource(strings={"complete","unknown","timeout","goal-already"})
+     void correctionEveryResultRetainsUnknownUntilFreshGoalAndIndependentCleanup(String scenario)throws Exception {
++        correctionScenario(scenario);
++    }
++
++    @Test
++    void correctionDenialRetainsRedactedReasonWithoutGrantOrReplay()throws Exception {
++        correctionScenario("deny");
++    }
++
++    private void correctionScenario(String scenario)throws Exception {
+         enable();
+         try(var runtime=open()) {
+             start(runtime,true);server(runtime);
+@@ -438,6 +447,8 @@
+                 var immutableOld=List.copyOf(log.events(task));fixturePhase.accept("OLD_IMMUTABLE_HISTORY_READY");
+                 var program=new DeploymentAgentPublicationCorrectionProgram(unit.layout());
+                 var correctionBinding=new AtomicReference<DeploymentAgentPublicationCorrectionProgram.Binding>();
++                String denialReason="Correction denied: bounded public reason\npassword=LOCAL_PASSWORD_SENTINEL\napi_key=LOCAL_API_KEY_SENTINEL\n"+"Retained explanation. ".repeat(60);
++                var deniedExactAction=new AtomicReference<String>();
+                 var allowGoal=new java.util.concurrent.atomic.AtomicBoolean(scenario.equals("goal-already"));
+                 var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
+                 var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var correctionSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
+@@ -451,9 +462,11 @@
+                         assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationCorrection/expectedSourceVersion").asText());
+                         assertEquals(old.event(),node.at("/publicationCorrection/binding/followup/diagnostic/continuation/original/pendingIntentEvent").longValue());
+                         diagnosticAction.set(UUID.fromString(node.at("/publicationCorrection/action").asText()));expectedCommand.set(command.script());
++                        deniedExactAction.set(DeploymentAgentInputs.hash(intent.exactAction()));
+                         try(var decoded=program.decode(command)){correctionBinding.set(decoded.binding());assertEquals(old.event(),decoded.binding().followup().diagnostic().continuation().original().pendingIntentEvent());}
+                     }
+-                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")&&node.has("publicationCorrection")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
++                    boolean denied=scenario.equals("deny")&&node.has("publicationCorrection");
++                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(denied?"DENY":"APPROVE",false,denied?denialReason:"Local diagnostic decision"),Map.of());
+                 };
+                 var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
+                     if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
+@@ -496,6 +509,20 @@
+                 assertTrue(state.lastActionEvent()>immutableOld.getLast().id());
+                 var correctionEvents=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList();
+                 assertFalse(correctionEvents.isEmpty());var afterAttempt=List.copyOf(correctionEvents);
++                var deniedDiagnostics=new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context).read(task.id());
++                assertTrue(deniedDiagnostics.problem().isEmpty());
++                var denialRecords=deniedDiagnostics.records().stream().filter(r->r.event().eventCode().equals("DEPLOYMENT_AGENT_REVIEW_DENIED")).toList();
++                if(scenario.equals("deny")) {
++                    assertEquals(1,denialRecords.size());var record=denialRecords.getFirst();String message=record.event().message();
++                    assertEquals(Optional.of(task.id()),record.event().taskId());assertFalse(record.truncated());
++                    assertTrue(message.startsWith("type=COMMAND action="+deniedExactAction.get()+" Correction denied: bounded public reason"));
++                    assertTrue(message.contains("[credential content excluded]"));
++                    assertFalse(message.contains("LOCAL_PASSWORD_SENTINEL"));assertFalse(message.contains("LOCAL_API_KEY_SENTINEL"));
++                    assertTrue(message.length()<=512+"type=COMMAND action=".length()+64+1);
++                    assertTrue(message.getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=2048);
++                    assertTrue(message.chars().noneMatch(Character::isISOControl));assertFalse(message.contains("WTL-SSH-COMMAND-1"));
++                    assertEquals(List.of("REQUEST","REVIEW","NOT_SENT"),correctionEvents.stream().map(e->{try{return new com.fasterxml.jackson.databind.ObjectMapper().readTree(e.detail()).path("kind").asText();}catch(Exception invalid){throw new AssertionError(invalid);}}).toList());
++                } else assertTrue(denialRecords.isEmpty());
+                 assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));assertTrue(log.events(task).contains(oldResult));
+                 assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
+                 assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
+@@ -505,6 +532,12 @@
+                 assertThrows(Exception.class,()->new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                 fixturePhase.accept("REPEAT_UNMET_RECONCILE_END");
+                 assertEquals(afterAttempt,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList());assertEquals(0,cleanups.get());
++                if(scenario.equals("deny")) {
++                    var retainedDiagnostics=new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context).read(task.id());
++                    assertTrue(retainedDiagnostics.problem().isEmpty());
++                    assertEquals(denialRecords,retainedDiagnostics.records().stream().filter(r->r.event().eventCode().equals("DEPLOYMENT_AGENT_REVIEW_DENIED")).toList());
++                    assertEquals(4,grants.get());assertEquals(4,sends.get());assertEquals(0,correctionSends.get());
++                }
+                 allowGoal.set(true);fixturePhase.accept("FINAL_GOAL_RECONCILE_BEGIN");
+                 assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
+                 fixturePhase.accept("FINAL_GOAL_RECONCILE_END");
