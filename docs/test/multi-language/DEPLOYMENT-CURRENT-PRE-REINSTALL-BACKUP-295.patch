@@ -1,0 +1,147 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -76,7 +76,7 @@
+         return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+             || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive()
+             || isolatedBackupMetadata() || backupMetadataOnlyLive() || isolatedProtectedBackupGuard() || isolatedProtectedBackupSentinel()
+-            || backupCommandOnlyLive() || isolatedBackupCommandGuard() || isolatedSnapshotProof() || backupReviewProbeOnlyLive() || isolatedSdkMetadataProtocol();
++            || backupCommandOnlyLive() || isolatedBackupCommandGuard() || isolatedBackupCurrentState() || isolatedSnapshotProof() || backupReviewProbeOnlyLive() || isolatedSdkMetadataProtocol();
+     }
+ 
+     private static boolean isolatedBackupGuard() {
+@@ -260,6 +260,7 @@
+     }
+ 
+     private void backupThroughProduct(boolean downloads, boolean metadataOnly) throws Exception {
++        backupRequire(!Boolean.getBoolean("managed.backup.currentState"));
+         backupRequire(!Boolean.getBoolean("managed.runtime.staticLive") && !Boolean.getBoolean("managed.runtime.agentLive"));
+         var layout = backupLayout();
+         Path evidence = backupEvidence();
+@@ -330,6 +331,59 @@
+             && "DeploymentStaticLiveAcceptanceTest#backupCommandPlansBindFullRequestsAndPreserveUnknownReceipts".equals(System.getProperty("test", ""));
+     }
+ 
++    private static boolean isolatedBackupCurrentState() {
++        return Boolean.getBoolean("managed.runtime.backupCurrentStateLocal")
++            && "DeploymentStaticLiveAcceptanceTest#currentBackupStateRejectsOtherSelectorsKindsAndPriorIdentities".equals(System.getProperty("test", ""));
++    }
++
++    private record BackupCurrentState(Path directory, java.util.UUID prerequisite) {
++    }
++
++    private static BackupCurrentState backupCurrentState(Path workspace, Path selected, String prerequisite, String selector, String kind, String fingerprint) {
++        backupRequire(selected.isAbsolute() && selected.equals(selected.normalize())
++            && selected.equals(workspace.toAbsolutePath().normalize().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4"))
++            && "3a780412-a9bb-474e-917f-810456beec7d".equals(prerequisite)
++            && "DeploymentStaticLiveAcceptanceTest#executesSelectiveBackupCommandThroughProduct".equals(selector)
++            && "READONLY_METADATA".equals(kind)
++            && "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc".equals(fingerprint));
++        return new BackupCurrentState(selected, java.util.UUID.fromString(prerequisite));
++    }
++
++    private static void backupCurrentPrerequisite(TaskSnapshot previous) {
++        backupRequire(previous.id().equals(java.util.UUID.fromString("3a780412-a9bb-474e-917f-810456beec7d"))
++            && previous.type().equals("deployment-block-filesystem-layout-observation") && previous.ownerId().equals(OWNER)
++            && previous.ownerVersion().equals(VERSION) && previous.state() == gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED
++            && previous.outcome().equals(Optional.of(TaskResult.SUCCEEDED)) && previous.blockers().isEmpty());
++    }
++
++    @Test
++    @EnabledIf("isolatedBackupCurrentState")
++    void currentBackupStateRejectsOtherSelectorsKindsAndPriorIdentities() {
++        Path workspace = Path.of("synthetic-backup-workspace").toAbsolutePath().normalize();
++        Path state = workspace.resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4");
++        String previous = "3a780412-a9bb-474e-917f-810456beec7d", fingerprint = "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc";
++        String selector = "DeploymentStaticLiveAcceptanceTest#executesSelectiveBackupCommandThroughProduct";
++        assertEquals(state, backupCurrentState(workspace, state, previous, selector, "READONLY_METADATA", fingerprint).directory());
++        for (String other : List.of("inventorySelectiveBackupThroughProduct", "inventorySelectiveBackupMetadataThroughProduct", "downloadSelectiveBackupThroughProduct"))
++            assertThrows(IllegalArgumentException.class, () -> backupCurrentState(workspace, state, previous, "DeploymentStaticLiveAcceptanceTest#" + other, "READONLY_METADATA", fingerprint));
++        for (String kind : List.of("FILES_SNAPSHOT", "DATABASE_SNAPSHOT", "OWNED_BACKUP_CLEANUP"))
++            assertThrows(IllegalArgumentException.class, () -> backupCurrentState(workspace, state, previous, selector, kind, fingerprint));
++        assertThrows(IllegalArgumentException.class, () -> backupCurrentState(workspace, state.resolveSibling("old-unknown"), previous, selector, "READONLY_METADATA", fingerprint));
++        assertThrows(IllegalArgumentException.class, () -> backupCurrentState(workspace, state, java.util.UUID.randomUUID().toString(), selector, "READONLY_METADATA", fingerprint));
++        assertThrows(IllegalArgumentException.class, () -> backupCurrentState(workspace, state, previous, selector, "READONLY_METADATA", "old-host-fingerprint"));
++        var valid = new TaskSnapshot(java.util.UUID.fromString(previous), OWNER, VERSION, "deployment-block-filesystem-layout-observation",
++            gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, Optional.of(TaskResult.SUCCEEDED), "synthetic", java.time.Instant.EPOCH,
++            Optional.of(java.time.Instant.EPOCH), List.of());
++        backupCurrentPrerequisite(valid);
++        for (var invalid : List.of(
++            new TaskSnapshot(valid.id(), OWNER, VERSION, "different-type", valid.state(), valid.outcome(), "", valid.startedAt(), valid.endedAt(), List.of()),
++            new TaskSnapshot(valid.id(), "different-owner", VERSION, valid.type(), valid.state(), valid.outcome(), "", valid.startedAt(), valid.endedAt(), List.of()),
++            new TaskSnapshot(valid.id(), OWNER, "different-version", valid.type(), valid.state(), valid.outcome(), "", valid.startedAt(), valid.endedAt(), List.of()),
++            new TaskSnapshot(valid.id(), OWNER, VERSION, valid.type(), gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN, Optional.empty(), "", valid.startedAt(), Optional.empty(), List.of()),
++            new TaskSnapshot(valid.id(), OWNER, VERSION, valid.type(), valid.state(), Optional.of(TaskResult.FAILED), "", valid.startedAt(), valid.endedAt(), List.of())))
++            assertThrows(IllegalArgumentException.class, () -> backupCurrentPrerequisite(invalid));
++    }
++
+     private record BackupCommandPlan(Path file, String sha, String json) {
+     }
+ 
+@@ -915,19 +969,42 @@
+         String fingerprint = System.getProperty("managed.ssh.fingerprint");
+         var plan = backupCommandPlan(workspace(), Path.of(System.getProperty("managed.backup.commandPlanFile")),
+             System.getProperty("managed.backup.commandPlanSha256"), run, SERVER, fingerprint, layout.digest());
++        boolean currentState = Boolean.getBoolean("managed.backup.currentState");
++        var selectedState = currentState ? backupCurrentState(workspace(), Path.of(System.getProperty("managed.live.originalState")),
++            System.getProperty("managed.live.originalTask"), System.getProperty("test"), JSON.readTree(plan.json()).path("kind").asText(), fingerprint) : null;
++        if (currentState) {
++            backupCanonical(selectedState.directory());
++            backupCanonical(selectedState.directory().resolve("data"));
++            backupRequire(Files.isDirectory(selectedState.directory().resolve("data"), java.nio.file.LinkOption.NOFOLLOW_LINKS));
++            backupRequire(layout.equals(new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths())));
++        }
+         backupWriteRecord(evidence, "command-run-claim.json", Map.of("run", run, "scope", "BACKUP_ONLY", "planSha256", plan.sha(), "backupComplete", false));
+         aiEnabled = true;
+         agentMode = true;
+         connectionOnly = false;
+-        root = workspace().resolve("src/app/db/data/backup-command-live-" + Long.toUnsignedString(System.nanoTime(), 36));
+-        enable();
+-        try (var runtime = open()) {
+-            start(runtime, true);
+-            saveServer(runtime);
+-            configureLiveModel(runtime, true);
+-            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+-            var handle = context.tasks().<CommandResult>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+-                "deployment.backup.command", "BACKUP_ONLY", List.of(SERVER), true), task -> {
++        if (currentState) {
++            root = selectedState.directory();
++            agentApproval = "AUTOMATIC";
++            agentRemember = false;
++        } else {
++            root = workspace().resolve("src/app/db/data/backup-command-live-" + Long.toUnsignedString(System.nanoTime(), 36));
++            enable();
++        }
++        try (var runtime = open()) {
++            start(runtime, true);
++            if (!currentState) {
++                saveServer(runtime);
++                configureLiveModel(runtime, true);
++            }
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            var handle = context.tasks().<CommandResult>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "deployment.backup.command", "BACKUP_ONLY", List.of(SERVER), true), task -> {
++                if (currentState) {
++                    backupCurrentPrerequisite(context.tasks().findArchived(selectedState.prerequisite(), task).orElseThrow());
++                    var profile = context.servers().get(new ServerId(SERVER), task);
++                    backupRequire(profile.host().equals("45.192.105.213") && profile.port() == 22 && profile.username().equals("root"));
++                }
+                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, layout);
+                 try (var workflow = backupOpenReviewedWorkflow(context.interaction(), task, SERVER, run, plan.sha());
+                      var session = context.linux().connect(new ServerId(SERVER), task); var request = backupCommandRequest(plan)) {
+@@ -940,8 +1017,13 @@
+                     var decision = backupCommandReview(workspace(), context, task, plan, factsJson, revision, layout, evidence);
+                     backupWriteRecord(evidence, "command-approval.json", Map.of("bindingSha256", binding, "decision", decision.decision(),
+                         "requiresUserConfirmation", decision.requiresUserConfirmation(), "reason", decision.reason()));
+-                    if (!decision.decision().equals("APPROVE"))
+-                        throw new IllegalStateException("BACKUP_COMMAND_INDEPENDENT_APP_DENIED");
++                    if (!decision.decision().equals("APPROVE")) {
++                        if (currentState)
++                            return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.ACCESS_DENIED,
++                                "BACKUP_COMMAND_INDEPENDENT_APP_DENIED", "Independent backup review refused this unsent action",
++                                Map.of("task", task.id().toString(), "planSha256", plan.sha(), "reason", decision.reason(), "dispatched", "false"), Optional.of(task.id()))));
++                        throw new IllegalStateException("BACKUP_COMMAND_INDEPENDENT_APP_DENIED");
++                    }
+                     var unchanged = backupCommandPlan(workspace(), plan.file(), plan.sha(), run, SERVER, fingerprint, layout.digest());
+                     backupRequire(binding.equals(inputDigest(backupCommandFacts(unchanged, task.id(),
+                         context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task)))));

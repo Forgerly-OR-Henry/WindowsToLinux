@@ -1,0 +1,17 @@
+# 当前主机重装前备份接线 295
+
+用户授权先把当前必要远端数据备份到test/data，完成后暂停目标，用户以paused作为可重装信号。旧174备份属于另一主机指纹，不能作为当前覆盖证据。已保留原README/总清单字节为README-at-174.md及backup-manifest-at-174.json；当前根说明和schema2总清单明确IN_PROGRESS_NOT_READY，run pre-reinstall-20261018-295，尚无当前有效远端备份。
+
+本次仅修改Live测试fixture一个路径94增12删，保原CRLF；默认历史入口不变。新managed.backup.currentState=true只允许精确executesSelectiveBackupCommandThroughProduct及READONLY_METADATA，复用已保存6u Runtime配置，不enable/saveServer/configureLiveModel。新Task核294归档的精确UUID/type/owner/version/ENDED-SUCCEEDED且blockers空，当前45.192.105.213:22/root、sCR主机指纹、真实当前layout与新计划相符。旧七库不打开、不恢复；194已结清不恢复。
+
+完整新计划、脚本和空stdin经既有backupCommandReview独立APP，获准后原生approveReviewedAction签新精确grant，同一session/request单次execute，保原SDK/task回执。仅新模式对持久保存的明确APP拒绝且未grant/send返回typedFAILED；执行异常及UNKNOWN不改写、不重放。当前模式在Runtime前拒绝旧FileQuery inventory和download入口，因此未默许APP前远端正文读取或多件一次APP。
+
+唯一local selector DeploymentStaticLiveAcceptanceTest#currentBackupStateRejectsOtherSelectorsKindsAndPriorIdentities，managed.runtime.backupCurrentStateLocal=true；test01/session88953 actualexit0，1P0F0E0skip，JUnit0.048s/Maven12.574s，UTC2026-10-17T18:15:56.1656061Z—2026-10-17T18:16:09.6138057Z。正例及错误selector/kind/root/UUID/hostkey、归档type/owner/version/UNKNOWN/FAILED均覆盖；纯guard不运行Runtime/DB/模型/SSH。仅test和必要testCompile，不package/旧组复跑/全量；14直接源与4253951B生产JAR属性窗口不变。CIMownJava0/terminated0，owner/边界/no-reparse已清c295a/u295t。
+
+父新metadata计划只读五个当前captured root及managed systemd目录/路径属性，空stdin180秒/1MiB；沿用旧公开metadata结构并补系统单元映射，不读取配置/业务正文，不改远端资源。代码只表示新入口可用，未执行实机。所有depth/cap/访问/未映射引用均保UNKNOWN，不能由一次盘点宣告完整备份。必要范围是当前正式应用持久数据、配置及未结任务必要身份/操作事实，不按旧12库或七组FT假定数量。
+
+专项静态判断确认原生SDK在消费下载grant后会重新核路径、句柄、大小和获审SHA；后续可用真实成功producer回执作为expected SHA，复用单bundle独立APP/newgrant及backupProtectOwnedPlain，避免旧APP前readFile预读。当前不泛化旧12/310合同，实际数量/体积待fresh inventory；producer与下载分别审批，DPAPI保护与内存恢复验证还须完成。不能仅凭下载或密文回读宣布READY。
+
+完整before/REPORT-current-runtime.md、disabled runner、计划与local结果在.ai-workspace/agent-live-evidence/agent-autonomy-20261012/selective-pre-reinstall-backup-295。窄patch按LF导出并reverse核对，仅Git阶段对1source+patch+本说明共3项计算摘要；保留其它迁移/AGENTS，不push。test/data由既有本地exclude排除，备份和凭据不提交Git。
+
+目标当前保持active。必须待必要覆盖闭合、真实归档和独立批准下载、DPAPI及内存恢复验真、自有进程/明文临时清理与完整本地清单均完成，才允许调用paused；届时只通知用户自行重装，不执行系统重装。备份不计File Transfer/CSV完整验收，原两项目严格串行目标仍待后续新主机身份及初始化范围确认。
