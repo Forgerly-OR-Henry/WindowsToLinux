@@ -1,0 +1,8 @@
+5e0efbf08b98c19a078d1d8c046be25380cfe3bf790716850b3d37a080ee395a  src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+af0360213e025984b7adae5f75e4e4e67445a062d974cacf46a33942bef9b608  src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+0cb983b633c8bcfa7c1befbe376e4e000238d014619bec20bc43a2e14d99e99f  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+4cbfee0ff825edfc498f3c42119e0a1e068d78447ab4175cce8cc6805c2d28bc  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+641aa3ffb5f159dd8716d448a48f1d83b90749a7aa69c880fc8315b8c2fb9baf  src/mod/deployment/target/deployment.jar
+bd99ff2d7f0516b8c30957905c2de0a87d552690e124602ee51443acafa568b6  docs/test/multi-language/DEPLOYMENT-AGENT-ISOLATION-FEEDBACK-281.patch
+14beae920ea67f8112b6790c4e3dc4606b3f4f96ee4c47bc0a0d364606c52d53  docs/test/multi-language/DEPLOYMENT-AGENT-ISOLATION-FEEDBACK-281.md
+38a7374ad39c996d044e21c2243fa830603ce4204a215e2252230fa48cefac50  docs/test/multi-language/DEPLOYMENT-AGENT-ISOLATION-LIVE-280.md

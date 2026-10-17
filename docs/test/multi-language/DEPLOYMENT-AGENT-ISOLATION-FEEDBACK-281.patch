@@ -1,0 +1,566 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/DeploymentAgentSession.java
+@@ -317,6 +317,12 @@
+                                             gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task).digest());
+                                         rejectionEvidence.put(call.id(), observe("PLAN_CAPACITY", refused.feedback()));
+                                         return refused;
++                                    } catch (gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
++                                        requireIsolationRefusal(refused);
++                                        if (!DeploymentAgentActionLog.effectsSettled(journal.events(task)))
++                                            throw new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_ISOLATION_REQUIRES_RECOVERY", "Earlier work still requires reconciliation", Map.of(), Optional.of(task.id())));
++                                        rejectionEvidence.put(call.id(), observe("ISOLATION_ADMISSION", refused.feedback()));
++                                        return refused;
+                                     } catch (
+                                         gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException refused) {
+                                         if (!DeploymentAgentActionLog.effectsSettled(journal.events(task)))
+@@ -338,7 +344,7 @@
+                                 }
+ 
+                                 public gold.debug.windowstolinux.appapi.ai.model.AiToolResult commit(gold.debug.windowstolinux.appapi.ai.model.AiToolCall original, Object value) {
+-                                    if (value instanceof DeploymentAlternativeRequiredException || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException
++                                    if (value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal || value instanceof DeploymentAlternativeRequiredException || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException
+                                         || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanCapacityRefusal
+                                         || value instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.PlanConnectionRefusal)
+                                         return new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(original.id(), lastObservation, true);
+@@ -786,6 +792,7 @@
+         }
+         String binding = digest(value + ":" + planRevision + ":" + revisions.get(value.component()));
+         boolean effect = Set.of("prepare_tools", "build", "databases", "secret_create").contains(value.name());
++        if (effect) requireIsolationAdmission();
+         if (effect) journal.event(task, "CAPABILITY_EXECUTING", binding, value.name());
+         String output;
+         try {
+@@ -922,6 +929,7 @@
+         checkpoint();
+         requireConfiguration();
+         source.verify();
++        requireIsolationAdmission();
+         journal.event(task, "COMMAND_EXECUTING", binding, Integer.toString(proposal.seconds()));
+         DeploymentAgentDeliveryPort.CommandFeedback result;
+         try {
+@@ -996,6 +1004,25 @@
+         } catch (Exception unavailable) {
+             return false;
+         }
++    }
++
++    private void requireIsolationAdmission() throws Exception {
++        if (!(tools instanceof gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools remote)) return;
++        try {
++            remote.validateIsolationAdmission();
++        } catch (gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) {
++            requireIsolationRefusal(refused);
++            throw refused;
++        } catch (Exception uncertain) {
++            journal.state(task, "UNKNOWN");
++            throw uncertain;
++        }
++    }
++
++    private void requireIsolationRefusal(gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentRemoteTools.IsolationRefusal refused) throws Exception {
++        requireConfiguration();
++        refused.requireBinding(task, source.revision(), models.revision(),
++            gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task).digest());
+     }
+ 
+     /** Opens a task-owned protected source candidate exactly once. / 恰好一次开启任务所属受保护来源候选。
+@@ -1010,6 +1037,7 @@
+         checkpoint();
+         requireConfiguration();
+         String binding = gold.debug.windowstolinux.mod.deployment.service.agent.tools.DeploymentAgentCandidateCapacityException.binding(task.id(), id, source.revision(), digest(plan.toString()), component.workspaceSelection().orElseThrow().bytes());
++        requireIsolationAdmission();
+         journal.event(task, "PREPARE_EXECUTING", binding, id);
+         var preparation = journal.events(task).getLast();
+         DeploymentAgentDeliveryPort.Prepared candidate;
+@@ -1305,6 +1333,7 @@
+         requireConfiguration();
+         checkpoint();
+         requireConfiguration();
++        requireIsolationAdmission();
+         journal.event(task, "PATCH_EXECUTING", binding, old + ":" + patch.beforeDigest());
+         String revised;
+         try {
+@@ -1346,6 +1375,7 @@
+         checkpoint();
+         requireConfiguration();
+         String binding = digest(id + ":" + revision + ":seal");
++        requireIsolationAdmission();
+         journal.event(task, "SEAL_EXECUTING", binding, revision);
+         String digest;
+         try {
+@@ -1403,6 +1433,7 @@
+         requireConfiguration();
+         source.verify();
+         String binding = digest(plan + ":" + new TreeMap<>(artifacts));
++        requireIsolationAdmission();
+         journal.event(task, "DELIVERY_EXECUTING", binding, Long.toString(planRevision));
+         OperationResult<DeploymentAgentDeliveryPort.Published> result;
+         try {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -111,6 +111,7 @@
+     private final DeploymentAgentIsolationGate isolationGate;
+     private DeploymentAgentPlan isolationPlan;
+     private String helperEvidenceSha256;
++    private boolean isolationAdmitted;
+     private final java.util.function.Consumer<IsolationAdmission> isolationObserver;
+ 
+     /** Local immutable observation and its original verifier; never an approval or host capability. */
+@@ -302,11 +303,16 @@
+         var facts = value(hosts.baseline());
+         var capacity = value(candidates.capacityObservation());
+         verifyWorkspaceBoundary();
+-        return Map.of("fingerprint", session.facts().fingerprint(), "capabilities", facts.facts().toString(),
++        var observed = Map.of("fingerprint", session.facts().fingerprint(), "capabilities", facts.facts().toString(),
+             "workspace", DeploymentAiJson.facts(Map.of("archiveBytes", archive.byteCount(), "unpackedBytes", archive.uncompressedByteCount(),
+                 "sourceCopies", 2, "metadataMarginBytes", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT,
+                 "availableBytes", capacity.availableBytes(), "minimumBytes", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT,
+                 "maximumBytes", workspacePolicy.maximumBytes(), "hostReserveBytes", workspacePolicy.reserveBytes(), "hostCost", "2*selectedWorkspaceBytes+hostReserveBytes"), 4000));
++        if (isolationPolicy == null) return observed;
++        var isolated = new LinkedHashMap<String, String>(observed);
++        isolated.put("isolationAdditionalDiskDemands", DeploymentAiJson.facts(Map.of("demands", isolationDiskDemands(),
++            "meaning", "Additional existing-toolchain PROBE/binding work; fresh per-filesystem admission adds these demands to selected workspaces. Native availableBytes is unchanged and is not permission or guaranteed future capacity."), 4000));
++        return Map.copyOf(isolated);
+     }
+ 
+     /** Executes an independently reviewed prerequisite command through the original session. / 经原会话执行独立审核的前置命令。
+@@ -621,6 +627,7 @@
+         if (isolationPolicy != null && !isolationPolicy.newApplication().equals(plan.applicationId()))
+             throw new SecurityException("Isolation application differs from the accepted plan");
+         isolationPlan = plan;
++        isolationAdmitted = false;
+         workspaceQuotas.clear();
+         plan.components().forEach(part -> workspaceQuotas.put(part.id(), part.workspaceSelection().orElseThrow()));
+     }
+@@ -691,8 +698,79 @@
+         }
+         return new DeploymentAgentIsolationPolicy.PlannedScope(task.id(), server.id(), journal.find(task).orElseThrow().identity().targetDigest(),
+             originalSourceRevision, configurationRevision, layout.digest(), sha256(planIdentity.toString()), components,
+-            List.of(new DeploymentAgentIsolationPolicy.DiskDemand(layout.toolchains(), 64L * 1024 * 1024, 1024L * 1024 * 1024)),
++            isolationDiskDemands(),
+             isolationPolicy.minimumMemAvailableBytes(), isolationPolicy.minimumCpuCount());
++    }
++
++    private List<DeploymentAgentIsolationPolicy.DiskDemand> isolationDiskDemands() {
++        return List.of(new DeploymentAgentIsolationPolicy.DiskDemand(layout.toolchains(), 64L * 1024 * 1024, 1024L * 1024 * 1024));
++    }
++
++    /** Only a complete current request's strict REFUSED result can produce known business rejection. */
++    public static final class IsolationRefusal extends Exception {
++        private final TaskContext original;
++        private final DeploymentAgentIsolationPolicy.PlannedScope scope;
++        private final UUID action;
++        private final String requestSha256, receipt, feedback;
++
++        private IsolationRefusal(TaskContext original, DeploymentAgentIsolationProbe.Request request,
++                                 OperationResult<CommandResult> actual) throws Exception {
++            super("AGENT_ISOLATION_NOT_ADMITTED: confirmed fixed read-only preflight refusal");
++            this.original = Objects.requireNonNull(original);
++            this.scope = request.scope();
++            this.action = request.action();
++            if (request.mode() != DeploymentAgentIsolationProbe.Mode.ADMISSION || !request.queryTask().equals(original.id())
++                || !scope.task().equals(original.id())) throw new SecurityException("Foreign isolation refusal");
++            var safe = new DeploymentAgentIsolationProbe(request.policy()).parse(request, actual);
++            this.receipt = safe.canonicalJson();
++            var json = new com.fasterxml.jackson.databind.ObjectMapper();
++            var body = json.readTree(receipt);
++            if (!body.path("status").asText().equals("REFUSED")) throw new SecurityException("Isolation refusal is not confirmed");
++            requestSha256 = sha256(RemoteActions.command(new ServerId(scope.server()), scope.configurationSha256(), request.command()).exactAction());
++            var output = json.createObjectNode().put("code", "AGENT_ISOLATION_NOT_ADMITTED").put("status", "REFUSED")
++                .put("reason", body.path("reason").asText()).put("task", scope.task().toString()).put("planSha256", scope.planSha256())
++                .put("requestSha256", requestSha256).put("receiptSha256", sha256(receipt)).put("effectSent", false).put("admitted", false);
++            // Preserve the complete canonical receipt separately, including protected metadata; the model needs the budget projection.
++            var projection = ((com.fasterxml.jackson.databind.node.ObjectNode) body).deepCopy();
++            projection.remove("protectedMetadata");
++            output.set("receiptBudget", projection);
++            var quotas = output.putArray("selectedWorkspaceBudgets");
++            for (var component : scope.components()) quotas.addObject().put("component", component.id())
++                .put("workspaceBytes", component.workspaceBytes()).put("reserveBytes", component.reserveBytes());
++            output.set("additionalDiskDemands", json.valueToTree(scope.additionalDiskDemands()));
++            output.put("rawReceiptRetention", "ISOLATION_REFUSAL_RECEIPT journal parts, bound by receiptSha256; this projection grants no authority");
++            output.put("meaning", "Only this attempted effect was not sent. Original per-filesystem free bytes and reserves are unchanged. Replan from all selected workspace plus additional demands, then obtain fresh independent APP/grant and a fresh READY proof; previous UNKNOWN work is not settled.");
++            feedback = json.writeValueAsString(output);
++            if (feedback.length() > 11000) throw new SecurityException("Isolation refusal exceeds bounded business feedback");
++        }
++
++        public void requireBinding(TaskContext task, String source, String configuration, String layout) {
++            if (original != task || !scope.task().equals(task.id()) || !scope.sourceSha256().equals(source)
++                || !scope.configurationSha256().equals(configuration) || !scope.layoutSha256().equals(layout))
++                throw new SecurityException("Isolation refusal changed its original task/plan inputs");
++        }
++        public String feedback() { return feedback; }
++        public String receipt() { return receipt; }
++    }
++
++    static IsolationRefusal confirmedIsolationRefusal(TaskContext task, DeploymentAgentIsolationProbe.Request request,
++                                                     OperationResult<CommandResult> actual) throws Exception {
++        return new IsolationRefusal(task, request, actual);
++    }
++
++    private void retainIsolationRefusal(IsolationRefusal refused) throws Exception {
++        String action = refused.action.toString();
++        journal.event(task, "ISOLATION_REFUSAL", action, "requestSha256=" + refused.requestSha256 + " receiptSha256=" + sha256(refused.receipt)
++            + " receiptChars=" + refused.receipt.length() + " budgetSha256=" + sha256(refused.feedback));
++        for (int at = 0, part = 0; at < refused.receipt.length(); at += 3000)
++            journal.event(task, "ISOLATION_REFUSAL_RECEIPT", action, (part++) + ":" + refused.receipt.substring(at, Math.min(at + 3000, refused.receipt.length())));
++        for (int at = 0, part = 0; at < refused.feedback.length(); at += 3000)
++            journal.event(task, "ISOLATION_REFUSAL_BUDGET", action, (part++) + ":" + refused.feedback.substring(at, Math.min(at + 3000, refused.feedback.length())));
++    }
++
++    /** Trusted Agent session preflight, before recording a potentially mutating attempt; not model authority. */
++    public void validateIsolationAdmission() throws Exception {
++        requireIsolation();
+     }
+ 
+     private void requireIsolation() throws Exception {
+@@ -703,10 +781,11 @@
+         if (helper != null && helper.status() != DeploymentAgentHelperReadiness.Status.READY)
+             throw new SecurityException("Isolation shared helper is not READY");
+         var scope = isolationScope();
+-        if (isolationGate.matches(scope)) {
++        if (isolationAdmitted && isolationGate.matches(scope)) {
+             isolationGate.requireCurrent(scope);
+             return;
+         }
++        isolationAdmitted = false;
+         if (helper == null) helper = helperReadiness();
+         if (helper.status() != DeploymentAgentHelperReadiness.Status.READY)
+             throw new SecurityException("Isolation shared helper is not READY");
+@@ -717,12 +796,23 @@
+             var grant = value(DeploymentCommandReviewRouter.approve(interaction, intent, request.command(), task));
+             beforeSend.verify();
+             var actual = session.execute(request.command(), grant);
+-            isolationGate.accept(request, actual, helper, helperEvidenceSha256);
++            DeploymentAgentIsolationProbe.Receipt receipt;
++            try { receipt = probe.parse(request, actual); }
++            catch (RuntimeException uncertain) { throw new SecurityException("Isolation preflight observation is unconfirmed", uncertain); }
++            var status = new com.fasterxml.jackson.databind.ObjectMapper().readTree(receipt.canonicalJson()).path("status").asText();
++            if (status.equals("REFUSED")) {
++                var refused = confirmedIsolationRefusal(task, request, actual);
++                retainIsolationRefusal(refused);
++                throw refused;
++            }
++            if (!status.equals("READY")) throw new SecurityException("Isolation preflight did not confirm admission");
++            try { isolationGate.accept(request, actual, helper, helperEvidenceSha256); }
++            catch (RuntimeException uncertain) { throw new SecurityException("Isolation READY proof is unconfirmed", uncertain); }
+             helperReady = true;
+             isolationGate.requireCurrent(isolationScope());
+-            var receipt = probe.parse(request, actual);
+             if (isolationObserver != null) isolationObserver.accept(new IsolationAdmission(scope, receipt, isolationGate));
+             journal.event(task, "ISOLATION_PREFLIGHT", sha256(intent.exactAction()), request.bindingSha256());
++            isolationAdmitted = true;
+         }
+     }
+ 
+@@ -734,7 +824,10 @@
+         }
+         public Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
+             verify(intent, request, supplied);
+-            return Map.of("agentIsolation", isolationGate.facts(), "agentResourceAdmissionBoundary", Map.of(
++            var current = new LinkedHashMap<String, Object>();
++            current.putAll(isolationGate.facts());
++            current.put("admitted", isolationAdmitted);
++            return Map.of("agentIsolation", Collections.unmodifiableMap(current), "agentResourceAdmissionBoundary", Map.of(
+                 "serialBuildAndProbeMemoryMiB", DeploymentAgentBuildTools.BUILD_MEMORY_MIB,
+                 "minimumHeadroomMiB", 256, "scopeMemoryFloorBytes", isolationPolicy.minimumMemAvailableBytes(),
+                 "cpuCountFloor", isolationPolicy.minimumCpuCount(), "runtimeMemoryAndCpuLimits", "NOT_DECLARED",
+@@ -756,7 +849,10 @@
+                             throw new SecurityException("Isolation requires the fixed existing-only toolchain preparation");
+                     } finally { Arrays.fill(input, (byte) 0); }
+                 }
+-                if (!readOnly(operation)) isolationGate.requireCurrent(isolationScope());
++                if (!readOnly(operation)) {
++                    if (!isolationAdmitted) throw new SecurityException("Isolation has no current READY admission");
++                    isolationGate.requireCurrent(isolationScope());
++                }
+             } catch (Exception failure) {
+                 throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_AGENT_ISOLATION_UNCONFIRMED",
+                     "Agent isolation is not confirmed for this exact action", Map.of(), Optional.of(task.id())));
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+@@ -49,7 +49,7 @@
+     private static final ObjectMapper JSON = new ObjectMapper();
+ 
+     private boolean diagnosticCandidateSessionIdentityJourney;
+-    private boolean isolationMissingPlanJourney, isolationMissingHelperJourney;
++    private boolean isolationMissingPlanJourney, isolationMissingHelperJourney, isolationRefusalJourney, isolationUnknownJourney;
+ 
+     @Test
+     void isolatedHostCommandRequiresAcceptedPlanBeforeAnyReviewOrSend() throws Exception {
+@@ -61,6 +61,18 @@
+     void isolatedPreparationRejectsMissingSharedHelperWithoutInstallingOrCreatingCandidate() throws Exception {
+         assertEquals(2415919104L, DeploymentAgentBuildTools.isolationMemoryFloor());
+         isolationMissingHelperJourney = true;
++        runVerification(VerificationMode.APPROVE, false);
++    }
++
++    @Test
++    void confirmedIsolationRefusalReturnsBudgetsAndAllowsFreshPlanWithoutEffects() throws Exception {
++        isolationRefusalJourney = true;
++        runVerification(VerificationMode.APPROVE, false);
++    }
++
++    @Test
++    void unconfirmedIsolationProbeNeverBecomesKnownBusinessRefusal() throws Exception {
++        isolationUnknownJourney = true;
+         runVerification(VerificationMode.APPROVE, false);
+     }
+ 
+@@ -200,6 +212,11 @@
+ 
+         String openEvidence = "", openPolicy = "";
+ 
++        int isolationSends, isolationVerdicts;
++        final Set<UUID> isolationActions = new HashSet<>(), isolationGrants = new HashSet<>();
++        final List<Long> isolationRequirements = new ArrayList<>();
++        final Map<String, String> isolationReceipts = new LinkedHashMap<>();
++
+         long selectedQuota;
+ 
+         String buildScript = "";
+@@ -250,7 +267,13 @@
+                     }
+                 }
+                 try {
+-                    return m.invoke(actual.interaction(), a);
++                    Object result = m.invoke(actual.interaction(), a);
++                    if (m.getName().equals("approveReviewedAction") && ((ActionIntent) a[0]).semantics().orElseThrow().operation()
++                        .equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
++                        @SuppressWarnings("unchecked") var approved = (OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>) result;
++                        assertTrue(isolationGrants.add(approved.value().orElseThrow().id()), "Every preflight needs a fresh host grant");
++                    }
++                    return result;
+                 } catch (InvocationTargetException error) {
+                     throw error.getCause();
+                 }
+@@ -269,11 +292,11 @@
+         DeploymentAgentRemoteTools remote() throws Exception {
+             journal.create(task, new DeploymentAgentActionLog.Identity(server.id(), "b".repeat(64), REVISION, "FULL_CONTROL", true));
+             journal.event(task, "SOURCE", archive.sha256(), material.snapshot().sha256());
+-            if (isolationMissingPlanJourney || isolationMissingHelperJourney) {
++            if (isolationMissingPlanJourney || isolationMissingHelperJourney || isolationRefusalJourney || isolationUnknownJourney) {
+                 var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+                 var policy = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.trusted(
+                     "controlled-isolation", "demo", layout, List.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.ProtectedApplication(
+-                        UUID.randomUUID(), "retained", layout.digest(), Set.of("retained-api"), Set.of("retained-api-1234567890abcdef"), Map.of(), Set.of())));
++                        UUID.randomUUID(), "retained", layout.digest(), Set.of("retained-api"), Set.of("retained-api-1234567890abcdef"), Map.of(), Set.of()))).minimumResources((2048L + 256) * 1024 * 1024, 1);
+                 return new DeploymentAgentRemoteTools(context, peer, context.interaction(), server, task, archive, material,
+                     REVISION, () -> revision.get(), journal, Optional.empty(), "FULL_CONTROL", true, layout, null, policy);
+             }
+@@ -310,6 +333,40 @@
+                 if (mode == VerificationMode.CAPACITY_UNSETTLED)
+                     journal.event(task, "CAPABILITY_EXECUTING", "c".repeat(64), "earlier-unconfirmed");
+                 var error = assertThrows(Exception.class, session::run);
++                if (isolationRefusalJourney || isolationUnknownJourney) {
++                    var events = journal.events(task);
++                    assertEquals(0, creates + uploads + installs + opens + verifyGrants + verifySends);
++                    assertFalse(events.stream().anyMatch(event -> Set.of("CANDIDATE", "CURRENT_SOURCE", "ISOLATION_PREFLIGHT").contains(event.type())), "REFUSED never admits or creates business state");
++                    int expected = isolationRefusalJourney ? 2 : 1;
++                    assertEquals(expected, isolationSends);
++                    assertEquals(expected, isolationVerdicts, "Every current preflight receives its own complete independent APP verdict");
++                    assertEquals(expected, isolationActions.size());
++                    assertEquals(expected, isolationGrants.size());
++                    if (isolationRefusalJourney) {
++                        assertSame(stop, error);
++                        assertEquals(7, decisions, "The same real Task replans after error feedback and obtains another APP/grant");
++                        assertNotEquals("UNKNOWN", journal.find(task).orElseThrow().state());
++                        assertFalse(events.stream().anyMatch(event -> Set.of("PREPARE_EXECUTING", "PREPARE_RESULT").contains(event.type())), "Admission refusal precedes every business-effect attempt");
++                        assertTrue(DeploymentAgentActionLog.effectsSettled(events), "The public consumer reads the retained refusal without a synthetic effect result");
++                        assertTrue(DeploymentAgentActionLog.preparationsSettled(events));
++                        assertTrue(isolationRequirements.get(1) < isolationRequirements.getFirst(), "The next accepted quota actually shrinks");
++                        for (var entry : isolationReceipts.entrySet()) {
++                            var pieces = events.stream().filter(event -> event.type().equals("ISOLATION_REFUSAL_RECEIPT") && event.action().equals(entry.getKey())).toList();
++                            var reconstructed = new StringBuilder();
++                            for (int i = 0; i < pieces.size(); i++) {
++                                assertTrue(pieces.get(i).detail().startsWith(i + ":"));
++                                reconstructed.append(pieces.get(i).detail().substring(pieces.get(i).detail().indexOf(':') + 1));
++                            }
++                            assertEquals(entry.getValue(), reconstructed.toString(), "Keep the actual canonical receipt without editing free bytes");
++                        }
++                    } else {
++                        assertEquals(4, decisions, "No known-refusal reply is returned to the main model");
++                        assertEquals("UNKNOWN", journal.find(task).orElseThrow().state());
++                        assertFalse(events.stream().anyMatch(event -> event.type().startsWith("ISOLATION_REFUSAL") || event.type().equals("PREPARE_RESULT")));
++                        assertTrue(DeploymentAgentActionLog.effectsSettled(events), "No business effect was attempted; UNKNOWN receipt is not an admission proof");
++                    }
++                    return;
++                }
+                 if (mode.name().startsWith("CAPACITY_")) {
+                     assertEquals(0, creates + uploads + opens);
+                     assertEquals(mode == VerificationMode.CAPACITY_AFTER_INSTALL || mode == VerificationMode.CAPACITY_INSTALL_UNKNOWN ? 1 : 0, installs);
+@@ -540,14 +597,14 @@
+                     verifyVerdicts++;
+                     return verdict("APPROVE");
+                 }
+-            } else if (isolationMissingHelperJourney) {
++            } else if (isolationMissingHelperJourney || isolationRefusalJourney || isolationUnknownJourney) {
+                 String operation = input.at("/currentRequest/operation").asText();
+-                assertTrue(Set.of("deployment.candidate.capacity.v1", DeploymentAgentHelperReadiness.OPERATION).contains(operation));
++                assertTrue(Set.of("deployment.candidate.capacity.v1", DeploymentAgentHelperReadiness.OPERATION, gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION).contains(operation));
+                 var isolation = input.at("/currentRequest/currentCommandEvidence/agentIsolation");
+                 assertTrue(isolation.isObject(), "Read-only approvals retain the actual protected policy before admission");
+                 assertFalse(isolation.path("admitted").asBoolean(true));
+                 assertEquals(0, creates + uploads + installs + opens + verifyGrants + verifySends);
+-                assertFalse(journal.events(task).stream().anyMatch(event -> Set.of("PREPARE_EXECUTING", "PREPARE_RESULT", "CANDIDATE").contains(event.type())));
++                if (isolationMissingHelperJourney) assertFalse(journal.events(task).stream().anyMatch(event -> Set.of("PREPARE_EXECUTING", "PREPARE_RESULT", "CANDIDATE").contains(event.type())));
+             } else
+                 assertTrue(input.at("/currentRequest/currentCommandEvidence").isMissingNode(), "Only this actual verify carries its consumer evidence");
+             var page = bodyPage(request, input, verification);
+@@ -557,6 +614,7 @@
+                 if (mode == VerificationMode.DENY) return verdict("DENY");
+                 if (mode == VerificationMode.CONFIGURATION_CHANGED) revision.set("e".repeat(64));
+             }
++            if (input.at("/currentRequest/operation").asText().equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) isolationVerdicts++;
+             return verdict("APPROVE");
+         }
+ 
+@@ -598,7 +656,16 @@
+         AiResponse decide(AiRequest request) throws Exception {
+             request.messages().stream().flatMap(m -> m.toolResult().stream()).reduce((a, b) -> b)
+                 .ifPresent(result -> {
+-                    if (mode.confirmedRefusal() && decisions == 4) {
++                    if (isolationRefusalJourney && (decisions == 4 || decisions == 6)) {
++                        assertTrue(result.error());
++                        assertTrue(result.text().contains("AGENT_ISOLATION_NOT_ADMITTED"));
++                        assertTrue(result.text().contains("additionalDiskDemands"));
++                        assertTrue(result.text().contains("67108864"));
++                        assertTrue(result.text().contains("1073741824"));
++                        assertTrue(result.text().contains("availableBytes"));
++                        assertTrue(result.text().contains("requiredBytes"));
++                        assertTrue(result.text().contains("reserveBytes"));
++                    } else if (mode.confirmedRefusal() && decisions == 4) {
+                         assertTrue(result.error());
+                         assertTrue(result.text().contains("WORKSPACE_HOST_INSUFFICIENT"));
+                         assertTrue(result.text().contains("availableBytes"));
+@@ -606,7 +673,7 @@
+                     } else assertFalse(result.error(), result.text());
+                 });
+             int turn = decisions++;
+-            if (mode.confirmedRefusal() && turn == 4) throw stop;
++            if (mode.confirmedRefusal() && turn == 4 || isolationRefusalJourney && turn == 6) throw stop;
+             String tool;
+             ObjectNode args;
+             if (turn == 0) {
+@@ -615,7 +682,7 @@
+             } else if (turn == 1) {
+                 tool = "identify";
+                 args = (ObjectNode) JSON.readTree("{\"components\":[{\"component\":\"api\",\"root\":\".\",\"technology\":\"Actual static HTML\",\"runtime\":\"Source observation\",\"resources\":\"No database required\",\"uncertainties\":\"Unverified candidate\",\"evidence\":[\"o1\"]}]}");
+-            } else if (turn == 2) {
++            } else if (turn == 2 || isolationRefusalJourney && turn == 4) {
+                 tool = "plan";
+                 args = (ObjectNode) JSON.readTree("{\"applicationId\":\"demo\",\"explanation\":\"Plan the read source\",\"components\":[{\"id\":\"api\",\"sourceRoot\":\".\",\"dependencies\":[],\"evidence\":[\"o1\"],\"backend\":\"PROCESS\",\"mode\":\"DAEMON\",\"entrypoint\":\"current.sh\",\"arguments\":[],\"workingDirectory\":\"\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10},\"ports\":[],\"resources\":[],\"configuration\":[],\"databases\":[],\"secretReferences\":[]}],\"applicationHealth\":{\"component\":\"api\",\"health\":{\"type\":\"HTTP\",\"url\":\"http://127.0.0.1:8080/\",\"status\":200,\"timeout\":10}}}");
+             } else if (mode.name().startsWith("BUILD_") && turn == 3) {
+@@ -629,13 +696,13 @@
+                 tool = "build";
+                 args = JSON.createObjectNode().put("component", "api").put("seconds", 60);
+             } else {
+-                assertEquals(mode.name().startsWith("BUILD_") ? 6 : 3, turn);
++                assertEquals(isolationRefusalJourney && turn == 5 ? 5 : mode.name().startsWith("BUILD_") ? 6 : 3, turn);
+                 tool = "remote_read";
+                 args = JSON.createObjectNode().put("component", "api").put("path", "index.html").put("offset", 0).put("limit", 1);
+             }
+             if (tool.equals("plan")) {
+                 ((ObjectNode) args.path("components").get(0)).putObject("workspace").put("mode", "AUTO")
+-                    .put("minimumBuildBytes", 0).put("preferredBuildBytes", mode == VerificationMode.BUILD_LARGE ? 536870912 : 134217728).put("explicitBytes", 0);
++                    .put("minimumBuildBytes", 0).put("preferredBuildBytes", mode == VerificationMode.BUILD_LARGE ? 536870912 : isolationRefusalJourney && turn == 4 ? 0 : 134217728).put("explicitBytes", 0);
+             }
+             if (Set.of("plan", "prepare_tools", "build").contains(tool)) {
+                 var assessment = args.putObject("assessment");
+@@ -653,6 +720,44 @@
+         }
+ 
+         OperationResult<CommandResult> transport(CommandRequest request) throws Exception {
++            if (request.script().startsWith("wtl_isolation='")) {
++                assertTrue(isolationRefusalJourney || isolationUnknownJourney);
++                var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++                try (var decoded = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.decode(request, layout)) {
++                    isolationSends++;
++                    assertTrue(isolationActions.add(decoded.action()));
++                    assertEquals(isolationSends, isolationGrants.size());
++                    var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(decoded.policy());
++                    var facts = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.reviewFacts(request, layout);
++                    long required = decoded.scope().components().stream().mapToLong(part -> Math.multiplyExact(2, part.workspaceBytes())).sum()
++                        + decoded.scope().additionalDiskDemands().stream().mapToLong(demand -> demand.requiredBytes()).sum();
++                    isolationRequirements.add(required);
++                    var body = JSON.createObjectNode().put("format", gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.FORMAT)
++                        .put("sourceVersion", probe.sourceVersion()).put("action", decoded.action().toString()).put("bindingSha256", decoded.bindingSha256())
++                        .put("policySha256", fixtureDigest(facts.get("trustedPolicy").toString())).put("scopeSha256", fixtureDigest(facts.get("acceptedScope").toString()))
++                        .put("mode", decoded.mode().name()).put("queryTask", task.id().toString())
++                        .put("status", isolationUnknownJourney ? "UNKNOWN" : "REFUSED").put("reason", isolationUnknownJourney ? "UNCONFIRMED" : "DISK_SPACE")
++                        .put("pathsChecked", decoded.scope().components().stream().flatMap(part -> part.paths().stream()).distinct().count())
++                        .put("unitsChecked", decoded.scope().components().size() * 2).put("portsChecked", decoded.scope().components().stream().flatMap(part -> part.ports().stream()).distinct().count());
++                    body.putArray("allocatedCandidates");
++                    body.putArray("filesystems").addObject().put("device", "7").put("availableBytes", 1073741824L).put("requiredBytes", required).put("reserveBytes", 1073741824L);
++                    body.putNull("memoryAvailableBytes").putNull("cpuCount").put("stable", false).putArray("protectedMetadata");
++                    String raw = body.toString();
++                    var actual = reply(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.FRAME + raw + "\n");
++                    probe.parse(decoded, actual);
++                    if (isolationUnknownJourney) assertThrows(SecurityException.class, () -> DeploymentAgentRemoteTools.confirmedIsolationRefusal(task, decoded, actual));
++                    else {
++                        isolationReceipts.put(decoded.action().toString(), raw);
++                        assertEquals(raw, DeploymentAgentRemoteTools.confirmedIsolationRefusal(task, decoded, actual).receipt());
++                        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentRemoteTools.confirmedIsolationRefusal(task, decoded,
++                            succeeded(new CommandResult(Optional.of(0), gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.FRAME + raw + "\n", "", true))));
++                        var foreign = body.deepCopy().put("action", UUID.randomUUID().toString());
++                        assertThrows(IllegalArgumentException.class, () -> DeploymentAgentRemoteTools.confirmedIsolationRefusal(task, decoded,
++                            reply(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.FRAME + foreign + "\n")));
++                    }
++                    return actual;
++                }
++            }
+             if (new String(request.stdin(), StandardCharsets.UTF_8).equals(DeploymentAgentHelperReadiness.script())) {
+                 readinessReads++;
+                 if (isolationMissingHelperJourney || readinessReads == 1 && (mode == VerificationMode.CAPACITY_AFTER_INSTALL || mode == VerificationMode.CAPACITY_INSTALL_UNKNOWN))
+@@ -750,6 +855,10 @@
+             }
+             throw new AssertionError("Unrequested controlled operation");
+         }
++    }
++
++    private static String fixtureDigest(String value) throws Exception {
++        return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+     }
+ 
+     @Override
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -6570,6 +6570,8 @@
+         }
+         assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown238") || selectedMode == Mode.AGENT,
+             "Retained UNKNOWN isolation is an Agent-only acceptance policy");
++        assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown280") || Boolean.getBoolean("managed.live.isolatedUnknown238"),
++            "The additional retained UNKNOWN must keep the original protection set");
+         var isolation = selectedMode == Mode.AGENT ? retainedUnknownIsolation(project, id, webPort) : null;
+         Map<String, String> requirements = selectedMode == Mode.AGENT ? liveAgentRequirements(project, id, host, webPort) : Map.of();
+         Path source = copyFixture(project);
+@@ -6815,6 +6817,17 @@
+             Map.of("backendOwner", "3ebea9b3ba5ccef97fb19ffc898b73d43e57c57e02fb8886092f3544ed3059e2",
+                 "backendRelease", "39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597"),
+             Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 48936)));
++        var protectedApplications = new java.util.ArrayList<>(List.of(protectedOriginal));
++        if (Boolean.getBoolean("managed.live.isolatedUnknown280")) {
++            String retainedApplication = "wtl-agent-file-transfer-ufjfoeitg";
++            protectedApplications.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.ProtectedApplication(
++                java.util.UUID.fromString("4255f545-7acb-4b47-a331-45c977d086dd"), retainedApplication, oldLayout,
++                Set.of("wtl-agent-file-transfer-ufjfoeitg-backend", "wtl-agent-file-transfer-ufjfoeitg-web"), Set.of(),
++                Map.of("accepted-plan", "8913cd1ff71ca8f2885388c7bc4a5e1c339cb3320b6b9acc360cabe6be4d6da2",
++                    "source", "296967551e9c7a93b61165be8d03198192c94f4b1544f41e5d16ae75e8672fd3"),
++                Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49280),
++                    new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49281))));
++        }
+         var ports = new java.util.HashSet<gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port>();
+         ports.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", webPort));
+         if (project.equals("file-transfer")) {
+@@ -6823,7 +6836,7 @@
+             ports.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", internalPort));
+         }
+         var policy = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy
+-            .trusted(run, application, layout, List.of(protectedOriginal)).requiringPorts(Set.copyOf(ports))
++            .trusted(run, application, layout, protectedApplications).requiringPorts(Set.copyOf(ports))
+             .minimumResources((2048L + 256) * 1024 * 1024, 1);
+         System.out.println("AI_LIVE_ISOLATION_POLICY_BOUND run=" + run + " application=" + application
+             + " retainedTask=" + protectedOriginal.task() + " remoteAdmissionProven=false"
