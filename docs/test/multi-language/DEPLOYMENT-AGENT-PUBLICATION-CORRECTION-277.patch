@@ -1,0 +1,1391 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -23,7 +23,7 @@
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1",
+         "deployment.agent.toolchain.controller.install.v1", "deployment.agent.publication-recovery.readiness.v1",
+         "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
+-        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1", "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1");
++        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1", "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1", "deployment.agent.publication-correction.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+     private DeploymentCommandEvidence() {
+@@ -48,6 +48,7 @@
+             && !operation.equals("deployment.agent.publication-recovery-preflight.v2")
+             && !operation.equals("deployment.agent.publication-contract-diagnostic.v1")
+             && !operation.equals("deployment.agent.publication-contract-diagnostic.followup.v1")
++            && !operation.equals("deployment.agent.publication-correction.v1")
+             && request.script().contains(layout.helperPath());
+         String invocation = installedHelper ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout) : request.script();
+         if (installedHelper) {
+@@ -68,6 +69,14 @@
+         facts.put("businessRevision", intent.revision());
+         facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
+         facts.put("exactAction", intent.exactAction());
++        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.OPERATION)) {
++            if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Publication correction server identity missing");
++            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.reviewFacts(request, layout);
++            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram
++                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
++            if (!intent.semantics().orElseThrow().targets().equals(required)) throw new IllegalArgumentException("Publication correction resource identity changed");
++            facts.put("publicationCorrection", program);
++        }
+         if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram.OPERATION)) {
+             if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Contract diagnostic followup server identity missing");
+             var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram.reviewFacts(request, layout);
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -37,7 +37,7 @@
+         "deployment.model.command.v1", "deployment.model.command.status.v1", "deployment.agent.preparation.absence.v1", "deployment.agent.preparation.partial-observation.v1",
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1",
+         "deployment.agent.publication-recovery.readiness.v1", "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
+-        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1", "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1",
++        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1", "deployment.agent.publication-contract-diagnostic.v1", "deployment.agent.publication-contract-diagnostic.followup.v1", "deployment.agent.publication-correction.v1",
+         "deployment.agent.toolchain.controller.readiness.v1", "deployment.agent.toolchain.controller.install.v1", "deployment.agent.toolchain.controller.prepare.v1", "deployment.agent.toolchain.controller.bind.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java
+@@ -318,6 +318,7 @@
+     public static State read(List<Event> events, UUID task) throws Exception {
+         prefix(events);
+         DeploymentAgentPublicationContractDiagnosticFollowup.rejectHistoricalReuse(events,0,events.size());
++        DeploymentAgentPublicationCorrection.rejectHistoricalReuse(events,0,events.size());
+         var begins = events.stream().filter(e -> e.type().equals(PLAN)).toList();
+         require(begins.size() == 1, "Compensation plan is absent or duplicated");
+         var begin = begins.getFirst();
+@@ -370,6 +371,7 @@
+         var continuationIntents = new HashSet<Long>();
+         var contractPriors = new HashSet<Long>();
+         var followupPriors=new HashSet<Long>();
++        var correctionPriors=new HashSet<String>();
+         int tailPosition = 0;
+         while (cursor < events.size()) {
+             var event = events.get(cursor);
+@@ -418,6 +420,16 @@
+                 int end=DeploymentAgentPublicationContinuation.validateBlock(events,cursor,eligible);
+                 DeploymentAgentPublicationContractDiagnostic.rejectHistoricalReuse(events,cursor,end);cursor=end;
+                 lastAction=events.get(cursor-1).id(); // Even an interrupted attempt requires a newer independently reviewed whole-graph observation.
++                continue;
++            }
++            if(event.type().equals(DeploymentAgentPublicationCorrection.EVENT)) {
++                require(pending!=null&&unknownRecorded,"Correction is outside its original UNKNOWN pending intent");
++                var state=new State(plan,completed,Optional.of(pending),lastAction,Optional.empty());
++                var eligible=DeploymentAgentPublicationCorrection.eligibility(state,events.subList(0,cursor)).orElseThrow(
++                    ()->new SQLException("Correction lacks a complete OBSERVED three-contract followup and newer unmet-goal observation"));
++                require(correctionPriors.add(pending.event()+":"+eligible.binding().followup().diagnostic().prior().requestEvent()),"Correction already attempted for this original pending/continuation pair");
++                cursor=DeploymentAgentPublicationCorrection.validateBlock(events,cursor,eligible);
++                lastAction=events.get(cursor-1).id();
+                 continue;
+             }
+             if(event.type().equals(DeploymentAgentPublicationContractDiagnosticFollowup.EVENT)) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrection.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrection.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrection.java
+@@ -0,0 +1,286 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.*;
++
++import java.sql.SQLException;
++import java.util.*;
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.*;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Event;
++
++/** One separately reviewed current-state correction per original pending/continuation pair; no ACK or settlement authority. */
++public final class DeploymentAgentPublicationCorrection {
++    public static final String EVENT = "PUBLICATION_CORRECTION";
++    private static final Set<String> COMMON = Set.of("formatVersion", "kind", "task", "plan", "pendingIntent", "pendingIntentSha256", "prior", "continuationRequest", "action", "history");
++    private final TaskContext task;
++    private final DeploymentAgentActionLog journal;
++    private final Eligibility eligible;
++    private final UUID action;
++
++    private DeploymentAgentPublicationCorrection(TaskContext task, DeploymentAgentActionLog journal,
++        Eligibility eligible, UUID action) {
++        this.task=task;this.journal=journal;this.eligible=eligible;this.action=action;
++    }
++
++    public record Eligibility(DeploymentAgentPublicationCompensation.DiagnosticEligibility original,
++        DeploymentAgentPublicationCorrectionProgram.Binding binding) { }
++
++    /** Only a complete immutable OBSERVED three-contract followup and a newer unmet-goal graph permit correction. */
++    public static Optional<Eligibility> eligibility(DeploymentAgentPublicationCompensation.State state,List<Event> events)throws Exception {
++        var selected=DeploymentAgentPublicationCompensation.diagnosticEligibility(state,events);
++        if(selected.isEmpty())return Optional.empty();var original=selected.orElseThrow();
++        var requests=new ArrayList<Event>();
++        for(var event:events)if(event.type().equals(DeploymentAgentPublicationContractDiagnosticFollowup.EVENT)) {
++            var node=parse(event.detail(),16384);
++            if(string(node,"kind").equals("REQUEST")&&number(node,"pendingIntent")==original.pending().event())requests.add(event);
++        }
++        if(requests.isEmpty())return Optional.empty();require(requests.size()==1,"Original contract followup request is duplicated");
++        var first=requests.getFirst();int index=events.indexOf(first);int end=index+1;
++        while(end<events.size()&&events.get(end).type().equals(DeploymentAgentPublicationContractDiagnosticFollowup.EVENT))end++;
++        var through=events.subList(0,end);
++        // One complete public read validates the immutable old block and its nested history before restoring its typed request.
++        var verified=DeploymentAgentPublicationCompensation.read(through,state.plan().task());
++        require(verified.pending().equals(Optional.of(original.pending()))&&verified.plan().equals(original.plan())&&verified.verified().isEmpty(),"Original followup pending binding changed");
++        var block=events.subList(index,end);
++        if(!string(parse(block.getLast().detail(),16384),"kind").equals("END")||original.observationEnd()<=block.getLast().id())return Optional.empty();
++        Event result=null;var receipt=new StringBuilder();
++        for(var event:block){var node=parse(event.detail(),16384);String kind=string(node,"kind");
++            if(kind.equals("RESULT")){require(result==null,"Original followup result duplicated");result=event;}
++            if(kind.equals("RECEIPT"))receipt.append(string(node,"text"));
++        }
++        if(result==null)return Optional.empty();var resultNode=parse(result.detail(),16384);
++        if(!resultNode.path("fixedReceiptVerified").asBoolean(false))return Optional.empty();
++        require(string(resultNode,"observedOutcome").equals("SUCCEEDED")&&hash(receipt.toString()).equals(digest(resultNode,"receipt")),"Original followup receipt changed");
++        var json=new com.fasterxml.jackson.databind.ObjectMapper();var firstNode=parse(first.detail(),16384);
++        var priorBinding=json.treeToValue(firstNode.path("binding"),DeploymentAgentPublicationContractDiagnosticFollowupProgram.Binding.class);
++        require(json.readTree(json.writeValueAsBytes(priorBinding)).equals(firstNode.path("binding")),"Original followup typed request changed");
++        var program=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout(through,state.plan()));
++        UUID action=uuid(firstNode,"action");
++        try(var request=program.request(priorBinding,action)) {
++            var safe=json.readTree(program.validateReceipt(request,receipt.toString()).canonicalJson());
++            if(!string(safe,"status").equals("OBSERVED")||!string(safe,"phase").equals("COMPLETE")||!string(safe,"reason").equals("MATCH")||!safe.path("exitCode").isInt()||safe.path("exitCode").intValue()!=0)return Optional.empty();
++            require(safe.path("checks").size()==3,"Complete native contract checks are missing");
++            for(var check:safe.path("checks"))if(!string(check,"status").equals("PASS")||!string(check,"reason").equals("MATCH")||!check.path("exitCode").isInt()||check.path("exitCode").intValue()!=0)return Optional.empty();
++        }
++        String sourceVersion=digest(parse(first.detail(),16384),"sourceVersion");require(sourceVersion.equals(program.sourceVersion()),"Original followup source version changed");
++        var prior=new DeploymentAgentPublicationCorrectionProgram.PriorFollowup(action,first.id(),block.getLast().id(),hash(first.detail()),hash(receipt.toString()),sourceVersion);
++        return Optional.of(new Eligibility(original,new DeploymentAgentPublicationCorrectionProgram.Binding(priorBinding,prior,original.observationEnd(),original.observationSha256())));
++    }
++
++    /** REQUEST consumes the original pending/continuation pair, independently of later versions, followups or observations. */
++    public static boolean attempted(List<Event> events,Eligibility eligible)throws Exception {
++        for(var event:events)if(event.type().equals(EVENT)) {
++            var node=parsed(event.detail());
++            if(number(node,"pendingIntent")==eligible.original().pending().event()
++                &&number(node,"continuationRequest")==eligible.binding().followup().diagnostic().prior().requestEvent())return true;
++        }
++        return false;
++    }
++
++    public static DeploymentAgentPublicationCorrection open(TaskContext task, DeploymentAgentActionLog journal,
++        Eligibility eligible,
++        DeploymentAgentPublicationCorrectionProgram.Request request, ActionIntent intent) throws Exception {
++        var events=journal.events(task);
++        require(task.id().equals(eligible.original().plan().task())&&!attempted(events,eligible),"Publication correction already attempted or foreign task");
++        require(eligibility(DeploymentAgentPublicationCompensation.read(events,task.id()),events).filter(eligible::equals).isPresent(),"Original complete followup/current-state evidence changed");
++        var value=new DeploymentAgentPublicationCorrection(task,journal,eligible,request.action());
++        var node=value.frame("REQUEST").put("operation",DeploymentAgentPublicationCorrectionProgram.OPERATION)
++            .put("reviewRevision",eligible.original().plan().reviewRevision()).put("sourceVersion",new DeploymentAgentPublicationCorrectionProgram(layout(events,eligible.original().plan())).sourceVersion())
++            .put("request",DeploymentAgentPublicationRecoveryInstallation.requestDigest(request.command()))
++            .put("exactAction",hash(intent.exactAction())).put("targets",DeploymentAgentPublicationRecoveryInstallation.targetsDigest(request.resourceTargets()))
++            .put("observationEnd",eligible.original().observationEnd()).put("observation",eligible.original().observationSha256()).put("prefixEnd",events.getLast().id());
++        require(intent.revision().equals(eligible.original().plan().sha256())&&intent.serverIds().equals(List.of(eligible.original().plan().server()))
++            &&intent.semantics().orElseThrow().operation().equals(DeploymentAgentPublicationCorrectionProgram.OPERATION)
++            &&intent.semantics().orElseThrow().targets().equals(request.resourceTargets()),"Publication correction action binding changed");
++        value.append(node);return value;
++    }
++
++    public void reviewed(DeploymentReviewDecision decision,String evidence) throws Exception {
++        append(frame("REVIEW").put("decision",decision.decision()).put("confirmation",decision.requiresUserConfirmation())
++            .put("reason",hash(decision.reason())).put("evidence",evidence).put("rememberAuthorization",false));
++    }
++    public void granted(ApprovalGrant grant) throws Exception {append(frame("GRANT").put("grant",grant.id().toString()));}
++    public void dispatch() throws Exception {append(frame("DISPATCH"));}
++
++    public void verifyCurrent() throws Exception {
++        var events=List.copyOf(journal.events(task));var state=DeploymentAgentPublicationCompensation.read(events,task.id());
++        require(events.equals(journal.events(task)),"Correction history changed during verification");
++        verifyCurrent(state,events);
++        require(events.equals(journal.events(task)),"Correction history changed during verification");
++    }
++
++    /** Only the current producer boundary may supply its freshly validated immutable snapshot; never retained across callbacks. */
++    void verifyCurrent(DeploymentAgentPublicationCompensation.State state,List<Event> events) throws Exception {
++        int first=0;while(first<events.size()&&!(events.get(first).type().equals(EVENT)&&events.get(first).action().equals(action.toString())))first++;
++        require(first<events.size(),"Publication correction request disappeared");var request=parsed(events.get(first).detail());
++        // read() has already rebuilt the entire strict block and immutable old codec. Compare this instance to that validated REQUEST.
++        require(state.plan().equals(eligible.original().plan())&&state.pending().equals(Optional.of(eligible.original().pending()))
++            &&uuid(request,"action").equals(action)&&uuid(request,"task").equals(task.id())
++            &&digest(request,"plan").equals(eligible.original().plan().sha256())
++            &&number(request,"pendingIntent")==eligible.original().pending().event()
++            &&digest(request,"pendingIntentSha256").equals(hash(eligible.original().pending().frame()))
++            &&number(request,"continuationRequest")==eligible.binding().followup().diagnostic().prior().requestEvent()
++            &&digest(request,"prior").equals(hash(binding(binding(eligible)).toString()))
++            &&number(request,"observationEnd")==eligible.original().observationEnd()
++            &&digest(request,"observation").equals(eligible.original().observationSha256())
++            &&DeploymentAgentPublicationObservation.readLatest(events,task.id()).endEvent()==eligible.original().observationEnd(),
++            "Publication correction original identity, fingerprints, pending intent or observation changed");
++    }
++
++    public void result(OperationResult<CommandResult> actual,DeploymentAgentPublicationCorrectionProgram.Receipt receipt) throws Exception {
++        String safe=receipt==null?null:receipt.canonicalJson();
++        require(safe==null||safe.getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=65536,"Publication correction safe receipt exceeds bound");
++        if(safe!=null) {
++            var program=new DeploymentAgentPublicationCorrectionProgram(layout(journal.events(task),eligible.original().plan()));
++            try(var expected=program.request(binding(eligible),action)) {
++                require(program.parse(expected,actual).canonicalJson().equals(safe),"Publication correction receipt does not match its actual transport");
++            }
++        }
++        int count=safe==null?0:(safe.length()+2047)/2048;
++        append(frame("RESULT").put("observedOutcome",actual.outcome().name()).put("actual",DeploymentAgentPublicationRecoveryInstallation.resultDigest(actual))
++            .put("fixedReceiptVerified",receipt!=null).put("receipt",safe==null?"none":hash(safe)).put("parts",count));
++        for(int part=0;part<count;part++)append(frame("RECEIPT").put("index",part).put("text",safe.substring(part*2048,Math.min(safe.length(),(part+1)*2048))));
++        append(frame("END"));
++    }
++
++    /** A missing review/grant/send/result is retained; no request is automatically repeated. */
++    public void retainInterrupted() throws Exception {
++        var block=journal.events(task).stream().filter(e->e.type().equals(EVENT)&&e.action().equals(action.toString())).toList();
++        if(block.stream().anyMatch(e->{try{return Set.of("RESULT","NOT_SENT","INTERRUPTED","END").contains(string(parsed(e.detail()),"kind"));}catch(Exception invalid){throw new IllegalStateException(invalid);}}))return;
++        boolean dispatched=block.stream().anyMatch(e->{try{return string(parsed(e.detail()),"kind").equals("DISPATCH");}catch(Exception invalid){throw new IllegalStateException(invalid);}});
++        append(frame(dispatched?"INTERRUPTED":"NOT_SENT"));
++    }
++
++    private ObjectNode frame(String kind) {return object().put("formatVersion",1).put("kind",kind).put("task",task.id().toString())
++        .put("plan",eligible.original().plan().sha256()).put("pendingIntent",eligible.original().pending().event()).put("pendingIntentSha256",hash(eligible.original().pending().frame())).put("prior",hash(binding(binding(eligible)).toString())).put("continuationRequest",eligible.binding().followup().diagnostic().prior().requestEvent()).put("action",action.toString());}
++    private void append(ObjectNode node) throws Exception {
++        var events=journal.events(task);node.put("history",DeploymentAgentPublicationObservation.prefixSha256(events));String text=encoded(node);
++        var proposed=new ArrayList<Event>(events);proposed.add(new Event(events.getLast().id()+1,EVENT,action.toString(),text));
++        DeploymentAgentPublicationCompensation.read(proposed,task.id());
++        require(events.equals(journal.events(task)),"Publication correction history changed before append");journal.event(task,EVENT,action.toString(),text);
++    }
++
++    /** Validates this contiguous correction block; the full binding is rebuilt from its immutable prefix, never trusted from a projection. */
++    static int validateBlock(List<Event> events,int start,Eligibility eligible) throws Exception {
++        var plan=eligible.original().plan();var pending=eligible.original().pending();var first=events.get(start);var request=parsed(first.detail());
++        fields(request,extra("operation","reviewRevision","sourceVersion","request","exactAction","targets","observationEnd","observation","prefixEnd"));
++        UUID action=uuid(request,"action");
++        require(string(request,"kind").equals("REQUEST")&&string(request,"operation").equals(DeploymentAgentPublicationCorrectionProgram.OPERATION)
++            &&string(request,"reviewRevision").equals(plan.reviewRevision())&&number(request,"observationEnd")==eligible.original().observationEnd()
++            &&digest(request,"observation").equals(eligible.original().observationSha256())&&number(request,"prefixEnd")==events.get(start-1).id(),"Publication correction request is not bound to the original latest observation");
++        var before=events.subList(0,start);require(!attempted(before,eligible),"Publication correction already attempted");rejectReuse(before,action,null);
++        var program=new DeploymentAgentPublicationCorrectionProgram(layout(before,plan));
++        try(var expected=program.request(binding(eligible),action)) {
++            require(digest(request,"prior").equals(hash(binding(expected.binding()).toString()))&&digest(request,"sourceVersion").equals(program.sourceVersion())
++                &&digest(request,"request").equals(DeploymentAgentPublicationRecoveryInstallation.requestDigest(expected.command()))
++                &&digest(request,"targets").equals(DeploymentAgentPublicationRecoveryInstallation.targetsDigest(expected.resourceTargets()))
++                &&digest(request,"exactAction").equals(hash(RemoteActions.command(new ServerId(plan.server()),plan.sha256(),expected.command()).exactAction())),"Publication correction source, version, target or request changed");
++            String phase="REQUEST",decision=null,receiptSha=null;int parts=0,index=0;StringBuilder receipt=new StringBuilder();boolean valid=false;
++            int cursor=start;
++            for(;cursor<events.size()&&events.get(cursor).type().equals(EVENT);cursor++) {
++                var event=events.get(cursor);var node=parsed(event.detail());
++                require(event.action().equals(action.toString())&&uuid(node,"action").equals(action)&&uuid(node,"task").equals(plan.task())
++                    &&digest(node,"plan").equals(plan.sha256())&&number(node,"pendingIntent")==pending.event()
++                    &&digest(node,"pendingIntentSha256").equals(hash(pending.frame()))
++                    &&digest(node,"prior").equals(hash(binding(binding(eligible)).toString()))
++                    &&number(node,"continuationRequest")==eligible.binding().followup().diagnostic().prior().requestEvent()
++                    &&digest(node,"history").equals(DeploymentAgentPublicationObservation.prefixSha256(events.subList(0,cursor))),"Publication correction identity or history changed");
++                String kind=string(node,"kind");
++                if(cursor==start){require(kind.equals("REQUEST"),"Publication correction request missing");continue;}
++                switch(kind) {
++                    case "REVIEW" -> {
++                        fields(node,extra("decision","confirmation","reason","evidence","rememberAuthorization"));
++                        require(phase.equals("REQUEST")&&Set.of("APPROVE","DENY").contains(string(node,"decision"))
++                            &&node.path("confirmation").isBoolean()&&node.path("rememberAuthorization").isBoolean()&&!node.path("rememberAuthorization").booleanValue(),"Publication correction review is duplicated or invalid");
++                        digest(node,"reason");digest(node,"evidence");decision=string(node,"decision");phase="REVIEW";
++                    }
++                    case "GRANT" -> {
++                        fields(node,extra("grant"));require(phase.equals("REVIEW")&&"APPROVE".equals(decision),"Publication correction grant lacks independent approval");
++                        rejectReuse(events.subList(0,cursor),null,uuid(node,"grant"));phase="GRANT";
++                    }
++                    case "DISPATCH" -> {fields(node,COMMON);require(phase.equals("GRANT"),"Publication correction dispatch lacks a fresh grant");phase="DISPATCH";}
++                    case "NOT_SENT" -> {fields(node,COMMON);require(Set.of("REQUEST","REVIEW","GRANT").contains(phase),"Publication correction NOT_SENT contradicts dispatch");phase="TERMINAL";}
++                    case "INTERRUPTED" -> {fields(node,COMMON);require(phase.equals("DISPATCH"),"Publication correction UNKNOWN has no dispatch");phase="TERMINAL";}
++                    case "RESULT" -> {
++                        fields(node,extra("observedOutcome","actual","fixedReceiptVerified","receipt","parts"));
++                        require(phase.equals("DISPATCH")&&Set.of("SUCCEEDED","FAILED","CANCELLED","UNKNOWN").contains(string(node,"observedOutcome"))&&node.path("fixedReceiptVerified").isBoolean(),"Publication correction result is unbound or duplicated");
++                        digest(node,"actual");valid=node.path("fixedReceiptVerified").booleanValue();parts=nonnegative(node,"parts");receiptSha=string(node,"receipt");
++                        require(parts<=32&&(valid?parts>0&&string(node,"observedOutcome").equals("SUCCEEDED")&&receiptSha.matches("[0-9a-f]{64}"):parts==0&&receiptSha.equals("none")),"Publication correction receipt classification changed");phase="RESULT";
++                    }
++                    case "RECEIPT" -> {
++                        fields(node,extra("index","text"));require(phase.equals("RESULT")&&valid&&nonnegative(node,"index")==index&&index<parts,"Publication correction safe receipt order changed");
++                        String text=string(node,"text");require(!text.isEmpty()&&text.length()<=2048,"Publication correction safe receipt chunk exceeds bound");receipt.append(text);index++;
++                    }
++                    case "END" -> {
++                        fields(node,COMMON);require(phase.equals("RESULT")&&index==parts,"Publication correction safe receipt is incomplete");
++                        if(valid){require(hash(receipt.toString()).equals(receiptSha),"Publication correction safe receipt digest changed");program.validateReceipt(expected,receipt.toString());}
++                        phase="TERMINAL";
++                    }
++                    default -> throw new SQLException("Unexpected correction frame kind");
++                }
++            }
++            return cursor;
++        }
++    }
++
++    public static DeploymentAgentPublicationCorrectionProgram.Binding binding(Eligibility eligible){return eligible.binding();}
++    private static ObjectNode binding(DeploymentAgentPublicationCorrectionProgram.Binding b) {
++        // Text encoding is canonicalized by the public program codec; no LongNode/IntNode structural comparison is used.
++        return new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(b);
++    }
++
++    private static DeploymentRemoteLayout layout(List<Event> events,DeploymentAgentPublicationCompensation.Plan plan) throws Exception {
++        var selected=events.stream().filter(e->e.type().equals("REMOTE_LAYOUT")).toList();require(selected.size()==1,"Publication correction original layout is missing or duplicated");
++        var event=selected.getFirst();var node=parse(event.detail(),16384);fields(node,Set.of("formatVersion","task","server","layout","layoutSha256"));
++        require(node.path("formatVersion").isInt()&&node.path("formatVersion").intValue()==1,"Original layout frame version changed");
++        var layout=DeploymentRemoteLayout.decode(node.path("layout").toString());
++        require(event.action().equals(plan.task().toString())&&uuid(node,"task").equals(plan.task())&&string(node,"server").equals(plan.server())
++            &&digest(node,"layoutSha256").equals(layout.digest())&&string(parse(plan.header()),"layout").equals(layout.digest()),"Publication correction original layout changed");return layout;
++    }
++    private static void rejectReuse(List<Event> events,UUID action,UUID grant)throws Exception {
++        for(var event:events) {
++            if(action!=null)require(!event.action().equals(action.toString()),"Publication correction action ID was reused");
++            JsonNode node;try{node=parse(event.detail(),16384);}catch(SQLException nonObject){continue;}
++            if(action!=null)for(String key:List.of("action","actionId"))if(node.path(key).isTextual())require(!node.path(key).textValue().equals(action.toString()),"Publication correction action ID was reused");
++            if(grant!=null)for(String key:List.of("grant","grantId"))if(node.path(key).isTextual())require(!node.path(key).textValue().equals(grant.toString()),"Publication correction grant was reused");
++        }
++    }
++    /** A later legacy action must not reuse an action or grant introduced by this protocol. */
++    static void rejectHistoricalReuse(List<Event> events,int start,int end)throws Exception {
++        int first=0;while(first<events.size()&&!events.get(first).type().equals(EVENT))first++;
++        if(first==events.size())return;
++        for(int i=Math.max(start,first+1);i<end;i++) {
++            var event=events.get(i);if(event.type().equals(EVENT))continue;var before=events.subList(0,i);
++            for(var prior:before)if(prior.type().equals(EVENT))require(!prior.action().equals(event.action()),"Publication correction action reused by a later event");
++            JsonNode node;try{node=parse(event.detail(),16384);}catch(SQLException notObject){continue;}
++            for(String field:List.of("action","actionId"))if(node.path(field).isTextual())rejectPriorCorrection(before,uuid(node,field),null);
++            for(String field:List.of("grant","grantId"))if(node.path(field).isTextual())rejectPriorCorrection(before,null,uuid(node,field));
++        }
++    }
++    static void rejectPriorCorrection(List<Event> events,UUID action,UUID grant)throws Exception {
++        for(var event:events)if(event.type().equals(EVENT)) {
++            var node=parsed(event.detail());
++            if(action!=null)require(!uuid(node,"action").equals(action),"Publication correction action ID was reused by a later action");
++            if(grant!=null&&node.path("grant").isTextual())require(!uuid(node,"grant").equals(grant),"Publication correction grant was reused by a later action");
++        }
++    }
++    private static Set<String> extra(String...names){var fields=new HashSet<String>(COMMON);fields.addAll(List.of(names));return Set.copyOf(fields);}
++    private static ObjectNode parsed(String raw)throws SQLException {require(raw.length()<=4096,"Publication correction frame exceeds character bound");var node=parse(raw,16384);require(node.path("formatVersion").isInt()&&node.path("formatVersion").intValue()==1,"Unsupported publication correction journal version");return node;}
++    private static String encoded(ObjectNode node)throws SQLException {String raw=encode(node,16384);parsed(raw);return raw;}
++    private static String digest(JsonNode node,String key)throws SQLException {String value=string(node,key);require(value.matches("[0-9a-f]{64}"),"Publication correction digest required");return value;}
++    private static UUID uuid(JsonNode node,String key)throws SQLException {String value=string(node,key);try{var id=UUID.fromString(value);require(id.toString().equals(value),"Canonical correction UUID required");return id;}catch(IllegalArgumentException invalid){throw new SQLException("Publication correction UUID required",invalid);}}
++    private static long number(JsonNode node,String key)throws SQLException {require(node.path(key).isIntegralNumber()&&node.path(key).canConvertToLong()&&node.path(key).longValue()>0,"Publication correction positive event required");return node.path(key).longValue();}
++    private static int nonnegative(JsonNode node,String key)throws SQLException {require(node.path(key).isInt()&&node.path(key).intValue()>=0,"Publication correction nonnegative counter required");return node.path(key).intValue();}
++    private static String hash(String value){return DeploymentAgentInputs.hash(value);}
++    private static void require(boolean value,String message)throws SQLException {if(!value)throw new SQLException(message);}
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrectionProgram.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrectionProgram.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrectionProgram.java
+@@ -0,0 +1,113 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++
++/** A separately reviewed correction action with a complete fixed source. Historical sources and results stay immutable. */
++public final class DeploymentAgentPublicationCorrectionProgram {
++    public static final String OPERATION="deployment.agent.publication-correction.v1";
++    public static final String FORMAT="WTL_AGENT_PUBLICATION_CORRECTION_1";
++    private static final String ROOT="/gold/debug/windowstolinux/mod/deployment/";
++    public static final String FRAME="PUBLICATION_CORRECTION=";
++    private static final Duration TIMEOUT=Duration.ofSeconds(180);
++    private static final long OUTPUT_LIMIT=16384;
++    private static final Set<String> CHECKS=Set.of("ENVIRONMENT","ARGUMENTS","ROOT_IDENTITY","LOCKS","JOB","CANDIDATE","FINGERPRINTS","BUILD","SNAPSHOTS","MAINTENANCE","CURRENT","NATIVE_CONTRACT","FULL_PARAMETER_VALIDATION","MANAGED_DATA_LINKS","UNIT_RENDER_MATCH","ROLLBACK","POSTCONDITIONS","COMPLETE","INTERNAL","LIMIT");
++    private static final ObjectMapper JSON=com.fasterxml.jackson.databind.json.JsonMapper.builder().enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).build();
++    private final DeploymentRemoteLayout layout;
++    private final String source;
++    public record PriorFollowup(UUID action,long requestEvent,long endEvent,String requestDetailSha256,String receiptSha256,String sourceVersion){
++        public PriorFollowup{Objects.requireNonNull(action);if(requestEvent<=0||endEvent<=requestEvent)throw invalid();digest(requestDetailSha256);digest(receiptSha256);digest(sourceVersion);}}
++    public record Binding(DeploymentAgentPublicationContractDiagnosticFollowupProgram.Binding followup,PriorFollowup prior,long observationEnd,String observationSha256){
++        public Binding{Objects.requireNonNull(followup);Objects.requireNonNull(prior);digest(observationSha256);
++            var d=followup.diagnostic();var c=d.continuation();
++            if(prior.requestEvent()<=followup.observationEnd()||observationEnd<=prior.endEvent()
++                ||Set.of(c.original().pendingAction(),c.preflight().action(),d.prior().action(),followup.prior().action()).contains(prior.action()))throw invalid();}}
++    public record Request(CommandRequest command,Set<ActionTarget> resourceTargets,Binding binding,UUID action)implements AutoCloseable{
++        public Request{Objects.requireNonNull(command);resourceTargets=Set.copyOf(resourceTargets);Objects.requireNonNull(binding);Objects.requireNonNull(action);}
++        @Override public void close(){command.close();}}
++    public record Receipt(String canonicalJson){public Receipt{Objects.requireNonNull(canonicalJson);}}
++    public DeploymentAgentPublicationCorrectionProgram(DeploymentRemoteLayout layout){
++        this.layout=Objects.requireNonNull(layout);
++        for(String root:List.of(layout.paths().helperDirectory(),layout.paths().applicationsRoot(),layout.paths().stateRoot(),layout.paths().configurationRoot(),layout.paths().dataRoot()))if(!root.matches("/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+")||root.contains(".."))throw invalid();
++        String original=DeploymentManagedHelperBundle.renderPublicationRecovery(layout);
++        String suffix="\n"+DeploymentRemoteLayoutTemplate.render(resource("service/agent/recovery/publication-recovery-guard.sh"),layout);
++        int cut=original.length()-suffix.length();
++        if(cut<0||!original.endsWith(suffix)||original.indexOf(suffix)!=cut)throw invalid();
++        String base=original.substring(0,cut);
++        for(String name:List.of("20-native-targets.sh","21-native-operations.sh"))base+=DeploymentRemoteLayoutTemplate.render(resource("linux/helper/database/"+name),layout);
++        String bash=base+"\n"+DeploymentRemoteLayoutTemplate.render(resource("service/agent/recovery/publication-continuation-guard.sh"),layout);
++        String template=resource("service/agent/recovery/publication-correction.py"),marker="# @WTL_CORRECTION_BASH@";
++        if(template.indexOf(marker)<0||template.indexOf(marker)!=template.lastIndexOf(marker))throw invalid();
++        source=template.replace(marker,"BASH_SOURCE = "+JSON.valueToTree(bash).toString());
++        if(source.getBytes(StandardCharsets.UTF_8).length>524288)throw invalid();
++    }
++    public String source(){return source;}
++    /** Product-bound expected stdin identity, not an independent measurement of executed remote code. */
++    public String sourceVersion(){return sha(source.getBytes(StandardCharsets.UTF_8));}
++    public Request request(Binding binding,UUID action){
++        Objects.requireNonNull(binding);Objects.requireNonNull(action);
++        var f=binding.followup();var d=f.diagnostic();var c=d.continuation();var o=c.original();
++        var priorProgram=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);
++        if(!o.layoutSha256().equals(layout.digest())||!binding.prior().sourceVersion().equals(priorProgram.sourceVersion())
++            ||Set.of(o.pendingAction(),c.preflight().action(),d.prior().action(),f.prior().action(),binding.prior().action()).contains(action))throw invalid();
++        try(var priorRequest=priorProgram.request(f,binding.prior().action())){ /* Validation only; never sent. */ }
++        var node=JSON.createObjectNode();node.set("binding",bindingNode(binding));node.put("action",action.toString()).put("sourceVersion",sourceVersion());String argument=node.toString();if(argument.getBytes(StandardCharsets.UTF_8).length>12000)throw invalid();
++        return new Request(new CommandRequest(script(argument,node),source.getBytes(StandardCharsets.UTF_8),TIMEOUT,OUTPUT_LIMIT),targets(binding),binding,action);
++    }
++    private String script(String argument,JsonNode envelope){
++        var refused=JSON.createObjectNode().put("format",FORMAT).put("sourceVersion",sourceVersion()).put("action",text(envelope,"action"));refused.set("binding",envelope.path("binding"));refused.put("status","REFUSED").put("check","ENVIRONMENT").put("mutationStarted",false);for(String k:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))refused.putNull(k);
++        String fail="builtin printf '%s\\n' "+quote(FRAME+refused)+"; exit 0";
++        return "wtl_argument="+quote(argument)+"\nset -fu\nLC_ALL=C\nbuiltin export LC_ALL\nif [[ ${BASH_ENV+x} != x || ${ENV+x} != x || \"$BASH_ENV\" != /dev/null || \"$ENV\" != /dev/null || ${LD_PRELOAD+x} || ${LD_LIBRARY_PATH+x} ]]; then "+fail+"; fi\nbuiltin unset BASH_ENV ENV || { "+fail+"; }\nexec /usr/bin/python3 -I -S - \"$wtl_argument\" 'SDK_DEV_NULL_SENTINELS_REMOVED_CORRECTION_V1'\n";
++    }
++    private Set<ActionTarget> targets(Binding b){var o=b.followup().diagnostic().continuation().original();String s=o.server(),u=o.unit();return Set.of(new ActionTarget(s,"task",o.task().toString()),new ActionTarget(s,"agent-publication-correction",sourceVersion()),new ActionTarget(s,"application",u),new ActionTarget(s,"deployment-release",layout.applicationRoot(u)+"/releases/"+o.releaseSha256()),new ActionTarget(s,"deployment-build",layout.candidateRoot(o.candidate())),new ActionTarget(s,"deployment-build",layout.applicationLockRoot(u)),new ActionTarget(s,"deployment-snapshot",layout.snapshotsRoot()),new ActionTarget(s,"systemd-unit","windowstolinux-"+u+".service"),new ActionTarget(s,"systemd-unit","windowstolinux-build-"+o.candidate()+".service"));}
++    public static Map<String,Object> reviewFacts(CommandRequest command,DeploymentRemoteLayout layout){var p=new DeploymentAgentPublicationCorrectionProgram(layout);try(var r=p.decode(command)){return Map.of("operation",OPERATION,"binding",bindingNode(r.binding()),"action",r.action().toString(),"expectedSourceVersion",p.sourceVersion(),"executableInputReference","commandEvidence.completeExecutableInput","scope","One separately reviewed correction of the fixed executable source: complete original native definitions, one current-state first-native rollback and exact owned maintenance removal. Both existing locks opened read-only; all six fingerprints and full original parameter/data/unit guards precede mutation. Candidate retained, independent cleanup still required. Prior completed followup and newer wholegraph are mandatory. No helper/controller installation, snapshot creation, retry/replay, old ACK/result replacement or settlement permission. UNKNOWN mutationStarted is conservative and never proof of actual mutation. Full fixed Python/Bash stdin reviewed once. Exact SDK DEV_NULL sentinels and LD presence checked before Python; only those two sentinels removed. Complete bounded BASH_FUNC/environment classification occurs after Python starts, before native IO. sourceVersion is product-bound expected stdin SHA, not independent remote measurement.");}}
++    public static Set<ActionTarget> reviewedResourceTargets(CommandRequest command,DeploymentRemoteLayout layout,ServerId server){var p=new DeploymentAgentPublicationCorrectionProgram(layout);try(var r=p.decode(command)){if(!r.binding().followup().diagnostic().continuation().original().server().equals(server.id()))throw invalid();return r.resourceTargets();}}
++    public Request decode(CommandRequest command){
++        String prefix="wtl_argument='";if(!command.script().startsWith(prefix)||!command.timeout().equals(TIMEOUT)||command.outputLimitBytes()!=OUTPUT_LIMIT||!Arrays.equals(command.stdin(),source.getBytes(StandardCharsets.UTF_8)))throw invalid();int end=command.script().indexOf("'\n",prefix.length());if(end<0)throw invalid();String argument=command.script().substring(prefix.length(),end);
++        try{var n=JSON.readTree(argument);fields(n,Set.of("binding","action","sourceVersion"));if(!n.toString().equals(argument)||!text(n,"sourceVersion").equals(sourceVersion()))throw invalid();var r=request(readBinding(n.path("binding")),uuid(text(n,"action")));if(!r.command().script().equals(command.script())){r.close();throw invalid();}return r;}catch(IOException e){throw invalid();}
++    }
++    public Receipt parse(Request request,OperationResult<CommandResult> actual){if(actual.outcome()!=TaskResult.SUCCEEDED||actual.value().isEmpty())throw invalid();var r=actual.value().orElseThrow();String out=r.stdout();if(r.truncated()||r.exitCode().isEmpty()||r.exitCode().orElseThrow()!=0||!r.stderr().isEmpty()||!out.startsWith(FRAME)||!out.endsWith("\n")||out.indexOf('\n')!=out.length()-1||out.indexOf('\r')>=0||out.getBytes(StandardCharsets.UTF_8).length>OUTPUT_LIMIT)throw invalid();return validateReceipt(request,out.substring(FRAME.length(),out.length()-1));}
++    public Receipt validateReceipt(Request request,String canonicalJson){try(var r=decode(request.command())){
++        if(!r.binding().equals(request.binding())||!r.action().equals(request.action())||!r.resourceTargets().equals(request.resourceTargets())||canonicalJson==null||canonicalJson.getBytes(StandardCharsets.UTF_8).length+FRAME.length()+1>OUTPUT_LIMIT)throw invalid();var n=JSON.readTree(canonicalJson);fields(n,Set.of("format","sourceVersion","action","binding","status","check","mutationStarted","currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"));
++        if(!n.toString().equals(canonicalJson)||!text(n,"format").equals(FORMAT)||!text(n,"sourceVersion").equals(sourceVersion())||!uuid(text(n,"action")).equals(request.action())||!readBinding(n.path("binding")).equals(request.binding())||!n.path("mutationStarted").isBoolean()||!CHECKS.contains(text(n,"check")))throw invalid();
++        String status=text(n,"status");boolean started=n.path("mutationStarted").booleanValue(),ok=status.equals("ROLLED_BACK");if(!Set.of("ROLLED_BACK","REFUSED","UNKNOWN").contains(status)||ok&&(!started||!text(n,"check").equals("COMPLETE"))||status.equals("REFUSED")&&started||status.equals("UNKNOWN")&&!started||!ok&&text(n,"check").equals("COMPLETE"))throw invalid();
++        for(String k:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))if(ok?(!n.path(k).isBoolean()||!n.path(k).booleanValue()):!n.path(k).isNull())throw invalid();return new Receipt(n.toString());}catch(IOException e){throw invalid();}}
++    private static ObjectNode bindingNode(Binding b){return JSON.valueToTree(b);}
++    private static Binding readBinding(JsonNode n)throws IOException{
++        fields(n,Set.of("followup","prior","observationEnd","observationSha256"));
++        fields(n.path("prior"),Set.of("action","requestEvent","endEvent","requestDetailSha256","receiptSha256","sourceVersion"));
++        positive(n,"observationEnd");positive(n.path("prior"),"requestEvent");positive(n.path("prior"),"endEvent");uuid(text(n.path("prior"),"action"));
++        var b=JSON.treeToValue(n,Binding.class);
++        // Exact normalized record tree rejects coercions/missing/foreign fields without LongNode/IntNode mismatch.
++        if(!JSON.readTree(JSON.writeValueAsBytes(b)).equals(n))throw invalid();return b;
++    }
++
++    private static String resource(String name){try(var input=DeploymentAgentPublicationCorrectionProgram.class.getResourceAsStream(ROOT+name)){if(input==null)throw invalid();byte[] bytes=input.readNBytes(1048577);if(bytes.length>1048576)throw invalid();return StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString().replace("\r\n","\n");}catch(IOException e){throw new IllegalStateException("Fixed correction resource unavailable",e);}}
++    private static long positive(JsonNode node,String key){if(!node.path(key).isIntegralNumber()||!node.path(key).canConvertToLong()||node.path(key).longValue()<=0)throw invalid();return node.path(key).longValue();}
++    private static void fields(JsonNode node, Set<String> expected) {
++        if (node == null || !node.isObject()) throw invalid();
++        var actual = new HashSet<String>(); node.fieldNames().forEachRemaining(actual::add); if (!actual.equals(expected)) throw invalid();
++    }
++    private static String text(JsonNode node, String key) { if (!node.path(key).isTextual()) throw invalid(); return node.path(key).textValue(); }
++    private static UUID uuid(String value) { var id = UUID.fromString(value); if (!id.toString().equals(value)) throw invalid(); return id; }
++    private static void digest(String value) { if (value == null || !value.matches("[a-f0-9]{64}")) throw invalid(); }
++    private static String quote(String value) { return "'" + value.replace("'", "'\\''") + "'"; }
++    private static String sha(byte[] bytes) { try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); } }
++    private static IllegalArgumentException invalid() { return new IllegalArgumentException("Fixed correction evidence invalid"); }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
+@@ -55,6 +55,8 @@
+         final String requestDigest;
+         DeploymentReviewDecision decision;
+         String evidence;
++        DeploymentAgentPublicationCorrection correction;
++        DeploymentAgentPublicationCorrectionProgram.Request correctionRequest;
+         DeploymentAgentPublicationContractDiagnosticFollowup contractFollowup;
+         DeploymentAgentPublicationContractDiagnosticFollowupProgram.Request followupRequest;
+         DeploymentAgentPublicationContractDiagnostic contractDiagnostic;
+@@ -135,6 +137,11 @@
+                 if(followup.isPresent()&&!DeploymentAgentPublicationContractDiagnosticFollowup.attempted(journal.events(task),followup.orElseThrow())) {
+                     contractFollowup(followup.orElseThrow());
+                     return false;
++                }
++                var correction=DeploymentAgentPublicationCorrection.eligibility(fresh,journal.events(task));
++                if(correction.isPresent()&&!DeploymentAgentPublicationCorrection.attempted(journal.events(task),correction.orElseThrow())) {
++                    correctCurrent(correction.orElseThrow());
++                    return false; // A correction receipt never resolves the old ACK; a later independently reviewed graph is required.
+                 }
+                 DeploymentAgentPublicationCompensation.observedOnly(task,journal,state.pending().orElseThrow());
+                 // The old command's missing/UNKNOWN ACK remains unchanged; no modification is resent.
+@@ -179,6 +186,33 @@
+         return false;
+     }
+ 
++    private void correctCurrent(DeploymentAgentPublicationCorrection.Eligibility eligible)throws Exception {
++        var unit=proposal.graph().components().stream().filter(p->p.componentId().equals(eligible.original().component().id())).findFirst().orElseThrow().unit();
++        var diagnosticProgram=new DeploymentAgentPublicationCorrectionProgram(unit.layout());
++        try(var request=diagnosticProgram.request(DeploymentAgentPublicationCorrection.binding(eligible),UUID.randomUUID())) {
++            var intent=RemoteActions.command(server,eligible.original().plan().sha256(),request.command())
++                .withSemantics(new ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,request.resourceTargets()));
++            var durable=DeploymentAgentPublicationCorrection.open(task,journal,eligible,request,intent);
++            pending=new Pending(DeploymentAgentPublicationCorrectionProgram.OPERATION,request.action(),unit,intent,request.command(),eligible.original().plan(),null,null);
++            pending.correction=durable;pending.correctionRequest=request;
++            try {
++                var grant=DeploymentCommandReviewRouter.approve(reviewed.interaction(),intent,request.command(),task);
++                if(grant.outcome()!=TaskResult.SUCCEEDED){durable.retainInterrupted();return;}
++                require(pending.decision!=null&&pending.decision.decision().equals("APPROVE")&&pending.evidence!=null,"Independent diagnostic decision is missing");
++                durable.granted(grant.value().orElseThrow());verify(intent,request.command(),task);
++                durable.dispatch();verify(intent,request.command(),task);
++                OperationResult<CommandResult> actual;
++                try {actual=session.execute(request.command(),grant.value().orElseThrow());}
++                catch(ApiException unavailable){actual=new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(unavailable.problem()));}
++                DeploymentAgentPublicationCorrectionProgram.Receipt receipt=null;
++                try {receipt=diagnosticProgram.parse(request,actual);}catch(RuntimeException unconfirmed){/* Preserve actual digest without accepting unsafe or partial output. */}
++                durable.result(actual,receipt);
++            } catch(ApiException unavailable) {durable.retainInterrupted();}
++            catch(Exception unavailable) {durable.retainInterrupted();throw unavailable;}
++            finally {pending=null;}
++        }
++    }
++
+     private void contractFollowup(DeploymentAgentPublicationContractDiagnosticFollowup.Eligibility eligible)throws Exception {
+         var unit=proposal.graph().components().stream().filter(p->p.componentId().equals(eligible.original().component().id())).findFirst().orElseThrow().unit();
+         var diagnosticProgram=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(unit.layout());
+@@ -373,7 +407,12 @@
+         facts.put("ownershipMeaning","Original proposal owner; actual sidecar guards or original-status receipts must verify remote ownership independently");
+         facts.put("originalStateMeaning","Unique original snapshot pair proves no prior CURRENT/managed unit; it does not prove empty disk, release root or persistent data");
+         facts.put("requestSha256",value.requestDigest);facts.put("planSha256",value.plan==null?"NOT_CREATED":value.plan.sha256());
+-        if(value.followupRequest!=null) {
++        if(value.correctionRequest!=null) {
++            facts.put("purpose","ONCE_CURRENT_STATE_CORRECTION_AFTER_COMPLETE_OBSERVED_NATIVE_CONTRACT_FOLLOWUP");
++            facts.put("correctionSourceVersion",new DeploymentAgentPublicationCorrectionProgram(value.unit.layout()).sourceVersion());
++            facts.put("correctionBinding",value.correctionRequest.binding());
++            facts.put("correctionEffectPolicy","One request per immutable original pending intent and original continuation REQUEST, never reset by later versions, actions, followups, denial, interruption or observations. Complete old source/receipts and the newer unmet-goal graph are rebound. Independently review the complete launcher/stdin and exact targets before a fresh single-use host grant. The fixed program rechecks both locks, all six historical fingerprint expectations and three native contracts before its one guarded first rollback; the candidate is retained for separately approved cleanup. Every result leaves this invocation UNKNOWN without replacing the old ACK, incrementing completed, reinstalling, cleaning or settling. Only a later independent whole-graph goal may permit the original OBSERVED_ONLY and separate cleanup/FAILED settlement guards.");
++        } else if(value.followupRequest!=null) {
+             facts.put("purpose","ONCE_READ_ONLY_FOLLOWUP_AFTER_COMPLETE_UNKNOWN_CONTROL_DIAGNOSTIC");
+             facts.put("followupSourceVersion",new DeploymentAgentPublicationContractDiagnosticFollowupProgram(value.unit.layout()).sourceVersion());
+             facts.put("followupBinding",value.followupRequest.binding());
+@@ -432,7 +471,9 @@
+         return Map.of("originalPublicationCompensation",Map.copyOf(facts));
+     }
+ 
+-    @Override public String reviewInstructions(){return pending!=null&&pending.followupRequest!=null
++    @Override public String reviewInstructions(){return pending!=null&&pending.correctionRequest!=null
++        ? "Independently review this new fixed current-state correction, complete launcher/stdin, exact targets, complete immutable OBSERVED three-native-contract followup and original FAILED/UNKNOWN pending/continuation receipts. It is a new bounded guarded first rollback, not a replay or rewritten ACK; both locks, six historical fingerprints and three native contracts must be rechecked before mutation. REQUEST consumes its one attempt for the original pending/continuation pair even after denial or interruption. Every result leaves this invocation UNKNOWN; a later separately reviewed whole-graph goal, each separately approved candidate cleanup and final whole-graph verification are still required for FAILED settlement. No installation or old action replay is authorized; a fresh exact host grant remains necessary after APP."
++        : pending!=null&&pending.followupRequest!=null
+         ? "Independently review this new fixed read-only contract followup launcher and complete stdin, exact targets, the complete immutable old UNKNOWN/CONTROL/UNCONFIRMED diagnostic receipt, original FAILED/UNKNOWN rollback and continuation, and the newer whole-graph unmet goal. This does not retry or rewrite the old diagnostic, mutation, source version or ACK. REQUEST consumes its one attempt even after denial or interruption. Every result leaves this invocation UNKNOWN; no mutation, installation, cleanup or settlement is authorized. A fresh exact host grant remains necessary after independent APP."
+         : pending!=null&&pending.contractRequest!=null
+         ? "Independently review the complete fixed read-only native-contract diagnostic launcher and stdin, exact targets, original FAILED/UNKNOWN rollback, complete unknown continuation receipt and later unmet-goal whole-graph status. Six fingerprints are historical bound expectations, not new observations. FULL_PARAMETER_VALIDATION, MANAGED_DATA_LINKS and UNIT_RENDER_MATCH are real read-only guard checks; no result supplies mutation or settlement authority. This one invocation remains UNKNOWN even after all three PASS. It cannot replay, install, clean, replace an ACK or settle. Every dispatch still requires an independent APP decision and a fresh exact single-use host grant."
+@@ -447,6 +488,7 @@
+     @Override public void reviewed(ActionIntent intent,CommandRequest request,TaskContext supplied,DeploymentReviewDecision decision)throws ApiException {
+         verify(intent,request,supplied);
+         pending.decision=decision;
++        if(pending.correction!=null)try {pending.correction.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.contractFollowup!=null)try {pending.contractFollowup.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.contractDiagnostic!=null)try {pending.contractDiagnostic.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.continuation!=null)try {pending.continuation.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+@@ -459,8 +501,20 @@
+         try {
+             require(supplied==task&&pending!=null&&pending.intent.equals(intent)&&pending.requestDigest.equals(DeploymentAgentPublicationRecoveryInstallation.requestDigest(request)),"Actual recovery request changed");
+             checkOriginal();
+-            if(pending.plan!=null)DeploymentAgentPublicationCompensation.requireCurrent(original,task,journal,pending.plan);
+-            if(pending.followupRequest!=null) {
++            var correctionEvents=pending.correctionRequest==null?null:List.copyOf(journal.events(task));
++            DeploymentAgentPublicationCompensation.State current=null;
++            if(pending.plan!=null)current=DeploymentAgentPublicationCompensation.requireCurrent(original,task,journal,pending.plan);
++            if(pending.correctionRequest!=null) {
++                require(current!=null&&correctionEvents.equals(journal.events(task)),"Correction history changed across current-state validation");
++                pending.correction.verifyCurrent(current,correctionEvents);
++                var fixed=new DeploymentAgentPublicationCorrectionProgram(pending.unit.layout());
++                try(var expected=fixed.request(pending.correctionRequest.binding(),pending.action)) {
++                    require(expected.resourceTargets().equals(intent.semantics().orElseThrow().targets())
++                        &&pending.operation.equals(DeploymentAgentPublicationCorrectionProgram.OPERATION)
++                        &&DeploymentAgentPublicationRecoveryInstallation.requestDigest(expected.command()).equals(pending.requestDigest),"Actual fixed correction request changed");
++                }
++                require(correctionEvents.equals(journal.events(task)),"Correction history changed during request verification");
++            } else if(pending.followupRequest!=null) {
+                 pending.contractFollowup.verifyCurrent();
+                 var fixed=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(pending.unit.layout());
+                 try(var expected=fixed.request(pending.followupRequest.binding(),pending.action)) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -180,6 +180,7 @@
+                         + "\ncurrentStateContinuation=at-most-one-new-fixed-current-state-mutation-per-original-FAILED-UNKNOWN-rollback-after-complete-verified-v2-preflight-with-24-PASS-3-intrinsic-UNKNOWN-and-six-file-fingerprints;bind-original-intent-result-plan-and-preflight-request-end-receipt;independent-APP-full-source-and-fresh-exact-grant;no-old-ACK-overwrite-or-install-replay;new-wholegraph-observation-after-any-attempt-before-OBSERVED_ONLY;each-candidate-cleanup-independent-APP-new-grant;final-wholegraph-before-verified-FAILED-local-tail;UNKNOWN-never-resent"
+                         + "\ncontractDiagnostic=at-most-one-fixed-readonly-native-contract-diagnostic-per-original-pending-and-complete-prior-continuation;bind-original-pending-result-continuation-request-end-receipt-and-later-complete-unmet-goal-wholegraph;independent-APP-full-source-and-fresh-exact-grant;this-invocation-always-UNKNOWN-no-mutation-ACK-cleanup-or-settlement"
+                         + "\ncontractDiagnosticFollowup=at-most-one-new-fixed-readonly-control-classification-followup-per-complete-original-contract-diagnostic-REQUEST-END-with-UNKNOWN-CONTROL-UNCONFIRMED-receipt;bind-all-old-pending-continuation-diagnostic-source-receipt-identities-and-later-complete-unmet-goal-wholegraph;version-action-observation-and-DENY-NOT_SENT-UNKNOWN-never-reset-REQUEST-consumption;independent-APP-full-source-and-fresh-exact-grant;this-invocation-always-UNKNOWN-no-mutation-install-ACK-cleanup-or-settlement"
++                        + "\npublicationCorrection=at-most-one-new-fixed-current-state-correction-per-original-pending-and-original-continuation-REQUEST-after-complete-immutable-OBSERVED-three-PASS-followup-and-newer-complete-unmet-goal-wholegraph;full-history-source-receipt-binding-and-two-lock-six-fingerprint-three-contract-guard;new-independent-APP-complete-source-and-fresh-exact-grant;REQUEST-DENY-UNKNOWN-interruption-version-or-new-followup-never-reset-consumption;this-invocation-always-UNKNOWN-no-original-ACK-replacement-reinstall-cleanup-or-settlement;later-fresh-goal-and-independent-cleanups-final-wholegraph-required-for-FAILED-settlement"
+                     : "\npurpose=verify-original-publication-and-settle-original-candidates"
+                         + "\nhealthEffects=original-app-current-and-health-validation;fixed-app-admission-locks;verified-inactive-orphan-cleanup")
+                 + "\npermission=each-command-still-requires-independent-review-and-current-single-use-host-grant");
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-correction.py b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-correction.py
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-correction.py
+@@ -0,0 +1,197 @@
++import hashlib
++import json
++import os
++import re
++import selectors
++import signal
++import subprocess
++import sys
++import time
++import uuid
++
++FORMAT = "WTL_AGENT_PUBLICATION_CORRECTION_1"
++FRAME = "PUBLICATION_CORRECTION="
++# @WTL_CORRECTION_BASH@
++CHECKS = {"ENVIRONMENT", "ARGUMENTS", "ROOT_IDENTITY", "LOCKS", "JOB", "CANDIDATE", "FINGERPRINTS", "BUILD", "SNAPSHOTS", "MAINTENANCE", "CURRENT", "NATIVE_CONTRACT", "FULL_PARAMETER_VALIDATION", "MANAGED_DATA_LINKS", "UNIT_RENDER_MATCH", "ROLLBACK", "POSTCONDITIONS", "COMPLETE", "INTERNAL", "LIMIT"}
++
++def strict(pairs):
++    value = {}
++    for key, item in pairs:
++        if key in value:
++            raise ValueError()
++        value[key] = item
++    return value
++
++def fields(value, expected):
++    if type(value) is not dict or set(value) != set(expected):
++        raise ValueError()
++
++def digest(value):
++    if type(value) is not str or not re.fullmatch(r"[a-f0-9]{64}", value):
++        raise ValueError()
++
++def positive(value):
++    if type(value) is not int or not 0 < value <= 9223372036854775807:
++        raise ValueError()
++
++def identity(value):
++    if type(value) is not str or str(uuid.UUID(value)) != value:
++        raise ValueError()
++
++def prior(value, version=True):
++    fields(value, ("action", "requestEvent", "endEvent", "requestDetailSha256", "receiptSha256", *(["sourceVersion"] if version else [])))
++    identity(value["action"])
++    positive(value["requestEvent"]); positive(value["endEvent"])
++    if value["endEvent"] <= value["requestEvent"]:
++        raise ValueError()
++    for key in ("requestDetailSha256", "receiptSha256", *(["sourceVersion"] if version else [])):
++        digest(value[key])
++
++def validate_binding(binding, action, source_version):
++    fields(binding, ("followup", "prior", "observationEnd", "observationSha256"))
++    followup = binding["followup"]
++    fields(followup, ("diagnostic", "prior", "observationEnd", "observationSha256"))
++    diagnostic = followup["diagnostic"]
++    fields(diagnostic, ("continuation", "prior", "observationEnd", "observationSha256"))
++    continuation = diagnostic["continuation"]
++    fields(continuation, ("original", "pendingResultEvent", "pendingResultSha256", "preflight", "current"))
++    original = continuation["original"]
++    fields(original, ("server", "task", "execution", "pendingAction", "pendingIntentEvent", "pendingIntentSha256", "planSha256", "unit", "ownerSha256", "candidate", "releaseSha256", "layoutSha256"))
++    for key in ("task", "execution", "pendingAction"):
++        identity(original[key])
++    if type(original["server"]) is not str or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", original["server"]):
++        raise ValueError()
++    unit = original["unit"]
++    if type(unit) is not str or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", unit) or type(original["candidate"]) is not str or not re.fullmatch(re.escape(unit) + r"-[a-f0-9]{16}", original["candidate"]):
++        raise ValueError()
++    for key in ("pendingIntentSha256", "planSha256", "ownerSha256", "releaseSha256", "layoutSha256"):
++        digest(original[key])
++    positive(original["pendingIntentEvent"]); positive(continuation["pendingResultEvent"]); digest(continuation["pendingResultSha256"])
++    current = continuation["current"]
++    fields(current, ("candidateOwnerSha256", "candidateTaskSha256", "maintenanceSha256", "releaseOwnerSha256", "parametersSha256", "unitSha256"))
++    for value in current.values():
++        digest(value)
++    prior(continuation["preflight"], False)
++    for value in (diagnostic, followup, binding):
++        prior(value["prior"]); positive(value["observationEnd"]); digest(value["observationSha256"])
++    if not (original["pendingIntentEvent"] < continuation["pendingResultEvent"] < continuation["preflight"]["requestEvent"] < continuation["preflight"]["endEvent"]
++            < diagnostic["prior"]["requestEvent"] < diagnostic["prior"]["endEvent"] < diagnostic["observationEnd"]
++            < followup["prior"]["requestEvent"] < followup["prior"]["endEvent"] < followup["observationEnd"]
++            < binding["prior"]["requestEvent"] < binding["prior"]["endEvent"] < binding["observationEnd"]):
++        raise ValueError()
++    identity(action); digest(source_version)
++    actions = (original["pendingAction"], continuation["preflight"]["action"], diagnostic["prior"]["action"], followup["prior"]["action"], binding["prior"]["action"], action)
++    if len(set(actions)) != len(actions):
++        raise ValueError()
++    return continuation
++
++def environment():
++    count = size = 0
++    for key, value in os.environ.items():
++        count += 1
++        record = len(os.fsencode(key)) + len(os.fsencode(value)) + 2
++        size += record
++        if count > 512 or record > 8192 or size > 131072:
++            return False
++        if key in ("BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH") or key.startswith("BASH_FUNC_"):
++            return False
++    return True
++
++def receipt(envelope, status, check, started):
++    ok = status == "ROLLED_BACK"
++    value = dict(format=FORMAT, sourceVersion=envelope["sourceVersion"], action=envelope["action"], binding=envelope["binding"],
++                 status=status, check=check, mutationStarted=started, currentAbsent=True if ok else None,
++                 unitAbsent=True if ok else None, releaseAbsent=True if ok else None,
++                 maintenanceAbsent=True if ok else None, candidateRetained=True if ok else None)
++    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
++    if len(encoded.encode()) > 16000:
++        raise ValueError()
++    print(FRAME + encoded, flush=True)
++
++def execute(args):
++    # Drain stdout/stderr while feeding the full fixed body, including early guard rejection.
++    process = subprocess.Popen(["/bin/bash", "--noprofile", "--norc", "-p", "-s", "--", *args],
++        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
++        env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C", "LC_ALL": "C"})
++    sent = 0
++    body = BASH_SOURCE.encode("utf-8")
++    output = bytearray()
++    errors = bytearray()
++    deadline = time.monotonic() + 165
++    try:
++        with selectors.DefaultSelector() as selection:
++            for pipe, events in ((process.stdin, selectors.EVENT_WRITE), (process.stdout, selectors.EVENT_READ), (process.stderr, selectors.EVENT_READ)):
++                os.set_blocking(pipe.fileno(), False)
++                selection.register(pipe, events)
++            while selection.get_map():
++                if time.monotonic() >= deadline:
++                    raise TimeoutError()
++                for key, _ in selection.select(min(1, max(0, deadline - time.monotonic()))):
++                    pipe = key.fileobj
++                    if pipe is process.stdin:
++                        try:
++                            sent += os.write(pipe.fileno(), body[sent:sent + 8192])
++                        except BrokenPipeError:
++                            selection.unregister(pipe); pipe.close(); continue
++                        if sent == len(body):
++                            selection.unregister(pipe); pipe.close()
++                    else:
++                        block = os.read(pipe.fileno(), 4096)
++                        if not block:
++                            selection.unregister(pipe); pipe.close(); continue
++                        target = output if pipe is process.stdout else errors
++                        target.extend(block)
++                        if len(output) + len(errors) > 16384:
++                            raise ValueError()
++            process.wait(timeout=max(0.01, deadline - time.monotonic()))
++        text = bytes(output)
++        started = b"CONTINUATION_MUTATION_STARTED=1\n" in text
++        if process.returncode == 0 and not errors and text == b"CONTINUATION_MUTATION_STARTED=1\nROLLED_BACK=1\nCONTINUATION_COMPLETED=1\n":
++            return "ROLLED_BACK", "COMPLETE", True
++        match = re.fullmatch(rb"CONTINUATION_REFUSED=([A-Z_]+)\n", text)
++        if not started and process.returncode == 74 and not errors and match and match[1].decode() in CHECKS:
++            return "REFUSED", match[1].decode(), False
++        partial = re.fullmatch(rb"CONTINUATION_MUTATION_STARTED=1\n(?:ROLLED_BACK=1\n)?CONTINUATION_REFUSED=([A-Z_]+)\n", text)
++        if started and process.returncode == 74 and not errors and partial and partial[1].decode() in CHECKS:
++            return "UNKNOWN", partial[1].decode(), True
++        return "UNKNOWN", "ROLLBACK" if started else "INTERNAL", True
++    except BaseException:
++        # Only the group started by this invocation is signalled; no retry or fallback operation.
++        try:
++            os.killpg(process.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        process.wait(timeout=5)
++        return "UNKNOWN", "LIMIT", True
++    finally:
++        for pipe in (process.stdin, process.stdout, process.stderr):
++            if not pipe.closed:
++                pipe.close()
++
++def main():
++    if len(sys.argv) != 3 or len(sys.argv[1].encode()) > 12000:
++        raise ValueError()
++    envelope = json.loads(sys.argv[1], object_pairs_hook=strict)
++    if set(envelope) != {"binding", "action", "sourceVersion"}:
++        raise ValueError()
++    binding = validate_binding(envelope["binding"], envelope["action"], envelope["sourceVersion"])
++    # The launcher verified the exact SDK sentinels and LD categories before Python.
++    # Functions are classified here, after Python startup, before any diagnostic/native IO.
++    if len(sys.argv) != 3 or sys.argv[2] != "SDK_DEV_NULL_SENTINELS_REMOVED_CORRECTION_V1" or not environment():
++        receipt(envelope, "REFUSED", "ENVIRONMENT", False); return
++    if os.geteuid() != 0:
++        receipt(envelope, "REFUSED", "ROOT_IDENTITY", False); return
++    original = binding["original"]; current = binding["current"]
++    args = [original["task"], envelope["action"].replace("-", ""), original["execution"], original["unit"],
++            original["ownerSha256"], original["candidate"], original["releaseSha256"], original["planSha256"],
++            current["candidateOwnerSha256"], current["candidateTaskSha256"], current["maintenanceSha256"],
++            current["releaseOwnerSha256"], current["parametersSha256"], current["unitSha256"]]
++    receipt(envelope, *execute(args))
++
++if __name__ == "__main__":
++    try:
++        main()
++    except BaseException:
++        # No raw exception/argument/configuration is printed. Missing safe receipt remains UNKNOWN.
++        print("PUBLICATION_CORRECTION_FAILURE=UNKNOWN", flush=True)
++        sys.exit(70)
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+@@ -25,6 +25,81 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentCommandEvidenceTest {
++    @Test
++    void publicationCorrectionDeliversCompleteSourceAndNeedsIndependentFreshGrant()throws Exception {
++        var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        var program=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram(layout);
++        var fixture=new NativeAiFixture();var json=new ObjectMapper();var server=new ServerId("original-host");
++        var ui=(gold.debug.windowstolinux.appapi.ui.UiService)java.lang.reflect.Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ui.UiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ui.UiService.class},(p,m,a)->{
++            if(m.getName().equals("environment"))return new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.ENGLISH,"LIGHT",false);throw new AssertionError(m.getName());
++        });
++        var reviewContext=(gold.debug.windowstolinux.appapi.mod.ModContext)java.lang.reflect.Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.mod.ModContext.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.mod.ModContext.class},(p,m,a)->{
++            if(m.getName().equals("ui"))return ui;try{return m.invoke(fixture.context,a);}catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
++        });
++        var original=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding(server.id(),fixture.task.id(),UUID.randomUUID(),UUID.randomUUID(),17,"a".repeat(64),"b".repeat(64),"backend","c".repeat(64),"backend-0123456789abcdef","d".repeat(64),layout.digest());
++        var prior=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.PriorPreflight(UUID.randomUUID(),30,38,"e".repeat(64),"f".repeat(64));
++        var current=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.CurrentFingerprints("1".repeat(64),"2".repeat(64),"3".repeat(64),"4".repeat(64),"5".repeat(64),"6".repeat(64));
++        var continuation=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.Binding(original,18,"7".repeat(64),prior,current);
++        var oldProgram=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram(layout);
++        var continuationPrior=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram.PriorContinuation(UUID.randomUUID(),40,46,"8".repeat(64),"9".repeat(64),oldProgram.sourceVersion());
++        var diagnosticBinding=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram.Binding(continuation,continuationPrior,50,"0".repeat(64));
++        var oldDiagnosticProgram=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram(layout);
++        var diagnosticPrior=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram.PriorDiagnostic(UUID.randomUUID(),60,68,"1".repeat(64),"2".repeat(64),oldDiagnosticProgram.sourceVersion());
++        var followupBinding=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram.Binding(diagnosticBinding,diagnosticPrior,70,"3".repeat(64));
++        var oldFollowupProgram=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);
++        var followupPrior=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.PriorFollowup(UUID.randomUUID(),80,88,"4".repeat(64),"5".repeat(64),oldFollowupProgram.sourceVersion());
++        var binding=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.Binding(followupBinding,followupPrior,90,"6".repeat(64));
++        var agent=new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(fixture.context,fixture.task,
++            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence(){
++                public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding(){return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(server.id(),"local-native-review-target","e".repeat(64));}
++                public Map<String,gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources(){return Map.of();}
++                public Object receipts(){return Map.of("events",List.of());}
++            });
++        var grants=new java.util.HashSet<UUID>();var reviewedActions=new java.util.HashSet<String>();
++        var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)java.lang.reflect.Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
++            if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("APP cannot be bypassed by host.approve");
++            var intent=(gold.debug.windowstolinux.appapi.task.action.ActionIntent)a[0];
++            @SuppressWarnings("unchecked") var supplied=(java.util.Optional<CommandRequest>)a[1];
++            assertEquals(RemoteActions.command(server,intent.revision(),supplied.orElseThrow()).exactAction(),intent.exactAction());
++            assertTrue(reviewedActions.add(intent.exactAction()));UUID id=UUID.randomUUID();assertTrue(grants.add(id));
++            return new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,java.util.Optional.of(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(id)),java.util.Optional.empty());
++        });
++        String approve="{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Local complete diagnostic review\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}";
++        String deny="{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Local diagnostic denial\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[],\"discussionStatus\":\"CLOSED\"}";
++        for(int attempt=0;attempt<3;attempt++)try(var request=program.request(binding,UUID.randomUUID())) {
++            var intent=RemoteActions.command(server,binding.followup().diagnostic().continuation().original().planSha256(),request.command()).withSemantics(new ActionSemantics(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.OPERATION,request.resourceTargets()));
++            var facts=json.valueToTree(DeploymentCommandEvidence.facts(intent,request.command(),layout));
++            assertEquals("EXECUTABLE_SCRIPT",facts.path("inputKind").asText());assertEquals(program.source(),facts.path("completeExecutableInput").asText());
++            assertEquals(program.sourceVersion(),facts.at("/publicationCorrection/expectedSourceVersion").asText());assertFalse(facts.path("publicationCorrection").has("completeReadonlySource"));assertFalse(facts.has("publicationRecoveryProgram"));assertFalse(facts.has("publicationRecoveryDiagnostic"));assertEquals(followupPrior.receiptSha256(),facts.at("/publicationCorrection/binding/prior/receiptSha256").asText());assertFalse(facts.has("publicationContractDiagnostic"));assertFalse(facts.has("installedHelperPath"));
++            if(attempt==0) {
++                fixture.nativeReply(new AiToolCall("diagnostic-deny","submit_result",deny));
++                var refusal=assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,()->DeploymentFixedCommandApproval.approve(reviewContext,host,intent,request.command(),fixture.task,"fixture-route","AUTOMATIC",false,agent,DeploymentCurrentCommandEvidence.NONE,true));
++                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED",refusal.problem().eventCode());assertTrue(grants.isEmpty());continue;
++            }
++            // Page the complete real launcher as well as stdin through the actual native review tools.
++            for(int offset=0;offset<request.command().script().length();) {
++                int end=Math.min(offset+4000,request.command().script().length());
++                fixture.nativeReply(new AiToolCall("preflight-launcher-"+attempt+"-"+offset,"request",json.writeValueAsString(Map.of("part","script","offset",offset,"limit",end-offset))));offset=end;
++            }
++            for(int offset=0;offset<program.source().length();) {
++                int end=Math.min(offset+4000,program.source().length());
++                fixture.nativeReply(new AiToolCall("diagnostic-page-"+attempt+"-"+offset,"evidence",json.writeValueAsString(Map.of("pointer","/completeExecutableInput","offset",offset,"limit",end-offset))));offset=end;
++            }
++            fixture.nativeReply(new AiToolCall("diagnostic-approve-"+attempt,"submit_result",approve));
++            assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,DeploymentFixedCommandApproval.approve(reviewContext,host,intent,request.command(),fixture.task,"fixture-route","AUTOMATIC",false,agent,DeploymentCurrentCommandEvidence.NONE,true).outcome());
++            assertEquals(attempt,grants.size());assertTrue(fixture.replies.isEmpty());
++            byte[] changed=request.command().stdin();changed[changed.length-1]^=1;
++            try(var drift=new CommandRequest(request.command().script(),changed,request.command().timeout(),request.command().outputLimitBytes())) {
++                assertThrows(IllegalArgumentException.class,()->DeploymentCommandEvidence.facts(intent,drift,layout));
++            }
++            var wrong=new java.util.HashSet<>(request.resourceTargets());wrong.remove(wrong.iterator().next());
++            assertThrows(IllegalArgumentException.class,()->DeploymentCommandEvidence.facts(RemoteActions.command(server,binding.followup().diagnostic().continuation().original().planSha256(),request.command()).withSemantics(new ActionSemantics(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram.OPERATION,wrong)),request.command(),layout));
++        }
++        assertEquals(2,grants.size());assertEquals(2,reviewedActions.size());
++        assertEquals(program.sourceVersion(),json.readTree(fixture.requests.getFirst().messages().get(1).text()).at("/currentRequest/publicationCorrection/expectedSourceVersion").asText());
++        // Existing native review fixture and synthetic host grants only; no SDK consumption, provider or SSH is exercised.
++    }
++
+     @Test
+     void contractDiagnosticFollowupDeliversCompleteSourceAndRequiresIndependentFreshGrant()throws Exception {
+         var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentGraphFixture.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentGraphFixture.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentGraphFixture.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentGraphFixture.java
+@@ -73,8 +73,8 @@
+ 
+     public void run(PlatformRuntime runtime, TaskWork<Void> work, Duration wait) throws Exception {
+         Objects.requireNonNull(wait);
+-        if (wait.isNegative() || wait.isZero() || wait.compareTo(Duration.ofMinutes(1)) > 0)
+-            throw new IllegalArgumentException("Fixture wait must be positive and at most one minute");
++        if (wait.isNegative() || wait.isZero() || wait.compareTo(Duration.ofSeconds(90)) > 0)
++            throw new IllegalArgumentException("Fixture wait must be positive and at most ninety seconds");
+         var context = runtime.modContexts().get(OWNER).context();
+         var observed = new AtomicReference<Throwable>();
+         var handle = context.tasks()
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+@@ -53,6 +53,8 @@
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflight;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnostic;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowup;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrection;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationCorrectionProgram;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticFollowupProgram;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContractDiagnosticProgram;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuation;
+@@ -108,6 +110,67 @@
+                 compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);
+                 completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+             });
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings={"refused-followup","denied-request","interrupted-request"})
++    void correctionRequiresCompleteFollowupAndConsumesDeniedOrInterruptedRequest(String scenario)throws Exception {
++        enable();
++        try(var runtime=open()) {
++            start(runtime,true);server(runtime);
++            run(runtime,task->{
++                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
++                var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,layout);
++                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
++                var old=compensationIntent(context,task,plan,UUID.randomUUID());
++                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
++                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
++                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
++                appendReadyPreflightFixture(task,log,original,layout);appendUnknownContinuationFixture(task,log,layout);
++                compensationObservation(context,task,true);appendContractControlFixture(task,log,layout,true);
++                compensationObservation(context,task,true);var authority=appendObservedFollowupFixture(task,log,layout,!scenario.equals("refused-followup"));
++                var immutable=List.copyOf(log.events(task));
++                assertTrue(DeploymentAgentPublicationCorrection.eligibility(DeploymentAgentPublicationCompensation.read(immutable,task.id()),immutable).isEmpty());
++                compensationObservation(context,task,true);
++                var selected=DeploymentAgentPublicationCorrection.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
++                if(scenario.equals("refused-followup"))assertTrue(selected.isEmpty());
++                else {
++                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationCorrectionProgram(layout);
++                    UUID historicalAction=UUID.fromString(log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).findFirst().orElseThrow().action());
++                    try(var reused=program.request(DeploymentAgentPublicationCorrection.binding(eligible),historicalAction)) {
++                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),reused.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,reused.resourceTargets()));
++                        var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCorrection.open(task,log,eligible,reused,intent));assertEquals(before,log.events(task));
++                    }
++                    try(var request=program.request(DeploymentAgentPublicationCorrection.binding(eligible),UUID.randomUUID())) {
++                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,request.resourceTargets()));
++                        var durable=DeploymentAgentPublicationCorrection.open(task,log,eligible,request,intent);
++                        var before=log.events(task);
++                        for(String field:List.of("task","sourceVersion","prior","continuationRequest")) {
++                            var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
++                            if(field.equals("task"))node.put(field,UUID.randomUUID().toString());else if(field.equals("continuationRequest"))node.put(field,1);else node.put(field,"0".repeat(64));
++                            forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
++                            assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
++                        }
++                        boolean interrupted=scenario.equals("interrupted-request");
++                        durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(interrupted?"APPROVE":"DENY",false,"Local correction decision"),"5".repeat(64));
++                        if(interrupted) {
++                            var beforeGrant=log.events(task);assertThrows(Exception.class,()->durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(authority.get("grant"))));assertEquals(beforeGrant,log.events(task));
++                            durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID()));durable.dispatch();
++                        }
++                        durable.retainInterrupted();assertTrue(DeploymentAgentPublicationCorrection.attempted(log.events(task),eligible));
++                        var attempted=log.events(task);try(var again=program.request(DeploymentAgentPublicationCorrection.binding(eligible),UUID.randomUUID())) {
++                            var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(plan.server()),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationCorrectionProgram.OPERATION,again.resourceTargets()));
++                            assertThrows(Exception.class,()->DeploymentAgentPublicationCorrection.open(task,log,eligible,again,next));assertEquals(attempted,log.events(task));
++                        }
++                        assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(attempted,log.events(task));
++                    }
++                }
++                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
++                assertEquals(immutable,log.events(task).subList(0,immutable.size()));assertTrue(log.events(task).contains(oldResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
++                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
++            }, java.time.Duration.ofSeconds(60));
+         }
+     }
+ 
+@@ -343,6 +406,121 @@
+ 
+     /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
+     @ParameterizedTest
++    @ValueSource(strings={"complete","unknown","timeout","deny","goal-already"})
++    void correctionEveryResultRetainsUnknownUntilFreshGoalAndIndependentCleanup(String scenario)throws Exception {
++        enable();
++        try(var runtime=open()) {
++            start(runtime,true);server(runtime);
++            run(runtime,task->{
++                long fixtureStarted=System.nanoTime();
++                java.util.function.Consumer<String> fixturePhase=name->{System.out.println("CORRECTION_FIXTURE_PHASE scenario="+scenario+" phase="+name+" elapsedNanos="+(System.nanoTime()-fixtureStarted));try{task.progress("Correction fixture "+name,Optional.empty());}catch(gold.debug.windowstolinux.appapi.task.result.ApiException unavailable){throw new AssertionError("Fixture phase could not be recorded",unavailable);}};
++                fixturePhase.accept("TASK_WORK_BEGIN");
++                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
++                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
++                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
++                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
++                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
++                assertEquals(capturedLayout,gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context,task,log.find(task).orElseThrow().identity(),log.events(task)));
++                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
++                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
++                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
++                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
++                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
++                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
++                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
++                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
++                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
++                appendReadyPreflightFixture(task,log,eligible,unit.layout());
++                appendUnknownContinuationFixture(task,log,unit.layout());
++                compensationObservation(context,task,true);appendContractControlFixture(task,log,unit.layout(),true);
++                compensationObservation(context,task,true);appendObservedFollowupFixture(task,log,unit.layout(),true);
++                var immutableOld=List.copyOf(log.events(task));fixturePhase.accept("OLD_IMMUTABLE_HISTORY_READY");
++                var program=new DeploymentAgentPublicationCorrectionProgram(unit.layout());
++                var correctionBinding=new AtomicReference<DeploymentAgentPublicationCorrectionProgram.Binding>();
++                var allowGoal=new java.util.concurrent.atomic.AtomicBoolean(scenario.equals("goal-already"));
++                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
++                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var correctionSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
++                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
++                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
++                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
++                    assertTrue(supplied==task);reviews.incrementAndGet();
++                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
++                    if(node.has("publicationCorrection")) {
++                        assertEquals(plan.sha256(),intent.revision());
++                        assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationCorrection/expectedSourceVersion").asText());
++                        assertEquals(old.event(),node.at("/publicationCorrection/binding/followup/diagnostic/continuation/original/pendingIntentEvent").longValue());
++                        diagnosticAction.set(UUID.fromString(node.at("/publicationCorrection/action").asText()));expectedCommand.set(command.script());
++                        try(var decoded=program.decode(command)){correctionBinding.set(decoded.binding());assertEquals(old.event(),decoded.binding().followup().diagnostic().continuation().original().pendingIntentEvent());}
++                    }
++                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")&&node.has("publicationCorrection")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
++                };
++                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
++                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
++                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());assertTrue(uniqueGrants.add(value.id()));granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
++                });
++                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
++                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
++                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
++                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(granted.get(),a[1]);sends.incrementAndGet();
++                    if(command.script().contains("'publication-original-status'")) {
++                        boolean retained=!allowGoal.get()&&command.script().contains("'"+unit.id()+"'");
++                        String output="PUBLICATION_STATUS=1\nCURRENT="+(retained?plan.components().getFirst().release():"none")+"\nCURRENT_KIND="+(retained?"deployment":"none")+"\nCURRENT_MODE="+(retained?"DAEMON":"none")+"\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="+(cleanups.get()==2?"absent":"owned")+"\nBUILD_ACTIVE=no\nUNIT_PRESENT="+(retained?"yes":"no")+"\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT="+(retained?1:0)+"\n";
++                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
++                    }
++                    if(command.script().contains("'candidate-cleanup-task'")) {cleanups.incrementAndGet();return localReceipt("CANDIDATE_CLEANED=1\n");}
++                    assertEquals(expectedCommand.get(),command.script());correctionSends.incrementAndGet();
++                    try(var expected=program.request(correctionBinding.get(),diagnosticAction.get())) {
++                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
++                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_CONTINUATION_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
++                        String output=DeploymentAgentPublicationCorrectionProgram.FRAME+correctionSafeReceipt(program,expected,scenario.equals("unknown"))+"\n";
++                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
++                    }
++                });
++                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
++                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
++                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
++                var producer=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log);
++                fixturePhase.accept("FIRST_RECONCILE_BEGIN");
++                boolean firstResult=producer.run();fixturePhase.accept("FIRST_RECONCILE_END");
++                if(scenario.equals("goal-already")) {
++                    assertTrue(firstResult);assertEquals(0,correctionSends.get());assertEquals(2,cleanups.get());
++                    assertTrue(log.events(task).stream().noneMatch(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)));
++                    assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());return success();
++                }
++                assertFalse(firstResult);
++                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
++                assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());
++                assertEquals(0,cleanups.get());assertEquals(3,reviews.get());assertEquals(scenario.equals("deny")?2:3,grants.get());
++                assertEquals(scenario.equals("deny")?2:3,sends.get());assertEquals(scenario.equals("deny")?0:1,correctionSends.get());
++                assertTrue(state.lastActionEvent()>immutableOld.getLast().id());
++                var correctionEvents=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList();
++                assertFalse(correctionEvents.isEmpty());var afterAttempt=List.copyOf(correctionEvents);
++                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));assertTrue(log.events(task).contains(oldResult));
++                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
++                assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
++                assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
++                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
++                fixturePhase.accept("REPEAT_UNMET_RECONCILE_BEGIN");
++                assertThrows(Exception.class,()->new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
++                fixturePhase.accept("REPEAT_UNMET_RECONCILE_END");
++                assertEquals(afterAttempt,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationCorrection.EVENT)).toList());assertEquals(0,cleanups.get());
++                allowGoal.set(true);fixturePhase.accept("FINAL_GOAL_RECONCILE_BEGIN");
++                assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
++                fixturePhase.accept("FINAL_GOAL_RECONCILE_END");
++                assertEquals(scenario.equals("deny")?0:1,correctionSends.get());assertEquals(2,cleanups.get());
++                assertEquals(grants.get(),uniqueGrants.size());assertEquals(reviews.get(),grants.get()+(scenario.equals("deny")?1:0));
++                assertEquals(immutableOld,log.events(task).subList(0,immutableOld.size()));
++                assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
++                fixturePhase.accept("LOCAL_FAILED_TAIL_BEGIN");
++                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task)).outcome());
++                fixturePhase.accept("LOCAL_FAILED_TAIL_END");return success();
++            }, java.time.Duration.ofSeconds(90));
++        }
++    }
++
++    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
++    @ParameterizedTest
+     @ValueSource(strings={"complete","partial","timeout","deny","refused","goal-already"})
+     void contractFollowupFreshObservationAndEveryResultPreserveUnknownWithoutReplay(String scenario)throws Exception {
+         enable();
+@@ -1268,6 +1446,26 @@
+         }
+         return Map.of("action",action,"grant",grant);
+     }
++    private static Map<String,UUID> appendObservedFollowupFixture(TaskContext task,DeploymentAgentActionLog log,
++        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout,boolean allPass)throws Exception {
++        var events=log.events(task);var eligible=DeploymentAgentPublicationContractDiagnosticFollowup.eligibility(DeploymentAgentPublicationCompensation.read(events,task.id()),events).orElseThrow();
++        var program=new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
++        try(var request=program.request(DeploymentAgentPublicationContractDiagnosticFollowup.binding(eligible),action)) {
++            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(eligible.original().plan().server()),eligible.original().plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContractDiagnosticFollowupProgram.OPERATION,request.resourceTargets()));
++            var durable=DeploymentAgentPublicationContractDiagnosticFollowup.open(task,log,eligible,request,intent);
++            durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Immutable complete native contract review"),"4".repeat(64));durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));durable.dispatch();
++            String safe=contractFollowupSafeReceipt(program,request,!allPass);var actual=localReceipt(DeploymentAgentPublicationContractDiagnosticFollowupProgram.FRAME+safe+"\n");durable.result(actual,program.parse(request,actual));
++        }
++        return Map.of("action",action,"grant",grant);
++    }
++    private static String correctionSafeReceipt(DeploymentAgentPublicationCorrectionProgram program,
++        DeploymentAgentPublicationCorrectionProgram.Request request,boolean unknown)throws Exception {
++        var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=json.createObjectNode().put("format",DeploymentAgentPublicationCorrectionProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());safe.set("binding",json.valueToTree(request.binding()));
++        safe.put("status",unknown?"UNKNOWN":"ROLLED_BACK").put("check",unknown?"INTERNAL":"COMPLETE").put("mutationStarted",true);
++        for(String key:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))if(unknown)safe.putNull(key);else safe.put(key,true);
++        return program.validateReceipt(request,safe.toString()).canonicalJson();
++    }
++
+     private static String contractFollowupSafeReceipt(DeploymentAgentPublicationContractDiagnosticFollowupProgram program,
+         DeploymentAgentPublicationContractDiagnosticFollowupProgram.Request request,boolean refused)throws Exception {
+         var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=json.createObjectNode().put("format",DeploymentAgentPublicationContractDiagnosticFollowupProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());safe.set("binding",json.valueToTree(request.binding()));
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrectionProgramTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrectionProgramTest.java
+new file mode 100644
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCorrectionProgramTest.java
+@@ -0,0 +1,239 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static org.junit.jupiter.api.Assertions.*;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.*;
++import java.security.MessageDigest;
++import java.time.Duration;
++import java.util.*;
++import java.util.concurrent.*;
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++class DeploymentAgentPublicationCorrectionProgramTest {
++    private static final ObjectMapper JSON=new ObjectMapper();
++    private final DeploymentRemoteLayout layout=DeploymentRemoteLayout.original();
++    private final DeploymentAgentPublicationCorrectionProgram program=new DeploymentAgentPublicationCorrectionProgram(layout);
++    private DeploymentAgentPublicationCorrectionProgram.Binding binding(){
++        var o=new DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding("host",UUID.fromString("072bc074-4bce-4c14-b425-f2ff965c7d40"),UUID.fromString("45e3a9a4-a6b8-403a-89f5-605e11eeeca0"),UUID.fromString("d5ace0b0-25c5-4fa9-a8fa-dc1839cd5b24"),271,"a".repeat(64),"b".repeat(64),"backend","c".repeat(64),"backend-0123456789abcdef","d".repeat(64),layout.digest());
++        var c=new DeploymentAgentPublicationContinuationProgram.Binding(o,272,"e".repeat(64),new DeploymentAgentPublicationContinuationProgram.PriorPreflight(UUID.fromString("e3c6caa1-3a02-4a85-ad7a-7552fc73ec6c"),353,361,"f".repeat(64),"1".repeat(64)),new DeploymentAgentPublicationContinuationProgram.CurrentFingerprints("2".repeat(64),"3".repeat(64),"4".repeat(64),"5".repeat(64),"6".repeat(64),"7".repeat(64)));
++        var d=new DeploymentAgentPublicationContractDiagnosticProgram.Binding(c,new DeploymentAgentPublicationContractDiagnosticProgram.PriorContinuation(UUID.fromString("cd6fee42-b595-433b-8b13-b79b5ed3ad24"),385,391,"8".repeat(64),"9".repeat(64),new DeploymentAgentPublicationContinuationProgram(layout).sourceVersion()),426,"0".repeat(64));
++        // 480/530 and the followup action are local fixture values, not live-ledger claims.
++        var f=new DeploymentAgentPublicationContractDiagnosticFollowupProgram.Binding(d,new DeploymentAgentPublicationContractDiagnosticFollowupProgram.PriorDiagnostic(UUID.fromString("dce2e4ed-de76-4c01-894b-99ee1b980cb7"),449,456,"a".repeat(64),"b".repeat(64),new DeploymentAgentPublicationContractDiagnosticProgram(layout).sourceVersion()),480,"c".repeat(64));
++        return new DeploymentAgentPublicationCorrectionProgram.Binding(f,new DeploymentAgentPublicationCorrectionProgram.PriorFollowup(UUID.fromString("11111111-2222-4333-8444-555555555555"),491,498,"d".repeat(64),"e".repeat(64),new DeploymentAgentPublicationContractDiagnosticFollowupProgram(layout).sourceVersion()),530,"f".repeat(64));
++    }
++    @Test void correctionAssemblesCompleteSourceAndReachesTheFixedEntry()throws Exception{
++        assertEquals("ee44f8cce327f38b8b6c519829ef8581301261eee7fbbdc77fb47ce14053f113",new DeploymentAgentPublicationContinuationProgram(layout).sourceVersion());
++        assertEquals("c9c21e6e00a04dec8fd64767cee299eae47d684d88c2f5036efa9b0923cbbc36",new DeploymentAgentPublicationContractDiagnosticProgram(layout).sourceVersion());
++        assertEquals("4bce53b129711ad351344107e8f298b2588c20f0ec82f9856d9b5e3b19eb2021",new DeploymentAgentPublicationRecoveryProgram(layout).version());
++        try(var r=program.request(binding(),UUID.randomUUID());var decoded=program.decode(r.command())){
++            assertEquals(r.binding(),decoded.binding());assertArrayEquals(program.source().getBytes(StandardCharsets.UTF_8),r.command().stdin());
++            assertEquals(Duration.ofSeconds(180),r.command().timeout());assertEquals(16384,r.command().outputLimitBytes());assertEquals(9,r.resourceTargets().size());
++            assertEquals(r.resourceTargets(),DeploymentAgentPublicationCorrectionProgram.reviewedResourceTargets(r.command(),layout,new ServerId("host")));
++            assertEquals("commandEvidence.completeExecutableInput",DeploymentAgentPublicationCorrectionProgram.reviewFacts(r.command(),layout).get("executableInputReference"));
++            try(var changed=new CommandRequest(r.command().script()+"\n",r.command().stdin(),r.command().timeout(),r.command().outputLimitBytes())){assertThrows(IllegalArgumentException.class,()->program.decode(changed));}
++            try(var changed=new CommandRequest(r.command().script(),(program.source()+"\n").getBytes(StandardCharsets.UTF_8),r.command().timeout(),r.command().outputLimitBytes())){assertThrows(IllegalArgumentException.class,()->program.decode(changed));}
++        }
++        String body=assembledBash();
++        Result syntax=bash(body,true);assertEquals(0,syntax.exit(),syntax.output());
++        // Execute the real complete assembly with no args: the actual fixed entry must
++        // reject before require_root or any filesystem/lifecycle operation is reached.
++        Result entry=bash(body,false);assertEquals(74,entry.exit(),entry.output());assertEquals("CONTINUATION_REFUSED=ARGUMENTS\n",entry.output());
++    }
++    @Test void correctionRejectsChangedPriorAndMalformedReceipts()throws Exception{
++        try(var r=program.request(binding(),UUID.randomUUID())){
++            var n=envelope(r);n.put("status","ROLLED_BACK").put("check","COMPLETE").put("mutationStarted",true);for(String k:goals())n.put(k,true);
++            assertEquals(n.toString(),program.validateReceipt(r,n.toString()).canonicalJson());
++            String frame=DeploymentAgentPublicationCorrectionProgram.FRAME+n+"\n";assertEquals(n.toString(),program.parse(r,actual(frame,"",0,false)).canonicalJson());
++            for(var bad:List.of(actual(frame,"private-value",0,false),actual(frame,"",1,false),actual(frame,"",0,true),actual(frame+frame,"",0,false)))assertThrows(IllegalArgumentException.class,()->program.parse(r,bad));
++            for(String k:List.of("format","sourceVersion","action","binding","status","check","mutationStarted","currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained")){var bad=n.deepCopy();bad.remove(k);assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,bad.toString()));}
++            for(String k:goals()){var bad=n.deepCopy().put(k,false);assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,bad.toString()));}
++            for(String k:List.of("requestDetailSha256","receiptSha256","sourceVersion")){var bad=n.deepCopy();((ObjectNode)bad.path("binding").path("prior")).put(k,"9".repeat(64));assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,bad.toString()));}
++            var numeric=n.deepCopy();((ObjectNode)numeric.path("binding").path("followup").path("diagnostic").path("continuation")).put("pendingResultEvent",272.5);assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,numeric.toString()));
++            assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,n.toString().replace("\"status\":","\"foreign\":true,\"status\":")));
++            assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,n.toString().replace("\"status\":","\"status\":\"UNKNOWN\",\"status\":")));
++            var unknown=n.deepCopy().put("status","UNKNOWN").put("check","INTERNAL");for(String k:goals())unknown.putNull(k);assertEquals(unknown.toString(),program.validateReceipt(r,unknown.toString()).canonicalJson());
++            var notStarted=unknown.deepCopy().put("mutationStarted",false);assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,notStarted.toString()));
++            var refused=unknown.deepCopy().put("status","REFUSED").put("check","FINGERPRINTS").put("mutationStarted",false);assertEquals(refused.toString(),program.validateReceipt(r,refused.toString()).canonicalJson());
++            try(var other=program.request(binding(),UUID.randomUUID())){assertThrows(IllegalArgumentException.class,()->program.validateReceipt(other,n.toString()));}
++            // Python validates the same fixed data shape before touching native IO.
++            var input=JSON.createObjectNode();input.set("binding",JSON.valueToTree(r.binding()));input.put("action",r.action().toString()).put("sourceVersion",program.sourceVersion());
++            assertEquals(0,pythonValidation(input).exit());
++            var extra=input.deepCopy();((ObjectNode)extra.path("binding").path("followup")).put("foreign",true);assertNotEquals(0,pythonValidation(extra).exit());
++            var booleanEvent=input.deepCopy();((ObjectNode)booleanEvent.path("binding").path("prior")).put("requestEvent",true);assertNotEquals(0,pythonValidation(booleanEvent).exit());
++        }
++        var b=binding();var wrong=new DeploymentAgentPublicationCorrectionProgram.PriorFollowup(b.prior().action(),491,498,b.prior().requestDetailSha256(),b.prior().receiptSha256(),"0".repeat(64));
++        assertThrows(IllegalArgumentException.class,()->program.request(new DeploymentAgentPublicationCorrectionProgram.Binding(b.followup(),wrong,530,"f".repeat(64)),UUID.randomUUID()));
++        var c=b.followup().diagnostic().continuation();for(UUID old:List.of(c.original().pendingAction(),c.preflight().action(),b.followup().diagnostic().prior().action(),b.followup().prior().action(),b.prior().action()))assertThrows(IllegalArgumentException.class,()->program.request(b,old));
++        assertThrows(IllegalArgumentException.class,()->new DeploymentAgentPublicationCorrectionProgram.Binding(b.followup(),b.prior(),498,"f".repeat(64)));
++    }
++    @Test void correctionGuardRejectsDriftAndPerformsOneOwnedRollback(@TempDir Path temp)throws Exception{
++        String full=assembledBash();
++        for(String scenario:List.of("candidate-owner","task","maintenance","release-owner","parameters","unit","current","full-parameters","data-links","unit-render","fragment","dropins","job","expected")){
++            Path f=temp.resolve(scenario);prepare(f);String args=arguments(f),release="b".repeat(64);
++            var paths=Map.of("candidate-owner","state/work/backend-0123456789abcdef/.deployer","task","state/work/backend-0123456789abcdef/.agent-task","maintenance","state/application-locks/backend/maintenance","release-owner","apps/backend/releases/"+release+"/.windowstolinux-owner","parameters","apps/backend/releases/"+release+"/.windowstolinux-deployment-parameters","unit","units/backend.service","current","apps/backend/current");
++            if(paths.containsKey(scenario))Files.writeString(f.resolve(paths.get(scenario)),"foreign");if(scenario.equals("job"))Files.writeString(f.resolve("state/application-locks/backend/job"),"foreign");
++            Result result=bash(guardScript(f,scenario,args,full),false);
++            if(!scenario.equals("expected")){
++                assertEquals(74,result.exit(),result.output());assertTrue(result.output().contains("CONTINUATION_REFUSED="));assertFalse(result.output().contains("CONTINUATION_MUTATION_STARTED"));assertEquals("",Files.readString(f.resolve("effects")));
++                assertTrue(Files.exists(f.resolve("apps/backend/releases/"+release)));assertTrue(Files.exists(f.resolve("state/application-locks/backend/maintenance")));
++            }else{
++                assertEquals(0,result.exit(),result.output());assertEquals("CONTINUATION_MUTATION_STARTED=1\nROLLED_BACK=1\nCONTINUATION_COMPLETED=1\n",result.output());
++                var lines=Files.readAllLines(f.resolve("effects"));assertEquals(1,lines.stream().filter(v->v.equals("LOCK_HELD_AT_STOP=1")).count());assertEquals(4,lines.stream().filter(v->v.equals("LOCK_HELD_AT_DELETE=1")).count());
++                for(String path:List.of("apps/backend/current","units/backend.service","apps/backend/releases/"+release,"state/application-locks/backend/maintenance"))assertFalse(Files.exists(f.resolve(path)));
++            }
++            assertEquals("admission-sentinel",Files.readString(f.resolve("state/application-locks/backend/admission")));assertEquals("run-sentinel",Files.readString(f.resolve("state/application-locks/backend/run")));
++            assertEquals("foreign-marker",Files.readString(f.resolve("state/application-locks/backend/foreign-maintenance")));assertEquals("retained-data",Files.readString(f.resolve("apps/backend/persistent-data")));assertTrue(Files.exists(f.resolve("state/work/backend-0123456789abcdef/.agent-task")));
++        }
++    }
++    private static List<String> goals(){return List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained");}
++    private ObjectNode envelope(DeploymentAgentPublicationCorrectionProgram.Request r){var n=JSON.createObjectNode().put("format",DeploymentAgentPublicationCorrectionProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",r.action().toString());n.set("binding",JSON.valueToTree(r.binding()));return n;}
++    private static OperationResult<CommandResult> actual(String out,String err,int exit,boolean truncated){return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new CommandResult(Optional.of(exit),out,err,truncated)),Optional.empty());}
++    private String assembledBash()throws Exception{
++        String fixture="import json,sys\nv=json.load(sys.stdin)\nn={'__name__':'fixture'}\nexec(compile(v['source'],'fixed-correction','exec'),n)\nsys.stdout.write(n['BASH_SOURCE'])\n";
++        Result result=execute(List.of(System.getProperty("managed.test.python","python"),"-I","-S","-c",fixture),JSON.writeValueAsBytes(Map.of("source",program.source())),524288);assertEquals(0,result.exit(),result.output());return result.output();
++    }
++    private Result pythonValidation(JsonNode value)throws Exception{
++        String fixture="import json,sys\nv=json.load(sys.stdin)\nn={'__name__':'fixture'}\nexec(compile(v['source'],'fixed-correction','exec'),n)\na=v['value']\nn['validate_binding'](a['binding'],a['action'],a['sourceVersion'])\n";
++        return execute(List.of(System.getProperty("managed.test.python","python"),"-I","-S","-c",fixture),JSON.writeValueAsBytes(Map.of("source",program.source(),"value",value)),16384);
++    }
++    private record Result(int exit,String output){}
++    private static Result bash(String source,boolean syntax)throws Exception{
++        String path=System.getProperty("managed.test.bash","/bin/bash");org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(path)));var args=new ArrayList<>(List.of(path,"--noprofile","--norc","-p"));if(syntax)args.add("-n");args.add("-s");return execute(args,source.getBytes(StandardCharsets.UTF_8),32768);
++    }
++    private static Result execute(List<String> command,byte[] input,int limit)throws Exception{
++        var p=new ProcessBuilder(command).redirectErrorStream(true).start();var pool=Executors.newFixedThreadPool(2);var drain=pool.submit(()->p.getInputStream().readNBytes(limit+1));var writer=pool.submit(()->{try(var out=p.getOutputStream()){out.write(input);}return null;});
++        try{assertTrue(p.waitFor(20,TimeUnit.SECONDS));writer.get(5,TimeUnit.SECONDS);byte[] output=drain.get(5,TimeUnit.SECONDS);assertTrue(output.length<=limit);return new Result(p.exitValue(),new String(output,StandardCharsets.UTF_8).replace("\r\n","\n"));}
++        finally{if(p.isAlive()){p.destroyForcibly();assertTrue(p.waitFor(5,TimeUnit.SECONDS));}p.getInputStream().close();p.getOutputStream().close();drain.cancel(true);writer.cancel(true);pool.shutdownNow();assertTrue(pool.awaitTermination(5,TimeUnit.SECONDS));}
++    }
++    // Fixture helpers below reuse the old narrow Windows boundary: actual fixed guard,
++    // rollback function and self-owned file changes; root/ownership/systemd/flock and
++    // three native-contract inputs are controlled substitutes, not Linux validation.
++ private static String sha(byte[] b)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(b));}
++ private static String arguments(Path f)throws Exception{String release="b".repeat(64);var a=new ArrayList<String>(List.of("072bc074-4bce-4c14-b425-f2ff965c7d40","aaaaaaaabbbb4ccc8dddeeeeeeeeeeee","45e3a9a4-a6b8-403a-89f5-605e11eeeca0","backend","a".repeat(64),"backend-0123456789abcdef",release,"c".repeat(64)));for(String file:List.of("state/work/backend-0123456789abcdef/.deployer","state/work/backend-0123456789abcdef/.agent-task","state/application-locks/backend/maintenance","apps/backend/releases/"+release+"/.windowstolinux-owner","apps/backend/releases/"+release+"/.windowstolinux-deployment-parameters","units/backend.service"))a.add(sha(Files.readAllBytes(f.resolve(file))));return String.join(" ",a);}
++    private static void prepare(Path fixture) throws Exception {
++        String task = "072bc074-4bce-4c14-b425-f2ff965c7d40", release = "b".repeat(64);
++        for (String directory : java.util.List.of("apps/backend/releases/" + release, "state/work/backend-0123456789abcdef",
++            "state/application-locks/backend", "state/snapshots", "units"))
++            java.nio.file.Files.createDirectories(fixture.resolve(directory));
++        String root = fixture.toString().replace('\\', '/');
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/current"), root + "/apps/backend/releases/" + (release));
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/releases/" + release + "/.windowstolinux-owner"), "a".repeat(64));
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/releases/" + release + "/.windowstolinux-deployment-parameters"), "fixture-native-daemon\n");
++        java.nio.file.Files.writeString(fixture.resolve("state/work/backend-0123456789abcdef/.agent-task"), task);
++        java.nio.file.Files.writeString(fixture.resolve("state/work/backend-0123456789abcdef/.deployer"), "root");
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/admission"), "admission-sentinel");
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/run"), "run-sentinel");
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/maintenance"), "deployment-" + release);
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/foreign-maintenance"), "foreign-marker");
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/persistent-data"), "retained-data");
++        java.nio.file.Files.writeString(fixture.resolve("units/backend.service"), "expected-unit\n");
++        java.nio.file.Files.writeString(fixture.resolve("expected-unit"), "expected-unit\n");
++        java.nio.file.Files.writeString(fixture.resolve("effects"), "");
++    }
++
++    private static String guardScript(Path fixture,String scenario,String arguments,String full) throws Exception {
++        String guard;
++        try(var input=DeploymentAgentPublicationCorrectionProgramTest.class.getResourceAsStream("/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation-guard.sh")){
++            guard=DeploymentRemoteLayoutTemplate.render(new String(Objects.requireNonNull(input).readAllBytes(),StandardCharsets.UTF_8).replace("\r\n","\n"),DeploymentRemoteLayout.original());
++        }
++        String suffix="\n"+guard;assertTrue(full.endsWith(suffix));assertEquals(full.length()-suffix.length(),full.indexOf(suffix));
++        // Execute the actual complete assembled definitions, not the old four-fragment subset.
++        StringBuilder script=new StringBuilder(full.substring(0,full.length()-suffix.length())).append('\n');
++        script.append("""
++            fixture='@FIXTURE@'
++            scenario='@SCENARIO@'
++            base_root="$fixture/state"
++            work_root="$base_root/work"
++            snapshots_root="$base_root/snapshots"
++            applications_root="$fixture/apps"
++            lock_directory="$base_root/application-locks/backend"
++            lock_calls=0
++            require_root() { :; }
++            require_deployer() { deployer=root; }
++            assert_storage_parent() { :; }
++            assert_root_owned_directory() { [[ -d "$1" && ! -L "$1" ]] || reject fixture-directory; }
++            assert_root_owned_regular() { [[ -f "$1" && ! -L "$1" ]] || reject fixture-regular; }
++            unit_path() { printf '%s/units/backend.service' "$fixture"; }
++            load_deployment_parameters() { [[ "$scenario" != full-parameters ]] || reject fixture-parameters; assert_root_owned_regular "$1"; application_mode=DAEMON; deployment_runtime_parameters=(fixture-native-daemon); }
++            expected_deployment_unit_digest() { [[ "$scenario" != unit-render ]] || { printf x; return; }; command sha256sum -- "$fixture/expected-unit" | command awk '{print $1}'; }
++            assert_managed_data_links() { [[ "$scenario" != data-links ]] || reject fixture-data; }
++            # The Windows runner needs no symlink privilege: only CURRENT's representation is virtualized.
++            function [() {
++                if [[ "$#" = 3 && "$1" = -L && "$2" = "$applications_root/backend/current" ]]; then
++                    builtin [ -f "$2" ]; return
++                fi
++                builtin [ "$@"
++            }
++            readlink() {
++                local target="${!#}"
++                [[ "$target" = "$applications_root/backend/current" ]] || return 91
++                command cat -- "$target"
++            }
++            stat() {
++                case "$2" in
++                    %h) printf '1' ;;
++                    %a) if [[ "${!#}" = "$lock_directory" ]]; then printf '700'; else printf '600'; fi ;;
++                    *) command stat "$@" ;;
++                esac
++            }
++            install() {
++                [[ "$*" = "-d -o root -g root -m 700 -- $lock_directory" && -d "$lock_directory" ]] || return 92
++            }
++            flock() {
++                [[ "$1" = -w && "$3" = -x ]] || return 93
++                lock_calls=$((lock_calls + 1))
++            }
++            fixture_locked() {
++                [[ "$lock_calls" = 2 ]] || exit 94
++                : <&"$application_admission_fd"
++                : <&"$application_run_fd"
++            }
++            systemctl() {
++                case "$*" in
++                    'show --value --property FragmentPath windowstolinux-backend.service') if [[ "$scenario" = fragment ]]; then printf /foreign; else unit_path backend; fi ;;
++                    'show --value --property DropInPaths windowstolinux-backend.service') if [[ "$scenario" = dropins ]]; then printf /foreign; fi ;;
++                    'show --value --property LoadState windowstolinux-backend.service') printf 'loaded' ;;
++                    'show --value --property ActiveState '* ) printf 'inactive' ;;
++                    'show --value --property MainPID '* ) printf '0' ;;
++                    'show --value --property ControlGroup '* ) : ;;
++                    'is-active --quiet windowstolinux-backend.service') return 1 ;;
++                    'stop windowstolinux-backend.service') fixture_locked; printf 'LOCK_HELD_AT_STOP=1\n' >>"$fixture/effects" ;;
++                    daemon-reload) fixture_locked; printf 'RELOAD=1\n' >>"$fixture/effects" ;;
++                    *) printf 'UNEXPECTED_SYSTEMCTL=%s\n' "$*" >&2; return 95 ;;
++                esac
++            }
++            rm() {
++                local target="${!#}"
++                case "$target" in
++                    "$fixture/units/backend.service" | "$fixture/apps/backend/current" | "$fixture/apps/backend/releases/@RELEASE@" | "$lock_directory/maintenance") ;;
++                    *) printf 'UNEXPECTED_DELETE=%s\n' "$target" >&2; exit 96 ;;
++                esac
++                fixture_locked
++                printf 'LOCK_HELD_AT_DELETE=1\nDELETE=%s\n' "$target" >>"$fixture/effects"
++                command rm "$@"
++            }
++            exec 9>"$fixture/trace"
++            BASH_XTRACEFD=9
++            PS4='+ '
++            set -x
++            set -- @ARGUMENTS@
++            """.replace("@FIXTURE@", fixture.toString().replace('\\', '/').replace("'", "'\\''"))
++            .replace("@SCENARIO@",scenario).replace("@ARGUMENTS@",arguments).replace("@OWNER@", "a".repeat(64)).replace("@RELEASE@", "b".repeat(64)).replace("@PLAN@", "c".repeat(64)));
++        script.append(guard);
++        return script.toString();
++    }
++
++
++
++}
