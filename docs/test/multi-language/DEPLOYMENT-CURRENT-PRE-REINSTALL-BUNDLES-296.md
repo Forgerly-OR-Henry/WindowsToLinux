@@ -1,0 +1,13 @@
+# 当前主机必要数据受保护备份 296
+
+用户要求先将当前必要远端数据备份到 `test/data`，验证和收尾完成后暂停目标；用户会把 `paused` 视为可以重装的信号。因此代码、计划、成功生成或下载单独都不能表示备份完成。本轮不执行服务器重装，不恢复194，不改变旧七UNKNOWN资源及历史结论，也不把备份算作File Transfer或CSV的完整验收。
+
+295的两个真实原生APP盘点确定当前主机指纹为sCR、正式数据只有两个canonical SQLite；FT旧238 backend仍在运行且有WAL。精确冻结选择包括276个普通文件745663B、两库主文件盘点时65536B。普通文件含操作与身份事实、正式配置、四个unit、19个上传源码归档、55个实盘小型源码及输出文件，避免只保存上传前源码而遗漏远端修改。2383个已盘路径逐项分类；21个工作区映像、942个实列缓存/工具遥测、411个有对应上传归档的输入副本、2个第三方Node对象、3个大型应用可执行文件及5个可重建helper/SDK对象排除。链接和目录只保存元数据，不作为可自动恢复对象。
+
+本次实现仅测试fixture、公开producer资源及新的本地校验工具，保持生产API、STATIC、ASSISTED和历史12库/310文件合同不变。两个producer分别复用既有DATABASE_SNAPSHOT及FILES_SNAPSHOT动作；完整公开源码和精确元数据stdin经原生独立APP，取得全新精确grant后才执行。producer只创建各自全新私有目录，不覆盖或清理原资源。普通文件前后核FD及路径身份、长度、时间；SQLite从canonical mode=ro路径在线备份，纳入已提交WAL内容，每库单独时间点。归档仅含严格USTAR的manifest和编号普通成员，无链接、PAX或路径提取。
+
+每份下载使用完整真实producer成功链，单独原生APP及新grant，再交原生SDK下载；不调用APP前的FileQuery正文预读。SDK根据获审SHA验证来源和下载结果，不能据此宣称producer与下载的远端inode相同。复用既有CREATE_NEW、私有ACL、CurrentUser DPAPI、密文磁盘回读、明文身份核验及删除机制。新私有目录为 `test/data/pre-reinstall-20261018-295`，仅当前Windows用户及SYSTEM访问。SQLite、配置和归档私密正文不进入模型、日志或Git。
+
+独立工具 `test/tools/backup/verify_current_backup_memory.py` 读取冻结选择及真实SDK回执，验证DPAPI密文、解密长度和SHA、归档精确成员集、manifest与选择映射、各成员SHA；SQLite仅在内存deserialize后检查integrity及外键，不输出业务行或字段名。校验明确不声称所有内部内存副本已安全擦除，不生成明文恢复文件。CurrentUser DPAPI备份需保留本机当前Windows账户的解密能力。
+
+父校验器6个定点测试通过（0.009s），覆盖空文件、inode和原始stdin绑定、额外/重复/链接成员、尾随数据、内层损坏、两个独立数据库内存恢复及失败/截断producer回执。未运行全量，也未把这些本地通过当作实际DPAPI或远端备份成功。Java两项定点现已分别通过：test02的Python协议方法、test03的实际大计划/六原件链及反例方法，均为相同冻结源码；test03唯一方法JUnit0.501s。FILES实际stdin72427B、v2计划102410B，完整review输入保持512KiB上限。首轮漏选择证据引用和Windows商店Python别名、第二轮父脚本提前退出未生成v2计划的本地失败均保留；随后只重跑仍失败的方法，没有重复已通过的方法。17代码路径及4253951B生产JAR属性不变，自有Java0、所有本地测试临时目录已清。真实生成、下载、独立内存验真及最终覆盖记录尚待完成；总清单仍为IN_PROGRESS_NOT_READY，目标active。

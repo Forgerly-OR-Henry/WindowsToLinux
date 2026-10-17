@@ -1,0 +1,6 @@
+e685f94d09f9c5cb11f54980a6509c16a720b3506cce6b570b8ac97763938e63  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+c1998197b77823875f7a44853e70267659ec369512b3234bbe0d4552f4c4a76f  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-backup.py
+a2e97c1b8e36bcccf6ac48d6f586b58836528d0ed18596124509d0a25382baf0  test/tools/backup/verify_current_backup_memory.py
+4e846af73ab1f93f525aa3494c47c21e6cd3a00f22b5a63feec4d38627689c43  test/tools/backup/test_verify_current_backup_memory.py
+b88887aabe4e866f06de0b1cbcdf876a398b3b58f33ac05d12960139e6b28837  docs/test/multi-language/DEPLOYMENT-CURRENT-PRE-REINSTALL-BUNDLES-296.patch
+1edccfbfc9f73b030f10c7d4d83c5c9250d699059d89e2cca09030fdc5de1da8  docs/test/multi-language/DEPLOYMENT-CURRENT-PRE-REINSTALL-BUNDLES-296.md

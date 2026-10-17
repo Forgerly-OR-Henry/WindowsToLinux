@@ -8,7 +8,11 @@
 
 唯一local selector DeploymentStaticLiveAcceptanceTest#currentBackupStateRejectsOtherSelectorsKindsAndPriorIdentities，managed.runtime.backupCurrentStateLocal=true；test01/session88953 actualexit0，1P0F0E0skip，JUnit0.048s/Maven12.574s，UTC2026-10-17T18:15:56.1656061Z—2026-10-17T18:16:09.6138057Z。正例及错误selector/kind/root/UUID/hostkey、归档type/owner/version/UNKNOWN/FAILED均覆盖；纯guard不运行Runtime/DB/模型/SSH。仅test和必要testCompile，不package/旧组复跑/全量；14直接源与4253951B生产JAR属性窗口不变。CIMownJava0/terminated0，owner/边界/no-reparse已清c295a/u295t。
 
-父新metadata计划只读五个当前captured root及managed systemd目录/路径属性，空stdin180秒/1MiB；沿用旧公开metadata结构并补系统单元映射，不读取配置/业务正文，不改远端资源。代码只表示新入口可用，未执行实机。所有depth/cap/访问/未映射引用均保UNKNOWN，不能由一次盘点宣告完整备份。必要范围是当前正式应用持久数据、配置及未结任务必要身份/操作事实，不按旧12库或七组FT假定数量。
+父新metadata计划只读五个当前captured root及managed systemd目录/路径属性，空stdin180秒/1MiB；沿用旧公开metadata结构并补系统单元映射，不读取配置/业务正文，不改远端资源。所有depth/cap/访问/未映射引用均保UNKNOWN，不能由一次盘点宣告完整备份。必要范围是当前正式应用持久数据、配置及未结任务必要身份/操作事实，不按旧12库或七组FT假定数量。
+
+实际两次盘点均已通过：inventory01 Task d6f58cda-9766-4343-b4fd-d01b35339818、新grant f0dae5de-ff23-42e5-aed8-d473ef4685e7，JUnit1P/10.886s；inventory02 Task bb5e2ac0-f1ab-470f-898e-c2b9aa45b5d1、新grant c83183c1-a086-40e8-b2cd-eb3e15f5c1b2，JUnit1P/10.873s。两Task均ENDED/SUCCEEDED，各单独原生APP、单新grant、单命令。深盘点2310路径，无depth边界、裁剪和截断；另逐个读取四个实列unit属性。当前正式数据只有两个canonical SQLite及FT的WAL/SHM，FT旧238 backend仍active，不能直接复制主库或停旧服务冒充备份。两次均已清自有Java/临时目录，原Runtime及证据保留，未生成备份payload。
+
+两次APP已知输入8916、输出210、缓存命中输入896、未命中8020，已知IO审批占比100%，输入加权缓存命中率10.0493%；两个reasoning未知、完整账单未知。这仅为备份元数据阶段指标，不能并入完整业务验收。首次launcher的本地PowerShell变量冲突在Java/模型/SSH前失败，修正后才运行inventory01；未重放远端动作。
 
 专项静态判断确认原生SDK在消费下载grant后会重新核路径、句柄、大小和获审SHA；后续可用真实成功producer回执作为expected SHA，复用单bundle独立APP/newgrant及backupProtectOwnedPlain，避免旧APP前readFile预读。当前不泛化旧12/310合同，实际数量/体积待fresh inventory；producer与下载分别审批，DPAPI保护与内存恢复验证还须完成。不能仅凭下载或密文回读宣布READY。
 
