@@ -1,0 +1,300 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -58,6 +58,7 @@
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitCommit;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitRuntimeConfig;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentFileBinding;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition;
+ import gold.debug.windowstolinux.mod.deployment.service.core.publish.DeploymentPublishPlan;
+@@ -439,6 +440,7 @@
+         }
+         verifyWorkspaceBoundary();
+         var inputs = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input>();
++        long preparedReleaseBytes = 0, additionalDiskDemandBytes = 0;
+         for (var part : plan.components()) {
+             var request = part.workspaceRequest().orElseThrow(() -> new IllegalArgumentException("WORKSPACE_DEMAND_UNKNOWN: source-backed AUTO minimum/preferred build bytes or EXPLICIT candidate bytes required"));
+             var current = existing.get(part.id());
+@@ -448,38 +450,60 @@
+                 gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.preserve(
+                     new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(part.id(), archive.byteCount(),
+                         gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.sourceFloor(archive.byteCount(), archive.uncompressedByteCount(), 2), request), current.quota());
++                if (isolationPolicy != null) preparedReleaseBytes = Math.addExact(preparedReleaseBytes, current.quota().bytes());
+             } else
+                 inputs.add(new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(part.id(), archive.byteCount(),
+                     gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.sourceFloor(archive.byteCount(), archive.uncompressedByteCount(), 2), request));
+         }
++        if (isolationPolicy != null)
++            for (var demand : isolationDiskDemands()) additionalDiskDemandBytes = Math.addExact(additionalDiskDemandBytes, demand.requiredBytes());
++        long fixedCostBytes = Math.addExact(preparedReleaseBytes, additionalDiskDemandBytes);
++        // Native capacity stays intact; this is only a conservative planning allowance, not a filesystem observation.
++        long planningAvailableBytes = Math.max(0, Math.subtractExact(capacity.availableBytes(), fixedCostBytes));
+         Map<String, gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Selection> selected;
+         try {
++            if (isolationPolicy != null && inputs.isEmpty() && capacity.availableBytes() < Math.addExact(fixedCostBytes, workspacePolicy.reserveBytes()))
++                throw new IllegalArgumentException("WORKSPACE_HOST_INSUFFICIENT: availableBytes=" + planningAvailableBytes
++                    + " requiredBytes=" + workspacePolicy.reserveBytes());
+             selected = inputs.isEmpty() ? Map.of()
+-                : gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.select(inputs, capacity.availableBytes(), workspacePolicy,
++                : gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.select(inputs, planningAvailableBytes, workspacePolicy,
+                 gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT);
+         } catch (IllegalArgumentException refused) {
+-            throw planCapacityRejection(refused, capacity, inputs);
++            throw planCapacityRejection(refused, capacity, inputs, preparedReleaseBytes, additionalDiskDemandBytes);
+         }
+         var resolved = plan.components().stream().map(part -> part.withWorkspace(existing.containsKey(part.id())
+             ? gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.preserve(
+             new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input(part.id(), archive.byteCount(),
+                 gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.sourceFloor(archive.byteCount(), archive.uncompressedByteCount(), 2), part.workspaceRequest().orElseThrow()), existing.get(part.id()).quota())
+-            : selected.get(part.id()))).toList();
++            : isolationPolicy == null ? selected.get(part.id()) : observedCapacity(selected.get(part.id()), capacity.availableBytes()))).toList();
+         return resolved;
++    }
++
++    private static DeploymentWorkspaceQuota.Selection observedCapacity(DeploymentWorkspaceQuota.Selection selected, long actualAvailableBytes) {
++        return new DeploymentWorkspaceQuota.Selection(selected.request(), selected.bytes(), selected.sourceFloorBytes(), selected.minimumBytes(),
++            selected.preferredBytes(), actualAvailableBytes, selected.policy(), selected.cost());
+     }
+ 
+     /** Projects only the original quota refusal and its measured inputs. / 仅投影原配额拒绝及其实测输入。 */
+     private IllegalArgumentException planCapacityRejection(IllegalArgumentException refused,
+                                                            DeploymentCandidateChannel.CapacityObservation capacity,
+-                                                           List<gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input> inputs) {
++                                                           List<gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Input> inputs,
++                                                           long preparedReleaseBytes, long additionalDiskDemandBytes) {
+         var match = java.util.regex.Pattern.compile("WORKSPACE_HOST_INSUFFICIENT: availableBytes=([0-9]{1,19}) requiredBytes=([0-9]{1,19})")
+             .matcher(String.valueOf(refused.getMessage()));
+         if (!match.matches()) return refused;
+         try {
+             long available = Long.parseLong(match.group(1)), required = Long.parseLong(match.group(2));
++            long fixedCostBytes = Math.addExact(preparedReleaseBytes, additionalDiskDemandBytes);
+             if (!Long.toString(available).equals(match.group(1)) || !Long.toString(required).equals(match.group(2))
+-                || available != capacity.availableBytes() || required < workspacePolicy.reserveBytes()
+-                || !task.id().equals(capacity.task()) || !server.id().equals(capacity.server())
++                || available != Math.max(0, Math.subtractExact(capacity.availableBytes(), fixedCostBytes)) || required < workspacePolicy.reserveBytes())
++                return refused;
++            long planningAvailableBytes = available;
++            available = capacity.availableBytes();
++            required = Math.addExact(required, fixedCostBytes);
++            if (isolationPolicy != null) refused = new IllegalArgumentException("WORKSPACE_HOST_INSUFFICIENT: availableBytes=" + available
++                + " requiredBytes=" + required + " fixedCostBytes=" + fixedCostBytes, refused);
++            if (!task.id().equals(capacity.task()) || !server.id().equals(capacity.server())
+                 || !configurationRevision.equals(capacity.revision()) || !layout.digest().equals(capacity.layoutSha256())
+                 || !originalSourceRevision.matches("[0-9a-f]{64}") || !configurationRevision.matches("[0-9a-f]{64}")
+                 || !capacity.requestSha256().matches("[0-9a-f]{64}") || !capacity.resultSha256().matches("[0-9a-f]{64}"))
+@@ -501,6 +525,14 @@
+             facts.put("hostReserveBytes", workspacePolicy.reserveBytes());
+             facts.put("requiredBytes", required);
+             facts.put("aggregateHostCostBytes", Math.subtractExact(required, workspacePolicy.reserveBytes()));
++            if (isolationPolicy != null) {
++                facts.put("preparedReleaseBytes", preparedReleaseBytes);
++                facts.put("additionalDiskDemandBytes", additionalDiskDemandBytes);
++                facts.put("fixedCostBytes", fixedCostBytes);
++                facts.put("candidateHostCostBytes", Math.subtractExact(Math.subtractExact(required, fixedCostBytes), workspacePolicy.reserveBytes()));
++                facts.put("planningAvailableBytes", planningAvailableBytes);
++                facts.put("budgetMeaning", "Conservative planning from one native capacity observation; availableBytes is unchanged. Owned candidates are already allocated; their future release quota and additional demands remain. Fresh independently reviewed per-filesystem isolation admission is still required.");
++            }
+             facts.put("cost", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Cost.AGENT.name());
+             facts.put("hostCostMultiplier", gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.hostCost(0,
+                 gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.UNIT,
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+@@ -35,6 +35,7 @@
+ import gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel;
+ import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildBudget;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentSession;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.*;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
+@@ -53,6 +54,7 @@
+     private boolean isolationMissingPlanJourney, isolationMissingHelperJourney, isolationRefusalJourney, isolationUnknownJourney, isolationReadyJourney;
+     private boolean isolationCancelAfterCreateJourney;
+     private boolean isolationExistingToolchainJourney;
++    private boolean isolationQuotaReplanJourney;
+     private UUID isolatedToolchainTask;
+ 
+     @Test
+@@ -103,6 +105,13 @@
+         assertEquals("MOD_STOP_BLOCKED", blocked.problem().eventCode());
+         assertEquals(Map.of("ownerId", OWNER), blocked.problem().context());
+         assertEquals("Mod cleanup is blocked: Task " + isolatedToolchainTask + " still owns Mod resources", blocked.problem().message());
++    }
++
++    @Test
++    void isolatedReplanReservesPreparedReleaseAndProbeWithoutChangingNativeCapacity() throws Exception {
++        isolationReadyJourney = true;
++        isolationQuotaReplanJourney = true;
++        runVerification(VerificationMode.APPROVE, false);
+     }
+ 
+     enum VerificationMode {
+@@ -274,6 +283,9 @@
+ 
+         long selectedQuota;
+ 
++        long isolationQuotaCapacityBytes = 2233180160L;
++        boolean isolationQuotaAdmitted;
++
+         String buildScript = "";
+ 
+         boolean inlineInputObserved;
+@@ -386,6 +398,10 @@
+         void run() throws Exception {
+             try (var tools = remote(); var authorization = DeploymentWorkflowAuthorization.open(context, task, server, REVISION, "FULL_CONTROL", true,
+                 "source=" + material.snapshot().sha256() + "\narchive=" + archive.sha256())) {
++                if (isolationQuotaReplanJourney) {
++                    verifyIsolationQuotaReplan(tools);
++                    return;
++                }
+                 if (isolationMissingPlanJourney || isolationMissingHelperJourney) {
+                     assertThrows(SecurityException.class, () -> tools.hostCommand(task, "printf controlled-no-effect", 30, "controlled"));
+                     assertEquals(0, approvalCalls + creates + uploads + installs + readinessReads);
+@@ -666,6 +682,81 @@
+             }
+         }
+ 
++        void verifyIsolationQuotaReplan(DeploymentAgentRemoteTools tools) throws Exception {
++            long mib = 1024L * 1024, reserve = 1024 * mib;
++            var health = new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentHealthCheck.Process(30, 1);
++            var runtime = new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.NodeService(24, health);
++            var resources = new gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings(List.of(), Optional.of(List.of()));
++            var backend = new DeploymentAgentPlan.Part("backend", "backend", List.of(), List.of("actual-backend-source"), runtime, resources,
++                List.of(), Optional.of(List.of()), List.of(), Optional.of(DeploymentWorkspaceQuota.Request.explicit(256 * mib)), Optional.empty());
++            var web = new DeploymentAgentPlan.Part("web", "web", List.of(), List.of("actual-web-source"), runtime, resources,
++                List.of(), Optional.of(List.of()), List.of(), Optional.of(DeploymentWorkspaceQuota.Request.automatic(128 * mib, 256 * mib)), Optional.empty());
++            var declared = new DeploymentAgentPlan("demo", "web", health, List.of(backend, web));
++            var first = new DeploymentAgentPlan("demo", "web", health, tools.selectWorkspaces(declared, Map.of()));
++            assertEquals(List.of(256 * mib, 256 * mib), first.components().stream().map(part -> part.workspaceSelection().orElseThrow().bytes()).toList());
++            assertEquals(384 * mib, first.components().get(1).workspaceSelection().orElseThrow().preferredBytes());
++            assertEquals(2233180160L, first.components().get(1).workspaceSelection().orElseThrow().availableBytes());
++            tools.acceptWorkspaces(first);
++            var prepared = tools.prepare("demo", first.components().getFirst());
++            assertEquals(1, creates);
++            assertEquals(1, uploads);
++            assertEquals(1, verifySends);
++            assertEquals(1, opens);
++            assertEquals(256 * mib, prepared.quota().bytes());
++            isolationQuotaCapacityBytes = 1964691456L;
++            var owned = Map.of("backend", prepared);
++            var next = new DeploymentAgentPlan("demo", "web", health, tools.selectWorkspaces(declared, owned));
++            assertEquals(prepared.quota(), next.components().getFirst().workspaceSelection().orElseThrow(), "An existing physical quota and its original native observation remain intact");
++            var nextWeb = next.components().get(1).workspaceSelection().orElseThrow();
++            assertEquals(256 * mib, nextWeb.bytes(), "Prepared release256 + additional64 must remain before selecting the web's two copies");
++            assertEquals(384 * mib, nextWeb.preferredBytes());
++            assertEquals(1964691456L, nextWeb.availableBytes(), "Never expose the internally reduced planning allowance as native availableBytes");
++            tools.acceptWorkspaces(next);
++            isolationQuotaAdmitted = false;
++            tools.validateIsolationAdmission();
++            assertEquals(List.of(1088 * mib, 832 * mib), isolationRequirements);
++            assertEquals(2, isolationSends);
++            assertEquals(2, isolationVerdicts);
++            assertEquals(2, isolationActions.size());
++            assertEquals(2, isolationGrants.size(), "The replanned scope needs an independently reviewed fresh native grant and READY receipt");
++            assertEquals(1, creates + installs, "Planning and admission never create the web candidate or install a toolchain");
++            var explicitWeb = new DeploymentAgentPlan.Part(web.id(), web.sourceRoot(), web.dependencies(), web.evidence(), web.runtime(), web.resources(),
++                web.configuration(), web.databaseIds(), web.secretReferences(), Optional.of(DeploymentWorkspaceQuota.Request.explicit(384 * mib)), Optional.empty());
++            var explicitPlan = new DeploymentAgentPlan("demo", "web", health, List.of(backend, explicitWeb));
++            var refused = assertThrows(DeploymentAgentRemoteTools.PlanCapacityRefusal.class, () -> tools.selectWorkspaces(explicitPlan, owned));
++            refused.requireBinding(task, material.snapshot().sha256(), REVISION, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original().digest());
++            var refusal = JSON.readTree(refused.feedback().substring("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=".length()));
++            assertEquals(1964691456L, refusal.path("availableBytes").longValue());
++            assertEquals(2112 * mib, refusal.path("requiredBytes").longValue());
++            assertEquals(reserve, refusal.path("hostReserveBytes").longValue());
++            assertEquals(256 * mib, refusal.path("preparedReleaseBytes").longValue());
++            assertEquals(64 * mib, refusal.path("additionalDiskDemandBytes").longValue());
++            assertEquals(320 * mib, refusal.path("fixedCostBytes").longValue());
++            assertEquals(768 * mib, refusal.path("candidateHostCostBytes").longValue());
++            assertEquals(1964691456L - 320 * mib, refusal.path("planningAvailableBytes").longValue());
++            isolationQuotaCapacityBytes = 2112 * mib - 1;
++            assertThrows(DeploymentAgentRemoteTools.PlanCapacityRefusal.class, () -> tools.selectWorkspaces(explicitPlan, owned));
++            isolationQuotaCapacityBytes++;
++            assertEquals(384 * mib, tools.selectWorkspaces(explicitPlan, owned).get(1).workspaceSelection().orElseThrow().bytes());
++            var onlyPrepared = new DeploymentAgentPlan("demo", "backend", health, List.of(backend));
++            isolationQuotaCapacityBytes = reserve + 320 * mib - 1;
++            var fixedRefusal = assertThrows(DeploymentAgentRemoteTools.PlanCapacityRefusal.class, () -> tools.selectWorkspaces(onlyPrepared, owned));
++            var fixed = JSON.readTree(fixedRefusal.feedback().substring("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=".length()));
++            assertEquals(reserve + 320 * mib - 1, fixed.path("availableBytes").longValue());
++            assertEquals(reserve + 320 * mib, fixed.path("requiredBytes").longValue());
++            assertEquals(0, fixed.path("componentCount").intValue());
++            isolationQuotaCapacityBytes++;
++            assertEquals(prepared.quota(), tools.selectWorkspaces(onlyPrepared, owned).getFirst().workspaceSelection().orElseThrow());
++            isolationQuotaCapacityBytes = 1;
++            var exhausted = assertThrows(DeploymentAgentRemoteTools.PlanCapacityRefusal.class, () -> tools.selectWorkspaces(explicitPlan, owned));
++            var empty = JSON.readTree(exhausted.feedback().substring("TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=".length()));
++            assertEquals(1, empty.path("availableBytes").longValue());
++            assertEquals(0, empty.path("planningAvailableBytes").longValue());
++            assertEquals(2112 * mib, empty.path("requiredBytes").longValue());
++            assertEquals(1, creates);
++            assertEquals(0, installs + controllerReadinessSends + existingPreparationSends);
++        }
++
+         ActionIntent verificationIntent(CommandRequest request) {
+             return gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request)
+                 .withSemantics(new ActionSemantics("deployment.candidate.verify.v1", Set.of(new ActionTarget(server.id(), "deployment-candidate", workspace.candidateRoot()))));
+@@ -737,6 +828,7 @@
+                 assertTrue(isolation.isObject(), "Every native command retains the actual isolation guard");
+                 boolean admitted = !operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)
+                     && isolationSends > 0;
++                if (isolationQuotaReplanJourney) admitted = isolationQuotaAdmitted;
+                 assertEquals(admitted, isolation.path("admitted").asBoolean());
+             } else if (isolationMissingHelperJourney || isolationRefusalJourney || isolationUnknownJourney) {
+                 String operation = input.at("/currentRequest/operation").asText();
+@@ -970,13 +1062,15 @@
+                     assertEquals(isolationSends, isolationGrants.size());
+                     var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(decoded.policy());
+                     var facts = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.reviewFacts(request, layout);
+-                    long required = decoded.scope().components().stream().mapToLong(part -> Math.multiplyExact(2, part.workspaceBytes())).sum()
++                    var allocated = isolationQuotaReplanJourney && creates > 0 ? Set.of(workspace.candidateId()) : Set.<String>of();
++                    long required = decoded.scope().components().stream().mapToLong(part -> Math.multiplyExact(allocated.contains(part.candidate()) ? 1 : 2, part.workspaceBytes())).sum()
+                         + decoded.scope().additionalDiskDemands().stream().mapToLong(demand -> demand.requiredBytes()).sum();
+                     if (isolationReadyJourney) {
+                         assertEquals(2, decoded.scope().components().size());
+-                        assertEquals(17, decoded.scope().components().stream().flatMap(part -> part.paths().stream()).distinct().count());
+-                        assertEquals(2, decoded.scope().components().stream().flatMap(part -> part.ports().stream()).distinct().count());
+-                        assertEquals(3288334336L, required, "Retain the actual 281 workspace plus extra PROBE demand");
++                        assertEquals(isolationQuotaReplanJourney ? 16 : 17, decoded.scope().components().stream().flatMap(part -> part.paths().stream()).distinct().count());
++                        assertEquals(isolationQuotaReplanJourney ? 0 : 2, decoded.scope().components().stream().flatMap(part -> part.ports().stream()).distinct().count());
++                        assertEquals(isolationQuotaReplanJourney ? (creates == 0 ? 1140850688L : 872415232L) : 3288334336L, required,
++                            "Retain all unallocated candidates, future releases and additional PROBE demand");
+                     }
+                     isolationRequirements.add(required);
+                     var body = JSON.createObjectNode().put("format", gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.FORMAT)
+@@ -987,8 +1081,9 @@
+                         .put("reason", isolationReadyJourney ? "READY" : isolationUnknownJourney ? "UNCONFIRMED" : "DISK_SPACE")
+                         .put("pathsChecked", decoded.scope().components().stream().flatMap(part -> part.paths().stream()).distinct().count())
+                         .put("unitsChecked", decoded.scope().components().size() * 2).put("portsChecked", decoded.scope().components().stream().flatMap(part -> part.ports().stream()).distinct().count());
+-                    body.putArray("allocatedCandidates");
+-                    body.putArray("filesystems").addObject().put("device", "7").put("availableBytes", isolationReadyJourney ? 10 * 1073741824L : 1073741824L).put("requiredBytes", required).put("reserveBytes", 1073741824L);
++                    var allocatedBody = body.putArray("allocatedCandidates");
++                    allocated.stream().sorted().forEach(allocatedBody::add);
++                    body.putArray("filesystems").addObject().put("device", "7").put("availableBytes", isolationQuotaReplanJourney ? isolationQuotaCapacityBytes : isolationReadyJourney ? 10 * 1073741824L : 1073741824L).put("requiredBytes", required).put("reserveBytes", 1073741824L);
+                     body.putNull("memoryAvailableBytes").putNull("cpuCount").put("stable", false).putArray("protectedMetadata");
+                     if (isolationReadyJourney) {
+                         body.put("memoryAvailableBytes", 4 * decoded.scope().minimumMemAvailableBytes()).put("cpuCount", 2).put("stable", true);
+@@ -1012,6 +1107,7 @@
+                         assertThrows(IllegalArgumentException.class, () -> DeploymentAgentRemoteTools.confirmedIsolationRefusal(task, decoded,
+                             reply(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.FRAME + foreign + "\n")));
+                     }
++                    if (isolationQuotaReplanJourney) isolationQuotaAdmitted = true;
+                     return actual;
+                 }
+             }
+@@ -1033,6 +1129,7 @@
+                 return reply("FORMAT=WTL_AGENT_BASELINE_1\nDISTRO_ID=ubuntu\nDISTRO_VARIANT=\nVERSION=24.04\nARCH=x86_64\nPACKAGE_MANAGER=apt\nPACKAGE_ARCH=amd64\nSYSTEMD=1\n");
+             if (request.script().contains("stat -f -c '%a %S'")) {
+                 capacityReads++;
++                if (isolationQuotaReplanJourney) return reply(isolationQuotaCapacityBytes + " 1\n");
+                 if (capacityReads == 2 && mode.name().startsWith("CAPACITY_")) {
+                     if (mode == VerificationMode.CAPACITY_TRUNCATED)
+                         return succeeded(new CommandResult(Optional.of(0), "1 4096\n", "", true));
+@@ -1055,7 +1152,7 @@
+                 var quota = java.util.regex.Pattern.compile("candidate-create-task '[^']+' '[^']+' ([0-9]+)").matcher(request.script());
+                 assertTrue(quota.find());
+                 selectedQuota = Long.parseLong(quota.group(1));
+-                assertEquals(isolationReadyJourney ? 939524096L : mode == VerificationMode.BUILD_LARGE ? 671088640L : 268435456L, selectedQuota);
++                assertEquals(isolationQuotaReplanJourney ? 268435456L : isolationReadyJourney ? 939524096L : mode == VerificationMode.BUILD_LARGE ? 671088640L : 268435456L, selectedQuota);
+                 if (isolationCancelAfterCreateJourney) requestCancel.run();
+                 return reply("CANDIDATE=" + workspace.candidateRoot() + "\n");
+             }
