@@ -1,0 +1,1415 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+index e553b77d5830c82fb3ae8217926a90b84e2240d0..212d9f2c3eddb97f4078b2d467eb0167b19da259 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
+@@ -23,7 +23,7 @@
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1",
+         "deployment.agent.toolchain.controller.install.v1", "deployment.agent.publication-recovery.readiness.v1",
+         "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
+-        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2");
++        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+     private DeploymentCommandEvidence() {
+@@ -66,6 +66,14 @@
+         facts.put("businessRevision", intent.revision());
+         facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
+         facts.put("exactAction", intent.exactAction());
++        if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.OPERATION)) {
++            if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Continuation server identity missing");
++            var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.reviewFacts(request, layout);
++            var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram
++                .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
++            if (!intent.semantics().orElseThrow().targets().equals(required)) throw new IllegalArgumentException("Continuation resource identity changed");
++            facts.put("publicationRecoveryContinuation", program);
++        }
+         if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION)) {
+             if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Preflight server identity missing");
+             var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.reviewFacts(request, layout);
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+index 4239776558a7dbed8e92d9db66993c8336f2f092..0ec182b0fcade6ac2fe06bca0e6ddc72bee638a8 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentFixedCommandApproval.java
+@@ -37,7 +37,7 @@
+         "deployment.model.command.v1", "deployment.model.command.status.v1", "deployment.agent.preparation.absence.v1", "deployment.agent.preparation.partial-observation.v1",
+         "deployment.agent.toolchain.dependencies.v1", "deployment.agent.toolchain.resolve.v1", "deployment.agent.toolchain.prepare.v1", "deployment.agent.toolchain.bind.v1",
+         "deployment.agent.publication-recovery.readiness.v1", "deployment.agent.publication-recovery.install.v1", "deployment.agent.publication-recovery.guarded-first-rollback.v1",
+-        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2",
++        "deployment.agent.publication-recovery-diagnostic.v1", "deployment.agent.publication-recovery-preflight.v2", "deployment.agent.publication-continuation.v1",
+         "deployment.agent.toolchain.controller.readiness.v1", "deployment.agent.toolchain.controller.install.v1", "deployment.agent.toolchain.controller.prepare.v1", "deployment.agent.toolchain.controller.bind.v1");
+ 
+     /** Prevents construction. / 禁止构造。 */
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java
+index 3d7e22496b5d6ea651192014c55b4ac70a876576..27209de63c3d785dcac9d1af89d30897bb7dcee3 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationCompensation.java
+@@ -366,6 +366,7 @@
+         var actionIds = new HashSet<UUID>();
+         var diagnosticIntents = new HashSet<Long>();
+         var preflightPriors = new HashSet<Long>();
++        var continuationIntents = new HashSet<Long>();
+         int tailPosition = 0;
+         while (cursor < events.size()) {
+             var event = events.get(cursor);
+@@ -389,6 +390,7 @@
+                     () -> new SQLException("Failed original rollback lacks a later complete unmet-goal observation"));
+                 int end = DeploymentAgentPublicationRecoveryDiagnostic.validateBlock(events, cursor, eligible);
+                 DeploymentAgentPublicationRecoveryPreflight.rejectHistoricalReuse(events,cursor,end);
++                DeploymentAgentPublicationContinuation.rejectHistoricalReuse(events,cursor,end);
+                 cursor = end;
+                 continue;
+             }
+@@ -398,7 +400,17 @@
+                 var eligible = DeploymentAgentPublicationRecoveryPreflight.eligibility(state, events.subList(0,cursor)).orElseThrow(
+                     () -> new SQLException("Preflight lacks a complete original v1 environment-failure receipt"));
+                 require(preflightPriors.add(eligible.prior().requestEvent()), "Preflight already attempted for this original diagnostic");
+-                cursor = DeploymentAgentPublicationRecoveryPreflight.validateBlock(events,cursor,eligible);
++                int end=DeploymentAgentPublicationRecoveryPreflight.validateBlock(events,cursor,eligible);
++                DeploymentAgentPublicationContinuation.rejectHistoricalReuse(events,cursor,end);cursor=end;
++                continue;
++            }
++            if(event.type().equals(DeploymentAgentPublicationContinuation.EVENT)) {
++                require(pending!=null&&unknownRecorded&&continuationIntents.add(pending.event()),"Continuation is outside its unique original UNKNOWN pending intent");
++                var state=new State(plan,completed,Optional.of(pending),lastAction,Optional.empty());
++                var eligible=DeploymentAgentPublicationContinuation.eligibility(state,events.subList(0,cursor)).orElseThrow(
++                    ()->new SQLException("Continuation lacks a complete verified current-state preflight"));
++                cursor=DeploymentAgentPublicationContinuation.validateBlock(events,cursor,eligible);
++                lastAction=events.get(cursor-1).id(); // Even an interrupted attempt requires a newer independently reviewed whole-graph observation.
+                 continue;
+             }
+             require(event.action().equals(operation.toString()), "Unrelated evidence inside compensation actions");
+@@ -410,6 +422,7 @@
+                 require(pending == null && completed < steps(plan).size() && text(node, "kind").equals("INTENT")
+                     && integer(node, "sequence") == completed + 1, "Compensation intent is duplicated or out of order");
+                 DeploymentAgentPublicationRecoveryPreflight.rejectPriorPreflight(events.subList(0,cursor),uuid(node,"actionId"),uuid(node,"grant"));
++                DeploymentAgentPublicationContinuation.rejectPriorContinuation(events.subList(0,cursor),uuid(node,"actionId"),uuid(node,"grant"));
+                 var step = steps(plan).get(completed);
+                 require(text(node, "component").equals(step.component().id()) && text(node, "verb").equals(step.verb().name())
+                     && digest(node, "previous").equals(prefix(events.subList(0, cursor))) && text(node, "decision").equals("APPROVE")
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuation.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuation.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0b386e86890eaeb47341006f755e13f30345342
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuation.java
+@@ -0,0 +1,273 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import static gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.*;
++
++import java.sql.SQLException;
++import java.util.*;
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.*;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.appapi.task.result.*;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.service.agent.contract.DeploymentAgentInputs;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog.Event;
++
++/** One fixed current-state action per original failed rollback; no ACK replacement or settlement authority. */
++public final class DeploymentAgentPublicationContinuation {
++    public static final String EVENT = "PUBLICATION_CONTINUATION";
++    private static final Set<String> COMMON = Set.of("formatVersion", "kind", "task", "plan", "pendingIntent", "pendingIntentSha256", "prior", "action", "history");
++    private final TaskContext task;
++    private final DeploymentAgentActionLog journal;
++    private final Eligibility eligible;
++    private final UUID action;
++
++    private DeploymentAgentPublicationContinuation(TaskContext task, DeploymentAgentActionLog journal,
++        Eligibility eligible, UUID action) {
++        this.task=task;this.journal=journal;this.eligible=eligible;this.action=action;
++    }
++
++    public record Eligibility(DeploymentAgentPublicationCompensation.DiagnosticEligibility original,
++        DeploymentAgentPublicationContinuationProgram.Binding binding) { }
++
++    /** Only a strictly validated immutable v2 prefix can supply the current-state fingerprints. */
++    public static Optional<Eligibility> eligibility(DeploymentAgentPublicationCompensation.State state,List<Event> events)throws Exception {
++        var selected=DeploymentAgentPublicationCompensation.diagnosticEligibility(state,events);
++        if(selected.isEmpty())return Optional.empty();var original=selected.orElseThrow();
++        var requests=new ArrayList<Event>();
++        for(var event:events)if(event.type().equals(DeploymentAgentPublicationRecoveryPreflight.EVENT)) {
++            var node=parse(event.detail(),16384);
++            if(string(node,"kind").equals("REQUEST")&&number(node,"pendingIntent")==original.pending().event())requests.add(event);
++        }
++        if(requests.isEmpty())return Optional.empty();require(requests.size()==1,"Original preflight request is duplicated");
++        var first=requests.getFirst();int index=events.indexOf(first);var before=events.subList(0,index);
++        var prior=DeploymentAgentPublicationRecoveryPreflight.eligibility(DeploymentAgentPublicationCompensation.read(before,state.plan().task()),before).orElseThrow();
++        require(prior.original().pending().equals(original.pending())&&prior.original().plan().equals(state.plan()),"Original preflight pending binding changed");
++        int end=DeploymentAgentPublicationRecoveryPreflight.validateBlock(events,index,prior);var block=events.subList(index,end);
++        if(!string(parse(block.getLast().detail(),16384),"kind").equals("END"))return Optional.empty();
++        Event result=null;var receipt=new StringBuilder();
++        for(var event:block){var node=parse(event.detail(),16384);String kind=string(node,"kind");
++            if(kind.equals("RESULT")){require(result==null,"Original preflight result duplicated");result=event;}
++            if(kind.equals("RECEIPT"))receipt.append(string(node,"text"));
++        }
++        if(result==null)return Optional.empty();var resultNode=parse(result.detail(),16384);
++        if(!resultNode.path("fixedReceiptVerified").asBoolean(false))return Optional.empty();
++        require(string(resultNode,"observedOutcome").equals("SUCCEEDED")&&hash(receipt.toString()).equals(digest(resultNode,"receipt")),"Original preflight receipt changed");
++        var program=new DeploymentAgentPublicationRecoveryPreflightProgram(layout(before,state.plan()));
++        UUID action=uuid(parse(first.detail(),16384),"action");JsonNode safe;
++        try(var request=program.request(DeploymentAgentPublicationRecoveryPreflight.binding(prior),action)) {
++            safe=new com.fasterxml.jackson.databind.ObjectMapper().readTree(program.validateReceipt(request,receipt.toString()).canonicalJson());
++        }
++        if(!safe.path("stable").asBoolean(false)||!string(safe,"stage").equals("GUARD_CHECKS"))return Optional.empty();
++        var environment=safe.path("environment");
++        if(!string(environment,"bashEnv").equals("DEV_NULL")||!string(environment,"env").equals("DEV_NULL")
++            ||!string(environment,"ldPreload").equals("ABSENT")||!string(environment,"ldLibraryPath").equals("ABSENT")
++            ||!string(environment,"exportedFunctions").equals("ABSENT")||!string(environment,"snapshot").equals("COMPLETE")
++            ||!environment.path("sanitizedSentinels").asBoolean(false)||!environment.path("pythonStarted").asBoolean(false))return Optional.empty();
++        var checks=new LinkedHashMap<String,JsonNode>();
++        for(var check:safe.path("checks")) {
++            String id=string(check,"id");boolean intrinsic=Set.of("FULL_PARAMETER_VALIDATION","UNIT_RENDER_MATCH","MANAGED_DATA_LINKS").contains(id);
++            if(!string(check,"status").equals(intrinsic?"UNKNOWN":"PASS")||!string(check,"reason").equals(intrinsic?"NOT_IMPLEMENTED":"MATCH")||!intrinsic&&!check.path("flag").asBoolean(false))return Optional.empty();
++            require(checks.put(id,check)==null,"Original preflight check duplicated");
++        }
++        require(checks.size()==27,"Original preflight checks incomplete");
++        var current=new DeploymentAgentPublicationContinuationProgram.CurrentFingerprints(digest(checks.get("CANDIDATE_OWNER"),"sha256"),digest(checks.get("CANDIDATE_TASK"),"sha256"),digest(checks.get("MAINTENANCE_OWNER"),"sha256"),digest(checks.get("RELEASE_OWNER"),"sha256"),digest(checks.get("PARAMETERS_FILE"),"sha256"),digest(checks.get("UNIT_FILE"),"sha256"));
++        var preflight=new DeploymentAgentPublicationContinuationProgram.PriorPreflight(action,first.id(),block.getLast().id(),hash(first.detail()),hash(receipt.toString()));
++        var binding=new DeploymentAgentPublicationContinuationProgram.Binding(DeploymentAgentPublicationRecoveryDiagnostic.binding(original),prior.prior().pendingResultEvent(),prior.prior().pendingResultSha256(),preflight,current);
++        return Optional.of(new Eligibility(original,binding));
++    }
++
++    /** Any attempt, including another source version, consumes this original pending intent exactly once. */
++    public static boolean attempted(List<Event> events,Eligibility eligible)throws Exception {
++        for(var event:events)if(event.type().equals(EVENT)&&number(parsed(event.detail()),"pendingIntent")==eligible.original().pending().event())return true;
++        return false;
++    }
++
++    public static DeploymentAgentPublicationContinuation open(TaskContext task, DeploymentAgentActionLog journal,
++        Eligibility eligible,
++        DeploymentAgentPublicationContinuationProgram.Request request, ActionIntent intent) throws Exception {
++        var events=journal.events(task);
++        require(task.id().equals(eligible.original().plan().task())&&!attempted(events,eligible),"Continuation already attempted or foreign task");
++        require(eligibility(DeploymentAgentPublicationCompensation.read(events,task.id()),events).filter(eligible::equals).isPresent(),"Original verified preflight/current-state evidence changed");
++        var value=new DeploymentAgentPublicationContinuation(task,journal,eligible,request.action());
++        var node=value.frame("REQUEST").put("operation",DeploymentAgentPublicationContinuationProgram.OPERATION)
++            .put("reviewRevision",eligible.original().plan().reviewRevision()).put("sourceVersion",new DeploymentAgentPublicationContinuationProgram(layout(events,eligible.original().plan())).sourceVersion())
++            .put("request",DeploymentAgentPublicationRecoveryInstallation.requestDigest(request.command()))
++            .put("exactAction",hash(intent.exactAction())).put("targets",DeploymentAgentPublicationRecoveryInstallation.targetsDigest(request.resourceTargets()))
++            .put("observationEnd",eligible.original().observationEnd()).put("observation",eligible.original().observationSha256()).put("prefixEnd",events.getLast().id());
++        node.set("binding",binding(request.binding()));
++        require(intent.revision().equals(eligible.original().plan().sha256())&&intent.serverIds().equals(List.of(eligible.original().plan().server()))
++            &&intent.semantics().orElseThrow().operation().equals(DeploymentAgentPublicationContinuationProgram.OPERATION)
++            &&intent.semantics().orElseThrow().targets().equals(request.resourceTargets()),"Continuation action binding changed");
++        value.append(node);return value;
++    }
++
++    public void reviewed(DeploymentReviewDecision decision,String evidence) throws Exception {
++        append(frame("REVIEW").put("decision",decision.decision()).put("confirmation",decision.requiresUserConfirmation())
++            .put("reason",hash(decision.reason())).put("evidence",evidence).put("rememberAuthorization",false));
++    }
++    public void granted(ApprovalGrant grant) throws Exception {append(frame("GRANT").put("grant",grant.id().toString()));}
++    public void dispatch() throws Exception {append(frame("DISPATCH"));}
++
++    public void verifyCurrent() throws Exception {
++        var events=journal.events(task);var state=DeploymentAgentPublicationCompensation.read(events,task.id());
++        int first=0;while(first<events.size()&&!(events.get(first).type().equals(EVENT)&&events.get(first).action().equals(action.toString())))first++;
++        require(first<events.size(),"Continuation request disappeared");var prefix=events.subList(0,first);
++        var before=DeploymentAgentPublicationCompensation.read(prefix,task.id());
++        require(state.plan().equals(eligible.original().plan())&&state.pending().equals(Optional.of(eligible.original().pending()))
++            &&eligibility(before,prefix).filter(eligible::equals).isPresent()
++            &&DeploymentAgentPublicationObservation.readLatest(events,task.id()).endEvent()==eligible.original().observationEnd(),
++            "Continuation original identity, fingerprints, pending intent or observation changed");
++    }
++
++    public void result(OperationResult<CommandResult> actual,DeploymentAgentPublicationContinuationProgram.Receipt receipt) throws Exception {
++        String safe=receipt==null?null:receipt.canonicalJson();
++        require(safe==null||safe.getBytes(java.nio.charset.StandardCharsets.UTF_8).length<=65536,"Continuation safe receipt exceeds bound");
++        if(safe!=null) {
++            var program=new DeploymentAgentPublicationContinuationProgram(layout(journal.events(task),eligible.original().plan()));
++            try(var expected=program.request(binding(eligible),action)) {
++                require(program.parse(expected,actual).canonicalJson().equals(safe),"Continuation receipt does not match its actual transport");
++            }
++        }
++        int count=safe==null?0:(safe.length()+2047)/2048;
++        append(frame("RESULT").put("observedOutcome",actual.outcome().name()).put("actual",DeploymentAgentPublicationRecoveryInstallation.resultDigest(actual))
++            .put("fixedReceiptVerified",receipt!=null).put("receipt",safe==null?"none":hash(safe)).put("parts",count));
++        for(int part=0;part<count;part++)append(frame("RECEIPT").put("index",part).put("text",safe.substring(part*2048,Math.min(safe.length(),(part+1)*2048))));
++        append(frame("END"));
++    }
++
++    /** A missing review/grant/send/result is retained; no request is automatically repeated. */
++    public void retainInterrupted() throws Exception {
++        var block=journal.events(task).stream().filter(e->e.type().equals(EVENT)&&e.action().equals(action.toString())).toList();
++        if(block.stream().anyMatch(e->{try{return Set.of("RESULT","NOT_SENT","INTERRUPTED","END").contains(string(parsed(e.detail()),"kind"));}catch(Exception invalid){throw new IllegalStateException(invalid);}}))return;
++        boolean dispatched=block.stream().anyMatch(e->{try{return string(parsed(e.detail()),"kind").equals("DISPATCH");}catch(Exception invalid){throw new IllegalStateException(invalid);}});
++        append(frame(dispatched?"INTERRUPTED":"NOT_SENT"));
++    }
++
++    private ObjectNode frame(String kind) {return object().put("formatVersion",1).put("kind",kind).put("task",task.id().toString())
++        .put("plan",eligible.original().plan().sha256()).put("pendingIntent",eligible.original().pending().event()).put("pendingIntentSha256",hash(eligible.original().pending().frame())).put("prior",hash(binding(binding(eligible)).toString())).put("action",action.toString());}
++    private void append(ObjectNode node) throws Exception {
++        var events=journal.events(task);node.put("history",DeploymentAgentPublicationObservation.prefixSha256(events));String text=encoded(node);
++        var proposed=new ArrayList<Event>(events);proposed.add(new Event(events.getLast().id()+1,EVENT,action.toString(),text));
++        DeploymentAgentPublicationCompensation.read(proposed,task.id());
++        require(events.equals(journal.events(task)),"Continuation history changed before append");journal.event(task,EVENT,action.toString(),text);
++    }
++
++    /** Validates only this contiguous continuation block; partial attempts retain the original pending state. */
++    static int validateBlock(List<Event> events,int start,Eligibility eligible) throws Exception {
++        var plan=eligible.original().plan();var pending=eligible.original().pending();var first=events.get(start);var request=parsed(first.detail());
++        fields(request,extra("operation","reviewRevision","sourceVersion","request","exactAction","targets","observationEnd","observation","prefixEnd","binding"));
++        UUID action=uuid(request,"action");
++        require(string(request,"kind").equals("REQUEST")&&string(request,"operation").equals(DeploymentAgentPublicationContinuationProgram.OPERATION)
++            &&string(request,"reviewRevision").equals(plan.reviewRevision())&&number(request,"observationEnd")==eligible.original().observationEnd()
++            &&digest(request,"observation").equals(eligible.original().observationSha256())&&number(request,"prefixEnd")==events.get(start-1).id(),"Continuation request is not bound to the original latest observation");
++        var before=events.subList(0,start);rejectReuse(before,action,null);
++        var program=new DeploymentAgentPublicationContinuationProgram(layout(before,plan));
++        try(var expected=program.request(binding(eligible),action)) {
++            require(request.path("binding").toString().equals(binding(expected.binding()).toString())&&digest(request,"sourceVersion").equals(program.sourceVersion())
++                &&digest(request,"request").equals(DeploymentAgentPublicationRecoveryInstallation.requestDigest(expected.command()))
++                &&digest(request,"targets").equals(DeploymentAgentPublicationRecoveryInstallation.targetsDigest(expected.resourceTargets()))
++                &&digest(request,"exactAction").equals(hash(RemoteActions.command(new ServerId(plan.server()),plan.sha256(),expected.command()).exactAction())),"Continuation source, version, target or request changed");
++            String phase="REQUEST",decision=null,receiptSha=null;int parts=0,index=0;StringBuilder receipt=new StringBuilder();boolean valid=false;
++            int cursor=start;
++            for(;cursor<events.size()&&events.get(cursor).type().equals(EVENT);cursor++) {
++                var event=events.get(cursor);var node=parsed(event.detail());
++                require(event.action().equals(action.toString())&&uuid(node,"action").equals(action)&&uuid(node,"task").equals(plan.task())
++                    &&digest(node,"plan").equals(plan.sha256())&&number(node,"pendingIntent")==pending.event()
++                    &&digest(node,"pendingIntentSha256").equals(hash(pending.frame()))
++                    &&digest(node,"prior").equals(hash(binding(binding(eligible)).toString()))
++                    &&digest(node,"history").equals(DeploymentAgentPublicationObservation.prefixSha256(events.subList(0,cursor))),"Continuation identity or history changed");
++                String kind=string(node,"kind");
++                if(cursor==start){require(kind.equals("REQUEST"),"Continuation request missing");continue;}
++                switch(kind) {
++                    case "REVIEW" -> {
++                        fields(node,extra("decision","confirmation","reason","evidence","rememberAuthorization"));
++                        require(phase.equals("REQUEST")&&Set.of("APPROVE","DENY").contains(string(node,"decision"))
++                            &&node.path("confirmation").isBoolean()&&node.path("rememberAuthorization").isBoolean()&&!node.path("rememberAuthorization").booleanValue(),"Continuation review is duplicated or invalid");
++                        digest(node,"reason");digest(node,"evidence");decision=string(node,"decision");phase="REVIEW";
++                    }
++                    case "GRANT" -> {
++                        fields(node,extra("grant"));require(phase.equals("REVIEW")&&"APPROVE".equals(decision),"Continuation grant lacks independent approval");
++                        rejectReuse(events.subList(0,cursor),null,uuid(node,"grant"));phase="GRANT";
++                    }
++                    case "DISPATCH" -> {fields(node,COMMON);require(phase.equals("GRANT"),"Continuation dispatch lacks a fresh grant");phase="DISPATCH";}
++                    case "NOT_SENT" -> {fields(node,COMMON);require(Set.of("REQUEST","REVIEW","GRANT").contains(phase),"Continuation NOT_SENT contradicts dispatch");phase="TERMINAL";}
++                    case "INTERRUPTED" -> {fields(node,COMMON);require(phase.equals("DISPATCH"),"Continuation UNKNOWN has no dispatch");phase="TERMINAL";}
++                    case "RESULT" -> {
++                        fields(node,extra("observedOutcome","actual","fixedReceiptVerified","receipt","parts"));
++                        require(phase.equals("DISPATCH")&&Set.of("SUCCEEDED","FAILED","CANCELLED","UNKNOWN").contains(string(node,"observedOutcome"))&&node.path("fixedReceiptVerified").isBoolean(),"Continuation result is unbound or duplicated");
++                        digest(node,"actual");valid=node.path("fixedReceiptVerified").booleanValue();parts=nonnegative(node,"parts");receiptSha=string(node,"receipt");
++                        require(parts<=32&&(valid?parts>0&&string(node,"observedOutcome").equals("SUCCEEDED")&&receiptSha.matches("[0-9a-f]{64}"):parts==0&&receiptSha.equals("none")),"Continuation receipt classification changed");phase="RESULT";
++                    }
++                    case "RECEIPT" -> {
++                        fields(node,extra("index","text"));require(phase.equals("RESULT")&&valid&&nonnegative(node,"index")==index&&index<parts,"Continuation safe receipt order changed");
++                        String text=string(node,"text");require(!text.isEmpty()&&text.length()<=2048,"Continuation safe receipt chunk exceeds bound");receipt.append(text);index++;
++                    }
++                    case "END" -> {
++                        fields(node,COMMON);require(phase.equals("RESULT")&&index==parts,"Continuation safe receipt is incomplete");
++                        if(valid){require(hash(receipt.toString()).equals(receiptSha),"Continuation safe receipt digest changed");program.validateReceipt(expected,receipt.toString());}
++                        phase="TERMINAL";
++                    }
++                    default -> throw new SQLException("Unexpected diagnostic frame kind");
++                }
++            }
++            return cursor;
++        }
++    }
++
++    public static DeploymentAgentPublicationContinuationProgram.Binding binding(Eligibility eligible){return eligible.binding();}
++    private static ObjectNode binding(DeploymentAgentPublicationContinuationProgram.Binding b) {
++        var o=b.original();var raw=object().put("server",o.server()).put("task",o.task().toString()).put("execution",o.execution().toString()).put("pendingAction",o.pendingAction().toString())
++            .put("pendingIntentEvent",o.pendingIntentEvent()).put("pendingIntentSha256",o.pendingIntentSha256()).put("planSha256",o.planSha256()).put("unit",o.unit())
++            .put("ownerSha256",o.ownerSha256()).put("candidate",o.candidate()).put("releaseSha256",o.releaseSha256()).put("layoutSha256",o.layoutSha256());
++        var p=b.preflight();var c=b.current();var n=object();n.set("original",raw);n.put("pendingResultEvent",b.pendingResultEvent()).put("pendingResultSha256",b.pendingResultSha256());
++        n.set("preflight",object().put("action",p.action().toString()).put("requestEvent",p.requestEvent()).put("endEvent",p.endEvent()).put("requestDetailSha256",p.requestDetailSha256()).put("receiptSha256",p.receiptSha256()));
++        n.set("current",object().put("candidateOwnerSha256",c.candidateOwnerSha256()).put("candidateTaskSha256",c.candidateTaskSha256()).put("maintenanceSha256",c.maintenanceSha256()).put("releaseOwnerSha256",c.releaseOwnerSha256()).put("parametersSha256",c.parametersSha256()).put("unitSha256",c.unitSha256()));return n;
++    }
++
++    private static DeploymentRemoteLayout layout(List<Event> events,DeploymentAgentPublicationCompensation.Plan plan) throws Exception {
++        var selected=events.stream().filter(e->e.type().equals("REMOTE_LAYOUT")).toList();require(selected.size()==1,"Continuation original layout is missing or duplicated");
++        var event=selected.getFirst();var node=parse(event.detail(),16384);fields(node,Set.of("formatVersion","task","server","layout","layoutSha256"));
++        require(node.path("formatVersion").isInt()&&node.path("formatVersion").intValue()==1,"Original layout frame version changed");
++        var layout=DeploymentRemoteLayout.decode(node.path("layout").toString());
++        require(event.action().equals(plan.task().toString())&&uuid(node,"task").equals(plan.task())&&string(node,"server").equals(plan.server())
++            &&digest(node,"layoutSha256").equals(layout.digest())&&string(parse(plan.header()),"layout").equals(layout.digest()),"Continuation original layout changed");return layout;
++    }
++    private static void rejectReuse(List<Event> events,UUID action,UUID grant)throws Exception {
++        for(var event:events) {
++            if(action!=null)require(!event.action().equals(action.toString()),"Continuation action ID was reused");
++            JsonNode node;try{node=parse(event.detail(),16384);}catch(SQLException nonObject){continue;}
++            if(action!=null)for(String key:List.of("action","actionId"))if(node.path(key).isTextual())require(!node.path(key).textValue().equals(action.toString()),"Continuation action ID was reused");
++            if(grant!=null)for(String key:List.of("grant","grantId"))if(node.path(key).isTextual())require(!node.path(key).textValue().equals(grant.toString()),"Continuation grant was reused");
++        }
++    }
++    /** A later legacy action must not reuse an action or grant introduced by this protocol. */
++    static void rejectHistoricalReuse(List<Event> events,int start,int end)throws Exception {
++        for(int i=start;i<end;i++) {
++            var node=parse(events.get(i).detail(),16384);String kind=string(node,"kind");
++            if(kind.equals("REQUEST"))rejectPriorContinuation(events.subList(0,i),uuid(node,"action"),null);
++            if(kind.equals("GRANT"))rejectPriorContinuation(events.subList(0,i),null,uuid(node,"grant"));
++        }
++    }
++    static void rejectPriorContinuation(List<Event> events,UUID action,UUID grant)throws Exception {
++        for(var event:events)if(event.type().equals(EVENT)) {
++            var node=parsed(event.detail());
++            if(action!=null)require(!uuid(node,"action").equals(action),"Continuation action ID was reused by a later action");
++            if(grant!=null&&node.path("grant").isTextual())require(!uuid(node,"grant").equals(grant),"Continuation grant was reused by a later action");
++        }
++    }
++    private static Set<String> extra(String...names){var fields=new HashSet<String>(COMMON);fields.addAll(List.of(names));return Set.copyOf(fields);}
++    private static ObjectNode parsed(String raw)throws SQLException {require(raw.length()<=4096,"Continuation frame exceeds character bound");var node=parse(raw,16384);require(node.path("formatVersion").isInt()&&node.path("formatVersion").intValue()==1,"Unsupported continuation journal version");return node;}
++    private static String encoded(ObjectNode node)throws SQLException {String raw=encode(node,16384);parsed(raw);return raw;}
++    private static String digest(JsonNode node,String key)throws SQLException {String value=string(node,key);require(value.matches("[0-9a-f]{64}"),"Continuation digest required");return value;}
++    private static UUID uuid(JsonNode node,String key)throws SQLException {String value=string(node,key);try{var id=UUID.fromString(value);require(id.toString().equals(value),"Canonical diagnostic UUID required");return id;}catch(IllegalArgumentException invalid){throw new SQLException("Continuation UUID required",invalid);}}
++    private static long number(JsonNode node,String key)throws SQLException {require(node.path(key).isIntegralNumber()&&node.path(key).canConvertToLong()&&node.path(key).longValue()>0,"Continuation positive event required");return node.path(key).longValue();}
++    private static int nonnegative(JsonNode node,String key)throws SQLException {require(node.path(key).isInt()&&node.path(key).intValue()>=0,"Continuation nonnegative counter required");return node.path(key).intValue();}
++    private static String hash(String value){return DeploymentAgentInputs.hash(value);}
++    private static void require(boolean value,String message)throws SQLException {if(!value)throw new SQLException(message);}
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuationProgram.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuationProgram.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5c5d7e39405379c5c8fb4fc889f6cdf90afcc74a
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuationProgram.java
+@@ -0,0 +1,138 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayoutTemplate;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType;
++
++/** A fixed current-state action. It grants nothing and neither replays nor replaces an old result. */
++public final class DeploymentAgentPublicationContinuationProgram {
++    public static final String OPERATION="deployment.agent.publication-continuation.v1";
++    public static final String FORMAT="WTL_AGENT_PUBLICATION_CONTINUATION_1";
++    private static final String ROOT="/gold/debug/windowstolinux/mod/deployment/",FRAME="PUBLICATION_CONTINUATION=";
++    private static final Duration TIMEOUT=Duration.ofSeconds(180);
++    private static final long OUTPUT_LIMIT=16384;
++    private static final Set<String> CHECKS=Set.of("ENVIRONMENT","ARGUMENTS","ROOT_IDENTITY","LOCKS","JOB","CANDIDATE","FINGERPRINTS","BUILD","SNAPSHOTS","MAINTENANCE","CURRENT","NATIVE_CONTRACT","FULL_PARAMETER_VALIDATION","MANAGED_DATA_LINKS","UNIT_RENDER_MATCH","ROLLBACK","POSTCONDITIONS","COMPLETE","INTERNAL","LIMIT");
++    private static final ObjectMapper JSON=com.fasterxml.jackson.databind.json.JsonMapper.builder().enable(com.fasterxml.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
++    private final DeploymentRemoteLayout layout;
++    private final String source;
++    public record PriorPreflight(UUID action,long requestEvent,long endEvent,String requestDetailSha256,String receiptSha256){
++        public PriorPreflight{Objects.requireNonNull(action);if(requestEvent<=0||endEvent<=requestEvent)throw invalid();digest(requestDetailSha256);digest(receiptSha256);}}
++    public record CurrentFingerprints(String candidateOwnerSha256,String candidateTaskSha256,String maintenanceSha256,String releaseOwnerSha256,String parametersSha256,String unitSha256){
++        public CurrentFingerprints{for(String v:List.of(candidateOwnerSha256,candidateTaskSha256,maintenanceSha256,releaseOwnerSha256,parametersSha256,unitSha256))digest(v);}}
++    public record Binding(DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding original,long pendingResultEvent,String pendingResultSha256,PriorPreflight preflight,CurrentFingerprints current){
++        public Binding{Objects.requireNonNull(original);Objects.requireNonNull(preflight);Objects.requireNonNull(current);digest(pendingResultSha256);if(pendingResultEvent<=original.pendingIntentEvent()||preflight.requestEvent()<=pendingResultEvent||preflight.action().equals(original.pendingAction()))throw invalid();}}
++    public record Request(CommandRequest command,Set<ActionTarget> resourceTargets,Binding binding,UUID action)implements AutoCloseable{
++        public Request{Objects.requireNonNull(command);resourceTargets=Set.copyOf(resourceTargets);Objects.requireNonNull(binding);Objects.requireNonNull(action);}
++        @Override public void close(){command.close();}}
++    public record Receipt(String canonicalJson){public Receipt{Objects.requireNonNull(canonicalJson);}}
++    public DeploymentAgentPublicationContinuationProgram(DeploymentRemoteLayout layout){
++        this.layout=Objects.requireNonNull(layout);
++        for(String root:List.of(layout.paths().helperDirectory(),layout.paths().applicationsRoot(),layout.paths().stateRoot(),layout.paths().configurationRoot(),layout.paths().dataRoot()))if(!root.matches("/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+")||root.contains(".."))throw invalid();
++        String base=assembleBase(layout),oldGuard=DeploymentRemoteLayoutTemplate.render(resource("service/agent/recovery/publication-recovery-guard.sh"),layout);
++        // Compare only: never slice, execute or include the old immediate entry.
++        if(!DeploymentManagedHelperBundle.renderPublicationRecovery(layout).equals(base+"\n"+oldGuard))throw invalid();
++        String bash=base+"\n"+DeploymentRemoteLayoutTemplate.render(resource("service/agent/recovery/publication-continuation-guard.sh"),layout);
++        if(bash.contains("'''"))throw invalid();
++        String template=resource("service/agent/recovery/publication-continuation.py"),marker="# @WTL_CONTINUATION_BASH@";
++        if(template.indexOf(marker)<0||template.indexOf(marker)!=template.lastIndexOf(marker))throw invalid();
++        source=template.replace(marker,"BASH_SOURCE = r'''"+bash+"'''");if(source.getBytes(StandardCharsets.UTF_8).length>524288)throw invalid();
++    }
++    public String source(){return source;}
++    /** Product-bound expected stdin identity, not an independent measurement of executed remote code. */
++    public String sourceVersion(){return sha(source.getBytes(StandardCharsets.UTF_8));}
++    public Request request(Binding binding,UUID action){
++        Objects.requireNonNull(binding);Objects.requireNonNull(action);if(!binding.original().layoutSha256().equals(layout.digest())||action.equals(binding.original().pendingAction())||action.equals(binding.preflight().action()))throw invalid();
++        var node=JSON.createObjectNode();node.set("binding",bindingNode(binding));node.put("action",action.toString()).put("sourceVersion",sourceVersion());String argument=node.toString();if(argument.getBytes(StandardCharsets.UTF_8).length>12000)throw invalid();
++        return new Request(new CommandRequest(script(argument,node),source.getBytes(StandardCharsets.UTF_8),TIMEOUT,OUTPUT_LIMIT),targets(binding),binding,action);
++    }
++    private String script(String argument,JsonNode envelope){
++        var refused=JSON.createObjectNode().put("format",FORMAT).put("sourceVersion",sourceVersion()).put("action",text(envelope,"action"));refused.set("binding",envelope.path("binding"));refused.put("status","REFUSED").put("check","ENVIRONMENT").put("mutationStarted",false);for(String k:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))refused.putNull(k);
++        String fail="builtin printf '%s\\n' "+quote(FRAME+refused)+"; exit 0";
++        return "wtl_argument="+quote(argument)+"\nset -fu\nLC_ALL=C\nbuiltin export LC_ALL\nif [[ ${BASH_ENV+x} != x || ${ENV+x} != x || \"$BASH_ENV\" != /dev/null || \"$ENV\" != /dev/null || ${LD_PRELOAD+x} || ${LD_LIBRARY_PATH+x} ]]; then "+fail+"; fi\nbuiltin unset BASH_ENV ENV || { "+fail+"; }\nexec /usr/bin/python3 -I -S - \"$wtl_argument\" 'SDK_DEV_NULL_SENTINELS_REMOVED_CONTINUATION_V1'\n";
++    }
++    private Set<ActionTarget> targets(Binding b){var o=b.original();String s=o.server(),u=o.unit();return Set.of(new ActionTarget(s,"task",o.task().toString()),new ActionTarget(s,"agent-publication-continuation",sourceVersion()),new ActionTarget(s,"application",u),new ActionTarget(s,"deployment-release",layout.applicationRoot(u)+"/releases/"+o.releaseSha256()),new ActionTarget(s,"deployment-build",layout.candidateRoot(o.candidate())),new ActionTarget(s,"deployment-build",layout.applicationLockRoot(u)),new ActionTarget(s,"deployment-snapshot",layout.snapshotsRoot()),new ActionTarget(s,"systemd-unit","windowstolinux-"+u+".service"),new ActionTarget(s,"systemd-unit","windowstolinux-build-"+o.candidate()+".service"));}
++    public static Map<String,Object> reviewFacts(CommandRequest command,DeploymentRemoteLayout layout){var p=new DeploymentAgentPublicationContinuationProgram(layout);try(var r=p.decode(command)){return Map.of("operation",OPERATION,"binding",bindingNode(r.binding()),"action",r.action().toString(),"expectedSourceVersion",p.sourceVersion(),"executableInputReference","commandEvidence.completeExecutableInput","scope","One new current-state first-native rollback and exact owned maintenance removal. Both existing locks opened read-only; all six fingerprints and full original parameter/data/unit guards precede mutation. Candidate retained, independent cleanup still required. No installation, snapshot creation, retry, old result replacement or settlement permission. Full fixed Python/Bash stdin reviewed once. Exact SDK DEV_NULL sentinels and LD presence checked before Python; only those two sentinels removed. Complete bounded BASH_FUNC/environment classification occurs after Python starts, before native IO. sourceVersion is product-bound expected stdin SHA, not independent remote measurement.");}}
++    public static Set<ActionTarget> reviewedResourceTargets(CommandRequest command,DeploymentRemoteLayout layout,ServerId server){var p=new DeploymentAgentPublicationContinuationProgram(layout);try(var r=p.decode(command)){if(!r.binding().original().server().equals(server.id()))throw invalid();return r.resourceTargets();}}
++    private Request decode(CommandRequest command){
++        String prefix="wtl_argument='";if(!command.script().startsWith(prefix)||!command.timeout().equals(TIMEOUT)||command.outputLimitBytes()!=OUTPUT_LIMIT||!Arrays.equals(command.stdin(),source.getBytes(StandardCharsets.UTF_8)))throw invalid();int end=command.script().indexOf("'\n",prefix.length());if(end<0)throw invalid();String argument=command.script().substring(prefix.length(),end);
++        try{var n=JSON.readTree(argument);fields(n,Set.of("binding","action","sourceVersion"));if(!n.toString().equals(argument)||!text(n,"sourceVersion").equals(sourceVersion()))throw invalid();var r=request(readBinding(n.path("binding")),uuid(text(n,"action")));if(!r.command().script().equals(command.script())){r.close();throw invalid();}return r;}catch(IOException e){throw invalid();}
++    }
++    public Receipt parse(Request request,OperationResult<CommandResult> actual){if(actual.outcome()!=TaskResult.SUCCEEDED||actual.value().isEmpty())throw invalid();var r=actual.value().orElseThrow();String out=r.stdout();if(r.truncated()||r.exitCode().isEmpty()||r.exitCode().orElseThrow()!=0||!r.stderr().isEmpty()||!out.startsWith(FRAME)||!out.endsWith("\n")||out.indexOf('\n')!=out.length()-1||out.indexOf('\r')>=0||out.getBytes(StandardCharsets.UTF_8).length>OUTPUT_LIMIT)throw invalid();return validateReceipt(request,out.substring(FRAME.length(),out.length()-1));}
++    public Receipt validateReceipt(Request request,String canonicalJson){try(var r=decode(request.command())){
++        if(!r.binding().equals(request.binding())||!r.action().equals(request.action())||!r.resourceTargets().equals(request.resourceTargets())||canonicalJson==null||canonicalJson.getBytes(StandardCharsets.UTF_8).length+FRAME.length()+1>OUTPUT_LIMIT)throw invalid();var n=JSON.readTree(canonicalJson);fields(n,Set.of("format","sourceVersion","action","binding","status","check","mutationStarted","currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"));
++        if(!n.toString().equals(canonicalJson)||!text(n,"format").equals(FORMAT)||!text(n,"sourceVersion").equals(sourceVersion())||!uuid(text(n,"action")).equals(request.action())||!readBinding(n.path("binding")).equals(request.binding())||!n.path("mutationStarted").isBoolean()||!CHECKS.contains(text(n,"check")))throw invalid();
++        String status=text(n,"status");boolean started=n.path("mutationStarted").booleanValue(),ok=status.equals("ROLLED_BACK");if(!Set.of("ROLLED_BACK","REFUSED","UNKNOWN").contains(status)||ok&&(!started||!text(n,"check").equals("COMPLETE"))||status.equals("REFUSED")&&started||status.equals("UNKNOWN")&&!started||!ok&&text(n,"check").equals("COMPLETE"))throw invalid();
++        for(String k:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))if(ok?(!n.path(k).isBoolean()||!n.path(k).booleanValue()):!n.path(k).isNull())throw invalid();return new Receipt(n.toString());}catch(IOException e){throw invalid();}}
++    private static ObjectNode bindingNode(Binding b){return JSON.valueToTree(b);}
++    private static Binding readBinding(JsonNode n)throws IOException{fields(n,Set.of("original","pendingResultEvent","pendingResultSha256","preflight","current"));fields(n.path("original"),Set.of("server","task","execution","pendingAction","pendingIntentEvent","pendingIntentSha256","planSha256","unit","ownerSha256","candidate","releaseSha256","layoutSha256"));fields(n.path("preflight"),Set.of("action","requestEvent","endEvent","requestDetailSha256","receiptSha256"));fields(n.path("current"),Set.of("candidateOwnerSha256","candidateTaskSha256","maintenanceSha256","releaseOwnerSha256","parametersSha256","unitSha256"));for(String k:List.of("pendingResultEvent"))positive(n,k);positive(n.path("original"),"pendingIntentEvent");positive(n.path("preflight"),"requestEvent");positive(n.path("preflight"),"endEvent");for(String k:List.of("task","execution","pendingAction"))uuid(text(n.path("original"),k));uuid(text(n.path("preflight"),"action"));var b=JSON.treeToValue(n,Binding.class);if(!JSON.readTree(JSON.writeValueAsBytes(b)).equals(n))throw invalid();return b;}
++
++    private static final List<String> FRAGMENTS = List.of("00-protocol-foundation.sh", "input/15-deployment-input.sh",
++            "input/16-application-input.sh", "input/17-managed-content.sh", "ecosystem/35-ecosystem-dispatch.sh",
++            "toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
++            "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py",
++            "runtime/40-typed-runtime.sh", "runtime/41-application-admission.sh", "runtime/41-application-runtime.sh",
++            "runtime/systemd/61-service-identity.sh", "database/10-native-instances.sh");
++    private static final Map<String, String> RESOURCE_INSERTS = Map.of("# @compat:agent-source@\n",
++        "workspace/source-operations.py", "# @compat:apparmor@\n",
++        "workspace/apparmor-namespace.sh", "# @compat:systemd-isolation@\n",
++        "runtime/systemd/systemd-manager-isolation.sh", "# @compat:selinux-entry@\n",
++        "runtime/systemd/selinux-command-entry.sh", "# @compat:centos-repositories@\n",
++        "toolchain/centos-source-repositories.py", "# @compat:toolchain-archives@\n", "toolchain/archive-boundaries.py");
++
++    private static String assembleBase(DeploymentRemoteLayout layout){
++        var output=new StringBuilder();var catalog=DeploymentToolchainCatalog.defaults();
++        for(String fragment:FRAGMENTS){
++            String content=resource("linux/helper/"+fragment);
++            for(var insert:RESOURCE_INSERTS.entrySet())if(content.contains(insert.getKey()))content=content.replaceAll("(?m)^[ \t]*"+java.util.regex.Pattern.quote(insert.getKey()),java.util.regex.Matcher.quoteReplacement(resource("linux/helper/"+insert.getValue())));
++            content=DeploymentRemoteLayoutTemplate.render(content,layout);
++            if(fragment.startsWith("toolchain/")){
++                if(fragment.endsWith("10-release-metadata.py"))output.append("prepare_official_toolchains() {\n  /usr/bin/python3 -I - \"$@\" <<'WTL_OFFICIAL_TOOLCHAINS'\n").append(catalogLiteral(catalog));
++                output.append(content).append('\n');if(fragment.endsWith("40-binding-protocol.py"))output.append("WTL_OFFICIAL_TOOLCHAINS\n}\n");continue;
++            }
++            if(fragment.endsWith("00-protocol-foundation.sh"))content+="build_entry_sha256="+DeploymentManagedHelperBundle.buildEntrySha256(layout)+"\n";
++            boolean literal=fragment.endsWith("27-agent-workspace.sh")||fragment.endsWith("10-native-instances.sh")||fragment.endsWith("20-native-targets.sh")||fragment.endsWith("21-native-operations.sh")||fragment.endsWith("23-container-builder.sh")||fragment.endsWith("12-container-image-input.sh")||fragment.endsWith("18-container-storage.sh")||fragment.contains("application-");
++            output.append(literal?content:content.replace("\\\\","\\"));
++        }
++        return output.toString();
++    }
++
++    private static String catalogLiteral(DeploymentToolchainCatalog catalog) {
++        StringBuilder data = new StringBuilder("SHIPPED_CATALOG = {\n");
++        for (var ecosystem : DeploymentToolchainType.values()) {
++            data.append("    '").append(ecosystem.name()).append("': [");
++            data.append(catalog.branches(ecosystem).stream().map(b -> "'" + b.version() + "'")
++                .collect(java.util.stream.Collectors.joining(", "))).append("],\n");
++        }
++        return data.append("}\n").toString();
++    }
++
++    private static String resource(String name){try(var input=DeploymentAgentPublicationContinuationProgram.class.getResourceAsStream(ROOT+name)){if(input==null)throw invalid();byte[] bytes=input.readNBytes(1048577);if(bytes.length>1048576)throw invalid();return StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString().replace("\r\n","\n");}catch(IOException e){throw new IllegalStateException("Fixed continuation resource unavailable",e);}}
++    private static long positive(JsonNode node,String key){if(!node.path(key).isIntegralNumber()||!node.path(key).canConvertToLong()||node.path(key).longValue()<=0)throw invalid();return node.path(key).longValue();}
++    private static void fields(JsonNode node, Set<String> expected) {
++        if (node == null || !node.isObject()) throw invalid();
++        var actual = new HashSet<String>(); node.fieldNames().forEachRemaining(actual::add); if (!actual.equals(expected)) throw invalid();
++    }
++    private static String text(JsonNode node, String key) { if (!node.path(key).isTextual()) throw invalid(); return node.path(key).textValue(); }
++    private static UUID uuid(String value) { var id = UUID.fromString(value); if (!id.toString().equals(value)) throw invalid(); return id; }
++    private static void digest(String value) { if (value == null || !value.matches("[a-f0-9]{64}")) throw invalid(); }
++    private static String quote(String value) { return "'" + value.replace("'", "'\\''") + "'"; }
++    private static String sha(byte[] bytes) { try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); } }
++    private static IllegalArgumentException invalid() { return new IllegalArgumentException("Fixed current-state continuation evidence invalid"); }
++}
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
+index cba4f712664278e580a6338896333b60f575faf0..f4eaabe56aaf75054b606f9a5985540fe058158d 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationRecovery.java
+@@ -55,6 +55,9 @@
+         final String requestDigest;
+         DeploymentReviewDecision decision;
+         String evidence;
++        DeploymentAgentPublicationContinuation continuation;
++        DeploymentAgentPublicationContinuationProgram.Request continuationRequest;
++        DeploymentAgentPublicationContinuation.Eligibility continuationEligibility;
+         DeploymentAgentPublicationRecoveryPreflight preflight;
+         DeploymentAgentPublicationRecoveryPreflightProgram.Request preflightRequest;
+         DeploymentAgentPublicationRecoveryPreflight.Eligibility preflightEligibility;
+@@ -101,6 +104,11 @@
+         if(preflight.isPresent()&&!DeploymentAgentPublicationRecoveryPreflight.attempted(journal.events(task),preflight.orElseThrow())) {
+             preflight(preflight.orElseThrow());
+             return false; // Every v2 preflight invocation ends UNKNOWN; later explicit reconciliation retains its ordinary guards.
++        }
++        var continuation=DeploymentAgentPublicationContinuation.eligibility(current,journal.events(task));
++        if(continuation.isPresent()&&!DeploymentAgentPublicationContinuation.attempted(journal.events(task),continuation.orElseThrow())) {
++            if(!continueCurrent(continuation.orElseThrow()))return false;
++            current=DeploymentAgentPublicationCompensation.read(journal.events(task),task.id());
+         }
+         var diagnostic=DeploymentAgentPublicationCompensation.diagnosticEligibility(current,journal.events(task));
+         if(diagnostic.isPresent()&&!DeploymentAgentPublicationRecoveryDiagnostic.attempted(journal.events(task),diagnostic.orElseThrow().pending())) {
+@@ -123,6 +131,35 @@
+                 DeploymentAgentPublicationCompensation.verify(original,task,journal);return true;
+             }
+             if(!execute(plan,next.orElseThrow()))return false;
++        }
++        return false;
++    }
++
++    private boolean continueCurrent(DeploymentAgentPublicationContinuation.Eligibility eligible)throws Exception {
++        var unit=proposal.graph().components().stream().filter(p->p.componentId().equals(eligible.original().component().id())).findFirst().orElseThrow().unit();
++        var diagnosticProgram=new DeploymentAgentPublicationContinuationProgram(unit.layout());
++        try(var request=diagnosticProgram.request(DeploymentAgentPublicationContinuation.binding(eligible),UUID.randomUUID())) {
++            var intent=RemoteActions.command(server,eligible.original().plan().sha256(),request.command())
++                .withSemantics(new ActionSemantics(DeploymentAgentPublicationContinuationProgram.OPERATION,request.resourceTargets()));
++            var durable=DeploymentAgentPublicationContinuation.open(task,journal,eligible,request,intent);
++            pending=new Pending(DeploymentAgentPublicationContinuationProgram.OPERATION,request.action(),unit,intent,request.command(),eligible.original().plan(),null,null);
++            pending.continuation=durable;pending.continuationRequest=request;pending.continuationEligibility=eligible;
++            try {
++                var grant=DeploymentCommandReviewRouter.approve(reviewed.interaction(),intent,request.command(),task);
++                if(grant.outcome()!=TaskResult.SUCCEEDED){durable.retainInterrupted();return false;}
++                require(pending.decision!=null&&pending.decision.decision().equals("APPROVE")&&pending.evidence!=null,"Independent diagnostic decision is missing");
++                durable.granted(grant.value().orElseThrow());verify(intent,request.command(),task);
++                durable.dispatch();verify(intent,request.command(),task);
++                OperationResult<CommandResult> actual;
++                try {actual=session.execute(request.command(),grant.value().orElseThrow());}
++                catch(ApiException unavailable){actual=new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(unavailable.problem()));}
++                DeploymentAgentPublicationContinuationProgram.Receipt receipt=null;
++                try {receipt=diagnosticProgram.parse(request,actual);}catch(RuntimeException unconfirmed){/* Preserve actual digest without accepting unsafe or partial output. */}
++                durable.result(actual,receipt);
++                return receipt!=null&&JSON.readTree(receipt.canonicalJson()).path("status").asText().equals("ROLLED_BACK");
++            } catch(ApiException unavailable) {durable.retainInterrupted();}
++            catch(Exception unavailable) {durable.retainInterrupted();throw unavailable;}
++            finally {pending=null;}
+         }
+         return false;
+     }
+@@ -267,7 +304,13 @@
+         facts.put("ownershipMeaning","Original proposal owner; actual sidecar guards or original-status receipts must verify remote ownership independently");
+         facts.put("originalStateMeaning","Unique original snapshot pair proves no prior CURRENT/managed unit; it does not prove empty disk, release root or persistent data");
+         facts.put("requestSha256",value.requestDigest);facts.put("planSha256",value.plan==null?"NOT_CREATED":value.plan.sha256());
+-        if(value.preflightRequest!=null) {
++        if(value.continuationRequest!=null) {
++            var binding=value.continuationRequest.binding();
++            facts.put("purpose","ONCE_ONLY_CURRENT_STATE_CONTINUATION_AFTER_COMPLETE_VERIFIED_PREFLIGHT");
++            facts.put("continuationSourceVersion",new DeploymentAgentPublicationContinuationProgram(value.unit.layout()).sourceVersion());
++            facts.put("currentStateBinding",binding);
++            facts.put("continuationEffectPolicy","One new independently reviewed current-state guarded rollback, never a replay or replacement of the original FAILED/UNKNOWN ACK. The fixed guard must revalidate all six preflight fingerprints and native parameters/unit/data rules under its locks. No result settles the original pending action. A new independent APP whole-graph observation must prove its goal, then each candidate cleanup needs its own APP and fresh grant; only the final whole graph can authorize verified FAILED local settlement. Any refused, missing or unknown result is never resent.");
++        } else if(value.preflightRequest!=null) {
+             var original=value.preflightEligibility.original();var prior=value.preflightEligibility.prior();
+             facts.put("purpose","READ_ONLY_V2_PREFLIGHT_AFTER_VERIFIED_ORIGINAL_V1_ENVIRONMENT_FAILURE");
+             facts.put("preflightSourceVersion",new DeploymentAgentPublicationRecoveryPreflightProgram(value.unit.layout()).sourceVersion());
+@@ -309,7 +352,9 @@
+         return Map.of("originalPublicationCompensation",Map.copyOf(facts));
+     }
+ 
+-    @Override public String reviewInstructions(){return pending!=null&&pending.preflightRequest!=null
++    @Override public String reviewInstructions(){return pending!=null&&pending.continuationRequest!=null
++        ? "Review the complete fixed current-state continuation launcher and stdin, exact targets, original immutable FAILED/UNKNOWN intent/result, verified v2 receipt and six fingerprints. This is a new bounded mutation under freshly checked current state, not authorization to replay the old command. Full native guard validation is required even though the read-only preflight intrinsically left three checks UNKNOWN. Every action requires an independent APP decision and a fresh exact host grant. The original ACK remains unchanged; this new receipt never settles it. Only a newer independently reviewed whole-graph status may prove its goal before independently reviewed cleanups and final FAILED settlement."
++        : pending!=null&&pending.preflightRequest!=null
+         ? "The fixed v2 preflight is bound to the complete original v1 ENVIRONMENT failure and original FAILED/UNKNOWN rollback. Review the complete actual CommandEvidence launcher and stdin, exact targets, old receipt and new source identity independently. The Bash prelude checks SDK exact /dev/null sentinels and refuses LD key presence before Python. After removing only those two sentinels, isolated Python completely classifies its bounded environment and refuses exported-function presence or incomplete classification before diagnostic guards. Only fixed categories are reported. Intrinsic incomplete checks remain UNKNOWN. No receipt authorizes a mutation, ACK replacement, cleanup or settlement. Independent APP and a fresh single-use exact host grant are required; this invocation returns UNKNOWN."
+         : pending!=null&&pending.diagnosticRequest!=null
+         ? "The product-owned facts bind one fixed read-only diagnostic of this original FAILED/UNKNOWN rollback. Independently review the complete actual CommandEvidence executable input and exact targets; these facts never authorize dispatch. FULL_PARAMETER_VALIDATION, UNIT_RENDER_MATCH and MANAGED_DATA_LINKS are explicitly UNKNOWN, not waived guard checks. The expected sourceVersion is the product's SHA-256 of actual stdin, not an independent remote measurement. This invocation remains UNKNOWN after any receipt and cannot retry a mutation, clean, finish or archive. Independent APP and a fresh single-use exact host grant remain required."
+@@ -318,6 +363,7 @@
+     @Override public void reviewed(ActionIntent intent,CommandRequest request,TaskContext supplied,DeploymentReviewDecision decision)throws ApiException {
+         verify(intent,request,supplied);
+         pending.decision=decision;
++        if(pending.continuation!=null)try {pending.continuation.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.preflight!=null)try {pending.preflight.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.diagnostic!=null)try {pending.diagnostic.reviewed(decision,pending.evidence);}catch(Exception invalid){throw stop();}
+         if(pending.installation!=null)try {pending.installation.reviewed(pending.action,decision,pending.evidence);}catch(Exception invalid){throw stop();}
+@@ -328,7 +374,14 @@
+             require(supplied==task&&pending!=null&&pending.intent.equals(intent)&&pending.requestDigest.equals(DeploymentAgentPublicationRecoveryInstallation.requestDigest(request)),"Actual recovery request changed");
+             checkOriginal();
+             if(pending.plan!=null)DeploymentAgentPublicationCompensation.requireCurrent(original,task,journal,pending.plan);
+-            if(pending.preflightRequest!=null) {
++            if(pending.continuationRequest!=null) {
++                pending.continuation.verifyCurrent();
++                var fixed=new DeploymentAgentPublicationContinuationProgram(pending.unit.layout());
++                try(var expected=fixed.request(pending.continuationRequest.binding(),pending.action)) {
++                    require(expected.resourceTargets().equals(intent.semantics().orElseThrow().targets())&&pending.operation.equals(DeploymentAgentPublicationContinuationProgram.OPERATION)
++                        &&DeploymentAgentPublicationRecoveryInstallation.requestDigest(expected.command()).equals(pending.requestDigest),"Actual current-state continuation request changed");
++                }
++            } else if(pending.preflightRequest!=null) {
+                 pending.preflight.verifyCurrent();
+                 var preflightProgram=new DeploymentAgentPublicationRecoveryPreflightProgram(pending.unit.layout());
+                 try(var expected=preflightProgram.request(pending.preflightRequest.binding(),pending.action)) {
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+index 2f8f5bbede1cbb6e7a7b53b4b8ae5109fb0b53f5..8d8143095b7010a1401c276fd6d3b40130afe8f0 100644
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentRecovery.java
+@@ -177,6 +177,7 @@
+                         + "\nunknownPolicy=unknown-install-only-reads-the-same-version-owner-operation-receipt;unknown-mutation-only-status-observation-never-resend"
+                         + "\nreadOnlyDiagnostic=at-most-one-fixed-source-diagnostic-attempt-per-failed-UNKNOWN-guarded-rollback-intent;requires-later-complete-unmet-goal-status;independent-APP-and-fresh-grant;this-invocation-remains-UNKNOWN-without-cleanup-or-settlement"
+                         + "\nreadOnlyPreflightV2=at-most-one-new-fixed-source-preflight-per-complete-verified-v1-environment-failure;bind-original-pending-result-and-v1-request-end-receipt;Bash-verifies-and-removes-only-exact-SDK-dev-null-sentinels-and-refuses-LD-before-Python;isolated-Python-bounded-complete-environment-refuses-exported-functions-or-incomplete-classification-before-diagnostic-guards;independent-APP-and-fresh-grant;this-invocation-remains-UNKNOWN-without-mutation-cleanup-ACK-replacement-or-settlement"
++                        + "\ncurrentStateContinuation=at-most-one-new-fixed-current-state-mutation-per-original-FAILED-UNKNOWN-rollback-after-complete-verified-v2-preflight-with-24-PASS-3-intrinsic-UNKNOWN-and-six-file-fingerprints;bind-original-intent-result-plan-and-preflight-request-end-receipt;independent-APP-full-source-and-fresh-exact-grant;no-old-ACK-overwrite-or-install-replay;new-wholegraph-observation-after-any-attempt-before-OBSERVED_ONLY;each-candidate-cleanup-independent-APP-new-grant;final-wholegraph-before-verified-FAILED-local-tail;UNKNOWN-never-resent"
+                     : "\npurpose=verify-original-publication-and-settle-original-candidates"
+                         + "\nhealthEffects=original-app-current-and-health-validation;fixed-app-admission-locks;verified-inactive-orphan-cleanup")
+                 + "\npermission=each-command-still-requires-independent-review-and-current-single-use-host-grant");
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation-guard.sh b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation-guard.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..79bfb73b45793172a551f95a9d5345852b06bc7b
+--- /dev/null
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation-guard.sh
+@@ -0,0 +1,124 @@
++# This unique entry is appended only to the separately reviewed continuation body.
++application_assert_no_orphan() { [ ! -e "$1/job" ] && [ ! -L "$1/job" ] || reject JOB; }
++continuation_check=ARGUMENTS
++continuation_mutation=0
++reject() { printf 'CONTINUATION_REFUSED=%s\n' "$continuation_check"; exit 74; }
++continuation_regular() {
++    assert_storage_parent "$1"
++    assert_root_owned_regular "$1"
++    [ "$(stat -c %h -- "$1")" = 1 ] || reject FILE
++}
++continuation_fingerprint() {
++    continuation_regular "$1"
++    [ "$(sha256sum -- "$1" | awk '{print $1}')" = "$2" ] || reject FINGERPRINT
++}
++continuation_build_idle() {
++    local name="windowstolinux-build-$1.service" state group processes
++    state="$(systemctl show --value --property ActiveState "$name")" || reject BUILD
++    case "$state" in inactive | failed) ;; *) reject BUILD ;; esac
++    [ "$(systemctl show --value --property MainPID "$name")" = 0 ] || reject BUILD
++    group="$(systemctl show --value --property ControlGroup "$name")" || reject BUILD
++    if [ -n "$group" ]; then
++        [[ "$group" = /* && "$group" != *..* && "$group" != *//* ]] || reject BUILD
++        if [ -e "/sys/fs/cgroup$group" ]; then
++            [ -d "/sys/fs/cgroup$group" ] && [ ! -L "/sys/fs/cgroup$group" ] || reject BUILD
++            processes="$(find -P "/sys/fs/cgroup$group" -name cgroup.procs -exec cat {} +)" || reject BUILD
++            [ -z "$processes" ] || reject BUILD
++        fi
++    fi
++}
++continuation() {
++    [ "$#" -eq 14 ] || reject ARGUMENTS
++    local task="$1" action="$2" execution="$3" app="$4" owner="$5" candidate="$6" release="$7" plan="$8"
++    local owner_hash="$9" task_hash="${10}" maintenance_hash="${11}" release_hash="${12}" parameters_hash="${13}" unit_hash="${14}"
++    require_snapshot_token "$task"; require_snapshot_token "$execution"
++    [[ "$action" =~ ^[a-f0-9]{32}$ ]] || reject ARGUMENTS
++    require_app "$app"; require_candidate "$app" "$candidate"
++    local digest
++    for digest in "$owner" "$release" "$plan" "$owner_hash" "$task_hash" "$maintenance_hash" "$release_hash" "$parameters_hash" "$unit_hash"; do require_digest "$digest"; done
++    continuation_check=ROOT_IDENTITY
++    require_root; require_deployer
++    local directory="$base_root/application-locks/$app" root="$(app_root "$app")" candidate_path="$(candidate_root "$candidate")" expected_unit="$(unit_path "$app")" path count=0 deadline=$((SECONDS + 30))
++    continuation_check=LOCKS
++    assert_storage_parent "$directory"; assert_root_owned_directory "$directory"
++    [ "$(stat -c %a -- "$directory")" = 700 ] || reject LOCKS
++    for path in "$directory/admission" "$directory/run"; do continuation_regular "$path"; [ "$(stat -c %a -- "$path")" = 600 ] || reject LOCKS; done
++    # Existing-only O_RDONLY descriptors: no mkdir, O_CREAT, or truncation before guards.
++    exec {application_admission_fd}<"$directory/admission"
++    flock -w 30 -x "$application_admission_fd" || reject LOCKS
++    exec {application_run_fd}<"$directory/run"
++    flock -w "$((deadline > SECONDS ? deadline - SECONDS : 0))" -x "$application_run_fd" || reject LOCKS
++    continuation_check=JOB
++    application_assert_no_orphan "$directory"
++    continuation_check=CANDIDATE
++    assert_storage_parent "$candidate_path"; assert_candidate_for_deployer "$candidate_path"
++    continuation_regular "$candidate_path/.agent-task"
++    [ "$(cat -- "$candidate_path/.agent-task")" = "$task" ] || reject CANDIDATE
++    continuation_check=FINGERPRINTS
++    continuation_fingerprint "$candidate_path/.deployer" "$owner_hash"
++    continuation_fingerprint "$candidate_path/.agent-task" "$task_hash"
++    continuation_fingerprint "$directory/maintenance" "$maintenance_hash"
++    continuation_fingerprint "$root/releases/$release/.windowstolinux-owner" "$release_hash"
++    continuation_fingerprint "$root/releases/$release/.windowstolinux-deployment-parameters" "$parameters_hash"
++    continuation_fingerprint "$expected_unit" "$unit_hash"
++    continuation_check=BUILD
++    continuation_build_idle "$candidate"
++    continuation_check=SNAPSHOTS
++    assert_storage_parent "$snapshots_root/$app-$task"
++    shopt -s nullglob dotglob
++    for path in "$snapshots_root/$app-"*; do reject SNAPSHOTS; done
++    continuation_check=MAINTENANCE
++    [ "$(cat -- "$directory/maintenance")" = "deployment-$release" ] || reject MAINTENANCE
++    continuation_check=CURRENT
++    assert_root_owned_directory "$root"; assert_root_owned_directory "$root/releases"
++    for path in "$root/releases/"*; do
++        [ "$path" = "$root/releases/$release" ] || reject CURRENT
++        assert_root_owned_directory "$path"; count=$((count + 1))
++    done
++    [ "$count" = 1 ] && [ -L "$root/current" ] && [ "$(readlink -- "$root/current")" = "$root/releases/$release" ] || reject CURRENT
++    continuation_check=NATIVE_CONTRACT
++    # Execute the original three pure contracts with distinct bounded rejection categories.
++    current_application="$app"
++    continuation_check=FULL_PARAMETER_VALIDATION
++    load_deployment_parameters "$root/releases/$release/.windowstolinux-deployment-parameters"
++    [ "$application_mode" = DAEMON ] || reject NATIVE_CONTRACT
++    continuation_check=MANAGED_DATA_LINKS
++    assert_managed_data_links "$root/releases/$release/source"
++    continuation_check=UNIT_RENDER_MATCH
++    local expected
++    expected="$(expected_deployment_unit_digest "$app" "${deployment_runtime_parameters[@]}")"
++    [ "$(systemctl show --value --property FragmentPath "$(unit_name "$app")")" = "$expected_unit" ] || reject NATIVE_CONTRACT
++    [ -z "$(systemctl show --value --property DropInPaths "$(unit_name "$app")")" ] || reject NATIVE_CONTRACT
++    [ "$(sha256sum -- "$expected_unit" | awk '{print $1}')" = "$expected" ] || reject NATIVE_CONTRACT
++    continuation_check=NATIVE_CONTRACT
++    assert_deployment_current_or_empty "$app" "$owner"
++    [ "$previous_present" = 1 ] && [ "$previous_path" = "$root/releases/$release" ] && [ "$application_mode" = DAEMON ] || reject NATIVE_CONTRACT
++    [ ! -e "/etc/containers/systemd/windowstolinux-$app.container" ] && [ ! -L "/etc/containers/systemd/windowstolinux-$app.container" ] || reject NATIVE_CONTRACT
++    # Recheck all bound bytes and direct ownership boundaries immediately before the one mutation.
++    continuation_check=FINGERPRINTS
++    continuation_fingerprint "$candidate_path/.deployer" "$owner_hash"
++    continuation_fingerprint "$candidate_path/.agent-task" "$task_hash"
++    continuation_fingerprint "$directory/maintenance" "$maintenance_hash"
++    continuation_fingerprint "$root/releases/$release/.windowstolinux-owner" "$release_hash"
++    continuation_fingerprint "$root/releases/$release/.windowstolinux-deployment-parameters" "$parameters_hash"
++    continuation_fingerprint "$expected_unit" "$unit_hash"
++    continuation_check=CURRENT
++    [ "$(readlink -- "$root/current")" = "$root/releases/$release" ] || reject CURRENT
++    [ "$(cat -- "$directory/maintenance")" = "deployment-$release" ] || reject CURRENT
++    continuation_check=ROLLBACK
++    printf 'CONTINUATION_MUTATION_STARTED=1\n'
++    rollback_deployment_first "$app" "$release" "$owner"
++    continuation_check=POSTCONDITIONS
++    [ ! -e "$root/current" ] && [ ! -L "$root/current" ] || reject POSTCONDITIONS
++    [ ! -e "$expected_unit" ] && [ ! -L "$expected_unit" ] || reject POSTCONDITIONS
++    [ ! -e "$root/releases/$release" ] && [ ! -L "$root/releases/$release" ] || reject POSTCONDITIONS
++    continuation_fingerprint "$directory/maintenance" "$maintenance_hash"
++    [ "$(cat -- "$directory/maintenance")" = "deployment-$release" ] || reject POSTCONDITIONS
++    rm -- "$directory/maintenance"
++    [ ! -e "$directory/maintenance" ] && [ ! -L "$directory/maintenance" ] || reject POSTCONDITIONS
++    assert_candidate_for_deployer "$candidate_path"
++    continuation_fingerprint "$candidate_path/.deployer" "$owner_hash"
++    continuation_fingerprint "$candidate_path/.agent-task" "$task_hash"
++    printf 'CONTINUATION_COMPLETED=1\n'
++}
++continuation "$@"
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation.py b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..485940ec6572c5e2a2071920e2468be33ee048ee
+--- /dev/null
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation.py
+@@ -0,0 +1,130 @@
++import hashlib
++import json
++import os
++import re
++import selectors
++import signal
++import subprocess
++import sys
++import time
++
++FORMAT = "WTL_AGENT_PUBLICATION_CONTINUATION_1"
++FRAME = "PUBLICATION_CONTINUATION="
++# @WTL_CONTINUATION_BASH@
++CHECKS = {"ENVIRONMENT", "ARGUMENTS", "ROOT_IDENTITY", "LOCKS", "JOB", "CANDIDATE", "FINGERPRINTS", "BUILD", "SNAPSHOTS", "MAINTENANCE", "CURRENT", "NATIVE_CONTRACT", "FULL_PARAMETER_VALIDATION", "MANAGED_DATA_LINKS", "UNIT_RENDER_MATCH", "ROLLBACK", "POSTCONDITIONS", "COMPLETE", "INTERNAL", "LIMIT"}
++
++def strict(pairs):
++    value = {}
++    for key, item in pairs:
++        if key in value:
++            raise ValueError()
++        value[key] = item
++    return value
++
++def environment():
++    count = size = 0
++    for key, value in os.environ.items():
++        count += 1
++        record = len(os.fsencode(key)) + len(os.fsencode(value)) + 2
++        size += record
++        if count > 512 or record > 8192 or size > 131072:
++            return False
++        if key in ("BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH") or key.startswith("BASH_FUNC_"):
++            return False
++    return True
++
++def receipt(envelope, status, check, started):
++    ok = status == "ROLLED_BACK"
++    value = dict(format=FORMAT, sourceVersion=envelope["sourceVersion"], action=envelope["action"], binding=envelope["binding"],
++                 status=status, check=check, mutationStarted=started, currentAbsent=True if ok else None,
++                 unitAbsent=True if ok else None, releaseAbsent=True if ok else None,
++                 maintenanceAbsent=True if ok else None, candidateRetained=True if ok else None)
++    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
++    if len(encoded.encode()) > 16000:
++        raise ValueError()
++    print(FRAME + encoded, flush=True)
++
++def execute(args):
++    # Drain stdout/stderr while feeding the full fixed body, including early guard rejection.
++    process = subprocess.Popen(["/bin/bash", "--noprofile", "--norc", "-p", "-s", "--", *args],
++        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
++        env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C", "LC_ALL": "C"})
++    sent = 0
++    body = BASH_SOURCE.encode("utf-8")
++    output = bytearray()
++    errors = bytearray()
++    deadline = time.monotonic() + 165
++    try:
++        with selectors.DefaultSelector() as selection:
++            for pipe, events in ((process.stdin, selectors.EVENT_WRITE), (process.stdout, selectors.EVENT_READ), (process.stderr, selectors.EVENT_READ)):
++                os.set_blocking(pipe.fileno(), False)
++                selection.register(pipe, events)
++            while selection.get_map():
++                if time.monotonic() >= deadline:
++                    raise TimeoutError()
++                for key, _ in selection.select(min(1, max(0, deadline - time.monotonic()))):
++                    pipe = key.fileobj
++                    if pipe is process.stdin:
++                        try:
++                            sent += os.write(pipe.fileno(), body[sent:sent + 8192])
++                        except BrokenPipeError:
++                            selection.unregister(pipe); pipe.close(); continue
++                        if sent == len(body):
++                            selection.unregister(pipe); pipe.close()
++                    else:
++                        block = os.read(pipe.fileno(), 4096)
++                        if not block:
++                            selection.unregister(pipe); pipe.close(); continue
++                        target = output if pipe is process.stdout else errors
++                        target.extend(block)
++                        if len(output) + len(errors) > 16384:
++                            raise ValueError()
++            process.wait(timeout=max(0.01, deadline - time.monotonic()))
++        text = bytes(output)
++        started = b"CONTINUATION_MUTATION_STARTED=1\n" in text
++        if process.returncode == 0 and not errors and text == b"CONTINUATION_MUTATION_STARTED=1\nROLLED_BACK=1\nCONTINUATION_COMPLETED=1\n":
++            return "ROLLED_BACK", "COMPLETE", True
++        match = re.fullmatch(rb"CONTINUATION_REFUSED=([A-Z_]+)\n", text)
++        if not started and process.returncode == 74 and not errors and match and match[1].decode() in CHECKS:
++            return "REFUSED", match[1].decode(), False
++        partial = re.fullmatch(rb"CONTINUATION_MUTATION_STARTED=1\n(?:ROLLED_BACK=1\n)?CONTINUATION_REFUSED=([A-Z_]+)\n", text)
++        if started and process.returncode == 74 and not errors and partial and partial[1].decode() in CHECKS:
++            return "UNKNOWN", partial[1].decode(), True
++        return "UNKNOWN", "ROLLBACK" if started else "INTERNAL", True
++    except BaseException:
++        # Only the group started by this invocation is signalled; no retry or fallback operation.
++        try:
++            os.killpg(process.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        process.wait(timeout=5)
++        return "UNKNOWN", "LIMIT", True
++    finally:
++        for pipe in (process.stdin, process.stdout, process.stderr):
++            if not pipe.closed:
++                pipe.close()
++
++def main():
++    envelope = json.loads(sys.argv[1], object_pairs_hook=strict)
++    if set(envelope) != {"binding", "action", "sourceVersion"}:
++        raise ValueError()
++    # The launcher verified the exact SDK sentinels and LD categories before Python.
++    # Functions are classified here, after Python startup, before any diagnostic/native IO.
++    if len(sys.argv) != 3 or sys.argv[2] != "SDK_DEV_NULL_SENTINELS_REMOVED_CONTINUATION_V1" or not environment():
++        receipt(envelope, "REFUSED", "ENVIRONMENT", False); return
++    if os.geteuid() != 0:
++        receipt(envelope, "REFUSED", "ROOT_IDENTITY", False); return
++    binding = envelope["binding"]; original = binding["original"]; current = binding["current"]
++    args = [original["task"], envelope["action"].replace("-", ""), original["execution"], original["unit"],
++            original["ownerSha256"], original["candidate"], original["releaseSha256"], original["planSha256"],
++            current["candidateOwnerSha256"], current["candidateTaskSha256"], current["maintenanceSha256"],
++            current["releaseOwnerSha256"], current["parametersSha256"], current["unitSha256"]]
++    receipt(envelope, *execute(args))
++
++if __name__ == "__main__":
++    try:
++        main()
++    except BaseException:
++        # No raw exception/argument/configuration is printed. Missing safe receipt remains UNKNOWN.
++        print("PUBLICATION_CONTINUATION_FAILURE=UNKNOWN", flush=True)
++        sys.exit(70)
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+index 494d0fbb4a9dae5aff78bd6fac20599f9ae16d42..49898884807d1b98a5cf98bac6a68272e6755d65 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidenceTest.java
+@@ -25,6 +25,68 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentCommandEvidenceTest {
++    @Test
++    void currentStateContinuationDeliversCompleteSourceAndRequiresFreshHostGrant()throws Exception {
++        var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        var program=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram(layout);
++        var fixture=new NativeAiFixture();var json=new ObjectMapper();var server=new ServerId("original-host");
++        var ui=(gold.debug.windowstolinux.appapi.ui.UiService)java.lang.reflect.Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ui.UiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ui.UiService.class},(p,m,a)->{
++            if(m.getName().equals("environment"))return new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.ENGLISH,"LIGHT",false);throw new AssertionError(m.getName());
++        });
++        var reviewContext=(gold.debug.windowstolinux.appapi.mod.ModContext)java.lang.reflect.Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.mod.ModContext.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.mod.ModContext.class},(p,m,a)->{
++            if(m.getName().equals("ui"))return ui;try{return m.invoke(fixture.context,a);}catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
++        });
++        var original=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding(server.id(),fixture.task.id(),UUID.randomUUID(),UUID.randomUUID(),17,"a".repeat(64),"b".repeat(64),"backend","c".repeat(64),"backend-0123456789abcdef","d".repeat(64),layout.digest());
++        var prior=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.PriorPreflight(UUID.randomUUID(),30,38,"e".repeat(64),"f".repeat(64));
++        var current=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.CurrentFingerprints("1".repeat(64),"2".repeat(64),"3".repeat(64),"4".repeat(64),"5".repeat(64),"6".repeat(64));
++        var binding=new gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.Binding(original,18,"7".repeat(64),prior,current);
++        var agent=new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(fixture.context,fixture.task,
++            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence(){
++                public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding(){return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(server.id(),"local-native-review-target","e".repeat(64));}
++                public Map<String,gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources(){return Map.of();}
++                public Object receipts(){return Map.of("events",List.of());}
++            });
++        var grants=new java.util.HashSet<UUID>();var reviewedActions=new java.util.HashSet<String>();
++        var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)java.lang.reflect.Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
++            if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("APP cannot be bypassed by host.approve");
++            var intent=(gold.debug.windowstolinux.appapi.task.action.ActionIntent)a[0];
++            @SuppressWarnings("unchecked") var supplied=(java.util.Optional<CommandRequest>)a[1];
++            assertEquals(RemoteActions.command(server,intent.revision(),supplied.orElseThrow()).exactAction(),intent.exactAction());
++            assertTrue(reviewedActions.add(intent.exactAction()));UUID id=UUID.randomUUID();assertTrue(grants.add(id));
++            return new gold.debug.windowstolinux.appapi.task.result.OperationResult<>(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,java.util.Optional.of(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(id)),java.util.Optional.empty());
++        });
++        String approve="{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false,\"reason\":\"Local complete diagnostic review\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[]}";
++        String deny="{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Local diagnostic denial\",\"missingEvidence\":[],\"adjustments\":[],\"candidateCommands\":[],\"discussionStatus\":\"CLOSED\"}";
++        for(int attempt=0;attempt<3;attempt++)try(var request=program.request(binding,UUID.randomUUID())) {
++            var intent=RemoteActions.command(server,binding.original().planSha256(),request.command()).withSemantics(new ActionSemantics(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.OPERATION,request.resourceTargets()));
++            var facts=json.valueToTree(DeploymentCommandEvidence.facts(intent,request.command(),layout));
++            assertEquals("EXECUTABLE_SCRIPT",facts.path("inputKind").asText());assertEquals(program.source(),facts.path("completeExecutableInput").asText());
++            assertEquals(program.sourceVersion(),facts.at("/publicationRecoveryContinuation/expectedSourceVersion").asText());assertFalse(facts.path("publicationRecoveryContinuation").has("completeReadonlySource"));assertFalse(facts.has("publicationRecoveryProgram"));assertFalse(facts.has("publicationRecoveryDiagnostic"));assertEquals(prior.receiptSha256(),facts.at("/publicationRecoveryContinuation/binding/preflight/receiptSha256").asText());assertFalse(facts.has("installedHelperPath"));
++            if(attempt==0) {
++                fixture.nativeReply(new AiToolCall("diagnostic-deny","submit_result",deny));
++                var refusal=assertThrows(gold.debug.windowstolinux.appapi.task.result.ApiException.class,()->DeploymentFixedCommandApproval.approve(reviewContext,host,intent,request.command(),fixture.task,"fixture-route","AUTOMATIC",false,agent,DeploymentCurrentCommandEvidence.NONE,true));
++                assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED",refusal.problem().eventCode());assertTrue(grants.isEmpty());continue;
++            }
++            // Page the complete real launcher as well as stdin through the actual native review tools.
++            for(int offset=0;offset<request.command().script().length();) {
++                int end=Math.min(offset+4000,request.command().script().length());
++                fixture.nativeReply(new AiToolCall("preflight-launcher-"+attempt+"-"+offset,"request",json.writeValueAsString(Map.of("part","script","offset",offset,"limit",end-offset))));offset=end;
++            }
++            for(int offset=0;offset<program.source().length();) {
++                int end=Math.min(offset+4000,program.source().length());
++                fixture.nativeReply(new AiToolCall("diagnostic-page-"+attempt+"-"+offset,"evidence",json.writeValueAsString(Map.of("pointer","/completeExecutableInput","offset",offset,"limit",end-offset))));offset=end;
++            }
++            fixture.nativeReply(new AiToolCall("diagnostic-approve-"+attempt,"submit_result",approve));
++            assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED,DeploymentFixedCommandApproval.approve(reviewContext,host,intent,request.command(),fixture.task,"fixture-route","AUTOMATIC",false,agent,DeploymentCurrentCommandEvidence.NONE,true).outcome());
++            assertEquals(attempt,grants.size());assertTrue(fixture.replies.isEmpty());
++            var wrong=new java.util.HashSet<>(request.resourceTargets());wrong.remove(wrong.iterator().next());
++            assertThrows(IllegalArgumentException.class,()->DeploymentCommandEvidence.facts(RemoteActions.command(server,binding.original().planSha256(),request.command()).withSemantics(new ActionSemantics(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram.OPERATION,wrong)),request.command(),layout));
++        }
++        assertEquals(2,grants.size());assertEquals(2,reviewedActions.size());
++        assertEquals(program.sourceVersion(),json.readTree(fixture.requests.getFirst().messages().get(1).text()).at("/currentRequest/publicationRecoveryContinuation/expectedSourceVersion").asText());
++        // Existing native review fixture and synthetic host grants only; no SDK consumption, provider or SSH is exercised.
++    }
++
+     @Test
+     void readonlyPublicationPreflightDeliversCompleteSourceAndRequiresFreshHostGrant()throws Exception {
+         var layout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+index 6151f0f50c07d862f8d0acc492757faf31d1a7d0..7858519e591b574e2858005f730a446af39705fc 100644
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/execution/DeploymentAgentHistoryArchiveTest.java
+@@ -51,6 +51,8 @@
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecovery;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflight;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuation;
++import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationContinuationProgram;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnostic;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryDiagnosticProgram;
+@@ -101,6 +103,62 @@
+                 assertEquals(Optional.of(old),DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).pending());assertTrue(log.events(task).contains(oldResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                 compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);
+                 completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
++            });
++        }
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings={"identity","source-version","prior-receipt","current-fingerprint","old-result","reused-grant","reused-action","repeat","old-observation"})
++    void continuationRejectsChangedCurrentStateAndReusedAuthority(String change)throws Exception {
++        enable();
++        try(var runtime=open()) {
++            start(runtime,true);server(runtime);
++            run(runtime,task->{
++                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());
++                originalPublication(runtime,task,false);var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);
++                var old=compensationIntent(context,task,plan,UUID.randomUUID());
++                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure())),false);
++                var originalResult=log.events(task).getLast();compensationObservation(context,task,true);
++                var original=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
++                var unit=new DeploymentExecutionStore(context.db()).publicationTemplate(new DeploymentExecutionStore(context.db()).findForTask(task).orElseThrow()).orElseThrow().graph().components().getFirst().unit();
++                var prior=appendReadyPreflightFixture(task,log,original,unit.layout());
++                var v1=log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList();
++                var selected=DeploymentAgentPublicationContinuation.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task));
++                {
++                    var eligible=selected.orElseThrow();var program=new DeploymentAgentPublicationContinuationProgram(unit.layout());
++                    try(var request=program.request(DeploymentAgentPublicationContinuation.binding(eligible),change.equals("reused-action")?UUID.fromString(v1.getFirst().action()):UUID.randomUUID())) {
++                        var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContinuationProgram.OPERATION,request.resourceTargets()));
++                        if(change.equals("reused-action")){var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationContinuation.open(task,log,eligible,request,intent));assertEquals(before,log.events(task));}
++                        else {
++                            var preflight=DeploymentAgentPublicationContinuation.open(task,log,eligible,request,intent);
++                            if(change.equals("old-observation")) {
++                                var before=log.events(task);assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.observedOnly(task,log,old));assertEquals(before,log.events(task));
++                            }else if(change.equals("reused-grant")) {
++                                preflight.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Local preflight fixture"),"5".repeat(64));
++                                var before=log.events(task);assertThrows(Exception.class,()->preflight.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(prior.get("grant"))));assertEquals(before,log.events(task));
++                            }else if(change.equals("repeat")) {
++                                var before=log.events(task);try(var again=program.request(DeploymentAgentPublicationContinuation.binding(eligible),UUID.randomUUID())) {
++                                    var next=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(unit.server(),plan.sha256(),again.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationContinuationProgram.OPERATION,again.resourceTargets()));
++                                    assertThrows(Exception.class,()->DeploymentAgentPublicationContinuation.open(task,log,eligible,again,next));assertEquals(before,log.events(task));
++                                }
++                            }else {
++                                var before=log.events(task);var forged=new ArrayList<>(before);var event=forged.getLast();var node=DeploymentJsonDocument.parse(event.detail());
++                                if(change.equals("identity"))node.put("task",UUID.randomUUID().toString());
++                                else if(change.equals("source-version"))node.put("sourceVersion","0".repeat(64));
++                                else if(change.equals("prior-receipt"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("preflight")).put("receiptSha256","0".repeat(64));
++                                else if(change.equals("current-fingerprint"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding").path("current")).put("unitSha256","0".repeat(64));
++                                else if(change.equals("old-result"))((com.fasterxml.jackson.databind.node.ObjectNode)node.path("binding")).put("pendingResultSha256","0".repeat(64));
++                                else throw new AssertionError(change);
++                                forged.set(forged.size()-1,new DeploymentAgentActionLog.Event(event.id(),event.type(),event.action(),DeploymentJsonDocument.encode(node)));
++                                assertThrows(Exception.class,()->DeploymentAgentPublicationCompensation.read(forged,task.id()));assertEquals(before,log.events(task));
++                            }
++                            preflight.retainInterrupted();
++                        }
++                    }
++                }
++                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());long barrier=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationContinuation.EVENT)).reduce((a,b)->b).map(DeploymentAgentActionLog.Event::id).orElse(originalResult.id());assertEquals(barrier,state.lastActionEvent());
++                assertEquals(v1,log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList());assertTrue(log.events(task).contains(originalResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
++                compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
+             });
+         }
+     }
+@@ -155,6 +213,127 @@
+                 var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertEquals(originalResult.id(),state.lastActionEvent());
+                 assertEquals(v1,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryDiagnostic.EVENT)).toList());assertTrue(log.events(task).contains(originalResult));assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
+                 compensationObservation(context,task,false);DeploymentAgentPublicationCompensation.observedOnly(task,log,old);completeCompensation(context,task,plan,false);new DeploymentAgentHistoryArchive(context).settle(task,finishCompensation(context,task));return success();
++            });
++        }
++    }
++
++    /** Authentic original TaskWork/journal; APP model and host/SSH are local capability peers, not real remote acceptance. */
++    @ParameterizedTest
++    @ValueSource(strings={"complete","partial","timeout","deny","refused"})
++    void currentStateContinuationNeverReplaysAndNeedsFreshWholeGraph(String scenario)throws Exception {
++        enable();
++        try(var runtime=open()) {
++            start(runtime,true);server(runtime);
++            run(runtime,task->{
++                var context=runtime.modContexts().get(OWNER).context();var log=new DeploymentAgentActionLog(context.db());var store=new DeploymentExecutionStore(context.db());
++                var server=new ServerId("server");String fingerprint="local-diagnostic-peer";
++                var capturedLayout=gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(),task,capturedLayout);
++                originalPublication(runtime,task,false,DeploymentAgentInputs.hash(server.id()+":"+fingerprint),DeploymentAgentInputs.targetProfile(context.servers().get(server,task)));
++                var formal=store.findForTask(task).orElseThrow();var template=store.publicationTemplate(formal).orElseThrow();var unit=template.graph().components().getFirst().unit();
++                assertEquals(capturedLayout,gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentLayouts.original(context,task,log.find(task).orElseThrow().identity(),log.events(task)));
++                var installedProgram=new DeploymentAgentPublicationRecoveryProgram(unit.layout());
++                var installation=DeploymentAgentPublicationRecoveryInstallation.open(task,log,formal,"b".repeat(64),installedProgram);
++                try(var ready=installedProgram.readiness(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,ready);installation.result(ready.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("MISSING","-","-"));}
++                try(var install=installedProgram.install(unit,task.id(),UUID.randomUUID())){installationFixtureDispatch(installation,install);installation.result(install.action(),localReceipt(),new DeploymentAgentPublicationRecoveryProgram.StoreReceipt("READY",task.id().toString(),install.action().toString().replace("-","")));}
++                var installationFrames=log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList();
++                var plan=DeploymentAgentPublicationCompensation.begin(context,task,log);var old=compensationIntent(context,task,plan,UUID.randomUUID());
++                DeploymentAgentPublicationCompensation.acknowledge(task,log,old,new OperationResult<>(TaskResult.FAILED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(70),"PUBLICATION_RECOVERY_FAILURE=UNKNOWN\n","",false)),Optional.of(new Problem(ProblemCode.IO_FAILURE,"SSH_COMMAND_NONZERO","Local rollback peer returned a nonzero exit",Map.of(),Optional.empty()))),false);
++                var oldResult=log.events(task).getLast();compensationObservation(context,task,true);
++                var eligible=DeploymentAgentPublicationCompensation.diagnosticEligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
++                appendReadyPreflightFixture(task,log,eligible,unit.layout());
++                var originalV1=log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList();
++                var preflightEligible=DeploymentAgentPublicationContinuation.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
++                var program=new DeploymentAgentPublicationContinuationProgram(unit.layout());
++                var reviews=new java.util.concurrent.atomic.AtomicInteger();var grants=new java.util.concurrent.atomic.AtomicInteger();var sends=new java.util.concurrent.atomic.AtomicInteger();
++                var granted=new AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();var expectedCommand=new AtomicReference<String>();var diagnosticAction=new AtomicReference<UUID>();var continuationSends=new java.util.concurrent.atomic.AtomicInteger();var cleanups=new java.util.concurrent.atomic.AtomicInteger();var uniqueGrants=new java.util.HashSet<UUID>();
++                var ai=(gold.debug.windowstolinux.appapi.ai.AiService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.ai.AiService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.ai.AiService.class},(p,m,a)->{if(m.getName().equals("configurationRevision"))return "b".repeat(64);throw new AssertionError("No provider call in local diagnostic fixture");});
++                var reviewedContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(p,m,a)->m.getName().equals("ai")?ai:invoke(m,context,a));
++                gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel model=(instructions,facts,intent,command,revision,supplied)->{
++                    assertTrue(supplied==task);reviews.incrementAndGet();
++                    var node=new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
++                    if(node.has("publicationRecoveryContinuation")) {
++                        assertEquals(plan.sha256(),intent.revision());
++                        assertEquals(program.source(),node.path("completeExecutableInput").asText());assertEquals(program.sourceVersion(),node.at("/publicationRecoveryContinuation/expectedSourceVersion").asText());
++                        assertEquals(old.event(),node.at("/publicationRecoveryContinuation/binding/original/pendingIntentEvent").longValue());
++                        diagnosticAction.set(UUID.fromString(node.at("/publicationRecoveryContinuation/action").asText()));expectedCommand.set(command.script());
++                    }
++                    return new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewModel.Result(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision(scenario.equals("deny")&&node.has("publicationRecoveryContinuation")?"DENY":"APPROVE",false,"Local diagnostic decision"),Map.of());
++                };
++                var host=(gold.debug.windowstolinux.appapi.task.action.InteractionService)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.task.action.InteractionService.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.task.action.InteractionService.class},(p,m,a)->{
++                    if(!m.getName().equals("approveReviewedAction"))throw new AssertionError("Diagnostic cannot bypass APP");
++                    grants.incrementAndGet();var value=new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(UUID.randomUUID());assertTrue(uniqueGrants.add(value.id()));granted.set(value);return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(value),Optional.empty());
++                });
++                var session=(gold.debug.windowstolinux.appapi.linux.session.RemoteSession)Proxy.newProxyInstance(gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class.getClassLoader(),new Class<?>[]{gold.debug.windowstolinux.appapi.linux.session.RemoteSession.class},(p,m,a)->{
++                    if(m.getName().equals("facts"))return new gold.debug.windowstolinux.appapi.linux.session.RemoteFacts("Linux","x86_64",fingerprint);
++                    if(!m.getName().equals("execute"))throw new AssertionError("No mutation or other remote capability");
++                    var command=(gold.debug.windowstolinux.appapi.linux.command.CommandRequest)a[0];assertEquals(granted.get(),a[1]);sends.incrementAndGet();
++                    if(command.script().contains("'publication-original-status'")) {
++                        String output="PUBLICATION_STATUS=1\nCURRENT=none\nCURRENT_KIND=none\nCURRENT_MODE=none\nSNAPSHOT=none\nSNAPSHOT_OLD=none\nSNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE=none\nCANDIDATE="+(cleanups.get()==2?"absent":"owned")+"\nBUILD_ACTIVE=no\nUNIT_PRESENT=no\nCONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=0\n";
++                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",false)),Optional.empty());
++                    }
++                    if(command.script().contains("'candidate-cleanup-task'")) {cleanups.incrementAndGet();return localReceipt("CANDIDATE_CLEANED=1\n");}
++                    assertEquals(expectedCommand.get(),command.script());continuationSends.incrementAndGet();
++                    try(var expected=program.request(DeploymentAgentPublicationContinuation.binding(preflightEligible),diagnosticAction.get())) {
++                        assertEquals(expected.command().script(),command.script());assertTrue(java.util.Arrays.equals(expected.command().stdin(),command.stdin()));
++                        if(scenario.equals("timeout"))return new OperationResult<>(TaskResult.UNKNOWN,Optional.empty(),Optional.of(new Problem(ProblemCode.UNKNOWN,"LOCAL_CONTINUATION_TIMEOUT","Local peer timeout",Map.of(),Optional.empty())));
++                        String output=scenario.equals("partial")?"PUBLICATION_CONTINUATION={":"PUBLICATION_CONTINUATION="+continuationSafeReceipt(program,expected,scenario.equals("refused"))+"\n";
++                        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),output,"",scenario.equals("partial"))),Optional.empty());
++                    }
++                });
++                var scope=new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(reviewedContext,host,task,"MANUAL_REVIEW",false,()->"b".repeat(64),null,gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE,()->model);
++                var candidates=new java.util.LinkedHashMap<String,gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate>();
++                for(var component:plan.components())candidates.put(component.id(),new gold.debug.windowstolinux.mod.deployment.service.core.delivery.DeploymentGraphPublisher.Candidate(component.candidate(),"f".repeat(64),"e".repeat(64),"0".repeat(64),false,Map.of()));
++                var producer=new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log);
++                assertEquals(scenario.equals("complete"),producer.run());
++                var state=DeploymentAgentPublicationCompensation.read(log.events(task),task.id());
++                if(!scenario.equals("complete")) {
++                    assertEquals(Optional.of(old),state.pending());assertEquals(0,state.completed());assertTrue(state.verified().isEmpty());assertEquals(0,cleanups.get());
++                    assertTrue(state.lastActionEvent()>oldResult.id());assertEquals(1,reviews.get());assertEquals(scenario.equals("deny")?0:1,grants.get());
++                    assertFalse(DeploymentAgentActionLog.effectsSettled(log.events(task)));
++                    // This later explicit run uses new independently approved whole-graph receipts; it never resends the continuation.
++                    assertTrue(new DeploymentAgentPublicationRecovery(reviewedContext,scope,session,server,task,"b".repeat(64),log.find(task).orElseThrow(),new DeploymentPublishResult(template.graph(),template.units()),candidates,log).run());
++                }
++                assertEquals(scenario.equals("deny")?0:1,continuationSends.get());assertEquals(2,cleanups.get());assertEquals(grants.get(),uniqueGrants.size());assertEquals(reviews.get(),grants.get()+(scenario.equals("deny")?1:0));
++                assertTrue(DeploymentAgentPublicationContinuation.attempted(log.events(task),preflightEligible));
++                assertEquals(originalV1,log.events(task).stream().filter(e->Set.of(DeploymentAgentPublicationRecoveryDiagnostic.EVENT,DeploymentAgentPublicationRecoveryPreflight.EVENT).contains(e.type())).toList());assertTrue(log.events(task).contains(oldResult));
++                assertEquals(installationFrames,log.events(task).stream().filter(e->e.type().equals(DeploymentAgentPublicationRecoveryInstallation.EVENT)).toList());
++                assertTrue(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()).verified().isPresent());
++                assertTrue(log.events(task).stream().noneMatch(e->Set.of("AI_PUBLICATION_FINISHED","AI_PUBLICATION_CLEANED","AI_RECOVERY_SETTLED").contains(e.type())));
++                String window=switch(scenario){case "complete"->"REFERENCE_ACK_LOST";case "partial"->"FAILED";case "deny"->"FINISHED";default->"UNKNOWN";};
++                var id=store.findForTask(task).orElseThrow().identity().executionId();
++                if(window.equals("UNKNOWN")) store.recordUncommittedOutcome(task,id,TaskResult.UNKNOWN,
++                    new Problem(ProblemCode.UNKNOWN,"FIXTURE_ORIGINAL_UNKNOWN","Original publication remains unknown",Map.of(),Optional.empty()),java.time.Instant.now());
++                if(window.equals("REFERENCE_ACK_LOST")) {
++                    var once=new java.util.concurrent.atomic.AtomicBoolean();var servers=context.servers();
++                    var losing=(gold.debug.windowstolinux.appapi.server.ServerService)Proxy.newProxyInstance(servers.getClass().getClassLoader(),
++                        new Class<?>[]{gold.debug.windowstolinux.appapi.server.ServerService.class},(proxy,method,args)->{
++                            var result=invoke(method,servers,args);
++                            if(method.getName().equals("resolve")&&once.compareAndSet(false,true))throw new ApiException(new Problem(ProblemCode.UNKNOWN,"FIXTURE_REFERENCE_ACK_LOST","Local fixture acknowledgement",Map.of(),Optional.empty()));
++                            return result;
++                        });
++                    var losingContext=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},
++                        (proxy,method,args)->method.getName().equals("servers")?losing:invoke(method,context,args));
++                    assertEquals(TaskResult.UNKNOWN,new DeploymentOriginalPublishCommit(losingContext).completeUncommittedVerified(task,id,TaskResult.FAILED,DeploymentAgentPublicationCompensation.failure()).outcome());
++                    assertEquals(Optional.of(TaskResult.FAILED),store.findForTask(task).orElseThrow().outcome());
++                } else if(!window.equals("UNKNOWN")) {
++                    assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).completeUncommittedVerified(task,id,TaskResult.FAILED,DeploymentAgentPublicationCompensation.failure()).outcome());
++                    if(window.equals("FINISHED"))assertEquals(TaskResult.FAILED,new DeploymentOriginalPublishCommit(context).finishKnown(task,store.findForTask(task).orElseThrow()).outcome());
++                }
++                var linux=new java.util.concurrent.atomic.AtomicInteger();var localAiCalls=new java.util.concurrent.atomic.AtomicInteger();
++                var localOnly=(ModContext)Proxy.newProxyInstance(ModContext.class.getClassLoader(),new Class<?>[]{ModContext.class},(proxy,method,args)->{
++                    if(method.getName().equals("linux")){linux.incrementAndGet();throw new AssertionError("Verified local tail cannot obtain Linux");}
++                    if(method.getName().equals("ai")){localAiCalls.incrementAndGet();throw new AssertionError("Verified local tail cannot obtain AI");}
++                    return invoke(method,context,args);
++                });
++                var recovery=new DeploymentAgentRecovery(localOnly,log);
++                assertEquals(TaskResult.FAILED,recovery.reconcile(task,log.find(task).orElseThrow()).outcome());
++                var settled=log.events(task);assertEquals(TaskResult.FAILED,recovery.reconcile(task,log.find(task).orElseThrow()).outcome());
++                assertEquals(settled,log.events(task));assertEquals(0,linux.get());assertEquals(0,localAiCalls.get());
++                assertEquals(DeploymentAgentPublicationCompensation.FAILURE,store.problem(store.findForTask(task).orElseThrow()).orElseThrow().eventCode());
++                assertEquals(TaskResult.FAILED,new DeploymentAgentHistoryArchive(context).settle(task,new OperationResult<>(TaskResult.FAILED,Optional.empty(),Optional.of(DeploymentAgentPublicationCompensation.failure()))).outcome());
++
++                return success();
+             });
+         }
+     }
+@@ -721,6 +900,34 @@
+             assertEquals(intent.businessKey(), reference.businessKey());
+             assertEquals(gold.debug.windowstolinux.appapi.task.ref.ResourceRefState.RESERVED, reference.state());
+         }
++    }
++
++    private static OperationResult<gold.debug.windowstolinux.appapi.linux.command.CommandResult> localReceipt(String stdout) {
++        return new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new gold.debug.windowstolinux.appapi.linux.command.CommandResult(Optional.of(0),stdout,"",false)),Optional.empty());
++    }
++    /** Strict typed fixture only; no remote check or historical current-state fingerprint is asserted. */
++    private static Map<String,UUID> appendReadyPreflightFixture(TaskContext task,DeploymentAgentActionLog log,DeploymentAgentPublicationCompensation.DiagnosticEligibility original,
++        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout)throws Exception {
++        appendV1DiagnosticFixture(task,log,original,layout,"ENV_FAIL");
++        var eligible=DeploymentAgentPublicationRecoveryPreflight.eligibility(DeploymentAgentPublicationCompensation.read(log.events(task),task.id()),log.events(task)).orElseThrow();
++        var program=new DeploymentAgentPublicationRecoveryPreflightProgram(layout);UUID action=UUID.randomUUID(),grant=UUID.randomUUID();
++        try(var request=program.request(preflightBinding(eligible),action)) {
++            var intent=gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(new ServerId(original.plan().server()),original.plan().sha256(),request.command()).withSemantics(new gold.debug.windowstolinux.appapi.task.action.ActionSemantics(DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION,request.resourceTargets()));
++            var durable=DeploymentAgentPublicationRecoveryPreflight.open(task,log,eligible,request,intent);durable.reviewed(new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE",false,"Complete local v2 preflight"),"5".repeat(64));durable.granted(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(grant));durable.dispatch();
++            var json=new com.fasterxml.jackson.databind.ObjectMapper();var safe=(com.fasterxml.jackson.databind.node.ObjectNode)json.readTree(preflightSafeReceipt(program,request));
++            for(var row:safe.path("checks"))if(!Set.of("FULL_PARAMETER_VALIDATION","UNIT_RENDER_MATCH","MANAGED_DATA_LINKS").contains(row.path("id").asText())) {
++                var check=(com.fasterxml.jackson.databind.node.ObjectNode)row;check.put("status","PASS").put("reason","MATCH").put("flag",true);
++                if(Set.of("CANDIDATE_OWNER","CANDIDATE_TASK","MAINTENANCE_OWNER","RELEASE_OWNER","PARAMETERS_FILE","UNIT_FILE").contains(check.path("id").asText()))check.put("sha256",DeploymentAgentInputs.hash("fixture:"+check.path("id").asText()));
++            }
++            String canonical=program.validateReceipt(request,safe.toString()).canonicalJson();var actual=localReceipt("PUBLICATION_RECOVERY_PREFLIGHT="+canonical+"\n");durable.result(actual,program.parse(request,actual));
++        }
++        return Map.of("action",action,"grant",grant);
++    }
++    private static String continuationSafeReceipt(DeploymentAgentPublicationContinuationProgram program,DeploymentAgentPublicationContinuationProgram.Request request,boolean refused)throws Exception {
++        var json=new com.fasterxml.jackson.databind.ObjectMapper();var n=json.createObjectNode().put("format",DeploymentAgentPublicationContinuationProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",request.action().toString());n.set("binding",json.valueToTree(request.binding()));
++        n.put("status",refused?"REFUSED":"ROLLED_BACK").put("check",refused?"FINGERPRINTS":"COMPLETE").put("mutationStarted",!refused);
++        for(String key:List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained"))if(refused)n.putNull(key);else n.put(key,true);
++        return program.validateReceipt(request,n.toString()).canonicalJson();
+     }
+ 
+     private static DeploymentAgentPublicationRecoveryPreflightProgram.Binding preflightBinding(DeploymentAgentPublicationRecoveryPreflight.Eligibility eligible)throws Exception {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuationProgramTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuationProgramTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..fc8384b4c2803925bcb212a1819aea8c7f34484d
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/DeploymentAgentPublicationContinuationProgramTest.java
+@@ -0,0 +1,196 @@
++package gold.debug.windowstolinux.mod.deployment.service.agent.recovery;
++import static org.junit.jupiter.api.Assertions.*;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.*;
++import java.security.MessageDigest;
++import java.util.*;
++import java.util.concurrent.*;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.node.ObjectNode;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.linux.command.CommandResult;
++import gold.debug.windowstolinux.appapi.task.result.OperationResult;
++import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++class DeploymentAgentPublicationContinuationProgramTest {
++ private static final ObjectMapper JSON=new ObjectMapper();
++ private final DeploymentRemoteLayout layout=DeploymentRemoteLayout.original();
++ private final DeploymentAgentPublicationContinuationProgram program=new DeploymentAgentPublicationContinuationProgram(layout);
++ private DeploymentAgentPublicationContinuationProgram.Binding binding(){
++  var o=new DeploymentAgentPublicationRecoveryDiagnosticProgram.Binding("host",UUID.fromString("072bc074-4bce-4c14-b425-f2ff965c7d40"),UUID.fromString("45e3a9a4-a6b8-403a-89f5-605e11eeeca0"),UUID.fromString("d5ace0b0-25c5-4fa9-a8fa-dc1839cd5b24"),271,"a".repeat(64),"b".repeat(64),"backend","c".repeat(64),"backend-0123456789abcdef","d".repeat(64),layout.digest());
++  return new DeploymentAgentPublicationContinuationProgram.Binding(o,272,"e".repeat(64),new DeploymentAgentPublicationContinuationProgram.PriorPreflight(UUID.fromString("e3c6caa1-3a02-4a85-ad7a-7552fc73ec6c"),353,361,"f".repeat(64),"1".repeat(64)),new DeploymentAgentPublicationContinuationProgram.CurrentFingerprints("2".repeat(64),"3".repeat(64),"4".repeat(64),"5".repeat(64),"6".repeat(64),"7".repeat(64)));
++ }
++ @Test void continuationPreservesInstalledProgramAndReconstructsCurrentBoundRequest()throws Exception{
++  var old=new DeploymentAgentPublicationRecoveryProgram(layout);
++  assertEquals("4bce53b129711ad351344107e8f298b2588c20f0ec82f9856d9b5e3b19eb2021",old.version());
++  assertEquals("477ca1395417bbf1ec024c7e427066775da8d7861f2d2ee759896d598cd59ca2",sha(old.source().getBytes(StandardCharsets.UTF_8)));
++  assertEquals("46dc35ea0c0c9b2eb5d2f1d4903891d9a62a391d8c80182a01efc9efdc7d0151",sha(old.loader().getBytes(StandardCharsets.UTF_8)));
++  assertEquals("0a16f4fccb224865bbcb42a4472070f54ae7f04a786f18e1bc73bda7bdb94d22",sha(old.installer().getBytes(StandardCharsets.UTF_8)));
++  try(var r=program.request(binding(),UUID.randomUUID())){
++   assertEquals(program.source(),new String(r.command().stdin(),StandardCharsets.UTF_8));
++   assertTrue(program.source().contains("BASH_SOURCE = r"+"'".repeat(3)));
++   assertEquals(r.resourceTargets(),DeploymentAgentPublicationContinuationProgram.reviewedResourceTargets(r.command(),layout,new ServerId("host")));
++   assertEquals("commandEvidence.completeExecutableInput",DeploymentAgentPublicationContinuationProgram.reviewFacts(r.command(),layout).get("executableInputReference"));
++   try(var bad=new CommandRequest(r.command().script(),(program.source()+"\n").getBytes(StandardCharsets.UTF_8),r.command().timeout(),r.command().outputLimitBytes())){assertThrows(IllegalArgumentException.class,()->DeploymentAgentPublicationContinuationProgram.reviewFacts(bad,layout));}
++   try(var bad=new CommandRequest(r.command().script()+"\n",r.command().stdin(),r.command().timeout(),r.command().outputLimitBytes())){assertThrows(IllegalArgumentException.class,()->DeploymentAgentPublicationContinuationProgram.reviewFacts(bad,layout));}
++  }
++ }
++ @Test void continuationReceiptRejectsReplayTamperAndUncertainSuccess()throws Exception{
++  try(var r=program.request(binding(),UUID.randomUUID())){
++   ObjectNode n=JSON.createObjectNode().put("format",DeploymentAgentPublicationContinuationProgram.FORMAT).put("sourceVersion",program.sourceVersion()).put("action",r.action().toString());n.set("binding",JSON.valueToTree(r.binding()));n.put("status","ROLLED_BACK").put("check","COMPLETE").put("mutationStarted",true);
++   var goals=List.of("currentAbsent","unitAbsent","releaseAbsent","maintenanceAbsent","candidateRetained");for(String k:goals)n.put(k,true);assertEquals(n.toString(),program.validateReceipt(r,n.toString()).canonicalJson());
++   String frame="PUBLICATION_CONTINUATION="+n+"\n";
++   assertEquals(n.toString(),program.parse(r,new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new CommandResult(Optional.of(0),frame,"",false)),Optional.empty())).canonicalJson());
++   for(CommandResult bad:List.of(new CommandResult(Optional.of(0),frame,"unsafe",false),new CommandResult(Optional.of(0),frame,"",true),new CommandResult(Optional.of(1),frame,"",false),new CommandResult(Optional.of(0),frame+frame,"",false)))assertThrows(IllegalArgumentException.class,()->program.parse(r,new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(bad),Optional.empty())));
++   for(String k:List.of("candidateOwnerSha256","candidateTaskSha256","maintenanceSha256","releaseOwnerSha256","parametersSha256","unitSha256")){var bad=n.deepCopy();((ObjectNode)bad.path("binding").path("current")).put(k,"9".repeat(64));assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,bad.toString()));}
++   for(String k:List.of("requestDetailSha256","receiptSha256")){var bad=n.deepCopy();((ObjectNode)bad.path("binding").path("preflight")).put(k,"9".repeat(64));assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,bad.toString()));}
++   for(String k:goals){var bad=n.deepCopy();bad.put(k,false);assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,bad.toString()));}
++   assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,n.toString().replace("\"status\":","\"foreign\":true,\"status\":")));
++   assertThrows(IllegalArgumentException.class,()->program.validateReceipt(r,n.toString().replace("\"status\":","\"status\":\"UNKNOWN\",\"status\":")));
++   var unknown=n.deepCopy();unknown.put("status","UNKNOWN").put("check","ROLLBACK");for(String k:goals)unknown.putNull(k);assertEquals("UNKNOWN",JSON.readTree(program.validateReceipt(r,unknown.toString()).canonicalJson()).path("status").asText());
++   try(var replay=program.request(binding(),UUID.randomUUID())){assertThrows(IllegalArgumentException.class,()->program.validateReceipt(replay,n.toString()));}
++  }
++ }
++ @Test void continuationGuardRejectsFingerprintsAndFullNativeDriftBeforeAnyMutation(@TempDir Path temp)throws Exception{
++  for(String scenario:List.of("candidate-owner","task","maintenance","release-owner","parameters","unit","current","full-parameters","data-links","unit-render","fragment","dropins","job")){
++   Path f=temp.resolve(scenario);prepare(f);String args=arguments(f),release="b".repeat(64);
++   var paths=Map.of("candidate-owner","state/work/backend-0123456789abcdef/.deployer","task","state/work/backend-0123456789abcdef/.agent-task","maintenance","state/application-locks/backend/maintenance","release-owner","apps/backend/releases/"+release+"/.windowstolinux-owner","parameters","apps/backend/releases/"+release+"/.windowstolinux-deployment-parameters","unit","units/backend.service","current","apps/backend/current");
++   if(paths.containsKey(scenario))Files.writeString(f.resolve(paths.get(scenario)),"foreign");if(scenario.equals("job"))Files.writeString(f.resolve("state/application-locks/backend/job"),"foreign");
++   var result=run(guardScript(f,scenario,args));assertNotEquals(0,result.exit(),result.output());assertTrue(result.output().contains("CONTINUATION_REFUSED="),result.output());assertFalse(result.output().contains("CONTINUATION_MUTATION_STARTED"));assertEquals("",Files.readString(f.resolve("effects")));
++   assertEquals("admission-sentinel",Files.readString(f.resolve("state/application-locks/backend/admission")));assertEquals("run-sentinel",Files.readString(f.resolve("state/application-locks/backend/run")));assertTrue(Files.exists(f.resolve("apps/backend/releases/"+release)));assertTrue(Files.exists(f.resolve("state/application-locks/backend/maintenance")));
++  }
++ }
++ @Test void continuationGuardRunsOneRollbackRetainsCandidateAndDeletesOnlyOwnedMarker(@TempDir Path f)throws Exception{
++  prepare(f);var result=run(guardScript(f,"expected",arguments(f)));assertEquals(0,result.exit(),result.output());assertEquals("CONTINUATION_MUTATION_STARTED=1\nROLLED_BACK=1\nCONTINUATION_COMPLETED=1\n",result.output());var lines=Files.readAllLines(f.resolve("effects"));assertEquals(1,lines.stream().filter(l->l.equals("LOCK_HELD_AT_STOP=1")).count());assertEquals(4,lines.stream().filter(l->l.equals("LOCK_HELD_AT_DELETE=1")).count());
++  for(String file:List.of("apps/backend/current","units/backend.service","apps/backend/releases/"+"b".repeat(64),"state/application-locks/backend/maintenance"))assertFalse(Files.exists(f.resolve(file)));assertEquals("foreign-marker",Files.readString(f.resolve("state/application-locks/backend/foreign-maintenance")));assertEquals("retained-data",Files.readString(f.resolve("apps/backend/persistent-data")));assertTrue(Files.exists(f.resolve("state/work/backend-0123456789abcdef/.agent-task")));assertEquals("admission-sentinel",Files.readString(f.resolve("state/application-locks/backend/admission")));assertEquals("run-sentinel",Files.readString(f.resolve("state/application-locks/backend/run")));
++ }
++ private static String sha(byte[] b)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(b));}
++ private static String arguments(Path f)throws Exception{String release="b".repeat(64);var a=new ArrayList<String>(List.of("072bc074-4bce-4c14-b425-f2ff965c7d40","aaaaaaaabbbb4ccc8dddeeeeeeeeeeee","45e3a9a4-a6b8-403a-89f5-605e11eeeca0","backend","a".repeat(64),"backend-0123456789abcdef",release,"c".repeat(64)));for(String file:List.of("state/work/backend-0123456789abcdef/.deployer","state/work/backend-0123456789abcdef/.agent-task","state/application-locks/backend/maintenance","apps/backend/releases/"+release+"/.windowstolinux-owner","apps/backend/releases/"+release+"/.windowstolinux-deployment-parameters","units/backend.service"))a.add(sha(Files.readAllBytes(f.resolve(file))));return String.join(" ",a);}
++    private static void prepare(Path fixture) throws Exception {
++        String task = "072bc074-4bce-4c14-b425-f2ff965c7d40", release = "b".repeat(64);
++        for (String directory : java.util.List.of("apps/backend/releases/" + release, "state/work/backend-0123456789abcdef",
++            "state/application-locks/backend", "state/snapshots", "units"))
++            java.nio.file.Files.createDirectories(fixture.resolve(directory));
++        String root = fixture.toString().replace('\\', '/');
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/current"), root + "/apps/backend/releases/" + (release));
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/releases/" + release + "/.windowstolinux-owner"), "a".repeat(64));
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/releases/" + release + "/.windowstolinux-deployment-parameters"), "fixture-native-daemon\n");
++        java.nio.file.Files.writeString(fixture.resolve("state/work/backend-0123456789abcdef/.agent-task"), task);
++        java.nio.file.Files.writeString(fixture.resolve("state/work/backend-0123456789abcdef/.deployer"), "root");
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/admission"), "admission-sentinel");
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/run"), "run-sentinel");
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/maintenance"), "deployment-" + release);
++        java.nio.file.Files.writeString(fixture.resolve("state/application-locks/backend/foreign-maintenance"), "foreign-marker");
++        java.nio.file.Files.writeString(fixture.resolve("apps/backend/persistent-data"), "retained-data");
++        java.nio.file.Files.writeString(fixture.resolve("units/backend.service"), "expected-unit\n");
++        java.nio.file.Files.writeString(fixture.resolve("expected-unit"), "expected-unit\n");
++        java.nio.file.Files.writeString(fixture.resolve("effects"), "");
++    }
++
++    private static String guardScript(Path fixture,String scenario,String arguments) throws Exception {
++        String resources = "/gold/debug/windowstolinux/mod/deployment/linux/helper/";
++        StringBuilder script = new StringBuilder();
++        for (String name : java.util.List.of("00-protocol-foundation.sh", "runtime/41-application-admission.sh",
++            "runtime/40-typed-runtime.sh", "runtime/systemd/61-service-identity.sh")) {
++            try (var input = DeploymentAgentPublicationContinuationProgramTest.class.getResourceAsStream(resources + name)) {
++                script.append(new String(java.util.Objects.requireNonNull(input).readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n")).append('\n');
++            }
++        }
++        script.append("""
++            fixture='@FIXTURE@'
++            scenario='@SCENARIO@'
++            base_root="$fixture/state"
++            work_root="$base_root/work"
++            snapshots_root="$base_root/snapshots"
++            applications_root="$fixture/apps"
++            lock_directory="$base_root/application-locks/backend"
++            lock_calls=0
++            require_root() { :; }
++            require_deployer() { deployer=root; }
++            assert_storage_parent() { :; }
++            assert_root_owned_directory() { [[ -d "$1" && ! -L "$1" ]] || reject fixture-directory; }
++            assert_root_owned_regular() { [[ -f "$1" && ! -L "$1" ]] || reject fixture-regular; }
++            unit_path() { printf '%s/units/backend.service' "$fixture"; }
++            load_deployment_parameters() { [[ "$scenario" != full-parameters ]] || reject fixture-parameters; assert_root_owned_regular "$1"; application_mode=DAEMON; deployment_runtime_parameters=(fixture-native-daemon); }
++            expected_deployment_unit_digest() { [[ "$scenario" != unit-render ]] || { printf x; return; }; command sha256sum -- "$fixture/expected-unit" | command awk '{print $1}'; }
++            assert_managed_data_links() { [[ "$scenario" != data-links ]] || reject fixture-data; }
++            # The Windows runner needs no symlink privilege: only CURRENT's representation is virtualized.
++            function [() {
++                if [[ "$#" = 3 && "$1" = -L && "$2" = "$applications_root/backend/current" ]]; then
++                    builtin [ -f "$2" ]; return
++                fi
++                builtin [ "$@"
++            }
++            readlink() {
++                local target="${!#}"
++                [[ "$target" = "$applications_root/backend/current" ]] || return 91
++                command cat -- "$target"
++            }
++            stat() {
++                case "$2" in
++                    %h) printf '1' ;;
++                    %a) if [[ "${!#}" = "$lock_directory" ]]; then printf '700'; else printf '600'; fi ;;
++                    *) command stat "$@" ;;
++                esac
++            }
++            install() {
++                [[ "$*" = "-d -o root -g root -m 700 -- $lock_directory" && -d "$lock_directory" ]] || return 92
++            }
++            flock() {
++                [[ "$1" = -w && "$3" = -x ]] || return 93
++                lock_calls=$((lock_calls + 1))
++            }
++            fixture_locked() {
++                [[ "$lock_calls" = 2 ]] || exit 94
++                : <&"$application_admission_fd"
++                : <&"$application_run_fd"
++            }
++            systemctl() {
++                case "$*" in
++                    'show --value --property FragmentPath windowstolinux-backend.service') if [[ "$scenario" = fragment ]]; then printf /foreign; else unit_path backend; fi ;;
++                    'show --value --property DropInPaths windowstolinux-backend.service') if [[ "$scenario" = dropins ]]; then printf /foreign; fi ;;
++                    'show --value --property LoadState windowstolinux-backend.service') printf 'loaded' ;;
++                    'show --value --property ActiveState '* ) printf 'inactive' ;;
++                    'show --value --property MainPID '* ) printf '0' ;;
++                    'show --value --property ControlGroup '* ) : ;;
++                    'is-active --quiet windowstolinux-backend.service') return 1 ;;
++                    'stop windowstolinux-backend.service') fixture_locked; printf 'LOCK_HELD_AT_STOP=1\n' >>"$fixture/effects" ;;
++                    daemon-reload) fixture_locked; printf 'RELOAD=1\n' >>"$fixture/effects" ;;
++                    *) printf 'UNEXPECTED_SYSTEMCTL=%s\n' "$*" >&2; return 95 ;;
++                esac
++            }
++            rm() {
++                local target="${!#}"
++                case "$target" in
++                    "$fixture/units/backend.service" | "$fixture/apps/backend/current" | "$fixture/apps/backend/releases/@RELEASE@" | "$lock_directory/maintenance") ;;
++                    *) printf 'UNEXPECTED_DELETE=%s\n' "$target" >&2; exit 96 ;;
++                esac
++                fixture_locked
++                printf 'LOCK_HELD_AT_DELETE=1\nDELETE=%s\n' "$target" >>"$fixture/effects"
++                command rm "$@"
++            }
++            exec 9>"$fixture/trace"
++            BASH_XTRACEFD=9
++            PS4='+ '
++            set -x
++            set -- @ARGUMENTS@
++            """.replace("@FIXTURE@", fixture.toString().replace('\\', '/').replace("'", "'\\''"))
++            .replace("@SCENARIO@",scenario).replace("@ARGUMENTS@",arguments).replace("@OWNER@", "a".repeat(64)).replace("@RELEASE@", "b".repeat(64)).replace("@PLAN@", "c".repeat(64)));
++        try (var input = DeploymentAgentPublicationContinuationProgramTest.class.getResourceAsStream(
++            "/gold/debug/windowstolinux/mod/deployment/service/agent/recovery/publication-continuation-guard.sh")) {
++            script.append(new String(java.util.Objects.requireNonNull(input).readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n"));
++        }
++        return script.toString();
++    }
++
++
++ private record Result(int exit,String output){}
++ private static Result run(String script)throws Exception{
++  String bash=System.getProperty("managed.test.bash","/bin/bash");org.junit.jupiter.api.Assumptions.assumeTrue(Files.isExecutable(Path.of(bash)));var p=new ProcessBuilder(bash,"--noprofile","--norc","-s").redirectErrorStream(true).start();var e=Executors.newFixedThreadPool(2);var out=e.submit(()->p.getInputStream().readNBytes(16385));var writer=e.submit(()->{try(var input=p.getOutputStream()){input.write(script.getBytes(StandardCharsets.UTF_8));}return null;});
++  try{assertTrue(p.waitFor(20,TimeUnit.SECONDS));writer.get(5,TimeUnit.SECONDS);byte[] b=out.get(5,TimeUnit.SECONDS);assertTrue(b.length<=16384);return new Result(p.exitValue(),new String(b,StandardCharsets.UTF_8).replace("\r\n","\n"));}
++  finally{if(p.isAlive()){p.destroyForcibly();assertTrue(p.waitFor(5,TimeUnit.SECONDS));}p.getInputStream().close();p.getOutputStream().close();out.cancel(true);writer.cancel(true);e.shutdownNow();assertTrue(e.awaitTermination(5,TimeUnit.SECONDS));}
++ }
++}
