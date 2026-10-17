@@ -1,0 +1,6 @@
+46e97c519e4aff6de6c96d7992e527efe6005682e1ed83ca3c582f7569388362  src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
+46c7431f8275e399c9290aef0ea3b000caf7fc5e06802692171b35f68fbee06b  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
+9601c255e6ef716695a098e9b1cf3766d5e8f4a3a5dcfe74d9376ce0a1e3ea60  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+a38342cbec0f4ac2dffe000fda6a3b9e312cf19ffdce8b0cc938d81c1d083597  src/mod/deployment/target/deployment.jar
+dc2a77d402701dfce2794e6a40a7a03ed74a71f6577dbac5a233826a2ede4798  docs/test/multi-language/DEPLOYMENT-AGENT-SEVEN-RETAINED-289.patch
+4d197cdb1766266e26d9fdb229ef45921936c838f01a3fb4453808740341aea5  docs/test/multi-language/DEPLOYMENT-AGENT-SEVEN-RETAINED-289.md

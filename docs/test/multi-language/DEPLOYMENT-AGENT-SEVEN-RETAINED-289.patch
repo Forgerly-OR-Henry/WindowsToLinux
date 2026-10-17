@@ -1,0 +1,191 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
+@@ -17,7 +17,7 @@
+     public static final String FORMAT="WTL_AGENT_ISOLATION_PREFLIGHT_1";
+     public static final String FRAME="AGENT_ISOLATION_PREFLIGHT=";
+     private static final Duration TIMEOUT=Duration.ofSeconds(30);
+-    private static final long LIMIT=24576;
++    private static final long LIMIT=32768;
+     public enum Mode {ADMISSION,PROTECTED_RECHECK}
+     private static final String SUFFIX="\nset -fu\nLC_ALL=C\nbuiltin export LC_ALL\nif [[ ${BASH_ENV+x} != x || ${ENV+x} != x || \"$BASH_ENV\" != /dev/null || \"$ENV\" != /dev/null || ${LD_PRELOAD+x} || ${LD_LIBRARY_PATH+x} ]]; then exit 65; fi\nbuiltin unset BASH_ENV ENV || exit 65\nexec /usr/bin/python3 -I -S - \"$wtl_isolation\"\n";
+     private final DeploymentAgentIsolationPolicy policy;
+@@ -76,7 +76,7 @@
+         int paths=integer(node,"pathsChecked"),units=integer(node,"unitsChecked"),ports=integer(node,"portsChecked");var demands=new HashSet<String>();
+         if(!node.path("allocatedCandidates").isArray()||node.path("allocatedCandidates").size()>request.scope().components().size())throw invalid();
+         var allocated=new HashSet<String>();for(var candidate:node.path("allocatedCandidates")){if(!candidate.isTextual()||!allocated.add(candidate.textValue())||request.scope().components().stream().noneMatch(c->c.candidate().equals(candidate.textValue())))throw invalid();}
+-        if(!node.path("protectedMetadata").isArray()||node.path("protectedMetadata").size()>128)throw invalid();String previous="";var protectedPaths=new HashSet<String>();
++        if(!node.path("protectedMetadata").isArray()||node.path("protectedMetadata").size()>160)throw invalid();String previous="";var protectedPaths=new HashSet<String>();
+         for(var row:node.path("protectedMetadata")){exact(row,Set.of("path","kind","identitySha256"));String path=text(row,"path");DeploymentAgentIsolationPolicy.path(path);digest(text(row,"identitySha256"));if(path.compareTo(previous)<=0||!policy.protects(path)||!Set.of("ABSENT","DIRECTORY","REGULAR","SYMLINK","OTHER").contains(text(row,"kind")))throw invalid();previous=path;protectedPaths.add(path);}
+         for(var fs:node.path("filesystems")){exact(fs,Set.of("device","availableBytes","requiredBytes","reserveBytes"));String device=text(fs,"device");if(!device.matches("[0-9]{1,20}")||!demands.add(device))throw invalid();number(fs,"availableBytes");number(fs,"requiredBytes");number(fs,"reserveBytes");}
+         if(!node.path("memoryAvailableBytes").isNull())number(node,"memoryAvailableBytes");if(!node.path("cpuCount").isNull())integer(node,"cpuCount");
+@@ -213,7 +213,7 @@
+                 for unit in old['units']: candidates.update(matching(work,unit+'-',work_names))
+                 if len(candidates)>16: refuse('LIMIT')
+                 for candidate in candidates: paths.update((work+'/'+candidate,work+'/'+candidate+'/.agent-task','/etc/systemd/system/windowstolinux-build-'+candidate+'.service'))
+-            if not paths or len(paths)>128: refuse('LIMIT')
++            if not paths or len(paths)>160: refuse('LIMIT')
+             unit_states=unit_metadata(sorted(path.rsplit('/',1)[1] for path in paths if path.startswith('/etc/systemd/system/windowstolinux-') and path.endswith('.service')))
+             result=[]
+             for path in sorted(paths):
+@@ -362,7 +362,7 @@
+                 try: os.close(fd)
+                 except Exception: out.update(status='UNKNOWN',reason='UNCONFIRMED',stable=False)
+         result='AGENT_ISOLATION_PREFLIGHT='+canonical(out)+'\\n'
+-        if len(result.encode())>24576: sys.exit(65)
++        if len(result.encode())>32768: sys.exit(65)
+         sys.stdout.write(result)
+         """;
+ }
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
+@@ -86,27 +86,27 @@
+         }
+     }
+ 
+-    @Test void completeSixRetainedNamespacesStayWithinBoundedReceipt(){
+-        var policy=sixRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++    @Test void completeSevenRetainedNamespacesStayWithinBoundedReceipt(){
++        var policy=sevenRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
+         try(var request=probe.request(scope(policy,"a"),UUID.randomUUID())){
+-            assertEquals(24576,request.command().outputLimitBytes());
+-            try(var oldLimit=new CommandRequest(request.command().script(),request.command().stdin(),request.command().timeout(),16384)){
++            assertEquals(32768,request.command().outputLimitBytes());
++            try(var oldLimit=new CommandRequest(request.command().script(),request.command().stdin(),request.command().timeout(),24576)){
+                 assertThrows(IllegalArgumentException.class,()->DeploymentAgentIsolationProbe.decode(oldLimit,layout));
+             }
+             var ready=receipt(request,true);var rows=ready.withArray("protectedMetadata");
+             for(String path:discoveredRetainedPaths())rows.addObject().put("path",path).put("kind","DIRECTORY").put("identitySha256","d".repeat(64));
+-            sortProtectedRows(ready);assertEquals(116,ready.path("protectedMetadata").size());
+-            assertTrue((DeploymentAgentIsolationProbe.FRAME+ready+"\n").getBytes(StandardCharsets.UTF_8).length<24576);
++            sortProtectedRows(ready);assertEquals(135,ready.path("protectedMetadata").size());
++            assertTrue((DeploymentAgentIsolationProbe.FRAME+ready+"\n").getBytes(StandardCharsets.UTF_8).length<32768);
+             assertEquals(ready.toString(),probe.parse(request,actual(ready)).canonicalJson());
+             var missing=ready.deepCopy();missing.withArray("protectedMetadata").remove(0);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,missing.toString()));
+             var shortPolicy=policy();var shortProbe=new DeploymentAgentIsolationProbe(shortPolicy);
+             try(var shortRequest=shortProbe.request(scope(shortPolicy,"a"),UUID.randomUUID())){
+                 var excess=receipt(shortRequest,true);assertEquals(19,excess.path("protectedMetadata").size());
+-                for(int i=0;i<110;i++)excess.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot(oldApp+"-backend")+"/extra-"+i).put("kind","ABSENT").put("identitySha256","d".repeat(64));
+-                sortProtectedRows(excess);assertEquals(129,excess.path("protectedMetadata").size());
++                for(int i=0;i<142;i++)excess.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot(oldApp+"-backend")+"/extra-"+i).put("kind","ABSENT").put("identitySha256","d".repeat(64));
++                sortProtectedRows(excess);assertEquals(161,excess.path("protectedMetadata").size());
+                 for(var row:excess.path("protectedMetadata")){String path=row.path("path").textValue();DeploymentAgentIsolationPolicy.path(path);assertTrue(shortPolicy.protects(path));}
+-                assertTrue((DeploymentAgentIsolationProbe.FRAME+excess+"\n").getBytes(StandardCharsets.UTF_8).length<24576);
++                assertTrue((DeploymentAgentIsolationProbe.FRAME+excess+"\n").getBytes(StandardCharsets.UTF_8).length<32768);
+                 assertThrows(IllegalArgumentException.class,()->shortProbe.validateReceipt(shortRequest,excess.toString()));
+                 assertThrows(IllegalArgumentException.class,()->shortProbe.parse(shortRequest,actual(excess)));
+             }
+@@ -116,9 +116,9 @@
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,unsorted.toString()));
+             var oversized=ready.deepCopy();var splitFilesystems=oversized.putArray("filesystems");
+             for(int i=0;i<64;i++)splitFilesystems.addObject().put("device","100000000000000000"+String.format(Locale.ROOT,"%02d",i)).put("availableBytes",10*reserve).put("requiredBytes",2*workspace/64).put("reserveBytes",reserve);
+-            assertEquals(116,oversized.path("protectedMetadata").size());
++            assertEquals(135,oversized.path("protectedMetadata").size());
+             for(var row:oversized.path("protectedMetadata")){String path=row.path("path").textValue();DeploymentAgentIsolationPolicy.path(path);assertTrue(policy.protects(path));}
+-            assertTrue(oversized.toString().getBytes(StandardCharsets.UTF_8).length>24576);
++            assertTrue(oversized.toString().getBytes(StandardCharsets.UTF_8).length>32768);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,oversized.toString()));
+             assertThrows(IllegalArgumentException.class,()->probe.parse(request,actual(oversized)));
+             var truncated=new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new CommandResult(Optional.of(0),DeploymentAgentIsolationProbe.FRAME+ready+"\n","",true)),Optional.<Problem>empty());
+@@ -127,7 +127,7 @@
+     }
+ 
+     @Test void fixedPythonProtectedProbeUsesSameFiniteMetadataBound()throws Exception{
+-        var policy=sixRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++        var policy=sevenRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
+         String fixture="""
+             import ast,sys,json,hashlib,re
+             data=json.load(sys.stdin)
+@@ -144,9 +144,9 @@
+                 global scans
+                 if root==roots['stateRoot']+'/work':
+                     scans+=1
+-                    return ['wtl-agent-file-transfer-8pqtgvbwc-web-525f7bab44afa87d']+(['wtl-agent-file-transfer-46xyx53kc-web-525f7bab44afa87d'] if extra_candidate else [])
++                    return ['wtl-agent-file-transfer-8pqtgvbwc-web-525f7bab44afa87d']+(['wtl-agent-file-transfer-46xyx53kc-web-525f7bab44afa87d','wtl-agent-file-transfer-61fy7ik8g-web-525f7bab44afa87d'] if extra_candidate else [])
+                 if root==roots['applicationsRoot']+'/wtl-agent-file-transfer-8pqtgvbwc-backend/releases':
+-                    return ['39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597']+([format(i,'064x') for i in range(5)] if extra_candidate else [])
++                    return ['39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597']+([format(i,'064x') for i in range(10)] if extra_candidate else [])
+                 return []
+             def open_path(path):
+                 global reads
+@@ -156,26 +156,26 @@
+             namespace=dict(p=data['policy'],json=json,hashlib=hashlib,re=re,refuse=refuse,directory_entries=directory_entries,remaining_budget=lambda:20,open_path=open_path,unit_metadata=lambda units:{unit:states for unit in units})
+             exec(compile(ast.Module(body=selected,type_ignores=[]),'<fixed-protected-probe>','exec'),namespace)
+             rows=namespace['protected']()
+-            assert len(rows)==116 and [row['path'] for row in rows]==sorted(data['paths']) and scans==1
++            assert len(rows)==135 and [row['path'] for row in rows]==sorted(data['paths']) and scans==1
+             before=reads
+             extra_candidate=True
+             try: namespace['protected']()
+             except Refused as error: assert str(error)=='LIMIT'
+-            else: raise AssertionError('129 protected rows were accepted')
++            else: raise AssertionError('161 protected rows were accepted')
+             assert reads==before and scans==2, 'over-limit enumeration must refuse before metadata reads and refresh its directory scan'
+             print(json.dumps(rows,separators=(',',':')))
+             """;
+         var paths=new TreeSet<>(policy.protectedMandatoryPaths());paths.addAll(discoveredRetainedPaths());
+         var input=JSON.createObjectNode().put("source",probe.source());input.set("policy",policy.document());input.set("paths",JSON.valueToTree(paths));
+         var process=new ProcessBuilder(System.getProperty("managed.test.python","python"),"-I","-S","-c",fixture).redirectErrorStream(true).start();
+-        var reader=java.util.concurrent.Executors.newSingleThreadExecutor();var outputBytes=reader.submit(()->process.getInputStream().readNBytes(24577));
++        var reader=java.util.concurrent.Executors.newSingleThreadExecutor();var outputBytes=reader.submit(()->process.getInputStream().readNBytes(32769));
+         try{
+             try(var out=process.getOutputStream()){out.write(JSON.writeValueAsBytes(input));}
+             assertTrue(process.waitFor(30,java.util.concurrent.TimeUnit.SECONDS),"controlled Python protected probe did not exit");
+             String output=new String(outputBytes.get(5,java.util.concurrent.TimeUnit.SECONDS),StandardCharsets.UTF_8);assertEquals(0,process.exitValue(),output);
+             try(var request=probe.requestProtectedRecheck(scope(policy,"a"),UUID.randomUUID(),UUID.randomUUID())){
+                 var observed=receipt(request,false);observed.set("protectedMetadata",JSON.readTree(output));
+-                assertEquals(116,observed.path("protectedMetadata").size());assertEquals(observed.toString(),probe.parse(request,actual(observed)).canonicalJson());
++                assertEquals(135,observed.path("protectedMetadata").size());assertEquals(observed.toString(),probe.parse(request,actual(observed)).canonicalJson());
+             }
+         }finally{
+             if(process.isAlive()){process.destroyForcibly();assertTrue(process.waitFor(10,java.util.concurrent.TimeUnit.SECONDS));}
+@@ -269,7 +269,7 @@
+                 namespace['e']={'bindingSha256':namespace['digest'](namespace['b'])}
+                 exec(compile(ast.Module(body=main+tree.body[-3:],type_ignores=[]),'<fixed-isolation-main>','exec'),namespace)
+                 frame=output.getvalue()
+-                assert frame.startswith('AGENT_ISOLATION_PREFLIGHT=') and frame.endswith(chr(10)) and len(frame.encode())<=24576
++                assert frame.startswith('AGENT_ISOLATION_PREFLIGHT=') and frame.endswith(chr(10)) and len(frame.encode())<=32768
+                 receipt=json.loads(frame[len('AGENT_ISOLATION_PREFLIGHT='):])
+                 assert all('Id' not in row for row in receipt['protectedMetadata'])
+                 if mode in ('ready','drift'):
+@@ -312,6 +312,11 @@
+         }
+     }
+ 
++    private DeploymentAgentIsolationPolicy sevenRetainedNamespaces(){
++        var applications=new ArrayList<>(sixRetainedNamespaces().protectedApplications());String name="wtl-agent-file-transfer-61fy7ik8g";
++        applications.add(new ProtectedApplication(UUID.fromString("7abadc73-0817-4159-80e8-945341a0bbb1"),name,layout.digest(),Set.of(name+"-backend",name+"-web"),Set.of(name+"-backend-525f7bab44afa87d"),Map.of("planSha256","025fa88d05de24e1f9600e4b81e658bddb919df44dd407ab8bd6037d42e33d9d","sourceSha256","296967551e9c7a93b61165be8d03198192c94f4b1544f41e5d16ae75e8672fd3"),Set.of(new Port("TCP",49292),new Port("TCP",49293))));
++        return DeploymentAgentIsolationPolicy.trusted("seven-retained-namespaces",application,layout,applications).requiringPorts(ports).minimumResources(memory,1);
++    }
+     private DeploymentAgentIsolationPolicy sixRetainedNamespaces(){
+         var applications=new ArrayList<>(fiveRetainedNamespaces().protectedApplications());String name="wtl-agent-file-transfer-4kt0vqj3s";
+         applications.add(new ProtectedApplication(UUID.fromString("eb71a6de-07cb-4574-b538-15df729a88d5"),name,layout.digest(),Set.of(name+"-backend",name+"-web"),Set.of(name+"-backend-525f7bab44afa87d",name+"-web-525f7bab44afa87d"),Map.of(),Set.of()));
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -6719,6 +6719,8 @@
+             "The timed-out probe must keep all earlier UNKNOWN protection sets");
+         assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown284") || Boolean.getBoolean("managed.live.isolatedUnknown283"),
+             "The unresolved controller action must keep all earlier UNKNOWN protection sets");
++        assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown287") || Boolean.getBoolean("managed.live.isolatedUnknown284"),
++            "The denied toolchain capability must keep all earlier UNKNOWN protection sets");
+         var isolation = selectedMode == Mode.AGENT ? retainedUnknownIsolation(project, id, webPort) : null;
+         Map<String, String> requirements = selectedMode == Mode.AGENT ? liveAgentRequirements(project, id, host, webPort) : Map.of();
+         Path source = copyFixture(project);
+@@ -7034,6 +7036,17 @@
+                 Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49288),
+                     new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49289))));
+         }
++        if (Boolean.getBoolean("managed.live.isolatedUnknown287")) {
++            String retainedApplication = "wtl-agent-file-transfer-61fy7ik8g";
++            protectedApplications.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.ProtectedApplication(
++                java.util.UUID.fromString("7abadc73-0817-4159-80e8-945341a0bbb1"), retainedApplication, oldLayout,
++                Set.of(retainedApplication + "-backend", retainedApplication + "-web"),
++                Set.of(retainedApplication + "-backend-525f7bab44afa87d"),
++                Map.of("accepted-plan", "025fa88d05de24e1f9600e4b81e658bddb919df44dd407ab8bd6037d42e33d9d",
++                    "source", "296967551e9c7a93b61165be8d03198192c94f4b1544f41e5d16ae75e8672fd3"),
++                Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49292),
++                    new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49293))));
++        }
+         var ports = new java.util.HashSet<gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port>();
+         ports.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", webPort));
+         if (project.equals("file-transfer")) {
