@@ -48,7 +48,7 @@ def sha(value):
 
 
 def path(value):
-    need(isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._+/-]+', value) and len(value) <= 4096
+    need(isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._+/$-]+', value) and len(value) <= 4096
          and str(PurePosixPath(value)) == value and all(part not in ('.', '..') for part in value.split('/')), 'CANONICAL_PATH')
     return PurePosixPath(value)
 
@@ -213,6 +213,6 @@ if __name__ == '__main__':
         output = encoded(result)
         need(len(output) <= 1048576, 'OUTPUT_BOUND')
         print(output.decode('utf-8'))
-    except (OSError, ValueError, KeyError, TypeError):
-        print('{"schema":1,"format":"WTL_PRE_REINSTALL_CONTENT_DIGEST_1","complete":false}')
+    except Exception:
+        print('{"schema":1,"format":"WTL_PRE_REINSTALL_CONTENT_DIGEST_1","complete":false,"errorCode":"CONTENT_DIGEST_UNCONFIRMED"}')
         sys.exit(1)

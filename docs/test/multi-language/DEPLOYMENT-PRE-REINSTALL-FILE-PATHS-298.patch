@@ -1,0 +1,449 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -443,0 +444,3 @@
++        var version = plan.path("sourceFacts").path("currentBackupProducerVersion");
++        boolean filesV2 = !version.isMissingNode();
++        backupRequire(!filesV2 || !content && version.isInt() && version.intValue() == 2 && plan.path("kind").asText().equals("FILES_SNAPSHOT"));
+@@ -456 +459 @@
+-            + (content ? "current-pre-reinstall-content-digest.py" : "current-pre-reinstall-backup.py")), java.nio.charset.StandardCharsets.UTF_8);
++            + (content ? "current-pre-reinstall-content-digest.py" : filesV2 ? "current-pre-reinstall-backup-files-v2.py" : "current-pre-reinstall-backup.py")), java.nio.charset.StandardCharsets.UTF_8);
+@@ -592 +595 @@
+-            backupRequire(name.matches("/|/[A-Za-z0-9._+/-]+") && !name.contains("//") && !name.contains("/../") && !name.endsWith("/..")
++            backupRequire(name.matches("/|/[A-Za-z0-9._+/$-]+") && !name.contains("//") && !name.contains("/../") && !name.endsWith("/..")
+@@ -960,0 +964,11 @@
++        String actualFilesV2 = System.getProperty("managed.backup.currentFilesV2PlanTestFile", "");
++        if (!actualFilesV2.isBlank()) {
++            Path path = Path.of(actualFilesV2); var node = SDK_METADATA_JSON.readTree(Files.readAllBytes(path));
++            var actualLayout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
++            var plan = backupCommandPlan(workspace(), path, System.getProperty("managed.backup.currentFilesV2PlanTestSha256"), node.path("run").asText(), SERVER,
++                "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc", actualLayout.digest());
++            assertEquals(2, node.path("sourceFacts").path("currentBackupProducerVersion").intValue());
++            currentBackupSelectedInput(workspace(), node, actualLayout, false);
++            assertTrue(backupCommandReviewInput(workspace(), plan, backupCommandFacts(plan, java.util.UUID.randomUUID(), "b".repeat(64)))
++                .getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= BACKUP_PROVENANCE_REVIEW_LIMIT);
++        }
+@@ -974 +988 @@
+-        for (String name : List.of("current-pre-reinstall-backup.py", "current-pre-reinstall-content-digest.py")) {
++        for (String name : List.of("current-pre-reinstall-backup.py", "current-pre-reinstall-content-digest.py", "current-pre-reinstall-backup-files-v2.py")) {
+@@ -1020,0 +1035,9 @@
++        var versioned = producer.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) versioned.path("sourceFacts")).put("currentBackupProducerVersion", 2);
++        assertThrows(Exception.class, () -> currentBackupSelection(workspace, versioned, layout), "Version2 must never adopt the old producer body");
++        String filesV2 = Files.readString(workspace.resolve(directory + "current-pre-reinstall-backup-files-v2.py"));
++        versioned.put("script", "exec " + gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.ENVIRONMENT
++            + " /usr/bin/python3 -I -S -B -c '" + filesV2.replace("'", "'\"'\"'") + "' --backups-root '" + backups + "'\n");
++        assertEquals(selection, currentBackupSelection(workspace, versioned, layout));
++        var badVersion = versioned.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) badVersion.path("sourceFacts")).put("currentBackupProducerVersion", 3);
++        assertThrows(Exception.class, () -> currentBackupSelection(workspace, badVersion, layout));
++        assertThrows(Exception.class, () -> currentBackupSelection(workspace, versioned.deepCopy().put("kind", "DATABASE_SNAPSHOT"), layout), "Version2 is FILES only");
+--- a/src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-content-digest.py
++++ b/src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-content-digest.py
+@@ -51 +51 @@
+-    need(isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._+/-]+', value) and len(value) <= 4096
++    need(isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._+/$-]+', value) and len(value) <= 4096
+@@ -216,2 +216,2 @@
+-    except (OSError, ValueError, KeyError, TypeError):
+-        print('{"schema":1,"format":"WTL_PRE_REINSTALL_CONTENT_DIGEST_1","complete":false}')
++    except Exception:
++        print('{"schema":1,"format":"WTL_PRE_REINSTALL_CONTENT_DIGEST_1","complete":false,"errorCode":"CONTENT_DIGEST_UNCONFIRMED"}')
+--- /dev/null
++++ b/src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-backup-files-v2.py
+@@ -0,0 +1,319 @@
++"""Exact frozen selection -> new private USTAR bundle. No payload is printed or old object removed."""
++import argparse
++from contextlib import contextmanager
++from decimal import Decimal
++import hashlib
++import io
++import json
++import os
++from pathlib import PurePosixPath
++import re
++import resource
++import sqlite3
++import stat
++import sys
++import tarfile
++import time
++from urllib.parse import quote
++
++FORMAT = 'WTL_PRE_REINSTALL_BUNDLE_1'
++MAX_INPUT, MAX_MANIFEST = 98304, 262144
++DEADLINE = 0
++
++
++def need(value, code='FROZEN_SOURCE_OR_OUTPUT_UNCONFIRMED'):
++    if not value:
++        raise ValueError(code)
++
++
++def fields(value, names):
++    need(isinstance(value, dict) and set(value) == set(names), 'EXACT_FIELDS')
++
++
++def strict_json(raw):
++    def pairs(items):
++        value = {}
++        for key, item in items:
++            need(key not in value, 'DUPLICATE_JSON_FIELD')
++            value[key] = item
++        return value
++    def invalid(value):
++        raise ValueError('NON_INTEGER_JSON_NUMBER')
++    return json.loads(raw.decode('utf-8'), object_pairs_hook=pairs, parse_float=invalid, parse_constant=invalid)
++
++
++def encoded(value):
++    return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('utf-8')
++
++
++def sha(value):
++    return hashlib.sha256(value).hexdigest()
++
++
++def path(value):
++    need(isinstance(value, str) and re.fullmatch(r'/[A-Za-z0-9._+/$-]+', value) and len(value) <= 4096
++         and str(PurePosixPath(value)) == value and all(part not in ('.', '..') for part in value.split('/')), 'CANONICAL_PATH')
++    return PurePosixPath(value)
++
++
++def integer(value, maximum=(1 << 63) - 1):
++    need(type(value) is int and 0 <= value <= maximum, 'INTEGER_BOUND')
++    return value
++
++
++def identity(info):
++    return info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid, info.st_nlink
++
++
++def matches(info, expected):
++    nanoseconds = Decimal(expected['mtime']) * 1000000000
++    need(nanoseconds == int(nanoseconds) and stat.S_ISREG(info.st_mode) and info.st_nlink == 1
++         and (info.st_dev, info.st_ino, stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid, info.st_size, info.st_mtime_ns)
++         == (expected['device'], expected['inode'], int(expected['mode'], 8), expected['uid'], expected['gid'], expected['bytes'], int(nanoseconds)))
++
++
++def selection(raw, backups_root):
++    need(0 < len(raw) <= MAX_INPUT, 'INPUT_BOUND')
++    value = strict_json(raw)
++    fields(value, ('schema', 'format', 'kind', 'run', 'operationRoot', 'items'))
++    need(type(value['schema']) is int and value['schema'] == 1 and value['format'] == FORMAT and value['kind'] in ('FILES', 'DATABASES'))
++    need(isinstance(value['run'], str) and re.fullmatch(r'[a-z0-9][a-z0-9-]{0,95}', value['run']))
++    operation, root = path(value['operationRoot']), path(backups_root)
++    need(operation.parent == root and re.fullmatch(re.escape(value['run']) + r'-[a-f0-9]{16,32}', operation.name), 'OWN_OPERATION_ROOT')
++    need(isinstance(value['items'], list) and 0 < len(value['items']) <= 512, 'MEMBER_BOUND')
++    seen, inodes, total = set(), set(), 0
++    for item in value['items']:
++        fields(item, ('source', 'sourceMetadata'))
++        source = path(item['source'])
++        need(str(source) not in seen and source != operation and operation not in source.parents, 'SOURCE_SET')
++        if value['kind'] == 'FILES':
++            need(not str(source).lower().endswith(('.db', '.sqlite', '.sqlite3', '-wal', '-shm', '-journal')), 'DATABASE_NOT_A_FILE_BUNDLE')
++        seen.add(str(source))
++        meta = item['sourceMetadata']
++        fields(meta, ('kind', 'bytes', 'device', 'inode', 'mode', 'uid', 'gid', 'mtime'))
++        need(meta['kind'] == 'f' and isinstance(meta['mode'], str) and re.fullmatch(r'[0-7]{3,4}', meta['mode'])
++             and not int(meta['mode'], 8) & 0o022 and isinstance(meta['mtime'], str) and re.fullmatch(r'-?[0-9]{1,12}\.[0-9]{1,12}', meta['mtime']))
++        for key in ('device', 'inode', 'uid', 'gid'):
++            integer(meta[key])
++        need((meta['device'], meta['inode']) not in inodes, 'DUPLICATE_SOURCE_IDENTITY')
++        inodes.add((meta['device'], meta['inode']))
++        total += integer(meta['bytes'], 65536 if value['kind'] == 'FILES' else 4194304)
++    need(total <= (1048576 if value['kind'] == 'FILES' else 8388608), 'SOURCE_TOTAL_BOUND')
++    return value
++
++
++class Paths:
++    def __init__(self):
++        self.directories, self.entries, self.sources = {}, [], []
++        fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
++        self.directories['/'] = fd
++        info = os.fstat(fd)
++        need(info.st_uid == 0 and info.st_gid == 0 and not info.st_mode & 0o022)
++
++    def directory(self, value, owner=0, root_only=False):
++        current, parent = '/', self.directories['/']
++        for name in path(value).parts[1:]:
++            current = current.rstrip('/') + '/' + name
++            before = os.stat(name, dir_fd=parent, follow_symlinks=False)
++            need(stat.S_ISDIR(before.st_mode) and not before.st_mode & 0o022 and before.st_uid in (0, owner)
++                 and (not root_only or before.st_uid == 0 and before.st_gid == 0), 'SOURCE_PARENT_UNTRUSTED')
++            if current not in self.directories:
++                need(len(self.directories) + len(self.sources) < 1024, 'DESCRIPTOR_BOUND')
++                fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
++                self.directories[current] = fd
++                need(identity(before)[:-1] == identity(os.fstat(fd))[:-1], 'PARENT_CHANGED')
++                self.entries.append((parent, name, fd, identity(before)[:-1]))
++            parent = self.directories[current]
++            need(identity(before)[:-1] == identity(os.fstat(parent))[:-1], 'PARENT_CHANGED')
++        return parent
++
++    def source(self, item, stable):
++        source, meta = path(item['source']), item['sourceMetadata']
++        parent = self.directory(str(source.parent), meta['uid'])
++        before = os.stat(source.name, dir_fd=parent, follow_symlinks=False)
++        matches(before, meta)
++        fd = os.open(source.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=parent)
++        self.sources.append((parent, source.name, fd, identity(before), meta, stable))
++        matches(os.fstat(fd), meta)
++        return fd
++
++    def verify(self):
++        for parent, name, fd, frozen in self.entries:
++            need(identity(os.fstat(fd))[:-1] == frozen == identity(os.stat(name, dir_fd=parent, follow_symlinks=False))[:-1], 'PARENT_CHANGED')
++        for parent, name, fd, frozen, meta, stable in self.sources:
++            after = os.stat(name, dir_fd=parent, follow_symlinks=False)
++            need(identity(after) == frozen == identity(os.fstat(fd)), 'SOURCE_IDENTITY_CHANGED')
++            if stable:
++                matches(after, meta); matches(os.fstat(fd), meta)
++
++    def close(self):
++        for row in reversed(self.sources): os.close(row[2])
++        for fd in reversed(list(self.directories.values())): os.close(fd)
++
++
++def tick():
++    need(time.monotonic() < DEADLINE, 'BACKUP_DEADLINE')
++
++
++def create(name, body):
++    tick()
++    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
++    try:
++        with os.fdopen(fd, 'wb', closefd=False) as output:
++            output.write(body); output.flush(); os.fsync(output.fileno())
++    finally:
++        os.close(fd)
++
++
++def read_owned(name, maximum):
++    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
++    try:
++        before = os.fstat(fd)
++        need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_uid == 0 and before.st_gid == 0
++             and stat.S_IMODE(before.st_mode) == 0o600 and 0 <= before.st_size <= maximum)
++        data = bytearray()
++        while len(data) <= maximum:
++            tick(); block = os.read(fd, min(65536, maximum + 1 - len(data)))
++            if not block: break
++            data.extend(block)
++        need(len(data) == before.st_size and identity(before) == identity(os.fstat(fd)) and before.st_mtime_ns == os.fstat(fd).st_mtime_ns)
++        return bytes(data)
++    finally:
++        os.close(fd)
++
++
++@contextmanager
++def sqlite_companions(item):
++    held = []
++    def trusted(info):
++        need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not info.st_mode & 0o022
++             and (info.st_uid, info.st_gid) == (item['sourceMetadata']['uid'], item['sourceMetadata']['gid']), 'SQLITE_SIDECAR_UNTRUSTED')
++    try:
++        for suffix in ('-wal', '-shm', '-journal'):
++            name = item['source'] + suffix
++            try: before = os.stat(name, follow_symlinks=False)
++            except FileNotFoundError: continue
++            trusted(before)
++            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
++            held.append((name, fd, identity(before)))
++            need(identity(os.fstat(fd)) == identity(before), 'SQLITE_SIDECAR_CHANGED')
++        yield
++        for name, fd, frozen in held:
++            need(identity(os.stat(name, follow_symlinks=False)) == frozen == identity(os.fstat(fd)), 'SQLITE_SIDECAR_CHANGED')
++        for suffix in ('-wal', '-shm', '-journal'):
++            try: info = os.stat(item['source'] + suffix, follow_symlinks=False)
++            except FileNotFoundError: continue
++            trusted(info)
++    finally:
++        for _, fd, _ in reversed(held): os.close(fd)
++
++
++def sqlite_snapshot(item, destination):
++    tick(); create(destination, b'')
++    source = sqlite3.connect('file:' + quote(item['source'], safe='/') + '?mode=ro', uri=True, timeout=5)
++    target = sqlite3.connect(destination, timeout=5)
++    try:
++        for connection in (source, target):
++            connection.enable_load_extension(False)
++            connection.execute('PRAGMA trusted_schema=OFF'); connection.execute('PRAGMA temp_store=MEMORY')
++            connection.set_progress_handler(lambda: int(time.monotonic() >= DEADLINE), 1000)
++        source.execute('PRAGMA query_only=ON')
++        need(source.execute('PRAGMA query_only').fetchone() == (1,))
++        page_size = source.execute('PRAGMA page_size').fetchone()[0]
++        def progress(status, remaining, total):
++            tick(); need(total * page_size <= 4194304, 'SQLITE_SNAPSHOT_BOUND')
++        need(target.execute('PRAGMA journal_mode=DELETE').fetchone() == ('delete',))
++        source.backup(target, pages=16, progress=progress, sleep=0.05)
++        need(target.execute('PRAGMA journal_mode=DELETE').fetchone() == ('delete',))
++        need(target.execute('PRAGMA integrity_check(1)').fetchmany(2) == [('ok',)] and target.execute('PRAGMA foreign_key_check').fetchmany(1) == [])
++    finally:
++        target.close(); source.close()
++    need(not any(os.path.lexists(destination + suffix) for suffix in ('-wal', '-shm', '-journal')), 'PRIVATE_SIDECAR')
++
++
++def produce(raw, backups_root):
++    global DEADLINE
++    DEADLINE = time.monotonic() + 120
++    expected = selection(raw, backups_root)
++    need(expected['kind'] == 'FILES', 'FILES_ONLY')
++    need(os.geteuid() == 0 and os.getegid() == 0 and hasattr(sqlite3.Connection, 'backup'), 'NATIVE_BACKUP_REQUIRED')
++    paths = Paths()
++    try:
++        parent = paths.directory(backups_root, root_only=True)
++        available = os.fstatvfs(parent)
++        need(available.f_bavail * available.f_frsize >= 134217728, 'BACKUP_HEADROOM')
++        for item in expected['items']: paths.source(item, expected['kind'] == 'FILES')
++        paths.verify()
++        operation = path(expected['operationRoot'])
++        os.umask(0o077)
++        os.mkdir(operation.name, 0o700, dir_fd=parent)
++        paths.directory(str(operation), root_only=True)
++        create(str(operation / '.owner.json'), encoded({'schema': 1, 'format': FORMAT, 'run': expected['run'], 'selectionSha256': sha(raw)}))
++        folder = 'files' if expected['kind'] == 'FILES' else 'databases'
++        os.mkdir(str(operation / folder), 0o700)
++        resource.setrlimit(resource.RLIMIT_FSIZE, (16777216, 16777216))
++        items, total = [], 0
++        for index, item in enumerate(expected['items']):
++            tick(); paths.verify()
++            member = folder + '/%04d.' % index + ('bin' if folder == 'files' else 'sqlite')
++            destination = str(operation / member)
++            if folder == 'files':
++                fd, body = paths.sources[index][2], bytearray()
++                while len(body) <= 65536:
++                    tick(); block = os.read(fd, min(65536, 65537 - len(body)))
++                    if not block: break
++                    body.extend(block)
++                need(len(body) == item['sourceMetadata']['bytes'])
++                need(not body.startswith(b'SQLite format 3\x00'), 'DATABASE_NOT_A_FILE_BUNDLE')
++                create(destination, body)
++            else:
++                with sqlite_companions(item): sqlite_snapshot(item, destination)
++            body = read_owned(destination, 65536 if folder == 'files' else 4194304)
++            total += len(body)
++            need(total <= (1048576 if folder == 'files' else 8388608), 'SNAPSHOT_TOTAL_BOUND')
++            paths.verify()
++            items.append(dict(item, member=member, type='FILE' if folder == 'files' else 'SQLITE_ONLINE', bytes=len(body), sha256=sha(body),
++                              consistency='FD_STABLE_READ' if folder == 'files' else 'SQLITE_ONLINE_BACKUP_INDEPENDENT_POINT'))
++        manifest = {key: expected[key] for key in ('schema', 'format', 'kind', 'run', 'operationRoot')}
++        manifest.update(selectionSha256=sha(raw), items=items)
++        manifest_bytes = encoded(manifest)
++        need(len(manifest_bytes) <= MAX_MANIFEST, 'MANIFEST_BOUND')
++        create(str(operation / 'manifest.json'), manifest_bytes)
++        bundle_path = str(operation / 'bundle.tar')
++        fd = os.open(bundle_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
++        try:
++            with os.fdopen(fd, 'wb', closefd=False) as output:
++                with tarfile.open(fileobj=output, mode='w', format=tarfile.USTAR_FORMAT) as archive:
++                    for name in ['manifest.json'] + [item['member'] for item in items]:
++                        tick(); body = read_owned(str(operation / name), MAX_MANIFEST if name == 'manifest.json' else (65536 if folder == 'files' else 4194304))
++                        if name == 'manifest.json': need(body == manifest_bytes, 'OWN_MANIFEST_CHANGED')
++                        else:
++                            original = next(item for item in items if item['member'] == name)
++                            need(len(body) == original['bytes'] and sha(body) == original['sha256'], 'OWN_SNAPSHOT_CHANGED')
++                        header = tarfile.TarInfo(name); header.mode = 0o600; header.size = len(body)
++                        archive.addfile(header, io.BytesIO(body))
++                output.flush(); os.fsync(fd)
++        finally:
++            os.close(fd)
++        bundle = read_owned(bundle_path, 2097152 if folder == 'files' else 16777216)
++        paths.verify()
++        result = {key: manifest[key] for key in ('schema', 'format', 'kind', 'selectionSha256', 'run', 'operationRoot')}
++        result.update(bundlePath=bundle_path, bundleBytes=len(bundle), bundleSha256=sha(bundle), manifestSha256=sha(manifest_bytes), manifest=manifest, complete=True)
++        create(str(operation / '.complete.json'), encoded(result))
++        return result
++    finally:
++        paths.close()
++
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser()
++    parser.add_argument('--backups-root', required=True)
++    args = parser.parse_args()
++    try:
++        result = produce(sys.stdin.buffer.read(MAX_INPUT + 1), args.backups_root)
++        output = encoded(result)
++        need(len(output) <= 1048576, 'OUTPUT_BOUND')
++        print(output.decode('utf-8'))
++    except Exception:
++        print('{"schema":1,"format":"WTL_PRE_REINSTALL_BUNDLE_1","complete":false,"policy":"RETAIN_OWN_INCOMPLETE_NO_REPLAY","errorCode":"FILES_SNAPSHOT_UNCONFIRMED"}')
++        sys.exit(1)
+--- /dev/null
++++ b/test/tools/backup/test_current_backup_paths.py
+@@ -0,0 +1,77 @@
++"""Pure public-resource validation; no observer/producer execution or Linux source access."""
++import argparse
++import ast
++from decimal import Decimal
++import hashlib
++import json
++from pathlib import Path, PurePosixPath
++import re
++import sys
++import unittest
++
++parser = argparse.ArgumentParser()
++parser.add_argument('--selection', type=Path, required=True)
++arguments, remaining = parser.parse_known_args()
++RESOURCES = Path(__file__).resolve().parents[3] / 'src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard'
++
++
++def definitions(name):
++    tree = ast.parse((RESOURCES / name).read_bytes(), filename=name)
++    names = {'need', 'fields', 'strict_json', 'path', 'integer', 'selection'}
++    pure = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
++    assert len(pure) == len(names)
++    constants = {}
++    for node in tree.body:
++        if isinstance(node, ast.Assign) and len(node.targets) == 1:
++            target = node.targets[0]
++            if isinstance(target, ast.Name) and target.id == 'FORMAT': constants['FORMAT'] = ast.literal_eval(node.value)
++            if isinstance(target, ast.Tuple) and [value.id for value in target.elts] == ['MAX_INPUT', 'MAX_MANIFEST']:
++                constants['MAX_INPUT'] = ast.literal_eval(node.value)[0]
++    namespace = dict(constants, json=json, re=re, PurePosixPath=PurePosixPath, Decimal=Decimal, hashlib=hashlib)
++    exec(compile(ast.Module(body=pure, type_ignores=[]), name, 'exec'), namespace)
++    return namespace, tree
++
++
++class CurrentBackupPaths(unittest.TestCase):
++    def test_actual_selection_literal_dollar_rejections_and_fixed_failure(self):
++        raw = arguments.selection.read_bytes()
++        self.assertEqual(72427, len(raw), 'Use the frozen actual next-FILES selection, not a synthetic substitute')
++        expected = json.loads(raw)
++        root = str(PurePosixPath(expected['operationRoot']).parent)
++        self.assertEqual(276, len(expected['items']))
++        self.assertEqual([24, 26, 28, 29, 30, 31, 32], [index for index, item in enumerate(expected['items']) if '$' in item['source']])
++        cases = (
++            ('current-pre-reinstall-content-digest.py', 'CONTENT_DIGEST_UNCONFIRMED'),
++            ('current-pre-reinstall-backup-files-v2.py', 'FILES_SNAPSHOT_UNCONFIRMED'),
++        )
++        for name, error in cases:
++            with self.subTest(resource=name):
++                namespace, tree = definitions(name)
++                self.assertEqual(expected, namespace['selection'](raw, root))
++                for valid in ('/safe/Outer$Inner.class', '/safe/$literal/Outer$1.class'):
++                    self.assertEqual(valid, str(namespace['path'](valid)))
++                for invalid in ('/safe/../Outer$Inner.class', '/safe/./Outer$Inner.class', '/safe//Inner.class', '/safe/Inner.class/',
++                                '/safe/$(touch x).class', '/safe/${HOME}.class', '/safe/`cmd`.class', '/safe/Inner\x00.class', 'relative$Inner.class'):
++                    with self.subTest(invalid=repr(invalid)), self.assertRaises(ValueError): namespace['path'](invalid)
++                with self.assertRaises(ValueError): namespace['selection'](raw + b'{}', root)
++                with self.assertRaises(ValueError): namespace['selection'](raw, '/different/backups')
++                main = next(node for node in tree.body if isinstance(node, ast.If))
++                guarded = next(node for node in main.body if isinstance(node, ast.Try))
++                self.assertEqual(1, len(guarded.handlers))
++                handler = guarded.handlers[0]
++                self.assertIsInstance(handler.type, ast.Name)
++                self.assertEqual('Exception', handler.type.id)
++                self.assertIsNone(handler.name, 'No raw exception/body may become output data')
++                output = handler.body[0].value
++                self.assertEqual('print', output.func.id)
++                self.assertIsInstance(output.args[0], ast.Constant)
++                frame = json.loads(output.args[0].value)
++                self.assertIs(False, frame['complete'])
++                self.assertEqual(error, frame['errorCode'])
++                self.assertNotIn('stdout', frame)
++                self.assertNotIn('message', frame)
++                self.assertEqual(1, handler.body[1].value.args[0].value)
++
++
++if __name__ == '__main__':
++    unittest.main(argv=[sys.argv[0], *remaining])

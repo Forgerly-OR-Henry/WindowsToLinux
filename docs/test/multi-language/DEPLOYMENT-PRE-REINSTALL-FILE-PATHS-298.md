@@ -1,0 +1,9 @@
+# 重装前普通文件路径修复298
+
+297摘要动作已获完整APP及freshgrant，但执行exit1/TaskENDED-FAILED，无有效摘要；本地纯selection确认7个Java内部类文件名含字面$，原路径字符集过窄。保留失败回执并以新run另行审批，不重放。仅摘要资源及新FILES v2资源允许此字符，路径仍经JSON/stdin及dir_fd读取，不经过shell求值；遍历、重复分隔符、NUL、命令替换形式等仍拒绝。失败只输出固定错误码，无异常/body。
+
+296已成功数据库producer资源保持原字节。新FILES仅通过显式sourceFacts.currentBackupProducerVersion=2选择完整v2模板；非FILES或未知版本拒绝，未声明版本仍保旧模板。只改Live fixture及公开测试资源，不改生产API、STATIC或ASSISTED逻辑。
+
+新增Python唯一方法定点通过0.021s，核真实72427B/276selection及7个$索引、正反路径、安全错误输出，不运行Linux操作。Java只跑现有content一个方法及必要编译；test01父辅助脚本误覆盖selection-summary导致证据摘要失败，已按原审批计划SHA恢复原532B精确字节，保留误副本和失败；test02通过。没有重跑已通过EOL/恢复/数据库内存组，无全量或package。20直接代码路径及原4253951B生产JAR属性冻结，只有Git阶段源码摘要。
+
+数据库新下载已SUCCEEDED，DATABASES.dpapi143590B，独立内存解密/两库恢复均PASS，integrityok/FK0，明文未落盘。普通文件后续新摘要APP、FILES producer/download APP、内存验真和最终必要覆盖仍待完成。当前仍IN_PROGRESS_NOT_READY/goalactive，全部验证与收尾后才paused，用户据此重装；FT→CSV完整验收未完成，不新FULL，不重装、不恢复194或旧七UNKNOWN。

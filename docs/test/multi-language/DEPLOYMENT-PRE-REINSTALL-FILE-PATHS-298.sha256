@@ -1,0 +1,6 @@
+0a489c035bbc7d2fbd4d179632ecba958d2c0fd58b6b7d870206a1809dbc97ac  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+0a72108133777c4889e82956e9f188d05ef865b6856ad6a21d2cfa9a940a6fe8  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-content-digest.py
+ddd8db8f9db4960a922ca5c81fa31077eaeeafaacd674c71f76c6b0bb54234b1  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-backup-files-v2.py
+4e90c6c697c8caa3634f59a9d9236c2c796dbd9b93dcb84cccb50ee9f4425d48  test/tools/backup/test_current_backup_paths.py
+b3a2148e80662c532b033c8d7613c2c007546ad3152f9346df400f5aea4c228a  docs/test/multi-language/DEPLOYMENT-PRE-REINSTALL-FILE-PATHS-298.patch
+e5ed8284f107b71cba5798462ecc11ad9deafca382b5e2b82bd60e762d87deae  docs/test/multi-language/DEPLOYMENT-PRE-REINSTALL-FILE-PATHS-298.md
