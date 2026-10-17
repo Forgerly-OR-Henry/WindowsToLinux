@@ -1,0 +1,17 @@
+# Agent SDK 纯观察与未发送任务核对 292
+
+291 APP拒绝了含隐式服务安装效果的通用封套。新请求只改一个Live测试文件，保真实公开observer snapshot/SourceBrowser、AgentApproval、ReviewScope、WorkflowAuthorization；通过现有ReviewRouter审核完整script/空stdin，成功后以新精确grant对同一session/request执行一次命令。60秒/65536B，清洁固定执行环境；明确SDK路径和task targets，使用已有宽义host-probe操作，不注入canonical baseline专属证据、不宣称READY。
+
+新请求不使用ModelCommandRunner/envelope/远端receipt查询/layout或服务写入；与原被拒封套不同，不重放原DENY。确定的原task APP DENY在execute前返回typed FAILED并保存完整脱敏拒因；执行UNKNOWN及异常不改写成已知。成功须exit0、空stderr、未截断、唯一完整SDK_METADATA帧及严格JSON，含METADATA_ONLY和零SDK执行/PROBE。Python观察器和此前已通过的synthetic测试均未改。
+
+独立原生核对入口仅接受新291 UUID c883e775-97d2-4e67-bcf9-982f115b10ab，使用RECOVERY上下文registerRecovery→runtime.tasks.reconcile。核id/type/owner/version/UNKNOWN、原released modelcommands checkpoint、完整严格payload与唯一原operation/body/60秒/INTENT且无exit、保存路由/hostkey和resourcesReleased，checkpoint前后不变。INTENT证明未越过persisted DISPATCHED边界，不单独证明未签grant。满足条件后由平台归档原观察为FAILED；不advance/close原checkpoint、不写SQL或forceKnown；不符保UNKNOWN，不发远端命令。不得恢复原289、七旧UNKNOWN、194或285。
+
+新观察connect前再用原生findArchived核原291 type/owner/version/FAILED及原289既有归档。该API要求原执行和leases消失；结合native核对TaskSnapshot，无需重复after JDBC reader。实际SDK记录仍待审批及观察，以上不算实机通过。
+
+两个直接相关local方法唯一组合selector为 `DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown+unsentSdkMetadataRecoveryRequiresExactReleasedIntent`，flag sdkMetadataProtocolLocal=true。协议测试用替身review/session核request/task绑定、DENY零发送、新模拟grant、UNKNOWN及异常；结清guard覆盖精确INTENT正例与UUID/type/phase/字段/资源/released/hostkey/revision反例，不声称替身是真实APP或grant。
+
+test01/session82953实际exit0，2P/0F/0E/0skip/0.115s，Maven12.524s，UTC 2026-10-17T17:11:39.1417989Z—2026-10-17T17:11:52.6146762Z。仅test及必要testCompile，没有生产JAR重新打包、已过Python组复跑或全量。十二直接source元数据在测试窗口内不变，既有生产JAR属性未变。CIM自有Java0/terminated0，owner/绝对边界/no-reparse检查后只清c292a/u292t。
+
+单测试路径窄patch 222增34删，reverse check通过；仅Git提交阶段计算source/patch/本说明三个限定摘要。仅提交md/patch/sha，不纳入既有迁移或个人AGENTS，不推送。实际核对和新观察另记录。
+
+仍无新FULL、SDK prepare/install/build、候选、发布或浏览器。最终目标保持File Transfer完整BUSINESSv2/真实浏览器/STOPDISABLE→CSV同样完整验收→暂停并报告审批占比和加权缓存命中率；两个项目目前均未完整通过。

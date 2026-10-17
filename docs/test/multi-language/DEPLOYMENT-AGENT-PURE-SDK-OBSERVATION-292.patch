@@ -1,0 +1,317 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -76,7 +76,7 @@
+         return "true".equals(System.getProperty("managed.runtime.staticLive")) || isolatedInputBridge() || isolatedStopDiagnostics()
+             || isolatedUserRequirements() || isolatedBackupGuard() || isolatedBackupBatchGuard() || backupOnlyLive()
+             || isolatedBackupMetadata() || backupMetadataOnlyLive() || isolatedProtectedBackupGuard() || isolatedProtectedBackupSentinel()
+-            || backupCommandOnlyLive() || isolatedBackupCommandGuard() || isolatedSnapshotProof() || backupReviewProbeOnlyLive();
++            || backupCommandOnlyLive() || isolatedBackupCommandGuard() || isolatedSnapshotProof() || backupReviewProbeOnlyLive() || isolatedSdkMetadataProtocol();
+     }
+ 
+     private static boolean isolatedBackupGuard() {
+@@ -4028,6 +4028,14 @@
+             && Set.of("DeploymentStaticLiveAcceptanceTest#mainOnlyInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel",
+                 "DeploymentStaticLiveAcceptanceTest#fullAgentInputBridgeRequiresExactAnswerBindingAndSupportsExplicitCancel",
+                 "DeploymentStaticLiveAcceptanceTest#originalReconsiderationInputRequiresCurrentScopeAndExactQuestion")
++            .contains(System.getProperty("test", ""));
++    }
++
++    private static boolean isolatedSdkMetadataProtocol() {
++        return Boolean.getBoolean("managed.runtime.sdkMetadataProtocolLocal") && Set.of(
++            "DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown",
++            "DeploymentStaticLiveAcceptanceTest#unsentSdkMetadataRecoveryRequiresExactReleasedIntent",
++            "DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown+unsentSdkMetadataRecoveryRequiresExactReleasedIntent")
+             .contains(System.getProperty("test", ""));
+     }
+ 
+@@ -5791,6 +5799,188 @@
+         }
+     }
+ 
++    private static final com.fasterxml.jackson.databind.ObjectMapper SDK_METADATA_JSON = new com.fasterxml.jackson.databind.ObjectMapper()
++        .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
++        .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
++
++    private static CommandRequest sdkMetadataRequest(String observer) {
++        return new CommandRequest("exec " + gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.ENVIRONMENT
++            + " /usr/bin/python3 -I -S -B - <<'WTL_SDK_METADATA_ONLY_292'\n" + observer + "\nWTL_SDK_METADATA_ONLY_292\n",
++            new byte[0], java.time.Duration.ofSeconds(60), 65536);
++    }
++
++    private static ActionIntent sdkMetadataIntent(ServerId server, TaskContext task, String revision, CommandRequest request) {
++        return gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, revision, request).withSemantics(
++            new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("deployment.candidate.host-probe.v1", Set.of(
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", task.id().toString()),
++                new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "sdk-metadata-root", "/usr/local/lib/windowstolinux/toolchains/versions"))));
++    }
++
++    private static OperationResult<CommandResult> sdkMetadataCommand(gold.debug.windowstolinux.appapi.task.action.InteractionService interaction,
++        RemoteSession session, ServerId server, TaskContext task, String revision, CommandRequest request) throws ApiException {
++        OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> review;
++        try {
++            review = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(
++                interaction, sdkMetadataIntent(server, task, revision, request), request, task);
++        } catch (ApiException denied) {
++            if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
++                || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
++            return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
++        }
++        if (review.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
++        if (review.value().isEmpty()) return sdkMetadataUnknown();
++        System.out.println("SDK_METADATA_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
++        return session.execute(request, review.value().orElseThrow());
++    }
++
++    private static <T> OperationResult<T> sdkMetadataUnknown() {
++        return new OperationResult<>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(new Problem(ProblemCode.UNKNOWN,
++            "SDK_METADATA_OBSERVATION_UNCONFIRMED", "Original metadata observation remains unconfirmed", Map.of(), Optional.empty())));
++    }
++
++    private static boolean sdkMetadataUnsentProof(TaskSnapshot previous, java.util.UUID task,
++        gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot checkpoint, String fingerprint, String revision, boolean resourcesReleased) {
++        try {
++            if (!task.equals(java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab")) || !previous.id().equals(task)
++                || !previous.ownerId().equals(OWNER) || !previous.ownerVersion().equals(VERSION) || !previous.type().equals("deployment-sdk-metadata-observation")
++                || previous.state() != gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN || !resourcesReleased
++                || checkpoint == null || !checkpoint.released() || fingerprint == null || fingerprint.isBlank()
++                || revision == null || !revision.matches("[a-f0-9]{64}") || checkpoint.payload().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000) return false;
++            var value = SDK_METADATA_JSON.readTree(checkpoint.payload());
++            gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(value,
++                Set.of("version", "task", "server", "fingerprint", "modelRevision", "commands"));
++            if (!value.path("version").isInt() || value.path("version").intValue() != 1
++                || !value.path("task").isTextual() || !value.path("task").asText().equals(task.toString())
++                || !value.path("server").isTextual() || !value.path("server").asText().equals(SERVER)
++                || !value.path("fingerprint").isTextual() || !value.path("fingerprint").asText().equals(fingerprint)
++                || !value.path("modelRevision").isTextual() || !value.path("modelRevision").asText().equals(revision)
++                || !value.path("commands").isArray() || value.path("commands").size() != 1) return false;
++            var command = value.path("commands").get(0);
++            gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(command, Set.of("operation", "body", "seconds", "phase"));
++            return command.path("operation").isTextual() && command.path("operation").asText().equals("9781a055-464c-4fb1-a5b4-b4e8781d7f9a")
++                && command.path("body").isTextual() && command.path("body").asText().equals("c6dba5ba7a7484dc924b89d4b9e679a6caee2982b96364f80c8c1f8e6062625b")
++                && command.path("seconds").isInt() && command.path("seconds").intValue() == 60
++                && command.path("phase").isTextual() && command.path("phase").asText().equals("INTENT");
++        } catch (Exception unconfirmed) { return false; }
++    }
++
++    @Test
++    @EnabledIf("isolatedSdkMetadataProtocol")
++    void unsentSdkMetadataRecoveryRequiresExactReleasedIntent() throws Exception {
++        var task = java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab"); String revision = "a".repeat(64), fingerprint = "synthetic-fingerprint";
++        var previous = new TaskSnapshot(task, OWNER, VERSION, "deployment-sdk-metadata-observation", gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN,
++            Optional.empty(), "synthetic", java.time.Instant.EPOCH, Optional.empty(), List.of());
++        var value = JSON.createObjectNode().put("version", 1).put("task", task.toString()).put("server", SERVER).put("fingerprint", fingerprint).put("modelRevision", revision);
++        var command = value.putArray("commands").addObject().put("operation", "9781a055-464c-4fb1-a5b4-b4e8781d7f9a")
++            .put("body", "c6dba5ba7a7484dc924b89d4b9e679a6caee2982b96364f80c8c1f8e6062625b").put("seconds", 60).put("phase", "INTENT");
++        var checkpoint = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true);
++        assertTrue(sdkMetadataUnsentProof(previous, task, checkpoint, fingerprint, revision, true));
++        assertFalse(sdkMetadataUnsentProof(previous, java.util.UUID.randomUUID(), checkpoint, fingerprint, revision, true));
++        assertFalse(sdkMetadataUnsentProof(new TaskSnapshot(task, OWNER, VERSION, "other-type", previous.state(), Optional.empty(), "", previous.startedAt(), Optional.empty(), List.of()),
++            task, checkpoint, fingerprint, revision, true));
++        assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), false), fingerprint, revision, true));
++        assertFalse(sdkMetadataUnsentProof(previous, task, checkpoint, "other-fingerprint", revision, true));
++        assertFalse(sdkMetadataUnsentProof(previous, task, checkpoint, fingerprint, "b".repeat(64), true));
++        assertFalse(sdkMetadataUnsentProof(previous, task, checkpoint, fingerprint, revision, false));
++        for (String phase : List.of("DISPATCHED", "ENDED")) {
++            command.put("phase", phase);
++            assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
++        }
++        command.put("phase", "INTENT").put("exit", "0");
++        assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
++        command.remove("exit"); value.put("unexpected", true);
++        assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
++    }
++
++    @Test
++    @EnabledIfSystemProperty(named = "managed.runtime.sdkMetadataRecovery", matches = "true")
++    void reconcilesUnsentSdkMetadataObservationThroughProduct() throws Exception {
++        assertEquals("DeploymentStaticLiveAcceptanceTest#reconcilesUnsentSdkMetadataObservationThroughProduct", System.getProperty("test"));
++        root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
++        assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
++        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
++        assertEquals(java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab"), original);
++        String fingerprint = Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint"));
++        try (var runtime = open()) {
++            var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageHost() {
++                public void show(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key, gold.debug.windowstolinux.appapi.ui.page.PageSpec spec, javax.swing.JComponent component) { throw new AssertionError("No recovery business pages"); }
++                public void focus(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) { }
++                public void remove(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) { }
++                public void environment(gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) { }
++            }, new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
++            var start = runtime.startDevelopmentMods(workspace(), pages);
++            assertTrue(start.running().isEmpty()); assertTrue(start.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")));
++            var context = runtime.modContexts().get(OWNER).context();
++            assertEquals(gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.RECOVERY, context.launchMode());
++            try (var registration = context.tasks().registerRecovery("deployment-sdk-metadata-observation", (previous, task) -> {
++                try {
++                    var checkpoint = context.tasks().findCheckpoint(task, gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY).orElseThrow();
++                    var saved = checkpoint.snapshot();
++                    String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
++                    if (!sdkMetadataUnsentProof(previous, task.id(), saved, fingerprint, revision, context.tasks().resourcesReleased(task))
++                        || !saved.equals(checkpoint.snapshot())) return sdkMetadataUnknown();
++                    return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
++                        "SDK_METADATA_REVIEW_REFUSED_NOT_SENT", "Original released INTENT never crossed the persisted DISPATCHED boundary; this does not prove a grant was never issued",
++                        Map.of("task", task.id().toString()), Optional.of(task.id()))));
++                } catch (Exception unconfirmed) { return sdkMetadataUnknown(); }
++            })) {
++                var result = runtime.tasks().reconcile(original).toCompletableFuture().get(2, TimeUnit.MINUTES);
++                System.out.println("SDK_METADATA_ORIGINAL_RECONCILED " + result);
++                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, result.state());
++                assertEquals(Optional.of(TaskResult.FAILED), result.outcome()); assertTrue(result.blockers().isEmpty());
++            }
++        }
++    }
++
++    @Test
++    @EnabledIf("isolatedSdkMetadataProtocol")
++    void pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown() throws Exception {
++        var id = java.util.UUID.randomUUID(); var server = new ServerId("synthetic-sdk-observation"); String revision = "a".repeat(64);
++        var task = (TaskContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
++            if (method.getName().equals("id")) return id; throw new AssertionError("No real task capability in this pure protocol test");
++        });
++        var deny = new java.util.concurrent.atomic.AtomicBoolean(true); var unknown = new java.util.concurrent.atomic.AtomicBoolean(false);
++        var executeThrows = new java.util.concurrent.atomic.AtomicBoolean(false);
++        var sends = new AtomicInteger(); var reviews = new AtomicInteger();
++        var issued = new java.util.HashSet<java.util.UUID>();
++        var expected = new java.util.concurrent.atomic.AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();
++        try (var request = sdkMetadataRequest("print('synthetic metadata')\n")) {
++            var intent = sdkMetadataIntent(server, task, revision, request);
++            assertEquals(0, request.stdin().length); assertEquals(java.time.Duration.ofSeconds(60), request.timeout()); assertEquals(65536, request.outputLimitBytes());
++            assertTrue(request.script().contains("/usr/bin/python3 -I -S -B")); assertFalse(request.script().contains("model-command-operations"));
++            assertFalse(request.script().contains("systemctl")); assertFalse(request.script().contains("mktemp"));
++            assertEquals("deployment.candidate.host-probe.v1", intent.semantics().orElseThrow().operation());
++            assertEquals(2, intent.semantics().orElseThrow().targets().size());
++            assertTrue(intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", id.toString())));
++            assertTrue(intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "sdk-metadata-root", "/usr/local/lib/windowstolinux/toolchains/versions")));
++            assertEquals(gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, revision, request).exactAction(), intent.exactAction());
++            assertTrue(gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentHostProbeEvidence.select(
++                JSON.createObjectNode().put("operation", intent.semantics().orElseThrow().operation()).put("exactAction", intent.exactAction())).isEmpty());
++            var interaction = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) Proxy.newProxyInstance(
++                getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class}, (proxy, method, args) -> {
++                    assertEquals("approveCommand", method.getName()); assertEquals(intent, args[0]); assertSame(request, args[1]); assertSame(task, args[2]); reviews.incrementAndGet();
++                    if (deny.get()) throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED", "Synthetic denied review",
++                        Map.of("task", id.toString(), "reviewReason", "Complete synthetic denial is retained"), Optional.of(id)));
++                    var grant = new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(java.util.UUID.randomUUID());
++                    assertTrue(issued.add(grant.id())); expected.set(grant); return success(grant);
++                });
++            var session = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
++                assertEquals("execute", method.getName()); assertSame(request, args[0]); assertSame(expected.get(), args[1]); sends.incrementAndGet();
++                if (executeThrows.get()) throw new ApiException(new Problem(ProblemCode.UNKNOWN, "SDK_TEST_EXECUTE_UNCONFIRMED", "Synthetic execute failure", Map.of(), Optional.of(id)));
++                if (unknown.get()) return sdkMetadataUnknown();
++                return success(new CommandResult(Optional.of(0), "synthetic", "", false));
++            });
++            var refused = sdkMetadataCommand(interaction, session, server, task, revision, request);
++            assertEquals(TaskResult.FAILED, refused.outcome()); assertEquals(0, sends.get());
++            assertEquals("Complete synthetic denial is retained", refused.problem().orElseThrow().context().get("reviewReason"));
++            deny.set(false); assertEquals(TaskResult.SUCCEEDED, sdkMetadataCommand(interaction, session, server, task, revision, request).outcome());
++            unknown.set(true); assertEquals(TaskResult.UNKNOWN, sdkMetadataCommand(interaction, session, server, task, revision, request).outcome());
++            executeThrows.set(true); assertEquals("SDK_TEST_EXECUTE_UNCONFIRMED", assertThrows(ApiException.class,
++                () -> sdkMetadataCommand(interaction, session, server, task, revision, request)).problem().eventCode());
++            assertEquals(3, sends.get()); assertEquals(4, reviews.get()); assertEquals(3, issued.size());
++        }
++    }
++
+     @Test
+     @EnabledIfSystemProperty(named = "managed.runtime.sdkMetadataObservation", matches = "true")
+     void observesExistingSdkMetadataThroughNativeApproval() throws Exception {
+@@ -5816,9 +6006,13 @@
+             assertEquals("DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", JSON.readTree(archived.path("result").asText()).path("problem").path("eventCode").asText());
+             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+             var observed = completed(context.tasks().<com.fasterxml.jackson.databind.JsonNode>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+-                "deployment-sdk-metadata-observation", "SDK METADATA_ONLY; SDK tree read-only, product admission and receipts may be written", List.of(SERVER), true), task -> {
++                "deployment-sdk-metadata-observation", "SDK METADATA_ONLY; one pure observation command, no remote product setup or receipt writes", List.of(SERVER), true), task -> {
+                 var conclusion = context.tasks().findArchived(original, task).orElseThrow();
+                 assertEquals(DeploymentAgentWorkflow.TASK_TYPE, conclusion.type()); assertEquals(Optional.of(TaskResult.FAILED), conclusion.outcome());
++                var priorObservation = context.tasks().findArchived(java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab"), task).orElseThrow();
++                assertEquals("deployment-sdk-metadata-observation", priorObservation.type());
++                assertEquals(OWNER, priorObservation.ownerId()); assertEquals(VERSION, priorObservation.ownerVersion());
++                assertEquals(Optional.of(TaskResult.FAILED), priorObservation.outcome(), "Settle the original denied observation before any replacement send");
+                 var server = new ServerId(SERVER);
+                 var profile = context.servers().get(server, task);
+                 assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
+@@ -5828,12 +6022,10 @@
+                 try (var snapshot = context.file().snapshots().snapshot(selection,
+                     new gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest(List.of("sdk-metadata-observation.py"), 65536), task)) {
+                     var browser = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser(snapshot.directory(), snapshot.sha256());
+-                    String script = "exec /usr/bin/python3 -I -S -B - <<'WTL_SDK_METADATA_ONLY_291'\n"
+-                        + Files.readString(snapshot.directory().resolve("sdk-metadata-observation.py"), java.nio.charset.StandardCharsets.UTF_8)
+-                        + "\nWTL_SDK_METADATA_ONLY_291\n";
++                    String observer = Files.readString(snapshot.directory().resolve("sdk-metadata-observation.py"), java.nio.charset.StandardCharsets.UTF_8);
+                     try (var authority = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
+                         context, task, server, revision, "AUTOMATIC", false,
+-                        "Observe only existing GO/NODE SDK marker metadata; no SDK execution/PROBE/prepare/install/candidate; product admission and operation receipts may be written");
++                        "New alternative request: observe GO/NODE SDK metadata once; no SDK execution/PROBE/prepare/install/candidate, remote receipt or layout/service setup; broad host-probe label does not claim canonical baseline or READY");
+                          var session = context.linux().connect(server, task)) {
+                         assertEquals(Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint")), session.facts().fingerprint());
+                         var approval = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(context, task,
+@@ -5844,7 +6036,8 @@
+                                 }
+                                 public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-observer", browser); }
+                                 public Object receipts() { return Map.of("purpose", "SDK_METADATA_ONLY", "prerequisiteTask", original.toString(),
+-                                    "prerequisiteResult", "FAILED:DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", "sdkTreeReadOnly", true, "productAdmissionAndReceiptWrites", true); }
++                                    "prerequisiteResult", "FAILED:DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", "sdkTreeReadOnly", true,
++                                    "remoteProductSetupOrReceiptWrites", false, "meaning", "New pure host metadata observation, not the canonical baseline and not a replay of the refused model-command envelope"); }
+                                 public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
+                                     return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(), "publicSourceSnapshotId", snapshot.id().toString());
+                                 }
+@@ -5852,39 +6045,34 @@
+                         var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(
+                             context, context.interaction(), task, "AUTOMATIC", false, () -> revision, null,
+                             gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> approval);
+-                        var grants = new java.util.HashSet<java.util.UUID>();
+-                        var tracked = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+-                            if (method.getName().equals("execute")) {
+-                                var grant = (gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) args[1];
+-                                assertTrue(grants.add(grant.id()), "Every SDK command must consume a fresh exact grant");
+-                                System.out.println("SDK_METADATA_SEND task=" + task.id() + " grant=" + grant.id() + " command=" + grants.size());
++                        try (var request = sdkMetadataRequest(observer)) {
++                            var result = sdkMetadataCommand(reviewed.interaction(), session, server, task, revision, request);
++                            if (result.outcome() != TaskResult.SUCCEEDED) {
++                                result.problem().filter(problem -> problem.eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED"))
++                                    .ifPresent(problem -> gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, new ApiException(problem)));
++                                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                             }
+-                            return invoke(method, session, args);
+-                        });
+-                        try {
+-                            String feedback = gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.execute(
+-                                reviewed, tracked, server, task, revision, script, 60, "Read existing SDK marker fields only; metadata does not establish content integrity, runtime compatibility or READY");
+-                            assertTrue(feedback.lines().anyMatch("EXIT=0"::equals)); assertFalse(feedback.contains("OUTPUT_TRUNCATED=1"));
+-                            var lines = feedback.lines().filter(value -> value.startsWith("SDK_METADATA=")).toList();
+-                            assertEquals(1, lines.size());
+-                            var metadata = JSON.readTree(lines.getFirst().substring("SDK_METADATA=".length()));
+-                            assertEquals("METADATA_ONLY", metadata.path("mode").asText()); assertEquals("OBSERVED", metadata.path("status").asText());
+-                            assertEquals(0, metadata.path("sdkExecutions").asInt(-1)); assertEquals(0, metadata.path("probeOperations").asInt(-1));
+-                            assertEquals(2, grants.size());
++                            if (result.value().isEmpty()) return sdkMetadataUnknown();
++                            var value = result.value().orElseThrow();
++                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty())
++                                return sdkMetadataUnknown();
++                            if (value.exitCode().orElseThrow() != 0)
++                                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
++                                    "SDK_METADATA_OBSERVATION_NONZERO", "The metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
++                            var lines = value.stdout().lines().toList();
++                            if (lines.size() != 1 || !lines.getFirst().startsWith("SDK_METADATA=")) return sdkMetadataUnknown();
++                            var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("SDK_METADATA=".length()));
++                            gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
++                                Set.of("schema", "mode", "status", "rootState", "records", "sdkExecutions", "probeOperations", "ecosystems", "meaning"));
++                            if (!metadata.path("schema").isInt() || metadata.path("schema").intValue() != 1
++                                || !metadata.path("mode").asText().equals("METADATA_ONLY") || !metadata.path("status").asText().equals("OBSERVED")
++                                || metadata.path("sdkExecutions").asInt(-1) != 0 || metadata.path("probeOperations").asInt(-1) != 0) return sdkMetadataUnknown();
+                             return success(metadata);
+-                        } catch (ApiException refused) {
+-                            var diagnostic = refused instanceof gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException
+-                                && refused.getCause() instanceof ApiException denied && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED") ? denied : refused;
+-                            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, diagnostic);
+-                            throw refused;
+-                        } finally {
+-                            if (!gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.unconfirmed(context, task))
+-                                gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.releaseKnown(context, task);
+                         }
+                     }
+                 } finally { context.file().closeTaskResources(task); }
+             }), 20);
+-            assertEquals(2, reviewedActions.get(), "Both the observation and its receipt query require independent approval");
++            assertEquals(1, reviewedActions.get(), "The sole pure observation command requires independent approval");
+             System.out.println("SDK_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
+         }
+     }
