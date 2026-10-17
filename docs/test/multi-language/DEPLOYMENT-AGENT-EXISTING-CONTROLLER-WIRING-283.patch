@@ -1,0 +1,527 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+@@ -290,7 +290,7 @@
+             for (String component : prepared) browsers.put(component, sources.browser(component));
+             return Map.copyOf(browsers);
+         }, new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.OriginalSource(archive, material, configurationRevision), reviewSource);
+-        this.buildTools = new DeploymentAgentBuildTools(this.context, task, session, server, configurationRevision, beforeSend, sources, projects, layout);
++        this.buildTools = new DeploymentAgentBuildTools(this.context, task, session, server, configurationRevision, beforeSend, sources, projects, layout, isolationPolicy != null);
+         this.resourceTools = new DeploymentAgentResourceTools(this.context, task, server, session, sources, journal, layout);
+     }
+ 
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
+@@ -17,7 +17,7 @@
+     public static final String FORMAT="WTL_AGENT_ISOLATION_PREFLIGHT_1";
+     public static final String FRAME="AGENT_ISOLATION_PREFLIGHT=";
+     private static final Duration TIMEOUT=Duration.ofSeconds(30);
+-    private static final long LIMIT=16384;
++    private static final long LIMIT=24576;
+     public enum Mode {ADMISSION,PROTECTED_RECHECK}
+     private static final String SUFFIX="\nset -fu\nLC_ALL=C\nbuiltin export LC_ALL\nif [[ ${BASH_ENV+x} != x || ${ENV+x} != x || \"$BASH_ENV\" != /dev/null || \"$ENV\" != /dev/null || ${LD_PRELOAD+x} || ${LD_LIBRARY_PATH+x} ]]; then exit 65; fi\nbuiltin unset BASH_ENV ENV || exit 65\nexec /usr/bin/python3 -I -S - \"$wtl_isolation\"\n";
+     private final DeploymentAgentIsolationPolicy policy;
+@@ -76,7 +76,7 @@
+         int paths=integer(node,"pathsChecked"),units=integer(node,"unitsChecked"),ports=integer(node,"portsChecked");var demands=new HashSet<String>();
+         if(!node.path("allocatedCandidates").isArray()||node.path("allocatedCandidates").size()>request.scope().components().size())throw invalid();
+         var allocated=new HashSet<String>();for(var candidate:node.path("allocatedCandidates")){if(!candidate.isTextual()||!allocated.add(candidate.textValue())||request.scope().components().stream().noneMatch(c->c.candidate().equals(candidate.textValue())))throw invalid();}
+-        if(!node.path("protectedMetadata").isArray()||node.path("protectedMetadata").size()>64)throw invalid();String previous="";var protectedPaths=new HashSet<String>();
++        if(!node.path("protectedMetadata").isArray()||node.path("protectedMetadata").size()>96)throw invalid();String previous="";var protectedPaths=new HashSet<String>();
+         for(var row:node.path("protectedMetadata")){exact(row,Set.of("path","kind","identitySha256"));String path=text(row,"path");DeploymentAgentIsolationPolicy.path(path);digest(text(row,"identitySha256"));if(path.compareTo(previous)<=0||!policy.protects(path)||!Set.of("ABSENT","DIRECTORY","REGULAR","SYMLINK","OTHER").contains(text(row,"kind")))throw invalid();previous=path;protectedPaths.add(path);}
+         for(var fs:node.path("filesystems")){exact(fs,Set.of("device","availableBytes","requiredBytes","reserveBytes"));String device=text(fs,"device");if(!device.matches("[0-9]{1,20}")||!demands.add(device))throw invalid();number(fs,"availableBytes");number(fs,"requiredBytes");number(fs,"reserveBytes");}
+         if(!node.path("memoryAvailableBytes").isNull())number(node,"memoryAvailableBytes");if(!node.path("cpuCount").isNull())integer(node,"cpuCount");
+@@ -196,7 +196,7 @@
+                 for unit in old['units']: candidates.update(matching(work,unit+'-'))
+                 if len(candidates)>16: refuse('LIMIT')
+                 for candidate in candidates: paths.update((work+'/'+candidate,work+'/'+candidate+'/.agent-task','/etc/systemd/system/windowstolinux-build-'+candidate+'.service'))
+-            if not paths or len(paths)>64: refuse('LIMIT')
++            if not paths or len(paths)>96: refuse('LIMIT')
+             result=[]
+             for path in sorted(paths):
+                 parent,name=path.rsplit('/',1);base=open_path(parent)
+@@ -331,7 +331,7 @@
+                 try: os.close(fd)
+                 except Exception: out.update(status='UNKNOWN',reason='UNCONFIRMED',stable=False)
+         result='AGENT_ISOLATION_PREFLIGHT='+canonical(out)+'\\n'
+-        if len(result.encode())>16384: sys.exit(65)
++        if len(result.encode())>24576: sys.exit(65)
+         sys.stdout.write(result)
+         """;
+ }
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+@@ -38,6 +38,7 @@
+ import gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentSession;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.*;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.recovery.evidence.DeploymentAgentActionLog;
++import gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.*;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.params.ParameterizedTest;
+ import org.junit.jupiter.params.provider.EnumSource;
+@@ -51,6 +52,8 @@
+     private boolean diagnosticCandidateSessionIdentityJourney;
+     private boolean isolationMissingPlanJourney, isolationMissingHelperJourney, isolationRefusalJourney, isolationUnknownJourney, isolationReadyJourney;
+     private boolean isolationCancelAfterCreateJourney;
++    private boolean isolationExistingToolchainJourney;
++    private UUID isolatedToolchainTask;
+ 
+     @Test
+     void isolatedHostCommandRequiresAcceptedPlanBeforeAnyReviewOrSend() throws Exception {
+@@ -88,6 +91,18 @@
+         isolationReadyJourney = true;
+         isolationCancelAfterCreateJourney = true;
+         runVerification(VerificationMode.APPROVE, false);
++    }
++
++    @Test
++    void isolatedRemoteToolsUsesExistingOnlyPreparationAfterControllerReady() throws Exception {
++        isolationReadyJourney = true;
++        isolationExistingToolchainJourney = true;
++        var blocked = assertThrows(ApiException.class, () -> runVerification(VerificationMode.APPROVE, false));
++        assertNotNull(isolatedToolchainTask, "Accept shutdown blocking only after this exact task passed every action-boundary assertion");
++        assertEquals(ProblemCode.BUSY, blocked.problem().code());
++        assertEquals("MOD_STOP_BLOCKED", blocked.problem().eventCode());
++        assertEquals(Map.of("ownerId", OWNER), blocked.problem().context());
++        assertEquals("Mod cleanup is blocked: Task " + isolatedToolchainTask + " still owns Mod resources", blocked.problem().message());
+     }
+ 
+     enum VerificationMode {
+@@ -156,6 +171,10 @@
+                 "package main\nimport \"net/http\"\nfunc main() { http.ListenAndServe(\"127.0.0.1:49283\", nil) }\n");
+             Files.writeString(Files.createDirectories(source.resolve("web")).resolve("server.mjs"),
+                 "import http from 'node:http';\nhttp.createServer((req, res) => res.end('web')).listen(49282);\n");
++            if (isolationExistingToolchainJourney) {
++                Files.writeString(source.resolve("backend/go.mod"), "module controlled/file-transfer\n\ngo 1.24.0\n");
++                Files.writeString(source.resolve("backend/go.sum"), "");
++            }
+         }
+         if (mode.name().startsWith("BUILD_"))
+             Files.writeString(Files.createDirectories(source.resolve("public")).resolve("index.html"), "<html>actual output</html>\n");
+@@ -205,6 +224,7 @@
+             }
+             if (failure.get() != null)
+                 throw new AssertionError("Controlled candidate verification failed", failure.get());
++            if (isolationExistingToolchainJourney) isolatedToolchainTask = handle.id();
+         }
+     }
+ 
+@@ -243,6 +263,10 @@
+ 
+         int isolationSends, isolationVerdicts;
+         int candidateQuerySends, candidateQueryVerdicts;
++        int controllerReadinessSends, existingPreparationSends, existingPreparationVerdicts;
++        final Set<UUID> toolchainGrants = new HashSet<>();
++        String existingPreparationExact = "";
++        UUID existingPreparationGrant;
+         Runnable requestCancel;
+         final Set<UUID> isolationActions = new HashSet<>(), isolationGrants = new HashSet<>();
+         final List<Long> isolationRequirements = new ArrayList<>();
+@@ -266,7 +290,17 @@
+             peer = proxy(RemoteSession.class, (p, m, a) -> switch (m.getName()) {
+                 case "facts" -> new RemoteFacts("Linux", "x86_64", "SHA256:" + "A".repeat(43));
+                 case "close" -> null;
+-                case "execute" -> transport((CommandRequest) a[0]);
++                case "execute" -> {
++                    var request = (CommandRequest) a[0];
++                    if (isolationExistingToolchainJourney && Arrays.equals(request.stdin(), DeploymentAgentToolchainPrograms
++                        .existingController(gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original()).getBytes(StandardCharsets.UTF_8))) {
++                        assertEquals(1, existingPreparationVerdicts, "The exact existing-only input needs its independent APP verdict");
++                        assertEquals(2, toolchainGrants.size(), "Readiness and preparation receive separate fresh grants");
++                        assertEquals(existingPreparationGrant, ((gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) a[1]).id());
++                        assertEquals(existingPreparationExact, gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request).exactAction());
++                    }
++                    yield transport(request);
++                }
+                 case "upload" -> {
+                     var transfer = (TransferRequest) a[0];
+                     uploads++;
+@@ -303,6 +337,20 @@
+                         .equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
+                         @SuppressWarnings("unchecked") var approved = (OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>) result;
+                         assertTrue(isolationGrants.add(approved.value().orElseThrow().id()), "Every preflight needs a fresh host grant");
++                    }
++                    if (isolationExistingToolchainJourney && m.getName().equals("approveReviewedAction")) {
++                        var intent = (ActionIntent) a[0];
++                        String operation = intent.semantics().orElseThrow().operation();
++                        if (Set.of("deployment.agent.toolchain.controller.readiness.v1", "deployment.agent.toolchain.prepare.v1").contains(operation)) {
++                            @SuppressWarnings("unchecked") var approved = (OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>) result;
++                            UUID grant = approved.value().orElseThrow().id();
++                            assertFalse(isolationGrants.contains(grant));
++                            assertTrue(toolchainGrants.add(grant), "The current toolchain command needs a fresh exact host grant");
++                            if (operation.equals("deployment.agent.toolchain.prepare.v1")) {
++                                existingPreparationExact = intent.exactAction();
++                                existingPreparationGrant = grant;
++                            }
++                        }
+                     }
+                     return result;
+                 } catch (InvocationTargetException error) {
+@@ -430,6 +478,28 @@
+                         assertEquals(mode == VerificationMode.CAPACITY_UNSETTLED, events.stream().anyMatch(event -> event.type().equals(DeploymentAgentCandidateCapacityException.EVENT)));
+                         assertFalse(DeploymentAgentActionLog.effectsSettled(events));
+                     }
++                    return;
++                }
++                if (isolationExistingToolchainJourney) {
++                    if (existingPreparationSends != 1)
++                        throw new AssertionError("RemoteTools did not reach the approved existing-only preparation after controller READY", error);
++                    assertSame(stop, error, "Stop at the actual prepare boundary without inventing a toolchain receipt");
++                    assertFalse(task.cancelToken().requested());
++                    assertEquals(1, controllerReadinessSends);
++                    assertEquals(1, existingPreparationVerdicts);
++                    assertEquals(2, toolchainGrants.size());
++                    assertEquals(0, installs);
++                    assertEquals(1, isolationSends);
++                    assertEquals(1, creates);assertEquals(1, candidateQuerySends);assertEquals(1, uploads);
++                    assertEquals(1, verifyGrants);assertEquals(1, verifySends);assertEquals(1, opens);
++                    var events = journal.events(task);
++                    assertEquals("RUNNING", journal.find(task).orElseThrow().state(),
++                        "This direct Session callback stops before Workflow.failed classifies its outer result");
++                    assertTrue(events.stream().anyMatch(event -> event.type().equals("PREPARE_RESULT")));
++                    assertTrue(events.stream().anyMatch(event -> event.type().equals("CANDIDATE")));
++                    assertTrue(events.stream().anyMatch(event -> event.type().equals("CAPABILITY_EXECUTING") && event.detail().equals("prepare_tools")));
++                    assertFalse(events.stream().anyMatch(event -> event.type().equals("CAPABILITY_RESULT")));
++                    assertFalse(DeploymentAgentActionLog.effectsSettled(events));
+                     return;
+                 }
+                 if (isolationCancelAfterCreateJourney) {
+@@ -687,6 +757,12 @@
+             }
+             if (input.at("/currentRequest/operation").asText().equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) isolationVerdicts++;
+             if (input.at("/currentRequest/operation").asText().equals("deployment.candidate.query.v1")) candidateQueryVerdicts++;
++            if (isolationExistingToolchainJourney && input.at("/currentRequest/operation").asText().equals("deployment.agent.toolchain.prepare.v1")) {
++                assertEquals(1, controllerReadinessSends);
++                assertEquals(fixtureDigest(DeploymentAgentToolchainPrograms.existingController(
++                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())), input.at("/executableInput/stdin/sha256").asText());
++                existingPreparationVerdicts++;
++            }
+             return verdict("APPROVE");
+         }
+ 
+@@ -827,6 +903,19 @@
+                 if (pending.isEmpty()) basis.add("o1").add("o2");else pending.forEach(id -> basis.add(id.asText()));
+                 assessment.put("suitability", "Use both observed sources").put("differences", "Candidates not yet observed")
+                     .put("resolution", "RESOLVED").put("decision", "Prepare only the Go backend first");
++            } else if (isolationExistingToolchainJourney && turn == 4) {
++                tool = "analyze";
++                args = JSON.createObjectNode().put("component", "backend").put("type", "GO_SERVICE");
++            } else if (isolationExistingToolchainJourney && turn == 5) {
++                tool = "prepare_tools";
++                args = JSON.createObjectNode().put("component", "backend");
++                args.putObject("recipe").put("version", "1.24").put("primary", "backend").put("secondary", "main.go")
++                    .put("jvmTarget", "").put("servicePort", 49283);
++                var assessment = args.putObject("assessment");
++                var basis = assessment.putArray("basis");
++                JSON.readTree(request.messages().getLast().text()).at("/state/judgement/pending").forEach(id -> basis.add(id.asText()));
++                assessment.put("suitability", "Use the current Go module analysis").put("differences", "Existing immutable toolchain only")
++                    .put("resolution", "RESOLVED").put("decision", "Probe the existing Go toolchain without shared installation");
+             } else {
+                 assertEquals(4, turn);
+                 tool = "remote_read";
+@@ -840,6 +929,38 @@
+         }
+ 
+         OperationResult<CommandResult> transport(CommandRequest request) throws Exception {
++            if (isolationExistingToolchainJourney) {
++                var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++                String input = new String(request.stdin(), StandardCharsets.UTF_8);
++                if (input.equals(DeploymentAgentToolchainPrograms.resolver(layout))) {
++                    var match = java.util.regex.Pattern.compile("'resolve' 'GO' '1.24' '-' '([0-9]+)' '([0-9a-f]{32})'$").matcher(request.script());
++                    assertTrue(match.find());
++                    var release = new TreeMap<String, String>();
++                    release.put("format", "WTL_AGENT_RELEASE_1");release.put("operation", match.group(2));release.put("ecosystem", "GO");
++                    release.put("branch", "1.24");release.put("requestedExact", "-");release.put("version", "1.24.13");
++                    release.put("url", "https://go.dev/dl/go1.24.13.linux-amd64.tar.gz");release.put("algorithm", "sha256");release.put("digest", "c".repeat(64));
++                    release.put("layout", "archive");release.put("platform", "linux-x86_64");release.put("resolverSourceSha256", fixtureDigest(input));
++                    String encoded = Base64.getEncoder().encodeToString(JSON.writeValueAsBytes(release));
++                    return reply("TOOLCHAIN_RELEASE=" + encoded + "\n");
++                }
++                if (request.script().contains(" 'readiness' '" + task.id() + "' '")) {
++                    var parser = DeploymentAgentToolchainProgramStore.class.getDeclaredMethod("arguments", String.class,
++                        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.class);
++                    parser.setAccessible(true);
++                    @SuppressWarnings("unchecked") var arguments = (List<String>) parser.invoke(null, request.script(), layout);
++                    assertEquals(List.of("readiness", task.id().toString()), arguments.subList(0, 2));
++                    controllerReadinessSends++;
++                    return reply("AGENT_CONTROLLER_STORE=" + DeploymentAgentToolchainProgramStoreTest.observation(arguments.get(1), arguments.get(2), true) + "\n");
++                }
++                if (input.equals(DeploymentAgentToolchainPrograms.existingController(layout))) {
++                    assertEquals(1, controllerReadinessSends);
++                    assertEquals(1, existingPreparationVerdicts);
++                    assertArrayEquals(DeploymentAgentToolchainPrograms.existingController(layout).getBytes(StandardCharsets.UTF_8), request.stdin());
++                    assertTrue(request.script().contains("'prepare' 'GO' '1.24' '-'"));
++                    existingPreparationSends++;
++                    throw stop;
++                }
++            }
+             if (request.script().startsWith("wtl_isolation='")) {
+                 assertTrue(isolationRefusalJourney || isolationUnknownJourney || isolationReadyJourney);
+                 var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
+@@ -86,31 +86,40 @@
+         }
+     }
+ 
+-    @Test void completeThreeRetainedNamespacesStayWithinBoundedReceipt(){
+-        var policy=threeRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++    @Test void completeFourRetainedNamespacesStayWithinBoundedReceipt(){
++        var policy=fourRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
+         try(var request=probe.request(scope(policy,"a"),UUID.randomUUID())){
++            assertEquals(24576,request.command().outputLimitBytes());
++            try(var oldLimit=new CommandRequest(request.command().script(),request.command().stdin(),request.command().timeout(),16384)){
++                assertThrows(IllegalArgumentException.class,()->DeploymentAgentIsolationProbe.decode(oldLimit,layout));
++            }
+             var ready=receipt(request,true);var rows=ready.withArray("protectedMetadata");
+             for(String path:discoveredRetainedPaths())rows.addObject().put("path",path).put("kind","DIRECTORY").put("identitySha256","d".repeat(64));
+-            sortProtectedRows(ready);assertEquals(59,ready.path("protectedMetadata").size());
+-            assertTrue((DeploymentAgentIsolationProbe.FRAME+ready+"\n").getBytes(StandardCharsets.UTF_8).length<16384);
++            sortProtectedRows(ready);assertEquals(78,ready.path("protectedMetadata").size());
++            assertTrue((DeploymentAgentIsolationProbe.FRAME+ready+"\n").getBytes(StandardCharsets.UTF_8).length<24576);
+             assertEquals(ready.toString(),probe.parse(request,actual(ready)).canonicalJson());
+             var missing=ready.deepCopy();missing.withArray("protectedMetadata").remove(0);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,missing.toString()));
+-            var excess=ready.deepCopy();for(int i=0;i<6;i++)excess.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot("wtl-agent-file-transfer-v0wjwq48s-backend")+"/extra-"+i).put("kind","ABSENT").put("identitySha256","d".repeat(64));
+-            sortProtectedRows(excess);assertEquals(65,excess.path("protectedMetadata").size());assertTrue(excess.toString().getBytes(StandardCharsets.UTF_8).length<16384);
++            var excess=ready.deepCopy();for(int i=0;i<19;i++)excess.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot("wtl-agent-file-transfer-v0wjwq48s-backend")+"/extra-"+i).put("kind","ABSENT").put("identitySha256","d".repeat(64));
++            sortProtectedRows(excess);assertEquals(97,excess.path("protectedMetadata").size());assertTrue(excess.toString().getBytes(StandardCharsets.UTF_8).length<24576);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,excess.toString()));
+             var foreign=ready.deepCopy();((ObjectNode)foreign.path("protectedMetadata").get(0)).put("path","/foreign/namespace");sortProtectedRows(foreign);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,foreign.toString()));
+             var unsorted=ready.deepCopy();var first=unsorted.withArray("protectedMetadata").remove(0);unsorted.withArray("protectedMetadata").add(first);
+             assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,unsorted.toString()));
+-            assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request," ".repeat(16385)));
++            var oversized=ready.deepCopy();for(int i=0;i<18;i++)oversized.withArray("protectedMetadata").addObject().put("path",layout.applicationRoot("wtl-agent-file-transfer-3g6o4vqic-backend")+"/oversize-"+i+"x".repeat(400)).put("kind","ABSENT").put("identitySha256","d".repeat(64));
++            sortProtectedRows(oversized);assertEquals(96,oversized.path("protectedMetadata").size());
++            for(var row:oversized.path("protectedMetadata")){String path=row.path("path").textValue();DeploymentAgentIsolationPolicy.path(path);assertTrue(policy.protects(path));}
++            assertTrue(oversized.toString().getBytes(StandardCharsets.UTF_8).length>24576);
++            assertThrows(IllegalArgumentException.class,()->probe.validateReceipt(request,oversized.toString()));
++            assertThrows(IllegalArgumentException.class,()->probe.parse(request,actual(oversized)));
+             var truncated=new OperationResult<>(TaskResult.SUCCEEDED,Optional.of(new CommandResult(Optional.of(0),DeploymentAgentIsolationProbe.FRAME+ready+"\n","",true)),Optional.<Problem>empty());
+             assertThrows(IllegalArgumentException.class,()->probe.parse(request,truncated));
+         }
+     }
+ 
+     @Test void fixedPythonProtectedProbeUsesSameFiniteMetadataBound()throws Exception{
+-        var policy=threeRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
++        var policy=fourRetainedNamespaces();var probe=new DeploymentAgentIsolationProbe(policy);
+         String fixture="""
+             import ast,sys,json,hashlib,re
+             data=json.load(sys.stdin)
+@@ -125,6 +134,8 @@
+             def matching(root,prefix):
+                 if root==roots['stateRoot']+'/work' and prefix=='wtl-agent-file-transfer-8pqtgvbwc-':
+                     return ['wtl-agent-file-transfer-8pqtgvbwc-web-525f7bab44afa87d']
++                if extra_releases and root==roots['stateRoot']+'/work' and prefix=='wtl-agent-file-transfer-3g6o4vqic-':
++                    return ['wtl-agent-file-transfer-3g6o4vqic-web-525f7bab44afa87d']
+                 if root==roots['applicationsRoot']+'/wtl-agent-file-transfer-8pqtgvbwc-backend/releases':
+                     return ['39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597']+[format(i,'064x') for i in range(extra_releases)]
+                 return []
+@@ -135,26 +146,26 @@
+             namespace=dict(p=data['policy'],json=json,hashlib=hashlib,re=re,refuse=refuse,matching=matching,open_path=open_path,unit_metadata=lambda name:{'LoadState':'not-found'})
+             exec(compile(ast.Module(body=selected,type_ignores=[]),'<fixed-protected-probe>','exec'),namespace)
+             rows=namespace['protected']()
+-            assert len(rows)==59 and [row['path'] for row in rows]==sorted(data['paths'])
++            assert len(rows)==78 and [row['path'] for row in rows]==sorted(data['paths'])
+             before=reads
+-            extra_releases=3
++            extra_releases=8
+             try: namespace['protected']()
+             except Refused as error: assert str(error)=='LIMIT'
+-            else: raise AssertionError('65 protected rows were accepted')
++            else: raise AssertionError('97 protected rows were accepted')
+             assert reads==before, 'over-limit enumeration must refuse before metadata reads'
+             print(json.dumps(rows,separators=(',',':')))
+             """;
+         var paths=new TreeSet<>(policy.protectedMandatoryPaths());paths.addAll(discoveredRetainedPaths());
+         var input=JSON.createObjectNode().put("source",probe.source());input.set("policy",policy.document());input.set("paths",JSON.valueToTree(paths));
+         var process=new ProcessBuilder(System.getProperty("managed.test.python","python"),"-I","-S","-c",fixture).redirectErrorStream(true).start();
+-        var reader=java.util.concurrent.Executors.newSingleThreadExecutor();var outputBytes=reader.submit(()->process.getInputStream().readNBytes(16385));
++        var reader=java.util.concurrent.Executors.newSingleThreadExecutor();var outputBytes=reader.submit(()->process.getInputStream().readNBytes(24577));
+         try{
+             try(var out=process.getOutputStream()){out.write(JSON.writeValueAsBytes(input));}
+             assertTrue(process.waitFor(30,java.util.concurrent.TimeUnit.SECONDS),"controlled Python protected probe did not exit");
+             String output=new String(outputBytes.get(5,java.util.concurrent.TimeUnit.SECONDS),StandardCharsets.UTF_8);assertEquals(0,process.exitValue(),output);
+             try(var request=probe.requestProtectedRecheck(scope(policy,"a"),UUID.randomUUID(),UUID.randomUUID())){
+                 var observed=receipt(request,false);observed.set("protectedMetadata",JSON.readTree(output));
+-                assertEquals(59,observed.path("protectedMetadata").size());assertEquals(observed.toString(),probe.parse(request,actual(observed)).canonicalJson());
++                assertEquals(78,observed.path("protectedMetadata").size());assertEquals(observed.toString(),probe.parse(request,actual(observed)).canonicalJson());
+             }
+         }finally{
+             if(process.isAlive()){process.destroyForcibly();assertTrue(process.waitFor(10,java.util.concurrent.TimeUnit.SECONDS));}
+@@ -162,12 +173,12 @@
+         }
+     }
+ 
+-    private DeploymentAgentIsolationPolicy threeRetainedNamespaces(){
++    private DeploymentAgentIsolationPolicy fourRetainedNamespaces(){
+         var applications=new ArrayList<ProtectedApplication>();
+-        String[] names={"wtl-agent-file-transfer-8pqtgvbwc","wtl-agent-file-transfer-ufjfoeitg","wtl-agent-file-transfer-v0wjwq48s"};
+-        String[] tasks={"072bc074-4bce-4c14-b425-f2ff965c7d40","4255f545-7acb-4b47-a331-45c977d086dd","c236a665-56e5-44b3-8acb-bfe167d97b97"};
++        String[] names={"wtl-agent-file-transfer-8pqtgvbwc","wtl-agent-file-transfer-ufjfoeitg","wtl-agent-file-transfer-v0wjwq48s","wtl-agent-file-transfer-3g6o4vqic"};
++        String[] tasks={"072bc074-4bce-4c14-b425-f2ff965c7d40","4255f545-7acb-4b47-a331-45c977d086dd","c236a665-56e5-44b3-8acb-bfe167d97b97","d8de6c5a-2b8c-42bd-8628-4bba4f88216b"};
+         for(int i=0;i<names.length;i++)applications.add(new ProtectedApplication(UUID.fromString(tasks[i]),names[i],layout.digest(),Set.of(names[i]+"-backend",names[i]+"-web"),i==1?Set.of():Set.of(names[i]+"-backend-525f7bab44afa87d"),Map.of(),Set.of()));
+-        return DeploymentAgentIsolationPolicy.trusted("three-retained-namespaces",application,layout,applications).requiringPorts(ports).minimumResources(memory,1);
++        return DeploymentAgentIsolationPolicy.trusted("four-retained-namespaces",application,layout,applications).requiringPorts(ports).minimumResources(memory,1);
+     }
+     private Set<String> discoveredRetainedPaths(){
+         String unit="wtl-agent-file-transfer-8pqtgvbwc-web",candidate=unit+"-525f7bab44afa87d",release=layout.applicationRoot("wtl-agent-file-transfer-8pqtgvbwc-backend")+"/releases/39f2ab6846947132163fa93814283b91df81817416110b90ffedcba6c901a597";
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -4037,6 +4037,7 @@
+                 "DeploymentStaticLiveAcceptanceTest#fullAgentMonitorRetainsSafeCapacityAndUnableDiagnosticsWithoutWideningScope",
+                 "DeploymentStaticLiveAcceptanceTest#monitorStopUsesProductCancellationWithoutCallingModelsOrServer",
+                 "DeploymentStaticLiveAcceptanceTest#isolationPostcheckStopCancelsQueryWithoutCallingModelsOrServer",
++                "DeploymentStaticLiveAcceptanceTest#queuedIsolationPostcheckStopCancelsRealTaskAndReleasesResources",
+                 "DeploymentStaticLiveAcceptanceTest#monitorStopUsesProductCancellationWithoutCallingModelsOrServer+isolationPostcheckStopCancelsQueryWithoutCallingModelsOrServer")
+             .contains(System.getProperty("test", ""));
+     }
+@@ -4681,7 +4682,7 @@
+ 
+     @Override
+     protected PlatformRuntime open() throws Exception {
+-        if (isolatedInputBridge()) return super.open();
++        if (isolatedInputBridge() || isolatedStopDiagnostics()) return super.open();
+         var runtime = PlatformRuntime.open(root.resolve("data"), currentUserProtection());
+         if (runtime.security().securityState().configured()) runtime.security().unlock(PASSWORD.toCharArray());
+         else runtime.security().setupAndUnlock(PASSWORD.toCharArray(), PASSWORD.toCharArray());
+@@ -5487,6 +5488,81 @@
+     @Test
+     void isolationPostcheckStopCancelsQueryWithoutCallingModelsOrServer() throws Exception {
+         assertMonitorStopCancels(DeploymentApplicationsService.QUERY_TASK, true);
++    }
++
++    @Test
++    @EnabledIf("isolatedStopDiagnostics")
++    void queuedIsolationPostcheckStopCancelsRealTaskAndReleasesResources() throws Exception {
++        assertFalse(Boolean.getBoolean("managed.runtime.staticLive"));
++        assertFalse(Boolean.getBoolean("managed.runtime.agentLive"));
++        Path stopFile = Files.createTempFile(workspace().resolve(".ai-workspace/agent-live-evidence"), "postquery-local-", ".stop");
++        Files.delete(stopFile);
++        String previous = System.getProperty("managed.live.stopAgentFile");
++        var holderStarted = new java.util.concurrent.CountDownLatch(1);
++        var releaseHolder = new java.util.concurrent.CountDownLatch(1);
++        var handlers = new AtomicInteger();
++        try {
++            enable();
++            try (var runtime = open()) {
++                start(runtime, true);
++                runtime.servers().saveServerProfile(ServerProfile.fromStored(
++                    new gold.debug.windowstolinux.app.db.server.StoredServerProfile(SERVER, "127.0.0.1", 22,
++                        "fixture", "postquery-local-only", "No remote connection")), "public-local-fixture".toCharArray());
++                var tasks = runtime.modContexts().get(OWNER).context().tasks();
++                var holder = tasks.<Void>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                    "isolation-local-server-holder", "Hold the local server claim without connecting", List.of(SERVER), true), task -> {
++                    holderStarted.countDown();
++                    assertTrue(releaseHolder.await(20, TimeUnit.SECONDS), "Local holder must be released");
++                    return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                });
++                TaskHandle<Void> post = null;
++                try {
++                    assertTrue(holderStarted.await(10, TimeUnit.SECONDS));
++                    assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.RUNNING, holder.snapshot().state());
++                    assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + holder.id()
++                        + "' AND resource_kind='SERVER' AND released_at IS NULL"));
++                    post = tasks.<Void>submit(isolationPostcheckRequest(), task -> {
++                        handlers.incrementAndGet();
++                        return new OperationResult<Void>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
++                    });
++                    assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.QUEUED, post.snapshot().state());
++                    assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task WHERE task_id='" + post.id() + "' AND cancellable=TRUE"));
++                    assertFalse(post.completion().toCompletableFuture().isDone());
++                    Files.writeString(stopFile, "AUTOMATIC_CLOSE\n", java.nio.file.StandardOpenOption.CREATE_NEW);
++                    System.setProperty("managed.live.stopAgentFile", stopFile.toString());
++                    var queued = post;
++                    var stopped = assertThrows(AssertionError.class, () -> completed(queued, 1, true));
++                    assertTrue(stopped.getMessage().contains("CANCELLED"), stopped::getMessage);
++                    assertEquals(TaskResult.CANCELLED, post.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
++                    assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, post.snapshot().state());
++                    assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + post.id() + "' AND released_at IS NULL"));
++                    assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + post.id() + "' AND resource_kind='CONNECTION'"));
++                    assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.RUNNING, holder.snapshot().state());
++                    assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE task_id='" + holder.id()
++                        + "' AND resource_kind='SERVER' AND released_at IS NULL"));
++                    assertEquals(0, handlers.get());
++                    assertEquals(0, modelCalls.get());
++                    assertEquals(0, approvalCalls.get());
++                    assertTrue(humanQuestions.isEmpty());
++                    var unverified = assertThrows(AssertionError.class, this::requireIsolationPostcheckAllowed);
++                    assertTrue(unverified.getMessage().contains("Stop file"));
++                } finally {
++                    try {
++                        if (post != null && !post.completion().toCompletableFuture().isDone()) post.requestCancel();
++                    } finally {
++                        releaseHolder.countDown();
++                        assertEquals(TaskResult.SUCCEEDED, holder.completion().toCompletableFuture().get(10, TimeUnit.SECONDS).outcome());
++                    }
++                }
++                assertEquals(0, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
++                assertEquals(0, runtime.security().securityState().activeTasks());
++            }
++        } finally {
++            releaseHolder.countDown();
++            Files.deleteIfExists(stopFile);
++            if (previous == null) System.clearProperty("managed.live.stopAgentFile");
++            else System.setProperty("managed.live.stopAgentFile", previous);
++        }
+     }
+ 
+     private void assertMonitorStopCancels(String type, boolean cancelIsolationPostcheck) throws Exception {
+@@ -6593,6 +6669,8 @@
+             "The additional retained UNKNOWN must keep the original protection set");
+         assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown281") || Boolean.getBoolean("managed.live.isolatedUnknown280"),
+             "The interrupted candidate must keep both earlier UNKNOWN protection sets");
++        assertTrue(!Boolean.getBoolean("managed.live.isolatedUnknown282") || Boolean.getBoolean("managed.live.isolatedUnknown281"),
++            "The prepared candidate must keep all earlier UNKNOWN protection sets");
+         var isolation = selectedMode == Mode.AGENT ? retainedUnknownIsolation(project, id, webPort) : null;
+         Map<String, String> requirements = selectedMode == Mode.AGENT ? liveAgentRequirements(project, id, host, webPort) : Map.of();
+         Path source = copyFixture(project);
+@@ -6786,8 +6864,7 @@
+         var admission = workflow.isolationAdmission().orElseThrow();
+         var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(policy);
+         var post = completed(context.tasks().<gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.Receipt>submit(
+-            new gold.debug.windowstolinux.appapi.task.model.TaskRequest(DeploymentApplicationsService.QUERY_TASK,
+-                "Verify retained UNKNOWN protected metadata after isolated acceptance", List.of(SERVER), false), task -> {
++            isolationPostcheckRequest(), task -> {
+                 gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, policy.layout());
+                 String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
+                 try (var authority = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
+@@ -6820,14 +6897,19 @@
+             + " retainedOriginalReconciliationRequested=false evidence=" + file);
+     }
+ 
++    private gold.debug.windowstolinux.appapi.task.model.TaskRequest isolationPostcheckRequest() {
++        return new gold.debug.windowstolinux.appapi.task.model.TaskRequest(DeploymentApplicationsService.QUERY_TASK,
++            "Verify retained UNKNOWN protected metadata after isolated acceptance", List.of(SERVER), true);
++    }
++
+     private void requireIsolationPostcheckAllowed() throws Exception {
+         String configured = System.getProperty("managed.live.stopAgentFile", "");
+         if (configured.isBlank()) return;
+         Path stop = Path.of(configured).toAbsolutePath().normalize();
+         assertTrue(stop.startsWith(workspace().resolve(".ai-workspace/agent-live-evidence")));
+         if (Files.exists(stop)) {
+-            System.out.println("AI_LIVE_ISOLATION_PROTECTED_NOT_VERIFIED reason=USER_REQUESTED_STOP");
+-            fail("User stop prevents the protected metadata recheck; isolation remains unverified");
++            System.out.println("AI_LIVE_ISOLATION_PROTECTED_NOT_VERIFIED reason=STOP_FILE_PRESENT");
++            fail("Stop file prevents the protected metadata recheck; isolation remains unverified");
+         }
+     }
+ 
+@@ -6871,6 +6953,17 @@
+                     "source", "296967551e9c7a93b61165be8d03198192c94f4b1544f41e5d16ae75e8672fd3"),
+                 Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49282),
+                     new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49283))));
++        }
++        if (Boolean.getBoolean("managed.live.isolatedUnknown282")) {
++            String retainedApplication = "wtl-agent-file-transfer-3g6o4vqic";
++            protectedApplications.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.ProtectedApplication(
++                java.util.UUID.fromString("d8de6c5a-2b8c-42bd-8628-4bba4f88216b"), retainedApplication, oldLayout,
++                Set.of(retainedApplication + "-backend", retainedApplication + "-web"),
++                Set.of(retainedApplication + "-backend-525f7bab44afa87d"),
++                Map.of("accepted-plan", "9b31b538593f3fb9a6199789066b414c893e5880119aabd9b2ac6e375d73cbf1",
++                    "source", "296967551e9c7a93b61165be8d03198192c94f4b1544f41e5d16ae75e8672fd3"),
++                Set.of(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49284),
++                    new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", 49285))));
+         }
+         var ports = new java.util.HashSet<gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port>();
+         ports.add(new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy.Port("TCP", webPort));
