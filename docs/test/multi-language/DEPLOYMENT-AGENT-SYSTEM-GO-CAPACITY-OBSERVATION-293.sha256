@@ -1,0 +1,5 @@
+39eb9a25bc6c80c5fa7fc73097b4ac43fbca1d432befbe73b0d084d3e80f9006  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+37f66f99d2563bccab8edc8f4eb807f9da760d0aced795cc236ae1d30a37b9ed  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
+c0831331cd591c066a67f5b4ce8c865b413e4a14dad11dbca28aaf0627c4e4ed  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/system-go-capacity-observation.py
+05194c4b57552b3b35b40ad91233b0a759933c21fe01cbbed94ca68049b14454  docs/test/multi-language/DEPLOYMENT-AGENT-SYSTEM-GO-CAPACITY-OBSERVATION-293.patch
+ac390ebbe9e3082e155a8006893c60cedb968aa526a8aed410d0051c95ebd306  docs/test/multi-language/DEPLOYMENT-AGENT-SYSTEM-GO-CAPACITY-OBSERVATION-293.md

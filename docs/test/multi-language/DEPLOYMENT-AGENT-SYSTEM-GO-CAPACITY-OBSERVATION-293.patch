@@ -1,0 +1,473 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -6078,6 +6078,117 @@
+     }
+ 
+     @Test
++    @EnabledIfSystemProperty(named = "managed.runtime.systemGoCapacityObservation", matches = "true")
++    void observesSystemGoAndCapacityMetadataThroughNativeApproval() throws Exception {
++        assertEquals("DeploymentStaticLiveAcceptanceTest#observesSystemGoAndCapacityMetadataThroughNativeApproval", System.getProperty("test"));
++        root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
++        assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
++        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
++        assertEquals(java.util.UUID.fromString("88f305d6-2fe6-4e9e-ad9f-927e5311c1cd"), original);
++        connectionOnly = false; aiEnabled = true; agentMode = true; agentApproval = "AUTOMATIC"; agentRemember = false;
++        try (var runtime = open()) {
++            start(runtime, true);
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            var observed = completed(context.tasks().<com.fasterxml.jackson.databind.JsonNode>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "deployment-system-go-capacity-observation", "METADATA_ONLY: standard Go declarations and captured-root filesystem capacity; one pure command", List.of(SERVER), true), task -> {
++                var prior = context.tasks().findArchived(original, task).orElseThrow();
++                assertEquals("deployment-sdk-metadata-observation", prior.type());
++                assertEquals(OWNER, prior.ownerId()); assertEquals(VERSION, prior.ownerVersion());
++                assertEquals(Optional.of(TaskResult.SUCCEEDED), prior.outcome());
++                var server = new ServerId(SERVER);
++                var profile = context.servers().get(server, task);
++                assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
++                String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
++                var selected = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
++                    gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task, selected);
++                var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(context.tasks(), task);
++                assertEquals(selected, layout, "Use the explicitly captured current layout, never an assumed default");
++                var paths = layout.paths();
++                var roots = Map.of("helperDirectory", paths.helperDirectory(), "applicationsRoot", paths.applicationsRoot(),
++                    "stateRoot", paths.stateRoot(), "configurationRoot", paths.configurationRoot(), "dataRoot", paths.dataRoot());
++                Path source = workspace().resolve("src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard");
++                var selection = context.file().sources().selectDirectory(source, task);
++                try (var snapshot = context.file().snapshots().snapshot(selection,
++                    new gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest(List.of("system-go-capacity-observation.py"), 65536), task)) {
++                    var browser = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser(snapshot.directory(), snapshot.sha256());
++                    String observer = "ROOTS = " + JSON.writeValueAsString(roots) + "\n"
++                        + Files.readString(snapshot.directory().resolve("system-go-capacity-observation.py"), java.nio.charset.StandardCharsets.UTF_8);
++                    try (var authority = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
++                        context, task, server, revision, "AUTOMATIC", false,
++                        "New pure METADATA_ONLY request: four standard Go paths, bounded trusted links and VERSION first-line declarations; fstatvfs of five captured roots or nearest trusted existing ancestors. No SDK binary reads/execution, install/PROBE/prepare/candidate, remote setup or receipt writes; broad host-probe is not the canonical baseline or READY");
++                         var session = context.linux().connect(server, task)) {
++                        assertEquals(Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint")), session.facts().fingerprint());
++                        var approval = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(context, task,
++                            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence() {
++                                public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding() {
++                                    return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
++                                        server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
++                                }
++                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-system-go-capacity-observer", browser); }
++                                public Object receipts() { return Map.of("purpose", "SYSTEM_GO_CAPACITY_METADATA_ONLY", "prerequisiteTask", original.toString(),
++                                    "prerequisiteResult", "SUCCEEDED:SDK_METADATA_ONLY", "capturedFsRoots", roots, "capturedLayoutSha256", layout.digest(),
++                                    "sdkExecutions", 0, "remoteProductSetupOrReceiptWrites", false,
++                                    "meaning", "Go attributes and VERSION declarations are not execution/compatibility evidence; free-space samples are not reservations or authorization to change layout"); }
++                                public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
++                                    return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(),
++                                        "publicSourceSnapshotId", snapshot.id().toString(), "capturedLayoutSha256", layout.digest());
++                                }
++                            });
++                        var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(
++                            context, context.interaction(), task, "AUTOMATIC", false, () -> revision, null,
++                            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> approval);
++                        try (var request = sdkMetadataRequest(observer)) {
++                            var targets = new java.util.HashSet<gold.debug.windowstolinux.appapi.task.action.ActionTarget>();
++                            targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", task.id().toString()));
++                            for (String candidate : List.of("/usr/local/bin/go", "/usr/bin/go", "/bin/go", "/usr/local/go/bin/go"))
++                                targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "system-go-candidate", candidate));
++                            roots.values().forEach(path -> targets.add(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "captured-fs-root", path)));
++                            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, revision, request).withSemantics(
++                                new gold.debug.windowstolinux.appapi.task.action.ActionSemantics("deployment.candidate.host-probe.v1", targets));
++                            OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> review;
++                            try {
++                                review = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(
++                                    reviewed.interaction(), intent, request, task);
++                            } catch (ApiException denied) {
++                                if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
++                                    || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
++                                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, denied);
++                                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
++                            }
++                            if (review.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
++                            if (review.value().isEmpty()) return sdkMetadataUnknown();
++                            System.out.println("SYSTEM_GO_CAPACITY_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
++                            var result = session.execute(request, review.value().orElseThrow());
++                            if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
++                            if (result.value().isEmpty()) return sdkMetadataUnknown();
++                            var value = result.value().orElseThrow();
++                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty()) return sdkMetadataUnknown();
++                            if (value.exitCode().orElseThrow() != 0)
++                                return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
++                                    "SYSTEM_GO_CAPACITY_METADATA_NONZERO", "The pure metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
++                            var lines = value.stdout().lines().toList();
++                            if (lines.size() != 1 || !lines.getFirst().startsWith("SYSTEM_GO_CAPACITY_METADATA=")) return sdkMetadataUnknown();
++                            var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("SYSTEM_GO_CAPACITY_METADATA=".length()));
++                            gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
++                                Set.of("schema", "mode", "status", "go", "capacities", "filesystemGroups", "sdkExecutions", "meaning"));
++                            if (!metadata.path("schema").isInt() || metadata.path("schema").intValue() != 1
++                                || !metadata.path("mode").asText().equals("METADATA_ONLY") || !metadata.path("status").asText().equals("OBSERVED")
++                                || !metadata.path("sdkExecutions").isInt() || metadata.path("sdkExecutions").intValue() != 0
++                                || !metadata.path("go").isArray() || metadata.path("go").size() != 4
++                                || !metadata.path("capacities").isArray() || metadata.path("capacities").size() != roots.size()
++                                || !metadata.path("filesystemGroups").isObject()) return sdkMetadataUnknown();
++                            return success(metadata);
++                        }
++                    }
++                } finally { context.file().closeTaskResources(task); }
++            }), 20);
++            assertEquals(1, reviewedActions.get(), "The sole pure Go/capacity command requires independent approval and a fresh exact grant");
++            System.out.println("SYSTEM_GO_CAPACITY_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
++        }
++    }
++
++    @Test
+     void observesCandidateCapacityThroughProduct() throws Exception {
+         connectionOnly = false;
+         enable();
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
+@@ -57,4 +57,127 @@
+             if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, TimeUnit.SECONDS)); }
+         }
+     }
++    @Test
++    void systemGoAndCapacityObserverBoundsLinksVersionAndFilesystemEvidence() throws Exception {
++        var source = Path.of(getClass().getResource("system-go-capacity-observation.py").toURI());
++        var process = new ProcessBuilder(System.getProperty("managed.python.executable", "python"), "-I", "-S", "-B", "-", source.toString())
++            .redirectErrorStream(true).start();
++        try {
++            try (var input = process.getOutputStream()) {
++                input.write("""
++                    import json, os, pathlib, posixpath, stat, sys, types
++                    from contextlib import ExitStack
++                    from unittest.mock import patch
++                    def rejected(action):
++                        try: action()
++                        except ValueError: return
++                        raise AssertionError('Untrusted or unbounded metadata was accepted')
++                    with ExitStack() as stack:
++                        for index, flag in enumerate(('O_DIRECTORY', 'O_NOFOLLOW', 'O_CLOEXEC', 'O_NONBLOCK', 'O_PATH')):
++                            stack.enter_context(patch.object(os, flag, 1 << (20 + index), create=True))
++                        n = {'__name__': 'synthetic_system_go_observation'}
++                        exec(compile(pathlib.Path(sys.argv[1]).read_bytes(), '<observer>', 'exec'), n)
++                        class FakeOS:
++                            O_RDONLY = os.O_RDONLY
++                            O_DIRECTORY, O_NOFOLLOW, O_CLOEXEC, O_NONBLOCK, O_PATH = (getattr(os, key) for key in
++                                ('O_DIRECTORY', 'O_NOFOLLOW', 'O_CLOEXEC', 'O_NONBLOCK', 'O_PATH'))
++                            def __init__(self):
++                                self.nodes, self.handles, self.nextfd, self.reads, self.samples = {}, {}, 10, [], 0
++                                for path in ('/', '/usr', '/usr/local', '/usr/local/bin', '/usr/bin', '/usr/local/go', '/usr/local/go/bin'):
++                                    self.add(path, stat.S_IFDIR | 0o755)
++                                self.add('/bin', stat.S_IFLNK | 0o777, target='usr/bin')
++                                self.add('/usr/bin/go', stat.S_IFLNK | 0o777, target='../local/go/bin/go')
++                                self.add('/usr/local/go/bin/go', stat.S_IFREG | 0o755, size=123)
++                                self.add('/usr/local/go/VERSION', stat.S_IFREG | 0o644, data=b'go1.24.0\\nPRIVATE_OTHER_PAYLOAD\\n')
++                            def add(self, path, mode, target=None, data=b'', size=None):
++                                info = types.SimpleNamespace(st_dev=1, st_ino=len(self.nodes) + 1, st_mode=mode, st_uid=0, st_gid=0,
++                                    st_nlink=1, st_size=len(data) if size is None else size, st_mtime_ns=1, st_ctime_ns=1)
++                                self.nodes[path] = (info, target, data)
++                            def path(self, name, dir_fd=None):
++                                return posixpath.normpath(name if name.startswith('/') else posixpath.join(self.handles[dir_fd][0], name))
++                            def stat(self, name, dir_fd=None, follow_symlinks=False):
++                                path = self.path(name, dir_fd)
++                                if path not in self.nodes: raise FileNotFoundError(path)
++                                return self.nodes[path][0]
++                            def open(self, name, flags, dir_fd=None):
++                                path = self.path(name, dir_fd); self.stat(path)
++                                assert not stat.S_ISLNK(self.nodes[path][0].st_mode)
++                                if path.endswith('/bin/go'): assert flags & self.O_PATH, 'SDK binary must never be opened for reading'
++                                self.nextfd += 1; self.handles[self.nextfd] = [path, 0]
++                                return self.nextfd
++                            def fstat(self, fd): return self.nodes[self.handles[fd][0]][0]
++                            def readlink(self, name, dir_fd=None): return self.nodes[self.path(name, dir_fd)][1]
++                            def close(self, fd): del self.handles[fd]
++                            def read(self, fd, count):
++                                path, offset = self.handles[fd]; assert path.endswith('/VERSION')
++                                self.reads.append(path); data = self.nodes[path][2][offset:offset + count]
++                                self.handles[fd][1] += len(data); return data
++                            def fstatvfs(self, fd):
++                                self.samples += 1
++                                return types.SimpleNamespace(f_fsid=(1 << 63) + 7, f_frsize=4096, f_bavail=10 + self.samples % 2)
++                        fake = FakeOS(); n['os'] = fake
++                        observer = n['Observer']()
++                        try:
++                            absent = observer.go('/usr/local/bin/go'); assert absent['state'] == 'ABSENT_AT_RESOLVED_PATH'
++                            linked = observer.go('/bin/go')
++                            assert linked['resolvedPath'] == '/usr/local/go/bin/go' and linked['version']['text'] == 'go1.24.0'
++                            assert 'PRIVATE_OTHER_PAYLOAD' not in json.dumps(linked) and fake.reads
++                            measured = n['capacity'](observer.root)
++                            assert measured['fsid'] == '0x8000000000000007'
++                            assert measured['freeBytesSamples'] == [45056, 40960] and measured['freeBytesMinimum'] == 40960
++                            rejected(lambda: observer.resolve('/' + '/'.join(['a'] * 129)))
++                            rejected(lambda: n['version_declaration'](b'go1.24.0;private'))
++                            rejected(lambda: n['long_value']((1 << 63)))
++                            observer.verify()
++                            fake.nodes['/usr/local/go/bin/go'][0].st_ctime_ns = 2
++                            rejected(observer.verify)
++                        finally: observer.close()
++                        fake = FakeOS(); n['os'] = fake
++                        observer = n['Observer']()
++                        try:
++                            observer.resolve('/bin/go')
++                            info, target, data = fake.nodes['/usr/bin/go']
++                            fake.nodes['/usr/bin/go'] = (info, '/changed', data)
++                            rejected(observer.verify)
++                        finally: observer.close()
++                        for links in (1, 16, 17):
++                            fake = FakeOS(); n['os'] = fake
++                            for index in range(links):
++                                name = '/usr/local/bin/go' if index == 0 else '/usr/local/bin/link' + str(index)
++                                target = 'go' if links == 1 else ('link' + str(index + 1) if index < links - 1 else '/usr/local/go/bin/go')
++                                fake.add(name, stat.S_IFLNK | 0o777, target=target)
++                            observer = n['Observer']()
++                            try:
++                                if links == 16: assert observer.resolve('/usr/local/bin/go')['path'] == '/usr/local/go/bin/go'
++                                else: rejected(lambda: observer.resolve('/usr/local/bin/go'))
++                            finally: observer.close()
++                        fake = FakeOS(); n['os'] = fake
++                        fake.nodes['/usr/local/go/VERSION'][0].st_nlink = 2
++                        observer = n['Observer']()
++                        try: assert observer.go('/usr/bin/go')['version']['state'] == 'UNCONFIRMED'
++                        finally: observer.close()
++                        fake = FakeOS(); n['os'] = fake
++                        roots = {key: '/usr/local/missing/leaf' for key in n['ROOT_FIELDS']}
++                        observed = n['observe'](roots)
++                        assert all(row['exists'] is False and row['observedExistingAncestor'] == '/usr/local'
++                            and row['requested'] == '/usr/local/missing/leaf' and row['freeBytesMinimum'] == 40960 for row in observed['capacities'])
++                        assert len(observed['filesystemGroups']) == 1 and not fake.handles
++                        fake = FakeOS(); n['os'] = fake
++                        fake.nodes['/usr/bin'][0].st_mode |= 0o022
++                        fake.fstatvfs = lambda fd: types.SimpleNamespace(f_fsid=1, f_frsize=1 << 62, f_bavail=4)
++                        observed = n['observe'](roots)
++                        assert observed['go'][1]['state'] == 'UNCONFIRMED'
++                        assert all(row['state'] == 'UNCONFIRMED' and 'freeBytesMinimum' not in row for row in observed['capacities'])
++                        assert not fake.handles and observed['sdkExecutions'] == 0
++                    print('SYSTEM_GO_CAPACITY_SYNTHETIC_OK')
++                    """.getBytes(StandardCharsets.UTF_8));
++            }
++            assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Synthetic observer must exit within its local bound");
++            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
++            assertEquals(0, process.exitValue(), output);
++            assertEquals("SYSTEM_GO_CAPACITY_SYNTHETIC_OK", output.strip());
++        } finally {
++            if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, TimeUnit.SECONDS)); }
++        }
++    }
+ }
+--- /dev/null
++++ b/src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/system-go-capacity-observation.py
+@@ -0,0 +1,220 @@
++"""Pure standard-Go declaration and captured-root filesystem observations; never READY."""
++import json
++import os
++import re
++import stat
++import sys
++
++GO_CANDIDATES = ('/usr/local/bin/go', '/usr/bin/go', '/bin/go', '/usr/local/go/bin/go')
++ROOT_FIELDS = {'helperDirectory', 'applicationsRoot', 'stateRoot', 'configurationRoot', 'dataRoot'}
++LONG_MAX = (1 << 63) - 1
++DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
++
++
++def need(value, code='UNTRUSTED_OR_CHANGED_METADATA'):
++    if not value:
++        raise ValueError(code)
++
++
++def signature(info):
++    return tuple(getattr(info, key) for key in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns'))
++
++
++def trusted(info):
++    need(info.st_uid == 0 and info.st_gid == 0)
++    # Linux symlink mode 0777 is not an access-control grant; its parent and target must be protected.
++    need(stat.S_IMODE(info.st_mode) == 0o777 if stat.S_ISLNK(info.st_mode) else not info.st_mode & 0o022)
++
++
++def long_value(value):
++    need(type(value) is int and 0 <= value <= LONG_MAX, 'CAPACITY_INTEGER')
++    return value
++
++
++def unsigned_hex(value):
++    need(type(value) is int and 0 <= value < (1 << 64), 'FILESYSTEM_IDENTIFIER')
++    return '0x%016x' % value
++
++
++def version_declaration(data):
++    need(isinstance(data, bytes) and 0 < len(data) <= 1024, 'VERSION_BOUND')
++    line = data.split(b'\n', 1)[0].rstrip(b'\r').decode('ascii')
++    need(re.fullmatch(r'go[1-9][0-9]*\.[0-9]+(?:\.[0-9]+)?', line) and len(line) <= 96, 'VERSION_DECLARATION')
++    return line
++
++
++class Observer:
++    def __init__(self):
++        self.fds, self.entries, self.links, self.missing = [], [], [], []
++        fd = os.open('/', DIRECTORY_FLAGS)
++        try:
++            info = os.fstat(fd)
++            trusted(info)
++            need(stat.S_ISDIR(info.st_mode))
++            self.root = fd
++            self.fds.append(fd)
++            self.entries.append((None, '/', fd, signature(info)))
++        except Exception:
++            os.close(fd)
++            raise
++
++    def close(self):
++        for fd in reversed(self.fds):
++            os.close(fd)
++
++    def resolve(self, requested, no_final_link=False):
++        need(isinstance(requested, str) and re.fullmatch(r'/[A-Za-z0-9._+/-]*', requested) and len(requested) <= 4096, 'PATH_BOUND')
++        queue = requested.split('/')[1:]
++        need(len(queue) <= 128, 'PATH_BOUND')
++        stack, parts, seen = [self.root], [], set()
++        while queue:
++            name = queue.pop(0)
++            if name in ('', '.'):
++                continue
++            if name == '..':
++                need(len(stack) > 1, 'PATH_ESCAPE')
++                stack.pop(); parts.pop()
++                continue
++            parent = stack[-1]
++            try:
++                info = os.stat(name, dir_fd=parent, follow_symlinks=False)
++            except FileNotFoundError:
++                self.missing.append((parent, name))
++                return {'exists': False, 'fd': parent, 'path': '/' + '/'.join(parts)}
++            trusted(info)
++            if stat.S_ISLNK(info.st_mode):
++                need(not (no_final_link and not queue), 'VERSION_LINK')
++                key = info.st_dev, info.st_ino
++                need(key not in seen and len(seen) < 16, 'LINK_LOOP_OR_LIMIT')
++                seen.add(key)
++                target = os.readlink(name, dir_fd=parent)
++                need(isinstance(target, str) and re.fullmatch(r'[A-Za-z0-9._+/-]{1,4096}', target), 'LINK_TARGET')
++                need(signature(info) == signature(os.stat(name, dir_fd=parent, follow_symlinks=False)))
++                self.links.append((parent, name, signature(info), target))
++                if target.startswith('/'):
++                    stack, parts = [self.root], []
++                queue = target.split('/') + queue
++                need(len(queue) <= 128, 'PATH_BOUND')
++                continue
++            directory = stat.S_ISDIR(info.st_mode)
++            need(directory or stat.S_ISREG(info.st_mode), 'ENTRY_TYPE')
++            need(directory or not queue, 'NON_DIRECTORY_PARENT')
++            need(len(self.fds) < 256, 'DESCRIPTOR_BOUND')
++            flags = DIRECTORY_FLAGS if directory else os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
++            fd = os.open(name, flags, dir_fd=parent)
++            try:
++                need(signature(info) == signature(os.fstat(fd)))
++            except Exception:
++                os.close(fd)
++                raise
++            self.fds.append(fd)
++            self.entries.append((parent, name, fd, signature(info)))
++            parts.append(name)
++            if directory:
++                stack.append(fd)
++            if not queue:
++                return {'exists': True, 'fd': fd, 'parent': parent, 'name': name, 'path': '/' + '/'.join(parts), 'info': info}
++        return {'exists': True, 'fd': stack[-1], 'path': '/' + '/'.join(parts), 'info': os.fstat(stack[-1])}
++
++    def verify(self):
++        for parent, name, fd, before in self.entries:
++            need(before == signature(os.fstat(fd)))
++            if parent is not None:
++                need(before == signature(os.stat(name, dir_fd=parent, follow_symlinks=False)))
++        for parent, name, before, target in self.links:
++            need(before == signature(os.stat(name, dir_fd=parent, follow_symlinks=False)) and target == os.readlink(name, dir_fd=parent))
++        for parent, name in self.missing:
++            try:
++                os.stat(name, dir_fd=parent, follow_symlinks=False)
++                need(False, 'ABSENCE_CHANGED')
++            except FileNotFoundError:
++                pass
++
++    def version(self, path):
++        resolved = self.resolve(path, no_final_link=True)
++        if not resolved['exists']:
++            return {'state': 'ABSENT'}
++        info = resolved['info']
++        need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and 0 < info.st_size <= 1024, 'VERSION_BOUND')
++        fd = os.open(resolved['name'], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=resolved['parent'])
++        try:
++            need(signature(info) == signature(os.fstat(fd)))
++            chunks, size = [], 0
++            while size <= 1024:
++                chunk = os.read(fd, min(256, 1025 - size))
++                if not chunk:
++                    break
++                chunks.append(chunk); size += len(chunk)
++            need(size == info.st_size and signature(info) == signature(os.fstat(fd)))
++            return {'state': 'DECLARATION_OBSERVED', 'text': version_declaration(b''.join(chunks))}
++        finally:
++            os.close(fd)
++
++    def go(self, candidate):
++        resolved = self.resolve(candidate)
++        if not resolved['exists']:
++            return {'candidate': candidate, 'state': 'ABSENT_AT_RESOLVED_PATH'}
++        info, path = resolved['info'], resolved['path']
++        need(stat.S_ISREG(info.st_mode) and info.st_mode & 0o111, 'GO_FILE_ATTRIBUTES')
++        result = {'candidate': candidate, 'state': 'FILE_ATTRIBUTES_OBSERVED', 'resolvedPath': path,
++                  'bytes': long_value(info.st_size), 'mode': '%04o' % stat.S_IMODE(info.st_mode)}
++        if not path.endswith('/bin/go'):
++            result['version'] = {'state': 'HOME_RELATION_UNCONFIRMED'}
++        else:
++            try:
++                result['version'] = self.version(path[:-len('/bin/go')] + '/VERSION')
++            except (OSError, ValueError, UnicodeError, KeyError):
++                result['version'] = {'state': 'UNCONFIRMED'}
++        return result
++
++
++def capacity(fd):
++    before, after = os.fstatvfs(fd), os.fstatvfs(fd)
++    device = unsigned_hex(os.fstat(fd).st_dev)
++    fsid = unsigned_hex(before.f_fsid)
++    need(fsid == unsigned_hex(after.f_fsid) and before.f_frsize == after.f_frsize, 'FILESYSTEM_CHANGED')
++    fragment = long_value(before.f_frsize)
++    need(fragment > 0, 'CAPACITY_INTEGER')
++    available = [long_value(before.f_bavail), long_value(after.f_bavail)]
++    free = [long_value(fragment * value) for value in available]
++    return {'device': device, 'fsid': fsid, 'frsize': fragment, 'bavailSamples': available,
++            'freeBytesSamples': free, 'freeBytesMinimum': min(free), 'meaning': 'Two point samples; minimum is not a reservation or future capacity guarantee.'}
++
++
++def observe(roots):
++    need(isinstance(roots, dict) and set(roots) == ROOT_FIELDS, 'CAPTURED_ROOTS')
++    observer = Observer()
++    try:
++        go, filesystems, groups = [], [], {}
++        for candidate in GO_CANDIDATES:
++            try:
++                go.append(observer.go(candidate))
++            except (OSError, ValueError, UnicodeError, KeyError):
++                go.append({'candidate': candidate, 'state': 'UNCONFIRMED'})
++        for role, requested in sorted(roots.items()):
++            row = {'role': role, 'requested': requested}
++            try:
++                resolved = observer.resolve(requested)
++                need(stat.S_ISDIR(os.fstat(resolved['fd']).st_mode), 'CAPACITY_DIRECTORY')
++                row.update(state='OBSERVED', exists=resolved['exists'], observedExistingAncestor=resolved['path'], **capacity(resolved['fd']))
++                key = row['device'] + ':' + row['fsid']
++                row['filesystemKey'] = key
++                groups.setdefault(key, []).append(role)
++            except (OSError, ValueError, KeyError, AttributeError):
++                row = {'role': role, 'requested': requested, 'state': 'UNCONFIRMED'}
++            filesystems.append(row)
++        observer.verify()
++        return {'schema': 1, 'mode': 'METADATA_ONLY', 'status': 'OBSERVED', 'go': go, 'capacities': filesystems,
++                'filesystemGroups': groups, 'sdkExecutions': 0, 'meaning': 'Standard paths and VERSION declarations only; no SDK binary reads/execution, runtime compatibility or READY. Missing roots sample their nearest trusted existing ancestor, not a future filesystem.'}
++    finally:
++        observer.close()
++
++
++if __name__ == '__main__':
++    try:
++        output = json.dumps(observe(ROOTS), sort_keys=True, separators=(',', ':'))
++        need(len(output.encode('utf-8')) <= 60000, 'OUTPUT_BOUND')
++        print('SYSTEM_GO_CAPACITY_METADATA=' + output)
++    except (OSError, ValueError, UnicodeError, KeyError, AttributeError):
++        print('SYSTEM_GO_CAPACITY_METADATA={"schema":1,"mode":"METADATA_ONLY","status":"UNCONFIRMED"}')
++        sys.exit(65)
