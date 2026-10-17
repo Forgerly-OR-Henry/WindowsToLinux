@@ -1,0 +1,19 @@
+# 当前主机重装前必要数据备份301
+
+必要备份已完成并核验，可进入用户要求的暂停点。实际目录为test/data/pre-reinstall-20261018-295；当前主机45.192.105.213:22/root，SSH指纹SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc。用户以本聊天目标显示paused作为可重装信号；本轮不执行重装，不再执行部署验收或远端动作。File Transfer→CSV完整BUSINESS验收仍未完成。
+
+备份包含276个普通文件745663B及两个canonical SQLite在线快照。普通文件覆盖操作/身份事实、正式配置、四个unit、19份上传源码归档及55份实盘小型source/output文件；两库在线备份纳入已提交WAL，每库为独立时间点。DATABASES.dpapi143590B，FILES.dpapi1116390B；两份均原生SDK成功下载，再CurrentUser DPAPI保护、密文磁盘回读和身份核验后删除下载明文。私有树仅当前Windows用户及SYSTEM访问，保持本机Windows用户profile的解密能力。
+
+两份独立内存核验均PASS：276文件精确成员集/manifest/长度/SHA全部一致；两库共131072B，在内存deserialize后integrity均ok、外键违规0。未提取业务正文到磁盘或模型/日志。最终独立APP元数据对账Task78a006cc-2f39-4799-939a-b296c52ecb2b实际成功：2383旧路径→2676当前路径，无缺失、无问题，276文件固定身份/长度/mtime稳定、两库canonical身份稳定，精确备份输出及新增合法SQLite sidecars分类闭合，四unit映射和状态无漂移。
+
+这不是整机镜像：21大型工作区映像、实列缓存/工具遥测、可重建SDK/依赖、大binary及已有源码归档对应的输入副本按逐路径coverage明确排除。旧身份/锁/grant仅保存证据，不自动恢复或重放；旧七UNKNOWN仍保原结论，194及其他已结清任务不恢复。旧174清单/README及历史有效/不完整备份均保留，不混作当前主机覆盖。
+
+采用的修正与替代路线：历史保护方法仅CRLF/LF差异，保留原件/生产源码摘要后规范该差异；仅新385通过产品原生FAILED结清，语义NO_VERIFIED_LOCAL_BACKUP，不伪称未SSH；为Java内部类字面$新增FILES v2，不改已成功的原DB producer；FILES拒绝后新增独立内容观察，再把完整实际回执、276成员/156不同SHA计数、已执行nlink/采样身份检查推导、父目录octal与0022运算、精确UID校验事实直接交APP。每次替代均新run/nonce、新完整独立APP及新grant，没有弱化策略或直接SSH/SFTP。四次DENY及一次获审后脚本失败完整保留，均未伪计成功。
+
+成功DBproducer Taskef6aa169-2594-49fc-ad25-b76a00850f82；受保护DB下载Taska1ea3811-f36f-406d-b98b-cafa7198bb94。最终内容观察Task8bc2a999-c654-4d7d-b00a-ba361fc0f9bc；FILESproducer Taskafb1cb00-8f1a-4851-b329-5e0d237c4639；受保护FILES下载Task4c409e2c-b441-488e-8cb7-1e1e2131b17b。独立摘要与实际FILES manifest逐项机械相符后才接受其proof并下载。所有远端动作及新385结清均已原生ENDED，未留下本轮活跃任务。
+
+只做直接相关定点和必要编译，未全量或package。297三新增方法通过；298字面$路径的Python单方法及Java单content方法通过；299/300只重跑受影响content单方法，最后分别0.960s/0.986s。296既有独立内存校验器六定点通过未重复执行。各轮编译/证据根/辅助摘要误覆盖等本地失败及恢复原字节过程在对应窄记录保留。实际backup恢复核验独立于这些本地测试，不能称业务验收全量通过。
+
+本轮备份阶段共15次物理provider调用，全部APP：已知input700406、output1720、IO702126、cache-hit input10112。审批Token占已知IO的100.00%，输入加权缓存命中率1.4437%；APP决策11批准/4拒绝（73.33%批准率）。15次reasoning usage均未知，无法给出完整账单；不把本阶段指标混作原17历史失败FULL或业务验收总指标。
+
+最终本地核验2026-10-17T19:44:36.4400314Z：自有Java0、295—300临时目录0、.staging为空、无下载明文或.part，89个当前私有树对象ACL均通过，仅删两个明确生成的Python缓存，未终止无关进程。备份及私密正文不进入Git；正式代码窄提交0bcf3530、4f33a582、85bbd476、05b6b171均只本地未push。当前完整备份清单SHA256 cc7475f75d39a51e9448e14a355028e917b493def6ff3d98a43c60ef96d745d5；清单及79份公开验真/审批/覆盖证据位于私有备份树，恢复路径与限制见该目录README。最后仅将本聊天目标切换paused；暂停状态以目标UI为准，后续重装由用户操作，恢复验收须重新核主机身份与初始化范围。
