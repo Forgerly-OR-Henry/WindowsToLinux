@@ -1,0 +1,452 @@
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommands.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/toolchain/DeploymentAgentToolchainCommands.java
+@@ -183,6 +183,13 @@
+                     programState.finish(retained, new OperationResult<>(failure.problem().code() == ProblemCode.CANCELLED ? TaskResult.CANCELLED : TaskResult.UNKNOWN,
+                         Optional.empty(), Optional.of(failure.problem())), false, null, !dispatchBoundary[0]);
+                 } catch (ApiException persistence) {
++                    if (failure instanceof gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException) {
++                        var uncertain = new ApiException(new Problem(ProblemCode.UNKNOWN, "DEPLOYMENT_AGENT_CONTROLLER_STATE_UNCONFIRMED",
++                            "Original denied controller action could not retain its NOT_SENT boundary", Map.of("task", programState.taskId(), "operation", operation), Optional.empty()));
++                        uncertain.initCause(persistence);
++                        uncertain.addSuppressed(failure);
++                        throw uncertain;
++                    }
+                     failure.addSuppressed(persistence);
+                 }
+                 throw failure;
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentBuildTools.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentBuildTools.java
+@@ -7,15 +7,21 @@
+ import java.util.*;
+ 
+ import gold.debug.windowstolinux.appapi.mod.ModContext;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
+ import gold.debug.windowstolinux.appapi.linux.session.RemoteSession;
+ import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+-import gold.debug.windowstolinux.appapi.task.result.TaskResult;
++import gold.debug.windowstolinux.appapi.task.result.*;
+ import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
++import gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException;
+ import gold.debug.windowstolinux.mod.deployment.service.agent.protocol.*;
+ import gold.debug.windowstolinux.mod.deployment.ai.json.DeploymentJsonFields;
+ import gold.debug.windowstolinux.mod.deployment.linux.build.*;
+ import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentSendGuard;
++import gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter;
++import gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.*;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.project.kind.DeploymentProjectKind;
+ import gold.debug.windowstolinux.mod.deployment.service.core.model.report.DeploymentProjectReport;
+@@ -143,10 +149,56 @@
+         this.server = Objects.requireNonNull(server);
+         this.sources = sources;
+         this.projects = projects;
+-        commands = new DeploymentBuildCommandChannel(session, context.interaction(), server, task, revision,
++        commands = new DeploymentBuildCommandChannel(session, reuseExistingOnly
++            ? new ExistingPreparationReview(context, context.interaction(), task, server, layout) : context.interaction(), server, task, revision,
+             gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget.current()
+                 .map(gold.debug.windowstolinux.mod.deployment.service.agent.DeploymentAgentGoalBudget::build)
+                 .orElseGet(() -> new DeploymentBuildBudget(7200)), guard, layout);
++    }
++
++    /** Classifies only the original denied existing-only review, before any host grant or dispatch. */
++    private record ExistingPreparationReview(ModContext context, InteractionService original, TaskContext task,
++                                             ServerId server, DeploymentRemoteLayout layout) implements DeploymentCommandReview {
++        public OperationResult<ApprovalGrant> approveCommand(ActionIntent intent, CommandRequest request, TaskContext supplied) throws ApiException {
++            try {
++                return DeploymentCommandReviewRouter.approve(original, intent, request, supplied);
++            } catch (ApiException denied) {
++                if (!(original instanceof DeploymentCommandReview) || supplied != task
++                    || denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
++                    || !task.id().toString().equals(denied.problem().context().get("task"))
++                    || !denied.problem().context().getOrDefault("reviewBinding", "").matches("[0-9a-f]{64}")
++                    || denied.getSuppressed().length != 0
++                    || !intent.serverIds().equals(List.of(server.id()))
++                    || intent.semantics().filter(value -> value.operation().equals("deployment.agent.toolchain.prepare.v1")).isEmpty())
++                    throw denied;
++                var actual = RemoteActions.command(server, intent.revision(), request);
++                byte[] input = request.stdin();
++                try {
++                    if (!intent.type().equals(actual.type()) || !intent.target().equals(actual.target())
++                        || !intent.exactAction().equals(actual.exactAction()) || !intent.effectSummary().equals(actual.effectSummary())
++                        || !Arrays.equals(input, gold.debug.windowstolinux.mod.deployment.service.agent.toolchain.DeploymentAgentToolchainPrograms
++                            .existingController(layout).getBytes(java.nio.charset.StandardCharsets.UTF_8)))
++                        throw denied;
++                } finally {
++                    Arrays.fill(input, (byte) 0);
++                }
++                // The caller now continues, so it will not reach Workflow's complete-denial diagnostic path.
++                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, denied);
++                throw DeploymentAlternativeRequiredException.fromReview(task, denied);
++            }
++        }
++
++        public OperationResult<ApprovalGrant> approve(ActionIntent intent, TaskContext supplied) throws ApiException {
++            return original.approve(intent, supplied);
++        }
++
++        public OperationResult<ApprovalGrant> approveRequired(ActionIntent intent, TaskContext supplied) throws ApiException {
++            return original.approveRequired(intent, supplied);
++        }
++
++        public OperationResult<String> requestText(String title, String prompt, boolean secret, TaskContext supplied) throws ApiException {
++            return original.requestText(title, prompt, secret, supplied);
++        }
+     }
+ 
+     /** Keeps selected tools and the consumed budget when adopting an explicitly accepted model revision. / 采用明确接受的模型修订时保留已选工具及已消费预算。
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+@@ -26,6 +26,8 @@
+ import gold.debug.windowstolinux.appapi.task.action.ActionSemantics;
+ import gold.debug.windowstolinux.appapi.task.action.ActionTarget;
+ import gold.debug.windowstolinux.appapi.task.model.TaskRequest;
++import gold.debug.windowstolinux.appapi.task.TaskService;
++import gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint;
+ import gold.debug.windowstolinux.appapi.task.result.*;
+ import gold.debug.windowstolinux.appapi.task.run.TaskContext;
+ import gold.debug.windowstolinux.mod.deployment.DeploymentRuntimeFixture;
+@@ -50,11 +52,15 @@
+ 
+     private static final ObjectMapper JSON = new ObjectMapper();
+ 
++    private static final String TOOLCHAIN_DENIAL_REASON = "Choose a different independently reviewed candidate action. "
++        + "The original existing installation remains unconfirmed; ".repeat(20) + "COMPLETE_DENIAL_END_288";
++
+     private boolean diagnosticCandidateSessionIdentityJourney;
+     private boolean isolationMissingPlanJourney, isolationMissingHelperJourney, isolationRefusalJourney, isolationUnknownJourney, isolationReadyJourney;
+     private boolean isolationCancelAfterCreateJourney;
+     private boolean isolationExistingToolchainJourney;
+     private boolean isolationQuotaReplanJourney;
++    private boolean isolationToolchainDeniedJourney, isolationToolchainPersistenceFailure;
+     private UUID isolatedToolchainTask;
+ 
+     @Test
+@@ -112,6 +118,28 @@
+         isolationReadyJourney = true;
+         isolationQuotaReplanJourney = true;
+         runVerification(VerificationMode.APPROVE, false);
++    }
++
++    @Test
++    void deniedExistingToolchainPreparationReturnsToSessionBeforeFreshAlternativeReview() throws Exception {
++        isolationReadyJourney = true;
++        isolationExistingToolchainJourney = true;
++        isolationToolchainDeniedJourney = true;
++        runVerification(VerificationMode.APPROVE, false);
++    }
++
++    @Test
++    void deniedExistingToolchainPreparationCannotContinueWhenNotSentPersistenceFails() throws Exception {
++        isolationReadyJourney = true;
++        isolationExistingToolchainJourney = true;
++        isolationToolchainDeniedJourney = true;
++        isolationToolchainPersistenceFailure = true;
++        var blocked = assertThrows(ApiException.class, () -> runVerification(VerificationMode.APPROVE, false));
++        assertNotNull(isolatedToolchainTask, "Accept shutdown blocking only after the original uncertain checkpoint assertions pass");
++        assertEquals(ProblemCode.BUSY, blocked.problem().code());
++        assertEquals("MOD_STOP_BLOCKED", blocked.problem().eventCode());
++        assertEquals(Map.of("ownerId", OWNER), blocked.problem().context());
++        assertEquals("Mod cleanup is blocked: Task " + isolatedToolchainTask + " still owns Mod resources", blocked.problem().message());
+     }
+ 
+     enum VerificationMode {
+@@ -276,6 +304,14 @@
+         final Set<UUID> toolchainGrants = new HashSet<>();
+         String existingPreparationExact = "";
+         UUID existingPreparationGrant;
++        String deniedPreparationExact = "";
++        String deniedExactPage = "";
++        String alternativeExact = "";
++        UUID alternativeGrant;
++        int alternativeSends;
++        boolean denialFeedbackObserved;
++        final ApiException persistenceFailure = new ApiException(new Problem(ProblemCode.UNKNOWN, "CONTROLLED_NOT_SENT_PERSISTENCE_FAILURE",
++            "Controlled checkpoint advance failure", Map.of(), Optional.empty()));
+         Runnable requestCancel;
+         final Set<UUID> isolationActions = new HashSet<>(), isolationGrants = new HashSet<>();
+         final List<Long> isolationRequirements = new ArrayList<>();
+@@ -311,6 +347,8 @@
+                         assertEquals(existingPreparationGrant, ((gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) a[1]).id());
+                         assertEquals(existingPreparationExact, gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request).exactAction());
+                     }
++                    if (isolationToolchainDeniedJourney && request.script().contains("'agent-read'"))
++                        assertEquals(alternativeGrant, ((gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) a[1]).id());
+                     yield transport(request);
+                 }
+                 case "upload" -> {
+@@ -364,14 +402,41 @@
+                             }
+                         }
+                     }
++                    if (isolationToolchainDeniedJourney && m.getName().equals("approveReviewedAction")
++                        && ((ActionIntent) a[0]).exactAction().contains("'agent-read'")) {
++                        @SuppressWarnings("unchecked") var approved = (OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>) result;
++                        alternativeExact = ((ActionIntent) a[0]).exactAction();
++                        alternativeGrant = approved.value().orElseThrow().id();
++                        assertTrue(denialFeedbackObserved);
++                        assertNotEquals(deniedPreparationExact, alternativeExact);
++                        assertFalse(toolchainGrants.contains(alternativeGrant));
++                        assertFalse(isolationGrants.contains(alternativeGrant));
++                    }
+                     return result;
+                 } catch (InvocationTargetException error) {
+                     throw error.getCause();
+                 }
++            });
++            var tasks = proxy(TaskService.class, (p, m, a) -> {
++                Object result;
++                try { result = m.invoke(actual.tasks(), a); }
++                catch (InvocationTargetException error) { throw error.getCause(); }
++                if (isolationToolchainPersistenceFailure && m.getName().equals("beginCheckpoint")
++                    && ((String) a[1]).startsWith("agent-controller-program.")
++                    && JSON.readTree((String) a[2]).at("/index/phase").asText().equals("PREPARE")) {
++                    var retained = (TaskCheckpoint) result;
++                    return proxy(TaskCheckpoint.class, (cp, cm, ca) -> {
++                        if (cm.getName().equals("advance")) throw persistenceFailure;
++                        try { return cm.invoke(retained, ca); }
++                        catch (InvocationTargetException error) { throw error.getCause(); }
++                    });
++                }
++                return result;
+             });
+             context = proxy(ModContext.class, (p, m, a) -> {
+                 if (m.getName().equals("ai")) return ai;
+                 if (m.getName().equals("interaction")) return host;
++                if (m.getName().equals("tasks") && isolationToolchainPersistenceFailure) return tasks;
+                 try {
+                     return m.invoke(actual, a);
+                 } catch (InvocationTargetException error) {
+@@ -494,6 +559,10 @@
+                         assertEquals(mode == VerificationMode.CAPACITY_UNSETTLED, events.stream().anyMatch(event -> event.type().equals(DeploymentAgentCandidateCapacityException.EVENT)));
+                         assertFalse(DeploymentAgentActionLog.effectsSettled(events));
+                     }
++                    return;
++                }
++                if (isolationToolchainDeniedJourney) {
++                    verifyToolchainDenial(error);
+                     return;
+                 }
+                 if (isolationExistingToolchainJourney) {
+@@ -680,6 +749,61 @@
+                 }
+                 assertEquals(0, creates + uploads + verifyGrants + verifySends + opens + approvalCalls);
+             }
++        }
++
++        void verifyToolchainDenial(Exception error) throws Exception {
++            assertEquals(1, existingPreparationVerdicts);
++            assertEquals(0, existingPreparationSends);
++            assertNull(existingPreparationGrant, "An independent DENY cannot reach host grant creation");
++            assertEquals(1, controllerReadinessSends);
++            assertEquals(1, toolchainGrants.size());
++            assertEquals(1, creates);
++            assertEquals(1, uploads);
++            assertEquals(1, opens);
++            var events = journal.events(task);
++            assertEquals(1, events.stream().filter(event -> event.type().equals("PREPARE_RESULT")).count());
++            assertEquals(1, events.stream().filter(event -> event.type().equals("CANDIDATE")).count());
++            var rows = DeploymentAgentToolchainProgramState.snapshot(context.tasks(), task, server.id(),
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(), events);
++            assertEquals(2, rows.size());
++            var pending = (JsonNode) rows.getLast().get("payload");
++            var diagnostics = new gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics(context).read(task.id());
++            assertTrue(diagnostics.problem().isEmpty());
++            var denials = diagnostics.records().stream().filter(record -> record.event().eventCode().equals("DEPLOYMENT_AGENT_COMMAND_REVIEW_DENIED")).toList();
++            assertEquals(1, denials.size());
++            assertFalse(denials.getFirst().truncated());
++            assertEquals(TOOLCHAIN_DENIAL_REASON, denials.getFirst().event().message(), "Keep the complete original bounded denial after the soft-feedback route bypasses Workflow.failed");
++            assertTrue(denials.getFirst().event().message().length() > 512);
++            if (isolationToolchainPersistenceFailure) {
++                var uncertain = assertInstanceOf(ApiException.class, error);
++                assertEquals(ProblemCode.UNKNOWN, uncertain.problem().code());
++                assertEquals("DEPLOYMENT_AGENT_CONTROLLER_STATE_UNCONFIRMED", uncertain.problem().eventCode());
++                assertSame(persistenceFailure, uncertain.getCause());
++                assertEquals(1, uncertain.getSuppressed().length);
++                assertInstanceOf(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException.class, uncertain.getSuppressed()[0]);
++                assertEquals("INTENT", pending.path("state").asText());
++                assertFalse((Boolean) rows.getLast().get("released"));
++                assertFalse(DeploymentAgentActionLog.effectsSettled(events));
++                assertFalse(events.stream().anyMatch(event -> event.type().equals("CAPABILITY_NOT_SENT") || event.type().equals("CAPABILITY_RESULT")));
++                assertFalse(events.stream().anyMatch(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("ALTERNATIVE_REQUIRED")));
++                assertEquals(6, decisions, "No next model call can observe a fabricated known NOT_SENT");
++                assertFalse(denialFeedbackObserved);
++                assertNull(alternativeGrant);
++                assertEquals(0, alternativeSends);
++                return;
++            }
++            assertSame(stop, error, "The independently reviewed replacement read stops at its actual transport boundary");
++            assertEquals("NOT_SENT", pending.path("state").asText());
++            assertTrue((Boolean) rows.getLast().get("released"));
++            assertEquals("DEPLOYMENT_ALTERNATIVE_REQUIRED", pending.path("problemEvent").asText());
++            assertEquals(1, events.stream().filter(event -> event.type().equals("CAPABILITY_NOT_SENT") && event.detail().equals("ALTERNATIVE_REQUIRED")).count());
++            assertTrue(DeploymentAgentActionLog.effectsSettled(events));
++            assertTrue(events.stream().anyMatch(event -> event.type().equals("AGENT_OBSERVATION") && event.action().equals("ALTERNATIVE_REQUIRED")));
++            assertEquals(7, decisions);
++            assertTrue(denialFeedbackObserved);
++            assertNotNull(alternativeGrant);
++            assertNotEquals(deniedPreparationExact, alternativeExact);
++            assertEquals(1, alternativeSends);
+         }
+ 
+         void verifyIsolationQuotaReplan(DeploymentAgentRemoteTools tools) throws Exception {
+@@ -768,6 +892,23 @@
+             assertEquals("FIRST_USER_MESSAGE_AFTER_BASE_SYSTEM", dynamic.path("currentEvidence").asText());
+             var input = (ObjectNode) JSON.readTree(request.messages().get(1).text());
+             input.setAll(dynamic);
++            if (isolationToolchainDeniedJourney && deniedPreparationExact.isEmpty() && !deniedExactPage.isEmpty()) {
++                var prior = request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((first, last) -> last).orElseThrow();
++                assertEquals(deniedExactPage, prior.callId());
++                assertFalse(prior.error());
++                var envelope = JSON.readTree(prior.text());
++                assertEquals(input.path("reviewBinding"), envelope.path("reviewBinding"));
++                var descriptor = input.at("/currentRequest/exactAction");
++                var value = envelope.path("value");
++                assertEquals(descriptor.path("sha256"), value.path("sha256"));
++                assertEquals(0, value.path("offset").intValue());
++                assertFalse(value.path("hasMore").booleanValue());
++                assertEquals(descriptor.path("characters").intValue(), value.path("total").intValue());
++                assertEquals(value.path("total"), value.path("next"));
++                deniedPreparationExact = value.path("text").asText();
++                assertFalse(deniedPreparationExact.isBlank());
++                assertEquals(descriptor.path("sha256").asText(), fixtureDigest(deniedPreparationExact));
++            }
+             if (mode.name().startsWith("OPEN_") && input.at("/currentRequest/agentOpenPhaseEvidence").isObject()) {
+                 var opening = input.at("/currentRequest/agentOpenPhaseEvidence");
+                 assertEquals("BEFORE_PROTECTED_SOURCE_CREATION", opening.path("phase").asText());
+@@ -853,7 +994,25 @@
+                 assertEquals(1, controllerReadinessSends);
+                 assertEquals(fixtureDigest(DeploymentAgentToolchainPrograms.existingController(
+                     gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original())), input.at("/executableInput/stdin/sha256").asText());
++                if (isolationToolchainDeniedJourney && deniedPreparationExact.isEmpty()) {
++                    var descriptor = input.at("/currentRequest/exactAction");
++                    assertEquals("evidence", descriptor.path("tool").asText());
++                    assertEquals("/exactAction", descriptor.at("/arguments/pointer").asText());
++                    assertTrue(descriptor.path("characters").intValue() > 512);
++                    assertTrue(descriptor.path("characters").intValue() <= 8000);
++                    deniedExactPage = "denied_exact_" + approvalCalls;
++                    return nativeCall(deniedExactPage, "evidence", (ObjectNode) descriptor.path("arguments").deepCopy());
++                }
+                 existingPreparationVerdicts++;
++                if (isolationToolchainDeniedJourney) {
++                    assertFalse(deniedPreparationExact.isBlank());
++                    var denied = JSON.createObjectNode().put("decision", "DENY").put("requiresUserConfirmation", false)
++                        .put("reason", TOOLCHAIN_DENIAL_REASON).put("discussionStatus", "CLOSED");
++                    denied.putArray("missingEvidence");
++                    denied.putArray("adjustments");
++                    denied.putArray("candidateCommands");
++                    return nativeCall("denied_existing_" + approvalCalls, "submit_result", denied);
++                }
+             }
+             return verdict("APPROVE");
+         }
+@@ -958,7 +1117,16 @@
+ 
+         AiResponse decideIsolatedFileTransfer(AiRequest request) throws Exception {
+             request.messages().stream().flatMap(message -> message.toolResult().stream()).reduce((first, last) -> last)
+-                .ifPresent(result -> assertFalse(result.error(), result.text()));
++                .ifPresent(result -> {
++                    if (isolationToolchainDeniedJourney && decisions == 6) {
++                        assertTrue(result.error());
++                        assertTrue(result.text().contains("APPROVAL_DENIED: the exact action was not sent"));
++                        assertTrue(result.text().contains("Choose a different independently reviewed candidate action"));
++                        assertTrue(result.text().contains("NOT_SENT"));
++                        assertEquals(1, existingPreparationVerdicts, "The denied request was reviewed exactly once");
++                        denialFeedbackObserved = true;
++                    } else assertFalse(result.error(), result.text());
++                });
+             int turn = decisions++;
+             String tool;
+             ObjectNode args;
+@@ -1009,7 +1177,7 @@
+                 assessment.put("suitability", "Use the current Go module analysis").put("differences", "Existing immutable toolchain only")
+                     .put("resolution", "RESOLVED").put("decision", "Probe the existing Go toolchain without shared installation");
+             } else {
+-                assertEquals(4, turn);
++                assertEquals(isolationToolchainDeniedJourney ? 6 : 4, turn);
+                 tool = "remote_read";
+                 args = JSON.createObjectNode().put("component", "backend").put("path", "backend/main.go").put("offset", 0).put("limit", 1);
+             }
+@@ -1208,6 +1376,11 @@
+             }
+             if (request.script().contains("'agent-read'")) {
+                 assertEquals(1, opens);
++                if (isolationToolchainDeniedJourney) {
++                    assertNotNull(alternativeGrant);
++                    assertEquals(alternativeExact, gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, REVISION, request).exactAction());
++                    alternativeSends++;
++                }
+                 throw stop;
+             }
+             throw new AssertionError("Unrequested controlled operation");
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -4067,6 +4067,35 @@
+         assertEquals(data.path("requiredBytes").longValue(), observed.path("capacity").path("requiredBytes").longValue());
+         assertEquals(data.path("components").toString(), observed.path("capacity").path("components").toString());
+         assertFalse(projected.contains("arguments"));
++        var fixed = data.deepCopy().put("availableBytes", 1964691456L).put("requiredBytes", 2214592512L)
++            .put("aggregateHostCostBytes", 1140850688L).put("preparedReleaseBytes", 268435456L)
++            .put("additionalDiskDemandBytes", 67108864L).put("fixedCostBytes", 335544320L)
++            .put("candidateHostCostBytes", 805306368L).put("planningAvailableBytes", 1629147136L)
++            .put("budgetMeaning", "Conservative planning from one native capacity observation; availableBytes is unchanged. Owned candidates are already allocated; their future release quota and additional demands remain. Fresh independently reviewed per-filesystem isolation admission is still required.");
++        ((com.fasterxml.jackson.databind.node.ObjectNode) fixed.path("components").get(0))
++            .put("explicitBytes", 402653184L).put("hostCostBytes", 805306368L);
++        var fixedResult = new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(),
++            "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + fixed, true);
++        var fixedObserved = json.readTree(liveToolDiagnosticProjection(task, call, fixedResult).substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
++        assertEquals("OBSERVED", fixedObserved.path("status").asText());
++        assertEquals(fixed.toString(), fixedObserved.path("capacity").toString());
++        var partial = fixed.deepCopy(); partial.remove("additionalDiskDemandBytes");
++        for (var invalid : List.of(partial, fixed.deepCopy().put("preparedReleaseBytes", -1),
++            fixed.deepCopy().put("fixedCostBytes", 335544321L), fixed.deepCopy().put("candidateHostCostBytes", 805306369L),
++            fixed.deepCopy().put("planningAvailableBytes", 1629147135L), fixed.deepCopy().put("aggregateHostCostBytes", 1140850689L),
++            fixed.deepCopy().put("preparedReleaseBytes", Long.MAX_VALUE), fixed.deepCopy().put("budgetMeaning", "private-script-94"),
++            fixed.deepCopy().put("script", "private-script-94"))) {
++            String rejected = liveToolDiagnosticProjection(task, call, new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(),
++                "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + invalid, true));
++            assertEquals("UNKNOWN", json.readTree(rejected.substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
++            assertFalse(rejected.contains("private-script-94"));
++            assertFalse(rejected.contains("capacity\""));
++        }
++        var belowFixed = fixed.deepCopy().put("availableBytes", 1).put("planningAvailableBytes", 0);
++        assertEquals("OBSERVED", json.readTree(liveToolDiagnosticProjection(task, call,
++            new gold.debug.windowstolinux.appapi.ai.model.AiToolResult(call.id(),
++                "TOOL_REJECTED: WORKSPACE_HOST_INSUFFICIENT DATA=" + belowFixed, true))
++            .substring("AI_LIVE_STOP_DIAGNOSTIC ".length())).path("status").asText());
+         var noTask = json.readTree(liveToolDiagnosticProjection(null, call, result).substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
+         assertEquals("NO_TASK_BINDING", noTask.path("projectionFailure").asText());
+         assertEquals("LIVE_DIAGNOSTIC_UNAVAILABLE", noTask.path("code").asText());
+@@ -4283,7 +4312,8 @@
+                 Set<String> fields = Set.of("code", "task", "sourceSha256", "configurationSha256", "layoutSha256",
+                     "capacityRequestSha256", "capacityResultSha256", "inputsSha256", "archiveBytes", "unpackedBytes", "availableBytes",
+                     "hostReserveBytes", "requiredBytes", "aggregateHostCostBytes", "cost", "hostCostMultiplier", "componentCount",
+-                    "components", "truncated", "newInputsNotCreatedByRejectedPlan", "componentIds");
++                    "components", "truncated", "newInputsNotCreatedByRejectedPlan", "componentIds", "preparedReleaseBytes",
++                    "additionalDiskDemandBytes", "fixedCostBytes", "candidateHostCostBytes", "planningAvailableBytes", "budgetMeaning");
+                 diagnosticFields(data, fields);
+                 if (!data.path("task").isTextual() || !task.toString().equals(data.path("task").textValue())
+                     || !data.path("code").isTextual() || !data.path("code").textValue().equals("WORKSPACE_HOST_INSUFFICIENT")
+@@ -4297,6 +4327,20 @@
+                         throw new IllegalArgumentException();
+                 for (String field : List.of("archiveBytes", "unpackedBytes", "availableBytes", "hostReserveBytes", "requiredBytes", "aggregateHostCostBytes", "componentCount"))
+                     diagnosticBytes(data, field);
++                var fixedFields = Set.of("preparedReleaseBytes", "additionalDiskDemandBytes", "fixedCostBytes",
++                    "candidateHostCostBytes", "planningAvailableBytes", "budgetMeaning");
++                if (fixedFields.stream().anyMatch(data::has)) {
++                    if (!fixedFields.stream().allMatch(data::has)) throw new IllegalArgumentException();
++                    for (String field : fixedFields) if (!field.equals("budgetMeaning")) diagnosticBytes(data, field);
++                    long fixed = Math.addExact(data.path("preparedReleaseBytes").longValue(), data.path("additionalDiskDemandBytes").longValue());
++                    if (fixed != data.path("fixedCostBytes").longValue()
++                        || Math.addExact(fixed, data.path("candidateHostCostBytes").longValue()) != data.path("aggregateHostCostBytes").longValue()
++                        || Math.addExact(data.path("aggregateHostCostBytes").longValue(), data.path("hostReserveBytes").longValue()) != data.path("requiredBytes").longValue()
++                        || Math.max(0, Math.subtractExact(data.path("availableBytes").longValue(), fixed)) != data.path("planningAvailableBytes").longValue()
++                        || !data.path("budgetMeaning").isTextual() || !data.path("budgetMeaning").textValue().equals(
++                            "Conservative planning from one native capacity observation; availableBytes is unchanged. Owned candidates are already allocated; their future release quota and additional demands remain. Fresh independently reviewed per-filesystem isolation admission is still required."))
++                        throw new IllegalArgumentException();
++                }
+                 if (!data.path("components").isArray() || data.path("components").size() > data.path("componentCount").longValue())
+                     throw new IllegalArgumentException();
+                 for (var component : data.path("components")) {
