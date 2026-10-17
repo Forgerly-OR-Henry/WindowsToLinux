@@ -1,0 +1,25 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -1014 +1014 @@
+-        for (String name : names) parents.addObject().put("source", name).put("kind", "d").put("device", 1).put("inode", parents.size() + 10).put("mode", "755").put("uid", 0).put("gid", 0);
++        for (String name : names) parents.addObject().put("source", name).put("kind", "d").put("device", 1).put("inode", parents.size() + 10).put("mode", "711").put("uid", 0).put("gid", 0);
+@@ -1038,0 +1039,4 @@
++        assertEquals(1, verifiedFacts.path("successfulObserverEnforcedSourceChecks").path("sourceNlink").asInt());
++        assertTrue(verifiedFacts.path("completeActuallyExecutedObserverScript").asText().contains("st_nlink == 1"));
++        assertTrue(verifiedFacts.path("parentPermissionArithmetic").get(0).path("passesNonWritableModePredicate").asBoolean());
++        assertEquals(0, verifiedFacts.path("parentPermissionArithmetic").get(0).path("groupOtherWriteMask").asInt());
+@@ -1336 +1340,2 @@
+-                var observed = currentContentProof(evidenceWorkspace, node.path("sourceFacts").path("currentContentObservation"), layout).receipt();
++                var observedProof = currentContentProof(evidenceWorkspace, node.path("sourceFacts").path("currentContentObservation"), layout);
++                var observed = observedProof.receipt();
+@@ -1349 +1354,9 @@
+-                    Map.entry("completeObservationReceipt", observed)));
++                    Map.entry("completeObservationReceipt", observed),
++                    Map.entry("successfulObserverEnforcedSourceChecks", Map.of("basis", "ENFORCED_BY_SUCCESSFUL_EXACT_OBSERVER_NOT_ADDITIONAL_STAT", "sourceNlink", 1,
++                        "samplePoints", "before open, fstat after open, path/fd checks before/after reads and final verify", "identityScope", "Equal identity at checked samples only; no claim about arbitrary history or changes between samples")),
++                    Map.entry("completeActuallyExecutedObserverScript", observedProof.documents().get("producerPlan").path("script")),
++                    Map.entry("parentPermissionArithmetic", java.util.stream.StreamSupport.stream(observed.path("parents").spliterator(), false)
++                        .map(parent -> Map.of("source", parent.path("source").asText(), "observedModeOctal", parent.path("mode").asText(),
++                            "parsedMode", Integer.parseInt(parent.path("mode").asText(), 8), "groupOtherWriteMask", Integer.parseInt(parent.path("mode").asText(), 8) & 0022,
++                            "passesNonWritableModePredicate", (Integer.parseInt(parent.path("mode").asText(), 8) & 0022) == 0,
++                            "otherOwnerTypeAndIdentityChecksStillRequired", true)).toList())));

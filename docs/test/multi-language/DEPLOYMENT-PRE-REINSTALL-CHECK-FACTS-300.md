@@ -1,0 +1,9 @@
+# 重装前文件备份的检查推导300
+
+299新FILES再被独立APP拒绝且无grant，理由称没有link-count/inode history及脚本拒绝0711目录。真实成功observer有118父目录，其中21为0711，全部mode&0022为0；精确执行源码matches必检source nlink1，并在打开前后、读取前后及最终检查path/FD身份。成功六链可支持这些已执行检查的逻辑推导，不等同新增stat输出或任意历史上从未改变。
+
+仅Live审核facts新增清楚标注的ENFORCED_BY_SUCCESSFUL_EXACT_OBSERVER_NOT_ADDITIONAL_STAT、完整实际观察脚本，以及每parent原始octal/解析值/与0022运算/其它owner和身份检查仍必要。原receipt不篡改，生产API、STATIC/ASSISTED、producer与APP政策不改。新的run/nonce按既有合同重新观察，然后独立FILES APP/newgrant；既有拒绝均保持结束，不重放。
+
+唯一content方法定点test01通过0.986s，含0711合法/可写父目录仍拒绝、推导标记及完整脚本来源。没有重跑已过EOL/恢复/DB/Python，没有全量/package，20直接源码及原生产JAR属性稳定。提交阶段仅窄源码及artifact摘要。
+
+必要数据库已受保护下载并独立内存恢复PASS。普通文件及最终必要覆盖/收尾仍待实际成功；完成前goalactive/test/data NOT_READY，绝不提前paused或发可重装信号。原FT→CSV验收未完成，不恢复194或旧七UNKNOWN，不执行重装。
