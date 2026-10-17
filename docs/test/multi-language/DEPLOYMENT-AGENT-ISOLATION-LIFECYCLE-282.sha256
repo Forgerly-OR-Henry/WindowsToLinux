@@ -1,0 +1,8 @@
+527db7ba586c2587cc4b52494115c62bf31d3d4654d426da411c17fe0b1b337c  src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentRemoteTools.java
+96e562e57c944d1b6605b9fddb5d8260859c0774dffed1a285708609e28d7c0c  src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationProbe.java
+544d9b68bfec07c34260130a33fc6e69bfa20d15e3c4f42b5c5257cdc96efed5  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/tools/DeploymentAgentPrepareReviewTest.java
+47ad72c97ffa30266763be9031920ad3a174475aceabaee463e2975f38d3847e  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/agent/isolation/DeploymentAgentIsolationTest.java
+2e136714166bee6260565bad47ae9b512903feaa5f053955717c8543b1285a3e  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+44ffdaad546092f9669525fbe6dcfcea124e39f96cce84ebc102d38cc5112580  src/mod/deployment/target/deployment.jar
+8f98a55ab20d1a1358c1573efe665fc993fedf1f9a79df77ab564781c930ca97  docs/test/multi-language/DEPLOYMENT-AGENT-ISOLATION-LIFECYCLE-282.patch
+ab8f12d58d5b13725769fd8a0a390a5d957fbb3606da159ed90b3633ea1cf5d0  docs/test/multi-language/DEPLOYMENT-AGENT-ISOLATION-LIFECYCLE-282.md
