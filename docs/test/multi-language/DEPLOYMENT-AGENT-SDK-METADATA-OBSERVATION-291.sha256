@@ -1,0 +1,6 @@
+3ba49982c9dc28f227d69af06a753d6cd8a99438fe271d8d74b291340e7ed84a  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+4d3ae676cd9a7421cc44d2ff7dd416d3c2ebe4a1b499eaa75e0767e02a2828d0  src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
+ab68675ae5116ae2bc37b2b826ec72f368763411b0970386b0b9bf4fdf7bc756  src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/sdk-metadata-observation.py
+ef77b1913f1e85b1aac6c545b694d6089c7a482b40cb5175466ef9d96be31f6a  src/mod/deployment/target/deployment.jar
+f4004ad4621e43351e7f61916a80ad1e7faaee63c84d0f65369372dd442b73a5  docs/test/multi-language/DEPLOYMENT-AGENT-SDK-METADATA-OBSERVATION-291.patch
+a834530156274b4bce7fed005188ce9a81bbdaa380157498d1c12c5c0c0676af  docs/test/multi-language/DEPLOYMENT-AGENT-SDK-METADATA-OBSERVATION-291.md

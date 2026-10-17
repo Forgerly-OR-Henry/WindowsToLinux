@@ -1,0 +1,338 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -5792,6 +5792,104 @@
+     }
+ 
+     @Test
++    @EnabledIfSystemProperty(named = "managed.runtime.sdkMetadataObservation", matches = "true")
++    void observesExistingSdkMetadataThroughNativeApproval() throws Exception {
++        assertEquals("DeploymentStaticLiveAcceptanceTest#observesExistingSdkMetadataThroughNativeApproval", System.getProperty("test"));
++        root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
++        assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
++        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
++        assertEquals(java.util.UUID.fromString("bc6fbab1-9106-48b6-bfd4-820ad0753906"), original);
++        connectionOnly = false; aiEnabled = true; agentMode = true; agentApproval = "AUTOMATIC"; agentRemember = false;
++        try (var runtime = open()) {
++            start(runtime, true);
++            var history = runtime.logs().inventory(false).categories().stream().filter(value -> value.target().owner().equals("app")
++                && value.target().category().equals("platform_task")).findFirst().orElseThrow();
++            var view = runtime.logs().inspect(history.target().key());
++            assertTrue(view.problem().isEmpty());
++            var receipts = view.records().stream().filter(value -> value.event().taskId().filter(original::equals).isPresent()).toList();
++            assertEquals(1, receipts.size());
++            var receipt = receipts.getFirst();
++            assertFalse(receipt.truncated()); assertEquals(Optional.of(OWNER), receipt.subjectMod()); assertEquals(Optional.of(VERSION), receipt.version());
++            assertEquals("PLATFORM_TASK_FAILED", receipt.event().eventCode()); assertEquals(Optional.of(TaskResult.FAILED), receipt.event().outcome());
++            var archived = JSON.readTree(receipt.event().details().orElseThrow());
++            assertEquals(DeploymentAgentWorkflow.TASK_TYPE, archived.path("taskType").asText());
++            assertEquals("DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", JSON.readTree(archived.path("result").asText()).path("problem").path("eventCode").asText());
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            var observed = completed(context.tasks().<com.fasterxml.jackson.databind.JsonNode>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
++                "deployment-sdk-metadata-observation", "SDK METADATA_ONLY; SDK tree read-only, product admission and receipts may be written", List.of(SERVER), true), task -> {
++                var conclusion = context.tasks().findArchived(original, task).orElseThrow();
++                assertEquals(DeploymentAgentWorkflow.TASK_TYPE, conclusion.type()); assertEquals(Optional.of(TaskResult.FAILED), conclusion.outcome());
++                var server = new ServerId(SERVER);
++                var profile = context.servers().get(server, task);
++                assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
++                String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
++                Path source = workspace().resolve("src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard");
++                var selection = context.file().sources().selectDirectory(source, task);
++                try (var snapshot = context.file().snapshots().snapshot(selection,
++                    new gold.debug.windowstolinux.appapi.file.snapshot.SnapshotRequest(List.of("sdk-metadata-observation.py"), 65536), task)) {
++                    var browser = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser(snapshot.directory(), snapshot.sha256());
++                    String script = "exec /usr/bin/python3 -I -S -B - <<'WTL_SDK_METADATA_ONLY_291'\n"
++                        + Files.readString(snapshot.directory().resolve("sdk-metadata-observation.py"), java.nio.charset.StandardCharsets.UTF_8)
++                        + "\nWTL_SDK_METADATA_ONLY_291\n";
++                    try (var authority = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.open(
++                        context, task, server, revision, "AUTOMATIC", false,
++                        "Observe only existing GO/NODE SDK marker metadata; no SDK execution/PROBE/prepare/install/candidate; product admission and operation receipts may be written");
++                         var session = context.linux().connect(server, task)) {
++                        assertEquals(Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint")), session.facts().fingerprint());
++                        var approval = new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval(context, task,
++                            new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Evidence() {
++                                public gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding binding() {
++                                    return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
++                                        server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
++                                }
++                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-observer", browser); }
++                                public Object receipts() { return Map.of("purpose", "SDK_METADATA_ONLY", "prerequisiteTask", original.toString(),
++                                    "prerequisiteResult", "FAILED:DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", "sdkTreeReadOnly", true, "productAdmissionAndReceiptWrites", true); }
++                                public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
++                                    return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(), "publicSourceSnapshotId", snapshot.id().toString());
++                                }
++                            });
++                        var reviewed = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCommandReviewScope(
++                            context, context.interaction(), task, "AUTOMATIC", false, () -> revision, null,
++                            gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence.NONE, () -> approval);
++                        var grants = new java.util.HashSet<java.util.UUID>();
++                        var tracked = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
++                            if (method.getName().equals("execute")) {
++                                var grant = (gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) args[1];
++                                assertTrue(grants.add(grant.id()), "Every SDK command must consume a fresh exact grant");
++                                System.out.println("SDK_METADATA_SEND task=" + task.id() + " grant=" + grant.id() + " command=" + grants.size());
++                            }
++                            return invoke(method, session, args);
++                        });
++                        try {
++                            String feedback = gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.execute(
++                                reviewed, tracked, server, task, revision, script, 60, "Read existing SDK marker fields only; metadata does not establish content integrity, runtime compatibility or READY");
++                            assertTrue(feedback.lines().anyMatch("EXIT=0"::equals)); assertFalse(feedback.contains("OUTPUT_TRUNCATED=1"));
++                            var lines = feedback.lines().filter(value -> value.startsWith("SDK_METADATA=")).toList();
++                            assertEquals(1, lines.size());
++                            var metadata = JSON.readTree(lines.getFirst().substring("SDK_METADATA=".length()));
++                            assertEquals("METADATA_ONLY", metadata.path("mode").asText()); assertEquals("OBSERVED", metadata.path("status").asText());
++                            assertEquals(0, metadata.path("sdkExecutions").asInt(-1)); assertEquals(0, metadata.path("probeOperations").asInt(-1));
++                            assertEquals(2, grants.size());
++                            return success(metadata);
++                        } catch (ApiException refused) {
++                            var diagnostic = refused instanceof gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAlternativeRequiredException
++                                && refused.getCause() instanceof ApiException denied && denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED") ? denied : refused;
++                            gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, diagnostic);
++                            throw refused;
++                        } finally {
++                            if (!gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.unconfirmed(context, task))
++                                gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.releaseKnown(context, task);
++                        }
++                    }
++                } finally { context.file().closeTaskResources(task); }
++            }), 20);
++            assertEquals(2, reviewedActions.get(), "Both the observation and its receipt query require independent approval");
++            System.out.println("SDK_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
++        }
++    }
++
++    @Test
+     void observesCandidateCapacityThroughProduct() throws Exception {
+         connectionOnly = false;
+         enable();
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentSdkMetadataObservationTest.java
+@@ -0,0 +1,60 @@
++package gold.debug.windowstolinux.mod.deployment.service.standard;
++
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Path;
++import java.util.concurrent.TimeUnit;
++import org.junit.jupiter.api.Test;
++import static org.junit.jupiter.api.Assertions.*;
++
++class DeploymentSdkMetadataObservationTest {
++    @Test
++    void boundedMetadataObserverRetainsAbsenceAndRejectsUntrustedOrDriftingEvidence() throws Exception {
++        var source = Path.of(getClass().getResource("sdk-metadata-observation.py").toURI());
++        var process = new ProcessBuilder(System.getProperty("managed.python.executable", "python"), "-I", "-S", "-B", "-", source.toString())
++            .redirectErrorStream(true).start();
++        try {
++            try (var input = process.getOutputStream()) {
++                input.write("""
++                    import hashlib, json, os, pathlib, stat, sys, types
++                    from contextlib import ExitStack
++                    from unittest.mock import Mock, patch
++                    def rejected(action):
++                        try: action()
++                        except ValueError: return
++                        raise AssertionError('Untrusted evidence was accepted')
++                    with ExitStack() as stack:
++                        for index, flag in enumerate(('O_DIRECTORY', 'O_NOFOLLOW', 'O_CLOEXEC', 'O_NONBLOCK')):
++                            stack.enter_context(patch.object(os, flag, 1 << (20 + index), create=True))
++                        n = {'__name__': 'synthetic_observation'}
++                        exec(compile(pathlib.Path(sys.argv[1]).read_bytes(), '<observer>', 'exec'), n)
++                        for ecosystem, version in [('GO', '1.24.13'), ('NODE', '24.22.0')]:
++                            digest = 'a' * 64
++                            name = ecosystem.lower() + '-' + hashlib.sha256((ecosystem + '\\n' + version + '\\n' + digest).encode()).hexdigest()
++                            value = dict(ecosystem=ecosystem, version=version, directory=n['ROOT'] + '/' + name,
++                                         origin='MANAGED', source='https://example.invalid/?token=synthetic-private', sha256=digest,
++                                         official_algorithm='sha256', official_digest=digest)
++                            projected = n['record'](json.dumps(value), name)
++                            assert projected['declaredBranchCompatible'] is True and 'source' not in projected
++                            assert 'synthetic-private' not in json.dumps(projected)
++                            rejected(lambda: n['record'](json.dumps(dict(value, unexpected='untrusted')), name))
++                            rejected(lambda: n['record'](json.dumps(dict(value, directory='/foreign/slot')), name))
++                        with patch.object(os, 'open', side_effect=FileNotFoundError):
++                            assert n['marker'](123) is None
++                        info = types.SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0, st_gid=0, st_nlink=1, st_size=64)
++                        n['trusted'](info, False)
++                        info.st_mode |= 0o020
++                        rejected(lambda: n['trusted'](info, False))
++                        with patch.dict(n, scan=Mock(side_effect=[([], [], []), (['changed'], [], [])])):
++                            rejected(lambda: n['stable_scan'](123))
++                    print('SDK_METADATA_SYNTHETIC positive=2 absence=1 untrusted=5 drift=1')
++                    """.getBytes(StandardCharsets.UTF_8));
++            }
++            assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Synthetic observer must exit within its local bound");
++            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
++            assertEquals(0, process.exitValue(), output);
++            assertEquals("SDK_METADATA_SYNTHETIC positive=2 absence=1 untrusted=5 drift=1", output.strip());
++        } finally {
++            if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, TimeUnit.SECONDS)); }
++        }
++    }
++}
+--- /dev/null
++++ b/src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/sdk-metadata-observation.py
+@@ -0,0 +1,165 @@
++"""SDK installation-tree metadata only; never execute an SDK or establish READY."""
++import json
++import hashlib
++import os
++import re
++import stat
++import sys
++
++ROOT = '/usr/local/lib/windowstolinux/toolchains/versions'
++FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
++REQUIRED = {'ecosystem', 'version', 'directory', 'origin', 'source', 'sha256'}
++FIELDS = REQUIRED | {'official_algorithm', 'official_digest', 'tree_sha256', 'agent_program_sha256', 'system_files', 'dependencies'}
++
++
++def require(value):
++    if not value:
++        raise ValueError('UNTRUSTED_OR_CHANGED_METADATA')
++
++
++def identity(info):
++    return tuple(getattr(info, key) for key in ('st_dev', 'st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns'))
++
++
++def trusted(info, directory):
++    require((stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
++            and info.st_uid == 0 and info.st_gid == 0 and not info.st_mode & 0o022)
++    if not directory:
++        require(info.st_nlink == 1 and 0 <= info.st_size <= 65536)
++
++
++def open_directory(name, parent=None):
++    fd = os.open(name, FLAGS, dir_fd=parent)
++    try:
++        trusted(os.fstat(fd), True)
++        return fd
++    except Exception:
++        os.close(fd)
++        raise
++
++
++def marker(directory):
++    try:
++        fd = os.open('.w2l-toolchain.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
++    except FileNotFoundError:
++        return None
++    try:
++        before = os.fstat(fd)
++        trusted(before, False)
++        chunks, size = [], 0
++        while size <= 65536:
++            chunk = os.read(fd, min(4096, 65537 - size))
++            if not chunk:
++                break
++            chunks.append(chunk)
++            size += len(chunk)
++        require(size == before.st_size and size <= 65536 and identity(before) == identity(os.fstat(fd)))
++        require(identity(before) == identity(os.stat('.w2l-toolchain.json', dir_fd=directory, follow_symlinks=False)))
++        return identity(before), b''.join(chunks)
++    finally:
++        os.close(fd)
++
++
++def pairs(values):
++    result = {}
++    for key, value in values:
++        require(key not in result)
++        result[key] = value
++    return result
++
++
++def record(data, name):
++    value = json.loads(data, object_pairs_hook=pairs)
++    require(isinstance(value, dict) and REQUIRED <= set(value) <= FIELDS)
++    require(all(isinstance(value[key], str) and re.fullmatch(r'[!-~]{1,2048}', value[key]) for key in REQUIRED))
++    ecosystem = name.split('-')[0].upper()
++    require(value['ecosystem'] == ecosystem and value['directory'] == ROOT + '/' + name)
++    require(re.fullmatch(r'[0-9][0-9A-Za-z._+-]{0,95}', value['version']) and value['origin'] in ('MANAGED', 'SYSTEM'))
++    for key in ('sha256', 'tree_sha256', 'agent_program_sha256'):
++        require(key not in value or isinstance(value[key], str) and re.fullmatch('[a-f0-9]{64}', value[key]))
++    require('official_algorithm' not in value or value['official_algorithm'] in ('sha256', 'sha512'))
++    require('official_digest' not in value or isinstance(value['official_digest'], str) and re.fullmatch('[a-f0-9]{64}|[a-f0-9]{128}', value['official_digest']))
++    if value['origin'] == 'MANAGED':
++        require(value.get('official_algorithm') in ('sha256', 'sha512'))
++        require(isinstance(value.get('official_digest'), str) and re.fullmatch('[a-f0-9]{' + ('64' if value['official_algorithm'] == 'sha256' else '128') + '}', value['official_digest']))
++        require(value['official_algorithm'] != 'sha256' or value['sha256'] == value['official_digest'])
++        require(name == ecosystem.lower() + '-' + hashlib.sha256((ecosystem + '\n' + value['version'] + '\n' + value['official_digest']).encode()).hexdigest())
++    else:
++        require(value['source'].startswith('system:/'))
++    result = {key: value[key] for key in sorted(FIELDS - {'source', 'system_files', 'dependencies'}) if key in value}
++    result['declaredBranchCompatible'] = bool(re.fullmatch(r'1\.24(?:\.[0-9]+)?', value['version']) if ecosystem == 'GO' else re.fullmatch(r'24(?:\.[0-9]+){0,2}', value['version']))
++    return result
++
++
++def scan(directory):
++    names = []
++    with os.scandir(directory) as entries:
++        for entry in entries:
++            require(len(names) < 32)
++            names.append(entry.name)
++    rows, proofs = [], []
++    for name in sorted(names):
++        if not name.startswith(('go-', 'node-')):
++            continue
++        require(re.fullmatch('(go|node)-[a-f0-9]{64}', name))
++        fd = open_directory(name, directory)
++        try:
++            before = identity(os.fstat(fd))
++            observed = marker(fd)
++            require(before == identity(os.fstat(fd)) == identity(os.stat(name, dir_fd=directory, follow_symlinks=False)))
++            rows.append({'slot': name, 'recordState': 'ABSENT' if observed is None else 'FIELDS_OBSERVED',
++                         'fields': {} if observed is None else record(observed[1], name)})
++            proofs.append((name, before, observed))
++        finally:
++            os.close(fd)
++    return sorted(names), proofs, rows
++
++
++def stable_scan(directory):
++    before, after = scan(directory), scan(directory)
++    require(before == after)
++    return before[2]
++
++
++def observe():
++    chain, missing, rows = [], None, []
++    try:
++        fd = open_directory('/')
++        chain.append((None, '/', fd, identity(os.fstat(fd))))
++        for name in ROOT.strip('/').split('/'):
++            parent = fd
++            try:
++                fd = open_directory(name, parent)
++            except FileNotFoundError:
++                missing = parent, name
++                break
++            chain.append((parent, name, fd, identity(os.fstat(fd))))
++        if missing is None:
++            rows = stable_scan(fd)
++        else:
++            try:
++                os.stat(missing[1], dir_fd=missing[0], follow_symlinks=False)
++                require(False)
++            except FileNotFoundError:
++                pass
++        for parent, name, fd, before in chain:
++            require(before == identity(os.fstat(fd)))
++            if parent is not None:
++                require(before == identity(os.stat(name, dir_fd=parent, follow_symlinks=False)))
++        return {'schema': 1, 'mode': 'METADATA_ONLY', 'status': 'OBSERVED', 'rootState': 'PRESENT' if missing is None else 'ABSENT',
++                'records': rows, 'sdkExecutions': 0, 'probeOperations': 0,
++                'ecosystems': {key: 'SLOTS_OBSERVED' if any(row['slot'].startswith(key.lower() + '-') for row in rows) else 'NO_RECORDED_SLOTS' for key in ('GO', 'NODE')},
++                'meaning': 'Declared metadata only; SDK execution, content digests, runtime compatibility and READY are not verified.'}
++    finally:
++        for _, _, fd, _ in reversed(chain):
++            os.close(fd)
++
++
++if __name__ == '__main__':
++    try:
++        output = json.dumps(observe(), sort_keys=True, separators=(',', ':'))
++        require(len(output.encode('utf-8')) <= 60000)
++        print('SDK_METADATA=' + output)
++    except (OSError, ValueError, TypeError, KeyError):
++        print('SDK_METADATA={"schema":1,"mode":"METADATA_ONLY","status":"UNCONFIRMED"}')
++        sys.exit(65)
