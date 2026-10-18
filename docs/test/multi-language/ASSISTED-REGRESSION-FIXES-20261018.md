@@ -494,3 +494,15 @@ Agent后续调试须注意：共享AiJson ask/askCommand的wire requiredToolName
 approval-reasoning-budget-unit-01共26项通过0跳过：配置默认/严格额度2、RequiredReviewSubmission13、StructuredSubmission2、原流程证据9；真实codec校验LOW/AUTO及max_tokens32768，拒绝场景仍无host授权/发送。真机监督断言改为读取生产配置上限，不再硬编码8192。只读用量审计器明确目录上限64改128，独立编译后usage-audit-18真实覆盖64个已结束根，未发送模型或SSH请求。
 
 该审计已知8187908Token、1412个typed物理生成尝试；2个HTTP400物理尝试用量未知，256项能力验证用量未知，另1条无物理trace逻辑记录为Task Board19发送前预算拦截。未知不按0处理，最终仍需覆盖剩余项目后重审。08及其余三站尚待新配置的完整实机验收，配置暂存改进仍未提前宣称实机通过。
+
+## File Transfer 08：输出额度与期限配合、UNKNOWN用量日志
+
+08原6151eae6-9393-4dad-a3ca-d883d2dd0c80/root assisted-live-file-transfer-7p6qmu3jc在Go prepare取得完整原生审批（output24618/reasoning24501、104858ms），随后实际命令EXIT0并完成绑定，证明8192限制已越过。后续Node prepare在120000ms返回AI_TIMEOUT，generation518a8fdc-d5e7-4293-b5a7-ca4031fb780a用量未知。原任务保留UNKNOWN；reconcile-08-01产品核实ENDED/FAILED、blockers=[]，JUnit1通过后才准许新部署，未重放原准备命令。
+
+将approval-timeout-seconds从120提高到600，使用既有extended-timeout-seconds600作为有限上限，普通部署期限120及32768输出、纠正轮数/独立否决/授权保持。旧冻结任务不变；共享默认影响后续Agent/backup新任务，需专项核验，不能声称本轮已验证。HEAD配置尚未纳入用户已有requests节，本次选择性提交该节必需四字段（普通120/审批600/扩展600/原有generation-recovery-attempts1），不改变其余用户配置或引入新重试。ASSISTED没有因此取得Agent专属生成重试权限。
+
+JFR另确认DeploymentAiCallMetrics.record把UNKNOWN填入LogEvent终态outcome，被真实LogRecordCodec拒绝，导致本次超时用量日志未落库。修复仅在日志终态字段省略UNKNOWN，details原outcome及typed生成UNKNOWN、缺失Token全部保留；原能力结果/异常原样返回。未更改宿主日志契约、未补零或吞掉原失败。该共享类及既有测试原未跟踪，按用户“修改文件保持提交”授权完整纳入；精确补丁仍只显示本轮相对实际.before的修改。
+
+approval-deadline-and-unknown-usage-unit-01因PowerShell参数拆分失败，业务测试0执行；改用参数数组后unit-02共22项通过0跳过：Metrics5（新增返回/抛出UNKNOWN均经真实编码/解码验证）、RequiredReviewSubmission13、StructuredSubmission2、配置默认及资源关系2。日志保持同一个原ApiException、调用1次且记录1次，未知不作终态。未运行Agent部署或全量测试。
+
+用量核对另发现Task Board19最早两次LANGUAGE生成（f3c61841-117f-45f1-8706-6c1d10fe4981、96ce1afe-6528-4896-bcc1-f3529df2919f）仅在原stdout有完整provider usage，当前保留日志未匹配到；以原输入1479+1850、输出76+202合计3607Token照实计入，不推算。08超时尝试也由stdout保留未知字段。最终报告须披露stdout与持久记录覆盖差异，不声称所有物理尝试均已在持久日志逐项复核。

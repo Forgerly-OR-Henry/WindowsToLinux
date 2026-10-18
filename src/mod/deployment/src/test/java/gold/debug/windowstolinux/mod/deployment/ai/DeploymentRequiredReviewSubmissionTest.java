@@ -52,7 +52,7 @@ class DeploymentRequiredReviewSubmissionTest {
         assertFalse(request.jsonObjectResponse());
         assertEquals(32768, request.maxOutputTokens().orElseThrow());
         assertEquals(1048576, request.maxRequestBytes());
-        assertEquals(Duration.ofSeconds(120), request.timeout());
+        assertEquals(Duration.ofSeconds(600), request.timeout());
         assertEquals(JSON.valueToTree(facts("first")), JSON.readTree(request.messages().getLast().text()));
         var schema = JSON.readTree(request.tools().getFirst().inputSchema());
         assertFalse(schema.path("additionalProperties").asBoolean());

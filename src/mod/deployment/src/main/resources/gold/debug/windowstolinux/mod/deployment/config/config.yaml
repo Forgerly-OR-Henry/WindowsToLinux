@@ -2,6 +2,11 @@ ai:
   deployment-max-output-tokens: 32768
   extended-deployment-max-output-tokens: 65536
   approval-max-output-tokens: 32768
+  requests:
+    deployment-timeout-seconds: 120
+    approval-timeout-seconds: 600
+    extended-timeout-seconds: 600
+    generation-recovery-attempts: 1
 source:
   bytes: 2147483648
   entries: 100000

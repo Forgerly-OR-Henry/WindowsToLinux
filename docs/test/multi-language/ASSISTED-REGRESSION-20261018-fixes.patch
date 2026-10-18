@@ -1497,6 +1497,19 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          var metrics = new DeploymentAiCallMetrics(context, task, "native_tools");
          var result = metrics.call(request, revision);
          if (result.outcome() != TaskResult.SUCCEEDED)
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetrics.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetrics.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetrics.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetrics.java
+@@ -83,7 +83,8 @@
+         try {
+             var target = context.logs().register(new LogCategory("deployment", "Deployment", Optional.of("deployment_log")));
+             context.logs().write(target, new LogEvent(LogLevel.INFO, "DEPLOYMENT_AI_USAGE", "DEPLOYMENT_AI_USAGE",
+-                Optional.of(JSON.writeValueAsString(values)), Optional.of(task.id()), Optional.of(invocation), Optional.of(result.outcome())));
++                Optional.of(JSON.writeValueAsString(values)), Optional.of(task.id()), Optional.of(invocation),
++                Optional.of(result.outcome()).filter(outcome -> outcome != TaskResult.UNKNOWN)));
+         } catch (ApiException | java.io.IOException unavailable) {
+             // Diagnostic storage remains independent of the authoritative model result.
+         }
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedAnalysis.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedAnalysis.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedAnalysis.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedAnalysis.java
@@ -3417,7 +3430,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(DeploymentConfig.Environment.original(), config.environment());
          assertEquals(new DeploymentConfig.View(750, 200), config.view());
 -        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600, 1),
-+        assertEquals(new DeploymentConfig.Ai(32768, 65536, 32768, new DeploymentConfig.Requests(120, 120, 600, 1),
++        assertEquals(new DeploymentConfig.Ai(32768, 65536, 32768, new DeploymentConfig.Requests(120, 600, 600, 1),
              new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
          assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
              "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
@@ -3716,7 +3729,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java
-@@ -47,18 +47,25 @@
+@@ -47,10 +47,10 @@
          assertEquals("DENY", result.path("decision").asText());
          assertEquals(1, fixture.requests.size());
          var request = fixture.requests.getFirst();
@@ -3727,11 +3740,9 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 -        assertEquals(8192, request.maxOutputTokens().orElseThrow());
 +        assertEquals(32768, request.maxOutputTokens().orElseThrow());
          assertEquals(1048576, request.maxRequestBytes());
--        assertEquals(Duration.ofSeconds(600), request.timeout());
-+        assertEquals(Duration.ofSeconds(120), request.timeout());
+         assertEquals(Duration.ofSeconds(600), request.timeout());
          assertEquals(JSON.valueToTree(facts("first")), JSON.readTree(request.messages().getLast().text()));
-         var schema = JSON.readTree(request.tools().getFirst().inputSchema());
-         assertFalse(schema.path("additionalProperties").asBoolean());
+@@ -59,6 +59,13 @@
          assertEquals(Set.of("decision", "requiresUserConfirmation", "reason"),
              Set.copyOf(JSON.convertValue(schema.path("required"), List.class)));
          assertEquals(List.of("APPROVE", "DENY"), JSON.convertValue(schema.at("/properties/decision/enum"), List.class));
@@ -3772,6 +3783,50 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(0, boundary.authorizations().get());
          assertEquals(0, boundary.dispatches().get());
      }
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiCallMetricsTest.java
+@@ -10,6 +10,40 @@
+ import org.junit.jupiter.api.Test;
+ 
+ class DeploymentAiCallMetricsTest {
++    @Test
++    void unknownGenerationRemainsUnknownAndItsUsageRoundTripsThroughTheRealLogCodec() throws Exception {
++        var problem = AiGenerationAttempt.attach(new Problem(ProblemCode.UNKNOWN, "AI_TIMEOUT", "Provider deadline elapsed",
++            Map.of(), Optional.empty()), List.of(new AiGenerationAttempt(UUID.randomUUID(), 1, "fixture", "OPENAI_CHAT_COMPLETIONS",
++            TaskResult.UNKNOWN, "AI_TIMEOUT", "NONE", 120000,
++            new AiUsage(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()), 100, 32768)));
++        var target = new gold.debug.windowstolinux.app.db.log.LogStore.Target(UUID.randomUUID(),
++            "gold.debug.windowstolinux.mod.deployment", "v1", UUID.randomUUID(), "m_" + "a".repeat(64) + "_v1",
++            "deployment", "deployment_log", "Deployment");
++        for (boolean thrown : List.of(false, true)) {
++            var fixture = new NativeAiFixture();
++            var result = new OperationResult<AiResponse>(TaskResult.UNKNOWN, Optional.empty(), Optional.of(problem));
++            if (thrown) fixture.refusal = Optional.of(new ApiException(problem));
++            else fixture.replies.add(result);
++            var metrics = new DeploymentAiCallMetrics(fixture.context, fixture.task, "native_tools");
++            if (thrown)
++                assertSame(problem, assertThrows(ApiException.class, () -> metrics.call(request, "fixture-route")).problem());
++            else assertSame(result, metrics.call(request, "fixture-route"));
++            assertEquals(1, fixture.requests.size());
++            assertEquals(1, fixture.events.size());
++            var event = fixture.events.getFirst();
++            assertTrue(event.outcome().isEmpty(), "An unresolved model observation is not a terminal task outcome");
++            var persisted = gold.debug.windowstolinux.app.db.log.LogRecordCodec.create(target, "1.0.0", event);
++            assertEquals(persisted, gold.debug.windowstolinux.app.db.log.LogRecordCodec.decode(target,
++                gold.debug.windowstolinux.app.db.log.LogRecordCodec.encode(target.key(), persisted)));
++            var facts = new com.fasterxml.jackson.databind.ObjectMapper().readTree(persisted.details());
++            assertEquals("UNKNOWN", facts.path("outcome").asText());
++            assertEquals("UNKNOWN", facts.path("generationAttempt.1.outcome").asText());
++            assertEquals("UNKNOWN", facts.path("generationAttempt.1.inputTokens").asText());
++            assertEquals("1", facts.path("generationUnknownUsageCount").asText());
++            assertFalse(persisted.truncated());
++        }
++    }
++
+     @Test
+     void physicalUnknownUsageSurvivesSuccessfulRecoveryAndFailureWithoutInventingTotals() throws Exception {
+         UUID generation = UUID.randomUUID();
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java
@@ -5532,7 +5587,7 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
 --- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
 +++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
-@@ -1,7 +1,7 @@
+@@ -1,10 +1,10 @@
  ai: # 部署 Mod 的模型运行资源；按类加载器读取快照，不热修改已冻结任务
    deployment-max-output-tokens: 32768 # 普通部署请求输出预算，单位：token；须大于 0
    extended-deployment-max-output-tokens: 65536 # 扩展部署请求输出预算，单位：token；不小于普通预算
@@ -5540,4 +5595,8 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 +  approval-max-output-tokens: 32768 # 独立审批请求输出预算，单位：token；不大于普通预算
    requests: # 每次模型请求的期限；超时不代表远端副作用已结清
      deployment-timeout-seconds: 120 # 普通部署模型单次调用期限，单位：秒
-     approval-timeout-seconds: 120 # 独立审批模型单次调用期限，单位：秒
+-    approval-timeout-seconds: 120 # 独立审批模型单次调用期限，单位：秒
++    approval-timeout-seconds: 600 # 独立审批模型单次调用期限，单位：秒
+     extended-timeout-seconds: 600 # 扩展部署模型单次调用期限，单位：秒；不小于普通/审批期限
+     generation-recovery-attempts: 1 # 独立 AGENT main/APP 显式选择：HTTP 正文不完整后额外纯生成次数，0..16，0 关闭，默认 1；共享原调用期限，仅旧连接和占用释放后发送。不会重放工具/审批/部署，不适用于取消、超时、完整拒绝、格式错误或响应上限；与项目体量及工具预算无关。仅当前生成捕获，旧计划/身份/UNKNOWN 不变，未知用量不补零；其他调用者默认 0。
+   execution: # 有限运行兜底；任一资源耗尽即可停止，不要求模型用满预算

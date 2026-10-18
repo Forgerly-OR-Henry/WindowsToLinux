@@ -43,7 +43,7 @@ class DeploymentConfigLoaderTest {
         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 32768, new DeploymentConfig.Requests(120, 120, 600, 1),
+        assertEquals(new DeploymentConfig.Ai(32768, 65536, 32768, new DeploymentConfig.Requests(120, 600, 600, 1),
             new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
