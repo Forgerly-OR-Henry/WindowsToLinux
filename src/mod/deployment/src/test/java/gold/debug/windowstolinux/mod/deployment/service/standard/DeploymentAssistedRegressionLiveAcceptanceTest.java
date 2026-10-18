@@ -35,6 +35,14 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
         }
     }
 
+    @ParameterizedTest
+    @MethodSource("cliProjects")
+    void deliversRecoveredAssistedCliForManualAcceptance(String project) throws Exception {
+        Path delivery = deliveryFile(project);
+        verifyRecoveredAssistedCli(project);
+        deliver(project, true, delivery, "ASSISTED");
+    }
+
     private void captureDenials(Throwable original) {
         try (var runtime = open()) {
             for (var category : runtime.logs().inventory(false).categories()) {

@@ -7955,6 +7955,37 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         }
     }
 
+    final void verifyRecoveredAssistedCli(String project) throws Exception {
+        assertTrue(cliProjects().anyMatch(project::equals));
+        connectionOnly = false;
+        agentMode = false;
+        aiEnabled = true;
+        root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
+        assertTrue(root.startsWith(workspace().resolve("src/app/db/data").toRealPath()));
+        assertTrue(root.getFileName().toString().startsWith("assisted-live-" + project + "-"));
+        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+        try (var runtime = open()) {
+            start(runtime, true);
+            var settled = new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database())
+                .queries().archived(original, OWNER, VERSION).orElseThrow();
+            assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, settled.state());
+            assertEquals(Optional.of(TaskResult.SUCCEEDED), settled.outcome());
+            assertTrue(settled.blockers().isEmpty());
+            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+            var applications = new DeploymentApplicationsService(context);
+            var published = completed(applications.list(), 2);
+            assertEquals(1, published.size());
+            var app = published.getFirst().application();
+            assertTrue(app.id().startsWith("wtl-assisted-" + project + "-"));
+            verifyAgentCli(project, context, app);
+            var inspected = completed(applications.inspect(app), 2);
+            assertEquals(ApplicationRunState.INSTALLED, inspected.state());
+            assertEquals(ApplicationAutostartState.NOT_APPLICABLE, inspected.autostart());
+            System.out.println("AI_LIVE_RECOVERED_CLI_BUSINESS " + project
+                + " verified by original successful COMMAND health and the persisted required business output");
+        }
+    }
+
     @Test
     void reconcilesOriginalManagementQueryAndStopsItsApplicationThroughProduct() throws Exception {
         connectionOnly = false;

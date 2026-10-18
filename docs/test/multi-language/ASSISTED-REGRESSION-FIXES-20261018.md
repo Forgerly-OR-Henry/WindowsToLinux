@@ -324,3 +324,10 @@ CLI21 prepare成功，bind仍有效DENY；理由已经变为缺少源码必需�
 maintenance-recovery-unit-01中帧/资源10项及原任务重启恢复11项全部通过；另2项记账测试业务断言通过但结束时触发夹具正常close拒绝UNKNOWN占用，故整次标失败。改为调用既有隔离子JVM夹具，仅重跑这2项（unit-02），不重跑已通过21项。未因夹具错误修改生产关闭/恢复规则。九Java限定格式化已完成。
 
 maintenance-recovery-unit-02两项隔离记账测试通过0跳过；合计23项定点通过（前次21+本次2），未执行全量。下一步只恢复原CLI22任务。
+
+
+维护修复本地提交8d62385b。reconcile-22-02成功，原247e2624-5971-4043-a27a-13619b6f4ffc为ENDED/SUCCEEDED、blockers空，产品列表确认wtl-assisted-log-analyzer-xiiwt1zl8为INSTALLED/NOT_APPLICABLE。仅原任务收尾，无新发布；1项真实恢复检查通过、61.37s。
+
+补恢复后的交付测试入口，核对正式已归档的原成功任务、同一应用与持久COMMAND健康期望，再复用现有product usage导出。delivery-01误从活跃snapshot找已结束任务、delivery-02误从未归档表读取，均在管理请求前失败，未变更原发布；delivery-03改读正式archived(task,owner,version)，继续验证管理与导出。没有为导出重建执行记录或重跑部署；原CLI业务检查同正常ASSISTED入口，以原成功COMMAND健康及期望输出为依据。
+
+delivery-03真实产品交付检查1项通过0跳过、41.69s；log-analyzer.json已导出同源管理启动命令，第一项ASSISTED完整交付成立。两Java限定格式化完成。恢复与交付管理调用将纳入usage-audit-08本地持久日志核对；任务归档正常保留，后续不再重部署该CLI。

@@ -2667,7 +2667,45 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                          "deployment-publication-unit-01", "deployment-publication-unit-02")) {
                          var saved = checkpoints.find(original, OWNER, "1.0.0", key);
                          if (saved.isEmpty()) continue;
-@@ -8343,7 +8577,7 @@
+@@ -7721,6 +7955,37 @@
+         }
+     }
+ 
++    final void verifyRecoveredAssistedCli(String project) throws Exception {
++        assertTrue(cliProjects().anyMatch(project::equals));
++        connectionOnly = false;
++        agentMode = false;
++        aiEnabled = true;
++        root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
++        assertTrue(root.startsWith(workspace().resolve("src/app/db/data").toRealPath()));
++        assertTrue(root.getFileName().toString().startsWith("assisted-live-" + project + "-"));
++        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
++        try (var runtime = open()) {
++            start(runtime, true);
++            var settled = new gold.debug.windowstolinux.app.db.task.TaskLedger(runtime.persistence().database())
++                .queries().archived(original, OWNER, VERSION).orElseThrow();
++            assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, settled.state());
++            assertEquals(Optional.of(TaskResult.SUCCEEDED), settled.outcome());
++            assertTrue(settled.blockers().isEmpty());
++            var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
++            var applications = new DeploymentApplicationsService(context);
++            var published = completed(applications.list(), 2);
++            assertEquals(1, published.size());
++            var app = published.getFirst().application();
++            assertTrue(app.id().startsWith("wtl-assisted-" + project + "-"));
++            verifyAgentCli(project, context, app);
++            var inspected = completed(applications.inspect(app), 2);
++            assertEquals(ApplicationRunState.INSTALLED, inspected.state());
++            assertEquals(ApplicationAutostartState.NOT_APPLICABLE, inspected.autostart());
++            System.out.println("AI_LIVE_RECOVERED_CLI_BUSINESS " + project
++                + " verified by original successful COMMAND health and the persisted required business output");
++        }
++    }
++
+     @Test
+     void reconcilesOriginalManagementQueryAndStopsItsApplicationThroughProduct() throws Exception {
+         connectionOnly = false;
+@@ -8343,7 +8608,7 @@
                      } else
                          assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
                      if (selectedMode != Mode.AGENT)
@@ -2676,7 +2714,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      if (!deploymentOnly)
                          System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
                              + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
-@@ -8361,7 +8595,7 @@
+@@ -8361,7 +8626,7 @@
              } finally {
                  try {
                      if (agentOriginalId != null) {
@@ -2685,7 +2723,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              printOriginalDiagnostics(runtime, agentOriginalId);
                          } catch (Exception unavailable) {
                              System.out.println("STATIC_LIVE_AGENT_DIAGNOSTIC_UNAVAILABLE " + unavailable.getClass().getSimpleName());
-@@ -8381,7 +8615,7 @@
+@@ -8381,7 +8646,7 @@
                      if (!uncertain.isEmpty()) {
                          System.out.println("AI_LIVE_RETAINED_UNCERTAINTY " + uncertain);
                      } else {
@@ -2694,7 +2732,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              for (var current : completed(applications.list(), 2)) {
                                  if (!current.application().id().equals(id)) continue;
                                  var selected = completed(applications.inspect(current.application()), 2);
-@@ -8417,7 +8651,7 @@
+@@ -8417,7 +8682,7 @@
                      acceptanceFailure.addSuppressed(closingFailure);
                  } finally {
                      if (isolation != null && agentWorkflow != null && agentWorkflow.isolationAdmission().isPresent()) {
@@ -2703,7 +2741,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              verifyRetainedIsolation(context, isolation, agentWorkflow);
                          } catch (Exception | AssertionError protectionFailure) {
                              phaseFailureRecorded = true;
-@@ -8450,8 +8684,8 @@
+@@ -8450,8 +8715,8 @@
      }
  
      private void verifyRetainedIsolation(ModContext context,
@@ -2714,7 +2752,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          requireIsolationPostcheckAllowed();
          var admission = workflow.isolationAdmission().orElseThrow();
          var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(policy);
-@@ -9007,20 +9241,20 @@
+@@ -9007,20 +9272,20 @@
              if (agentMode && !mainOnlyDiagnostic) {
                  fileTransferV2(web, applications, app, context);
              } else {
@@ -2749,7 +2787,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }
          } else if (project.equals("asset-lending")) {
              var category = post(web + "/api/categories", Map.of("name", "静态跨语言资产验证"));
-@@ -9103,17 +9337,20 @@
+@@ -9103,17 +9368,20 @@
          String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
          for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
          var before = get(upload);
@@ -2773,7 +2811,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
  
          var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
-@@ -9122,17 +9359,20 @@
+@@ -9122,17 +9390,20 @@
          var completionStart = new java.util.concurrent.CountDownLatch(1);
          com.fasterxml.jackson.databind.JsonNode first;
          try {
@@ -2801,7 +2839,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          }
          assertEquals(1, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
-@@ -9141,7 +9381,8 @@
+@@ -9141,7 +9412,8 @@
          String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
          for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
          var second = post(secondUpload + "/complete", Map.of());
@@ -2811,7 +2849,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9187,7 +9428,8 @@
+@@ -9187,7 +9459,8 @@
          assertEquals("failed", get(rejected).path("state").asText());
          var recovered = get(pending);
          assertEquals("receiving", recovered.path("state").asText());
@@ -2821,7 +2859,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9208,13 +9450,16 @@
+@@ -9208,13 +9481,16 @@
              var candidate = java.net.URI.create(value);
              return Objects.equals(candidate.getScheme(), expected.getScheme()) && Objects.equals(candidate.getHost(), expected.getHost())
                  && candidate.getPort() == expected.getPort();
@@ -2840,7 +2878,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      private static String byteSha256(byte[] bytes) throws java.security.NoSuchAlgorithmException {
-@@ -9223,7 +9468,8 @@
+@@ -9223,7 +9499,8 @@
  
      private static void assertFileTransferDownload(String web, String version, long bytes, String sha) throws Exception {
          byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
@@ -3641,6 +3679,70 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            default -> throw new IllegalArgumentException("Unsupported workload health variant");
 +        }
 +        return Map.copyOf(result);
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java
+@@ -0,0 +1,60 @@
++package gold.debug.windowstolinux.mod.deployment.service.standard;
++
++import java.nio.file.Path;
++
++import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.MethodSource;
++
++/** Runs the real ASSISTED workflow and exports product-owned usage for manual acceptance. / 真实辅助部署并导出产品用法供人工验收。 */
++@EnabledIfSystemProperty(named = "managed.runtime.staticLive", matches = "true")
++class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticRegressionLiveAcceptanceTest {
++    @ParameterizedTest
++    @MethodSource("websiteProjects")
++    void deploysAssistedWebsitesForManualAcceptance(String project) throws Exception {
++        Path delivery = deliveryFile(project);
++        try {
++            deploysWebsitesThroughAssistedEntry(project);
++            deliver(project, false, delivery, "ASSISTED");
++        } catch (Exception | AssertionError failure) {
++            captureDenials(failure);
++            throw failure;
++        }
++    }
++
++    @ParameterizedTest
++    @MethodSource("cliProjects")
++    void deploysAssistedCliForManualAcceptance(String project) throws Exception {
++        Path delivery = deliveryFile(project);
++        try {
++            deploysCliThroughAssistedEntry(project);
++            deliver(project, true, delivery, "ASSISTED");
++        } catch (Exception | AssertionError failure) {
++            captureDenials(failure);
++            throw failure;
++        }
++    }
++
++    @ParameterizedTest
++    @MethodSource("cliProjects")
++    void deliversRecoveredAssistedCliForManualAcceptance(String project) throws Exception {
++        Path delivery = deliveryFile(project);
++        verifyRecoveredAssistedCli(project);
++        deliver(project, true, delivery, "ASSISTED");
++    }
++
++    private void captureDenials(Throwable original) {
++        try (var runtime = open()) {
++            for (var category : runtime.logs().inventory(false).categories()) {
++                if (!category.target().owner().equals(OWNER)) continue;
++                for (var record : runtime.logs().inspect(category.target().key()).records())
++                    if (record.event().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
++                        || record.event().eventCode().equals("DEPLOYMENT_ASSISTED_REVIEW_DENIED")
++                        || record.event().eventCode().equals("DEPLOYMENT_OPERATION_FAILURE"))
++                        System.out.println("ASSISTED_REVIEW_DIAGNOSTIC " + record.event().eventCode() + " " + record.event().message());
++            }
++        } catch (Exception unavailable) {
++            original.addSuppressed(unavailable);
++        }
 +    }
 +}
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentMaintenanceFrameEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentMaintenanceFrameEvidenceRegressionTest.java
