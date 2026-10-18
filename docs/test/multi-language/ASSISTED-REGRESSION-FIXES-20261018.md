@@ -9,7 +9,7 @@
 | `ai/agent/DeploymentNativeSelection.java` | 原生读取工具补齐 offset/limit 上限；明确最多四调用；整批超限返回每个调用对应的错误回执，读取零文件；批量数量与剩余单工具预算协调，为结论保留机会；识别/校准提交补齐嵌套组件字段、类型和实际已读文件枚举 | 所在包含 agent 字样，但当前调用方是 ASSISTED 的 SourceComparison；不改变 Agent 自主循环或审批器。总识别 12 轮、校准 6 轮不增加。 |
 | `service/standard/assisted/DeploymentSourceComparison.java` | 消费超限批次时计入原有轮次并反馈；每轮提供实际 readPaths，列表或搜索元数据不能冒充已读正文 | 仅辅助来源比较；原组件归属、未读证据、冻结来源和人工未决选择规则保持。 |
 | `service/standard/assisted/DeploymentAssistedAnalysis.java` | 工具明确声明 action/sourceRevision/arguments，以及 LIST/READ/SEARCH/ADVISE 的子参数；解析前校验结构，不完整提交用原有纠正机制反馈 | 仅辅助技术建议；来源修订、真实证据、人工答案优先和确定性参数验证保持。12 次业务决策上限不增加。 |
-| `ai/DeploymentAiJson.java` | 新增 askStructured 复用原 submit；非审批的多提交整批拒绝，仅在原有两次提交机会内重交，不执行其中动作；保持 AUTO 工具选择，并移除原审批的 named tool_choice | **共享代码，后续 Agent 须重点核对。** DeepSeek 思考模式不支持强制指定工具，但程序仍只接受合法的单次原生提交。普通多工具浏览不受影响。APPROVAL 多提交仍严格拒绝；不复用审批、不跳过独立模型或宿主授权。 |
+| `ai/DeploymentAiJson.java` | 新增 askStructured 复用原 submit；非审批的多提交整批拒绝，仅在原有两次提交机会内重交，不执行其中动作；LANGUAGE 保持 AUTO；早期曾为 LOW 审批移除 named tool_choice，CLI19 后将 APPROVAL 单结果恢复为显式 submit_result（审批配置须支持） | **共享代码，后续 Agent 须重点核对。** DeepSeek 思考模式不支持强制指定工具，但程序仍只接受合法的单次原生提交。普通多工具浏览不受影响。APPROVAL 多提交仍严格拒绝；不复用审批、不跳过独立模型或宿主授权。 |
 | `ai/review/DeploymentFixedCommandApproval.java`、`service/feedback/DeploymentDiagnostics.java` | 独立审批拒绝时，在各模式保留公开理由的脱敏记录，最多4096字符，不记录原始模型正文、命令或凭据 | **共享代码，Agent 也会获得该诊断。** 仍抛出原拒绝，不增加发送、不产生授权、不缓存拒绝。 |
 | `service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java` | 捕获内部异常并保守转 UNKNOWN 前，保存 DEPLOYMENT_OPERATION_FAILURE 的脱敏类型、原因和公开问题码 | 仅补诊断，不改变 UNKNOWN、对账、清理或发布逻辑；对 STATIC/ASSISTED 整图可见。 |
 | `ai/review/DeploymentCommandEvidence.java` | 把已执行的规范 Base64、严格 UTF-8、绑定类型往返检查显式列为 literalValidation；按当前捕获布局给出目录的 SAME/DESCENDANT/OUTSIDE 关系，区分同前缀兄弟路径 | **共享证据，Agent 后续需核对。** 仅描述字面编码与词法路径关系，不声明安装、归属或权限，不接受无效绑定；SYSTEM 目录可以在管理根之外，仍须审查原 helper 的保护检查。 |
@@ -262,3 +262,17 @@ publication-argument-frame-unit-01仅运行受影响帧/边界及新增字面位
 capacity-interface-unit-01新事实7项、原自定义路径1项、原精确拒绝/预算2参数，共10项通过0跳过；3Java格式check通过。capacity-review-02真实API-only通过，Task `278bec94-b78c-4e54-85fc-13666bb215d9`、root `ai-live-capacity-review-wpza36hr0`，known3667=3553+114、cache512/miss3041、reasoningUNKNOWN，4capUNKNOWN；无SSH连接/发送且不复用许可。该通道首次修改前已保存.before，本轮增量单独入精确补丁；完整触及文件保留既有内容提交。
 
 全局截至该单项known3711677、722物理（1用量UNKNOWN）、172capUNKNOWN；usage-audit-07覆盖此前41root/708条全部对账无漏记，不覆盖CLI18/该单项，最终须更新。仍0/8交付。
+
+## CLI19 与方向复核：单结果审批请求的工具选择
+
+CLI19容量通过，上传固定效果审查返回finishReason=stop，JFR确认`A complete native result submission is required`，继而`Independent fixed-action review was invalid`。没有原生结果，不能记成有效DENY或推断模型正文内容。原任务`de6296b2-c0ff-4e30-b256-361cbb2b808b`、root`assisted-live-log-analyzer-wr12gqezc`经reconcile-19-01产品对账ENDED/FAILED、blockers空、应用列表为空。
+
+只读方向复核确认：STATIC与ASSISTED共用标准源码、工具链、候选、构建和发布能力；当前模式合同另外要求AI独立识别、选择标准工具和逐条独立审批。前期Schema、实际目标和错误合同修复有具体缺陷依据；后期逐拒绝补说明并完整重跑未形成稳定闭环。用户随后明确要求继续修补，后续优先协议和统一交接，不改变模式调度/审批规则。
+
+审批用途自task-board10起已为NONE，部署用途仍LOW；AiJson单结果请求却仍统一AUTO，允许只输出正文，与后续必须原生提交冲突。现仅`submit`中的APPROVAL要求已有`submit_result`；公开通用`call`和LANGUAGE保持原AUTO。严格单提交/三字段检查、原一次结构纠正、有效DENY立即停止、宿主单次精确授权保持。无原生结果仍失败、不解析正文当批准，不为找放行追加调用。
+
+[DeepSeek官方接口](https://api-docs.deepseek.com/api/create-chat-completion/)说明`reasoning_effort=none`关闭思考，named/required工具仅在关闭思考后可用。当前既有NONE配置符合；程序不隐式关闭思考、更换提供方或把不支持的强制工具请求降级。其它审批配置须满足已有AiRequest.withRequiredTool的公开合同。共享AiJson可能影响Agent单结果审查，后续Agent调试须核对所选配置，未运行Agent真机。
+
+required-approval-submission-unit-01因PowerShell未正确引用Maven带点属性，未进入编译/测试；unit-02已改为参数数组，验证进行中。只读合并已保留记录得到known3847223、746物理尝试（1输入/输出UNKNOWN），包含CLI19与恢复；其中LANGUAGE1763408、APPROVAL2083815。最终汇总与数据库对账仍须更新。
+
+required-approval-submission-unit-02定点18项全部通过、0跳过；涵盖独立上下文、纯文本/多结果拒绝、畸形结果原有边界、有效DENY不重审及不同方案重新审批。两Java已按项目格式化。capacity-review-03真实API-only通过，task969bc8da-fff8-4a6a-af10-0d08addb8229/root ai-live-capacity-review-x30k0mig8，无SSH；输入3563/输出117=3680、cache2816/miss747，reasoningUNKNOWN，4项能力验证用量UNKNOWN。该单次结果不能替代整部署稳定性或后续每条审查。

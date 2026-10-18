@@ -152,7 +152,8 @@ public final class DeploymentAiJson {
             } catch (Exception rejected) {
                 throw new IOException("Approval conversation history rejected", rejected);
             }
-            var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000);
+            var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000,
+                purpose == AiPurpose.APPROVAL ? Optional.of(definition.name()) : Optional.empty());
             if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
                 throw new IOException("A complete native result submission is required");
             if (response.toolCalls().size() != 1) {
@@ -197,12 +198,19 @@ public final class DeploymentAiJson {
     public AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,
                            String revision, TaskContext task, boolean extended)
         throws ApiException, CapabilityOutcomeException {
+        return call(purpose, messages, tools, revision, task, extended, Optional.empty());
+    }
+
+    private AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,
+                            String revision, TaskContext task, boolean extended, Optional<String> requiredTool)
+        throws ApiException, CapabilityOutcomeException {
         int tokens = purpose == AiPurpose.APPROVAL ? output.approvalMaxOutputTokens()
             : extended ? output.extendedDeploymentMaxOutputTokens() : output.deploymentMaxOutputTokens();
         int seconds = purpose == AiPurpose.APPROVAL ? output.requests().approvalTimeoutSeconds()
             : extended ? output.requests().extendedTimeoutSeconds() : output.requests().deploymentTimeoutSeconds();
         var request = new AiRequest(purpose, messages, tokens, Duration.ofSeconds(seconds), false, tools)
             .withGenerationRecovery(generationRecoveryAttempts);
+        if (requiredTool.isPresent()) request = request.withRequiredTool(requiredTool.orElseThrow());
         var metrics = new DeploymentAiCallMetrics(context, task, "native_tools");
         var result = metrics.call(request, revision);
         if (result.outcome() != TaskResult.SUCCEEDED)

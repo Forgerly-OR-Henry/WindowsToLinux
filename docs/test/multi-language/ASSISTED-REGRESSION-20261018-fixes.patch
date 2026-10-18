@@ -1102,11 +1102,14 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      public JsonNode askCommand(String instruction, Map<String, ?> facts, String revision, TaskContext task,
-@@ -146,8 +153,18 @@
+@@ -145,9 +152,20 @@
+             } catch (Exception rejected) {
                  throw new IOException("Approval conversation history rejected", rejected);
              }
-             var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000);
+-            var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000);
 -            if (!response.finishReason().equals("tool_calls") || response.toolCalls().size() != 1)
++            var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000,
++                purpose == AiPurpose.APPROVAL ? Optional.of(definition.name()) : Optional.empty());
 +            if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
                  throw new IOException("A complete native result submission is required");
 +            if (response.toolCalls().size() != 1) {
@@ -1122,13 +1125,26 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              var call = response.toolCalls().getFirst();
              JsonNode result = null;
              String invalid;
-@@ -186,9 +203,6 @@
+@@ -180,15 +198,19 @@
+     public AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,
+                            String revision, TaskContext task, boolean extended)
+         throws ApiException, CapabilityOutcomeException {
++        return call(purpose, messages, tools, revision, task, extended, Optional.empty());
++    }
++
++    private AiResponse call(AiPurpose purpose, List<AiMessage> messages, List<AiToolDefinition> tools,
++                            String revision, TaskContext task, boolean extended, Optional<String> requiredTool)
++        throws ApiException, CapabilityOutcomeException {
+         int tokens = purpose == AiPurpose.APPROVAL ? output.approvalMaxOutputTokens()
+             : extended ? output.extendedDeploymentMaxOutputTokens() : output.deploymentMaxOutputTokens();
+         int seconds = purpose == AiPurpose.APPROVAL ? output.requests().approvalTimeoutSeconds()
              : extended ? output.requests().extendedTimeoutSeconds() : output.requests().deploymentTimeoutSeconds();
          var request = new AiRequest(purpose, messages, tokens, Duration.ofSeconds(seconds), false, tools)
              .withGenerationRecovery(generationRecoveryAttempts);
 -        if (purpose == AiPurpose.APPROVAL
 -            && tools.size() == 1 && tools.getFirst().name().equals("submit_result"))
 -            request = request.withRequiredTool("submit_result");
++        if (requiredTool.isPresent()) request = request.withRequiredTool(requiredTool.orElseThrow());
          var metrics = new DeploymentAiCallMetrics(context, task, "native_tools");
          var result = metrics.call(request, revision);
          if (result.outcome() != TaskResult.SUCCEEDED)
