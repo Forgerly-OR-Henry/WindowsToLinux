@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前5/8交付（全部3CLI、Task Board及File Transfer），其余3网站串行验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前6/8交付（全部3CLI、Task Board、File Transfer及Asset Lending），其余2网站串行验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -534,3 +534,9 @@ build-fixed-contract-scope-unit-01共32项通过0跳过：Workflow11（新增实
 Go/Node准备和绑定均真实成功；Go绑定审批output940/reasoning829。Go构建审批请求44121字节（10为121373）、20513ms/output3632/reasoning3520，原生结论后实际EXIT0/TOOL=GO_MODULE；前端也实际EXIT0/TOOL=NPM。动态构建body完整保留；原固定pin/原目标/独立审查均未替换。配置暂存的保护数据/固定receiver证据也在本轮真实取得完整结论，INPUT_STAGED=1，61923756对应卡点至此实机越过。随后发布、健康、保留、清理、业务及生命周期均通过。
 
 业务实际执行64KiB随机文件上传、下载逐字节比较、重启后再次逐字节比较；另验证产品启停/重启、自启开关与最终交付START。不能将它表述为Agent 64MiB场景或浏览器人工验收。AI_LIVE_PASS记录LANGUAGE18/APPROVAL56；传输AUTO时requiredApprovals=0只是wire requiredToolName计数，严格单原生结论和独立审批仍执行，不能解释为没有审批。最终总Token仍须以所有项目结束后的逐物理尝试审计为准。
+
+## Asset Lending 01：沿同一标准流程首轮通过
+
+2026-10-19 04:29（Asia/Singapore）交付；JUnit1通过0跳过，总20分56秒，源码沿用0c65225，没有为该项目继续修改生产程序。原aa472bb0-b320-4f74-993a-d56b01cebb98/root assisted-live-asset-lending-8tavet83s；应用wtl-assisted-asset-lending-8tavgcrso，asset-lending.json实际导出http://45.192.105.213:46120、RUNNING/自启DISABLED。
+
+产品实际准备.NET10.0.300及Node，后端EXIT0/TOOL=DOTNET_LOCKED、前端EXIT0/TOOL=NPM，配置暂存/发布/整应用健康/清理通过。业务创建分类及资产，借还经过submit/approve/checkout/return，确认closed，重启后再次读取仍closed；另经过产品启停、自启开关与最终交付START。AI_LIVE_PASS记录LANGUAGE15/APPROVAL56；不是跳过独立模型或执行服务器手工部署的结果。当前6/8，继续CSV与Survey，Agent部署仍暂停。
