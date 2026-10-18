@@ -118,19 +118,16 @@ public final class PlatformModContext implements ContextLease {
         var remote = own(runtime.remoteCapabilities(identity.id(), identity.version()));
         var servers = own(runtime.serverAccess(identity.id(), identity.version(), schema));
         var ai = own(runtime.ai(identity.id(), identity.version()));
-        services.bindRecoveryCleanup(task -> {
-            remote.closeTaskResources(task);
-            ai.closeTaskResources(task);
-            servers.retryFinishedReleases(task);
-        });
         var secrets = own(runtime.secrets(identity.id(), identity.version(), schema));
         var source = own(runtime.source(identity.id(), identity.version(), remote));
         var processes = own(runtime.processes(identity.id(), identity.version()));
-        var tasks = new RecoveryTasks(
-            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote, ai, servers);
-        ModDatabase database = schema.isPresent()
+        TaskModDatabase jdbc = schema.isPresent()
             ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
-            : new StatelessDatabase();
+            : null;
+        var tasks = new RecoveryTasks(
+            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote, ai, servers, jdbc);
+        services.bindRecoveryCleanup(tasks::cleanup);
+        ModDatabase database = jdbc != null ? jdbc : new StatelessDatabase();
         var context = new BoundContext(identity, mode, pageScope, tasks, remote.interaction(), servers, remote.linux(),
             ai, database, secrets, new gold.debug.windowstolinux.app.service.file.PlatformFileService(source), logs, processes, services);
         lease = new ModHostLease(context, runtime.tasks(), contributions);
@@ -303,7 +300,16 @@ public final class PlatformModContext implements ContextLease {
      * @param ai host-owned original model cleanup / 宿主持有的原模型收尾 */
     private record RecoveryTasks(TaskService delegate, PlatformModHost.Remote remote,
                                  gold.debug.windowstolinux.app.service.ai.PlatformAiService ai,
-                                 gold.debug.windowstolinux.app.service.server.PlatformServerAccess servers) implements TaskService {
+                                 gold.debug.windowstolinux.app.service.server.PlatformServerAccess servers,
+                                 TaskModDatabase jdbc) implements TaskService {
+        /** Reconciles prior host resources without inferring the author's business result. */
+        private void cleanup(TaskContext task) throws ApiException {
+            if (jdbc != null) jdbc.releasePreviousConnections(task);
+            remote.closeTaskResources(task);
+            ai.closeTaskResources(task);
+            servers.retryFinishedReleases(task);
+        }
+
         /** Delegates original task admission unchanged. / 原样委托任务准入。
          * @param request exact task request / 精确任务请求
          * @param work author callback / 作者回调
@@ -393,9 +399,7 @@ public final class PlatformModContext implements ContextLease {
         public RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException {
             Objects.requireNonNull(recovery);
             return delegate.registerRecovery(taskType, (previous, task) -> {
-                remote.closeTaskResources(task);
-                ai.closeTaskResources(task);
-                servers.retryFinishedReleases(task);
+                cleanup(task);
                 return recovery.reconcile(previous, task);
             });
         }

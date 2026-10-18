@@ -916,10 +916,31 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                 throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_SCHEMA_NOT_ADMITTED",
                     "The task does not own this Mod schema generation");
             return retain(context,
-                new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false));
+                new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false),
+                new ResourceRecovery("jdbc.v1", Map.of("bootId", bootId.toString(),
+                    "schemaVersion", identity.schemaVersion(), "schemaGeneration", identity.generation().toString())), false);
         } catch (SQLException failure) {
             throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_SCHEMA_CLAIM",
                 "Schema admission could not be verified");
+        }
+    }
+
+    /** Reconciles only disappeared earlier-engine JDBC handles, independently of business outcomes. */
+    public synchronized void releasePreviousSchemaConnections(TaskContext context,
+                                                              gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity) throws ApiException {
+        var caller = requireContext(context);
+        if (!caller.ownerId().equals(identity.ownerId())
+            && !dependenciesSupport.delegated(context, identity.ownerId(), null))
+            throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_SCHEMA_SCOPE",
+                "Provider JDBC requires its synchronous service call");
+        if (!executions.get(context.id()).reconciling)
+            return;
+        try {
+            ledger.releasePreviousSchemaConnections(context.id(), identity);
+            executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
+        } catch (SQLException failure) {
+            throw TaskConclusion.error(ProblemCode.IO_FAILURE, "JDBC_PREVIOUS_RELEASE",
+                "Previous JDBC ownership could not be reconciled");
         }
     }
 

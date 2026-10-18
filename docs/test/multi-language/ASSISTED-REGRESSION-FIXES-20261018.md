@@ -398,3 +398,17 @@ build-collector-evidence-unit-01新事实/变造边界13项全部通过；所选
 大段实现仅由原任务ASSISTED Scope的prepare/bind审查提供，避免把它自动加入STATIC/Agent共享证据及其预算。共有HelperBundle只是新增只读接口，代码内容不变；Agent若后续需要可另行评估，当前不恢复Agent测试。完整原请求/动态输入/参数/授权和实际pre-invocation守卫仍由独立审查核对；实现不证明live安装或未来解析结果，非零失败可能有部分副作用，不能误写无效果。没有重试有效DENY、没有切模型寻找批准。
 
 最终toolchain-implementation-scope-unit-01：来源字节/SHA/预算/默认与自定义layout2项、直接受影响原workflow生命周期9项，共11通过0跳过；原绑定解码/路径边界类14项另通过。两来源用例曾在前组通过后因移动到ASSISTED Scope重跑，不能把重复执行当独立用例累计。unit01实际只运行新2项，未运行的RuntimePaths selector不计通过；新用例直接校验两种捕获layout与共享证据没有大段payload。验证未涉及提供方或服务器调用，接下来18轮真实验证。
+
+## Task Board 18：精确上传归档关联与旧引擎 JDBC 记录
+
+18轮的prepare/bind已实际通过，toolchain.bind真实审查包含82113字符证据、provider输入27473/输出134。随后前端上传被有效DENY；理由将后端7364字节和前端14592字节的两个捕获归档混合比较，尚未发布。原任务3067a968-a9d4-4b8a-b03b-38311bc7ee1f，root assisted-live-task-board-4tlpqkz6o。未将拒绝当成已证实的传输字节缺陷，也没有重复请求同一有效拒绝。
+
+ASSISTED Scope新增currentSourceArchiveTransfer：使用生产RemoteActions.transfer工厂重建完整canonical intent，与实际方向、server/target/revision、local path、SHA256、maxBytes、remote path、effect及可选冲突选择逐项完整相等后，必须恰好匹配一个不可替换的archiver观察。声明目标还须是捕获layout下合法candidate的固定mutable/source.tar.gz；不依赖不适用于后续operation的候选后缀推导。其余归档是同图兄弟组件，不是当前上传的竞争身份；本地basename不要求与远端固定名相同。该证据不替代文件当前字节校验、SFTP冲突处理或新独立授权。STATIC/Agent未增加此字段。
+
+18-01/02产品恢复已将publication graph及unit清理核实为FAILED，但仍UNKNOWN。新增只读诊断定位唯一剩余canonical UUID CONNECTION，其metadata为旧{release:EXPLICIT}；不是ssh-*远端连接，而是TaskModDatabase的宿主JDBC标记。原JVM已退出，物理业务连接由lease_id标记追踪，旧账本却无对应跨引擎核对。监督侧未写SQL、未手工清账或服务器。
+
+新增宿主jdbc.v1记录，保留实际bootId/schemaVersion/schemaGeneration。仅真实原任务reconciling时，核验READY结构、原MOD和精确SCHEMA占用、先前独占引擎、原任务UNKNOWN/FINISHING、同owner canonical UUID及实际lease_id物理连接数为0，才释放前引擎记录。现存旧EXPLICIT形状按相同严格准入规则处理；公开作者retain只能建立CUSTOM，不能伪造CONNECTION。当前boot、未知协议、他人、SSH/AI和实际活连接保留；不据此推导业务成功。PlatformModContext的显式作者恢复和provider恢复收尾共用同一宿主cleanup，业务核对仍独立。
+
+jdbc-recovery-unit-01：真实子JVM已提交一次业务写并遗留未关闭连接后退出，父进程对旧/新格式分别验证只释放旧记录，保留当前/未知/他人资源且items仍为1；加正常回调保留活连接、原FINISHING真实关闭检查，共4项通过0跳过。18-03由产品恢复通过，原任务最终ENDED/FAILED、blockers=[]，无业务重放。archive-transfer-unit-01新增16项验证多归档精确选择、Unicode/空格路径、三种冲突、改哈希/大小/本地/远端/尾随/方向/server/目标/effect及重复/空观察拒绝；原workflow与宿主恢复上下文结果另行记录。JDBC宿主修复适用于后续Agent恢复，当前未运行Agent验收。
+
+本次直接验证共30项通过：上述JDBC4、归档16、宿主无状态恢复上下文1、archive-transfer-workflow-unit-02流程证据9。archive-transfer-unit-01同时误选了更大的原DeploymentAssistedWorkflowTest，线程快照证明耗时在本地DevelopmentModFinder目录扫描，监督侧停止该自启动测试JVM32368，因此该次Maven整体失败、该大类不计通过；不重跑已通过17项，仅以原直接相关证据9项完成必要检查。未启动全量、Agent、人工服务器写入或重复UNKNOWN部署。

@@ -200,6 +200,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var facts = new LinkedHashMap<String, Object>();
         facts.put("workflowAuthorization", evidence);
         if (source != null) facts.put("sourceSelection", source);
+        if (intent.type().equals("platform.sftp.upload") && intent.semantics()
+            .filter(value -> value.operation().equals("deployment.candidate.upload.v1")).isPresent())
+            facts.put("currentSourceArchiveTransfer", archiveTransferFacts(List.copyOf(sourceArchives.values()), intent,
+                new ServerId(Objects.requireNonNull(source).get("server").toString()),
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
         if (!sourceArchives.isEmpty())
             facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
                 "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. sourceToolchainRequirements preserve the deterministic selected component declarations/constraints/source files, independent of the initial draft URI/git field; they are not a resolved future installer result or installation proof. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
@@ -207,6 +212,40 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
                 "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));
         return Map.copyOf(facts);
+    }
+
+    /** Matches the entire canonical transfer to exactly one archiver observation, without granting permission. */
+    static Map<String, Object> archiveTransferFacts(List<Map<String, Object>> archives, ActionIntent intent,
+                                                    ServerId server, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var semantics = intent.semantics().orElseThrow();
+        if (!semantics.operation().equals("deployment.candidate.upload.v1") || semantics.targets().size() != 1
+            || !intent.serverIds().equals(List.of(server.id())))
+            throw new IllegalArgumentException("Archive transfer scope differs");
+        var target = semantics.targets().iterator().next();
+        String remote = target.id(), prefix = layout.workRoot() + "/", suffix = "/mutable/source.tar.gz";
+        if (!target.serverId().equals(server.id()) || !target.kind().equals("deployment-candidate")
+            || !remote.startsWith(prefix) || !remote.endsWith(suffix))
+            throw new IllegalArgumentException("Archive transfer destination differs");
+        String candidate = remote.substring(prefix.length(), remote.length() - suffix.length());
+        if (!(layout.candidateRoot(candidate) + suffix).equals(remote))
+            throw new IllegalArgumentException("Archive transfer candidate differs");
+        var matches = new ArrayList<Map<String, Object>>();
+        for (var archive : archives) {
+            var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(
+                java.nio.file.Path.of(archive.get("localArchivePath").toString()), remote,
+                ((Number) archive.get("archiveBytes")).longValue());
+            String hash = archive.get("archiveSha256").toString();
+            var expected = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(server, intent.revision(), request, hash, true);
+            boolean matched = expected.withSemantics(semantics).equals(intent);
+            for (var choice : gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.values())
+                matched |= gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(server, intent.revision(), request, hash, true, choice)
+                    .withSemantics(semantics).equals(intent);
+            if (matched) matches.add(archive);
+        }
+        if (matches.size() != 1) throw new IllegalArgumentException("One exact captured upload archive required");
+        return Map.of("archive", matches.getFirst(), "server", server.id(), "literalCandidate", candidate,
+            "remoteArchivePath", remote, "canonicalTransferMatched", true,
+            "meaning", "Complete canonical transfer (direction, server, local path, archive SHA256, exact byte limit, remote path and optional explicit conflict choice) equals exactly one frozen archiver observation. Other observations are sibling component archives, not conflicting identities. Source manifest SHA and compressed archive SHA identify different objects. The local archive basename may differ from the fixed remote source.tar.gz name. This identifies intended transfer content only; the host must still verify actual local bytes, destination, conflicts and fresh independent permission. It does not prove live remote ownership, safe source or authorization.");
     }
 
     private void validateWorkflow(Map<String, Object> evidence) {

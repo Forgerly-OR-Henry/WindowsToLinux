@@ -108,6 +108,12 @@ public final class TaskModDatabase implements ModDatabase, AutoCloseable {
         }
     }
 
+    /** Host recovery reconciles only vanished previous-engine handles; it never closes live author JDBC. */
+    public void releasePreviousConnections(TaskContext task) throws ApiException {
+        requireOpen();
+        tasks.releasePreviousSchemaConnections(task, coordinates.identity());
+    }
+
     /** Revokes new capability calls while existing JDBC remains the author's close responsibility. / 撤销新能力调用，已有 JDBC 仍由作者负责关闭。 */
     @Override
     public void close() {

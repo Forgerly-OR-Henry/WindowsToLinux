@@ -402,7 +402,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,178 @@
+@@ -48,6 +48,217 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -558,6 +558,11 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        var facts = new LinkedHashMap<String, Object>();
 +        facts.put("workflowAuthorization", evidence);
 +        if (source != null) facts.put("sourceSelection", source);
++        if (intent.type().equals("platform.sftp.upload") && intent.semantics()
++            .filter(value -> value.operation().equals("deployment.candidate.upload.v1")).isPresent())
++            facts.put("currentSourceArchiveTransfer", archiveTransferFacts(List.copyOf(sourceArchives.values()), intent,
++                new ServerId(Objects.requireNonNull(source).get("server").toString()),
++                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
 +        if (!sourceArchives.isEmpty())
 +            facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
 +                "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. sourceToolchainRequirements preserve the deterministic selected component declarations/constraints/source files, independent of the initial draft URI/git field; they are not a resolved future installer result or installation proof. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
@@ -565,6 +570,40 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
 +                "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));
 +        return Map.copyOf(facts);
++    }
++
++    /** Matches the entire canonical transfer to exactly one archiver observation, without granting permission. */
++    static Map<String, Object> archiveTransferFacts(List<Map<String, Object>> archives, ActionIntent intent,
++                                                    ServerId server, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
++        var semantics = intent.semantics().orElseThrow();
++        if (!semantics.operation().equals("deployment.candidate.upload.v1") || semantics.targets().size() != 1
++            || !intent.serverIds().equals(List.of(server.id())))
++            throw new IllegalArgumentException("Archive transfer scope differs");
++        var target = semantics.targets().iterator().next();
++        String remote = target.id(), prefix = layout.workRoot() + "/", suffix = "/mutable/source.tar.gz";
++        if (!target.serverId().equals(server.id()) || !target.kind().equals("deployment-candidate")
++            || !remote.startsWith(prefix) || !remote.endsWith(suffix))
++            throw new IllegalArgumentException("Archive transfer destination differs");
++        String candidate = remote.substring(prefix.length(), remote.length() - suffix.length());
++        if (!(layout.candidateRoot(candidate) + suffix).equals(remote))
++            throw new IllegalArgumentException("Archive transfer candidate differs");
++        var matches = new ArrayList<Map<String, Object>>();
++        for (var archive : archives) {
++            var request = new gold.debug.windowstolinux.appapi.linux.transfer.TransferRequest(
++                java.nio.file.Path.of(archive.get("localArchivePath").toString()), remote,
++                ((Number) archive.get("archiveBytes")).longValue());
++            String hash = archive.get("archiveSha256").toString();
++            var expected = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(server, intent.revision(), request, hash, true);
++            boolean matched = expected.withSemantics(semantics).equals(intent);
++            for (var choice : gold.debug.windowstolinux.appapi.linux.transfer.TransferConflictChoice.values())
++                matched |= gold.debug.windowstolinux.appapi.linux.action.RemoteActions.transfer(server, intent.revision(), request, hash, true, choice)
++                    .withSemantics(semantics).equals(intent);
++            if (matched) matches.add(archive);
++        }
++        if (matches.size() != 1) throw new IllegalArgumentException("One exact captured upload archive required");
++        return Map.of("archive", matches.getFirst(), "server", server.id(), "literalCandidate", candidate,
++            "remoteArchivePath", remote, "canonicalTransferMatched", true,
++            "meaning", "Complete canonical transfer (direction, server, local path, archive SHA256, exact byte limit, remote path and optional explicit conflict choice) equals exactly one frozen archiver observation. Other observations are sibling component archives, not conflicting identities. Source manifest SHA and compressed archive SHA identify different objects. The local archive basename may differ from the fixed remote source.tar.gz name. This identifies intended transfer content only; the host must still verify actual local bytes, destination, conflicts and fresh independent permission. It does not prove live remote ownership, safe source or authorization.");
 +    }
 +
 +    private void validateWorkflow(Map<String, Object> evidence) {
@@ -581,7 +620,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
-@@ -316,6 +488,13 @@
+@@ -316,6 +527,13 @@
      @Override
      public InteractionService interaction() {
          return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
@@ -2951,7 +2990,35 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }), 20);
              assertEquals(1, reviewedActions.get(), "One full script requires one independent native approval and fresh exact grant");
              System.out.println("BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
-@@ -7463,7 +7697,7 @@
+@@ -7460,10 +7694,35 @@
+                     }
+                 }
+                 if (retained) System.out.println("STATIC_LIVE_RETAINED " + ledger.queries().snapshot(original));
++                if (retained) {
++                    try (var connection = database.openConnection();
++                         var query = connection.prepareStatement("SELECT resource_kind,resource_id,owner_id,recovery_json FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
++                        query.setObject(1, original);
++                        try (var rows = query.executeQuery()) {
++                            while (rows.next()) {
++                                var shape = JSON.createObjectNode().put("kind", rows.getString(1)).put("resource", rows.getString(2))
++                                    .put("owner", rows.getString(3));
++                                var raw = JSON.readTree(rows.getString(4));
++                                var names = new java.util.TreeSet<String>();
++                                raw.fieldNames().forEachRemaining(names::add);
++                                shape.set("rootFieldNames", JSON.valueToTree(names));
++                                for (String field : List.of("protocol", "release"))
++                                    if (raw.path(field).isTextual()) shape.put(field, raw.path(field).asText());
++                                if (raw.has("protocol")) {
++                                    var metadata = gold.debug.windowstolinux.app.db.task.ResourceRecovery.decode(rows.getString(4));
++                                    shape.set("fieldNames", JSON.valueToTree(new java.util.TreeSet<>(metadata.fields().keySet())));
++                                    for (String field : List.of("bootId", "serverId"))
++                                        if (metadata.fields().containsKey(field)) shape.put(field, metadata.fields().get(field));
++                                }
++                                System.out.println("STATIC_LIVE_RETAINED_RESOURCE " + shape);
++                            }
++                        }
++                    }
++                }
                  boolean archived = false;
                  var checkpoints = new gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint(database);
                  if (retained)
@@ -2960,7 +3027,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                          "deployment-publication-unit-01", "deployment-publication-unit-02")) {
                          var saved = checkpoints.find(original, OWNER, "1.0.0", key);
                          if (saved.isEmpty()) continue;
-@@ -7721,6 +7955,37 @@
+@@ -7721,6 +7980,37 @@
          }
      }
  
@@ -2998,7 +3065,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      @Test
      void reconcilesOriginalManagementQueryAndStopsItsApplicationThroughProduct() throws Exception {
          connectionOnly = false;
-@@ -8343,7 +8608,7 @@
+@@ -8343,7 +8633,7 @@
                      } else
                          assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
                      if (selectedMode != Mode.AGENT)
@@ -3007,7 +3074,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      if (!deploymentOnly)
                          System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
                              + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
-@@ -8361,7 +8626,7 @@
+@@ -8361,7 +8651,7 @@
              } finally {
                  try {
                      if (agentOriginalId != null) {
@@ -3016,7 +3083,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              printOriginalDiagnostics(runtime, agentOriginalId);
                          } catch (Exception unavailable) {
                              System.out.println("STATIC_LIVE_AGENT_DIAGNOSTIC_UNAVAILABLE " + unavailable.getClass().getSimpleName());
-@@ -8381,7 +8646,7 @@
+@@ -8381,7 +8671,7 @@
                      if (!uncertain.isEmpty()) {
                          System.out.println("AI_LIVE_RETAINED_UNCERTAINTY " + uncertain);
                      } else {
@@ -3025,7 +3092,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              for (var current : completed(applications.list(), 2)) {
                                  if (!current.application().id().equals(id)) continue;
                                  var selected = completed(applications.inspect(current.application()), 2);
-@@ -8417,7 +8682,7 @@
+@@ -8417,7 +8707,7 @@
                      acceptanceFailure.addSuppressed(closingFailure);
                  } finally {
                      if (isolation != null && agentWorkflow != null && agentWorkflow.isolationAdmission().isPresent()) {
@@ -3034,7 +3101,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              verifyRetainedIsolation(context, isolation, agentWorkflow);
                          } catch (Exception | AssertionError protectionFailure) {
                              phaseFailureRecorded = true;
-@@ -8450,8 +8715,8 @@
+@@ -8450,8 +8740,8 @@
      }
  
      private void verifyRetainedIsolation(ModContext context,
@@ -3045,7 +3112,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          requireIsolationPostcheckAllowed();
          var admission = workflow.isolationAdmission().orElseThrow();
          var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(policy);
-@@ -9007,20 +9272,20 @@
+@@ -9007,20 +9297,20 @@
              if (agentMode && !mainOnlyDiagnostic) {
                  fileTransferV2(web, applications, app, context);
              } else {
@@ -3080,7 +3147,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }
          } else if (project.equals("asset-lending")) {
              var category = post(web + "/api/categories", Map.of("name", "静态跨语言资产验证"));
-@@ -9103,17 +9368,20 @@
+@@ -9103,17 +9393,20 @@
          String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
          for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
          var before = get(upload);
@@ -3104,7 +3171,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
  
          var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
-@@ -9122,17 +9390,20 @@
+@@ -9122,17 +9415,20 @@
          var completionStart = new java.util.concurrent.CountDownLatch(1);
          com.fasterxml.jackson.databind.JsonNode first;
          try {
@@ -3132,7 +3199,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          }
          assertEquals(1, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
-@@ -9141,7 +9412,8 @@
+@@ -9141,7 +9437,8 @@
          String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
          for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
          var second = post(secondUpload + "/complete", Map.of());
@@ -3142,7 +3209,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9187,7 +9459,8 @@
+@@ -9187,7 +9484,8 @@
          assertEquals("failed", get(rejected).path("state").asText());
          var recovered = get(pending);
          assertEquals("receiving", recovered.path("state").asText());
@@ -3152,7 +3219,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9208,13 +9481,16 @@
+@@ -9208,13 +9506,16 @@
              var candidate = java.net.URI.create(value);
              return Objects.equals(candidate.getScheme(), expected.getScheme()) && Objects.equals(candidate.getHost(), expected.getHost())
                  && candidate.getPort() == expected.getPort();
@@ -3171,7 +3238,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      private static String byteSha256(byte[] bytes) throws java.security.NoSuchAlgorithmException {
-@@ -9223,7 +9499,8 @@
+@@ -9223,7 +9524,8 @@
  
      private static void assertFileTransferDownload(String web, String version, long bytes, String sha) throws Exception {
          byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
@@ -3614,10 +3681,89 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskLedger.java b/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskLedger.java
 --- a/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskLedger.java
 +++ b/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/TaskLedger.java
-@@ -893,6 +893,62 @@
+@@ -764,6 +764,71 @@
          });
      }
  
++    /** Releases only absent prior-engine JDBC handles admitted to the exact ready schema. */
++    public void releasePreviousSchemaConnections(UUID taskId,
++                                                 gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity) throws SQLException {
++        locked(() -> {
++            try (var c = connections.open()) {
++                new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(identity)
++                    .requireRegistered(c, Set.of("READY"));
++                if (!queries.holds(taskId, new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))
++                    || !queries.holds(taskId, new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false)))
++                    throw new SQLException("Original JDBC schema was not admitted");
++                try (var p = c.prepareStatement("SELECT boot_id,state FROM platform_task WHERE task_id=?")) {
++                    p.setObject(1, taskId);
++                    try (var row = p.executeQuery()) {
++                        if (!row.next() || !Set.of("UNKNOWN", "FINISHING").contains(row.getString(2)))
++                            throw new SQLException("Original JDBC task is not recoverable");
++                        if (bootId.equals(row.getObject(1, UUID.class))) return null;
++                    }
++                }
++                var leases = new ArrayList<UUID>();
++                try (var p = c.prepareStatement("SELECT lease_id,resource_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='CONNECTION' AND owner_id=? AND released_at IS NULL")) {
++                    p.setObject(1, taskId);
++                    p.setString(2, identity.ownerId());
++                    try (var rows = p.executeQuery()) {
++                        while (rows.next()) {
++                            String id = rows.getString(2), metadata = rows.getString(3);
++                            try {
++                                if (!UUID.fromString(id).toString().equals(id)) continue;
++                            } catch (IllegalArgumentException invalid) {
++                                continue;
++                            }
++                            if (!ResourceRecovery.EXPLICIT.equals(metadata)) {
++                                var facts = ResourceRecovery.decode(metadata);
++                                if (!facts.protocol().equals("jdbc.v1")) continue;
++                                if (!facts.fields().keySet().equals(Set.of("bootId", "schemaVersion", "schemaGeneration"))
++                                    || !identity.schemaVersion().equals(facts.fields().get("schemaVersion"))
++                                    || !identity.generation().toString().equals(facts.fields().get("schemaGeneration")))
++                                    throw new SQLException("JDBC recovery schema differs");
++                                try {
++                                    String boot = facts.fields().get("bootId");
++                                    var previousBoot = UUID.fromString(boot);
++                                    if (!previousBoot.toString().equals(boot)) throw new IllegalArgumentException();
++                                    if (bootId.equals(previousBoot)) continue;
++                                } catch (IllegalArgumentException invalid) {
++                                    throw new SQLException("Invalid JDBC engine identity", invalid);
++                                }
++                            }
++                            var lease = rows.getObject(1, UUID.class);
++                            // Historical JDBC used only EXPLICIT plus a canonical UUID; authors retain CUSTOM instead.
++                            if (database.openConnections(lease.toString()) == 0) leases.add(lease);
++                        }
++                    }
++                }
++                try (var p = c.prepareStatement("UPDATE platform_task_resource SET released_at=? WHERE task_id=? AND lease_id=? AND released_at IS NULL")) {
++                    for (var lease : leases) {
++                        p.setLong(1, System.currentTimeMillis());
++                        p.setObject(2, taskId);
++                        p.setObject(3, lease);
++                        if (p.executeUpdate() != 1) throw new SQLException("JDBC connection lease changed");
++                    }
++                }
++            }
++            return null;
++        });
++    }
++
+     /** Releases vanished SSH clients from an earlier exclusive database boot, preserving file claims. / 释放更早独占数据库启动中已消失的 SSH 客户端，保留文件申请。
+      * @param taskId original recovery task / 原恢复任务
+      * @param owner original Mod identity / 原 Mod 身份
+@@ -886,6 +951,62 @@
+                         p.setObject(2, lease);
+                         p.setObject(3, taskId);
+                         if (p.executeUpdate() != 1) throw new SQLException("AI process lease changed");
++                    }
++                }
++            }
++            return null;
++        });
++    }
++
 +    /** Releases only vanished synchronous server-access calls, never server references or business results. */
 +    public void releasePreviousServerAccesses(UUID taskId, String owner, String version) throws SQLException {
 +        locked(() -> {
@@ -3667,26 +3813,16 @@ diff --git a/src/app/db/src/main/java/gold/debug/windowstolinux/app/db/task/Task
 +                        p.setObject(2, lease);
 +                        p.setObject(3, taskId);
 +                        if (p.executeUpdate() != 1) throw new SQLException("Server-access process lease changed");
-+                    }
-+                }
-+            }
-+            return null;
-+        });
-+    }
-+
-     /** Persists cooperative cancellation without inventing termination. / 持久化协作取消，不虚构任务终止。
-      * @param taskId selected task / 选中的任务
-      * @return true when queued work was cancelled before it could run / 排队工作在执行前被取消时为真
+                     }
+                 }
+             }
 diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java
 --- a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java
 +++ b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/task/PlatformTaskRuntime.java
-@@ -861,6 +861,18 @@
-         } catch (SQLException failure) {
-             throw TaskConclusion.error(ProblemCode.IO_FAILURE, "AI_PREVIOUS_RELEASE",
-                 "Previous AI process ownership could not be reconciled");
-+        }
-+    }
-+
+@@ -864,6 +864,18 @@
+         }
+     }
+ 
 +    /** Reconciles vanished local synchronous server access without changing references or outcomes. */
 +    public synchronized void releasePreviousServerAccesses(TaskContext context, String owner, String version) throws ApiException {
 +        requireCleanup(context, owner, version);
@@ -3696,6 +3832,42 @@ diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service
 +        } catch (SQLException failure) {
 +            throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVER_ACCESS_PREVIOUS_RELEASE",
 +                "Previous server-access process ownership could not be reconciled");
++        }
++    }
++
+     /** Requires previous task SSH clients to be physically closed before file recovery. / 文件恢复前要求原任务其他 SSH 客户端已物理关闭。
+      * @param context original task / 原任务
+      * @param owner bound Mod / 绑定 Mod
+@@ -904,10 +916,31 @@
+                 throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_SCHEMA_NOT_ADMITTED",
+                     "The task does not own this Mod schema generation");
+             return retain(context,
+-                new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false));
++                new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false),
++                new ResourceRecovery("jdbc.v1", Map.of("bootId", bootId.toString(),
++                    "schemaVersion", identity.schemaVersion(), "schemaGeneration", identity.generation().toString())), false);
+         } catch (SQLException failure) {
+             throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_SCHEMA_CLAIM",
+                 "Schema admission could not be verified");
++        }
++    }
++
++    /** Reconciles only disappeared earlier-engine JDBC handles, independently of business outcomes. */
++    public synchronized void releasePreviousSchemaConnections(TaskContext context,
++                                                              gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity) throws ApiException {
++        var caller = requireContext(context);
++        if (!caller.ownerId().equals(identity.ownerId())
++            && !dependenciesSupport.delegated(context, identity.ownerId(), null))
++            throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_SCHEMA_SCOPE",
++                "Provider JDBC requires its synchronous service call");
++        if (!executions.get(context.id()).reconciling)
++            return;
++        try {
++            ledger.releasePreviousSchemaConnections(context.id(), identity);
++            executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
++        } catch (SQLException failure) {
++            throw TaskConclusion.error(ProblemCode.IO_FAILURE, "JDBC_PREVIOUS_RELEASE",
++                "Previous JDBC ownership could not be reconciled");
          }
      }
  
@@ -3734,39 +3906,76 @@ diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service
 diff --git a/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java b/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java
 --- a/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java
 +++ b/src/app/main/src/main/java/gold/debug/windowstolinux/app/main/mod/PlatformModContext.java
-@@ -121,12 +121,13 @@
-         services.bindRecoveryCleanup(task -> {
-             remote.closeTaskResources(task);
-             ai.closeTaskResources(task);
-+            servers.retryFinishedReleases(task);
-         });
+@@ -118,18 +118,16 @@
+         var remote = own(runtime.remoteCapabilities(identity.id(), identity.version()));
+         var servers = own(runtime.serverAccess(identity.id(), identity.version(), schema));
+         var ai = own(runtime.ai(identity.id(), identity.version()));
+-        services.bindRecoveryCleanup(task -> {
+-            remote.closeTaskResources(task);
+-            ai.closeTaskResources(task);
+-        });
          var secrets = own(runtime.secrets(identity.id(), identity.version(), schema));
          var source = own(runtime.source(identity.id(), identity.version(), remote));
          var processes = own(runtime.processes(identity.id(), identity.version()));
++        TaskModDatabase jdbc = schema.isPresent()
++            ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
++            : null;
          var tasks = new RecoveryTasks(
 -            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote, ai);
-+            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote, ai, servers);
-         ModDatabase database = schema.isPresent()
-             ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
-             : new StatelessDatabase();
-@@ -301,7 +302,8 @@
+-        ModDatabase database = schema.isPresent()
+-            ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
+-            : new StatelessDatabase();
++            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote, ai, servers, jdbc);
++        services.bindRecoveryCleanup(tasks::cleanup);
++        ModDatabase database = jdbc != null ? jdbc : new StatelessDatabase();
+         var context = new BoundContext(identity, mode, pageScope, tasks, remote.interaction(), servers, remote.linux(),
+             ai, database, secrets, new gold.debug.windowstolinux.app.service.file.PlatformFileService(source), logs, processes, services);
+         lease = new ModHostLease(context, runtime.tasks(), contributions);
+@@ -301,7 +299,17 @@
       * @param remote host-owned remote cleanup / 宿主持有的远端收尾
       * @param ai host-owned original model cleanup / 宿主持有的原模型收尾 */
      private record RecoveryTasks(TaskService delegate, PlatformModHost.Remote remote,
 -                                 gold.debug.windowstolinux.app.service.ai.PlatformAiService ai) implements TaskService {
 +                                 gold.debug.windowstolinux.app.service.ai.PlatformAiService ai,
-+                                 gold.debug.windowstolinux.app.service.server.PlatformServerAccess servers) implements TaskService {
++                                 gold.debug.windowstolinux.app.service.server.PlatformServerAccess servers,
++                                 TaskModDatabase jdbc) implements TaskService {
++        /** Reconciles prior host resources without inferring the author's business result. */
++        private void cleanup(TaskContext task) throws ApiException {
++            if (jdbc != null) jdbc.releasePreviousConnections(task);
++            remote.closeTaskResources(task);
++            ai.closeTaskResources(task);
++            servers.retryFinishedReleases(task);
++        }
++
          /** Delegates original task admission unchanged. / 原样委托任务准入。
           * @param request exact task request / 精确任务请求
           * @param work author callback / 作者回调
-@@ -393,6 +395,7 @@
+@@ -391,8 +399,7 @@
+         public RecoveryRegistration registerRecovery(String taskType, TaskRecovery recovery) throws ApiException {
+             Objects.requireNonNull(recovery);
              return delegate.registerRecovery(taskType, (previous, task) -> {
-                 remote.closeTaskResources(task);
-                 ai.closeTaskResources(task);
-+                servers.retryFinishedReleases(task);
+-                remote.closeTaskResources(task);
+-                ai.closeTaskResources(task);
++                cleanup(task);
                  return recovery.reconcile(previous, task);
              });
          }
+diff --git a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/db/TaskModDatabase.java b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/db/TaskModDatabase.java
+--- a/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/db/TaskModDatabase.java
++++ b/src/app/service/src/main/java/gold/debug/windowstolinux/app/service/db/TaskModDatabase.java
+@@ -108,6 +108,12 @@
+         }
+     }
+ 
++    /** Host recovery reconciles only vanished previous-engine handles; it never closes live author JDBC. */
++    public void releasePreviousConnections(TaskContext task) throws ApiException {
++        requireOpen();
++        tasks.releasePreviousSchemaConnections(task, coordinates.identity());
++    }
++
+     /** Revokes new capability calls while existing JDBC remains the author's close responsibility. / 撤销新能力调用，已有 JDBC 仍由作者负责关闭。 */
+     @Override
+     public void close() {
 diff --git a/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/DependencyRecoveryLedgerTest.java b/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/DependencyRecoveryLedgerTest.java
 --- a/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/DependencyRecoveryLedgerTest.java
 +++ b/src/app/db/src/test/java/gold/debug/windowstolinux/app/db/DependencyRecoveryLedgerTest.java
@@ -3860,6 +4069,224 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 +Source discovery and recipe review have already completed before this loop. prepare validates host/toolchains without uploading application sources; build uploads and verifies the frozen reviewed archive, then executes its reviewed recipe in the managed candidate. Source absence on the remote host before build is expected, not a missing host capability. Use the offered build tool for that work; do not rediscover local or remote project directories with supplement. Only actual prerequisite observations or standard-tool failure feedback can establish a necessary host capability gap; missing source-browsing tools in this publication-stage catalog cannot.
  Before relying on host prerequisites compare reviewed project needs with validated observations. inspect-host sees system PATH only: managed SDKs may not appear; empty observations are not proof of absence. Standard prepare installs declared runtime SDKs but not necessarily every build tool. supplement requires a concrete necessary capability missing from standard tools, an explanation, and full script review; inspect again after success before relying on it.
  Use only task-owned application resources and authorized host prerequisites. Never disclose/include credentials, change approval/receipt records or bypass source/candidate isolation. Confirmed nonzero exit is failure feedback; UNKNOWN stops without replay. Tool schemas and effects are in the catalog.
+diff --git a/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/db/TaskModDatabaseRecoveryRegressionTest.java b/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/db/TaskModDatabaseRecoveryRegressionTest.java
+--- /dev/null
++++ b/src/app/service/src/test/java/gold/debug/windowstolinux/app/service/db/TaskModDatabaseRecoveryRegressionTest.java
+@@ -0,0 +1,134 @@
++package gold.debug.windowstolinux.app.service.db;
++
++import static org.junit.jupiter.api.Assertions.*;
++import static gold.debug.windowstolinux.app.service.db.TaskModDatabaseTest.*;
++
++import java.nio.file.*;
++import java.util.*;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicReference;
++
++import gold.debug.windowstolinux.app.db.connect.PlatformDatabase;
++import gold.debug.windowstolinux.app.db.task.*;
++import gold.debug.windowstolinux.app.service.task.PlatformTaskRuntime;
++import gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity;
++import gold.debug.windowstolinux.appapi.task.model.TaskState;
++import gold.debug.windowstolinux.appapi.task.result.ApiException;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++public class TaskModDatabaseRecoveryRegressionTest {
++    @TempDir
++    Path root;
++
++    /** A real previous JVM exits after one committed write with an unclosed physical JDBC handle. */
++    public static void main(String[] args) throws Exception {
++        var fixture = new TaskModDatabaseTest();
++        var db = PlatformDatabase.open(Path.of(args[0]), PROTECTION);
++        var identity = fixture.prepare(db, "example.owner");
++        var security = security(db);
++        var runtime = new PlatformTaskRuntime(db, (c, o, v, r) -> fixture.claims(identity, r), security);
++        var business = new TaskModDatabase(db, runtime, identity);
++        var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(fixture.request(), active -> {
++            var connection = business.openConnection(active);
++            try (var statement = connection.createStatement()) {
++                statement.execute("INSERT INTO items VALUES(1)");
++            }
++            throw new IllegalStateException("Fixture process loses its original JDBC handle");
++        });
++        state(task, TaskState.UNKNOWN);
++        assertEquals(1, db.openConnections());
++        if (Boolean.parseBoolean(args[1]))
++            fixture.sql(db, "UPDATE platform_task_resource SET recovery_json='{\"release\":\"EXPLICIT\"}' WHERE resource_kind='CONNECTION'");
++        Files.writeString(Path.of(args[2]), task.id() + "\n" + identity.generation());
++        System.exit(0);
++    }
++
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void previousJvmReleasePreservesLiveUnknownForeignAndOriginalBusiness(boolean legacy) throws Exception {
++        var ids = root.resolve("ids.txt");
++        var executable = Path.of(System.getProperty("java.home"), "bin",
++            System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java");
++        var child = new ProcessBuilder(executable.toString(), "-cp",
++            System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
++            getClass().getName(), root.resolve("db").toString(), Boolean.toString(legacy), ids.toString())
++            .redirectErrorStream(true).redirectOutput(root.resolve("child.log").toFile()).start();
++        try {
++            assertTrue(child.waitFor(45, TimeUnit.SECONDS));
++        } finally {
++            if (child.isAlive()) {
++                child.destroyForcibly();
++                child.waitFor(10, TimeUnit.SECONDS);
++            }
++        }
++        assertEquals(0, child.exitValue(), () -> {
++            try {
++                return Files.readString(root.resolve("child.log"));
++            } catch (Exception failure) {
++                return failure.toString();
++            }
++        });
++        var lines = Files.readAllLines(ids);
++        var taskId = UUID.fromString(lines.get(0));
++        var identity = new SchemaIdentity("example.owner", "1", UUID.fromString(lines.get(1)));
++        var fixture = new TaskModDatabaseTest();
++        var problem = new AtomicReference<Throwable>();
++        try (var db = PlatformDatabase.open(root.resolve("db"), PROTECTION);
++             var security = security(db);
++             var runtime = new PlatformTaskRuntime(db, (c, o, v, r) -> fixture.claims(identity, r), security)) {
++            var business = new TaskModDatabase(db, runtime, identity);
++            var service = runtime.bind(identity.ownerId(), "1.0.0", true);
++            try (var registration = service.registerRecovery("fixture", (previous, active) -> {
++                try (var live = business.openConnection(active);
++                     var unknown = runtime.retain(active, new TaskResource("CONNECTION", UUID.randomUUID().toString(), identity.ownerId(), false),
++                         new ResourceRecovery("unrecognized.v1", Map.of("kind", "unknown")), false);
++                     var foreign = runtime.retain(active, new TaskResource("CONNECTION", UUID.randomUUID().toString(), "foreign.owner", false))) {
++                    assertThrows(ApiException.class, () -> runtime.releasePreviousSchemaConnections(active,
++                        new SchemaIdentity(identity.ownerId(), "1", UUID.randomUUID())));
++                    business.releasePreviousConnections(active);
++                    business.releasePreviousConnections(active);
++                    assertFalse(service.resourcesReleased(active));
++                    assertEquals(3, fixture.count(db, "SELECT COUNT(*) FROM platform_task_resource WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
++                    assertEquals(1, db.openConnections());
++                    try (var statement = live.createStatement(); var rows = statement.executeQuery("SELECT COUNT(*) FROM items")) {
++                        assertTrue(rows.next());
++                        assertEquals(1, rows.getInt(1));
++                    }
++                } catch (Throwable failure) {
++                    problem.set(failure);
++                    throw failure;
++                }
++                return success(null);
++            })) {
++                var result = runtime.reconcile(taskId).toCompletableFuture().get(15, TimeUnit.SECONDS);
++                assertNull(problem.get(), () -> String.valueOf(problem.get()));
++                assertEquals(TaskState.ENDED, result.state());
++                assertEquals(0, fixture.count(db, "SELECT COUNT(*) FROM platform_task_resource WHERE released_at IS NULL"));
++            }
++        }
++    }
++
++    @Test
++    void normalCallbackNeverReleasesItsLiveJdbc() throws Exception {
++        var fixture = new TaskModDatabaseTest();
++        try (var db = PlatformDatabase.open(root, PROTECTION)) {
++            var identity = fixture.prepare(db, "example.owner");
++            try (var security = security(db);
++                 var runtime = new PlatformTaskRuntime(db, (c, o, v, r) -> fixture.claims(identity, r), security)) {
++                var business = new TaskModDatabase(db, runtime, identity);
++                var task = runtime.bind(identity.ownerId(), "1.0.0", false).submit(fixture.request(), active -> {
++                    try (var live = business.openConnection(active)) {
++                        business.releasePreviousConnections(active);
++                        assertEquals(1, db.openConnections());
++                        assertFalse(live.isClosed());
++                    }
++                    return success(null);
++                });
++                assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, result(task).outcome());
++            }
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedArchiveTransferRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedArchiveTransferRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedArchiveTransferRegressionTest.java
+@@ -0,0 +1,76 @@
++package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.nio.file.Path;
++import java.util.*;
++
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.transfer.*;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++class DeploymentAssistedArchiveTransferRegressionTest {
++    private final ServerId server = new ServerId("original");
++
++    private final DeploymentRemoteLayout layout = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++        "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data"));
++
++    private final Path frontend = Path.of("fixture", "中文 前端", "frontend-source.tar.gz").toAbsolutePath().normalize();
++
++    private final String remote = layout.candidateRoot("demo-" + "c".repeat(16)) + "/mutable/source.tar.gz";
++
++    @ParameterizedTest
++    @ValueSource(strings = {"NONE", "OVERWRITE", "KEEP_BOTH", "SKIP"})
++    void selectsExactFrontendAmongBackendAndFrontendWithoutClaimingAuthority(String choice) {
++        var facts = DeploymentAssistedScope.archiveTransferFacts(archives(), intent(choice), server, layout);
++        assertEquals(archives().get(1), facts.get("archive"));
++        assertEquals(remote, facts.get("remoteArchivePath"));
++        assertEquals(true, facts.get("canonicalTransferMatched"));
++        assertFalse(facts.containsKey("commandGrant"));
++        assertFalse(facts.containsKey("liveOwnership"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"HASH", "BYTES", "LOCAL", "TRAILING", "DIRECTION", "SERVER", "INTENT_TARGET", "EFFECT", "ESCAPE", "REMOTE", "DUPLICATE", "EMPTY"})
++    void changedTransferOrAmbiguousArchivesCannotAcquireMatchingEvidence(String mutation) {
++        var original = intent("NONE");
++        String action = original.exactAction();
++        action = switch (mutation) {
++            case "HASH" -> action.replace("a".repeat(64), "b".repeat(64));
++            case "BYTES" -> action.replace("maxBytes=14592", "maxBytes=7364");
++            case "LOCAL" -> action.replace("frontend-source.tar.gz", "backend--source.tar.gz");
++            case "TRAILING" -> action + "\nunreviewed=true";
++            default -> action;
++        };
++        String destination = mutation.equals("ESCAPE") ? layout.workRoot() + "/../demo-" + "c".repeat(16) + "/mutable/source.tar.gz"
++            : mutation.equals("REMOTE") ? remote + ".other" : remote;
++        var changed = new ActionIntent(mutation.equals("DIRECTION") ? "platform.sftp.download" : original.type(),
++            mutation.equals("SERVER") ? List.of("foreign") : original.serverIds(),
++            mutation.equals("INTENT_TARGET") ? "foreign" : original.target(), original.revision(), action,
++            mutation.equals("EFFECT") ? "Unrelated effect" : original.effectSummary())
++            .withSemantics(new ActionSemantics("deployment.candidate.upload.v1", Set.of(new ActionTarget(server.id(), "deployment-candidate", destination))));
++        var observations = mutation.equals("EMPTY") ? List.<Map<String, Object>>of()
++            : mutation.equals("DUPLICATE") ? List.of(archives().get(1), archives().get(1)) : archives();
++        assertThrows(IllegalArgumentException.class,
++            () -> DeploymentAssistedScope.archiveTransferFacts(observations, changed, server, layout));
++    }
++
++    private ActionIntent intent(String choice) {
++        var request = new TransferRequest(frontend, remote, 14592);
++        var result = choice.equals("NONE") ? RemoteActions.transfer(server, "revision", request, "a".repeat(64), true)
++            : RemoteActions.transfer(server, "revision", request, "a".repeat(64), true, TransferConflictChoice.valueOf(choice));
++        return result.withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
++            Set.of(new ActionTarget(server.id(), "deployment-candidate", remote))));
++    }
++
++    private List<Map<String, Object>> archives() {
++        return List.of(Map.of("localArchivePath", frontend.resolveSibling("backend-source.tar.gz").toString(),
++                "archiveSha256", "b".repeat(64), "archiveBytes", 7364L, "relativeRoot", "backend"),
++            Map.of("localArchivePath", frontend.toString(), "archiveSha256", "a".repeat(64),
++                "archiveBytes", 14592L, "relativeRoot", "frontend"));
++    }
++}
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkloadReviewEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkloadReviewEvidence.java
 --- /dev/null
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkloadReviewEvidence.java

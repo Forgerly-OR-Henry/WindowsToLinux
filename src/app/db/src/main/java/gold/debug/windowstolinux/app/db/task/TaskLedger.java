@@ -764,6 +764,71 @@ public final class TaskLedger {
         });
     }
 
+    /** Releases only absent prior-engine JDBC handles admitted to the exact ready schema. */
+    public void releasePreviousSchemaConnections(UUID taskId,
+                                                 gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity identity) throws SQLException {
+        locked(() -> {
+            try (var c = connections.open()) {
+                new gold.debug.windowstolinux.app.db.schema.SchemaCoordinates(identity)
+                    .requireRegistered(c, Set.of("READY"));
+                if (!queries.holds(taskId, new TaskResource("MOD", identity.ownerId(), identity.ownerId(), false))
+                    || !queries.holds(taskId, new TaskResource("SCHEMA", identity.generation().toString(), identity.ownerId(), false)))
+                    throw new SQLException("Original JDBC schema was not admitted");
+                try (var p = c.prepareStatement("SELECT boot_id,state FROM platform_task WHERE task_id=?")) {
+                    p.setObject(1, taskId);
+                    try (var row = p.executeQuery()) {
+                        if (!row.next() || !Set.of("UNKNOWN", "FINISHING").contains(row.getString(2)))
+                            throw new SQLException("Original JDBC task is not recoverable");
+                        if (bootId.equals(row.getObject(1, UUID.class))) return null;
+                    }
+                }
+                var leases = new ArrayList<UUID>();
+                try (var p = c.prepareStatement("SELECT lease_id,resource_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='CONNECTION' AND owner_id=? AND released_at IS NULL")) {
+                    p.setObject(1, taskId);
+                    p.setString(2, identity.ownerId());
+                    try (var rows = p.executeQuery()) {
+                        while (rows.next()) {
+                            String id = rows.getString(2), metadata = rows.getString(3);
+                            try {
+                                if (!UUID.fromString(id).toString().equals(id)) continue;
+                            } catch (IllegalArgumentException invalid) {
+                                continue;
+                            }
+                            if (!ResourceRecovery.EXPLICIT.equals(metadata)) {
+                                var facts = ResourceRecovery.decode(metadata);
+                                if (!facts.protocol().equals("jdbc.v1")) continue;
+                                if (!facts.fields().keySet().equals(Set.of("bootId", "schemaVersion", "schemaGeneration"))
+                                    || !identity.schemaVersion().equals(facts.fields().get("schemaVersion"))
+                                    || !identity.generation().toString().equals(facts.fields().get("schemaGeneration")))
+                                    throw new SQLException("JDBC recovery schema differs");
+                                try {
+                                    String boot = facts.fields().get("bootId");
+                                    var previousBoot = UUID.fromString(boot);
+                                    if (!previousBoot.toString().equals(boot)) throw new IllegalArgumentException();
+                                    if (bootId.equals(previousBoot)) continue;
+                                } catch (IllegalArgumentException invalid) {
+                                    throw new SQLException("Invalid JDBC engine identity", invalid);
+                                }
+                            }
+                            var lease = rows.getObject(1, UUID.class);
+                            // Historical JDBC used only EXPLICIT plus a canonical UUID; authors retain CUSTOM instead.
+                            if (database.openConnections(lease.toString()) == 0) leases.add(lease);
+                        }
+                    }
+                }
+                try (var p = c.prepareStatement("UPDATE platform_task_resource SET released_at=? WHERE task_id=? AND lease_id=? AND released_at IS NULL")) {
+                    for (var lease : leases) {
+                        p.setLong(1, System.currentTimeMillis());
+                        p.setObject(2, taskId);
+                        p.setObject(3, lease);
+                        if (p.executeUpdate() != 1) throw new SQLException("JDBC connection lease changed");
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
     /** Releases vanished SSH clients from an earlier exclusive database boot, preserving file claims. / 释放更早独占数据库启动中已消失的 SSH 客户端，保留文件申请。
      * @param taskId original recovery task / 原恢复任务
      * @param owner original Mod identity / 原 Mod 身份

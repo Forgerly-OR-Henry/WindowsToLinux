@@ -7694,6 +7694,31 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     }
                 }
                 if (retained) System.out.println("STATIC_LIVE_RETAINED " + ledger.queries().snapshot(original));
+                if (retained) {
+                    try (var connection = database.openConnection();
+                         var query = connection.prepareStatement("SELECT resource_kind,resource_id,owner_id,recovery_json FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
+                        query.setObject(1, original);
+                        try (var rows = query.executeQuery()) {
+                            while (rows.next()) {
+                                var shape = JSON.createObjectNode().put("kind", rows.getString(1)).put("resource", rows.getString(2))
+                                    .put("owner", rows.getString(3));
+                                var raw = JSON.readTree(rows.getString(4));
+                                var names = new java.util.TreeSet<String>();
+                                raw.fieldNames().forEachRemaining(names::add);
+                                shape.set("rootFieldNames", JSON.valueToTree(names));
+                                for (String field : List.of("protocol", "release"))
+                                    if (raw.path(field).isTextual()) shape.put(field, raw.path(field).asText());
+                                if (raw.has("protocol")) {
+                                    var metadata = gold.debug.windowstolinux.app.db.task.ResourceRecovery.decode(rows.getString(4));
+                                    shape.set("fieldNames", JSON.valueToTree(new java.util.TreeSet<>(metadata.fields().keySet())));
+                                    for (String field : List.of("bootId", "serverId"))
+                                        if (metadata.fields().containsKey(field)) shape.put(field, metadata.fields().get(field));
+                                }
+                                System.out.println("STATIC_LIVE_RETAINED_RESOURCE " + shape);
+                            }
+                        }
+                    }
+                }
                 boolean archived = false;
                 var checkpoints = new gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint(database);
                 if (retained)
