@@ -444,3 +444,15 @@ original-status-evidence-unit-01初18项通过；随后候选前缀收紧到与h
 仅ASSISTED Scope的build.run审查加入该大段实现，STATIC/Agent共享CommandEvidence未自动增加。Scope同时在原完整collector重建和stdin digest匹配后，将完整输入里的唯一规范archive SHA守卫的64个字符，与唯一捕获归档逐字比较并标出当前candidate/声明目标；不把守卫已经执行、后续变量不可改写或脚本/依赖安全当成事实。项目和依赖hook仍是需要在实际受管边界内执行的非可信代码，完整stdin仍独立审阅，未加--ignore-scripts来改变构建语义，未放松审批。
 
 build-isolation-evidence-unit-01共19项通过0跳过：默认/自定义layout实现源码及入口/摘要/预算2、归档完整SHA/唯一观察/collector stdin/目标与变造8、原流程证据9。没有服务器或提供方调用，未执行Windows缺失的/bin/bash测试、未恢复Agent。下一轮03从来源识别重新执行，所有失败/恢复请求计入总Token。
+
+## File Transfer 03：配置暂存的保护数据与固定写入器证据
+
+03原任务18089c12-d917-438b-8893-1b811f2f6321/root assisted-live-file-transfer-6iq6vvy1c实际Go/NPM均构建成功，前端NPM EXIT=0，新构建源码证据在真实请求中约10万字符并通过独立审查。随后26字节stage-config被DENY，认为不透明负载缺少内容、可能含环境变量/密钥或注入值。产品reconcile-03-01已核实ENDED/FAILED、blockers=[]、应用列表空（JUnit1通过），未重放原部署。
+
+源码核对：DeploymentConfigSnapshot/Entry/Value是普通非秘密配置，secret-like键必须用DeploymentSecretRef；PublishStaging分别处理普通配置与secrets.use回调。但固定审查保持OPAQUE_BOUND_DATA与保护值不披露，未为求批准而把实际配置、秘密、服务器密码传给模型。stage_configuration/stage_secret只调用receive_immutable_payload：受控根/参数/尺寸和摘要校验，目标存在时验证匹配并消费输入，否则受控临时文件读入、核验、root:root400不可变安装；该动作不eval/source/执行数据。后续启动和运行时消费是独立受审操作，不能由暂存获准推导安全。
+
+新增configurationStagingImplementationFacts提供完整固定receiver、受控根初始化、公共根守卫及dispatch四片实际源码和逐片SHA，验证为原pin helper的连续子串，总字符上限131072。没有改变远端写入器、权限、路径、payload或helper pin。大段实现仅由ASSISTED Scope的config/secret两种暂存审查提供；ASSISTED fixed-effect-review明确保护数据不是缺失的可执行stdin，仍须审核字面目标/身份/摘要/大小、原目标写入授权、初始化与文件效果，保留独立DENY。未修改共享v2契约或Agent输入策略；新只读Bundle API不会自动加入Agent事实。
+
+configuration-staging-evidence-unit-01因新测试误用不存在的secretsRoot方法编译失败，执行0项；修正为生产原有configurationRoot/secrets路径后unit-02共13项通过0跳过：默认/自定义源码与摘要2、普通配置/secret载荷不透明且不出现在审查JSON2、原流程证据9。没有真实数据明文披露、模型调用、服务器操作或Agent验收。
+
+用量辅助脚本另修复generationAttemptCount=UNKNOWN解析失败：按invocation/record单列未提供trace的逻辑记录，不作0、不虚构物理请求。当前唯一此记录来自Task Board19发送前预算拦截，真实stdout证明encoded23443>maximum23018而未发送；产品原始未知元数据保留。usage-audit-15只读覆盖59个已结束目录，typed物理生成与提供方字段照实去重；能力探测与缺失用量继续独列。该修复仅辅助汇总器，不更改生产usage。

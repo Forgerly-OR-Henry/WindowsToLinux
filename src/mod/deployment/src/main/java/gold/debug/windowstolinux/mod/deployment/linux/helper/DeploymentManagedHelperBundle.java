@@ -289,6 +289,24 @@ public final class DeploymentManagedHelperBundle {
             "meaning", "Actual rendered common guards, complete isolated-Python official toolchain function (including catalog and inserted archive/repository code), and full public dispatch from the same helper identity used by the pre-invocation guard. Follow this request's prepare-toolchains prepare or bind branch; unrelated dispatch branches are not selected. Review official resolution/download/checksum/archive/installation/ownership/sealing code and exact arguments. A nonzero preparer status can leave partial effects and aborts the set-e invocation; it is not successful preparation or permission. These are source bytes, not a claim about live installed files, future resolved values, safe arguments or an execution grant.");
     }
 
+    /** Supplies the actual fixed opaque-data receiver; protected payload bytes are never included. */
+    public static Map<String, Object> configurationStagingImplementationFacts(DeploymentRemoteLayout layout) {
+        String complete = renderScript(layout);
+        var sources = new java.util.ArrayList<Map<String, Object>>();
+        int characters = 0;
+        for (String fragment : List.of("00-protocol-foundation.sh", "input/15-deployment-input.sh",
+            "workspace/20-candidate-workspace.sh", "70-command-dispatch.sh")) {
+            String source = new String(assemble(DeploymentToolchainCatalog.defaults(), layout, List.of(fragment)), StandardCharsets.UTF_8);
+            characters += source.length();
+            if (characters > 131072 || !complete.contains(source))
+                throw new IllegalStateException("Configuration staging source differs from pinned helper");
+            sources.add(Map.of("fragment", fragment, "sha256", sha256(source.getBytes(StandardCharsets.UTF_8)), "source", source));
+        }
+        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
+            "sourceBinding", "EXACT_RENDERED_SUBSTRINGS_OF_COMPLETE_LOCALLY_HASH_PINNED_HELPER",
+            "meaning", "Actual fixed stage_configuration/stage_secret, receive_immutable_payload, controlled-root setup and public dispatch. Review selected arguments, declared target, hash/length, root initialization and immutable file creation/reuse. Opaque stdin is copied as bounded bytes, never evaluated, sourced or run by staging; configuration/secret identity differs from rendered payload SHA. Protected values intentionally remain undisclosed. Runtime consumption, activation and application behavior are separate operations needing their own review. Source bytes and exact payload bindings do not prove live ownership, desired content, safe future consumption or authority.");
+    }
+
     /** Supplies the pinned build controller and non-root entry source without invoking or modifying either. */
     public static Map<String, Object> buildIsolationImplementationFacts(DeploymentRemoteLayout layout) {
         String complete = renderScript(layout), entry = renderBuildEntry(layout);

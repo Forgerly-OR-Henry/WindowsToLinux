@@ -409,7 +409,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,259 @@
+@@ -48,6 +48,263 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -508,6 +508,10 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
 +                                TaskContext supplied) throws ApiException {
 +        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
++        if (intent.semantics().filter(value -> Set.of("deployment.publication.config.v1", "deployment.publication.secret.v1")
++            .contains(value.operation())).isPresent())
++            facts.put("configurationStagingImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
++                .configurationStagingImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
 +        if (intent.semantics().filter(value -> value.operation().equals("deployment.build.run.v1")).isPresent()) {
 +            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
 +            facts.put("buildIsolationImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildIsolationImplementationFacts(layout));
@@ -669,7 +673,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
-@@ -316,6 +569,13 @@
+@@ -316,6 +573,13 @@
      @Override
      public InteractionService interaction() {
          return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
@@ -765,7 +769,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
-@@ -267,6 +267,52 @@
+@@ -267,6 +267,70 @@
          return sha256(renderScript(layout).getBytes(StandardCharsets.UTF_8));
      }
  
@@ -789,6 +793,24 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
 +            "sourceBinding", "EXACT_RENDERED_SUBSTRINGS_OF_COMPLETE_LOCALLY_HASH_PINNED_HELPER",
 +            "meaning", "Actual rendered common guards, complete isolated-Python official toolchain function (including catalog and inserted archive/repository code), and full public dispatch from the same helper identity used by the pre-invocation guard. Follow this request's prepare-toolchains prepare or bind branch; unrelated dispatch branches are not selected. Review official resolution/download/checksum/archive/installation/ownership/sealing code and exact arguments. A nonzero preparer status can leave partial effects and aborts the set-e invocation; it is not successful preparation or permission. These are source bytes, not a claim about live installed files, future resolved values, safe arguments or an execution grant.");
++    }
++
++    /** Supplies the actual fixed opaque-data receiver; protected payload bytes are never included. */
++    public static Map<String, Object> configurationStagingImplementationFacts(DeploymentRemoteLayout layout) {
++        String complete = renderScript(layout);
++        var sources = new java.util.ArrayList<Map<String, Object>>();
++        int characters = 0;
++        for (String fragment : List.of("00-protocol-foundation.sh", "input/15-deployment-input.sh",
++            "workspace/20-candidate-workspace.sh", "70-command-dispatch.sh")) {
++            String source = new String(assemble(DeploymentToolchainCatalog.defaults(), layout, List.of(fragment)), StandardCharsets.UTF_8);
++            characters += source.length();
++            if (characters > 131072 || !complete.contains(source))
++                throw new IllegalStateException("Configuration staging source differs from pinned helper");
++            sources.add(Map.of("fragment", fragment, "sha256", sha256(source.getBytes(StandardCharsets.UTF_8)), "source", source));
++        }
++        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
++            "sourceBinding", "EXACT_RENDERED_SUBSTRINGS_OF_COMPLETE_LOCALLY_HASH_PINNED_HELPER",
++            "meaning", "Actual fixed stage_configuration/stage_secret, receive_immutable_payload, controlled-root setup and public dispatch. Review selected arguments, declared target, hash/length, root initialization and immutable file creation/reuse. Opaque stdin is copied as bounded bytes, never evaluated, sourced or run by staging; configuration/secret identity differs from rendered payload SHA. Protected values intentionally remain undisclosed. Runtime consumption, activation and application behavior are separate operations needing their own review. Source bytes and exact payload bindings do not prove live ownership, desired content, safe future consumption or authority.");
 +    }
 +
 +    /** Supplies the pinned build controller and non-root entry source without invoking or modifying either. */
@@ -4467,6 +4489,79 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +        assertTrue(DeploymentAiJson.facts(facts, 1048576).length() < 1048576);
 +    }
 +}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentConfigurationStagingEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentConfigurationStagingEvidenceRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentConfigurationStagingEvidenceRegressionTest.java
+@@ -0,0 +1,69 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++class DeploymentConfigurationStagingEvidenceRegressionTest {
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void receiverSourceMatchesPinnedHelperForDefaultAndCapturedRoots(boolean custom) throws Exception {
++        var layout = custom ? new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data")) : DeploymentRemoteLayout.original();
++        var facts = DeploymentManagedHelperBundle.configurationStagingImplementationFacts(layout);
++        var json = new ObjectMapper().valueToTree(facts);
++        assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), json.path("helperSha256").asText());
++        String helper = DeploymentManagedHelperBundle.renderScript(layout);
++        for (var source : json.path("sources")) {
++            String body = source.path("source").asText();
++            assertTrue(helper.contains(body));
++            assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(body.getBytes(StandardCharsets.UTF_8))), source.path("sha256").asText());
++        }
++        String receiver = json.at("/sources/1/source").asText();
++        assertTrue(receiver.contains("receive_immutable_payload()"));
++        assertTrue(receiver.contains("stage_configuration()"));
++        assertTrue(receiver.contains("stage_secret()"));
++        assertTrue(receiver.contains("install -o root -g root -m 400"));
++        assertFalse(json.has("payload"));
++        assertFalse(json.has("commandGrant"));
++        assertTrue(DeploymentAiJson.facts(facts, 1048576).length() < 1048576);
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"config", "secret"})
++    void dataAndSecretPayloadsRemainOpaqueAndAbsentFromSharedReviewJson(String kind) throws Exception {
++        var layout = DeploymentRemoteLayout.original();
++        String protectedText = "fixture-protected-value-NEVER-SEND-THIS-TO-THE-MODEL";
++        byte[] payload = protectedText.getBytes(StandardCharsets.UTF_8);
++        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(payload));
++        String script = "'" + layout.helperPath() + "' 'stage-" + kind + "' 'demo' '"
++            + (kind.equals("config") ? "b".repeat(64) + "' 'systemd" : "credential' '1") + "' '" + digest + "' '" + payload.length + "'";
++        var server = new ServerId("fixture");
++        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), payload, Duration.ofSeconds(90), 4096)) {
++            String destination = kind.equals("config") ? layout.configurationRoot("demo") + "/" + "b".repeat(64) + "/systemd.env"
++                : layout.configurationRoot("demo") + "/secrets/credential/1/value";
++            var intent = RemoteActions.command(server, "revision", request).withSemantics(new ActionSemantics(
++                "deployment.publication." + kind + ".v1", Set.of(new ActionTarget(server.id(), kind.equals("config") ? "deployment-configuration" : "deployment-secret", destination))));
++            var facts = DeploymentCommandEvidence.facts(intent, request, layout);
++            assertEquals("OPAQUE_BOUND_DATA", facts.get("inputKind"));
++            assertFalse(facts.containsKey("completeExecutableInput"));
++            assertFalse(facts.containsKey("configurationStagingImplementation"), "Large source belongs only to ASSISTED scope");
++            var all = new LinkedHashMap<String, Object>(facts);
++            all.put("configurationStagingImplementation", DeploymentManagedHelperBundle.configurationStagingImplementationFacts(layout));
++            assertFalse(new ObjectMapper().writeValueAsString(all).contains(protectedText));
++        }
++    }
++}
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedBuildArchiveRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedBuildArchiveRegressionTest.java
 --- /dev/null
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedBuildArchiveRegressionTest.java
@@ -5277,6 +5372,7 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md
 --- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md
 +++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md
-@@ -1 +1,2 @@
+@@ -1 +1,3 @@
  Review the exact registered fixed effect. serverTargets are saved server identities; resourceTargets are {serverId,kind,id}. Compare each object with its expected identity. Deny undisclosed commands/patches, source/target drift, secret disclosure or unverified prerequisites.
++For exact guarded stage-config/stage-secret, inputKind=OPAQUE_BOUND_DATA is protected file data, distinct from missing executable stdin. configurationStagingImplementation supplies the actual pinned receiver, controlled-root setup and dispatch; review complete selected code and literal app/configuration-or-secret/format/revision/target/SHA/byte-count bindings, original goal write authority and filesystem effects. The receiver copies bounded bytes into an immutable root-only regular file without evaluating, sourcing or running that data. Do not request or disclose protected values. Later runtime consumption/activation requires a separate independent review; successful staging alone proves no application safety, live ownership or authorization.
 +For platform.sftp.upload, WTL-SFTP-1 binds the exact local/remote paths, SHA256 and maximum bytes to the consumed host grant. Platform transfer opens a regular local file without following links, checks identity/length and hashes its actual bytes against that approved digest before remote mutation; it rechecks the source, hashes the remote temporary file and verifies the final named result. These are enforced transfer semantics, not a claim that this future transfer has happened. Match the exact sourceArchiveObservations path/hash/byte identity when supplied. SourceArchiver originally hashes the compressed output and re-reads its frozen copy before publishing that association. Candidate upload separately checks the returned byte/hash/path receipt; the build pipeline independently queries task ownership and remote bytes/hash before executing the archive. An upload is data transfer, not execution of archive hooks; execution needs its own full review and isolation. Do not invent a requirement for an already transferred remote checksum before transfer. Changed sources/targets, missing authority, conflicting observations or unreviewed execution still fail.
