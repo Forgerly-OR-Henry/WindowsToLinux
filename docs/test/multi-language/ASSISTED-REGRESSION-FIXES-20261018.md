@@ -276,3 +276,16 @@ CLI19容量通过，上传固定效果审查返回finishReason=stop，JFR确认`
 required-approval-submission-unit-01因PowerShell未正确引用Maven带点属性，未进入编译/测试；unit-02已改为参数数组，验证进行中。只读合并已保留记录得到known3847223、746物理尝试（1输入/输出UNKNOWN），包含CLI19与恢复；其中LANGUAGE1763408、APPROVAL2083815。最终汇总与数据库对账仍须更新。
 
 required-approval-submission-unit-02定点18项全部通过、0跳过；涵盖独立上下文、纯文本/多结果拒绝、畸形结果原有边界、有效DENY不重审及不同方案重新审批。两Java已按项目格式化。capacity-review-03真实API-only通过，task969bc8da-fff8-4a6a-af10-0d08addb8229/root ai-live-capacity-review-x30k0mig8，无SSH；输入3563/输出117=3680、cache2816/miss747，reasoningUNKNOWN，4项能力验证用量UNKNOWN。该单次结果不能替代整部署稳定性或后续每条审查。
+
+## CLI20：官方摘要角色与UNKNOWN诊断字段
+
+审批单结果修复提交`fcb5bb59`后，CLI20实际审批请求均带`requiredTool=submit_result`，部署普通工具仍AUTO。容量/主机探测/prepare成功，bind收到有效DENY：认为绑定中的归档SHA不能说明官方校验值。原`a3c034e5-0f93-4ea2-9488-152e45b32b3d`、root`assisted-live-log-analyzer-x4knkcaqc`经reconcile-20-01程序核对ENDED/FAILED、blockers空、无应用；原运行known85387，恢复另计。没有重试该拒绝、没有发布。
+
+直接核对当前固定helper：`toolchain/10-release-metadata.py`的Rust resolver返回归档URL+.sha256的官方expected；download同时计算官方算法和SHA256，官方expected不匹配即失败，通过后才返回归档SHA256。`30-managed-installation.py`把官方算法/expected与归档SHA分别保存在受保护marker；SHA256来源两值相等、SHA512来源不同。原bindingDigestMeaning仅称downloaded archive SHA，遗漏这种关系。现补已有代码语义，仍要求匹配原prepare观测与live bind守卫，未改helper、目录、任何服务器命令/授权或凭空生成官方值。
+
+JFR同时确认独立本地缺陷：effectResult把TaskResult.UNKNOWN作为LogEvent终态outcome，而LogRecordCodec明确禁止UNKNOWN终态。二次IllegalArgumentException被RefFlow捕获后会遮住原UNKNOWN问题。现统一将UNKNOWN记录为细节`observedOutcome=UNKNOWN`，终态字段留空；其他终态不改，不改变真实任务结果/对账要求。原DeploymentDiagnosticsTest只是捕获LogEvent，没校验真实编解码。现在保留脱敏断言并执行LogRecordCodec.create/encode/decode往返，证明记录可被实际日志层接受。该测试文件原已存在但未跟踪，依用户后续授权完整提交，当前改动仅方法异常声明、UNKNOWN断言及往返验证。
+
+observed-outcome-and-official-digest-unit-01因新增Codec.decode受检异常未声明而编译失败，未进入测试；修正后unit-02同5项定点全部通过（诊断1、绑定1、helper身份1、原拒绝/策略预算2），0跳过。共享Diagnostics及CommandEvidence的Agent影响留待后续核对，未进行Agent真机测试。Rust绑定API-only验证进行中。
+
+- Rust-binding-review-02真实API-only审查通过，taskdf19d84e-d023-47ad-bad2-78d816615741/root ai-live-rust-binding-review-xbc7ksn6k，known4957=4824+133、cache2816/miss2008、reasoningUNKNOWN，4capUNKNOWN，无SSH/许可复用。两处修复相关5项定点通过，3Java格式化完成。下一步CLI21完整流程；该单项不等同整部署成功。
+- 当前已记录known3949839、765物理尝试（1输入/输出UNKNOWN）、188项能力验证用量UNKNOWN；usage-audit-07仍不覆盖后续新增，最终需要新的库对账。仍0/8。

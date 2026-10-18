@@ -214,8 +214,10 @@ public final class DeploymentDiagnostics {
      * @param outcome actual optional outcome / 实际可选结果 */
     private void event(UUID taskId, LogLevel level, String code, String message, Optional<TaskResult> outcome) {
         try {
-            context.logs().write(target(), new LogEvent(level, code, message, Optional.empty(),
-                Optional.of(taskId), Optional.of(taskId), outcome));
+            var observation = outcome.filter(value -> value == TaskResult.UNKNOWN)
+                .map(value -> "{\"observedOutcome\":\"UNKNOWN\"}");
+            context.logs().write(target(), new LogEvent(level, code, message, observation,
+                Optional.of(taskId), Optional.of(taskId), outcome.filter(value -> value != TaskResult.UNKNOWN)));
         } catch (ApiException unavailable) {
             // The existing logger reports its storage issue; diagnostics do not alter the business result.
         }

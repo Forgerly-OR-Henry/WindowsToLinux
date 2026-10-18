@@ -915,7 +915,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
-+                "bindingDigestMeaning", "MANAGED sha256 is the downloaded archive SHA-256. The directory name is a distinct installation cache identity from ecosystem/version/resolver digest and fixed recipe, not the archive or a tree checksum. SYSTEM sha256 identifies the pinned system-file set. bind checks protected markers and exact versions and rehashes SYSTEM files before sealing; missing/drifted installations fail. These are input/code semantics, not observed installation, safety or authority.",
++                "bindingDigestMeaning", "MANAGED sha256 is the downloaded archive SHA-256 returned only after checking the official expected digest. For SHA256 sources it equals the official checksum (Rust resolves archive URL plus .sha256); SHA512 sources retain a separate official digest in the protected completion marker. The directory name is a distinct installation cache identity from ecosystem/version/resolver digest and fixed recipe, not the archive or a tree checksum. SYSTEM sha256 identifies the pinned system-file set. bind checks protected markers and exact versions and rehashes SYSTEM files before sealing; missing/drifted installations fail. These are input/code semantics, not observed installation, safety or authority.",
 +                "literalValidation", Map.of("canonicalBase64", true, "strictUtf8", true, "canonicalTypedBinding", true,
 +                    "scope", "LITERAL_ENCODING_ONLY_NOT_LIVE_INSTALLATION_OR_AUTHORITY"),
 +                "managedToolchainsRoot", layout.toolchains(),
@@ -1257,6 +1257,19 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Keeps the actual independent denial bounded and redacted without granting permission. */
+@@ -191,8 +214,10 @@
+      * @param outcome actual optional outcome / 实际可选结果 */
+     private void event(UUID taskId, LogLevel level, String code, String message, Optional<TaskResult> outcome) {
+         try {
+-            context.logs().write(target(), new LogEvent(level, code, message, Optional.empty(),
+-                Optional.of(taskId), Optional.of(taskId), outcome));
++            var observation = outcome.filter(value -> value == TaskResult.UNKNOWN)
++                .map(value -> "{\"observedOutcome\":\"UNKNOWN\"}");
++            context.logs().write(target(), new LogEvent(level, code, message, observation,
++                Optional.of(taskId), Optional.of(taskId), outcome.filter(value -> value != TaskResult.UNKNOWN)));
+         } catch (ApiException unavailable) {
+             // The existing logger reports its storage issue; diagnostics do not alter the business result.
+         }
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java
