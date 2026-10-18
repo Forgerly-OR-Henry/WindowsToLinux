@@ -247,6 +247,8 @@ final class DeploymentCommandEvidence {
             + "'application-health' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '([A-Za-z0-9+/=]{1,87384})'\\z").matcher(script);
         boolean publishing = intent.semantics().orElseThrow().operation().equals("deployment.publication.publish.v1");
         if (publishing ? !publish.lookingAt() : !health.matches()) return java.util.Optional.empty();
+        var publicationArguments = publishing ? DeploymentWorkloadReviewEvidence.publicationArguments(script) : java.util.Optional.<Map<String, Object>>empty();
+        if (publishing && publicationArguments.isEmpty()) return java.util.Optional.empty();
         String app = publishing ? publish.group(2) : health.group(1);
         var result = new LinkedHashMap<String, Object>(DeploymentWorkloadReviewEvidence.decode(publishing ? publish.group(7) : health.group(3), !publishing));
         var targets = intent.semantics().orElseThrow().targets();
@@ -263,7 +265,10 @@ final class DeploymentCommandEvidence {
             result.put("candidate", candidate);
             result.put("releaseSha256", publish.group(4));
             result.put("identityPolicy", publish.group(6));
-            result.put("frameValidation", "LITERAL_PUBLICATION_PREFIX_ONLY_REMAINING_ARGUMENTS_REQUIRE_REVIEW");
+            result.put("derivedReleaseRoot", layout.applicationRoot(app));
+            result.put("derivedCandidateRoot", layout.candidateRoot(candidate));
+            result.put("publicationFrame", publicationArguments.orElseThrow());
+            result.put("frameValidation", "COMPLETE_CANONICAL_LITERAL_ARGUMENTS_PAYLOAD_AND_DECLARED_PATHS_ONLY");
         } else result.put("frameValidation", "EXACT_APPLICATION_HEALTH_FRAME");
         return java.util.Optional.of(Collections.unmodifiableMap(result));
     }

@@ -244,3 +244,11 @@ upload-integrity-evidence-unit-01原归档/上传关联2项及精确宿主许可
 实际ProjectFacts已有从冻结源码得出的ToolchainRequirement（生态/声明/来源文件/用途/约束/版本），ToolchainSetup依原catalog和约束选择并验证真实版本；独立APP准备审查只收到初始化Draft和精确prepare字面参数，缺少这些原需求。因此复用既有workspaceDemand→archiveCaptured交接，把实际facts.toolchainRequirements同原archive关联保存；prepare也展示该观察，明确不等于初始URI/git、未来resolver结果或安装证明。原任务/源码/归档/模型/服务器检查及不可替换规则保留，未改catalog、选择、安装、命令或许可。
 
 source-toolchain-requirement-unit-01新准备需求1项+直接受影响原归档2项，共3项通过0跳过；3Java格式check通过。测试确认来源Cargo.toml/MINIMUM/1.85.0及原source SHA可见、同归档需求不能替换；只是验证字段/生命周期边界，不宣称服务器安装状态。全局截至CLI16known3458568、676物理（1用量UNKNOWN）、160capUNKNOWN；usage-audit-06覆盖此前39root/660记录，不覆盖CLI16，最终须更新。仍0/8交付。
+
+## CLI17：完整发布位置参数仍无对应表
+
+源码工具链需求提交 `69c046ef` 后，CLI17 prepare/bind、真实upload/独立verify、实际构建、配置和snapshot均通过；publish审查仍DENY，明确要求应用/candidate/部署目录与13位置参数/NUL载荷的对应表。新workloadInput已实际进入facts（publish evidence10993字符），不能说解码器未执行，也不能把模型仍称opaque当实际数据缺失。原 `4be84d93-4be7-4d82-98e9-5ce10471fd8f`、root `assisted-live-log-analyzer-weaus7ou0` 经reconcile-17-01产品对账ENDED/FAILED、blockers空、无应用；known159278=44963+114315，恢复另计。
+
+新增完整字面参数映射：仅程序标准单引号/转义引号的完整调用经shellQuote回环完全相同后，依真实public标量次序列出每个参数的序号/原值/角色；包含app/candidate/release/owner、identity、恰好第7个原workload参数、configuration、计数秘密引用、十字段数据绑定、可选tools-v1以及全部运行dispatch尾参数。保留原始完整命令，不把参数分组当全部类型值/安全校验；未审运行参数、当前状态和权限仍由独立审查与helper控制。发布facts再明确派生releaseRoot/candidateRoot。process分派使用解码workload入口；编译型程序可不保留构建期编译器，所以运行期tools-v1可合法缺席，不能把缺省当丢失构建绑定。
+
+publication-argument-frame-unit-01仅运行受影响帧/边界及新增字面位置用例，共11项通过0跳过；无关已通过health/解码用例未重跑，3Java格式check通过。没有改helper执行或任何服务器参数。全局known3635080、708物理（1用量UNKNOWN）、164capUNKNOWN；audit06不覆盖CLI16/17，最终须更新。仍0/8交付。

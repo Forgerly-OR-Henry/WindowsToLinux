@@ -15,6 +15,79 @@ final class DeploymentWorkloadReviewEvidence {
         this.fields = fields;
     }
 
+    /** Labels every original scalar only after canonical shell-literal round-trip validation. */
+    static Optional<Map<String, Object>> publicationArguments(String script) {
+        var words = new ArrayList<String>();
+        int at = 0;
+        while (at < script.length()) {
+            if (script.charAt(at++) != '\'') return Optional.empty();
+            var word = new StringBuilder();
+            boolean closed = false;
+            while (at < script.length()) {
+                if (script.startsWith("'\"'\"'", at)) {
+                    word.append('\'');
+                    at += 5;
+                } else if (script.charAt(at) == '\'') {
+                    at++;
+                    closed = true;
+                    break;
+                } else word.append(script.charAt(at++));
+            }
+            if (!closed) return Optional.empty();
+            words.add(word.toString());
+            if (at < script.length() && (script.charAt(at++) != ' ' || at == script.length())) return Optional.empty();
+        }
+        String canonical = words.stream().map(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel::shellQuote)
+            .collect(java.util.stream.Collectors.joining(" "));
+        if (!canonical.equals(script) || words.size() < 15) return Optional.empty();
+        var roles = new ArrayList<String>(List.of("application", "candidate", "releaseSha256", "ownershipManifestSha256",
+            "runtimeFormat", "identityPolicy", "workloadPayload", "configurationIdentity", "secretCount"));
+        int cursor = 11;
+        int secrets = scalarCount(words.get(10), (words.size() - cursor) / 3);
+        for (int i = 0; i < secrets; i++) {
+            roles.addAll(List.of("secret[" + i + "].identifier", "secret[" + i + "].revision", "secret[" + i + "].payloadSha256"));
+            cursor += 3;
+        }
+        if (cursor + 3 >= words.size()) throw new IllegalArgumentException("Truncated publication content frame");
+        if (!words.get(2).equals(words.get(cursor)) || !words.get(2).equals(words.get(cursor + 1)))
+            throw new IllegalArgumentException("Publication content application differs");
+        roles.addAll(List.of("contentOwnerApplication", "contentRuntimeApplication", "contentBindingCount"));
+        int bindings = scalarCount(words.get(cursor + 2), (words.size() - cursor - 3) / 10);
+        cursor += 3;
+        for (int i = 0; i < bindings; i++) {
+            for (String name : List.of("id", "path", "access", "resourceType", "locationType", "locationPath", "databaseFile", "seed", "initializationFiles", "contentSha256"))
+                roles.add("content[" + i + "]." + name);
+            cursor += 10;
+        }
+        var tools = new LinkedHashMap<String, Object>();
+        boolean hasTools = cursor < words.size() && words.get(cursor).equals("tools-v1");
+        tools.put("present", hasTools);
+        if (hasTools) {
+            if (cursor + 2 >= words.size() || !words.get(cursor + 1).matches("[a-f0-9]{64}"))
+                throw new IllegalArgumentException("Invalid publication runtime tool binding");
+            roles.addAll(List.of("runtimeToolchainFormat", "runtimeToolchainBindingSha256"));
+            tools.put("bindingSha256", words.get(cursor + 1));
+            cursor += 2;
+        }
+        if (cursor >= words.size()) throw new IllegalArgumentException("Missing publication runtime dispatch");
+        var dispatch = List.copyOf(words.subList(cursor, words.size()));
+        for (int i = 0; i < dispatch.size(); i++) roles.add("runtimeDispatchArgument[" + i + "]");
+        var arguments = new ArrayList<Map<String, Object>>();
+        for (int i = 2; i < words.size(); i++)
+            arguments.add(Map.of("position", i - 1, "role", roles.get(i - 2), "value", words.get(i)));
+        return Optional.of(Map.of("literalArgumentCount", arguments.size(), "arguments", List.copyOf(arguments),
+            "workloadPayloadArgumentPosition", 7, "runtimeToolchainBinding", Map.copyOf(tools), "runtimeDispatchArguments", dispatch,
+            "literalValidation", "COMPLETE_CANONICAL_SHELL_LITERAL_ROUND_TRIP_AND_PUBLIC_SCALAR_GROUPING_ONLY",
+            "meaning", "Positions count after the helper verb. Argument 7 is exactly the workloadInput payload decoded separately; app/candidate/release/ownership/configuration identities are different objects. Runtime tools-v1 is optional: build-only compilers need not be retained in a compiled binary's runtime. process dispatch uses the decoded workload entrypoint in the sealed release; other explicit dispatch arguments remain visible for review. This proves original literal grouping, not safety, live state or permission."));
+    }
+
+    private static int scalarCount(String value, int remainingMaximum) {
+        if (!value.matches("0|[1-9][0-9]{0,4}")) throw new IllegalArgumentException("Invalid publication scalar count");
+        int count = Integer.parseInt(value);
+        if (count > remainingMaximum) throw new IllegalArgumentException("Truncated publication scalar group");
+        return count;
+    }
+
     static Map<String, Object> decode(String encoded, boolean healthOnly) throws CharacterCodingException {
         if (!encoded.matches("[A-Za-z0-9+/]{1,87384}={0,2}"))
             throw new IllegalArgumentException("Invalid workload encoding");

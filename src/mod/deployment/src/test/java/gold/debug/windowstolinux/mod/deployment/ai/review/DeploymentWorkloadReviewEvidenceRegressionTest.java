@@ -95,6 +95,11 @@ class DeploymentWorkloadReviewEvidenceRegressionTest {
         assertEquals("demo", facts.at("/workloadInput/application").asText());
         assertEquals("b".repeat(64), facts.at("/workloadInput/ownershipManifestSha256").asText());
         assertEquals("bin/tool", facts.at(verb.equals("application-health") ? "/workloadInput/health/command/entrypoint" : "/workloadInput/command/entrypoint").asText());
+        if (!verb.equals("application-health")) {
+            assertEquals(13, facts.at("/workloadInput/publicationFrame/literalArgumentCount").asInt());
+            assertEquals(7, facts.at("/workloadInput/publicationFrame/workloadPayloadArgumentPosition").asInt());
+            assertFalse(facts.at("/workloadInput/publicationFrame/runtimeToolchainBinding/present").asBoolean(true));
+        }
     }
 
     @ParameterizedTest
@@ -108,6 +113,37 @@ class DeploymentWorkloadReviewEvidenceRegressionTest {
         assertFalse(frame("publish-deployment", "STDIN").has("workloadInput"));
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void completePublicationPositionsPreserveSecretsContentEscapesAndOptionalRuntimeTools(boolean tools) throws Exception {
+        var words = new ArrayList<>(List.of("/helper", "publish-deployment", "demo", "demo-" + "a".repeat(16), "b".repeat(64), "c".repeat(64),
+            "identity-v2", "SYSTEMD_STATIC", payload(false), "d".repeat(64), "1", "db-password", "2", "e".repeat(64),
+            "demo", "demo", "1", "data", "/srv/data", "rw", "FILE", "MANAGED", "-", "-", "seed/file's.csv", "-", "-"));
+        if (tools) words.addAll(List.of("tools-v1", "f".repeat(64)));
+        words.add("process");
+        String script = words.stream().map(gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildCommandChannel::shellQuote)
+            .collect(java.util.stream.Collectors.joining(" "));
+        var node = JSON.valueToTree(DeploymentWorkloadReviewEvidence.publicationArguments(script).orElseThrow());
+        assertEquals(words.size() - 2, node.path("literalArgumentCount").asInt());
+        assertEquals(payload(false), node.at("/arguments/6/value").asText());
+        assertEquals("secret[0].payloadSha256", node.at("/arguments/11/role").asText());
+        assertEquals("e".repeat(64), node.at("/arguments/11/value").asText());
+        assertEquals("seed/file's.csv", node.at("/arguments/22/value").asText());
+        assertEquals(tools, node.at("/runtimeToolchainBinding/present").asBoolean());
+        assertEquals("process", node.at("/runtimeDispatchArguments/0").asText());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNQUOTED", "APPENDED", "UNCLOSED"})
+    void noncanonicalShellBodiesNeverReceiveTheCompleteArgumentTable(String mutation) {
+        String body = switch (mutation) {
+            case "UNQUOTED" -> "helper publish-deployment demo";
+            case "APPENDED" -> "'/helper' 'publish-deployment'; printf altered";
+            default -> "'/helper' 'publish-deployment";
+        };
+        assertTrue(DeploymentWorkloadReviewEvidence.publicationArguments(body).isEmpty());
+    }
+
     private JsonNode frame(String verb, String mutation) throws Exception {
         var layout = DeploymentRemoteLayout.original();
         var server = new ServerId("fixture");
@@ -115,7 +151,7 @@ class DeploymentWorkloadReviewEvidenceRegressionTest {
         String candidate = "demo-" + "a".repeat(16);
         String script = "'" + layout.helperPath() + "' '" + verb + "' 'demo' "
             + (health ? "'" + "b".repeat(64) + "' '" + DeploymentWorkloadArguments.healthPayload(CHECK) + "'"
-            : "'" + candidate + "' '" + "c".repeat(64) + "' '" + "b".repeat(64) + "' 'identity-v2' 'SYSTEMD_STATIC' '" + payload(false) + "' 'remaining-arguments-require-review'");
+            : "'" + candidate + "' '" + "c".repeat(64) + "' '" + "b".repeat(64) + "' 'identity-v2' 'SYSTEMD_STATIC' '" + payload(false) + "' '" + "d".repeat(64) + "' '0' 'demo' 'demo' '0' 'process'");
         var targets = new HashSet<ActionTarget>();
         targets.add(new ActionTarget(server.id(), "deployment-release", layout.applicationRoot("demo") + (mutation.equals("TARGET") ? ".other" : "")));
         if (!health)
