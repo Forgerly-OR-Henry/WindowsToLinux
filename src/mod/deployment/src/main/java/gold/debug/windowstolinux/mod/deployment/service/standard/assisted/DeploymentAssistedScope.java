@@ -143,6 +143,18 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.build.run.v1")).isPresent()) {
+            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
+            facts.put("buildIsolationImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildIsolationImplementationFacts(layout));
+            String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
+            if (invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
+                try {
+                    facts.put("currentBuildArchive", buildArchiveFacts(List.copyOf(sourceArchives.values()), intent, request, layout));
+                } catch (java.io.IOException invalid) {
+                    throw new IllegalArgumentException("Build archive evidence cannot be decoded", invalid);
+                }
+            }
+        }
         if (intent.semantics().filter(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1")
             .contains(value.operation())).isPresent())
             facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
@@ -160,6 +172,36 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             }
         }
         return Map.copyOf(facts);
+    }
+
+    /** Compares the literal build archive guard and complete collector to one captured source association. */
+    static Map<String, Object> buildArchiveFacts(List<Map<String, Object>> archives, ActionIntent intent,
+                                                 gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
+                                                 gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
+        byte[] input = request.stdin();
+        try {
+            String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
+            var collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.reviewFacts(invocation, input, layout);
+            if (!intent.semantics().orElseThrow().operation().equals("deployment.build.run.v1") || intent.serverIds().size() != 1
+                || !intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
+                intent.serverIds().getFirst(), "deployment-build", collector.get("candidateRoot").toString())))
+                throw new IllegalArgumentException("Build archive candidate differs");
+            String body = java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(input)).toString();
+            var guard = java.util.regex.Pattern.compile("(?m)^" + java.util.regex.Pattern.quote("test \"$(sha256sum \"$archive\" | awk '{print $1}')\" = '")
+                + "([a-f0-9]{64})'$").matcher(body);
+            if (!guard.find()) throw new IllegalArgumentException("Build archive hash guard missing");
+            String expected = guard.group(1);
+            if (guard.find()) throw new IllegalArgumentException("Build archive hash guard is ambiguous");
+            var matched = archives.stream().filter(value -> expected.equals(value.get("archiveSha256"))).toList();
+            if (matched.size() != 1) throw new IllegalArgumentException("One exact captured build archive required");
+            return Map.of("expectedArchiveSha256", expected, "sha256Characters", expected.length(), "archive", matched.getFirst(),
+                "candidate", collector.get("candidate"), "candidateRoot", collector.get("candidateRoot"),
+                "comparison", "ALL_64_SHA256_CHARACTERS_EQUAL_ONE_CAPTURED_ARCHIVE_AND_COLLECTOR_INPUT_DIGEST_MATCHES",
+                "meaning", "Full literal archive SHA256 in this exact executable stdin equals the captured compressed archive SHA256, without display abbreviation. The complete collector round-trip verifies this input digest and declared candidate. This is a literal source association, not proof that the shell guard or archive extraction has executed, that later code cannot override variables, that project code/hooks are safe, or that execution is authorized. Independently review the complete body and pinned build isolation implementation.");
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
     }
 
     /** Cross-checks a literal publication with the original durable proposal, without claiming a completed remote effect. */

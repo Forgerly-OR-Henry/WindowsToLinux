@@ -409,7 +409,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,217 @@
+@@ -48,6 +48,259 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -508,6 +508,18 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
 +                                TaskContext supplied) throws ApiException {
 +        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
++        if (intent.semantics().filter(value -> value.operation().equals("deployment.build.run.v1")).isPresent()) {
++            var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
++            facts.put("buildIsolationImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildIsolationImplementationFacts(layout));
++            String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
++            if (invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
++                try {
++                    facts.put("currentBuildArchive", buildArchiveFacts(List.copyOf(sourceArchives.values()), intent, request, layout));
++                } catch (java.io.IOException invalid) {
++                    throw new IllegalArgumentException("Build archive evidence cannot be decoded", invalid);
++                }
++            }
++        }
 +        if (intent.semantics().filter(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1")
 +            .contains(value.operation())).isPresent())
 +            facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
@@ -525,6 +537,36 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            }
 +        }
 +        return Map.copyOf(facts);
++    }
++
++    /** Compares the literal build archive guard and complete collector to one captured source association. */
++    static Map<String, Object> buildArchiveFacts(List<Map<String, Object>> archives, ActionIntent intent,
++                                                 gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
++                                                 gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
++        byte[] input = request.stdin();
++        try {
++            String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
++            var collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.reviewFacts(invocation, input, layout);
++            if (!intent.semantics().orElseThrow().operation().equals("deployment.build.run.v1") || intent.serverIds().size() != 1
++                || !intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
++                intent.serverIds().getFirst(), "deployment-build", collector.get("candidateRoot").toString())))
++                throw new IllegalArgumentException("Build archive candidate differs");
++            String body = java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
++                .decode(java.nio.ByteBuffer.wrap(input)).toString();
++            var guard = java.util.regex.Pattern.compile("(?m)^" + java.util.regex.Pattern.quote("test \"$(sha256sum \"$archive\" | awk '{print $1}')\" = '")
++                + "([a-f0-9]{64})'$").matcher(body);
++            if (!guard.find()) throw new IllegalArgumentException("Build archive hash guard missing");
++            String expected = guard.group(1);
++            if (guard.find()) throw new IllegalArgumentException("Build archive hash guard is ambiguous");
++            var matched = archives.stream().filter(value -> expected.equals(value.get("archiveSha256"))).toList();
++            if (matched.size() != 1) throw new IllegalArgumentException("One exact captured build archive required");
++            return Map.of("expectedArchiveSha256", expected, "sha256Characters", expected.length(), "archive", matched.getFirst(),
++                "candidate", collector.get("candidate"), "candidateRoot", collector.get("candidateRoot"),
++                "comparison", "ALL_64_SHA256_CHARACTERS_EQUAL_ONE_CAPTURED_ARCHIVE_AND_COLLECTOR_INPUT_DIGEST_MATCHES",
++                "meaning", "Full literal archive SHA256 in this exact executable stdin equals the captured compressed archive SHA256, without display abbreviation. The complete collector round-trip verifies this input digest and declared candidate. This is a literal source association, not proof that the shell guard or archive extraction has executed, that later code cannot override variables, that project code/hooks are safe, or that execution is authorized. Independently review the complete body and pinned build isolation implementation.");
++        } finally {
++            Arrays.fill(input, (byte) 0);
++        }
 +    }
 +
 +    /** Cross-checks a literal publication with the original durable proposal, without claiming a completed remote effect. */
@@ -627,7 +669,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
-@@ -316,6 +527,13 @@
+@@ -316,6 +569,13 @@
      @Override
      public InteractionService interaction() {
          return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
@@ -723,7 +765,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
-@@ -267,6 +267,28 @@
+@@ -267,6 +267,52 @@
          return sha256(renderScript(layout).getBytes(StandardCharsets.UTF_8));
      }
  
@@ -747,6 +789,30 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
 +            "sourceBinding", "EXACT_RENDERED_SUBSTRINGS_OF_COMPLETE_LOCALLY_HASH_PINNED_HELPER",
 +            "meaning", "Actual rendered common guards, complete isolated-Python official toolchain function (including catalog and inserted archive/repository code), and full public dispatch from the same helper identity used by the pre-invocation guard. Follow this request's prepare-toolchains prepare or bind branch; unrelated dispatch branches are not selected. Review official resolution/download/checksum/archive/installation/ownership/sealing code and exact arguments. A nonzero preparer status can leave partial effects and aborts the set-e invocation; it is not successful preparation or permission. These are source bytes, not a claim about live installed files, future resolved values, safe arguments or an execution grant.");
++    }
++
++    /** Supplies the pinned build controller and non-root entry source without invoking or modifying either. */
++    public static Map<String, Object> buildIsolationImplementationFacts(DeploymentRemoteLayout layout) {
++        String complete = renderScript(layout), entry = renderBuildEntry(layout);
++        var groups = List.of(List.of("00-protocol-foundation.sh"),
++            List.of("workspace/20-candidate-workspace.sh", "workspace/21-workspace-volume.sh", "workspace/22-restricted-build.sh", "workspace/23-container-builder.sh"),
++            List.of("workspace/26-build-output.sh"), List.of("ecosystem/35-ecosystem-dispatch.sh"),
++            List.of("runtime/systemd/61-service-identity.sh"), List.of("70-command-dispatch.sh"));
++        var sources = new java.util.ArrayList<Map<String, Object>>();
++        int characters = entry.length();
++        for (var fragments : groups) {
++            String source = new String(assemble(DeploymentToolchainCatalog.defaults(), layout, fragments), StandardCharsets.UTF_8);
++            characters += source.length();
++            if (characters > 131072 || !complete.contains(source))
++                throw new IllegalStateException("Build review source differs from pinned helper");
++            sources.add(Map.of("fragments", fragments, "sha256", sha256(source.getBytes(StandardCharsets.UTF_8)), "source", source));
++        }
++        String entryDigest = sha256(entry.getBytes(StandardCharsets.UTF_8));
++        if (!complete.contains(entryDigest)) throw new IllegalStateException("Build entry differs from helper pin");
++        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
++            "buildEntrySha256", entryDigest, "buildEntrySource", entry,
++            "sourceBinding", "EXACT_RENDERED_HELPER_SUBSTRINGS_AND_HASH_BOUND_COMPLETE_BUILD_ENTRY",
++            "meaning", "Actual pinned controller/volume/identity/output/binding-dispatch/systemd isolation sources and complete build-entry; these are implementation evidence, not a live isolation receipt or permission. Inspect this current engine branch, arguments, full executable stdin and limits. Project source and dependency lifecycle hooks remain untrusted executable input intentionally run inside that build boundary; source snapshots are identity evidence, not code approval. Ordinary dynamic-user systemd isolation, rootless-container exceptions, network access, writable candidate paths and root-owned controller setup/cleanup effects must be assessed from the complete supplied code; no claim of a network sandbox or safe hooks is made. Other helper functions remain governed by the separately pinned interface contract; this is not a reproduction of the whole helper or installer.");
 +    }
 +
      /**
@@ -4352,6 +4418,112 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +            var intent = RemoteActions.command(variant.equals("SERVER") ? new ServerId("foreign") : server, "b".repeat(64), request)
 +                .withSemantics(new ActionSemantics(variant.equals("OTHER_OPERATION") ? "deployment.publication.observe.v1" : "deployment.publication.original-status.v1", targets));
 +            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentBuildIsolationEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentBuildIsolationEvidenceRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentBuildIsolationEvidenceRegressionTest.java
+@@ -0,0 +1,42 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.nio.charset.StandardCharsets;
++import java.util.*;
++
++import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++class DeploymentBuildIsolationEvidenceRegressionTest {
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void exposesActualRenderedControllerAndWholeHashBoundEntryWithinExistingRequestBudget(boolean custom) throws Exception {
++        var layout = custom ? new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data")) : DeploymentRemoteLayout.original();
++        var facts = DeploymentManagedHelperBundle.buildIsolationImplementationFacts(layout);
++        String helper = DeploymentManagedHelperBundle.renderScript(layout);
++        assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), facts.get("helperSha256"));
++        var sources = (List<Map<String, Object>>) facts.get("sources");
++        for (var source : sources) {
++            String text = source.get("source").toString();
++            assertTrue(helper.contains(text));
++            assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8))), source.get("sha256"));
++        }
++        assertEquals(DeploymentManagedHelperBundle.renderBuildEntry(layout), facts.get("buildEntrySource"));
++        assertEquals(DeploymentManagedHelperBundle.buildEntrySha256(layout), facts.get("buildEntrySha256"));
++        assertTrue(helper.contains(facts.get("buildEntrySha256").toString()));
++        String controller = sources.get(1).get("source").toString();
++        assertTrue(controller.contains("--property=DynamicUser=yes"));
++        assertTrue(controller.contains("--property=NoNewPrivileges=yes"));
++        assertTrue(controller.contains("--property=NoNewPrivileges=no"), "Container branch exceptions must remain visible");
++        assertTrue(controller.contains("ReadWritePaths=$mutable"));
++        assertTrue(facts.get("buildEntrySource").toString().contains("[ \"$(id -u)\" -gt 0 ]"));
++        assertFalse(facts.containsKey("liveIsolation"));
++        assertFalse(facts.containsKey("commandGrant"));
++        assertTrue(DeploymentAiJson.facts(facts, 1048576).length() < 1048576);
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedBuildArchiveRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedBuildArchiveRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedBuildArchiveRegressionTest.java
+@@ -0,0 +1,56 @@
++package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.util.*;
++
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++class DeploymentAssistedBuildArchiveRegressionTest {
++    @Test
++    void comparesAll64CharactersToExactFrontendArchiveWithoutTrustingExecutableBody() throws Exception {
++        var facts = facts("VALID");
++        assertEquals("a".repeat(64), facts.get("expectedArchiveSha256"));
++        assertEquals(64, facts.get("sha256Characters"));
++        assertEquals("frontend", ((Map<?, ?>) facts.get("archive")).get("relativeRoot"));
++        assertFalse(facts.containsKey("verifiedSource"));
++        assertFalse(facts.containsKey("commandGrant"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"HASH", "SHORT", "DUPLICATE_GUARD", "DUPLICATE_ARCHIVE", "TARGET", "COLLECTOR_INPUT", "OPERATION"})
++    void alteredLiteralHashInputCandidateOrAmbiguousSourceCannotAcquireComparison(String mutation) {
++        assertThrows(IllegalArgumentException.class, () -> facts(mutation));
++    }
++
++    private Map<String, Object> facts(String mutation) throws Exception {
++        var layout = DeploymentRemoteLayout.original();
++        var workspace = new DeploymentRemoteWorkspace("frontend", "a".repeat(64), layout);
++        String guard = "test \"$(sha256sum \"$archive\" | awk '{print $1}')\" = '" + (mutation.equals("HASH") ? "c".repeat(64) : mutation.equals("SHORT") ? "a".repeat(63) : "a".repeat(64)) + "'\n";
++        byte[] input = (guard + (mutation.equals("DUPLICATE_GUARD") ? guard : "") + "printf 'untrusted later body still needs independent review\\n'\n").getBytes(StandardCharsets.UTF_8);
++        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(input));
++        String script = DeploymentBuildOutputProtocol.script(workspace, 60, 16, 256, 8192, "ordinary", digest, "-", List.of());
++        if (mutation.equals("COLLECTOR_INPUT")) input = guard.getBytes(StandardCharsets.UTF_8);
++        var server = new ServerId("fixture");
++        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout), input, Duration.ofSeconds(75), 65536)) {
++            var intent = RemoteActions.command(server, "revision", request).withSemantics(new ActionSemantics(
++                mutation.equals("OPERATION") ? "deployment.publication.observe.v1" : "deployment.build.run.v1", Set.of(new ActionTarget(server.id(), "deployment-build", workspace.candidateRoot() + (mutation.equals("TARGET") ? ".other" : "")))));
++            Map<String, Object> frontend = Map.of("archiveSha256", "a".repeat(64), "relativeRoot", "frontend");
++            var archives = mutation.equals("DUPLICATE_ARCHIVE") ? List.of(frontend, frontend)
++                : List.of(Map.<String, Object>of("archiveSha256", "b".repeat(64), "relativeRoot", "backend"), frontend);
++            return DeploymentAssistedScope.buildArchiveFacts(archives, intent, request, layout);
 +        }
 +    }
 +}

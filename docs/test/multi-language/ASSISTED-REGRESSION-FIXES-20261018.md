@@ -432,3 +432,15 @@ reconcile-01-02连通后有效DENY，理由无法将publication-original-status�
 PublishChannel现在为原状态基础/attempt两种查询声明release、candidate、snapshot、application-locks四类真实观察目标。CommandEvidence仅在完整固定helper guard、空stdin、完整规范字面帧、canonical UUID、严格app+16hex候选、合法native:none/container:docker或podman组合及四目标完全对应时，补originalPublicationStatus事实；基础形态snapshot operation=task，attempt形态使用独立operation。release=none是发布身份尚未形成时的真实状态，不发明digest。没有改变远端脚本/helper pin，没有授权替代或复用有效DENY；缺失对象仍需实际查询，不要求预先存在或归属。
 
 original-status-evidence-unit-01初18项通过；随后候选前缀收紧到与helper require_candidate完全相同，新增demo-other前缀拒绝，unit-02只重跑受影响15项通过0跳过。最终19个唯一用例通过（帧17原有+新增1，实际发送目标1），重复执行不累加。覆盖默认/自定义layout、基础/attempt、native/container、none/明确release、四类目标/服务器/候选归属/后端/arity变造，以及stdin/额外参数/其它operation不得获标记；RuntimePaths用真实Channel捕获两次查询的四个目标及原guard。共享证据/精确目标修复将影响后续Agent同类查询输入，但没有恢复Agent验收。原任务下一次产品对账结果后续记录。
+
+原01的reconcile-01-03已通过JUnit1，最终ENDED/FAILED、blockers=[]、应用列表空；新目标/参数证据已在实际恢复审查通过，不重放原部署。
+
+## File Transfer 02：实际构建隔离源码与归档全摘要比较
+
+02原任务8ed16905-e5c6-403a-b953-9387c6dde291/root assisted-live-file-transfer-6aj2kml8c越过前次SSH超时位置，Go后端WTL_BUILD_REPORT EXIT=0/TOOL=GO_MODULE；前端构建有效DENY，认为npm生命周期脚本/build.mjs缺完整可执行内容或隔离边界证据，并将显示中的摘要前缀与完整64位归档SHA混作长度差。reconcile-02-01已由产品核实ENDED/FAILED、blockers空、应用列表空（JUnit1通过），未重放原构建或发布。
+
+原固定SYSTEM契约已描述非root/systemd边界且实际完整可执行stdin一直被审查；本轮增加可审计实现证据，而非宣告项目代码安全或强迫批准。ManagedHelperBundle新增buildIsolationImplementationFacts：先校验整个helper原pin，按捕获layout渲染原根/候选/卷/受限构建/容器builder/输出/binding分派/systemd隔离/总分派片段，逐片验证其为完整helper连续源码及SHA；提供完整build-entry源码及helper中实际绑定摘要。总源码字符上限131072，不执行，不改远端脚本/安装器/hash或任何现有隔离参数；未声称重印整个helper或所有调用依赖。明确保留ordinary和rootless container不同权限分支、联网、临时候选可写、控制器setup/cleanup效果，供独立审查判断。
+
+仅ASSISTED Scope的build.run审查加入该大段实现，STATIC/Agent共享CommandEvidence未自动增加。Scope同时在原完整collector重建和stdin digest匹配后，将完整输入里的唯一规范archive SHA守卫的64个字符，与唯一捕获归档逐字比较并标出当前candidate/声明目标；不把守卫已经执行、后续变量不可改写或脚本/依赖安全当成事实。项目和依赖hook仍是需要在实际受管边界内执行的非可信代码，完整stdin仍独立审阅，未加--ignore-scripts来改变构建语义，未放松审批。
+
+build-isolation-evidence-unit-01共19项通过0跳过：默认/自定义layout实现源码及入口/摘要/预算2、归档完整SHA/唯一观察/collector stdin/目标与变造8、原流程证据9。没有服务器或提供方调用，未执行Windows缺失的/bin/bash测试、未恢复Agent。下一轮03从来源识别重新执行，所有失败/恢复请求计入总Token。

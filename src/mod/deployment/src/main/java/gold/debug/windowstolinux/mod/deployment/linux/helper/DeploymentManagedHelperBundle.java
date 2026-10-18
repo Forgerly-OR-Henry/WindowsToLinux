@@ -289,6 +289,30 @@ public final class DeploymentManagedHelperBundle {
             "meaning", "Actual rendered common guards, complete isolated-Python official toolchain function (including catalog and inserted archive/repository code), and full public dispatch from the same helper identity used by the pre-invocation guard. Follow this request's prepare-toolchains prepare or bind branch; unrelated dispatch branches are not selected. Review official resolution/download/checksum/archive/installation/ownership/sealing code and exact arguments. A nonzero preparer status can leave partial effects and aborts the set-e invocation; it is not successful preparation or permission. These are source bytes, not a claim about live installed files, future resolved values, safe arguments or an execution grant.");
     }
 
+    /** Supplies the pinned build controller and non-root entry source without invoking or modifying either. */
+    public static Map<String, Object> buildIsolationImplementationFacts(DeploymentRemoteLayout layout) {
+        String complete = renderScript(layout), entry = renderBuildEntry(layout);
+        var groups = List.of(List.of("00-protocol-foundation.sh"),
+            List.of("workspace/20-candidate-workspace.sh", "workspace/21-workspace-volume.sh", "workspace/22-restricted-build.sh", "workspace/23-container-builder.sh"),
+            List.of("workspace/26-build-output.sh"), List.of("ecosystem/35-ecosystem-dispatch.sh"),
+            List.of("runtime/systemd/61-service-identity.sh"), List.of("70-command-dispatch.sh"));
+        var sources = new java.util.ArrayList<Map<String, Object>>();
+        int characters = entry.length();
+        for (var fragments : groups) {
+            String source = new String(assemble(DeploymentToolchainCatalog.defaults(), layout, fragments), StandardCharsets.UTF_8);
+            characters += source.length();
+            if (characters > 131072 || !complete.contains(source))
+                throw new IllegalStateException("Build review source differs from pinned helper");
+            sources.add(Map.of("fragments", fragments, "sha256", sha256(source.getBytes(StandardCharsets.UTF_8)), "source", source));
+        }
+        String entryDigest = sha256(entry.getBytes(StandardCharsets.UTF_8));
+        if (!complete.contains(entryDigest)) throw new IllegalStateException("Build entry differs from helper pin");
+        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
+            "buildEntrySha256", entryDigest, "buildEntrySource", entry,
+            "sourceBinding", "EXACT_RENDERED_HELPER_SUBSTRINGS_AND_HASH_BOUND_COMPLETE_BUILD_ENTRY",
+            "meaning", "Actual pinned controller/volume/identity/output/binding-dispatch/systemd isolation sources and complete build-entry; these are implementation evidence, not a live isolation receipt or permission. Inspect this current engine branch, arguments, full executable stdin and limits. Project source and dependency lifecycle hooks remain untrusted executable input intentionally run inside that build boundary; source snapshots are identity evidence, not code approval. Ordinary dynamic-user systemd isolation, rootless-container exceptions, network access, writable candidate paths and root-owned controller setup/cleanup effects must be assessed from the complete supplied code; no claim of a network sandbox or safe hooks is made. Other helper functions remain governed by the separately pinned interface contract; this is not a reproduction of the whole helper or installer.");
+    }
+
     /**
      * Combines fixed helper fragments with resource inserts and the shipped toolchain catalog into UTF-8 bytes.
      * <p>将固定 helper 片段、资源插入内容及随附工具链目录组合为 UTF-8 字节。
