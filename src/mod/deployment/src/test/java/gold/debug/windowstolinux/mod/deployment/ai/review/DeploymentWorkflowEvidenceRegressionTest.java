@@ -162,6 +162,10 @@ class DeploymentWorkflowEvidenceRegressionTest {
             assertEquals(List.of("cli/Cargo.toml", "native/CMakeLists.txt"), entry.get("fileNames"));
             assertEquals(2, entry.get("fileCount"));
             assertEquals(false, entry.get("fileNamesTruncated"));
+            assertEquals(archive.path().toString(), entry.get("localArchivePath"));
+            var upload = intent.withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
+                Set.of(new ActionTarget(server.id(), "deployment-candidate", "/fixture/candidate/mutable/source.tar.gz"))));
+            assertEquals(evidence, scope.effectFacts(upload, task).get("sourceArchiveObservations"));
             assertFalse(entry.containsKey("commandGrant"));
             assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task(id)));
             assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, UUID.randomUUID(), "a".repeat(64), "project"), task));
@@ -214,6 +218,7 @@ class DeploymentWorkflowEvidenceRegressionTest {
         var snapshot = stub(gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot.class, (proxy, method, args) -> switch (method.getName()) {
             case "id" -> id;
             case "sha256" -> hash;
+            case "directory" -> java.nio.file.Path.of("C:/fixture/snapshot").toAbsolutePath();
             default -> throw new AssertionError("No source bytes or live capabilities expected: " + method);
         });
         return new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture source", snapshot, List.of("Cargo.toml"), List.of());

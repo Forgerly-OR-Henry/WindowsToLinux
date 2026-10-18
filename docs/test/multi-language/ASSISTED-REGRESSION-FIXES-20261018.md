@@ -226,3 +226,13 @@ server-access-recovery-unit-01新Ledger2项、原真实ServerRef物理释放重�
 CommandEvidence仅对已知public publish字面前缀或完整application-health帧、空stdin解码，核对所属应用release目标及publish实际candidate目标。publish前缀以外完整原命令仍需独立审阅，没有用解码结果替代其余配置/秘密/工具/运行参数。受保护的配置/秘密载荷不进入解码器。PublishChannel新增真正candidate resourceTarget；ASSISTED只在publish同时提供同任务原archive/preparation观察以便比较同对象身份，非许可或实时状态证明。未改helper、工作负载编码或服务器执行体。共享review/PublishChannel的影响需在稍后Agent调试核对，不得据此豁免其命令或来源检查。
 
 workload-review-evidence-unit-01共29项通过0跳过：新协议/帧20项、原捕获layout发布目标1项、原来源关联1项、原准备观察7项；6Java格式check通过。新生产文件从不存在基线加入增量补丁；其余文件继续保留首次工作树.before及哈希。当前全局known3233405、636物理（1用量UNKNOWN）、152capUNKNOWN；audit05覆盖此前37root/602条，不覆盖CLI14，最终需更新。仍0/8交付。
+
+## CLI15：上传缺少原归档关联与已有校验语义
+
+工作负载解码提交 `3049a674` 后，CLI15提前在固定upload审查有效DENY，未到新publish/health事实。拒绝称摘要/长度只是声明，未见本地实测或后续远端校验。原 `6accdc01-c691-414f-8c20-6e33f4b955b9`、root `assisted-live-log-analyzer-w51fy9ubs` 经reconcile-15-01产品对账ENDED/FAILED、blockers空、无应用；known116407=41077+75330，恢复另计。
+
+直接核对原SourceArchiver：DigestOutputStream计算压缩输出摘要/长度，再重读冻结副本确认。原SftpTransfer.SourceSetup.open/verify在远端写入前NOFOLLOW打开常规本地文件，检查长度/身份/真实哈希；过程中再验证源及远端临时/最终结果。PlatformLinuxService消费精确WTL-SFTP-1许可，源摘要与原本地/远端路径/maxBytes绑定。原CandidateChannel还核对返回路径/字节/摘要，StandardBuildRunner再独立验证远端task/bytes/SHA后才构建，构建信封亦校验压缩SHA。未发现这些原有校验缺失，也没有新增手工hash或改SFTP实现。
+
+把已有sourceArchiveObservations也提供给upload，增加原归档snapshot ID和实际localArchivePath，以便对照本条transfer原参数；仅匹配原任务/来源关联，不声称未来传输已完成或授予权限。fixed-effect-review补已有平台校验语义与数据上传/后续执行区别，仍拒绝变更源/目标、冲突事实、缺权限或未审执行。Scope的路径访问仍走原snapshot句柄验证，不读取或解码秘密载荷。该说明属于ASSISTED，Agent后续不能自动继承执行豁免。
+
+upload-integrity-evidence-unit-01原归档/上传关联2项及精确宿主许可1项，共3通过0跳过；2Java格式check通过，合同文本已核对上述实际入口。当前全局known3366982、660物理（1用量UNKNOWN）、156capUNKNOWN；audit05尚不覆盖CLI14/15，最终更新。仍0/8交付。

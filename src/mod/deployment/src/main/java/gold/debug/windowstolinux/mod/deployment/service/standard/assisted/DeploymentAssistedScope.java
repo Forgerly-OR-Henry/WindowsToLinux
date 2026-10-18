@@ -83,6 +83,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         }
         Map<String, Object> observation = Map.of("originSnapshotId", archive.originSnapshotId().toString(),
             "sourceManifestSha256", archive.sourceManifestSha256(), "archiveSha256", archive.sha256(),
+            "archiveSnapshotId", archive.snapshot().id().toString(), "localArchivePath", archive.path().toString(),
             "archiveBytes", archive.byteCount(), "relativeRoot", archive.relativeRoot(), "fileCount", names.size(),
             "fileNames", List.copyOf(displayed), "fileNamesTruncated", displayed.size() != names.size());
         String key = archive.relativeRoot() + "\n" + archive.sha256();
@@ -150,7 +151,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var facts = new LinkedHashMap<String, Object>();
         facts.put("workflowAuthorization", evidence);
         if (source != null) facts.put("sourceSelection", source);
-        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> Set.of("deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
+        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> Set.of("deployment.candidate.upload.v1", "deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
             facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
                 "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
         if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
