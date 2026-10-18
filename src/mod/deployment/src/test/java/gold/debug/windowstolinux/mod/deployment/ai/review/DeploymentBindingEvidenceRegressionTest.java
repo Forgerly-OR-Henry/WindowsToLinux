@@ -35,8 +35,9 @@ class DeploymentBindingEvidenceRegressionTest {
             + "' prepare-toolchains 'bind' '" + encoded + "'", layout), new byte[0], Duration.ofSeconds(30), 8192)) {
             var intent = RemoteActions.command(server, "frozen", request).withSemantics(new ActionSemantics(
                 "deployment.toolchain.bind.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
-            var binding = new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout))
-                .path("decodedToolchainBinding");
+            var evidence = new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
+            assertEquals("bind", evidence.path("toolchainSubcommand").asText());
+            var binding = evidence.path("decodedToolchainBinding");
             assertEquals(layout.toolchains(), binding.path("managedToolchainsRoot").asText());
             assertEquals(relation, binding.at("/toolchains/0/lexicalRelationToManagedRoot").asText());
             for (String field : Set.of("canonicalBase64", "strictUtf8", "canonicalTypedBinding"))

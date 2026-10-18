@@ -96,6 +96,66 @@ class DeploymentWorkflowEvidenceRegressionTest {
         }
     }
 
+    @Test
+    void actualSourceSelectionIsImmutableAndBoundToTheOriginalActiveTaskAndServer() throws Exception {
+        var scope = sourceScope("model-revision");
+        var source = material(UUID.randomUUID(), "a".repeat(64));
+        assertThrows(IllegalArgumentException.class, () -> scope.sourceCaptured(server, source, task));
+        try (var permission = open(() -> {
+        })) {
+            scope.workflowOpened(permission);
+            assertThrows(IllegalArgumentException.class, () -> scope.sourceCaptured(server, source, task(id)));
+            assertThrows(IllegalArgumentException.class, () -> scope.sourceCaptured(new ServerId("other"), source, task));
+            assertFalse(scope.facts(command(server.id(), server.id()), null, task).containsKey("sourceSelection"));
+            scope.sourceCaptured(server, source, task);
+            scope.sourceCaptured(server, source, task);
+            var selection = (java.util.Map<?, ?>) scope.facts(command(server.id(), server.id()), null, task).get("sourceSelection");
+            assertEquals(source.snapshot().id().toString(), selection.get("snapshotId"));
+            assertEquals(source.snapshot().sha256(), selection.get("sourceRevision"));
+            assertEquals(1, selection.get("includedFiles"));
+            assertFalse(selection.containsKey("commandGrant"));
+            assertThrows(IllegalStateException.class, () -> scope.sourceCaptured(server, material(UUID.randomUUID(), "a".repeat(64)), task));
+            assertThrows(IllegalStateException.class, () -> scope.sourceCaptured(server, material(source.snapshot().id(), "b".repeat(64)), task));
+            permission.close();
+            assertThrows(IllegalArgumentException.class, () -> scope.sourceCaptured(server, source, task));
+            assertThrows(IllegalArgumentException.class, () -> scope.facts(command(server.id(), server.id()), null, task));
+        }
+    }
+
+    @Test
+    void sourceObservationRejectsInvalidSnapshotsAndChangedModelRoutes() throws Exception {
+        var scope = sourceScope("model-revision");
+        try (var permission = open(() -> {
+        })) {
+            scope.workflowOpened(permission);
+            assertThrows(IllegalArgumentException.class, () -> scope.sourceCaptured(server, material(UUID.randomUUID(), "invalid"), task));
+            var changed = sourceScope("changed-model");
+            changed.workflowOpened(permission);
+            assertThrows(ApiException.class, () -> changed.sourceCaptured(server, material(UUID.randomUUID(), "a".repeat(64)), task));
+        }
+    }
+
+    private gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope sourceScope(String revision) {
+        var ai = stub(gold.debug.windowstolinux.appapi.ai.AiService.class, (proxy, method, args) -> {
+            assertEquals("configurationRevision", method.getName());
+            return "model-revision";
+        });
+        var context = stub(ModContext.class, (proxy, method, args) -> {
+            assertEquals("ai", method.getName());
+            return ai;
+        });
+        return new gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope(context, task, revision, "AUTOMATIC", true);
+    }
+
+    private static gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material(UUID id, String hash) {
+        var snapshot = stub(gold.debug.windowstolinux.appapi.file.snapshot.FileSnapshot.class, (proxy, method, args) -> switch (method.getName()) {
+            case "id" -> id;
+            case "sha256" -> hash;
+            default -> throw new AssertionError("No source bytes or live capabilities expected: " + method);
+        });
+        return new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture source", snapshot, List.of("Cargo.toml"), List.of());
+    }
+
     private WorkflowGrant open(WorkflowGrant original) throws Exception {
         var interaction = stub(InteractionService.class, (proxy, method, args) -> {
             assertEquals("openReviewedWorkflow", method.getName());

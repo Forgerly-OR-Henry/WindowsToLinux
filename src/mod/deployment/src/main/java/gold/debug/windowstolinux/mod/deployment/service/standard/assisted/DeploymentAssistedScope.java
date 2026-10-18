@@ -51,6 +51,27 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private volatile gold.debug.windowstolinux.appapi.task.action.WorkflowGrant workflow;
 
+    private volatile Map<String, Object> sourceSelection;
+
+    /** Records the actual post-picker frozen selection, not executable trust or a command grant. */
+    public synchronized void sourceCaptured(ServerId server, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
+                                            TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        verify();
+        var authorization = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, server);
+        validateWorkflow(authorization);
+        var snapshot = material.snapshot();
+        String hash = Objects.requireNonNull(snapshot.sha256());
+        if (!hash.matches("[a-f0-9]{64}") || material.includedFiles().isEmpty())
+            throw new IllegalArgumentException("Actual source snapshot is missing");
+        Map<String, Object> selected = Map.of("server", server.id(), "snapshotId", Objects.requireNonNull(snapshot.id()).toString(),
+            "sourceRevision", hash, "displayName", material.displayName(), "includedFiles", material.includedFiles().size(),
+            "meaning", "Actual frozen source selected after workflow admission (folder picker may leave the initial draft URI empty). Snapshot identity only; not code trust, per-command permission or an installation safety verdict.");
+        if (sourceSelection != null && !sourceSelection.equals(selected))
+            throw new IllegalStateException("Original assisted source snapshot cannot be replaced");
+        sourceSelection = selected;
+    }
+
     @Override
     public synchronized void workflowOpened(gold.debug.windowstolinux.appapi.task.action.WorkflowGrant permission) {
         if (workflow != null) throw new IllegalStateException("Original assisted workflow is already bound");
@@ -64,10 +85,15 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         verify();
         if (workflow == null) return Map.of();
         var evidence = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, intent);
+        validateWorkflow(evidence);
+        var source = sourceSelection;
+        return source == null ? Map.of("workflowAuthorization", evidence) : Map.of("workflowAuthorization", evidence, "sourceSelection", source);
+    }
+
+    private void validateWorkflow(Map<String, Object> evidence) {
         if (!revision.equals(evidence.get("modelRevision")) || !approvalMode.equals(evidence.get("approvalPolicy"))
             || !Boolean.valueOf(rememberAuthorization).equals(evidence.get("rememberAuthorization")))
             throw new IllegalArgumentException("Workflow evidence differs from the frozen assisted route");
-        return Map.of("workflowAuthorization", evidence);
     }
 
     @Override

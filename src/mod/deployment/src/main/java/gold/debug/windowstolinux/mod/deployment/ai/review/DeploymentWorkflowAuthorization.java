@@ -87,6 +87,13 @@ public final class DeploymentWorkflowAuthorization {
         return reviewed.facts(task, command);
     }
 
+    /** Validates a source observation against the original active handoff before any command exists. */
+    public static java.util.Map<String, Object> reviewFacts(WorkflowGrant permission, TaskContext task, ServerId server) {
+        if (!(permission instanceof ReviewedWorkflow reviewed))
+            throw new IllegalArgumentException("Workflow evidence requires its actual host-issued handoff");
+        return reviewed.facts(task, List.of(server.id()));
+    }
+
     private static final class ReviewedWorkflow implements WorkflowGrant {
         private final WorkflowGrant original;
 
@@ -118,8 +125,13 @@ public final class DeploymentWorkflowAuthorization {
         }
 
         private synchronized java.util.Map<String, Object> facts(TaskContext supplied, ActionIntent command) {
-            if (!active || supplied != task || !command.serverIds().equals(intent.serverIds())
-                || command.semantics().orElseThrow().targets().stream().anyMatch(target -> !intent.serverIds().contains(target.serverId())))
+            if (command.semantics().orElseThrow().targets().stream().anyMatch(target -> !intent.serverIds().contains(target.serverId())))
+                throw new IllegalArgumentException("Workflow evidence is closed or belongs to another task/server");
+            return facts(supplied, command.serverIds());
+        }
+
+        private synchronized java.util.Map<String, Object> facts(TaskContext supplied, List<String> servers) {
+            if (!active || supplied != task || !servers.equals(intent.serverIds()))
                 throw new IllegalArgumentException("Workflow evidence is closed or belongs to another task/server");
             return java.util.Map.of("task", task.id().toString(), "serverTargets", intent.serverIds(),
                 "modelRevision", intent.revision(), "approvalPolicy", policy, "rememberAuthorization", remember,

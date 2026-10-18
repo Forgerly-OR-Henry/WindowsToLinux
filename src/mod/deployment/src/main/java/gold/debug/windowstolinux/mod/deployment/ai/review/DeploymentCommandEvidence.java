@@ -150,8 +150,10 @@ final class DeploymentCommandEvidence {
                 throw new IllegalArgumentException("Recovery resource identity changed");
             facts.put("publicationRecoveryProgram", program);
         }
-        if (operation.equals("deployment.toolchain.bind.v1"))
+        if (operation.equals("deployment.toolchain.bind.v1")) {
             facts.put("decodedToolchainBinding", binding(invocation, layout));
+            facts.put("toolchainSubcommand", "bind");
+        }
         if (operation.equals("deployment.build.run.v1"))
             buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
         if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")

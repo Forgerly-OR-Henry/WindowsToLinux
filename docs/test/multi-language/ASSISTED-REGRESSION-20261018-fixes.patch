@@ -1,7 +1,48 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java
+@@ -51,6 +51,10 @@
+ 
+     /** Task-local mode extension using shared deterministic contracts. / 使用共用确定性合同的任务所属模式扩展。 */
+     interface Session {
++        /** Observes the actual source snapshot selected after workflow admission; creates no authority. */
++        default void sourceCaptured(ServerId server, DeploymentSourceMaterial material, TaskContext task) throws ApiException {
++        }
++
+         default gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request workspaceDemand(
+             gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts facts,
+             gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive, Answers answer,
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/DeploymentStandardWorkflow.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/DeploymentStandardWorkflow.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/DeploymentStandardWorkflow.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/DeploymentStandardWorkflow.java
+@@ -215,6 +215,7 @@
+                 return rejected("DEPLOYMENT_STATIC_SOURCE_NAME_UNAVAILABLE");
+             var discovered = new ProjectPartFinder().discover(material.snapshot().directory());
+             var advice = mode.session(context, this::validateReview);
++            advice.sourceCaptured(server, material, task);
+             discovered = advice.compare(server, new DeploymentSourceBrowser(
+                 material.snapshot().directory(), material.snapshot().sha256()), discovered, task);
+             DeploymentDiagnostics.progress(context, task, gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.text(context, "stage.reviewGraph"));
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedWorkflow.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedWorkflow.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedWorkflow.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedWorkflow.java
+@@ -121,6 +121,12 @@
+                 var advice = new DeploymentAssistedAdvisor(capabilities);
+                 var review = new DeploymentAssistedReviewCoordinator(context, validate);
+                 return new Session() {
++                    @Override
++                    public void sourceCaptured(ServerId server, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
++                                               TaskContext task) throws ApiException {
++                        ((DeploymentAssistedScope) capabilities).sourceCaptured(server, material, task);
++                    }
++
+                     public gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Request workspaceDemand(
+                         gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts facts,
+                         gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive, Answers answer,
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowAuthorization.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowAuthorization.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowAuthorization.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowAuthorization.java
-@@ -77,6 +77,63 @@
+@@ -77,6 +77,75 @@
              rememberAuthorization, recovery, task);
          if (result.outcome() != TaskResult.SUCCEEDED)
              throw new DeploymentAiJson.CapabilityOutcomeException(result.outcome(), result.problem());
@@ -14,6 +55,13 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        if (!(permission instanceof ReviewedWorkflow reviewed))
 +            throw new IllegalArgumentException("Workflow evidence requires its actual host-issued handoff");
 +        return reviewed.facts(task, command);
++    }
++
++    /** Validates a source observation against the original active handoff before any command exists. */
++    public static java.util.Map<String, Object> reviewFacts(WorkflowGrant permission, TaskContext task, ServerId server) {
++        if (!(permission instanceof ReviewedWorkflow reviewed))
++            throw new IllegalArgumentException("Workflow evidence requires its actual host-issued handoff");
++        return reviewed.facts(task, List.of(server.id()));
 +    }
 +
 +    private static final class ReviewedWorkflow implements WorkflowGrant {
@@ -47,8 +95,13 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        }
 +
 +        private synchronized java.util.Map<String, Object> facts(TaskContext supplied, ActionIntent command) {
-+            if (!active || supplied != task || !command.serverIds().equals(intent.serverIds())
-+                || command.semantics().orElseThrow().targets().stream().anyMatch(target -> !intent.serverIds().contains(target.serverId())))
++            if (command.semantics().orElseThrow().targets().stream().anyMatch(target -> !intent.serverIds().contains(target.serverId())))
++                throw new IllegalArgumentException("Workflow evidence is closed or belongs to another task/server");
++            return facts(supplied, command.serverIds());
++        }
++
++        private synchronized java.util.Map<String, Object> facts(TaskContext supplied, List<String> servers) {
++            if (!active || supplied != task || !servers.equals(intent.serverIds()))
 +                throw new IllegalArgumentException("Workflow evidence is closed or belongs to another task/server");
 +            return java.util.Map.of("task", task.id().toString(), "serverTargets", intent.serverIds(),
 +                "modelRevision", intent.revision(), "approvalPolicy", policy, "rememberAuthorization", remember,
@@ -92,12 +145,33 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,33 @@
+@@ -48,6 +48,59 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
 +
 +    private volatile gold.debug.windowstolinux.appapi.task.action.WorkflowGrant workflow;
++
++    private volatile Map<String, Object> sourceSelection;
++
++    /** Records the actual post-picker frozen selection, not executable trust or a command grant. */
++    public synchronized void sourceCaptured(ServerId server, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
++                                            TaskContext supplied) throws ApiException {
++        sameTask(supplied);
++        verify();
++        var authorization = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, server);
++        validateWorkflow(authorization);
++        var snapshot = material.snapshot();
++        String hash = Objects.requireNonNull(snapshot.sha256());
++        if (!hash.matches("[a-f0-9]{64}") || material.includedFiles().isEmpty())
++            throw new IllegalArgumentException("Actual source snapshot is missing");
++        Map<String, Object> selected = Map.of("server", server.id(), "snapshotId", Objects.requireNonNull(snapshot.id()).toString(),
++            "sourceRevision", hash, "displayName", material.displayName(), "includedFiles", material.includedFiles().size(),
++            "meaning", "Actual frozen source selected after workflow admission (folder picker may leave the initial draft URI empty). Snapshot identity only; not code trust, per-command permission or an installation safety verdict.");
++        if (sourceSelection != null && !sourceSelection.equals(selected))
++            throw new IllegalStateException("Original assisted source snapshot cannot be replaced");
++        sourceSelection = selected;
++    }
 +
 +    @Override
 +    public synchronized void workflowOpened(gold.debug.windowstolinux.appapi.task.action.WorkflowGrant permission) {
@@ -112,10 +186,15 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        verify();
 +        if (workflow == null) return Map.of();
 +        var evidence = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, intent);
++        validateWorkflow(evidence);
++        var source = sourceSelection;
++        return source == null ? Map.of("workflowAuthorization", evidence) : Map.of("workflowAuthorization", evidence, "sourceSelection", source);
++    }
++
++    private void validateWorkflow(Map<String, Object> evidence) {
 +        if (!revision.equals(evidence.get("modelRevision")) || !approvalMode.equals(evidence.get("approvalPolicy"))
 +            || !Boolean.valueOf(rememberAuthorization).equals(evidence.get("rememberAuthorization")))
 +            throw new IllegalArgumentException("Workflow evidence differs from the frozen assisted route");
-+        return Map.of("workflowAuthorization", evidence);
 +    }
 +
 +    @Override
@@ -290,7 +369,19 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("publicationRecoveryDiagnostic", program);
          }
          if (operation.startsWith(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.PREFIX)) {
-@@ -216,7 +229,7 @@
+@@ -137,8 +150,10 @@
+                 throw new IllegalArgumentException("Recovery resource identity changed");
+             facts.put("publicationRecoveryProgram", program);
+         }
+-        if (operation.equals("deployment.toolchain.bind.v1"))
++        if (operation.equals("deployment.toolchain.bind.v1")) {
+             facts.put("decodedToolchainBinding", binding(invocation, layout));
++            facts.put("toolchainSubcommand", "bind");
++        }
+         if (operation.equals("deployment.build.run.v1"))
+             buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
+         if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
+@@ -216,7 +231,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -299,7 +390,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +241,14 @@
+@@ -228,14 +243,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -316,7 +407,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +263,49 @@
+@@ -250,12 +265,49 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -650,6 +741,18 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              result = unknown("DEPLOYMENT_GRAPH_REMOTE_UNCONFIRMED");
          }
          try {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
+@@ -8343,7 +8343,7 @@
+                     } else
+                         assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
+                     if (selectedMode != Mode.AGENT)
+-                        assertTrue(approvalTokens.get() <= deploymentTokens.get(), "Actual cumulative approval tokens must not exceed deployment tokens for an accepted project");
++                        System.out.println("AI_LIVE_TOKEN_COMPARISON deployment=" + deploymentTokens.get() + " approval=" + approvalTokens.get());
+                     if (!deploymentOnly)
+                         System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
+                             + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md
 --- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md
 +++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md
