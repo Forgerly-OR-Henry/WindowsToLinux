@@ -19,7 +19,7 @@ class DeploymentStructuredSubmissionRegressionTest {
         assertThrows(java.io.IOException.class, () -> new DeploymentAiJson(fixture.context)
             .ask(AiPurpose.APPROVAL, "Review", Map.of(), fixture.configurationRevision, fixture.task));
         assertEquals(1, fixture.requests.size());
-        assertEquals(Optional.of("submit_result"), fixture.requests.getFirst().requiredToolName());
+        assertTrue(fixture.requests.getFirst().requiredToolName().isEmpty());
     }
 
     @Test

@@ -153,7 +153,7 @@ public final class DeploymentAiJson {
                 throw new IOException("Approval conversation history rejected", rejected);
             }
             var response = call(purpose, messages, List.of(definition), revision, task, bound > 48000,
-                purpose == AiPurpose.APPROVAL ? Optional.of(definition.name()) : Optional.empty());
+                Optional.empty());
             if (!response.finishReason().equals("tool_calls") || response.toolCalls().isEmpty())
                 throw new IOException("A complete native result submission is required");
             if (response.toolCalls().size() != 1) {

@@ -472,3 +472,15 @@ toolchain-dispatch-manifest-unit-01默认/自定义layout清单与实际选中�
 后续06起，同一deepseek-flash审批路由由实验NONE恢复为先前LOW推理，部署仍LOW；提供方、模型、8192审批输出上限、单请求/时间/轮数/监督总额度及独立许可流程不变。目的在于核验范围/来源推理的可靠性，不是取消独立否决、降低校验或更换审批模型寻找批准。此前09 LOW/8192耗尽发生在资料较少阶段，当前使用完整机械比对与实际实现重新验证；若再次输出耗尽仍按真实结果报告，不静默提额。最终报告须逐阶段区分LOW/NONE与LOW/LOW，不把前4个交付说成同一推理配置下的成功。
 
 原03、04、05的配置暂存改进仍待新完整流程实际走到该阶段验证。当前已交付4/8，不能把定点测试或推理配置调整当成网站通过。
+
+## File Transfer 06：LOW 审批仍被强制 named tool 的实际回归
+
+06 root assisted-live-file-transfer-75qc0gsds，原b0c1e169-4221-4708-ba18-02cc7c8bbcea在第一条capacity审批HTTP400，generation40b71378-9856-4dcc-ad6c-4e4f70d32e90、输入/输出用量未知；known任务FAILED，应用列表空、runtime正常退出，无UNKNOWN或远端候选待恢复。不能把这次400当作LOW推理质量或输出耗尽。
+
+检查当前源码和git blame已确认：fcb5bb59（require native submission for independent approval results）于2026-10-18 20:45把APPROVAL ask/askCommand恢复为requiredToolName=submit_result；ChatCompletionsCodec按SDK契约如实编码named tool_choice。此前07曾去除强制的历史记录不能代表当前分支，这次恢复强制时缺失LOW兼容测试。DeepSeek[官方Chat Completions说明](https://api-docs.deepseek.com/api/create-chat-completion/)明确thinking模式不支持required/named tool_choice并返回400；当前LANGUAGE LOW使用AUTO正常，而APP LOW仍指定工具，与真实400一致。核心SDK仍保留显式required工具语义，未做提供方专属静默降级。
+
+最小生产修复：DeploymentAiJson.submit在传输层统一AUTO，逻辑层继续要求原schema的恰好一次完整原生submit_result；文本、错误工具、多提交、缺字段、结构错误和有效DENY仍按原边界拒绝，无host授权或发送。保留原两次格式纠正上限、原有效DENY终态、不生成虚构提交、不增加输出/超时/预算。不是将审批变成人工批准或降低安全校验；仅避免用不兼容传输选项表达逻辑提交要求。
+
+approval-thinking-auto-unit-01共24项通过0跳过：RequiredReviewSubmission13、StructuredSubmission2、原流程证据9。正例使用真实ModelProtocolCodec编码LOW，验证reasoning_effort=low/tool_choice=auto；拒绝例确认0 host授权/0发送、原DENY原因和原请求/receipt保留。RequiredReviewSubmission旧正例的默认超时断言由600修正为实际未改的120秒，未修改生产超时。Native schema、目的、8192、1MiB、业务提交要求保留。
+
+Agent后续调试须注意：共享AiJson ask/askCommand的wire requiredToolName现在为空，原生提交逻辑仍必需。部分任务开始前已有的未跟踪ApprovalConversation及其它Agent/backup测试夹具仍断言named tool；本轮没有改写这些其它任务文件或运行Agent部署验收。其传输元数据期望需在相应专项中对齐AUTO，原拒绝/授权/完整输入/记忆边界不得削弱。本轮已覆盖standalone及retained conversation的有效/拒绝实际逻辑。

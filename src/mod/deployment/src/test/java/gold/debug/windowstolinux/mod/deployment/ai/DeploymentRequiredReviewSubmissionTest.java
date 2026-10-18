@@ -47,18 +47,24 @@ class DeploymentRequiredReviewSubmissionTest {
         assertEquals("DENY", result.path("decision").asText());
         assertEquals(1, fixture.requests.size());
         var request = fixture.requests.getFirst();
-        assertEquals(Optional.of("submit_result"), request.requiredToolName());
+        assertTrue(request.requiredToolName().isEmpty());
         assertEquals(AiPurpose.APPROVAL, request.purpose());
         assertFalse(request.jsonObjectResponse());
         assertEquals(8192, request.maxOutputTokens().orElseThrow());
         assertEquals(1048576, request.maxRequestBytes());
-        assertEquals(Duration.ofSeconds(600), request.timeout());
+        assertEquals(Duration.ofSeconds(120), request.timeout());
         assertEquals(JSON.valueToTree(facts("first")), JSON.readTree(request.messages().getLast().text()));
         var schema = JSON.readTree(request.tools().getFirst().inputSchema());
         assertFalse(schema.path("additionalProperties").asBoolean());
         assertEquals(Set.of("decision", "requiresUserConfirmation", "reason"),
             Set.copyOf(JSON.convertValue(schema.path("required"), List.class)));
         assertEquals(List.of("APPROVE", "DENY"), JSON.convertValue(schema.at("/properties/decision/enum"), List.class));
+        var encoded = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
+            gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS).encode("deepseek-flash", request,
+            8192, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
+        var wire = JSON.readTree(encoded);
+        assertEquals("auto", wire.path("tool_choice").asText());
+        assertEquals("low", wire.path("reasoning_effort").asText());
     }
 
     @Test
@@ -71,7 +77,7 @@ class DeploymentRequiredReviewSubmissionTest {
                 fixture.task, DeploymentReviewDecision::malformed);
             assertEquals("DENY", result.path("decision").asText());
             var request = fixture.requests.getLast();
-            assertEquals(Optional.of("submit_result"), request.requiredToolName());
+            assertTrue(request.requiredToolName().isEmpty());
             assertEquals(current, JSON.readTree(request.messages().getLast().text()).path("exactAction").asText());
         }
         assertEquals(2, fixture.requests.size());
@@ -111,7 +117,7 @@ class DeploymentRequiredReviewSubmissionTest {
     }
 
     @Test
-    void forcedToolDoesNotAcceptAnIncompleteApprovalShapeOrDispatchIt() throws Exception {
+    void automaticToolSelectionDoesNotAcceptAnIncompleteApprovalShapeOrDispatchIt() throws Exception {
         var fixture = new NativeAiFixture();
         for (String id : List.of("invalid-first", "invalid-correction"))
             fixture.nativeReply(new AiToolCall(id, "submit_result", "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false}"));
@@ -212,7 +218,7 @@ class DeploymentRequiredReviewSubmissionTest {
 
     private static void assertStopped(NativeAiFixture fixture, Boundary boundary, int expectedCalls) {
         assertEquals(expectedCalls, fixture.requests.size());
-        assertTrue(fixture.requests.stream().allMatch(request -> request.requiredToolName().equals(Optional.of("submit_result"))));
+        assertTrue(fixture.requests.stream().allMatch(request -> request.requiredToolName().isEmpty()));
         assertEquals(0, boundary.authorizations().get());
         assertEquals(0, boundary.dispatches().get());
     }
