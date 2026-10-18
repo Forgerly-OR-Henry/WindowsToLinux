@@ -143,6 +143,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
         var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1")
+            .contains(value.operation())).isPresent())
+            facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
+                .toolchainImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture
+                    .originalTaskLayout(original.tasks(), supplied)));
         if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {
             try {
                 var store = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());

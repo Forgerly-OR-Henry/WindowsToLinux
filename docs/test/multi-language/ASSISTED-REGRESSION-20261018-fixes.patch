@@ -402,7 +402,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,173 @@
+@@ -48,6 +48,178 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -501,6 +501,11 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
 +                                TaskContext supplied) throws ApiException {
 +        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
++        if (intent.semantics().filter(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1")
++            .contains(value.operation())).isPresent())
++            facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
++                .toolchainImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture
++                    .originalTaskLayout(original.tasks(), supplied)));
 +        if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {
 +            try {
 +                var store = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());
@@ -576,7 +581,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
-@@ -316,6 +483,13 @@
+@@ -316,6 +488,13 @@
      @Override
      public InteractionService interaction() {
          return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
@@ -669,6 +674,38 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          """;
  
      private static final String TEXT = DeploymentRemoteLayoutTemplate.render(TEMPLATE.formatted(HELPER_SHA, BUILD_SHA), DeploymentRemoteLayout.original());
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java
+@@ -267,6 +267,28 @@
+         return sha256(renderScript(layout).getBytes(StandardCharsets.UTF_8));
+     }
+ 
++    /** Supplies the actual pinned source closure for toolchain review without changing or invoking the helper. */
++    public static Map<String, Object> toolchainImplementationFacts(DeploymentRemoteLayout layout) {
++        String complete = renderScript(layout);
++        var catalog = DeploymentToolchainCatalog.defaults();
++        var groups = List.of(List.of("00-protocol-foundation.sh"),
++            List.of("toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
++                "toolchain/30-managed-installation.py", "toolchain/40-binding-protocol.py"),
++            List.of("70-command-dispatch.sh"));
++        var sources = new java.util.ArrayList<Map<String, Object>>();
++        int characters = 0;
++        for (var fragments : groups) {
++            String source = new String(assemble(catalog, layout, fragments), StandardCharsets.UTF_8);
++            characters += source.length();
++            if (characters > 131072 || !complete.contains(source))
++                throw new IllegalStateException("Toolchain review source differs from pinned helper");
++            sources.add(Map.of("fragments", fragments, "sha256", sha256(source.getBytes(StandardCharsets.UTF_8)), "source", source));
++        }
++        return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
++            "sourceBinding", "EXACT_RENDERED_SUBSTRINGS_OF_COMPLETE_LOCALLY_HASH_PINNED_HELPER",
++            "meaning", "Actual rendered common guards, complete isolated-Python official toolchain function (including catalog and inserted archive/repository code), and full public dispatch from the same helper identity used by the pre-invocation guard. Follow this request's prepare-toolchains prepare or bind branch; unrelated dispatch branches are not selected. Review official resolution/download/checksum/archive/installation/ownership/sealing code and exact arguments. A nonzero preparer status can leave partial effects and aborts the set-e invocation; it is not successful preparation or permission. These are source bytes, not a claim about live installed files, future resolved values, safe arguments or an execution grant.");
++    }
++
+     /**
+      * Combines fixed helper fragments with resource inserts and the shipped toolchain catalog into UTF-8 bytes.
+      * <p>将固定 helper 片段、资源插入内容及随附工具链目录组合为 UTF-8 字节。
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
@@ -4414,6 +4451,63 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +            var intent = RemoteActions.command(server, "b".repeat(64), request).withSemantics(new ActionSemantics(
 +                "deployment.build.run.v1", Set.of(new ActionTarget(server.id(), "deployment-build", workspace.candidateRoot() + (mutation.equals("TARGET") ? ".other" : "")))));
 +            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentToolchainImplementationEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentToolchainImplementationEvidenceRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentToolchainImplementationEvidenceRegressionTest.java
+@@ -0,0 +1,53 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.ai.DeploymentAiJson;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class DeploymentToolchainImplementationEvidenceRegressionTest {
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void preparationReceivesActualPinnedImplementationAndFitsTheExistingRequestBudget(boolean custom) throws Exception {
++        var layout = custom ? new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data")) : DeploymentRemoteLayout.original();
++        String complete = DeploymentManagedHelperBundle.renderScript(layout);
++        var server = new ServerId("fixture");
++        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath()
++            + "' prepare-toolchains 'prepare' 'JAVA' '21' '-' '120' '-'", layout), new byte[0], Duration.ofSeconds(135), 65536)) {
++            var intent = RemoteActions.command(server, "b".repeat(64), request).withSemantics(new ActionSemantics(
++                "deployment.toolchain.prepare.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
++            var facts = new LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request, layout));
++            assertFalse(facts.containsKey("toolchainImplementation"), "Shared Agent/STATIC evidence must not gain this large assisted-only payload");
++            facts.put("toolchainImplementation", DeploymentManagedHelperBundle.toolchainImplementationFacts(layout));
++            var json = new ObjectMapper().valueToTree(facts);
++            var implementation = json.path("toolchainImplementation");
++            assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), implementation.path("helperSha256").asText());
++            assertEquals(3, implementation.path("sources").size());
++            for (var source : implementation.path("sources")) {
++                String text = source.path("source").asText();
++                assertTrue(complete.contains(text));
++                assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
++                    .digest(text.getBytes(StandardCharsets.UTF_8))), source.path("sha256").asText());
++            }
++            assertTrue(implementation.at("/sources/1/source").asText().contains("/usr/bin/python3 -I -"));
++            assertTrue(implementation.at("/sources/2/source").asText().contains("prepare_official_toolchains \"$@\""));
++            assertFalse(implementation.has("verifiedInstallation"));
++            assertFalse(implementation.has("commandGrant"));
++            assertTrue(DeploymentAiJson.facts(facts, 1048576).length() < 1048576);
++            assertEquals("JAVA", json.at("/toolchainPreparation/ecosystem").asText());
 +        }
 +    }
 +}

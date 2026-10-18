@@ -387,3 +387,14 @@ MavenBuildWriter.bootstrapEvidence只识别真实prepareMaven完整片段，提�
 build-collector-evidence-unit-01新事实/变造边界13项全部通过；所选既有2个本地shell行为检查因Windows无/bin/bash启动失败，整次Maven标失败，不能计为通过。未修改测试来隐藏环境缺失。另以修改前快照编译独立before类，与当前生产script在默认/自定义layout、3种engine、2种binding、3种兼容短语组合共36组逐字节比较全部一致，serverDispatches=0；这验证render提取不改变原远端命令，不能代替Linux实际执行检查。另选原审批单方法验证中。
 
 原审批完整输入/opaque/超限边界单方法1项通过0跳过，连同新事实13项为14项定点通过。4Java限定格式化后，初次compile生命周期因仓库test-support分类依赖无法解析而失败；改走原test生命周期、显式单类选择且skipTests，仅编译成功（未执行测试），之后before/current36组字节比较再次通过。2个/bin/bash本地检查仍是未验证项，未计通过。
+
+
+## Task Board 17：补固定工具链 handler 的实际实现证据
+
+原5d61849c-5ad7-44b1-918d-ac3a9795fbd6/root assisted-live-task-board-4g3ua3phc提前在toolchain prepare下发前DENY，尚未验证e7010eb2的Maven构建新事实。拒绝承认stat/find/SHA和调用接口正确，却要求helper内部解析、来源摘要、安装、归属与签封实现，并提及非零退出使set-e调用失败。task-board-reconcile-17-01已由产品结清原图ENDED/FAILED、blockers空，无应用发布，不重放该原任务。
+
+只读审查确认DeploymentAiJson已把版本固定的HelperReviewContract附在真实SYSTEM消息中，非漏传契约；其给源码绑定语义而没有逐次重印内部实现。此次补实际代码证据，未放松独立判断或改为按哈希批准：ManagedHelperBundle用原同一assembler获取公共根守卫、含catalog/资源插入的完整官方工具链Python函数、完整公共dispatch三段；先验证完整默认helper全局pin，再验证捕获layout下每段确实是完整helper连续字节子串，逐段SHA并提供sourceBinding。源码总字符有界131072；不执行源码，不改assemble输出、目录、下载、摘要或helper pin。
+
+大段实现仅由原任务ASSISTED Scope的prepare/bind审查提供，避免把它自动加入STATIC/Agent共享证据及其预算。共有HelperBundle只是新增只读接口，代码内容不变；Agent若后续需要可另行评估，当前不恢复Agent测试。完整原请求/动态输入/参数/授权和实际pre-invocation守卫仍由独立审查核对；实现不证明live安装或未来解析结果，非零失败可能有部分副作用，不能误写无效果。没有重试有效DENY、没有切模型寻找批准。
+
+最终toolchain-implementation-scope-unit-01：来源字节/SHA/预算/默认与自定义layout2项、直接受影响原workflow生命周期9项，共11通过0跳过；原绑定解码/路径边界类14项另通过。两来源用例曾在前组通过后因移动到ASSISTED Scope重跑，不能把重复执行当独立用例累计。unit01实际只运行新2项，未运行的RuntimePaths selector不计通过；新用例直接校验两种捕获layout与共享证据没有大段payload。验证未涉及提供方或服务器调用，接下来18轮真实验证。
