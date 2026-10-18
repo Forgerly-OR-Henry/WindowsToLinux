@@ -48,4 +48,38 @@ class DeploymentBindingEvidenceRegressionTest {
             assertFalse(binding.has("installed"));
         }
     }
+
+    @ParameterizedTest
+    @CsvSource({"RUST,1.95,-,1777,-", "JAVA,21,21.0.12.1+1,30,/fixture/java", "NODE,22,-,7200,-"})
+    void decodesTheActualPreparationArgumentPositions(String ecosystem, String branch, String exact, int seconds, String javaHome) throws Exception {
+        var evidence = preparation("'prepare' '" + ecosystem + "' '" + branch + "' '" + exact + "' '" + seconds + "' '" + javaHome + "'");
+        assertEquals(ecosystem, evidence.path("ecosystem").asText());
+        assertEquals(branch, evidence.path("catalogBranch").asText());
+        assertEquals(exact, evidence.path("requestedExact").asText());
+        assertEquals(seconds, evidence.path("preparationTimeoutSeconds").asInt());
+        assertEquals(javaHome, evidence.path("javaHome").asText());
+        assertFalse(evidence.has("installed"));
+        assertFalse(evidence.has("commandGrant"));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "'prepare' 'RUST' '1.95' '-' '29' '-'", "'prepare' 'RUST' '1.95' '-' '7201' '-'",
+        "'prepare' 'RUST' '1.95' '-' '1777' '-' 'extra'", "'prepare' 'RUST' 'RUST' '1.95' '1777' '-'",
+        "'prepare' 'JAVA' '21' '17.0.1' '1777' '-'", "'prepare' 'RUST' '1.95' '-' '1777' '-'; true"
+    })
+    void doesNotInventParsedEvidenceForMalformedOrAppendedPreparation(String arguments) throws Exception {
+        assertTrue(preparation(arguments).isMissingNode());
+    }
+
+    private static com.fasterxml.jackson.databind.JsonNode preparation(String arguments) throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath()
+            + "' prepare-toolchains " + arguments, layout), new byte[0], Duration.ofSeconds(1800), 65536)) {
+            var server = new ServerId("fixture");
+            var intent = RemoteActions.command(server, "revision", request).withSemantics(new ActionSemantics(
+                "deployment.toolchain.prepare.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
+            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout)).path("toolchainPreparation");
+        }
+    }
 }

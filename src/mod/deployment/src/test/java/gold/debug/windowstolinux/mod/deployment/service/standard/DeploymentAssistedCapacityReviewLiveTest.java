@@ -84,11 +84,11 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                          : preparation
                          ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
                          "'" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH
-                             + (rust ? "' 'prepare-toolchains' 'prepare' 'RUST' '1.85' '-' '1776' '-'"
-                             : "' 'prepare-toolchains' 'prepare' 'JAVA' '21' '-' '300' '-'"))
+                             + (rust ? "' prepare-toolchains 'prepare' 'RUST' '1.95' '-' '1777' '-'"
+                             : "' prepare-toolchains 'prepare' 'JAVA' '21' '-' '300' '-'"))
                          : binding ? originalBindingCommand()
                          : "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\nstat -f -c '%a %S' -- '/var/lib'\n",
-                         new byte[0], Duration.ofSeconds(hostProbe ? 120 : rust ? 1791 : preparation ? 315 : 20), preparation || hostProbe ? 65536 : 1024)) {
+                         new byte[0], Duration.ofSeconds(hostProbe ? 120 : rust ? 1792 : preparation ? 315 : 20), preparation || hostProbe ? 65536 : 1024)) {
                     var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
                         hostProbe ? "deployment.candidate.host-probe.v1" : preparation ? "deployment.toolchain.prepare.v1" : binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
                         Set.of(new ActionTarget(server.id(), hostProbe ? "deployment-host" : binding || preparation ? "deployment-build" : "deployment-workspace",
@@ -124,7 +124,7 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
             .getDeclaredMethod("workflowRequest", ServerId.class, String.class);
         formatter.setAccessible(true);
         return (String) formatter.invoke(null, server,
-            "Draft[application=log-analyzer-api-review, selectedSource=success-log-analyzer, cli/Cargo.toml rust-version=1.85]; API-only review, no SSH dispatch");
+            "Draft[application=log-analyzer-api-review, selectedSource=success-log-analyzer, cli/Cargo.toml rust-version>=1.85, selected catalog branch=1.95]; API-only review, no SSH dispatch");
     }
 
     @Test

@@ -369,7 +369,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("publicationRecoveryDiagnostic", program);
          }
          if (operation.startsWith(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.PREFIX)) {
-@@ -137,8 +150,10 @@
+@@ -137,8 +150,12 @@
                  throw new IllegalArgumentException("Recovery resource identity changed");
              facts.put("publicationRecoveryProgram", program);
          }
@@ -378,10 +378,42 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("decodedToolchainBinding", binding(invocation, layout));
 +            facts.put("toolchainSubcommand", "bind");
 +        }
++        if (operation.equals("deployment.toolchain.prepare.v1"))
++            preparation(invocation, layout).ifPresent(value -> facts.put("toolchainPreparation", value));
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -216,7 +231,7 @@
+@@ -207,6 +224,29 @@
+         return java.util.Collections.unmodifiableMap(result);
+     }
+ 
++    /** Labels exact literal arguments without asserting resolver results, installation trust or authority. */
++    private static java.util.Optional<Map<String, Object>> preparation(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
++        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' prepare-toolchains ")
++            + "'prepare' '([A-Z]+)' '([0-9]{1,3}(?:\\.[0-9]{1,3})?)' '([^'\\r\\n]+)' '([1-9][0-9]{1,3})' '(-|/[^'\\r\\n]*)'\\z").matcher(script);
++        if (!match.matches()) return java.util.Optional.empty();
++        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType ecosystem;
++        try {
++            ecosystem = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.valueOf(match.group(1));
++        } catch (IllegalArgumentException invalid) {
++            return java.util.Optional.empty();
++        }
++        String branch = match.group(2), exact = match.group(3);
++        int seconds = Integer.parseInt(match.group(4));
++        if (seconds < 30 || seconds > 7200 || match.group(5).length() > 2048
++            || !(exact.equals("-") || gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainVersion.parse(ecosystem, exact)
++            .filter(version -> version.text().equals(exact) && !version.preview() && version.branch().equals(branch)).isPresent()))
++            return java.util.Optional.empty();
++        return java.util.Optional.of(Map.of("subcommand", "prepare", "ecosystem", ecosystem.name(), "catalogBranch", branch,
++            "requestedExact", exact, "preparationTimeoutSeconds", seconds, "javaHome", match.group(5),
++            "literalArgumentOrder", java.util.List.of("prepare", "ecosystem", "catalogBranch", "requestedExact", "preparationTimeoutSeconds", "javaHome"),
++            "meaning", "Exact literal argument decoding only; branch and timeout are separate arguments. Official version/source/digest are resolved inside the pinned helper. Not live installation evidence, a safety verdict or a command grant."));
++    }
++
+     /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
+      * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
+      * @return decoded original toolchain binding evidence / 已解码原工具链绑定依据
+@@ -216,7 +256,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -390,7 +422,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +243,14 @@
+@@ -228,14 +268,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -407,7 +439,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +265,49 @@
+@@ -250,12 +290,49 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
