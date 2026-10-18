@@ -139,6 +139,16 @@ CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build
 
 `candidate-guard-contract-unit-01` 源码固定身份/完整预调用守卫1项通过，原拒绝2参数因policy12305字符超过原12288失败；失败保留。压缩重复表述后，`unit-02` 只重跑这两项，均通过，未提高上限；已通过的源码测试不重复。压缩仍保留原Agent参数顺序、非root隔离、所有动态输入/初始化效果和独立许可规则，没有运行Agent验收。下一步仅重试失败CLI，仍无交付URL或CLI命令可宣称成功。
 
+## CLI07：配置暂存帧和实际目的地
+
+候选守卫说明提交 `3e81f3de` 后，CLI07候选创建、源码上传/校验和实际 Rust+C++ 编译均通过。构建回执 EXIT=0、ENGINE=ordinary、TOOL=CARGO_LOCKED、非root UID63370；但发布前 stage-config 审查DENY，尚未发布或CLI业务验收。任务 `3a42131c-4a8a-4b1a-a6bc-2c04e2562f02`、root `assisted-live-log-analyzer-tyefebfj4` 已 `reconcile-07-01` 产品对账 ENDED/FAILED，无应用；known167699（部署72942/审批94757），恢复新增4APP17104另计。
+
+拒绝称空stdin不合法、配置帧摘要不等于业务/源码/目标摘要、且命令未带task参数。源码 `15-deployment-input.sh` 明确stage-config接受5参数（app、configuration identity、format、payload digest、payload bytes），允许0字节普通配置；它按应用/配置身份寻址，不包含task参数，任务权限由现有宿主交接另行绑定。configuration identity与渲染payload摘要是不同对象，不能互相比较。
+
+同时确认 `DeploymentPublishChannel` 的审批resourceTargets只有releaseRoot，遗漏真正写入的配置/秘密文件。现已保留release语义目标，并为stage-config/stage-secret增补捕获layout下的精确文件目标。CommandEvidence只在当前完整字面配置帧匹配时核对stdin真实长度/SHA256及声明的配置目的地，输出各身份的明确字段和空配置语义；不披露配置内容，不声称live所有权、内容安全或授予命令许可。错长度、摘要、目标不能变成该证据，附加参数不会得到精确帧绑定。helper执行体不变。
+
+`configuration-frame-unit-01` 11项通过、0跳过：新增帧边界8项，捕获自定义路径的配置/秘密目标2项，原暂存缓冲清理1项。既有路径测试按新增精确目标更新；该文件原有未跟踪内容依用户持续授权整体提交，本轮增量另入首次修改前补丁。共享PublishChannel和CommandEvidence会影响后续Agent的资源声明/审查事实，应在稍后Agent调试时核对；本轮仍未运行Agent。四个触及Java文件已格式化。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。

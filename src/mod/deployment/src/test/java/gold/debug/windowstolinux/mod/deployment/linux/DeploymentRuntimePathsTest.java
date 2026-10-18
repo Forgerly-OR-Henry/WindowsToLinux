@@ -63,11 +63,16 @@ import org.junit.jupiter.api.io.TempDir;
 /** Exercises actual request construction with public controlled transport, not remote execution or host authority. */
 class DeploymentRuntimePathsTest {
     private static final ServerId SERVER = new ServerId("Server-Exact-520");
+
     private static final String REVISION = "e".repeat(64);
+
     private static final String ARCHIVE_SHA = "a".repeat(64);
+
     private static final UUID TASK = UUID.fromString("11111111-1111-4111-8111-111111111111");
+
     private static final DeploymentBuildLimits LIMITS = new DeploymentBuildLimits(120, 32, 512, 65536,
         64L * 1024 * 1024, false);
+
     private static final DeploymentRemoteLayout LAYOUT = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
         "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data"));
 
@@ -177,7 +182,9 @@ class DeploymentRuntimePathsTest {
 
     @Test
     void mismatchedWorkspaceOrUnitFailsBeforeReviewGuardOrTransport() throws Exception {
-        var peer = new ControlledPeer(request -> { throw new AssertionError("No command may dispatch"); });
+        var peer = new ControlledPeer(request -> {
+            throw new AssertionError("No command may dispatch");
+        });
         var guard = new AtomicInteger();
         var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
         var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
@@ -219,12 +226,27 @@ class DeploymentRuntimePathsTest {
         assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
             "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
         assertArrayEquals(configuration, peer.commands.getFirst().input());
-        peer.commands.forEach(command -> {
-            assertGuard(command.script());
-            assertTarget(command.intent(), "deployment-release", "/srv/wtl/apps/demo");
-        });
+        peer.commands.forEach(command -> assertGuard(command.script()));
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", "/srv/wtl/apps/demo"),
+                new ActionTarget(SERVER.id(), "deployment-configuration", LAYOUT.configurationRoot("demo") + "/" + "c".repeat(64) + "/systemd.env")),
+            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
+        assertTarget(peer.commands.get(1).intent(), "deployment-release", "/srv/wtl/apps/demo");
         assertTrue(verifiedBody(peer.commands.get(1).script()).contains("'/srv/wtl/data/demo/databases/orders/orders.db'"));
         assertFalse(verifiedBody(peer.commands.get(1).script()).contains("/var/opt/windowstolinux"));
+    }
+
+    @Test
+    void secretStagingDeclaresTheExactCapturedSecretRevisionDestination() throws Exception {
+        var peer = new ControlledPeer(request -> "INPUT_STAGED=1\n");
+        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
+        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
+        byte[] value = {1, 2, 3};
+        assertEquals(TaskResult.SUCCEEDED, channel.stageSecret(unit, "db-secret", 2, value).outcome());
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
+                new ActionTarget(SERVER.id(), "deployment-secret", LAYOUT.configurationRoot("demo") + "/secrets/db-secret/2/value")),
+            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
+        assertArrayEquals(new byte[]{1, 2, 3}, value);
+        java.util.Arrays.fill(value, (byte) 0);
     }
 
     @Test
@@ -296,10 +318,20 @@ class DeploymentRuntimePathsTest {
     /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
     private static FileSnapshot snapshot(Path directory) {
         return new FileSnapshot() {
-            public UUID id() { return TASK; }
-            public String sha256() { return "9".repeat(64); }
-            public Path directory() { return directory; }
-            public void close() { }
+            public UUID id() {
+                return TASK;
+            }
+
+            public String sha256() {
+                return "9".repeat(64);
+            }
+
+            public Path directory() {
+                return directory;
+            }
+
+            public void close() {
+            }
         };
     }
 
@@ -327,21 +359,28 @@ class DeploymentRuntimePathsTest {
         assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
     }
 
-    private record SentCommand(String script, byte[] input, ActionIntent intent) { }
+    private record SentCommand(String script, byte[] input, ActionIntent intent) {
+    }
 
     /** Grants, command replies, upload replies and task identity are controlled; unexpected public calls fail. */
     private static final class ControlledPeer implements DeploymentCommandReview {
         private final List<ActionIntent> intents = new ArrayList<>();
+
         private final List<SentCommand> commands = new ArrayList<>();
+
         private final List<TransferRequest> uploads = new ArrayList<>();
+
         private final TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
             new Class<?>[]{TaskContext.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "id" -> TASK;
                 case "cancelToken" -> (CancelToken) () -> false;
                 default -> throw new AssertionError("Unexpected task method: " + method.getName());
             });
+
         private final RemoteSession session;
+
         private ApprovalGrant pendingGrant;
+
         private ActionIntent pendingIntent;
 
         private ControlledPeer(Function<CommandRequest, String> response) {

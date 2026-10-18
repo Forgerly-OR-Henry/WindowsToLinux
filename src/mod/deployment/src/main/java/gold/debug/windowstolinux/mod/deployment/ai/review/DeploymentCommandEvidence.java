@@ -174,6 +174,8 @@ final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            if (operation.equals("deployment.publication.config.v1"))
+                stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
             if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                 String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
@@ -222,6 +224,30 @@ final class DeploymentCommandEvidence {
             result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
                 .receiptStatusEvidence(context, task, intent, request, layout));
         return java.util.Collections.unmodifiableMap(result);
+    }
+
+    /** Binds the actual configuration frame without disclosing its data or asserting live ownership. */
+    private static java.util.Optional<Map<String, Object>> stagedConfiguration(String script, byte[] input, ActionIntent intent,
+                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' 'stage-config' ")
+            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '(systemd|container)' '([a-f0-9]{64})' '(0|[1-9][0-9]{0,4})'\\z").matcher(script);
+        if (!match.matches()) return java.util.Optional.empty();
+        int bytes = Integer.parseInt(match.group(5));
+        String digest;
+        try {
+            digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(input));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        String destination = layout.configurationRoot(match.group(1)) + "/" + match.group(2) + "/" + match.group(3) + ".env";
+        if (bytes > 65536 || input.length != bytes || !digest.equals(match.group(4))
+            || intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().contains(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-configuration", destination)))
+            throw new IllegalArgumentException("Configuration frame, payload or resource binding differs");
+        return java.util.Optional.of(Map.of("application", match.group(1), "configurationIdentity", match.group(2), "format", match.group(3),
+            "payloadSha256", digest, "payloadBytes", bytes, "destination", destination,
+            "literalValidation", "EXACT_FRAME_PAYLOAD_BYTES_SHA256_AND_DECLARED_DESTINATION_ONLY",
+            "meaning", "Configuration identity names the reviewed configuration set, not its rendered payload or deployment/source/model revision. Empty normal configuration is valid; secret staging forbids empty data. This protocol binds application/configuration, not a task argument; active workflow evidence separately identifies the task. Data stays opaque; no live ownership, content-safety verdict or command authority is implied."));
     }
 
     /** Labels exact literal arguments without asserting resolver results, installation trust or authority. */

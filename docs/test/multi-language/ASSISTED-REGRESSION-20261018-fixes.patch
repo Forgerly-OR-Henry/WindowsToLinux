@@ -1,3 +1,39 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
+@@ -755,7 +755,15 @@
+             .append(DeploymentBuildCommandChannel.shellQuote(verb));
+         for (String value : arguments)
+             script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
+-        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output));
++        var targets = new java.util.HashSet<ActionTarget>();
++        targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
++        if (verb.equals("stage-config"))
++            targets.add(new ActionTarget(server.id(), "deployment-configuration", unit.layout().configurationRoot(unit.id())
++                + "/" + arguments.get(1) + "/" + arguments.get(2) + ".env"));
++        if (verb.equals("stage-secret"))
++            targets.add(new ActionTarget(server.id(), "deployment-secret", unit.layout().configurationRoot(unit.id())
++                + "/secrets/" + arguments.get(1) + "/" + arguments.get(2) + "/value"));
++        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output), Set.copyOf(targets));
+     }
+ 
+     /** Dispatches one exact fixed command through actual review. / 经真实审核发送一条精确固定命令。
+@@ -766,9 +774,14 @@
+      * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
+     private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
+                                                     CommandRequest request) throws ApiException {
++        return dispatch(operation, unit, request, Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot())));
++    }
++
++    private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
++                                                    CommandRequest request, Set<ActionTarget> targets) throws ApiException {
+         try (request) {
+             var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
+-                operation, Set.of(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()))));
++                operation, targets));
+             var grant = DeploymentCommandReviewRouter.approve(interaction, intent, request, task);
+             if (grant.outcome() != TaskResult.SUCCEEDED)
+                 return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java
@@ -453,10 +489,43 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -207,6 +224,29 @@
+@@ -157,6 +174,8 @@
+         }
+         byte[] input = request.stdin();
+         try {
++            if (operation.equals("deployment.publication.config.v1"))
++                stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
+             if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
+                 String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
+@@ -207,6 +226,53 @@
          return java.util.Collections.unmodifiableMap(result);
      }
  
++    /** Binds the actual configuration frame without disclosing its data or asserting live ownership. */
++    private static java.util.Optional<Map<String, Object>> stagedConfiguration(String script, byte[] input, ActionIntent intent,
++                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
++        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' 'stage-config' ")
++            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '(systemd|container)' '([a-f0-9]{64})' '(0|[1-9][0-9]{0,4})'\\z").matcher(script);
++        if (!match.matches()) return java.util.Optional.empty();
++        int bytes = Integer.parseInt(match.group(5));
++        String digest;
++        try {
++            digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(input));
++        } catch (java.security.NoSuchAlgorithmException impossible) {
++            throw new IllegalStateException(impossible);
++        }
++        String destination = layout.configurationRoot(match.group(1)) + "/" + match.group(2) + "/" + match.group(3) + ".env";
++        if (bytes > 65536 || input.length != bytes || !digest.equals(match.group(4))
++            || intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().contains(
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-configuration", destination)))
++            throw new IllegalArgumentException("Configuration frame, payload or resource binding differs");
++        return java.util.Optional.of(Map.of("application", match.group(1), "configurationIdentity", match.group(2), "format", match.group(3),
++            "payloadSha256", digest, "payloadBytes", bytes, "destination", destination,
++            "literalValidation", "EXACT_FRAME_PAYLOAD_BYTES_SHA256_AND_DECLARED_DESTINATION_ONLY",
++            "meaning", "Configuration identity names the reviewed configuration set, not its rendered payload or deployment/source/model revision. Empty normal configuration is valid; secret staging forbids empty data. This protocol binds application/configuration, not a task argument; active workflow evidence separately identifies the task. Data stays opaque; no live ownership, content-safety verdict or command authority is implied."));
++    }
++
 +    /** Labels exact literal arguments without asserting resolver results, installation trust or authority. */
 +    private static java.util.Optional<Map<String, Object>> preparation(String script, gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
 +        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' prepare-toolchains ")
@@ -483,7 +552,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
       * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
       * @return decoded original toolchain binding evidence / 已解码原工具链绑定依据
-@@ -216,7 +256,7 @@
+@@ -216,7 +282,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -492,7 +561,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +268,14 @@
+@@ -228,14 +294,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -509,7 +578,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +290,49 @@
+@@ -250,12 +316,49 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -869,6 +938,124 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      if (!deploymentOnly)
                          System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
                              + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java
+@@ -63,11 +63,16 @@
+ /** Exercises actual request construction with public controlled transport, not remote execution or host authority. */
+ class DeploymentRuntimePathsTest {
+     private static final ServerId SERVER = new ServerId("Server-Exact-520");
++
+     private static final String REVISION = "e".repeat(64);
++
+     private static final String ARCHIVE_SHA = "a".repeat(64);
++
+     private static final UUID TASK = UUID.fromString("11111111-1111-4111-8111-111111111111");
++
+     private static final DeploymentBuildLimits LIMITS = new DeploymentBuildLimits(120, 32, 512, 65536,
+         64L * 1024 * 1024, false);
++
+     private static final DeploymentRemoteLayout LAYOUT = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
+         "/srv/wtl/helper", "/srv/wtl/apps", "/srv/wtl/state", "/srv/wtl/config", "/srv/wtl/data"));
+ 
+@@ -177,7 +182,9 @@
+ 
+     @Test
+     void mismatchedWorkspaceOrUnitFailsBeforeReviewGuardOrTransport() throws Exception {
+-        var peer = new ControlledPeer(request -> { throw new AssertionError("No command may dispatch"); });
++        var peer = new ControlledPeer(request -> {
++            throw new AssertionError("No command may dispatch");
++        });
+         var guard = new AtomicInteger();
+         var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
+         var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
+@@ -219,12 +226,27 @@
+         assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
+             "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
+         assertArrayEquals(configuration, peer.commands.getFirst().input());
+-        peer.commands.forEach(command -> {
+-            assertGuard(command.script());
+-            assertTarget(command.intent(), "deployment-release", "/srv/wtl/apps/demo");
+-        });
++        peer.commands.forEach(command -> assertGuard(command.script()));
++        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", "/srv/wtl/apps/demo"),
++                new ActionTarget(SERVER.id(), "deployment-configuration", LAYOUT.configurationRoot("demo") + "/" + "c".repeat(64) + "/systemd.env")),
++            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
++        assertTarget(peer.commands.get(1).intent(), "deployment-release", "/srv/wtl/apps/demo");
+         assertTrue(verifiedBody(peer.commands.get(1).script()).contains("'/srv/wtl/data/demo/databases/orders/orders.db'"));
+         assertFalse(verifiedBody(peer.commands.get(1).script()).contains("/var/opt/windowstolinux"));
++    }
++
++    @Test
++    void secretStagingDeclaresTheExactCapturedSecretRevisionDestination() throws Exception {
++        var peer = new ControlledPeer(request -> "INPUT_STAGED=1\n");
++        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
++        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
++        byte[] value = {1, 2, 3};
++        assertEquals(TaskResult.SUCCEEDED, channel.stageSecret(unit, "db-secret", 2, value).outcome());
++        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
++                new ActionTarget(SERVER.id(), "deployment-secret", LAYOUT.configurationRoot("demo") + "/secrets/db-secret/2/value")),
++            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
++        assertArrayEquals(new byte[]{1, 2, 3}, value);
++        java.util.Arrays.fill(value, (byte) 0);
+     }
+ 
+     @Test
+@@ -296,10 +318,20 @@
+     /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
+     private static FileSnapshot snapshot(Path directory) {
+         return new FileSnapshot() {
+-            public UUID id() { return TASK; }
+-            public String sha256() { return "9".repeat(64); }
+-            public Path directory() { return directory; }
+-            public void close() { }
++            public UUID id() {
++                return TASK;
++            }
++
++            public String sha256() {
++                return "9".repeat(64);
++            }
++
++            public Path directory() {
++                return directory;
++            }
++
++            public void close() {
++            }
+         };
+     }
+ 
+@@ -327,21 +359,28 @@
+         assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
+     }
+ 
+-    private record SentCommand(String script, byte[] input, ActionIntent intent) { }
++    private record SentCommand(String script, byte[] input, ActionIntent intent) {
++    }
+ 
+     /** Grants, command replies, upload replies and task identity are controlled; unexpected public calls fail. */
+     private static final class ControlledPeer implements DeploymentCommandReview {
+         private final List<ActionIntent> intents = new ArrayList<>();
++
+         private final List<SentCommand> commands = new ArrayList<>();
++
+         private final List<TransferRequest> uploads = new ArrayList<>();
++
+         private final TaskContext task = (TaskContext) Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
+             new Class<?>[]{TaskContext.class}, (proxy, method, args) -> switch (method.getName()) {
+                 case "id" -> TASK;
+                 case "cancelToken" -> (CancelToken) () -> false;
+                 default -> throw new AssertionError("Unexpected task method: " + method.getName());
+             });
++
+         private final RemoteSession session;
++
+         private ApprovalGrant pendingGrant;
++
+         private ActionIntent pendingIntent;
+ 
+         private ControlledPeer(Function<CommandRequest, String> response) {
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md
 --- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md
 +++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/ai/review/command-review.md
