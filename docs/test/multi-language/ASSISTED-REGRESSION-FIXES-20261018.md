@@ -412,3 +412,13 @@ ASSISTED Scope新增currentSourceArchiveTransfer：使用生产RemoteActions.tra
 jdbc-recovery-unit-01：真实子JVM已提交一次业务写并遗留未关闭连接后退出，父进程对旧/新格式分别验证只释放旧记录，保留当前/未知/他人资源且items仍为1；加正常回调保留活连接、原FINISHING真实关闭检查，共4项通过0跳过。18-03由产品恢复通过，原任务最终ENDED/FAILED、blockers=[]，无业务重放。archive-transfer-unit-01新增16项验证多归档精确选择、Unicode/空格路径、三种冲突、改哈希/大小/本地/远端/尾随/方向/server/目标/effect及重复/空观察拒绝；原workflow与宿主恢复上下文结果另行记录。JDBC宿主修复适用于后续Agent恢复，当前未运行Agent验收。
 
 本次直接验证共30项通过：上述JDBC4、归档16、宿主无状态恢复上下文1、archive-transfer-workflow-unit-02流程证据9。archive-transfer-unit-01同时误选了更大的原DeploymentAssistedWorkflowTest，线程快照证明耗时在本地DevelopmentModFinder目录扫描，监督侧停止该自启动测试JVM32368，因此该次Maven整体失败、该大类不计通过；不重跑已通过17项，仅以原直接相关证据9项完成必要检查。未启动全量、Agent、人工服务器写入或重复UNKNOWN部署。
+
+## Task Board 19：真实构建、上传通过；监督夹具额度与原成功恢复
+
+18轮原日志已确认后端WTL_BUILD_REPORT EXIT=0/TOOL=MAVEN及实际BUILD SUCCESS；19轮又完成后端与前端真实构建，14592字节前端归档独立审查通过并实际上传。新的归档匹配已在真机跨过原拒绝点。两组件随后已发布并完成health/inspect，但最后observe审查发送前遇到测试监督总额度：known468790、500000总量减输出预留后的maxRequestBytes=23018，真实编码23443，AI_REQUEST_BUDGET拒绝，未发送该请求。不是有效模型DENY，也不是生产独立授权被绕过。
+
+这次是验收夹具预设500k额度对多组件图不够；后续launcher调整每轮已知Token监督额度为1000000，仍有界。用户未指定此500k为预算承诺；没有改变产品单请求、输出、超时、轮数、提供方或独立审批。失败尝试及恢复费用照实计入总用量，未知不按0。
+
+原任务06972efc-52c6-4f37-8a93-399e78e67339/root assisted-live-task-board-5gfvz6pos经产品reconcile-19-01核实ENDED/SUCCEEDED、blockers=[]；没有重新构建或发布。其后原产品STOP/disable检查完成、JUnit1通过。新增deliversRecoveredAssistedTaskBoardForManualAcceptance仅组合既有verifiesRecoveredTaskBoardThroughProduct（真实业务持久化、START/STOP/RESTART、自启动与原成功归档验证）和既有管理同源deliver，不创建新部署。交付验证结果后续记录。原19 JFR仅预算拒绝及收尾占用异常；测试监控的Agent identify解析器异常已捕获，不是实际Agent部署或19失败根因。
+
+task-board-delivery-01真实验证1项通过0跳过（13分18秒），原成功归档、真实业务写入及重启后读取、START/STOP/RESTART、自启启停全部通过，阶段模型调用0。管理同源task-board.json已导出，application=wtl-assisted-task-board-5gfw0tg9s、前后端RUNNING、autostart=DISABLED，公开前端http://45.192.105.213:46100；交付入口已启动网站供人工验收，未重建原部署。当前ASSISTED4/8交付。该入口是验收组合变更，不改变生产部署或恢复路径。

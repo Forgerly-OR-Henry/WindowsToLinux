@@ -43,6 +43,13 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
         deliver(project, true, delivery, "ASSISTED");
     }
 
+    @org.junit.jupiter.api.Test
+    void deliversRecoveredAssistedTaskBoardForManualAcceptance() throws Exception {
+        Path delivery = deliveryFile("task-board");
+        verifiesRecoveredTaskBoardThroughProduct();
+        deliver("task-board", false, delivery, "ASSISTED");
+    }
+
     private void captureDenials(Throwable original) {
         try (var runtime = open()) {
             for (var category : runtime.logs().inventory(false).categories()) {

@@ -4507,7 +4507,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java
 --- /dev/null
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,67 @@
 +package gold.debug.windowstolinux.mod.deployment.service.standard;
 +
 +import java.nio.file.Path;
@@ -4551,6 +4551,13 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +        Path delivery = deliveryFile(project);
 +        verifyRecoveredAssistedCli(project);
 +        deliver(project, true, delivery, "ASSISTED");
++    }
++
++    @org.junit.jupiter.api.Test
++    void deliversRecoveredAssistedTaskBoardForManualAcceptance() throws Exception {
++        Path delivery = deliveryFile("task-board");
++        verifiesRecoveredTaskBoardThroughProduct();
++        deliver("task-board", false, delivery, "ASSISTED");
 +    }
 +
 +    private void captureDenials(Throwable original) {
