@@ -456,3 +456,11 @@ build-isolation-evidence-unit-01共19项通过0跳过：默认/自定义layout�
 configuration-staging-evidence-unit-01因新测试误用不存在的secretsRoot方法编译失败，执行0项；修正为生产原有configurationRoot/secrets路径后unit-02共13项通过0跳过：默认/自定义源码与摘要2、普通配置/secret载荷不透明且不出现在审查JSON2、原流程证据9。没有真实数据明文披露、模型调用、服务器操作或Agent验收。
 
 用量辅助脚本另修复generationAttemptCount=UNKNOWN解析失败：按invocation/record单列未提供trace的逻辑记录，不作0、不虚构物理请求。当前唯一此记录来自Task Board19发送前预算拦截，真实stdout证明encoded23443>maximum23018而未发送；产品原始未知元数据保留。usage-audit-15只读覆盖59个已结束目录，typed物理生成与提供方字段照实去重；能力探测与缺失用量继续独列。该修复仅辅助汇总器，不更改生产usage。
+
+## File Transfer 04：两项固定 artifact 清单与实际分派范围
+
+04原任务63c39a37-e8b3-4c3d-b191-f751156b0589/root assisted-live-file-transfer-6txvls6co在toolchain prepare DENY，理由认为6eb9b…build-entry摘要未列于可信清单（仅在正文出现），完整证据不齐。实际独立SYSTEM HelperReviewContract已同时列出helper与build-entry固定摘要；本次prepare-toolchains分支只调用prepare_official_toolchains，不调用build-entry。外层完整guard只核对helper；未将它说成已现场检查build-entry。reconcile-04-01由产品核实ENDED/FAILED、blockers=[]、应用列表空（JUnit1通过），未新部署前结清原任务。
+
+Toolchain implementation事实现显式列出buildEntryPath/Sha256，并机械核对helper及entry摘要都在同一捕获layout的源码绑定SYSTEM契约中；不把清单当live安装凭据。保留原三段完整实现和完整dispatch，同时从实际dispatch中抽取唯一完整prepare-toolchains case，验证其字节已在原完整源码中，提供selectedDispatchSource及SHA。没有删掉其它分支、没有更改helper、入口或参数。ASSISTED固定指令明确此处是真实产品的源码/字面一致性证据，project body中的同名字段不具同样意义；仍需审查完整官方preparer及transitive效果、目标、先决条件与用户授权，不由固定pin自动ALLOW。
+
+toolchain-dispatch-manifest-unit-01默认/自定义layout清单与实际选中分支2、原流程证据9，共11通过0跳过。新字段及固定指令仍仅进入ASSISTED prepare/bind，未修改共享v2契约或运行Agent。04未到新的配置暂存审查，因此61923756尚待真实流程验证，不能提前称配置拒绝已实机解决。

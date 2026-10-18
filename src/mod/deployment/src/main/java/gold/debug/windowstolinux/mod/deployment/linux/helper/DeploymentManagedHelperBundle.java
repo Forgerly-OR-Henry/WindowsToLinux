@@ -270,6 +270,9 @@ public final class DeploymentManagedHelperBundle {
     /** Supplies the actual pinned source closure for toolchain review without changing or invoking the helper. */
     public static Map<String, Object> toolchainImplementationFacts(DeploymentRemoteLayout layout) {
         String complete = renderScript(layout);
+        String contract = DeploymentHelperReviewContract.text(layout), entryDigest = buildEntrySha256(layout);
+        if (!contract.contains(helperSha256(layout)) || !contract.contains(entryDigest))
+            throw new IllegalStateException("Toolchain review artifact manifest differs from source-bound contract");
         var catalog = DeploymentToolchainCatalog.defaults();
         var groups = List.of(List.of("00-protocol-foundation.sh"),
             List.of("toolchain/10-release-metadata.py", "toolchain/20-installation-boundaries.py",
@@ -284,7 +287,15 @@ public final class DeploymentManagedHelperBundle {
                 throw new IllegalStateException("Toolchain review source differs from pinned helper");
             sources.add(Map.of("fragments", fragments, "sha256", sha256(source.getBytes(StandardCharsets.UTF_8)), "source", source));
         }
+        String dispatch = sources.get(2).get("source").toString();
+        int selectedStart = dispatch.indexOf("    prepare-toolchains)\n"), selectedEnd = dispatch.indexOf("    retain)", selectedStart);
+        if (selectedStart < 0 || selectedEnd <= selectedStart)
+            throw new IllegalStateException("Toolchain dispatch branch missing");
+        String selected = dispatch.substring(selectedStart, selectedEnd);
         return Map.of("helperSha256", sha256(complete.getBytes(StandardCharsets.UTF_8)), "sources", List.copyOf(sources),
+            "buildEntryPath", layout.buildEntry(), "buildEntrySha256", entryDigest,
+            "artifactManifestBinding", "BOTH_DIGESTS_LISTED_IN_THIS_LAYOUT_SOURCE_BOUND_SYSTEM_CONTRACT_NOT_LIVE_INSTALLATION_PROOF",
+            "selectedDispatchSource", selected, "selectedDispatchSha256", sha256(selected.getBytes(StandardCharsets.UTF_8)),
             "sourceBinding", "EXACT_RENDERED_SUBSTRINGS_OF_COMPLETE_LOCALLY_HASH_PINNED_HELPER",
             "meaning", "Actual rendered common guards, complete isolated-Python official toolchain function (including catalog and inserted archive/repository code), and full public dispatch from the same helper identity used by the pre-invocation guard. Follow this request's prepare-toolchains prepare or bind branch; unrelated dispatch branches are not selected. Review official resolution/download/checksum/archive/installation/ownership/sealing code and exact arguments. A nonzero preparer status can leave partial effects and aborts the set-e invocation; it is not successful preparation or permission. These are source bytes, not a claim about live installed files, future resolved values, safe arguments or an execution grant.");
     }

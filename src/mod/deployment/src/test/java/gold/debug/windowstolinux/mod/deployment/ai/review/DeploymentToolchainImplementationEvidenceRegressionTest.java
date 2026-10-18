@@ -36,6 +36,17 @@ class DeploymentToolchainImplementationEvidenceRegressionTest {
             var implementation = json.path("toolchainImplementation");
             assertEquals(DeploymentManagedHelperBundle.helperSha256(layout), implementation.path("helperSha256").asText());
             assertEquals(3, implementation.path("sources").size());
+            String contract = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.text(layout);
+            assertEquals(DeploymentManagedHelperBundle.buildEntrySha256(layout), implementation.path("buildEntrySha256").asText());
+            assertTrue(contract.contains(implementation.path("helperSha256").asText()));
+            assertTrue(contract.contains(implementation.path("buildEntrySha256").asText()));
+            String selected = implementation.path("selectedDispatchSource").asText();
+            assertTrue(complete.contains(selected));
+            assertTrue(selected.contains("prepare_official_toolchains \"$@\""));
+            assertFalse(selected.contains("build-entry"));
+            assertFalse(selected.contains("run_restricted_build"));
+            assertEquals(java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(selected.getBytes(StandardCharsets.UTF_8))), implementation.path("selectedDispatchSha256").asText());
             for (var source : implementation.path("sources")) {
                 String text = source.path("source").asText();
                 assertTrue(complete.contains(text));
