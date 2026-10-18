@@ -157,6 +157,14 @@ CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build
 
 `configuration-contract-unit-01` 源码固定身份/完整守卫1项通过，原拒绝2参数因policy12289比原上限多1字符失败；压缩重复收尾后unit-02仅重跑失败2项，均通过。`configuration-review-01` 真实API-only空配置审查通过：Task `33732b43-c590-4668-b733-40021ab3dedb`，root `ai-live-configuration-review-ueh6k36yk`；使用实际构造的空DeploymentConfigSnapshot及真实五参数帧，没有SSH连接/发送或许可复用。该结果不等同整项目发布成功，下一步继续完整真实流程。失败记录与真实用量继续保留。
 
+## CLI09：工具链目录缓存键不是归档摘要
+
+配置合同修复提交 `35f00cf3`，API-only空配置实际4422输入+116输出=4538 Token，cache1792/miss2630、reasoningUNKNOWN，4能力验证任务UNKNOWN。CLI09随后在更早的Rust bind被拒绝，尚未在完整流程触达新配置合同。原 `edd2fd8c-8380-4bd0-9969-079b4cb47d5e`、root `assisted-live-log-analyzer-ufktdzyk4` 已通过日志自动定位脚本启动 `reconcile-09-01` 产品对账 ENDED/FAILED、无应用；known90864（部署41128/审批49736），恢复另计。
+
+拒绝将目录尾部 `3fa746…` 与归档SHA `a47ac9…` 直接比较，并要求先有安装验证。源码 `30-managed-installation.py` 对Rust的目录键为 SHA256("RUST\n1.95.0\n"+官方归档摘要)，现场数值机械计算确实得到3fa746…，不是归档或树摘要；其它生态可能使用解析器摘要及固定配方后缀，SYSTEM使用系统文件集合身份。`40-binding-protocol.py` 的bind会在封存前实际核对受管目录/受保护标记、来源/摘要、精确版本并重哈希SYSTEM文件，缺失或漂移会失败；不是只信输入标记，也没有在本地审查事实中证明当前安装。
+
+新增bindingDigestMeaning区分这些对象，源码绑定合同明确bind自身执行live校验后才封存。没有新增目录命名推导作为许可、没有把文字当安装回执。`binding-digest-domains-unit-01` 新Rust双身份1项、原完整源码守卫1项、原拒绝/预算2参数，共4项通过0跳过；审批上限12288保持。`rust-binding-review-01` 真实API-only通过，Task `01d892ab-6113-4fb8-87b4-8a475d8c5bc2`、root `ai-live-rust-binding-review-um7f2d67s`，没有SSH连接/发送或许可复用；使用代表性SERIES1.95/current目录版本帧，不声称与原失败MINIMUM/catalog版本帧逐字相同。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。

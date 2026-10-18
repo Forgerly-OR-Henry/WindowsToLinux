@@ -316,6 +316,7 @@ final class DeploymentCommandEvidence {
                 throw new IllegalArgumentException("Toolchain binding is not canonical");
             return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                 "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
+                "bindingDigestMeaning", "MANAGED sha256 is the downloaded archive SHA-256. The directory name is a distinct installation cache identity from ecosystem/version/resolver digest and fixed recipe, not the archive or a tree checksum. SYSTEM sha256 identifies the pinned system-file set. bind checks protected markers and exact versions and rehashes SYSTEM files before sealing; missing/drifted installations fail. These are input/code semantics, not observed installation, safety or authority.",
                 "literalValidation", Map.of("canonicalBase64", true, "strictUtf8", true, "canonicalTypedBinding", true,
                     "scope", "LITERAL_ENCODING_ONLY_NOT_LIVE_INSTALLATION_OR_AUTHORITY"),
                 "managedToolchainsRoot", layout.toolchains(),

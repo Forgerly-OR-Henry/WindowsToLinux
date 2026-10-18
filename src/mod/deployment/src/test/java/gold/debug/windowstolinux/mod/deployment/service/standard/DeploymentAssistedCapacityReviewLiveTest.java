@@ -56,8 +56,14 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
         reviewWithoutRemoteDispatch("configuration");
     }
 
+    @Test
+    void reviewsManagedRustBindingWithoutRemoteDispatch() throws Exception {
+        reviewWithoutRemoteDispatch("rust-binding");
+    }
+
     private void reviewWithoutRemoteDispatch(String kind) throws Exception {
-        boolean binding = kind.equals("binding");
+        boolean rustBinding = kind.equals("rust-binding");
+        boolean binding = kind.equals("binding") || rustBinding;
         boolean rust = kind.equals("rust-preparation");
         boolean preparation = kind.equals("preparation") || rust;
         boolean hostProbe = kind.equals("host-probe");
@@ -85,6 +91,7 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                 try (var authority = DeploymentWorkflowAuthorization.open(context, task, server, revision, "AUTOMATIC", true,
                     config ? deploymentGoal(server, "Draft[application=" + configuration.applicationId() + ", normal configuration entries=0, configuration identity=" + configuration.sha256()
                         + "]; review ordinary empty configuration staging, not installation or runtime execution; API-only, no SSH dispatch")
+                        : rustBinding ? deploymentGoal(server, "Draft[application=log-analyzer-api-review, selectedSource=success-log-analyzer, source Rust minimum=1.85, reviewed branch=1.95]; review canonical Rust 1.95 binding, including guarded marker/version verification before sealing; representative request, no SSH dispatch")
                         : rust ? rustDeploymentGoal(server)
                         : hostProbe ? "Review the exact host capability observation for the user's authorized task-board deployment on the selected server; no SSH dispatch"
                         : preparation ? "Review the guarded Java 21 catalog prerequisite for the user's authorized task-board deployment, including permitted official download/install and SYSTEM reuse effects; no SSH dispatch"
@@ -101,7 +108,7 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                          "'" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH
                              + (rust ? "' prepare-toolchains 'prepare' 'RUST' '1.95' '-' '1777' '-'"
                              : "' prepare-toolchains 'prepare' 'JAVA' '21' '-' '300' '-'"))
-                         : binding ? originalBindingCommand()
+                         : binding ? (rustBinding ? rustBindingCommand() : originalBindingCommand())
                          : "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\nstat -f -c '%a %S' -- '/var/lib'\n",
                          new byte[0], Duration.ofSeconds(config ? 90 : hostProbe ? 120 : rust ? 1792 : preparation ? 315 : 20), preparation || hostProbe ? 65536 : 1024)) {
                     var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
@@ -173,6 +180,16 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                         printCause.invoke(null, event.details());
                 }
         }
+    }
+
+    private static String rustBindingCommand() {
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        String source = java.util.Base64.getEncoder().encodeToString("https://static.rust-lang.org/dist/rust-1.95.0-x86_64-unknown-linux-gnu.tar.gz".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String payload = "WTL-TOOLS-1\tcurrent\nRUST\tLANGUAGE_TARGET\tMS45NQ==\tQ2FyZ28udG9tbA==\tSERIES\t1.95\t1.95.0\t"
+            + layout.toolchains() + "/versions/rust-3fa746bb3d818cf2c1af16a59e34fd06b7da0d1dbcdf940f9262ccb889638c53\tMANAGED\t" + source
+            + "\ta47ac940abd12399d59ad15c877e7113fa35f2b9ec7e6a8a045d4fd8b9741dea\n";
+        return gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
+            "'" + layout.helperPath() + "' prepare-toolchains 'bind' '" + java.util.Base64.getEncoder().encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "'");
     }
 
     private static String originalBindingCommand() {

@@ -15,12 +15,40 @@ import gold.debug.windowstolinux.mod.deployment.config.DeploymentConfig;
 import gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout;
 import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Encoding proof never implies installation or path ownership. / 编码证据不等同于安装或路径所有权。 */
 class DeploymentBindingEvidenceRegressionTest {
+    @Test
+    void managedArchiveDigestAndInstallationCacheIdentityDescribeDistinctObjects() throws Exception {
+        var layout = DeploymentRemoteLayout.original();
+        String artifact = "a47ac940abd12399d59ad15c877e7113fa35f2b9ec7e6a8a045d4fd8b9741dea";
+        String key = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+            .digest(("RUST\n1.95.0\n" + artifact).getBytes(StandardCharsets.UTF_8)));
+        assertNotEquals(artifact, key);
+        String directory = layout.toolchains() + "/versions/rust-" + key;
+        String source = Base64.getEncoder().encodeToString("https://static.rust-lang.org/dist/rust-1.95.0-x86_64-unknown-linux-gnu.tar.gz".getBytes(StandardCharsets.UTF_8));
+        String payload = "WTL-TOOLS-1\tcurrent\nRUST\tLANGUAGE_TARGET\tMS45NQ==\tQ2FyZ28udG9tbA==\tSERIES\t1.95\t1.95.0\t"
+            + directory + "\tMANAGED\t" + source + "\t" + artifact + "\n";
+        String encoded = Base64.getEncoder().encodeToString(payload.getBytes(StandardCharsets.UTF_8));
+        var server = new ServerId("fixture");
+        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath()
+            + "' prepare-toolchains 'bind' '" + encoded + "'", layout), new byte[0], Duration.ofSeconds(30), 8192)) {
+            var intent = RemoteActions.command(server, "business-plan", request).withSemantics(new ActionSemantics(
+                "deployment.toolchain.bind.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
+            var facts = new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
+            var binding = facts.path("decodedToolchainBinding");
+            assertEquals(artifact, binding.at("/toolchains/0/sha256").asText());
+            assertEquals(directory, binding.at("/toolchains/0/directory").asText());
+            assertEquals("DESCENDANT", binding.at("/toolchains/0/lexicalRelationToManagedRoot").asText());
+            assertTrue(binding.path("bindingDigestMeaning").isTextual());
+            assertFalse(binding.has("verifiedInstallation"));
+        }
+    }
+
     @ParameterizedTest
     @CsvSource({"/fixture/lib/toolchains/versions/java-a,DESCENDANT", "/fixture/lib/toolchains,SAME",
         "/fixture/lib/toolchains-evil/java-a,OUTSIDE", "/usr/lib/jvm/java-21,OUTSIDE"})
