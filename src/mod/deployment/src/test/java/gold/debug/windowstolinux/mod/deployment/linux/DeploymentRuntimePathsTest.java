@@ -255,6 +255,18 @@ class DeploymentRuntimePathsTest {
     }
 
     @Test
+    void maintenanceEndDeclaresActualApplicationLockDirectory() throws Exception {
+        var peer = new ControlledPeer(request -> "MAINTENANCE=end\n");
+        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
+        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
+        assertEquals(TaskResult.SUCCEEDED, channel.endMaintenance(unit, "d".repeat(64)).outcome());
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
+                new ActionTarget(SERVER.id(), "deployment-application-locks", LAYOUT.applicationLockRoot("demo"))),
+            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
+        assertGuard(peer.commands.getFirst().script());
+    }
+
+    @Test
     void secretStagingDeclaresTheExactCapturedSecretRevisionDestination() throws Exception {
         var peer = new ControlledPeer(request -> "INPUT_STAGED=1\n");
         var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);

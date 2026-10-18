@@ -311,3 +311,16 @@ CLI21 prepare成功，bind仍有效DENY；理由已经变为缺少源码必需�
 - 逐轮原始日志/XML、过滤JFR异常及精确源码补丁保留。本轮诊断JFR均已随验收JVM退出停止。最新token-summary在CLI21后为4042320 known /781物理（1输入/输出UNKNOWN）/192项能力验证用量UNKNOWN；暂停前将纳入CLI22与恢复生成新汇总，最终仍需新数据库用量对账。
 
 暂停汇总已刷新：已知提供方Token 4237072，物理生成尝试815（输入/输出用量UNKNOWN 1次），能力验证用量UNKNOWN 196项；包含失败、API-only及恢复。无新增模型/SSH调用，旧audit07不覆盖新增部分，完整最终对账留待恢复工作时执行。
+
+
+## 用户继续后：CLI22维护收尾与单体清理记账
+
+本地只读检查original-22-inspection-03通过，原任务仍UNKNOWN，远端检查点phase=MAINTENANCE_END_MAY_HAVE_RUN，verifiedOutcome=SUCCEEDED。此前拒绝发生在独立审批、未获得发送许可；单体finishKnown直接mark后调用，漏用多组件发布已有DeploymentPublishCleanupAttempt，导致明确未发送仍被记成可能已发送。现单体三项收尾复用已有工具：仅明确发送前拒绝恢复原阶段，真正UNKNOWN保留MAY。没有修改平台任务、删除检查点或伪造成功。
+
+维护命令实际五参数为end/app/ownerManifestSha256/deployment-releaseSha256/releaseSha256，发布目录由layout派生；新增机械帧证据逐一绑定token后缀与release、空stdin、完整字面命令与声明资源。PublishChannel同时声明真实applicationLockRoot目标，覆盖锁目录及admission/run文件写入与maintenance标记删除。owner与release摘要角色不同；特别明确helper end只校验参数格式、root归属锁目录/标记和精确token，不以owner/expected摘要核实当前发布。原命令、完整helper审查和每次独立新授权保留；没有改helper或服务器命令。
+
+单体原恢复此前拒绝所有MAINTENANCE_END_MAY_HAVE_RUN，因而无法结清历史错误记账。新边界只对这一幂等收尾允许：原账本已有已核实业务结果，原任务独立只读status重新确认对应release的所属维护标记仍在，当前业务状态一致且构建未活动，再经过本条独立审批执行end；helper在排他锁内重核token，外来token拒绝，已不存在则不会重发end。仍禁止重放构建/发布/回滚、重试未知retain或候选清理。新增有标记/已结束/活动构建/外来标记等回环SSH恢复案例及发送前拒绝与UNKNOWN区分案例，验证进行中。此共享单体通道可能影响未来Agent固定命令审查，需保留记录；本次不做Agent真机测试。
+
+maintenance-recovery-unit-01中帧/资源10项及原任务重启恢复11项全部通过；另2项记账测试业务断言通过但结束时触发夹具正常close拒绝UNKNOWN占用，故整次标失败。改为调用既有隔离子JVM夹具，仅重跑这2项（unit-02），不重跑已通过21项。未因夹具错误修改生产关闭/恢复规则。九Java限定格式化已完成。
+
+maintenance-recovery-unit-02两项隔离记账测试通过0跳过；合计23项定点通过（前次21+本次2），未执行全量。下一步只恢复原CLI22任务。

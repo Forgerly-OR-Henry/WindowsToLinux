@@ -147,13 +147,15 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
-@@ -755,7 +755,20 @@
+@@ -755,7 +755,22 @@
              .append(DeploymentBuildCommandChannel.shellQuote(verb));
          for (String value : arguments)
              script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
 -        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output));
 +        var targets = new java.util.HashSet<ActionTarget>();
 +        targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
++        if (verb.equals("application-maintenance"))
++            targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
 +        if (operation.equals("deployment.publication.publish.v1"))
 +            targets.add(new ActionTarget(server.id(), "deployment-candidate", unit.layout().candidateRoot(arguments.get(1))));
 +        if (operation.equals("deployment.publication.snapshot.v1"))
@@ -169,7 +171,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Dispatches one exact fixed command through actual review. / 经真实审核发送一条精确固定命令。
-@@ -766,9 +779,14 @@
+@@ -766,9 +781,14 @@
       * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
      private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
                                                      CommandRequest request) throws ApiException {
@@ -754,7 +756,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -157,6 +191,12 @@
+@@ -157,6 +191,14 @@
          }
          byte[] input = request.stdin();
          try {
@@ -762,12 +764,14 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +                workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
 +            if (operation.equals("deployment.publication.snapshot.v1"))
 +                publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
++            if (operation.equals("deployment.publication.maintenance-end.v1"))
++                publicationMaintenance(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationMaintenance", value));
 +            if (operation.equals("deployment.publication.config.v1"))
 +                stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
              if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                  String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-@@ -201,10 +241,117 @@
+@@ -201,10 +243,136 @@
                                       gold.debug.windowstolinux.appapi.task.run.TaskContext task)
          throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
          var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
@@ -837,6 +841,25 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
 +    }
 +
++    /** Binds the exact maintenance cleanup frame and actual lock paths without asserting live state or permission. */
++    private static java.util.Optional<Map<String, Object>> publicationMaintenance(String script, byte[] input, ActionIntent intent,
++                                                                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
++        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' 'application-maintenance' 'end' ")
++            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '(deployment-([a-f0-9]{64}))' '([a-f0-9]{64})'\\z").matcher(script);
++        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
++        String release = layout.applicationRoot(match.group(1)), locks = layout.applicationLockRoot(match.group(1));
++        if (!match.group(4).equals(match.group(5)) || intent.serverIds().size() != 1
++            || !intent.semantics().orElseThrow().targets().containsAll(Set.of(
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-release", release),
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-application-locks", locks))))
++            throw new IllegalArgumentException("Maintenance token or derived resource bindings differ");
++        return java.util.Optional.of(Map.of("application", match.group(1), "ownershipManifestSha256", match.group(2),
++            "maintenanceToken", match.group(3), "releaseSha256", match.group(5), "derivedReleaseRoot", release,
++            "applicationLockRoot", locks, "maintenanceMarker", locks + "/maintenance",
++            "literalValidation", "EXACT_FRAME_EMPTY_STDIN_TOKEN_RELEASE_AND_DECLARED_DERIVED_PATHS_ONLY",
++            "meaning", "Exact public arguments: end, application, ownership manifest digest, deployment-release token, expected release digest. Ownership and release digests have different roles. Helper end validates argument syntax, root-owned application locks and any existing marker's exact token; it does not verify current release ownership from these digests. It may create the lock directory, opens admission/run lock files, obtains exclusive locks, checks for orphan work, and removes the matching marker if present. No publish, rollback, release deletion or service start is requested. These are pinned helper code semantics, not proof of live state, safety or authority."));
++    }
++
 +    /** Binds the actual configuration frame without disclosing its data or asserting live ownership. */
 +    private static java.util.Optional<Map<String, Object>> stagedConfiguration(String script, byte[] input, ActionIntent intent,
 +                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
@@ -885,7 +908,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
-@@ -216,7 +363,7 @@
+@@ -216,7 +384,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -894,7 +917,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +375,14 @@
+@@ -228,14 +396,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -911,7 +934,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +397,53 @@
+@@ -250,12 +418,53 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -1274,6 +1297,79 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          } catch (ApiException unavailable) {
              // The existing logger reports its storage issue; diagnostics do not alter the business result.
          }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java
+@@ -217,24 +217,25 @@
+     private static void finishKnown(DeploymentPublishChannel channel, DeploymentUnitIdentity unit,
+                                     String candidateId, String releaseSha256, boolean successful, DeploymentPublishCleanupActionLog journal) {
+         try {
+-            if (!journal.mark("MAINTENANCE_END_MAY_HAVE_RUN")
+-                || channel.endMaintenance(unit, releaseSha256).outcome() != TaskResult.SUCCEEDED
++            if (!gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentPublishCleanupAttempt.run(
++                journal, "MAINTENANCE_END_MAY_HAVE_RUN", () -> channel.endMaintenance(unit, releaseSha256))
+                 || !journal.mark("MAINTENANCE_ENDED"))
+                 return;
+             if (successful) {
+-                if (!journal.mark("RETAIN_MAY_HAVE_RUN") || channel.retain(unit).outcome() != TaskResult.SUCCEEDED)
++                if (!gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentPublishCleanupAttempt.run(
++                    journal, "RETAIN_MAY_HAVE_RUN", () -> channel.retain(unit)))
+                     return;
+                 if (!journal.mark("RETAIN_VERIFIED"))
+                     return;
+             }
+-            if (!journal.mark("CANDIDATE_CLEANUP_MAY_HAVE_RUN")
+-                || channel.cleanupCandidate(unit, candidateId).outcome() != TaskResult.SUCCEEDED)
++            if (!gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.cleanup.DeploymentPublishCleanupAttempt.run(
++                journal, "CANDIDATE_CLEANUP_MAY_HAVE_RUN", () -> channel.cleanupCandidate(unit, candidateId)))
+                 return;
+             if (!journal.mark("CANDIDATE_CLEANED"))
+                 return;
+             journal.remoteClean();
+         } catch (ApiException unconfirmedCleanup) {
+-            // The exact pending step remains occupied in the original task checkpoint.
++            // The original checkpoint preserves either the unsent phase or the uncertain dispatched step.
+         }
+     }
+ 
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRecovery.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRecovery.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRecovery.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRecovery.java
+@@ -197,6 +197,8 @@
+                                                                 Optional<DeploymentPublishProposal> proposal, DeploymentPublishRecoveryFacts facts,
+                                                                 DeploymentOriginalPublishStatus status, DeploymentPublishChannel channel,
+                                                                 DeploymentPublishCleanupActionLog journal) throws ApiException, SQLException {
++        if (status.buildActive())
++            return unknown("DEPLOYMENT_ORIGINAL_BUILD_STILL_ACTIVE");
+         if (facts.verifiedOutcome().isPresent()) {
+             var result = verified(facts, proposal);
+             if (result.outcome() == TaskResult.SUCCEEDED && !status.current().equals(facts.release())
+@@ -205,8 +207,6 @@
+                 return unknown("DEPLOYMENT_ORIGINAL_BUSINESS_STATE_CHANGED");
+             return result;
+         }
+-        if (status.buildActive())
+-            return unknown("DEPLOYMENT_ORIGINAL_BUILD_STILL_ACTIVE");
+         if (record.outcome().filter(outcome -> outcome != TaskResult.UNKNOWN).isPresent()) {
+             var result = known(record, proposal, facts);
+             if (result.outcome() == TaskResult.UNKNOWN)
+@@ -338,13 +338,14 @@
+             return true;
+         var current = status;
+         var phase = journal.facts().path("phase").asText();
+-        if (successful && !current.current().equals(facts.release()))
++        if (current.buildActive() || successful && !current.current().equals(facts.release()))
+             return false;
+         if (!successful && facts.release().isPresent() && !restored(facts, current, channel)
+             || !successful && facts.release().isEmpty() && current.snapshot())
+             return false;
+         if (current.maintenance()) {
+-            if (facts.release().isEmpty() || phase.equals("MAINTENANCE_END_MAY_HAVE_RUN")
++            // A fresh owned marker proves this idempotent cleanup is still pending; the helper rechecks its token under exclusive locks.
++            if (facts.release().isEmpty() || phase.equals("MAINTENANCE_END_MAY_HAVE_RUN") && facts.verifiedOutcome().isEmpty()
+                 || cleanupOrder(phase) >= cleanupOrder("MAINTENANCE_ENDED")
+                 || !journal.mark("MAINTENANCE_END_MAY_HAVE_RUN"))
+                 return false;
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java
@@ -1288,7 +1384,746 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
-@@ -6086,6 +6086,7 @@
+@@ -389,6 +389,7 @@
+     }
+ 
+     private static final String CURRENT_BACKUP_FORMAT = "WTL_PRE_REINSTALL_BUNDLE_1";
++
+     private static final String CURRENT_CONTENT_FORMAT = "WTL_PRE_REINSTALL_CONTENT_DIGEST_1";
+ 
+     private static boolean currentBackupFormat(com.fasterxml.jackson.databind.JsonNode plan) {
+@@ -431,7 +432,7 @@
+     }
+ 
+     private static com.fasterxml.jackson.databind.JsonNode currentBackupSelection(Path workspace, com.fasterxml.jackson.databind.JsonNode plan,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
++                                                                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
+         backupRequire(currentBackupFormat(plan) && Set.of("FILES_SNAPSHOT", "DATABASE_SNAPSHOT").contains(plan.path("kind").asText()));
+         var selection = currentBackupSelectedInput(workspace, plan, layout, false);
+         if (plan.path("sourceFacts").has("currentContentObservation")) currentContentForPlan(workspace, plan, layout);
+@@ -439,7 +440,7 @@
+     }
+ 
+     private static com.fasterxml.jackson.databind.JsonNode currentBackupSelectedInput(Path workspace, com.fasterxml.jackson.databind.JsonNode plan,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, boolean content) throws Exception {
++                                                                                      gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, boolean content) throws Exception {
+         backupRequire(content ? currentContentFormat(plan) : currentBackupFormat(plan));
+         var version = plan.path("sourceFacts").path("currentBackupProducerVersion");
+         boolean filesV2 = !version.isMissingNode();
+@@ -496,11 +497,12 @@
+             && backupBytesSha(currentBackupCanonical(manifest)).equals(result.path("manifestSha256").asText()));
+     }
+ 
+-    private record CurrentBackupProof(String sha, String task, com.fasterxml.jackson.databind.JsonNode receipt, Map<String, com.fasterxml.jackson.databind.JsonNode> documents) {
++    private record CurrentBackupProof(String sha, String task, com.fasterxml.jackson.databind.JsonNode receipt,
++                                      Map<String, com.fasterxml.jackson.databind.JsonNode> documents) {
+     }
+ 
+     private static CurrentBackupProof currentBackupProof(Path workspace, Path file, String sha,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
++                                                         gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
+         var proof = currentBackupKnownCommand(workspace, file, sha, layout, CURRENT_BACKUP_FORMAT);
+         var plan = proof.documents().get("producerPlan");
+         var expected = currentBackupSelection(workspace, plan, layout);
+@@ -510,13 +512,14 @@
+             var archived = proof.receipt().path("manifest").path("items");
+             backupRequire(observed.size() == archived.size());
+             for (int index = 0; index < observed.size(); index++)
+-                for (String field : List.of("source", "sourceMetadata", "bytes", "sha256")) backupRequire(observed.get(index).path(field).equals(archived.get(index).path(field)));
++                for (String field : List.of("source", "sourceMetadata", "bytes", "sha256"))
++                    backupRequire(observed.get(index).path(field).equals(archived.get(index).path(field)));
+         }
+         return proof;
+     }
+ 
+     private static CurrentBackupProof currentBackupKnownCommand(Path workspace, Path file, String sha,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, String format) throws Exception {
++                                                                gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, String format) throws Exception {
+         var proof = backupBoundJson(workspace, file, sha, 65536);
+         var roles = List.of("producerPlan", "approvalFacts", "approval", "grant", "sdkResult", "taskObservation");
+         backupCommandFields(proof, Set.of("schema", "format", "producerPlan", "approvalFacts", "approval", "grant", "sdkResult", "taskObservation"));
+@@ -546,7 +549,8 @@
+         backupRequire(backupComparableWorkflowFacts(facts).equals(backupComparableWorkflowFacts(JSON.readTree(backupCommandFacts(plan,
+             java.util.UUID.fromString(task), facts.path("exactIntent").path("revision").asText())))));
+         String binding = inputDigest(facts.toString());
+-        for (String role : List.of("approvalFacts", "approval", "grant", "sdkResult")) backupRequire(documents.get(role).path("bindingSha256").asText().equals(binding));
++        for (String role : List.of("approvalFacts", "approval", "grant", "sdkResult"))
++            backupRequire(documents.get(role).path("bindingSha256").asText().equals(binding));
+         backupRequire(documents.get("approval").path("decision").asText().equals("APPROVE") && documents.get("approval").path("requiresUserConfirmation").isBoolean()
+             && documents.get("grant").path("outcome").asText().equals("SUCCEEDED") && sdk.path("grantId").equals(documents.get("grant").path("grantId"))
+             && sdk.path("planSha256").asText().equals(plan.sha()) && documents.get("taskObservation").path("task").asText().equals(task)
+@@ -557,7 +561,7 @@
+     }
+ 
+     private static CurrentBackupProof currentContentProof(Path workspace, com.fasterxml.jackson.databind.JsonNode reference,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
++                                                          gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
+         backupCommandFields(reference, Set.of("file", "sha256"));
+         var proof = currentBackupKnownCommand(workspace, Path.of(reference.path("file").asText()), reference.path("sha256").asText(), layout, CURRENT_CONTENT_FORMAT);
+         var plan = proof.documents().get("producerPlan");
+@@ -567,7 +571,7 @@
+     }
+ 
+     private static void currentContentResult(com.fasterxml.jackson.databind.JsonNode result, com.fasterxml.jackson.databind.JsonNode expected,
+-        String selectionSha, String backupsRoot) throws Exception {
++                                             String selectionSha, String backupsRoot) throws Exception {
+         backupCommandFields(result, Set.of("schema", "format", "kind", "selectionSha256", "run", "operationRoot", "items", "parents", "destination", "consistency", "complete"));
+         backupRequire(result.path("schema").isInt() && result.path("schema").intValue() == 1 && result.path("format").asText().equals(CURRENT_CONTENT_FORMAT)
+             && result.path("kind").asText().equals("FILES_CONTENT_DIGEST") && result.path("selectionSha256").asText().equals(selectionSha)
+@@ -623,7 +627,7 @@
+     }
+ 
+     private static CurrentBackupProof currentContentForPlan(Path workspace, com.fasterxml.jackson.databind.JsonNode plan,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
++                                                            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
+         backupRequire(currentBackupFormat(plan) && plan.path("kind").asText().equals("FILES_SNAPSHOT"));
+         var reference = plan.path("sourceFacts").path("currentContentObservation");
+         backupRequire(java.util.stream.StreamSupport.stream(plan.path("evidence").spliterator(), false).anyMatch(reference::equals));
+@@ -646,9 +650,9 @@
+     }
+ 
+     private static boolean currentBackupUnverifiedDownload(TaskSnapshot previous, java.util.UUID original,
+-        gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot captured, String capturedHash,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, boolean resourcesReleased, boolean noLocalArtifacts,
+-        com.fasterxml.jackson.databind.JsonNode claim, com.fasterxml.jackson.databind.JsonNode producer) {
++                                                           gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot captured, String capturedHash,
++                                                           gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout, boolean resourcesReleased, boolean noLocalArtifacts,
++                                                           com.fasterxml.jackson.databind.JsonNode claim, com.fasterxml.jackson.databind.JsonNode producer) {
+         try {
+             if (!original.equals(java.util.UUID.fromString("385cc829-0d70-4717-9751-7372f1eca89f")) || !previous.id().equals(original)
+                 || !previous.ownerId().equals(OWNER) || !previous.ownerVersion().equals(VERSION) || !previous.type().equals("deployment.backup.current-download")
+@@ -666,7 +670,9 @@
+                 && claim.path("remotePath").equals(producer.path("bundlePath")) && claim.path("expectedSha256").equals(producer.path("bundleSha256"))
+                 && claim.path("expectedBytes").isIntegralNumber() && claim.path("expectedBytes").canConvertToLong() && claim.path("expectedBytes").longValue() == 143360
+                 && claim.path("expectedBytes").equals(producer.path("bundleBytes"));
+-        } catch (Exception unknown) { return false; }
++        } catch (Exception unknown) {
++            return false;
++        }
+     }
+ 
+     private void currentBackupNoLocalArtifacts(BackupProtectedRun prepared) throws Exception {
+@@ -689,8 +695,10 @@
+         var previous = new TaskSnapshot(original, OWNER, VERSION, "deployment.backup.current-download", gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN,
+             Optional.empty(), "synthetic", java.time.Instant.EPOCH, Optional.empty(), List.of());
+         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+-        var payload = JSON.createObjectNode().put("formatVersion", 1).put("task", original.toString()).put("layoutSha256", layout.digest()); payload.set("layout", JSON.readTree(layout.canonical()));
+-        var captured = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(1, payload.toString(), true); String hash = inputDigest(payload.toString());
++        var payload = JSON.createObjectNode().put("formatVersion", 1).put("task", original.toString()).put("layoutSha256", layout.digest());
++        payload.set("layout", JSON.readTree(layout.canonical()));
++        var captured = new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(1, payload.toString(), true);
++        String hash = inputDigest(payload.toString());
+         var producer = JSON.createObjectNode().put("bundlePath", "/public/bundle.tar").put("bundleSha256", "a".repeat(64)).put("bundleBytes", 143360);
+         var claim = JSON.createObjectNode().put("remotePath", "/public/bundle.tar").put("expectedSha256", "a".repeat(64)).put("expectedBytes", 143360)
+             .put("backupComplete", false).put("kind", "DATABASES").put("run", "pre-reinstall-download-databases-296-01")
+@@ -717,41 +725,61 @@
+         var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+         assertEquals(java.util.UUID.fromString("385cc829-0d70-4717-9751-7372f1eca89f"), original);
+         assertEquals("SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc", System.getProperty("managed.ssh.fingerprint"));
+-        var prepared = currentBackupPreparedRun("DATABASES"); currentBackupNoLocalArtifacts(prepared);
++        var prepared = currentBackupPreparedRun("DATABASES");
++        currentBackupNoLocalArtifacts(prepared);
+         Path evidence = workspace().resolve(".ai-workspace/agent-live-evidence/agent-autonomy-20261012/selective-pre-reinstall-bundles-296");
+         var proof = currentBackupProof(workspace(), evidence.resolve("inputs/producer-proof-databases.json"), "918eeb9fd71218392d99571c672f54cd89dd1795254296b3b7618875f53a6de9", backupLayout());
+-        Path claimFile = evidence.resolve("pre-reinstall-download-databases-296-01/current-download-claim.json"); backupCanonical(claimFile);
+-        backupRequire(Files.size(claimFile) <= 4096); byte[] claimBytes = Files.readAllBytes(claimFile); var claim = SDK_METADATA_JSON.readTree(claimBytes);
++        Path claimFile = evidence.resolve("pre-reinstall-download-databases-296-01/current-download-claim.json");
++        backupCanonical(claimFile);
++        backupRequire(Files.size(claimFile) <= 4096);
++        byte[] claimBytes = Files.readAllBytes(claimFile);
++        var claim = SDK_METADATA_JSON.readTree(claimBytes);
+         try (var runtime = open()) {
+             var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageHost() {
+-                public void show(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key, gold.debug.windowstolinux.appapi.ui.page.PageSpec spec, javax.swing.JComponent component) { throw new AssertionError("No recovery business pages"); }
+-                public void focus(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) { }
+-                public void remove(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) { }
+-                public void environment(gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) { }
++                public void show(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key, gold.debug.windowstolinux.appapi.ui.page.PageSpec spec, javax.swing.JComponent component) {
++                    throw new AssertionError("No recovery business pages");
++                }
++
++                public void focus(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) {
++                }
++
++                public void remove(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) {
++                }
++
++                public void environment(gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) {
++                }
+             }, new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
+             var started = runtime.startDevelopmentMods(workspace(), pages);
+-            assertTrue(started.running().isEmpty()); assertTrue(started.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")));
+-            var context = runtime.modContexts().get(OWNER).context(); assertEquals(gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.RECOVERY, context.launchMode());
++            assertTrue(started.running().isEmpty());
++            assertTrue(started.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")));
++            var context = runtime.modContexts().get(OWNER).context();
++            assertEquals(gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.RECOVERY, context.launchMode());
+             try (var registration = context.tasks().registerRecovery("deployment.backup.current-download", (previous, task) -> {
+                 try {
+-                    var checkpoint = context.tasks().findCheckpoint(task, "deployment.config.remote-layout.v1").orElseThrow(); var captured = checkpoint.snapshot();
++                    var checkpoint = context.tasks().findCheckpoint(task, "deployment.config.remote-layout.v1").orElseThrow();
++                    var captured = checkpoint.snapshot();
+                     var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.remoteLayout(context.tasks(), task);
+                     currentBackupNoLocalArtifacts(prepared);
+                     currentBackupKnownProducer(context.tasks().findArchived(java.util.UUID.fromString(proof.task()), task).orElseThrow(), proof.task());
+                     if (!currentBackupUnverifiedDownload(previous, task.id(), captured, "615f3e733efb060e851385c358a241435a7ca535b675c30a96fc13424d08dde5", layout,
+-                            context.tasks().resourcesReleased(task), true, claim, proof.receipt())
++                        context.tasks().resourcesReleased(task), true, claim, proof.receipt())
+                         || context.tasks().findCheckpoint(task, gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner.KEY).isPresent()
+                         || !layout.equals(backupLayout()) || !java.util.Arrays.equals(claimBytes, Files.readAllBytes(claimFile))
+-                        || !captured.equals(checkpoint.snapshot()) || !context.tasks().resourcesReleased(task)) return currentBackupRecoveryUnknown();
++                        || !captured.equals(checkpoint.snapshot()) || !context.tasks().resourcesReleased(task))
++                        return currentBackupRecoveryUnknown();
+                     currentBackupNoLocalArtifacts(prepared);
+                     return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+                         "BACKUP_CURRENT_DOWNLOAD_NO_VERIFIED_LOCAL_BACKUP", "Original download has no verified local backup artifact; released physical resources and exact local absence allow failed settlement, without proving that no SSH/dispatch occurred",
+                         Map.of("task", task.id().toString(), "backupComplete", "false"), Optional.of(task.id()))));
+-                } catch (Exception unconfirmed) { return currentBackupRecoveryUnknown(); }
++                } catch (Exception unconfirmed) {
++                    return currentBackupRecoveryUnknown();
++                }
+             })) {
+                 var result = runtime.tasks().reconcile(original).toCompletableFuture().get(2, TimeUnit.MINUTES);
+                 System.out.println("CURRENT_BACKUP_UNVERIFIED_DOWNLOAD_RECONCILED " + result);
+-                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, result.state()); assertEquals(Optional.of(TaskResult.FAILED), result.outcome()); assertTrue(result.blockers().isEmpty());
++                assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, result.state());
++                assertEquals(Optional.of(TaskResult.FAILED), result.outcome());
++                assertTrue(result.blockers().isEmpty());
+             }
+         }
+     }
+@@ -809,7 +837,8 @@
+             && !Boolean.getBoolean("managed.runtime.agentLive") && !Boolean.getBoolean("managed.runtime.backupLive") && !Boolean.getBoolean("managed.runtime.backupCommandLive"));
+         var binding = backupCurrentBinding(workspace(), Path.of(System.getProperty("managed.live.originalState")),
+             System.getProperty("managed.live.originalTask"), System.getProperty("managed.ssh.fingerprint"));
+-        backupCanonical(binding.directory()); backupCanonical(binding.directory().resolve("data"));
++        backupCanonical(binding.directory());
++        backupCanonical(binding.directory().resolve("data"));
+         root = binding.directory();
+         var layout = backupLayout();
+         backupRequire(layout.equals(new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
+@@ -825,7 +854,11 @@
+         Path plain = protectedRun.staging().resolve(kind + ".plain"), cipher = protectedRun.directory().resolve(kind + ".dpapi");
+         backupWriteRecord(evidence, "current-download-claim.json", Map.of("producerProofSha256", proofSha, "run", run, "kind", kind, "remotePath", remote,
+             "expectedBytes", bytes, "expectedSha256", sha, "backupComplete", false));
+-        aiEnabled = true; agentMode = true; connectionOnly = false; agentApproval = "AUTOMATIC"; agentRemember = false;
++        aiEnabled = true;
++        agentMode = true;
++        connectionOnly = false;
++        agentApproval = "AUTOMATIC";
++        agentRemember = false;
+         try (var runtime = open()) {
+             start(runtime, true);
+             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+@@ -850,15 +883,21 @@
+                     var capabilityRef = JSON.createObjectNode().put("file", System.getProperty("managed.backup.protectionEvidenceFile", ""))
+                         .put("sha256", System.getProperty("managed.backup.protectionEvidenceSha256", ""));
+                     var facts = new LinkedHashMap<String, Object>();
+-                    facts.put("currentBackupFormat", CURRENT_BACKUP_FORMAT); facts.put("scope", "BACKUP_ONLY"); facts.put("task", task.id().toString());
+-                    facts.put("run", run); facts.put("revision", revision); facts.put("producerProof", Map.of("file", proofFile.toString(), "sha256", proofSha));
++                    facts.put("currentBackupFormat", CURRENT_BACKUP_FORMAT);
++                    facts.put("scope", "BACKUP_ONLY");
++                    facts.put("task", task.id().toString());
++                    facts.put("run", run);
++                    facts.put("revision", revision);
++                    facts.put("producerProof", Map.of("file", proofFile.toString(), "sha256", proofSha));
+                     facts.put("producerOriginalReferences", backupBoundJson(workspace(), proofFile, proofSha, 65536));
+                     facts.put("producerSuccessReceipt", receipt);
+                     facts.put("producerPlanBinding", Map.of("planSha256", proof.documents().get("sdkResult").path("planSha256"),
+                         "originalApprovalBinding", proof.documents().get("approvalFacts").path("bindingSha256"),
+                         "selection", proof.documents().get("producerPlan").path("sourceFacts").path("selection")));
+-                    facts.put("producerApproval", proof.documents().get("approval")); facts.put("producerGrant", proof.documents().get("grant"));
+-                    facts.put("producerTask", proof.documents().get("taskObservation")); facts.put("transfer", backupIntentFacts(intent));
++                    facts.put("producerApproval", proof.documents().get("approval"));
++                    facts.put("producerGrant", proof.documents().get("grant"));
++                    facts.put("producerTask", proof.documents().get("taskObservation"));
++                    facts.put("transfer", backupIntentFacts(intent));
+                     String fixture = Files.readString(workspace().resolve("src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java"));
+                     facts.put("producerValidationSource", Map.of("currentBackupProof", backupProtectionMethod(fixture, "currentBackupProof"),
+                         "currentBackupKnownCommand", backupProtectionMethod(fixture, "currentBackupKnownCommand"),
+@@ -873,12 +912,16 @@
+                             "currentContentForPlan", backupProtectionMethod(fixture, "currentContentForPlan"), "currentContentResult", backupProtectionMethod(fixture, "currentContentResult")));
+                     }
+                     facts.put("sourceDigestMeaning", "Asserted by the fully bound successful producer; not an APP-preceding FileQuery observation. SDK verifies content only after consuming the new grant.");
+-                    facts.put("expectedBytes", bytes); facts.put("expectedSha256", sha); facts.put("conflict", "SKIP");
++                    facts.put("expectedBytes", bytes);
++                    facts.put("expectedSha256", sha);
++                    facts.put("conflict", "SKIP");
+                     facts.put("preparedTarget", Map.of("proofSha256", protectedRun.proofSha(), "root", protectedRun.rootAcl(), "staging", protectedRun.stagingAcl(), "marker", protectedRun.markerAcl()));
+-                    facts.put("protectionCapabilityEvidence", capabilityRef); facts.put("historicalProtectionCapability", backupProtectionCapability(workspace(), capabilityRef));
++                    facts.put("protectionCapabilityEvidence", capabilityRef);
++                    facts.put("historicalProtectionCapability", backupProtectionCapability(workspace(), capabilityRef));
+                     facts.put("currentNativeSdkSources", currentBackupNativeTransferSources(workspace()));
+                     facts.put("protectionContract", "One exact native APP/new grant, SDK SUCCEEDED exact local/remote path/bytes/SHA, then current-user DPAPI CREATE_NEW, disk-read/unprotect original SHA+length, same owned plaintext identity/DACL/hash before deletion. UNKNOWN/failed transfer/protection preserves unconfirmed plaintext/.part. Never assert global backupComplete, erase SDK/internal copies, clean remote originals or replay old grants.");
+-                    facts.put("payloadIncluded", false); facts.put("backupComplete", false);
++                    facts.put("payloadIncluded", false);
++                    facts.put("backupComplete", false);
+                     String encoded = JSON.writeValueAsString(facts);
+                     backupRequire(encoded.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= BACKUP_PROVENANCE_REVIEW_LIMIT);
+                     var batch = new BackupFrozenBatch(encoded, inputDigest(encoded), List.of());
+@@ -888,24 +931,32 @@
+                                 && context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL, task).equals(revision));
+                             backupProtectedRunUnchanged(protectedRun, acl);
+                             backupRequire(!Files.exists(plain, java.nio.file.LinkOption.NOFOLLOW_LINKS) && !Files.exists(cipher, java.nio.file.LinkOption.NOFOLLOW_LINKS));
+-                        } catch (Exception changed) { throw new IllegalStateException("CURRENT_BACKUP_FROZEN_DOWNLOAD_CHANGED", changed); }
++                        } catch (Exception changed) {
++                            throw new IllegalStateException("CURRENT_BACKUP_FROZEN_DOWNLOAD_CHANGED", changed);
++                        }
+                     };
+                     recheck.run();
+                     var decision = backupBatchReview(workspace(), context, task, revision, batch, evidence, "current-download");
+-                    if (!decision.decision().equals("APPROVE")) return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.ACCESS_DENIED,
+-                        "BACKUP_CURRENT_DOWNLOAD_REVIEW_DENIED", "Independent review refused this unsent transfer", Map.of("task", task.id().toString(), "reason", decision.reason()), Optional.of(task.id()))));
++                    if (!decision.decision().equals("APPROVE"))
++                        return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.ACCESS_DENIED,
++                            "BACKUP_CURRENT_DOWNLOAD_REVIEW_DENIED", "Independent review refused this unsent transfer", Map.of("task", task.id().toString(), "reason", decision.reason()), Optional.of(task.id()))));
+                     recheck.run();
+                     var grant = context.interaction().approveReviewedAction(intent, Optional.empty(), decision.requiresUserConfirmation(), decision.reason(), task);
+                     backupWriteRecord(evidence, "current-download-grant.json", Map.of("batchSha256", batch.sha(), "outcome", grant.outcome().name(), "grantId", grant.value().map(value -> value.id().toString()).orElse("NONE")));
+                     var result = backupDispatch(batch.sha(), inputDigest(encoded), decision, grant, new java.util.HashSet<>(), actual -> {
+-                        recheck.run(); return session.download(request, actual, TransferConflictChoice.SKIP);
++                        recheck.run();
++                        return session.download(request, actual, TransferConflictChoice.SKIP);
+                     });
+                     var observed = new LinkedHashMap<String, Object>();
+-                    observed.put("task", task.id().toString()); observed.put("producerProofSha256", proofSha); observed.put("batchSha256", batch.sha());
+-                    observed.put("grantId", grant.value().orElseThrow().id().toString()); observed.put("outcome", result.outcome().name());
++                    observed.put("task", task.id().toString());
++                    observed.put("producerProofSha256", proofSha);
++                    observed.put("batchSha256", batch.sha());
++                    observed.put("grantId", grant.value().orElseThrow().id().toString());
++                    observed.put("outcome", result.outcome().name());
+                     result.value().ifPresent(value -> observed.put("sdkReceipt", Map.of("bytes", value.transferredBytes(), "sha256", value.sha256(), "localPath", value.localPath().toString(), "remotePath", value.remoteAbsolutePath())));
+                     backupWriteRecord(evidence, "current-download-sdk-receipt.json", observed);
+-                    if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
++                    if (result.outcome() != TaskResult.SUCCEEDED)
++                        return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                     var actual = result.value().orElseThrow();
+                     backupRequire(actual.localPath().equals(plain) && actual.remoteAbsolutePath().equals(remote) && actual.transferredBytes() == bytes && actual.sha256().equals(sha));
+                     var sequence = new AtomicInteger();
+@@ -941,19 +992,24 @@
+     }
+ 
+     private static Map<String, com.fasterxml.jackson.databind.JsonNode> currentContentPublicDocuments(Path workspace, Path directory,
+-        com.fasterxml.jackson.databind.node.ObjectNode planNode, com.fasterxml.jackson.databind.JsonNode receipt,
+-        gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
+-        Path file = directory.resolve("producerPlan.json"); Files.writeString(file, planNode.toString());
++                                                                                                      com.fasterxml.jackson.databind.node.ObjectNode planNode, com.fasterxml.jackson.databind.JsonNode receipt,
++                                                                                                      gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws Exception {
++        Path file = directory.resolve("producerPlan.json");
++        Files.writeString(file, planNode.toString());
+         var plan = backupCommandPlan(workspace, file, backupBytesSha(Files.readAllBytes(file)), planNode.path("run").asText(), SERVER,
+             "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc", layout.digest());
+-        var task = java.util.UUID.randomUUID(); String grant = java.util.UUID.randomUUID().toString();
+-        var facts = SDK_METADATA_JSON.readTree(backupCommandFacts(plan, task, "b".repeat(64))); String binding = inputDigest(facts.toString());
+-        var documents = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>(); documents.put("producerPlan", planNode);
++        var task = java.util.UUID.randomUUID();
++        String grant = java.util.UUID.randomUUID().toString();
++        var facts = SDK_METADATA_JSON.readTree(backupCommandFacts(plan, task, "b".repeat(64)));
++        String binding = inputDigest(facts.toString());
++        var documents = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++        documents.put("producerPlan", planNode);
+         documents.put("approvalFacts", JSON.createObjectNode().put("bindingSha256", binding).set("facts", facts));
+         documents.put("approval", JSON.createObjectNode().put("bindingSha256", binding).put("decision", "APPROVE").put("requiresUserConfirmation", false));
+         documents.put("grant", JSON.createObjectNode().put("bindingSha256", binding).put("outcome", "SUCCEEDED").put("grantId", grant));
+         var sdk = (com.fasterxml.jackson.databind.node.ObjectNode) JSON.valueToTree(backupCommandReceipt(success(new CommandResult(Optional.of(0), receipt.toString(), "", false))));
+-        sdk.put("task", task.toString()).put("bindingSha256", binding).put("grantId", grant).put("planSha256", plan.sha()); documents.put("sdkResult", sdk);
++        sdk.put("task", task.toString()).put("bindingSha256", binding).put("grantId", grant).put("planSha256", plan.sha());
++        documents.put("sdkResult", sdk);
+         documents.put("taskObservation", JSON.createObjectNode().put("task", task.toString()).put("state", "ENDED").put("outcome", "SUCCEEDED").put("planSha256", plan.sha()));
+         return documents;
+     }
+@@ -963,7 +1019,8 @@
+     void currentContentEvidenceRequiresExactSuccessfulOrderedHashes() throws Exception {
+         String actualFilesV2 = System.getProperty("managed.backup.currentFilesV2PlanTestFile", "");
+         if (!actualFilesV2.isBlank()) {
+-            Path path = Path.of(actualFilesV2); var node = SDK_METADATA_JSON.readTree(Files.readAllBytes(path));
++            Path path = Path.of(actualFilesV2);
++            var node = SDK_METADATA_JSON.readTree(Files.readAllBytes(path));
+             var actualLayout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
+             var plan = backupCommandPlan(workspace(), path, System.getProperty("managed.backup.currentFilesV2PlanTestSha256"), node.path("run").asText(), SERVER,
+                 "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc", actualLayout.digest());
+@@ -974,11 +1031,13 @@
+         }
+         String actualPlan = System.getProperty("managed.backup.currentContentPlanTestFile", "");
+         if (!actualPlan.isBlank()) {
+-            Path path = Path.of(actualPlan); var node = SDK_METADATA_JSON.readTree(Files.readAllBytes(path));
++            Path path = Path.of(actualPlan);
++            var node = SDK_METADATA_JSON.readTree(Files.readAllBytes(path));
+             var actualLayout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
+             var plan = backupCommandPlan(workspace(), path, System.getProperty("managed.backup.currentContentPlanTestSha256"), node.path("run").asText(), SERVER,
+                 "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc", actualLayout.digest());
+-            assertTrue(currentContentFormat(node)); currentBackupSelectedInput(workspace(), node, actualLayout, true);
++            assertTrue(currentContentFormat(node));
++            currentBackupSelectedInput(workspace(), node, actualLayout, true);
+             assertTrue(node.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 48000);
+             assertTrue(backupCommandReviewInput(workspace(), plan, backupCommandFacts(plan, java.util.UUID.randomUUID(), "b".repeat(64)))
+                 .getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= BACKUP_PROVENANCE_REVIEW_LIMIT);
+@@ -986,16 +1045,21 @@
+         Path workspace = Files.createDirectory(root.resolve("public-content-protocol"));
+         String directory = "src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/";
+         for (String name : List.of("current-pre-reinstall-backup.py", "current-pre-reinstall-content-digest.py", "current-pre-reinstall-backup-files-v2.py")) {
+-            Path target = workspace.resolve(directory + name); Files.createDirectories(target.getParent());
+-            try (var input = getClass().getResourceAsStream(name)) { Files.copy(Objects.requireNonNull(input), target); }
++            Path target = workspace.resolve(directory + name);
++            Files.createDirectories(target.getParent());
++            try (var input = getClass().getResourceAsStream(name)) {
++                Files.copy(Objects.requireNonNull(input), target);
++            }
+         }
+         Path evidence = Files.createDirectories(workspace.resolve(".ai-workspace/agent-live-evidence/public-content"));
+-        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original(); String backups = layout.paths().stateRoot() + "/backups";
++        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        String backups = layout.paths().stateRoot() + "/backups";
+         var selection = JSON.createObjectNode().put("schema", 1).put("format", CURRENT_BACKUP_FORMAT).put("kind", "FILES").put("run", "public-future-files")
+             .put("operationRoot", backups + "/public-future-files-" + "a".repeat(16));
+         var selected = selection.putArray("items").addObject().put("source", "/public/source.txt");
+         selected.putObject("sourceMetadata").put("kind", "f").put("bytes", 4).put("device", 1).put("inode", 2).put("mode", "600").put("uid", 0).put("gid", 0).put("mtime", "1.0000000000");
+-        Path selectionFile = evidence.resolve("selection.json"); Files.writeString(selectionFile, selection.toString());
++        Path selectionFile = evidence.resolve("selection.json");
++        Files.writeString(selectionFile, selection.toString());
+         String selectionSha = backupBytesSha(Files.readAllBytes(selectionFile)), contentSha = backupBytesSha("test".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+         var selectionRef = JSON.createObjectNode().put("file", selectionFile.toString()).put("sha256", selectionSha);
+         String readonly = Files.readString(workspace.resolve(directory + "current-pre-reinstall-content-digest.py"));
+@@ -1009,9 +1073,12 @@
+         var observed = JSON.createObjectNode().put("schema", 1).put("format", CURRENT_CONTENT_FORMAT).put("kind", "FILES_CONTENT_DIGEST").put("selectionSha256", selectionSha)
+             .put("run", selection.path("run").asText()).put("operationRoot", selection.path("operationRoot").asText()).put("consistency", "ORDERED_FD_STABLE_READ_NOT_CROSS_FILE_ATOMIC").put("complete", true);
+         observed.putArray("items").add(((com.fasterxml.jackson.databind.node.ObjectNode) selected.deepCopy()).put("index", 0).put("bytes", 4).put("sha256", contentSha));
+-        var parents = observed.putArray("parents"); var names = new java.util.TreeSet<String>(Set.of("/", "/public"));
+-        for (String name = backups; !name.equals("/"); name = name.substring(0, Math.max(1, name.lastIndexOf('/')))) names.add(name);
+-        for (String name : names) parents.addObject().put("source", name).put("kind", "d").put("device", 1).put("inode", parents.size() + 10).put("mode", "711").put("uid", 0).put("gid", 0);
++        var parents = observed.putArray("parents");
++        var names = new java.util.TreeSet<String>(Set.of("/", "/public"));
++        for (String name = backups; !name.equals("/"); name = name.substring(0, Math.max(1, name.lastIndexOf('/'))))
++            names.add(name);
++        for (String name : names)
++            parents.addObject().put("source", name).put("kind", "d").put("device", 1).put("inode", parents.size() + 10).put("mode", "711").put("uid", 0).put("gid", 0);
+         observed.putObject("destination").put("backupsRoot", backups).put("operationRoot", selection.path("operationRoot").asText()).put("operationAbsent", true)
+             .put("availableBytes", 1073741824).put("requiredHeadroomBytes", 134217728);
+         Path observationDir = Files.createDirectory(evidence.resolve("observation")), observationProof = evidence.resolve("observation-proof.json");
+@@ -1027,57 +1094,75 @@
+         String program = Files.readString(workspace.resolve(directory + "current-pre-reinstall-backup.py"));
+         producer.put("script", "exec " + gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.ENVIRONMENT
+             + " /usr/bin/python3 -I -S -B -c '" + program.replace("'", "'\"'\"'") + "' --backups-root '" + backups + "'\n");
+-        var facts = producer.putObject("sourceFacts").put("currentBackupFormat", CURRENT_BACKUP_FORMAT); facts.set("selection", selectionRef); facts.set("currentContentObservation", observationRef);
++        var facts = producer.putObject("sourceFacts").put("currentBackupFormat", CURRENT_BACKUP_FORMAT);
++        facts.set("selection", selectionRef);
++        facts.set("currentContentObservation", observationRef);
+         facts.putObject("currentContentFacts").put("task", documents.get("sdkResult").path("task").asText()).put("grantId", documents.get("grant").path("grantId").asText())
+             .put("selectionSha256", selectionSha).putArray("hashes").add(contentSha);
+         ((com.fasterxml.jackson.databind.node.ArrayNode) producer.path("evidence")).add(observationRef);
+         assertEquals(selection, currentBackupSelection(workspace, producer, layout));
+         var verifiedFacts = SDK_METADATA_JSON.readTree(backupCommandFacts(new BackupCommandPlan(evidence.resolve("sizing-only.json"), "a".repeat(64), producer.toString()), java.util.UUID.randomUUID(), "b".repeat(64))).path("verifiedCurrentContentEvidence");
+-        assertEquals(1, verifiedFacts.path("selectedCount").asInt()); assertEquals(1, verifiedFacts.path("observedCount").asInt());
+-        assertEquals(1, verifiedFacts.path("orderedHashCount").asInt()); assertTrue(verifiedFacts.path("allSelectionDigestBindingsEqual").asBoolean());
++        assertEquals(1, verifiedFacts.path("selectedCount").asInt());
++        assertEquals(1, verifiedFacts.path("observedCount").asInt());
++        assertEquals(1, verifiedFacts.path("orderedHashCount").asInt());
++        assertTrue(verifiedFacts.path("allSelectionDigestBindingsEqual").asBoolean());
+         assertEquals(observed, verifiedFacts.path("completeObservationReceipt"));
+         assertEquals(1, verifiedFacts.path("successfulObserverEnforcedSourceChecks").path("sourceNlink").asInt());
+         assertTrue(verifiedFacts.path("completeActuallyExecutedObserverScript").asText().contains("st_nlink == 1"));
+         assertTrue(verifiedFacts.path("parentPermissionArithmetic").get(0).path("passesNonWritableModePredicate").asBoolean());
+         assertEquals(0, verifiedFacts.path("parentPermissionArithmetic").get(0).path("groupOtherWriteMask").asInt());
+-        var versioned = producer.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) versioned.path("sourceFacts")).put("currentBackupProducerVersion", 2);
++        var versioned = producer.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) versioned.path("sourceFacts")).put("currentBackupProducerVersion", 2);
+         assertThrows(Exception.class, () -> currentBackupSelection(workspace, versioned, layout), "Version2 must never adopt the old producer body");
+         String filesV2 = Files.readString(workspace.resolve(directory + "current-pre-reinstall-backup-files-v2.py"));
+         versioned.put("script", "exec " + gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentModelCommandIdentity.ENVIRONMENT
+             + " /usr/bin/python3 -I -S -B -c '" + filesV2.replace("'", "'\"'\"'") + "' --backups-root '" + backups + "'\n");
+         assertEquals(selection, currentBackupSelection(workspace, versioned, layout));
+-        var badVersion = versioned.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) badVersion.path("sourceFacts")).put("currentBackupProducerVersion", 3);
++        var badVersion = versioned.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) badVersion.path("sourceFacts")).put("currentBackupProducerVersion", 3);
+         assertThrows(Exception.class, () -> currentBackupSelection(workspace, badVersion, layout));
+         assertThrows(Exception.class, () -> currentBackupSelection(workspace, versioned.deepCopy().put("kind", "DATABASE_SNAPSHOT"), layout), "Version2 is FILES only");
+-        var compactChanged = producer.deepCopy(); ((com.fasterxml.jackson.databind.node.ArrayNode) compactChanged.path("sourceFacts").path("currentContentFacts").path("hashes")).set(0, JSON.getNodeFactory().textNode("0".repeat(64)));
++        var compactChanged = producer.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ArrayNode) compactChanged.path("sourceFacts").path("currentContentFacts").path("hashes")).set(0, JSON.getNodeFactory().textNode("0".repeat(64)));
+         assertThrows(Exception.class, () -> currentBackupSelection(workspace, compactChanged, layout), "Compact pre-execution facts must equal actual observed hashes");
+         var manifest = selection.deepCopy().put("selectionSha256", selectionSha);
+         ((com.fasterxml.jackson.databind.node.ObjectNode) manifest.path("items").get(0)).put("member", "files/0000.bin").put("type", "FILE").put("bytes", 4).put("sha256", contentSha).put("consistency", "FD_STABLE_READ");
+-        var receipt = manifest.deepCopy(); receipt.remove("items"); receipt.set("manifest", manifest);
++        var receipt = manifest.deepCopy();
++        receipt.remove("items");
++        receipt.set("manifest", manifest);
+         receipt.put("bundlePath", selection.path("operationRoot").asText() + "/bundle.tar").put("bundleBytes", 10240).put("bundleSha256", "d".repeat(64))
+             .put("manifestSha256", backupBytesSha(currentBackupCanonical(manifest))).put("complete", true);
+         Path producerDir = Files.createDirectory(evidence.resolve("producer")), proof = evidence.resolve("producer-proof.json");
+         var producerDocuments = currentContentPublicDocuments(workspace, producerDir, producer, receipt, layout);
+         currentBackupPublicProof(producerDir, producerDocuments, proof);
+         assertEquals(receipt, currentBackupProof(workspace, proof, backupBytesSha(Files.readAllBytes(proof)), layout).receipt());
+-        var changed = receipt.deepCopy(); ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("manifest").path("items").get(0)).put("sha256", "f".repeat(64));
++        var changed = receipt.deepCopy();
++        ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("manifest").path("items").get(0)).put("sha256", "f".repeat(64));
+         changed.put("manifestSha256", backupBytesSha(currentBackupCanonical(changed.path("manifest"))));
+         ((com.fasterxml.jackson.databind.node.ObjectNode) producerDocuments.get("sdkResult").path("commandResult")).put("stdout", changed.toString());
+         currentBackupPublicProof(producerDir, producerDocuments, proof);
+         assertThrows(Exception.class, () -> currentBackupProof(workspace, proof, backupBytesSha(Files.readAllBytes(proof)), layout), "Updated outer manifest cannot conceal different actual archive content");
+         for (String scenario : List.of("FAILED", "TRUNCATED", "GRANT", "TASK", "INDEX", "INODE", "PARENT", "DESTINATION")) {
+-            var bad = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>(); documents.forEach((key, value) -> bad.put(key, value.deepCopy()));
++            var bad = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++            documents.forEach((key, value) -> bad.put(key, value.deepCopy()));
+             var sdk = (com.fasterxml.jackson.databind.node.ObjectNode) bad.get("sdkResult");
+             if (scenario.equals("FAILED")) sdk.put("outcome", "FAILED");
+-            else if (scenario.equals("TRUNCATED")) ((com.fasterxml.jackson.databind.node.ObjectNode) sdk.path("commandResult")).put("truncated", true);
+-            else if (scenario.equals("GRANT")) ((com.fasterxml.jackson.databind.node.ObjectNode) bad.get("grant")).put("grantId", java.util.UUID.randomUUID().toString());
+-            else if (scenario.equals("TASK")) ((com.fasterxml.jackson.databind.node.ObjectNode) bad.get("taskObservation")).put("state", "UNKNOWN");
++            else if (scenario.equals("TRUNCATED"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) sdk.path("commandResult")).put("truncated", true);
++            else if (scenario.equals("GRANT"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) bad.get("grant")).put("grantId", java.util.UUID.randomUUID().toString());
++            else if (scenario.equals("TASK"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) bad.get("taskObservation")).put("state", "UNKNOWN");
+             else {
+                 var result = observed.deepCopy();
+-                if (scenario.equals("INDEX")) ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("items").get(0)).put("index", 1);
+-                else if (scenario.equals("INODE")) ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("items").get(0).path("sourceMetadata")).put("inode", 999);
+-                else if (scenario.equals("PARENT")) ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("parents").get(0)).put("mode", "777");
+-                else ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("destination")).put("operationAbsent", false);
++                if (scenario.equals("INDEX"))
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("items").get(0)).put("index", 1);
++                else if (scenario.equals("INODE"))
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("items").get(0).path("sourceMetadata")).put("inode", 999);
++                else if (scenario.equals("PARENT"))
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("parents").get(0)).put("mode", "777");
++                else
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) result.path("destination")).put("operationAbsent", false);
+                 ((com.fasterxml.jackson.databind.node.ObjectNode) sdk.path("commandResult")).put("stdout", result.toString());
+             }
+             currentBackupPublicProof(observationDir, bad, observationProof, CURRENT_CONTENT_FORMAT);
+@@ -1107,7 +1192,9 @@
+         String resource = "src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard/current-pre-reinstall-backup.py";
+         Path source = workspace.resolve(resource);
+         Files.createDirectories(source.getParent());
+-        try (var input = getClass().getResourceAsStream("current-pre-reinstall-backup.py")) { Files.copy(Objects.requireNonNull(input), source); }
++        try (var input = getClass().getResourceAsStream("current-pre-reinstall-backup.py")) {
++            Files.copy(Objects.requireNonNull(input), source);
++        }
+         Path directory = Files.createDirectories(workspace.resolve(".ai-workspace/agent-live-evidence/public-current"));
+         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+         String run = "public-current-bundle", fingerprint = "SHA256:sCRc3ICCT9OMtsaGxjciDIQd0NMVO5/+pDe/fNMgRYc";
+@@ -1115,7 +1202,8 @@
+             .put("operationRoot", layout.paths().stateRoot() + "/backups/" + run + "-" + "a".repeat(16));
+         var selected = expected.putArray("items").addObject().put("source", "/public/source.txt");
+         selected.putObject("sourceMetadata").put("kind", "f").put("bytes", 4).put("device", 1).put("inode", 2).put("mode", "600").put("uid", 0).put("gid", 0).put("mtime", "1.0000000000");
+-        Path selection = directory.resolve("selection.json"); Files.writeString(selection, expected.toString());
++        Path selection = directory.resolve("selection.json");
++        Files.writeString(selection, expected.toString());
+         String selectionSha = backupBytesSha(Files.readAllBytes(selection));
+         String program = Files.readString(source);
+         var planNode = JSON.createObjectNode().put("schema", 1).put("scope", "BACKUP_ONLY").put("run", run).put("server", SERVER).put("fingerprint", fingerprint)
+@@ -1125,48 +1213,69 @@
+                 + " /usr/bin/python3 -I -S -B -c '" + program.replace("'", "'\"'\"'") + "' --backups-root '" + layout.paths().stateRoot() + "/backups'\n");
+         planNode.putObject("sourceFacts").put("currentBackupFormat", CURRENT_BACKUP_FORMAT).putObject("selection").put("file", selection.toString()).put("sha256", selectionSha);
+         planNode.putArray("evidence").addObject().put("file", selection.toString()).put("sha256", selectionSha);
+-        Path planFile = directory.resolve("producerPlan.json"); Files.writeString(planFile, planNode.toString());
++        Path planFile = directory.resolve("producerPlan.json");
++        Files.writeString(planFile, planNode.toString());
+         var plan = backupCommandPlan(workspace, planFile, backupBytesSha(Files.readAllBytes(planFile)), run, SERVER, fingerprint, layout.digest());
+         assertEquals(524288, backupCommandReviewLimit(planNode));
+         assertEquals(expected, currentBackupSelection(workspace, planNode, layout));
+         assertThrows(Exception.class, () -> currentBackupSelection(workspace, planNode.deepCopy().put("script", "PUBLIC_DIFFERENT_BODY"), layout));
+-        var manifest = expected.deepCopy(); manifest.put("selectionSha256", selectionSha);
++        var manifest = expected.deepCopy();
++        manifest.put("selectionSha256", selectionSha);
+         var member = (com.fasterxml.jackson.databind.node.ObjectNode) manifest.path("items").get(0);
+         member.put("member", "files/0000.bin").put("type", "FILE").put("bytes", 4).put("sha256", "c".repeat(64)).put("consistency", "FD_STABLE_READ");
+         var receipt = (com.fasterxml.jackson.databind.node.ObjectNode) manifest.deepCopy().without("items");
+-        receipt.set("manifest", manifest); receipt.put("bundlePath", expected.path("operationRoot").asText() + "/bundle.tar").put("bundleBytes", 10240)
++        receipt.set("manifest", manifest);
++        receipt.put("bundlePath", expected.path("operationRoot").asText() + "/bundle.tar").put("bundleBytes", 10240)
+             .put("bundleSha256", "d".repeat(64)).put("manifestSha256", backupBytesSha(currentBackupCanonical(manifest))).put("complete", true);
+-        var task = java.util.UUID.randomUUID(); String grant = java.util.UUID.randomUUID().toString();
+-        var facts = SDK_METADATA_JSON.readTree(backupCommandFacts(plan, task, "b".repeat(64))); String binding = inputDigest(facts.toString());
+-        var documents = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>(); documents.put("producerPlan", planNode);
++        var task = java.util.UUID.randomUUID();
++        String grant = java.util.UUID.randomUUID().toString();
++        var facts = SDK_METADATA_JSON.readTree(backupCommandFacts(plan, task, "b".repeat(64)));
++        String binding = inputDigest(facts.toString());
++        var documents = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++        documents.put("producerPlan", planNode);
+         documents.put("approvalFacts", JSON.createObjectNode().put("bindingSha256", binding).set("facts", facts));
+         documents.put("approval", JSON.createObjectNode().put("bindingSha256", binding).put("decision", "APPROVE").put("requiresUserConfirmation", false).put("reason", "Public synthetic verdict only"));
+         documents.put("grant", JSON.createObjectNode().put("bindingSha256", binding).put("outcome", "SUCCEEDED").put("grantId", grant));
+         var sdk = JSON.valueToTree(backupCommandReceipt(success(new CommandResult(Optional.of(0), receipt.toString(), "", false))));
+-        ((com.fasterxml.jackson.databind.node.ObjectNode) sdk).put("task", task.toString()).put("bindingSha256", binding).put("grantId", grant).put("planSha256", plan.sha()); documents.put("sdkResult", sdk);
++        ((com.fasterxml.jackson.databind.node.ObjectNode) sdk).put("task", task.toString()).put("bindingSha256", binding).put("grantId", grant).put("planSha256", plan.sha());
++        documents.put("sdkResult", sdk);
+         documents.put("taskObservation", JSON.createObjectNode().put("task", task.toString()).put("state", "ENDED").put("outcome", "SUCCEEDED").put("planSha256", plan.sha()));
+-        Path proof = directory.resolve("proof.json"); currentBackupPublicProof(directory, documents, proof);
++        Path proof = directory.resolve("proof.json");
++        currentBackupPublicProof(directory, documents, proof);
+         assertEquals(receipt, currentBackupProof(workspace, proof, backupBytesSha(Files.readAllBytes(proof)), layout).receipt());
+-        var replay = new java.util.HashSet<java.util.UUID>(); var dispatched = new AtomicInteger();
++        var replay = new java.util.HashSet<java.util.UUID>();
++        var dispatched = new AtomicInteger();
+         var approval = new gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision("APPROVE", false, "Public synthetic authorization only");
+         var syntheticGrant = success(new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(java.util.UUID.randomUUID()));
+-        var unknown = backupDispatch(binding, binding, approval, syntheticGrant, replay, actual -> { dispatched.incrementAndGet(); return sdkMetadataUnknown(); });
++        var unknown = backupDispatch(binding, binding, approval, syntheticGrant, replay, actual -> {
++            dispatched.incrementAndGet();
++            return sdkMetadataUnknown();
++        });
+         assertEquals(TaskResult.UNKNOWN, unknown.outcome());
+-        assertThrows(Exception.class, () -> backupDispatch(binding, binding, approval, syntheticGrant, replay, actual -> { dispatched.incrementAndGet(); return sdkMetadataUnknown(); }));
++        assertThrows(Exception.class, () -> backupDispatch(binding, binding, approval, syntheticGrant, replay, actual -> {
++            dispatched.incrementAndGet();
++            return sdkMetadataUnknown();
++        }));
+         assertEquals(1, dispatched.get(), "A consumed grant cannot dispatch a second transfer; native expiry/task checks remain in consumeRemote");
+         for (String scenario : List.of("FAILED", "TRUNCATED", "GRANT", "INODE", "SHA", "EXTRA", "TASK_UNKNOWN")) {
+-            var changed = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>(); documents.forEach((key, value) -> changed.put(key, value.deepCopy()));
++            var changed = new LinkedHashMap<String, com.fasterxml.jackson.databind.JsonNode>();
++            documents.forEach((key, value) -> changed.put(key, value.deepCopy()));
+             var current = (com.fasterxml.jackson.databind.node.ObjectNode) changed.get("sdkResult");
+             if (scenario.equals("FAILED")) current.put("outcome", "FAILED");
+-            else if (scenario.equals("TRUNCATED")) ((com.fasterxml.jackson.databind.node.ObjectNode) current.path("commandResult")).put("truncated", true);
+-            else if (scenario.equals("GRANT")) ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("grant")).put("grantId", java.util.UUID.randomUUID().toString());
+-            else if (scenario.equals("TASK_UNKNOWN")) ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("taskObservation")).put("state", "UNKNOWN");
++            else if (scenario.equals("TRUNCATED"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) current.path("commandResult")).put("truncated", true);
++            else if (scenario.equals("GRANT"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("grant")).put("grantId", java.util.UUID.randomUUID().toString());
++            else if (scenario.equals("TASK_UNKNOWN"))
++                ((com.fasterxml.jackson.databind.node.ObjectNode) changed.get("taskObservation")).put("state", "UNKNOWN");
+             else {
+                 var altered = receipt.deepCopy();
+                 if (scenario.equals("SHA")) altered.put("selectionSha256", "0".repeat(64));
+                 else if (scenario.equals("EXTRA")) altered.put("unexpected", true);
+-                else { ((com.fasterxml.jackson.databind.node.ObjectNode) altered.path("manifest").path("items").get(0).path("sourceMetadata")).put("inode", 999);
+-                    altered.put("manifestSha256", backupBytesSha(currentBackupCanonical(altered.path("manifest")))); }
++                else {
++                    ((com.fasterxml.jackson.databind.node.ObjectNode) altered.path("manifest").path("items").get(0).path("sourceMetadata")).put("inode", 999);
++                    altered.put("manifestSha256", backupBytesSha(currentBackupCanonical(altered.path("manifest"))));
++                }
+                 ((com.fasterxml.jackson.databind.node.ObjectNode) current.path("commandResult")).put("stdout", altered.toString());
+             }
+             currentBackupPublicProof(directory, changed, proof);
+@@ -1235,8 +1344,14 @@
+             }
+             assertTrue(process.waitFor(30, TimeUnit.SECONDS));
+             String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+-            assertEquals(0, process.exitValue(), output); assertEquals("CURRENT_BACKUP_PUBLIC_PROTOCOL_OK", output.strip());
+-        } finally { if (process.isAlive()) { process.destroyForcibly(); assertTrue(process.waitFor(10, TimeUnit.SECONDS)); } }
++            assertEquals(0, process.exitValue(), output);
++            assertEquals("CURRENT_BACKUP_PUBLIC_PROTOCOL_OK", output.strip());
++        } finally {
++            if (process.isAlive()) {
++                process.destroyForcibly();
++                assertTrue(process.waitFor(10, TimeUnit.SECONDS));
++            }
++        }
+     }
+ 
+     private record BackupCommandPlan(Path file, String sha, String json) {
+@@ -1334,13 +1449,15 @@
+                 && node.path("sourceFacts").has("currentContentObservation")) {
+                 var layout = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
+                 Path evidenceWorkspace = plan.file().toAbsolutePath().normalize().getParent();
+-                while (evidenceWorkspace != null && (evidenceWorkspace.getFileName() == null || !evidenceWorkspace.getFileName().toString().equals(".ai-workspace"))) evidenceWorkspace = evidenceWorkspace.getParent();
++                while (evidenceWorkspace != null && (evidenceWorkspace.getFileName() == null || !evidenceWorkspace.getFileName().toString().equals(".ai-workspace")))
++                    evidenceWorkspace = evidenceWorkspace.getParent();
+                 evidenceWorkspace = Objects.requireNonNull(evidenceWorkspace, "Bound backup evidence workspace is required").getParent();
+                 var selection = currentBackupSelection(evidenceWorkspace, node, layout);
+                 var observedProof = currentContentProof(evidenceWorkspace, node.path("sourceFacts").path("currentContentObservation"), layout);
+                 var observed = observedProof.receipt();
+                 var hashes = node.path("sourceFacts").path("currentContentFacts").path("hashes");
+-                var distinct = new java.util.HashSet<String>(); hashes.forEach(value -> distinct.add(value.asText()));
++                var distinct = new java.util.HashSet<String>();
++                hashes.forEach(value -> distinct.add(value.asText()));
+                 String stdinSha = backupBytesSha(node.path("stdin").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                 facts.put("verifiedCurrentContentEvidence", Map.ofEntries(
+                     Map.entry("meaning", "Deterministic local validation of the full six-chain and each ordered source/metadata/bytes/hash; independent APP may still refuse. Distinct hashes are not the member count; repeated and empty payloads are permitted."),
+@@ -1877,7 +1994,7 @@
+         var selectedState = currentState ? currentBackupFormat(planNode) || currentContentFormat(planNode)
+             ? backupCurrentBinding(workspace(), Path.of(System.getProperty("managed.live.originalState")), System.getProperty("managed.live.originalTask"), fingerprint)
+             : backupCurrentState(workspace(), Path.of(System.getProperty("managed.live.originalState")), System.getProperty("managed.live.originalTask"),
+-                System.getProperty("test"), planNode.path("kind").asText(), fingerprint) : null;
++            System.getProperty("test"), planNode.path("kind").asText(), fingerprint) : null;
+         if (currentState) {
+             backupRequire("DeploymentStaticLiveAcceptanceTest#executesSelectiveBackupCommandThroughProduct".equals(System.getProperty("test")));
+             if (currentBackupFormat(planNode)) currentBackupSelection(workspace(), planNode, layout);
+@@ -5066,9 +5183,9 @@
+ 
+     private static boolean isolatedSdkMetadataProtocol() {
+         return Boolean.getBoolean("managed.runtime.sdkMetadataProtocolLocal") && Set.of(
+-            "DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown",
+-            "DeploymentStaticLiveAcceptanceTest#unsentSdkMetadataRecoveryRequiresExactReleasedIntent",
+-            "DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown+unsentSdkMetadataRecoveryRequiresExactReleasedIntent")
++                "DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown",
++                "DeploymentStaticLiveAcceptanceTest#unsentSdkMetadataRecoveryRequiresExactReleasedIntent",
++                "DeploymentStaticLiveAcceptanceTest#pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown+unsentSdkMetadataRecoveryRequiresExactReleasedIntent")
+             .contains(System.getProperty("test", ""));
+     }
+ 
+@@ -5120,7 +5237,8 @@
+         var fixedObserved = json.readTree(liveToolDiagnosticProjection(task, call, fixedResult).substring("AI_LIVE_STOP_DIAGNOSTIC ".length()));
+         assertEquals("OBSERVED", fixedObserved.path("status").asText());
+         assertEquals(fixed.toString(), fixedObserved.path("capacity").toString());
+-        var partial = fixed.deepCopy(); partial.remove("additionalDiskDemandBytes");
++        var partial = fixed.deepCopy();
++        partial.remove("additionalDiskDemandBytes");
+         for (var invalid : List.of(partial, fixed.deepCopy().put("preparedReleaseBytes", -1),
+             fixed.deepCopy().put("fixedCostBytes", 335544321L), fixed.deepCopy().put("candidateHostCostBytes", 805306369L),
+             fixed.deepCopy().put("planningAvailableBytes", 1629147135L), fixed.deepCopy().put("aggregateHostCostBytes", 1140850689L),
+@@ -5379,7 +5497,7 @@
+                         || Math.addExact(data.path("aggregateHostCostBytes").longValue(), data.path("hostReserveBytes").longValue()) != data.path("requiredBytes").longValue()
+                         || Math.max(0, Math.subtractExact(data.path("availableBytes").longValue(), fixed)) != data.path("planningAvailableBytes").longValue()
+                         || !data.path("budgetMeaning").isTextual() || !data.path("budgetMeaning").textValue().equals(
+-                            "Conservative planning from one native capacity observation; availableBytes is unchanged. Owned candidates are already allocated; their future release quota and additional demands remain. Fresh independently reviewed per-filesystem isolation admission is still required."))
++                        "Conservative planning from one native capacity observation; availableBytes is unchanged. Owned candidates are already allocated; their future release quota and additional demands remain. Fresh independently reviewed per-filesystem isolation admission is still required."))
+                         throw new IllegalArgumentException();
+                 }
+                 if (!data.path("components").isArray() || data.path("components").size() > data.path("componentCount").longValue())
+@@ -5539,8 +5657,10 @@
+         } finally {
+             originalReconsiderationInputTask = null;
+             originalReconsiderationInputState = null;
+-            if (priorRun == null) System.clearProperty("managed.live.inputRun"); else System.setProperty("managed.live.inputRun", priorRun);
+-            if (priorCheckpoint == null) System.clearProperty("managed.live.inputCheckpoint"); else System.setProperty("managed.live.inputCheckpoint", priorCheckpoint);
++            if (priorRun == null) System.clearProperty("managed.live.inputRun");
++            else System.setProperty("managed.live.inputRun", priorRun);
++            if (priorCheckpoint == null) System.clearProperty("managed.live.inputCheckpoint");
++            else System.setProperty("managed.live.inputCheckpoint", priorCheckpoint);
+         }
+         assertFalse(originalReconsiderationInput(title, prompt, task));
+     }
+@@ -5737,10 +5857,13 @@
+     private final AtomicInteger reviewedActions = new AtomicInteger();
+ 
+     private final Set<String> managementAppReady = java.util.concurrent.ConcurrentHashMap.newKeySet();
++
+     private final Set<java.util.UUID> managementIssuedGrants = java.util.concurrent.ConcurrentHashMap.newKeySet();
++
+     private final Map<java.util.UUID, ManagementGrant> managementGrants = new java.util.concurrent.ConcurrentHashMap<>();
+ 
+-    private record ManagementGrant(TaskContext task, CommandRequest request, String actionSha256) { }
++    private record ManagementGrant(TaskContext task, CommandRequest request, String actionSha256) {
++    }
+ 
+     private final AtomicInteger reviewedQuestions = new AtomicInteger();
+ 
+@@ -5797,7 +5920,7 @@
+             String run = System.getProperty("managed.live.inputRun");
+             if (run == null || !run.matches("[a-z0-9][a-z0-9-]{0,95}") || prompt == null || prompt.length() > 2000
+                 || (!isolatedInputBridge() && !originalReconsideration
+-                    && (supervisedAgent == null || !task.id().equals(supervisedAgent.id()))))
++                && (supervisedAgent == null || !task.id().equals(supervisedAgent.id()))))
+                 throw new IllegalStateException("INPUT_BRIDGE_IDENTITY");
+             if (title.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationReconsideration.TITLE)
+                 && (!originalReconsideration || !prompt.equals(safeInputData(prompt)) || !title.equals(safeInputData(title))))
+@@ -5899,7 +6022,7 @@
+             && originalReconsiderationInputTask.equals(task.id()) && originalReconsiderationInputState.equals(root)
+             && OWNER.equals(task.ownerId()) && VERSION.equals(task.ownerVersion()) && task.type().equals("deployment-agent")
+             && gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationReconsideration
+-                .matchesQuestion(task.id(), title, prompt);
++            .matchesQuestion(task.id(), title, prompt);
+     }
+ 
+     private static String inputDigest(String value) throws java.security.NoSuchAlgorithmException {
+@@ -6086,6 +6209,7 @@
                          + message.toolResult().map(tool -> tool.text().length()).orElse(0)).sum()
                          + " nativeTools=" + value.tools().size() + " requiredTool=" + supervisedRequest.requiredToolName().orElse("AUTO")
                          + " timeout=" + value.timeout());
@@ -1296,7 +2131,543 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      System.out.println("AI_LIVE_CONTEXT_BYTES continuation=" + value.messages().stream().flatMap(m -> m.continuation().stream())
                          .mapToLong(gold.debug.windowstolinux.appapi.ai.model.AiContinuation::payloadBytes).sum());
                      var binding = evidence.path("decodedToolchainBinding");
-@@ -8343,7 +8344,7 @@
+@@ -6188,11 +6312,12 @@
+                     (peer, operation, inputs) -> {
+                         if (operation.getName().equals("execute") && agentMode && !mainOnlyDiagnostic
+                             && Set.of(DeploymentApplicationsService.QUERY_TASK, DeploymentApplicationsService.ACTION_TASK)
+-                                .contains(actual.tasks().inspect(remoteTask).type())) {
++                            .contains(actual.tasks().inspect(remoteTask).type())) {
+                             var supplied = (gold.debug.windowstolinux.appapi.task.action.ApprovalGrant) inputs[1];
+                             var grant = managementGrants.remove(supplied.id());
+                             assertNotNull(grant, "Every management send requires its own independent APP and fresh host grant");
+-                            assertSame(remoteTask, grant.task()); assertSame(inputs[0], grant.request());
++                            assertSame(remoteTask, grant.task());
++                            assertSame(inputs[0], grant.request());
+                             System.out.println("AGENT_MANAGEMENT_SEND task=" + remoteTask.id() + " grant=" + supplied.id()
+                                 + " actionSha256=" + grant.actionSha256());
+                         }
+@@ -6218,7 +6343,7 @@
+                 boolean management = agentMode && !mainOnlyDiagnostic && args != null
+                     && args[args.length - 1] instanceof TaskContext supplied
+                     && Set.of(DeploymentApplicationsService.QUERY_TASK, DeploymentApplicationsService.ACTION_TASK)
+-                        .contains(actual.tasks().inspect(supplied).type());
++                    .contains(actual.tasks().inspect(supplied).type());
+                 if (management && method.getName().equals("approve") && ((ActionIntent) args[0]).type().equals("platform.ssh.execute"))
+                     throw new AssertionError("Management cannot fall back to unreviewed host approval");
+                 String managementSha = null;
+@@ -6850,7 +6975,7 @@
+     }
+ 
+     private static OperationResult<CommandResult> sdkMetadataCommand(gold.debug.windowstolinux.appapi.task.action.InteractionService interaction,
+-        RemoteSession session, ServerId server, TaskContext task, String revision, CommandRequest request) throws ApiException {
++                                                                     RemoteSession session, ServerId server, TaskContext task, String revision, CommandRequest request) throws ApiException {
+         OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> review;
+         try {
+             review = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(
+@@ -6860,7 +6985,8 @@
+                 || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
+             return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
+         }
+-        if (review.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
++        if (review.outcome() != TaskResult.SUCCEEDED)
++            return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
+         if (review.value().isEmpty()) return sdkMetadataUnknown();
+         System.out.println("SDK_METADATA_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
+         return session.execute(request, review.value().orElseThrow());
+@@ -6872,13 +6998,14 @@
+     }
+ 
+     private static boolean sdkMetadataUnsentProof(TaskSnapshot previous, java.util.UUID task,
+-        gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot checkpoint, String fingerprint, String revision, boolean resourcesReleased) {
++                                                  gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot checkpoint, String fingerprint, String revision, boolean resourcesReleased) {
+         try {
+             if (!task.equals(java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab")) || !previous.id().equals(task)
+                 || !previous.ownerId().equals(OWNER) || !previous.ownerVersion().equals(VERSION) || !previous.type().equals("deployment-sdk-metadata-observation")
+                 || previous.state() != gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN || !resourcesReleased
+                 || checkpoint == null || !checkpoint.released() || fingerprint == null || fingerprint.isBlank()
+-                || revision == null || !revision.matches("[a-f0-9]{64}") || checkpoint.payload().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000) return false;
++                || revision == null || !revision.matches("[a-f0-9]{64}") || checkpoint.payload().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 12000)
++                return false;
+             var value = SDK_METADATA_JSON.readTree(checkpoint.payload());
+             gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(value,
+                 Set.of("version", "task", "server", "fingerprint", "modelRevision", "commands"));
+@@ -6894,13 +7021,16 @@
+                 && command.path("body").isTextual() && command.path("body").asText().equals("c6dba5ba7a7484dc924b89d4b9e679a6caee2982b96364f80c8c1f8e6062625b")
+                 && command.path("seconds").isInt() && command.path("seconds").intValue() == 60
+                 && command.path("phase").isTextual() && command.path("phase").asText().equals("INTENT");
+-        } catch (Exception unconfirmed) { return false; }
++        } catch (Exception unconfirmed) {
++            return false;
++        }
+     }
+ 
+     @Test
+     @EnabledIf("isolatedSdkMetadataProtocol")
+     void unsentSdkMetadataRecoveryRequiresExactReleasedIntent() throws Exception {
+-        var task = java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab"); String revision = "a".repeat(64), fingerprint = "synthetic-fingerprint";
++        var task = java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab");
++        String revision = "a".repeat(64), fingerprint = "synthetic-fingerprint";
+         var previous = new TaskSnapshot(task, OWNER, VERSION, "deployment-sdk-metadata-observation", gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN,
+             Optional.empty(), "synthetic", java.time.Instant.EPOCH, Optional.empty(), List.of());
+         var value = JSON.createObjectNode().put("version", 1).put("task", task.toString()).put("server", SERVER).put("fingerprint", fingerprint).put("modelRevision", revision);
+@@ -6921,7 +7051,8 @@
+         }
+         command.put("phase", "INTENT").put("exit", "0");
+         assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
+-        command.remove("exit"); value.put("unexpected", true);
++        command.remove("exit");
++        value.put("unexpected", true);
+         assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
+     }
+ 
+@@ -6936,13 +7067,22 @@
+         String fingerprint = Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint"));
+         try (var runtime = open()) {
+             var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageHost() {
+-                public void show(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key, gold.debug.windowstolinux.appapi.ui.page.PageSpec spec, javax.swing.JComponent component) { throw new AssertionError("No recovery business pages"); }
+-                public void focus(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) { }
+-                public void remove(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) { }
+-                public void environment(gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) { }
++                public void show(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key, gold.debug.windowstolinux.appapi.ui.page.PageSpec spec, javax.swing.JComponent component) {
++                    throw new AssertionError("No recovery business pages");
++                }
++
++                public void focus(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) {
++                }
++
++                public void remove(gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageKey key) {
++                }
++
++                public void environment(gold.debug.windowstolinux.appapi.ui.page.UiEnvironment environment) {
++                }
+             }, new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.SIMPLIFIED_CHINESE, "LIGHT", false));
+             var start = runtime.startDevelopmentMods(workspace(), pages);
+-            assertTrue(start.running().isEmpty()); assertTrue(start.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")));
++            assertTrue(start.running().isEmpty());
++            assertTrue(start.problems().stream().allMatch(problem -> problem.eventCode().equals("MOD_RECOVERY_READY")));
+             var context = runtime.modContexts().get(OWNER).context();
+             assertEquals(gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.RECOVERY, context.launchMode());
+             try (var registration = context.tasks().registerRecovery("deployment-sdk-metadata-observation", (previous, task) -> {
+@@ -6955,12 +7095,15 @@
+                     return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+                         "SDK_METADATA_REVIEW_REFUSED_NOT_SENT", "Original released INTENT never crossed the persisted DISPATCHED boundary; this does not prove a grant was never issued",
+                         Map.of("task", task.id().toString()), Optional.of(task.id()))));
+-                } catch (Exception unconfirmed) { return sdkMetadataUnknown(); }
++                } catch (Exception unconfirmed) {
++                    return sdkMetadataUnknown();
++                }
+             })) {
+                 var result = runtime.tasks().reconcile(original).toCompletableFuture().get(2, TimeUnit.MINUTES);
+                 System.out.println("SDK_METADATA_ORIGINAL_RECONCILED " + result);
+                 assertEquals(gold.debug.windowstolinux.appapi.task.model.TaskState.ENDED, result.state());
+-                assertEquals(Optional.of(TaskResult.FAILED), result.outcome()); assertTrue(result.blockers().isEmpty());
++                assertEquals(Optional.of(TaskResult.FAILED), result.outcome());
++                assertTrue(result.blockers().isEmpty());
+             }
+         }
+     }
+@@ -6968,20 +7111,29 @@
+     @Test
+     @EnabledIf("isolatedSdkMetadataProtocol")
+     void pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown() throws Exception {
+-        var id = java.util.UUID.randomUUID(); var server = new ServerId("synthetic-sdk-observation"); String revision = "a".repeat(64);
++        var id = java.util.UUID.randomUUID();
++        var server = new ServerId("synthetic-sdk-observation");
++        String revision = "a".repeat(64);
+         var task = (TaskContext) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
+-            if (method.getName().equals("id")) return id; throw new AssertionError("No real task capability in this pure protocol test");
++            if (method.getName().equals("id")) return id;
++            throw new AssertionError("No real task capability in this pure protocol test");
+         });
+-        var deny = new java.util.concurrent.atomic.AtomicBoolean(true); var unknown = new java.util.concurrent.atomic.AtomicBoolean(false);
++        var deny = new java.util.concurrent.atomic.AtomicBoolean(true);
++        var unknown = new java.util.concurrent.atomic.AtomicBoolean(false);
+         var executeThrows = new java.util.concurrent.atomic.AtomicBoolean(false);
+-        var sends = new AtomicInteger(); var reviews = new AtomicInteger();
++        var sends = new AtomicInteger();
++        var reviews = new AtomicInteger();
+         var issued = new java.util.HashSet<java.util.UUID>();
+         var expected = new java.util.concurrent.atomic.AtomicReference<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant>();
+         try (var request = sdkMetadataRequest("print('synthetic metadata')\n")) {
+             var intent = sdkMetadataIntent(server, task, revision, request);
+-            assertEquals(0, request.stdin().length); assertEquals(java.time.Duration.ofSeconds(60), request.timeout()); assertEquals(65536, request.outputLimitBytes());
+-            assertTrue(request.script().contains("/usr/bin/python3 -I -S -B")); assertFalse(request.script().contains("model-command-operations"));
+-            assertFalse(request.script().contains("systemctl")); assertFalse(request.script().contains("mktemp"));
++            assertEquals(0, request.stdin().length);
++            assertEquals(java.time.Duration.ofSeconds(60), request.timeout());
++            assertEquals(65536, request.outputLimitBytes());
++            assertTrue(request.script().contains("/usr/bin/python3 -I -S -B"));
++            assertFalse(request.script().contains("model-command-operations"));
++            assertFalse(request.script().contains("systemctl"));
++            assertFalse(request.script().contains("mktemp"));
+             assertEquals("deployment.candidate.host-probe.v1", intent.semantics().orElseThrow().operation());
+             assertEquals(2, intent.semantics().orElseThrow().targets().size());
+             assertTrue(intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", id.toString())));
+@@ -6991,26 +7143,43 @@
+                 JSON.createObjectNode().put("operation", intent.semantics().orElseThrow().operation()).put("exactAction", intent.exactAction())).isEmpty());
+             var interaction = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) Proxy.newProxyInstance(
+                 getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class}, (proxy, method, args) -> {
+-                    assertEquals("approveCommand", method.getName()); assertEquals(intent, args[0]); assertSame(request, args[1]); assertSame(task, args[2]); reviews.incrementAndGet();
+-                    if (deny.get()) throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED", "Synthetic denied review",
+-                        Map.of("task", id.toString(), "reviewReason", "Complete synthetic denial is retained"), Optional.of(id)));
++                    assertEquals("approveCommand", method.getName());
++                    assertEquals(intent, args[0]);
++                    assertSame(request, args[1]);
++                    assertSame(task, args[2]);
++                    reviews.incrementAndGet();
++                    if (deny.get())
++                        throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_COMMAND_REVIEW_DENIED", "Synthetic denied review",
++                            Map.of("task", id.toString(), "reviewReason", "Complete synthetic denial is retained"), Optional.of(id)));
+                     var grant = new gold.debug.windowstolinux.appapi.task.action.ApprovalGrant(java.util.UUID.randomUUID());
+-                    assertTrue(issued.add(grant.id())); expected.set(grant); return success(grant);
++                    assertTrue(issued.add(grant.id()));
++                    expected.set(grant);
++                    return success(grant);
+                 });
+             var session = (RemoteSession) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{RemoteSession.class}, (proxy, method, args) -> {
+-                assertEquals("execute", method.getName()); assertSame(request, args[0]); assertSame(expected.get(), args[1]); sends.incrementAndGet();
+-                if (executeThrows.get()) throw new ApiException(new Problem(ProblemCode.UNKNOWN, "SDK_TEST_EXECUTE_UNCONFIRMED", "Synthetic execute failure", Map.of(), Optional.of(id)));
++                assertEquals("execute", method.getName());
++                assertSame(request, args[0]);
++                assertSame(expected.get(), args[1]);
++                sends.incrementAndGet();
++                if (executeThrows.get())
++                    throw new ApiException(new Problem(ProblemCode.UNKNOWN, "SDK_TEST_EXECUTE_UNCONFIRMED", "Synthetic execute failure", Map.of(), Optional.of(id)));
+                 if (unknown.get()) return sdkMetadataUnknown();
+                 return success(new CommandResult(Optional.of(0), "synthetic", "", false));
+             });
+             var refused = sdkMetadataCommand(interaction, session, server, task, revision, request);
+-            assertEquals(TaskResult.FAILED, refused.outcome()); assertEquals(0, sends.get());
++            assertEquals(TaskResult.FAILED, refused.outcome());
++            assertEquals(0, sends.get());
+             assertEquals("Complete synthetic denial is retained", refused.problem().orElseThrow().context().get("reviewReason"));
+-            deny.set(false); assertEquals(TaskResult.SUCCEEDED, sdkMetadataCommand(interaction, session, server, task, revision, request).outcome());
+-            unknown.set(true); assertEquals(TaskResult.UNKNOWN, sdkMetadataCommand(interaction, session, server, task, revision, request).outcome());
+-            executeThrows.set(true); assertEquals("SDK_TEST_EXECUTE_UNCONFIRMED", assertThrows(ApiException.class,
++            deny.set(false);
++            assertEquals(TaskResult.SUCCEEDED, sdkMetadataCommand(interaction, session, server, task, revision, request).outcome());
++            unknown.set(true);
++            assertEquals(TaskResult.UNKNOWN, sdkMetadataCommand(interaction, session, server, task, revision, request).outcome());
++            executeThrows.set(true);
++            assertEquals("SDK_TEST_EXECUTE_UNCONFIRMED", assertThrows(ApiException.class,
+                 () -> sdkMetadataCommand(interaction, session, server, task, revision, request)).problem().eventCode());
+-            assertEquals(3, sends.get()); assertEquals(4, reviews.get()); assertEquals(3, issued.size());
++            assertEquals(3, sends.get());
++            assertEquals(4, reviews.get());
++            assertEquals(3, issued.size());
+         }
+     }
+ 
+@@ -7022,7 +7191,11 @@
+         assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
+         var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+         assertEquals(java.util.UUID.fromString("bc6fbab1-9106-48b6-bfd4-820ad0753906"), original);
+-        connectionOnly = false; aiEnabled = true; agentMode = true; agentApproval = "AUTOMATIC"; agentRemember = false;
++        connectionOnly = false;
++        aiEnabled = true;
++        agentMode = true;
++        agentApproval = "AUTOMATIC";
++        agentRemember = false;
+         try (var runtime = open()) {
+             start(runtime, true);
+             var history = runtime.logs().inventory(false).categories().stream().filter(value -> value.target().owner().equals("app")
+@@ -7032,8 +7205,11 @@
+             var receipts = view.records().stream().filter(value -> value.event().taskId().filter(original::equals).isPresent()).toList();
+             assertEquals(1, receipts.size());
+             var receipt = receipts.getFirst();
+-            assertFalse(receipt.truncated()); assertEquals(Optional.of(OWNER), receipt.subjectMod()); assertEquals(Optional.of(VERSION), receipt.version());
+-            assertEquals("PLATFORM_TASK_FAILED", receipt.event().eventCode()); assertEquals(Optional.of(TaskResult.FAILED), receipt.event().outcome());
++            assertFalse(receipt.truncated());
++            assertEquals(Optional.of(OWNER), receipt.subjectMod());
++            assertEquals(Optional.of(VERSION), receipt.version());
++            assertEquals("PLATFORM_TASK_FAILED", receipt.event().eventCode());
++            assertEquals(Optional.of(TaskResult.FAILED), receipt.event().outcome());
+             var archived = JSON.readTree(receipt.event().details().orElseThrow());
+             assertEquals(DeploymentAgentWorkflow.TASK_TYPE, archived.path("taskType").asText());
+             assertEquals("DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", JSON.readTree(archived.path("result").asText()).path("problem").path("eventCode").asText());
+@@ -7041,14 +7217,18 @@
+             var observed = completed(context.tasks().<com.fasterxml.jackson.databind.JsonNode>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
+                 "deployment-sdk-metadata-observation", "SDK METADATA_ONLY; one pure observation command, no remote product setup or receipt writes", List.of(SERVER), true), task -> {
+                 var conclusion = context.tasks().findArchived(original, task).orElseThrow();
+-                assertEquals(DeploymentAgentWorkflow.TASK_TYPE, conclusion.type()); assertEquals(Optional.of(TaskResult.FAILED), conclusion.outcome());
++                assertEquals(DeploymentAgentWorkflow.TASK_TYPE, conclusion.type());
++                assertEquals(Optional.of(TaskResult.FAILED), conclusion.outcome());
+                 var priorObservation = context.tasks().findArchived(java.util.UUID.fromString("c883e775-97d2-4e67-bcf9-982f115b10ab"), task).orElseThrow();
+                 assertEquals("deployment-sdk-metadata-observation", priorObservation.type());
+-                assertEquals(OWNER, priorObservation.ownerId()); assertEquals(VERSION, priorObservation.ownerVersion());
++                assertEquals(OWNER, priorObservation.ownerId());
++                assertEquals(VERSION, priorObservation.ownerVersion());
+                 assertEquals(Optional.of(TaskResult.FAILED), priorObservation.outcome(), "Settle the original denied observation before any replacement send");
+                 var server = new ServerId(SERVER);
+                 var profile = context.servers().get(server, task);
+-                assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
++                assertEquals("45.192.105.213", profile.host());
++                assertEquals(22, profile.port());
++                assertEquals("root", profile.username());
+                 String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
+                 Path source = workspace().resolve("src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard");
+                 var selection = context.file().sources().selectDirectory(source, task);
+@@ -7067,10 +7247,17 @@
+                                     return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
+                                         server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
+                                 }
+-                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-observer", browser); }
+-                                public Object receipts() { return Map.of("purpose", "SDK_METADATA_ONLY", "prerequisiteTask", original.toString(),
+-                                    "prerequisiteResult", "FAILED:DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", "sdkTreeReadOnly", true,
+-                                    "remoteProductSetupOrReceiptWrites", false, "meaning", "New pure host metadata observation, not the canonical baseline and not a replay of the refused model-command envelope"); }
++
++                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() {
++                                    return Map.of("public-observer", browser);
++                                }
++
++                                public Object receipts() {
++                                    return Map.of("purpose", "SDK_METADATA_ONLY", "prerequisiteTask", original.toString(),
++                                        "prerequisiteResult", "FAILED:DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", "sdkTreeReadOnly", true,
++                                        "remoteProductSetupOrReceiptWrites", false, "meaning", "New pure host metadata observation, not the canonical baseline and not a replay of the refused model-command envelope");
++                                }
++
+                                 public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
+                                     return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(), "publicSourceSnapshotId", snapshot.id().toString());
+                                 }
+@@ -7093,17 +7280,21 @@
+                                 return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+                                     "SDK_METADATA_OBSERVATION_NONZERO", "The metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
+                             var lines = value.stdout().lines().toList();
+-                            if (lines.size() != 1 || !lines.getFirst().startsWith("SDK_METADATA=")) return sdkMetadataUnknown();
++                            if (lines.size() != 1 || !lines.getFirst().startsWith("SDK_METADATA="))
++                                return sdkMetadataUnknown();
+                             var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("SDK_METADATA=".length()));
+                             gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
+                                 Set.of("schema", "mode", "status", "rootState", "records", "sdkExecutions", "probeOperations", "ecosystems", "meaning"));
+                             if (!metadata.path("schema").isInt() || metadata.path("schema").intValue() != 1
+                                 || !metadata.path("mode").asText().equals("METADATA_ONLY") || !metadata.path("status").asText().equals("OBSERVED")
+-                                || metadata.path("sdkExecutions").asInt(-1) != 0 || metadata.path("probeOperations").asInt(-1) != 0) return sdkMetadataUnknown();
++                                || metadata.path("sdkExecutions").asInt(-1) != 0 || metadata.path("probeOperations").asInt(-1) != 0)
++                                return sdkMetadataUnknown();
+                             return success(metadata);
+                         }
+                     }
+-                } finally { context.file().closeTaskResources(task); }
++                } finally {
++                    context.file().closeTaskResources(task);
++                }
+             }), 20);
+             assertEquals(1, reviewedActions.get(), "The sole pure observation command requires independent approval");
+             System.out.println("SDK_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
+@@ -7118,7 +7309,11 @@
+         assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
+         var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+         assertEquals(java.util.UUID.fromString("88f305d6-2fe6-4e9e-ad9f-927e5311c1cd"), original);
+-        connectionOnly = false; aiEnabled = true; agentMode = true; agentApproval = "AUTOMATIC"; agentRemember = false;
++        connectionOnly = false;
++        aiEnabled = true;
++        agentMode = true;
++        agentApproval = "AUTOMATIC";
++        agentRemember = false;
+         try (var runtime = open()) {
+             start(runtime, true);
+             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+@@ -7126,11 +7321,14 @@
+                 "deployment-system-go-capacity-observation", "METADATA_ONLY: standard Go declarations and captured-root filesystem capacity; one pure command", List.of(SERVER), true), task -> {
+                 var prior = context.tasks().findArchived(original, task).orElseThrow();
+                 assertEquals("deployment-sdk-metadata-observation", prior.type());
+-                assertEquals(OWNER, prior.ownerId()); assertEquals(VERSION, prior.ownerVersion());
++                assertEquals(OWNER, prior.ownerId());
++                assertEquals(VERSION, prior.ownerVersion());
+                 assertEquals(Optional.of(TaskResult.SUCCEEDED), prior.outcome());
+                 var server = new ServerId(SERVER);
+                 var profile = context.servers().get(server, task);
+-                assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
++                assertEquals("45.192.105.213", profile.host());
++                assertEquals(22, profile.port());
++                assertEquals("root", profile.username());
+                 String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
+                 var selected = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
+                     gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
+@@ -7158,11 +7356,18 @@
+                                     return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
+                                         server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
+                                 }
+-                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-system-go-capacity-observer", browser); }
+-                                public Object receipts() { return Map.of("purpose", "SYSTEM_GO_CAPACITY_METADATA_ONLY", "prerequisiteTask", original.toString(),
+-                                    "prerequisiteResult", "SUCCEEDED:SDK_METADATA_ONLY", "capturedFsRoots", roots, "capturedLayoutSha256", layout.digest(),
+-                                    "sdkExecutions", 0, "remoteProductSetupOrReceiptWrites", false,
+-                                    "meaning", "Go attributes and VERSION declarations are not execution/compatibility evidence; free-space samples are not reservations or authorization to change layout"); }
++
++                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() {
++                                    return Map.of("public-system-go-capacity-observer", browser);
++                                }
++
++                                public Object receipts() {
++                                    return Map.of("purpose", "SYSTEM_GO_CAPACITY_METADATA_ONLY", "prerequisiteTask", original.toString(),
++                                        "prerequisiteResult", "SUCCEEDED:SDK_METADATA_ONLY", "capturedFsRoots", roots, "capturedLayoutSha256", layout.digest(),
++                                        "sdkExecutions", 0, "remoteProductSetupOrReceiptWrites", false,
++                                        "meaning", "Go attributes and VERSION declarations are not execution/compatibility evidence; free-space samples are not reservations or authorization to change layout");
++                                }
++
+                                 public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
+                                     return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(),
+                                         "publicSourceSnapshotId", snapshot.id().toString(), "capturedLayoutSha256", layout.digest());
+@@ -7185,23 +7390,28 @@
+                                     reviewed.interaction(), intent, request, task);
+                             } catch (ApiException denied) {
+                                 if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
+-                                    || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
++                                    || !task.id().toString().equals(denied.problem().context().get("task")))
++                                    throw denied;
+                                 gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, denied);
+                                 return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
+                             }
+-                            if (review.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
++                            if (review.outcome() != TaskResult.SUCCEEDED)
++                                return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
+                             if (review.value().isEmpty()) return sdkMetadataUnknown();
+                             System.out.println("SYSTEM_GO_CAPACITY_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
+                             var result = session.execute(request, review.value().orElseThrow());
+-                            if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
++                            if (result.outcome() != TaskResult.SUCCEEDED)
++                                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                             if (result.value().isEmpty()) return sdkMetadataUnknown();
+                             var value = result.value().orElseThrow();
+-                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty()) return sdkMetadataUnknown();
++                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty())
++                                return sdkMetadataUnknown();
+                             if (value.exitCode().orElseThrow() != 0)
+                                 return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+                                     "SYSTEM_GO_CAPACITY_METADATA_NONZERO", "The pure metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
+                             var lines = value.stdout().lines().toList();
+-                            if (lines.size() != 1 || !lines.getFirst().startsWith("SYSTEM_GO_CAPACITY_METADATA=")) return sdkMetadataUnknown();
++                            if (lines.size() != 1 || !lines.getFirst().startsWith("SYSTEM_GO_CAPACITY_METADATA="))
++                                return sdkMetadataUnknown();
+                             var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("SYSTEM_GO_CAPACITY_METADATA=".length()));
+                             gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
+                                 Set.of("schema", "mode", "status", "go", "capacities", "filesystemGroups", "sdkExecutions", "meaning"));
+@@ -7214,7 +7424,9 @@
+                             return success(metadata);
+                         }
+                     }
+-                } finally { context.file().closeTaskResources(task); }
++                } finally {
++                    context.file().closeTaskResources(task);
++                }
+             }), 20);
+             assertEquals(1, reviewedActions.get(), "The sole pure Go/capacity command requires independent approval and a fresh exact grant");
+             System.out.println("SYSTEM_GO_CAPACITY_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
+@@ -7229,7 +7441,11 @@
+         assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
+         var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+         assertEquals(java.util.UUID.fromString("05b481d0-fe1b-42bc-b4a6-4ca855f43b05"), original);
+-        connectionOnly = false; aiEnabled = true; agentMode = true; agentApproval = "AUTOMATIC"; agentRemember = false;
++        connectionOnly = false;
++        aiEnabled = true;
++        agentMode = true;
++        agentApproval = "AUTOMATIC";
++        agentRemember = false;
+         try (var runtime = open()) {
+             start(runtime, true);
+             var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
+@@ -7237,11 +7453,14 @@
+                 "deployment-block-filesystem-layout-observation", "METADATA_ONLY: captured-state filesystem and root block topology/partition geometry; one pure command", List.of(SERVER), true), task -> {
+                 var prior = context.tasks().findArchived(original, task).orElseThrow();
+                 assertEquals("deployment-system-go-capacity-observation", prior.type());
+-                assertEquals(OWNER, prior.ownerId()); assertEquals(VERSION, prior.ownerVersion());
++                assertEquals(OWNER, prior.ownerId());
++                assertEquals(VERSION, prior.ownerVersion());
+                 assertEquals(Optional.of(TaskResult.SUCCEEDED), prior.outcome());
+                 var server = new ServerId(SERVER);
+                 var profile = context.servers().get(server, task);
+-                assertEquals("45.192.105.213", profile.host()); assertEquals(22, profile.port()); assertEquals("root", profile.username());
++                assertEquals("45.192.105.213", profile.host());
++                assertEquals(22, profile.port());
++                assertEquals("root", profile.username());
+                 String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
+                 var selected = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
+                     gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
+@@ -7269,11 +7488,18 @@
+                                     return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
+                                         server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
+                                 }
+-                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() { return Map.of("public-block-filesystem-observer", browser); }
+-                                public Object receipts() { return Map.of("purpose", "BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY", "prerequisiteTask", original.toString(),
+-                                    "prerequisiteResult", "SUCCEEDED:SYSTEM_GO_CAPACITY_METADATA_ONLY", "capturedStateRoot", stateRoot, "capturedLayoutSha256", layout.digest(),
+-                                    "expectedMajorMinor", "253:1", "expectedDevice", "0xfd01", "sdkExecutions", 0,
+-                                    "meaning", "Read-only standard OS utilities under existing OS trust; no raw UUID/serial/options output and no resize authorization"); }
++
++                                public Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources() {
++                                    return Map.of("public-block-filesystem-observer", browser);
++                                }
++
++                                public Object receipts() {
++                                    return Map.of("purpose", "BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY", "prerequisiteTask", original.toString(),
++                                        "prerequisiteResult", "SUCCEEDED:SYSTEM_GO_CAPACITY_METADATA_ONLY", "capturedStateRoot", stateRoot, "capturedLayoutSha256", layout.digest(),
++                                        "expectedMajorMinor", "253:1", "expectedDevice", "0xfd01", "sdkExecutions", 0,
++                                        "meaning", "Read-only standard OS utilities under existing OS trust; no raw UUID/serial/options output and no resize authorization");
++                                }
++
+                                 public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
+                                     return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(),
+                                         "publicSourceSnapshotId", snapshot.id().toString(), "capturedLayoutSha256", layout.digest());
+@@ -7297,23 +7523,28 @@
+                                     reviewed.interaction(), intent, request, task);
+                             } catch (ApiException denied) {
+                                 if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
+-                                    || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
++                                    || !task.id().toString().equals(denied.problem().context().get("task")))
++                                    throw denied;
+                                 gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.agentFailure(context, task, denied);
+                                 return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
+                             }
+-                            if (review.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
++                            if (review.outcome() != TaskResult.SUCCEEDED)
++                                return new OperationResult<>(review.outcome(), Optional.empty(), review.problem());
+                             if (review.value().isEmpty()) return sdkMetadataUnknown();
+                             System.out.println("BLOCK_FILESYSTEM_LAYOUT_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
+                             var result = session.execute(request, review.value().orElseThrow());
+-                            if (result.outcome() != TaskResult.SUCCEEDED) return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
++                            if (result.outcome() != TaskResult.SUCCEEDED)
++                                return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                             if (result.value().isEmpty()) return sdkMetadataUnknown();
+                             var value = result.value().orElseThrow();
+-                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty()) return sdkMetadataUnknown();
++                            if (value.exitCode().isEmpty() || value.truncated() || !value.stderr().isEmpty())
++                                return sdkMetadataUnknown();
+                             if (value.exitCode().orElseThrow() != 0)
+                                 return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
+                                     "BLOCK_FILESYSTEM_LAYOUT_METADATA_NONZERO", "The pure metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
+                             var lines = value.stdout().lines().toList();
+-                            if (lines.size() != 1 || !lines.getFirst().startsWith("BLOCK_FILESYSTEM_LAYOUT_METADATA=")) return sdkMetadataUnknown();
++                            if (lines.size() != 1 || !lines.getFirst().startsWith("BLOCK_FILESYSTEM_LAYOUT_METADATA="))
++                                return sdkMetadataUnknown();
+                             var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("BLOCK_FILESYSTEM_LAYOUT_METADATA=".length()));
+                             gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
+                                 Set.of("schema", "mode", "status", "capturedStateRoot", "filesystem", "mount", "topology", "partitionTable", "sdkExecutions", "meaning"));
+@@ -7322,11 +7553,14 @@
+                                 || !metadata.path("capturedStateRoot").asText().equals(stateRoot) || !metadata.path("sdkExecutions").isInt()
+                                 || metadata.path("sdkExecutions").intValue() != 0 || !metadata.path("filesystem").path("state").asText().equals("OBSERVED")
+                                 || !metadata.path("filesystem").path("device").asText().equals("0x000000000000fd01")
+-                                || !metadata.path("filesystem").path("majorMinor").asText().equals("253:1")) return sdkMetadataUnknown();
++                                || !metadata.path("filesystem").path("majorMinor").asText().equals("253:1"))
++                                return sdkMetadataUnknown();
+                             return success(metadata);
+                         }
+                     }
+-                } finally { context.file().closeTaskResources(task); }
++                } finally {
++                    context.file().closeTaskResources(task);
++                }
+             }), 20);
+             assertEquals(1, reviewedActions.get(), "One full script requires one independent native approval and fresh exact grant");
+             System.out.println("BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
+@@ -7463,7 +7697,7 @@
+                 boolean archived = false;
+                 var checkpoints = new gold.debug.windowstolinux.app.db.task.TaskAuthorCheckpoint(database);
+                 if (retained)
+-                    for (String key : List.of("deployment-publication-graph", "deployment-publication-unit-00",
++                    for (String key : List.of("deployment-publication-remote", "deployment-publication-graph", "deployment-publication-unit-00",
+                         "deployment-publication-unit-01", "deployment-publication-unit-02")) {
+                         var saved = checkpoints.find(original, OWNER, "1.0.0", key);
+                         if (saved.isEmpty()) continue;
+@@ -8343,7 +8577,7 @@
                      } else
                          assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
                      if (selectedMode != Mode.AGENT)
@@ -1305,6 +2676,358 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      if (!deploymentOnly)
                          System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
                              + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
+@@ -8361,7 +8595,7 @@
+             } finally {
+                 try {
+                     if (agentOriginalId != null) {
+-                          try {
++                        try {
+                             printOriginalDiagnostics(runtime, agentOriginalId);
+                         } catch (Exception unavailable) {
+                             System.out.println("STATIC_LIVE_AGENT_DIAGNOSTIC_UNAVAILABLE " + unavailable.getClass().getSimpleName());
+@@ -8381,7 +8615,7 @@
+                     if (!uncertain.isEmpty()) {
+                         System.out.println("AI_LIVE_RETAINED_UNCERTAINTY " + uncertain);
+                     } else {
+-                          try {
++                        try {
+                             for (var current : completed(applications.list(), 2)) {
+                                 if (!current.application().id().equals(id)) continue;
+                                 var selected = completed(applications.inspect(current.application()), 2);
+@@ -8417,7 +8651,7 @@
+                     acceptanceFailure.addSuppressed(closingFailure);
+                 } finally {
+                     if (isolation != null && agentWorkflow != null && agentWorkflow.isolationAdmission().isPresent()) {
+-                          try {
++                        try {
+                             verifyRetainedIsolation(context, isolation, agentWorkflow);
+                         } catch (Exception | AssertionError protectionFailure) {
+                             phaseFailureRecorded = true;
+@@ -8450,8 +8684,8 @@
+     }
+ 
+     private void verifyRetainedIsolation(ModContext context,
+-        gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy policy,
+-        DeploymentAgentWorkflow workflow) throws Exception {
++                                         gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationPolicy policy,
++                                         DeploymentAgentWorkflow workflow) throws Exception {
+         requireIsolationPostcheckAllowed();
+         var admission = workflow.isolationAdmission().orElseThrow();
+         var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(policy);
+@@ -9007,20 +9241,20 @@
+             if (agentMode && !mainOnlyDiagnostic) {
+                 fileTransferV2(web, applications, app, context);
+             } else {
+-            var folder = post(web + "/api/folders", Map.of("name", "静态跨语言文件验证"));
+-            assertTrue(folder.path("id").asLong() > 0, folder::toString);
+-            byte[] bytes = new byte[65536];
+-            new java.util.Random(20261006).nextBytes(bytes);
+-            String sha = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+-            var upload = post(web + "/api/uploads", Map.of("folderId", folder.path("id").asLong(), "name", "静态真机.bin",
+-                "size", bytes.length, "sha256", sha, "chunkSize", bytes.length));
+-            String uploadUrl = web + "/api/uploads/" + upload.path("id").asText();
+-            http(uploadUrl + "/chunks/0", "PUT", bytes, "application/octet-stream");
+-            var version = post(uploadUrl + "/complete", Map.of());
+-            String persisted = web + "/api/versions/" + version.path("id").asText() + "/download";
+-            assertArrayEquals(bytes, http(persisted, "GET", null, "application/octet-stream"));
+-            restart(applications, app);
+-            assertArrayEquals(bytes, http(persisted, "GET", null, "application/octet-stream"));
++                var folder = post(web + "/api/folders", Map.of("name", "静态跨语言文件验证"));
++                assertTrue(folder.path("id").asLong() > 0, folder::toString);
++                byte[] bytes = new byte[65536];
++                new java.util.Random(20261006).nextBytes(bytes);
++                String sha = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
++                var upload = post(web + "/api/uploads", Map.of("folderId", folder.path("id").asLong(), "name", "静态真机.bin",
++                    "size", bytes.length, "sha256", sha, "chunkSize", bytes.length));
++                String uploadUrl = web + "/api/uploads/" + upload.path("id").asText();
++                http(uploadUrl + "/chunks/0", "PUT", bytes, "application/octet-stream");
++                var version = post(uploadUrl + "/complete", Map.of());
++                String persisted = web + "/api/versions/" + version.path("id").asText() + "/download";
++                assertArrayEquals(bytes, http(persisted, "GET", null, "application/octet-stream"));
++                restart(applications, app);
++                assertArrayEquals(bytes, http(persisted, "GET", null, "application/octet-stream"));
+             }
+         } else if (project.equals("asset-lending")) {
+             var category = post(web + "/api/categories", Map.of("name", "静态跨语言资产验证"));
+@@ -9103,17 +9337,20 @@
+         String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
+         for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
+         var before = get(upload);
+-        assertEquals("receiving", before.path("state").asText()); assertEquals(16, before.path("chunks").size());
++        assertEquals("receiving", before.path("state").asText());
++        assertEquals(16, before.path("chunks").size());
+         var duplicate = JSON.readTree(http(upload + "/chunks/0", "PUT", Arrays.copyOfRange(bytes, 0, 1024 * 1024), "application/octet-stream"));
+         assertTrue(duplicate.path("duplicate").asBoolean());
+         assertEquals(byteSha256(Arrays.copyOfRange(bytes, 0, 1024 * 1024)), duplicate.path("sha256").asText());
+-        byte[] conflict = Arrays.copyOfRange(bytes, 0, 1024 * 1024); conflict[0] ^= 1;
++        byte[] conflict = Arrays.copyOfRange(bytes, 0, 1024 * 1024);
++        conflict[0] ^= 1;
+         http(upload + "/chunks/0", "PUT", conflict, "application/octet-stream", 409);
+         http(upload + "/complete", "POST", new byte[0], "application/json", 409);
+         assertEquals(before.path("chunks"), get(upload).path("chunks"), "Rejected requests cannot replace confirmed chunks");
+         restart(applications, app);
+         var resumed = get(upload);
+-        assertEquals("receiving", resumed.path("state").asText()); assertEquals(before.path("chunks"), resumed.path("chunks"));
++        assertEquals("receiving", resumed.path("state").asText());
++        assertEquals(before.path("chunks"), resumed.path("chunks"));
+         for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
+ 
+         var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
+@@ -9122,17 +9359,20 @@
+         var completionStart = new java.util.concurrent.CountDownLatch(1);
+         com.fasterxml.jackson.databind.JsonNode first;
+         try {
+-            for (int index = 0; index < 10; index++) completions.add(pool.submit(() -> {
+-                completionReady.countDown();
+-                assertTrue(completionStart.await(10, TimeUnit.SECONDS), "Concurrent completion start must be released");
+-                return post(upload + "/complete", Map.of());
+-            }));
++            for (int index = 0; index < 10; index++)
++                completions.add(pool.submit(() -> {
++                    completionReady.countDown();
++                    assertTrue(completionStart.await(10, TimeUnit.SECONDS), "Concurrent completion start must be released");
++                    return post(upload + "/complete", Map.of());
++                }));
+             assertTrue(completionReady.await(10, TimeUnit.SECONDS), "All ten completion workers must be ready together");
+             completionStart.countDown();
+             first = completions.getFirst().get(60, TimeUnit.SECONDS);
+-            for (var completion : completions) assertEquals(first.path("id"), completion.get(60, TimeUnit.SECONDS).path("id"));
++            for (var completion : completions)
++                assertEquals(first.path("id"), completion.get(60, TimeUnit.SECONDS).path("id"));
+         } finally {
+-            pool.shutdownNow(); assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS), "All owned HTTP completion workers must exit");
++            pool.shutdownNow();
++            assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS), "All owned HTTP completion workers must exit");
+         }
+         assertEquals(1, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
+         assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
+@@ -9141,7 +9381,8 @@
+         String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
+         for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
+         var second = post(secondUpload + "/complete", Map.of());
+-        assertEquals(first.path("fileId"), second.path("fileId")); assertNotEquals(first.path("id"), second.path("id"));
++        assertEquals(first.path("fileId"), second.path("fileId"));
++        assertNotEquals(first.path("id"), second.path("id"));
+         assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
+         assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
+         assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
+@@ -9187,7 +9428,8 @@
+         assertEquals("failed", get(rejected).path("state").asText());
+         var recovered = get(pending);
+         assertEquals("receiving", recovered.path("state").asText());
+-        assertEquals(pendingBefore.path("chunks"), recovered.path("chunks")); assertEquals("", recovered.path("versionId").asText());
++        assertEquals(pendingBefore.path("chunks"), recovered.path("chunks"));
++        assertEquals("", recovered.path("versionId").asText());
+         assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
+         assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
+         assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
+@@ -9208,13 +9450,16 @@
+             var candidate = java.net.URI.create(value);
+             return Objects.equals(candidate.getScheme(), expected.getScheme()) && Objects.equals(candidate.getHost(), expected.getHost())
+                 && candidate.getPort() == expected.getPort();
+-        } catch (IllegalArgumentException invalid) { return false; }
++        } catch (IllegalArgumentException invalid) {
++            return false;
++        }
+     }
+ 
+     private static void fileTransferChunk(String upload, int index, byte[] bytes) throws Exception {
+         byte[] chunk = Arrays.copyOfRange(bytes, index * 1024 * 1024, (index + 1) * 1024 * 1024);
+         var result = JSON.readTree(http(upload + "/chunks/" + index, "PUT", chunk, "application/octet-stream"));
+-        assertEquals(index, result.path("number").asInt()); assertEquals(byteSha256(chunk), result.path("sha256").asText());
++        assertEquals(index, result.path("number").asInt());
++        assertEquals(byteSha256(chunk), result.path("sha256").asText());
+     }
+ 
+     private static String byteSha256(byte[] bytes) throws java.security.NoSuchAlgorithmException {
+@@ -9223,7 +9468,8 @@
+ 
+     private static void assertFileTransferDownload(String web, String version, long bytes, String sha) throws Exception {
+         byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
+-        assertEquals(bytes, downloaded.length); assertEquals(sha, byteSha256(downloaded));
++        assertEquals(bytes, downloaded.length);
++        assertEquals(sha, byteSha256(downloaded));
+     }
+ 
+     private void restart(DeploymentApplicationsService applications, DeploymentApplicationId app) throws Exception {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java
+@@ -119,7 +119,7 @@
+ 
+     /** Three distinct original remote outcomes. / 三种不同的原远端结果。 */
+     private enum ScenarioType {
+-        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_UNSUPPORTED_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
++        SUCCESS, SECOND_CONFIG_UNKNOWN, PUBLISH_UNKNOWN, HEALTH_FAILED_ROLLBACK, HEALTH_FAILED_ROLLBACK_UNSUPPORTED_MODE, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, MAINTENANCE_UNKNOWN, MAINTENANCE_DENIED, COMMIT_WINDOW, PURPOSE_PRESENT, PURPOSE_UNKNOWN, PURPOSE_MISMATCH
+     }
+ 
+     /** Actual host-reviewed grants. / 宿主实际审核的授权。 */
+@@ -1188,6 +1188,12 @@
+      * @param scenario exact remote outcome / 精确远端结果
+      * @param interruptedHost whether normal shutdown is intentionally unavailable / 正常关闭是否按设计不可用
+      * @throws Exception if the original fixture fails / 原夹具失败时 */
++    @ParameterizedTest
++    @EnumSource(value = ScenarioType.class, names = {"MAINTENANCE_UNKNOWN", "MAINTENANCE_DENIED"})
++    void maintenanceCleanupDistinguishesUnknownDispatchFromAdmissionRefusal(ScenarioType scenario) throws Exception {
++        unknownPublicationRetainsOriginalEvidenceWithoutNormalShutdown(scenario);
++    }
++
+     private void runScenario(ScenarioType scenario, boolean interruptedHost) throws Exception {
+         Files.createDirectories(selectedSourceDirectory());
+         Files.writeString(selectedSourceDirectory().resolve("go.mod"), "module example.test/service\n\ngo 1.24\n");
+@@ -1320,12 +1326,18 @@
+                 for (int attempt = 0; attempt < 200 && handle.snapshot().state() != TaskState.UNKNOWN; attempt++)
+                     Thread.sleep(10);
+                 assertEquals(TaskState.UNKNOWN, handle.snapshot().state(), handle.snapshot().toString());
+-                assertEquals(scenario == ScenarioType.RETAIN_UNKNOWN ? 1 : 0, countMod(runtime, "deployment_release"));
++                assertEquals(scenario == ScenarioType.RETAIN_UNKNOWN || scenario == ScenarioType.MAINTENANCE_UNKNOWN || scenario == ScenarioType.MAINTENANCE_DENIED ? 1 : 0, countMod(runtime, "deployment_release"));
+                 if (scenario == ScenarioType.COMMIT_WINDOW) {
+                     assertEquals(0, countMod(runtime, "deployment_release"));
+                     assertTrue(originalCheckpointReleased(runtime, handle.id()));
+                     assertEquals(1, countExecutionOutcome(runtime, "UNKNOWN"));
+                     assertFalse(actions.contains("rollback"));
++                } else if (scenario == ScenarioType.MAINTENANCE_UNKNOWN || scenario == ScenarioType.MAINTENANCE_DENIED) {
++                    assertEquals(scenario == ScenarioType.MAINTENANCE_UNKNOWN, actions.contains("maintenance-end"));
++                    assertFalse(actions.contains("retain"));
++                    assertFalse(actions.contains("candidate-cleanup"));
++                    assertTrue(pendingCandidate(runtime, handle.id(), candidate.get().candidateId(),
++                        scenario == ScenarioType.MAINTENANCE_UNKNOWN ? "MAINTENANCE_END_MAY_HAVE_RUN" : "PUBLISHED_VERIFIED"));
+                 } else if (scenario == ScenarioType.RETAIN_UNKNOWN) {
+                     assertEquals(List.of("maintenance-end", "retain"),
+                         actions.subList(actions.size() - 2, actions.size()));
+@@ -1685,6 +1697,12 @@
+                     return Proxy.newProxyInstance(InteractionService.class.getClassLoader(),
+                         new Class<?>[]{InteractionService.class}, (interactionProxy, operation, arguments) -> {
+                             try {
++                                if (scenario == ScenarioType.MAINTENANCE_DENIED && arguments != null && arguments.length > 0
++                                    && arguments[0] instanceof ActionIntent intent && intent.semantics()
++                                    .filter(value -> value.operation().equals("deployment.publication.maintenance-end.v1")).isPresent())
++                                    throw new ApiException(new gold.debug.windowstolinux.appapi.task.result.Problem(
++                                        gold.debug.windowstolinux.appapi.task.result.ProblemCode.ACCESS_DENIED,
++                                        "TEST_MAINTENANCE_REVIEW_DENIED", "Controlled admission refusal", Map.of(), Optional.empty()));
+                                 var result = operation.invoke(real.interaction(), arguments);
+                                 if ((operation.getName().equals("approve") || operation.getName().equals("approveRequired")
+                                     || operation.getName().equals("approveReviewedAction"))
+@@ -2215,7 +2233,7 @@
+                     }
+                     actions.add("publish");
+                     if (scenario == ScenarioType.PUBLISH_UNKNOWN || scenario == ScenarioType.ROLLBACK_UNKNOWN
+-                        || scenario == ScenarioType.RETAIN_UNKNOWN
++                        || scenario == ScenarioType.RETAIN_UNKNOWN || scenario == ScenarioType.MAINTENANCE_UNKNOWN
+                         || scenario == ScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
+                         || scenario == ScenarioType.COMMIT_WINDOW) {
+                         var match = java.util.regex.Pattern
+@@ -2273,7 +2291,7 @@
+                 }
+                 if (script.contains("application-maintenance")) {
+                     actions.add("maintenance-end");
+-                    return reply("MAINTENANCE=end\n");
++                    return scenario == ScenarioType.MAINTENANCE_UNKNOWN ? unknown() : reply("MAINTENANCE=end\n");
+                 }
+                 if (script.contains("candidate-cleanup-task")) {
+                     actions.add("candidate-cleanup");
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentPublishRecoveryRestartTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentPublishRecoveryRestartTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentPublishRecoveryRestartTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentPublishRecoveryRestartTest.java
+@@ -40,7 +40,7 @@
+ class DeploymentPublishRecoveryRestartTest extends DeploymentRuntimeFixture {
+     /** Original durable interruption to reconcile. / 待核对的原持久中断。 */
+     private enum RecoveryScenarioType {
+-        PUBLISH_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, PUBLISH_CONFLICT, ROLLBACK_UNIT_PRESENT, COMMIT_WINDOW
++        PUBLISH_UNKNOWN, ROLLBACK_UNKNOWN, RETAIN_UNKNOWN, HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN, PUBLISH_CONFLICT, ROLLBACK_UNIT_PRESENT, MAINTENANCE_UNKNOWN, MAINTENANCE_ALREADY_ENDED, MAINTENANCE_BUILD_ACTIVE, MAINTENANCE_FOREIGN, COMMIT_WINDOW
+     }
+ 
+     /** Durable remote state provided by the child fixture only after its original publish dispatch. / 子夹具仅在原发布发送后提供的远端持久状态。 */
+@@ -51,6 +51,8 @@
+ 
+     /** Whether the original remote publication was already rolled back. / 原远端发布是否已经回滚。 */
+     private final AtomicBoolean rolledBack = new AtomicBoolean();
++
++    private final AtomicBoolean buildActive = new AtomicBoolean(), foreignMarker = new AtomicBoolean();
+ 
+     /** Foreign current release for a deliberate first read-only conflict. / 首次只读冲突中的外来当前发布。 */
+     private final AtomicReference<String> currentOverride = new AtomicReference<>();
+@@ -78,6 +80,7 @@
+             String originalScenario = switch (scenario) {
+                 case PUBLISH_CONFLICT -> "PUBLISH_UNKNOWN";
+                 case ROLLBACK_UNIT_PRESENT -> "ROLLBACK_UNKNOWN";
++                case MAINTENANCE_ALREADY_ENDED, MAINTENANCE_BUILD_ACTIVE, MAINTENANCE_FOREIGN -> "MAINTENANCE_UNKNOWN";
+                 default -> scenario.name();
+             };
+             var child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(),
+@@ -109,9 +112,12 @@
+             maintenance.set(scenario == RecoveryScenarioType.PUBLISH_UNKNOWN
+                 || scenario == RecoveryScenarioType.ROLLBACK_UNKNOWN
+                 || scenario == RecoveryScenarioType.PUBLISH_CONFLICT
+-                || scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT);
++                || scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT
++                || scenario == RecoveryScenarioType.MAINTENANCE_UNKNOWN || scenario == RecoveryScenarioType.MAINTENANCE_BUILD_ACTIVE);
+             candidatePresent.set(scenario != RecoveryScenarioType.HEALTH_FAILED_ROLLBACK_CLOSE_UNKNOWN
+                 && scenario != RecoveryScenarioType.COMMIT_WINDOW);
++            buildActive.set(scenario == RecoveryScenarioType.MAINTENANCE_BUILD_ACTIVE);
++            foreignMarker.set(scenario == RecoveryScenarioType.MAINTENANCE_FOREIGN);
+             if (scenario == RecoveryScenarioType.PUBLISH_CONFLICT)
+                 currentOverride.set("c".repeat(64));
+             if (scenario == RecoveryScenarioType.ROLLBACK_UNIT_PRESENT)
+@@ -125,7 +131,7 @@
+                 assertEquals(1, unfinished.size());
+                 assertEquals(1, scalar(runtime, "SELECT COUNT(*) FROM platform_task_resource"
+                     + " WHERE resource_kind='CONNECTION' AND released_at IS NULL"));
+-                if (currentOverride.get() != null || staleUnit.get()) {
++                if (currentOverride.get() != null || staleUnit.get() || buildActive.get() || foreignMarker.get()) {
+                     var unconfirmed = runtime.tasks().reconcile(unfinished.getFirst()).toCompletableFuture().get(25,
+                         TimeUnit.SECONDS);
+                     assertEquals(TaskState.UNKNOWN, unconfirmed.state());
+@@ -137,7 +143,7 @@
+                         query.setObject(1, unfinished.getFirst());
+                         try (var rows = query.executeQuery()) {
+                             assertTrue(rows.next());
+-                            assertFalse(rows.getBoolean(1), "Conflicting remote state cannot commit original business");
++                            assertEquals(scenario == RecoveryScenarioType.MAINTENANCE_BUILD_ACTIVE || scenario == RecoveryScenarioType.MAINTENANCE_FOREIGN, rows.getBoolean(1), "Recovery cannot create or erase the original business commit");
+                         }
+                     }
+                     try (var access = scope(runtime, true);
+@@ -145,7 +151,7 @@
+                          var statement = connection.createStatement();
+                          var rows = statement.executeQuery("SELECT COUNT(*) FROM deployment_release")) {
+                         assertTrue(rows.next());
+-                        assertEquals(0, rows.getLong(1));
++                        assertEquals(scenario == RecoveryScenarioType.MAINTENANCE_BUILD_ACTIVE || scenario == RecoveryScenarioType.MAINTENANCE_FOREIGN ? 1 : 0, rows.getLong(1));
+                     }
+                     assertFalse(
+                         commands.stream()
+@@ -154,6 +160,9 @@
+                         commands.toString());
+                     currentOverride.set(null);
+                     staleUnit.set(false);
++                    buildActive.set(false);
++                    foreignMarker.set(false);
++                    if (scenario == RecoveryScenarioType.MAINTENANCE_FOREIGN) maintenance.set(true);
+                 }
+                 TaskSnapshot recovered;
+                 try {
+@@ -187,6 +196,10 @@
+                         .anyMatch(value -> value.contains("publish-deployment") || value.contains("rollback-deployment")
+                             || value.contains("prepare-toolchains") || value.contains("candidate-create-task")),
+                     commands.toString());
++                if (scenario == RecoveryScenarioType.MAINTENANCE_UNKNOWN || scenario == RecoveryScenarioType.MAINTENANCE_BUILD_ACTIVE)
++                    assertEquals(1, commands.stream().filter(value -> value.contains("application-maintenance")).count());
++                if (scenario == RecoveryScenarioType.MAINTENANCE_ALREADY_ENDED)
++                    assertFalse(commands.stream().anyMatch(value -> value.contains("application-maintenance")));
+                 if (scenario == RecoveryScenarioType.RETAIN_UNKNOWN)
+                     assertFalse(commands.stream().anyMatch(value -> value.contains("'retain'")), commands.toString());
+                 assertFalse(maintenance.get());
+@@ -270,8 +283,8 @@
+                 + "\nCURRENT_KIND=" + (rolledBack.get() ? "none" : "deployment") + "\nCURRENT_MODE="
+                 + (rolledBack.get() ? "none" : "DAEMON") + "\nSNAPSHOT=none\nSNAPSHOT_OLD=none\n"
+                 + "SNAPSHOT_KIND=none\nSNAPSHOT_RUNNING=none\nMAINTENANCE="
+-                + (maintenance.get() ? "deployment-" + release.get() : "none") + "\nCANDIDATE="
+-                + (candidatePresent.get() ? "owned" : "absent") + "\nBUILD_ACTIVE=no\nUNIT_PRESENT="
++                + (foreignMarker.get() ? "deployment-" + "c".repeat(64) : maintenance.get() ? "deployment-" + release.get() : "none") + "\nCANDIDATE="
++                + (candidatePresent.get() ? "owned" : "absent") + "\nBUILD_ACTIVE=" + (buildActive.get() ? "yes" : "no") + "\nUNIT_PRESENT="
+                 + (rolledBack.get() && !staleUnit.get() ? "no" : "yes") + "\n"
+                 + "CONTAINER_PRESENT=not-applicable\nRETAINED_COUNT=1\n";
+         if (command.contains("inspect-runtime"))
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/DeploymentRuntimePathsTest.java
@@ -1336,7 +3059,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var guard = new AtomicInteger();
          var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
          var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
-@@ -219,12 +226,46 @@
+@@ -219,12 +226,58 @@
          assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
              "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
          assertArrayEquals(configuration, peer.commands.getFirst().input());
@@ -1373,6 +3096,18 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +    }
 +
 +    @Test
++    void maintenanceEndDeclaresActualApplicationLockDirectory() throws Exception {
++        var peer = new ControlledPeer(request -> "MAINTENANCE=end\n");
++        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
++        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
++        assertEquals(TaskResult.SUCCEEDED, channel.endMaintenance(unit, "d".repeat(64)).outcome());
++        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
++                new ActionTarget(SERVER.id(), "deployment-application-locks", LAYOUT.applicationLockRoot("demo"))),
++            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
++        assertGuard(peer.commands.getFirst().script());
++    }
++
++    @Test
 +    void secretStagingDeclaresTheExactCapturedSecretRevisionDestination() throws Exception {
 +        var peer = new ControlledPeer(request -> "INPUT_STAGED=1\n");
 +        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
@@ -1387,7 +3122,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      @Test
-@@ -296,10 +337,20 @@
+@@ -296,10 +349,20 @@
      /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
      private static FileSnapshot snapshot(Path directory) {
          return new FileSnapshot() {
@@ -1412,7 +3147,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          };
      }
  
-@@ -327,21 +378,28 @@
+@@ -327,21 +390,28 @@
          assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
      }
  
@@ -1906,6 +3641,74 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            default -> throw new IllegalArgumentException("Unsupported workload health variant");
 +        }
 +        return Map.copyOf(result);
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentMaintenanceFrameEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentMaintenanceFrameEvidenceRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentMaintenanceFrameEvidenceRegressionTest.java
+@@ -0,0 +1,64 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class DeploymentMaintenanceFrameEvidenceRegressionTest {
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void bindsDistinctDigestRolesAndActualLockEffects(boolean custom) throws Exception {
++        var frame = facts("VALID", custom).path("publicationMaintenance");
++        assertEquals("c".repeat(64), frame.path("ownershipManifestSha256").asText());
++        assertEquals("d".repeat(64), frame.path("releaseSha256").asText());
++        assertEquals("deployment-" + "d".repeat(64), frame.path("maintenanceToken").asText());
++        assertEquals(layout(custom).applicationLockRoot("demo") + "/maintenance", frame.path("maintenanceMarker").asText());
++        assertFalse(frame.has("verifiedOwnership"));
++        assertFalse(frame.has("commandGrant"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"RELEASE_TARGET", "LOCK_TARGET", "TOKEN", "APPLICATION"})
++    void rejectsUnboundResourcesOrDifferentToken(String mutation) {
++        assertThrows(IllegalArgumentException.class, () -> facts(mutation, true));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"EXTRA", "STDIN", "BEGIN"})
++    void changedCommandsNeverReceiveMaintenanceEndEvidence(String mutation) throws Exception {
++        assertFalse(facts(mutation, true).has("publicationMaintenance"));
++    }
++
++    private static DeploymentRemoteLayout layout(boolean custom) {
++        return custom ? new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data")) : DeploymentRemoteLayout.original();
++    }
++
++    private JsonNode facts(String mutation, boolean custom) throws Exception {
++        var layout = layout(custom);
++        var server = new ServerId("fixture");
++        String script = "'" + layout.helperPath() + "' 'application-maintenance' '" + (mutation.equals("BEGIN") ? "begin" : "end")
++            + "' '" + (mutation.equals("APPLICATION") ? "other" : "demo") + "' '" + "c".repeat(64) + "' 'deployment-"
++            + (mutation.equals("TOKEN") ? "e" : "d").repeat(64) + "' '" + "d".repeat(64) + "'" + (mutation.equals("EXTRA") ? " 'extra'" : "");
++        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout),
++            mutation.equals("STDIN") ? new byte[]{1} : new byte[0], Duration.ofSeconds(30), 4096)) {
++            var intent = RemoteActions.command(server, "b".repeat(64), request).withSemantics(new ActionSemantics(
++                "deployment.publication.maintenance-end.v1", Set.of(
++                new ActionTarget(server.id(), "deployment-release", layout.applicationRoot("demo") + (mutation.equals("RELEASE_TARGET") ? ".other" : "")),
++                new ActionTarget(server.id(), "deployment-application-locks", layout.applicationLockRoot("demo") + (mutation.equals("LOCK_TARGET") ? ".other" : "")))));
++            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
++        }
 +    }
 +}
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md

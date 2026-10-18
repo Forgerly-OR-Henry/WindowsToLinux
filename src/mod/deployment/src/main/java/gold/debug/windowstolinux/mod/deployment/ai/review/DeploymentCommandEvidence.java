@@ -195,6 +195,8 @@ final class DeploymentCommandEvidence {
                 workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
             if (operation.equals("deployment.publication.snapshot.v1"))
                 publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
+            if (operation.equals("deployment.publication.maintenance-end.v1"))
+                publicationMaintenance(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationMaintenance", value));
             if (operation.equals("deployment.publication.config.v1"))
                 stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
             if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
@@ -305,6 +307,25 @@ final class DeploymentCommandEvidence {
             "ownershipManifestSha256", match.group(3), "task", match.group(4), "derivedReleaseRoot", release,
             "possibleSnapshotRoot", snapshot, "literalValidation", "EXACT_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_PATHS_ONLY",
             "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
+    }
+
+    /** Binds the exact maintenance cleanup frame and actual lock paths without asserting live state or permission. */
+    private static java.util.Optional<Map<String, Object>> publicationMaintenance(String script, byte[] input, ActionIntent intent,
+                                                                                  gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' 'application-maintenance' 'end' ")
+            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '(deployment-([a-f0-9]{64}))' '([a-f0-9]{64})'\\z").matcher(script);
+        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
+        String release = layout.applicationRoot(match.group(1)), locks = layout.applicationLockRoot(match.group(1));
+        if (!match.group(4).equals(match.group(5)) || intent.serverIds().size() != 1
+            || !intent.semantics().orElseThrow().targets().containsAll(Set.of(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-release", release),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-application-locks", locks))))
+            throw new IllegalArgumentException("Maintenance token or derived resource bindings differ");
+        return java.util.Optional.of(Map.of("application", match.group(1), "ownershipManifestSha256", match.group(2),
+            "maintenanceToken", match.group(3), "releaseSha256", match.group(5), "derivedReleaseRoot", release,
+            "applicationLockRoot", locks, "maintenanceMarker", locks + "/maintenance",
+            "literalValidation", "EXACT_FRAME_EMPTY_STDIN_TOKEN_RELEASE_AND_DECLARED_DERIVED_PATHS_ONLY",
+            "meaning", "Exact public arguments: end, application, ownership manifest digest, deployment-release token, expected release digest. Ownership and release digests have different roles. Helper end validates argument syntax, root-owned application locks and any existing marker's exact token; it does not verify current release ownership from these digests. It may create the lock directory, opens admission/run lock files, obtains exclusive locks, checks for orphan work, and removes the matching marker if present. No publish, rollback, release deletion or service start is requested. These are pinned helper code semantics, not proof of live state, safety or authority."));
     }
 
     /** Binds the actual configuration frame without disclosing its data or asserting live ownership. */
