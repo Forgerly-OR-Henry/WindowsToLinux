@@ -761,7 +761,7 @@ public final class DeploymentPublishChannel {
             targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
         if (verb.equals("retain"))
             targets.add(new ActionTarget(server.id(), "deployment-secret", unit.layout().configurationRoot(unit.id()) + "/.container-credentials"));
-        if (operation.equals("deployment.publication.publish.v1"))
+        if (operation.equals("deployment.publication.publish.v1") || verb.equals("candidate-cleanup-task"))
             targets.add(new ActionTarget(server.id(), "deployment-candidate", unit.layout().candidateRoot(arguments.get(1))));
         if (operation.equals("deployment.publication.snapshot.v1"))
             targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),

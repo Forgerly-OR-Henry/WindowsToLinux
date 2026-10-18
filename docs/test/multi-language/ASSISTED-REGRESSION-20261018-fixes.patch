@@ -158,7 +158,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
 +        if (verb.equals("retain"))
 +            targets.add(new ActionTarget(server.id(), "deployment-secret", unit.layout().configurationRoot(unit.id()) + "/.container-credentials"));
-+        if (operation.equals("deployment.publication.publish.v1"))
++        if (operation.equals("deployment.publication.publish.v1") || verb.equals("candidate-cleanup-task"))
 +            targets.add(new ActionTarget(server.id(), "deployment-candidate", unit.layout().candidateRoot(arguments.get(1))));
 +        if (operation.equals("deployment.publication.snapshot.v1"))
 +            targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),
@@ -3129,7 +3129,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var guard = new AtomicInteger();
          var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
          var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
-@@ -219,12 +226,70 @@
+@@ -219,12 +226,83 @@
          assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
              "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
          assertArrayEquals(configuration, peer.commands.getFirst().input());
@@ -3163,6 +3163,19 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +                peer.commands.get(i).intent().semantics().orElseThrow().targets());
 +            assertGuard(peer.commands.get(i).script());
 +        }
++    }
++
++    @Test
++    void candidateCleanupDeclaresTheExactOriginalCandidateRoot() throws Exception {
++        var peer = new ControlledPeer(request -> "CANDIDATE_CLEANED=1\n");
++        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
++        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
++        String candidate = "demo-" + "a".repeat(16);
++        assertEquals(TaskResult.SUCCEEDED, channel.cleanupCandidate(unit, candidate).outcome());
++        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
++                new ActionTarget(SERVER.id(), "deployment-candidate", LAYOUT.candidateRoot(candidate))),
++            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
++        assertGuard(peer.commands.getFirst().script());
 +    }
 +
 +    @Test
@@ -3204,7 +3217,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      @Test
-@@ -296,10 +361,20 @@
+@@ -296,10 +374,20 @@
      /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
      private static FileSnapshot snapshot(Path directory) {
          return new FileSnapshot() {
@@ -3229,7 +3242,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          };
      }
  
-@@ -327,21 +402,28 @@
+@@ -327,21 +415,28 @@
          assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
      }
  

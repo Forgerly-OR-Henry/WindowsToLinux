@@ -255,6 +255,19 @@ class DeploymentRuntimePathsTest {
     }
 
     @Test
+    void candidateCleanupDeclaresTheExactOriginalCandidateRoot() throws Exception {
+        var peer = new ControlledPeer(request -> "CANDIDATE_CLEANED=1\n");
+        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
+        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
+        String candidate = "demo-" + "a".repeat(16);
+        assertEquals(TaskResult.SUCCEEDED, channel.cleanupCandidate(unit, candidate).outcome());
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
+                new ActionTarget(SERVER.id(), "deployment-candidate", LAYOUT.candidateRoot(candidate))),
+            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
+        assertGuard(peer.commands.getFirst().script());
+    }
+
+    @Test
     void retentionDeclaresBothReleaseAndContainerCredentialCleanupRoots() throws Exception {
         var peer = new ControlledPeer(request -> "RETAINED=1\n");
         var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);

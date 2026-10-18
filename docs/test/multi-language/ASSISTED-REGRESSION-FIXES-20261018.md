@@ -340,3 +340,5 @@ delivery-03真实产品交付检查1项通过0跳过、41.69s；log-analyzer.jso
 补这类固定管理入口的共同app/owner机械帧，覆盖retain/inspect-runtime/observe-deployment，完整精确字面调用、空stdin及派生应用资源匹配后才给出；保留原命令/所有权和业务修订角色差异，事实不等于live归属或授权。retain额外描述真实inventory/归属验证、当前+两个最新非当前版本保留，以及旧版本和对应容器凭据目录清理。核对源码时发现retain可能调用remove_container_secret_delivery，原target只含应用发布目录；现另声明捕获layout的configurationRoot(app)/.container-credentials，不暴露任何秘密值。无helper/命令/保留策略变化，独立新审批不省略；未来Agent固定发布通道会看到此资源，记录供后续调试。定点验证进行中。
 
 managed-application-frame-unit-01限定10项通过0跳过（3种共同帧、资源/参数漂移与非空stdin/额外动作边界9项，真实PublishChannel保留target1项）；4Java限定格式化完成。接下来导出已成功原Directory Diff，再继续余下6项。
+
+共同管理帧修复本地提交ea7eebf5。Directory Diff原成功任务delivery-01检查1项通过0跳过、32.65s，管理启动命令已导出directory-diff.json，当前2/8。继续核对同一send资源分支还发现candidate-cleanup-task实际删除工作候选，却只声明发布应用；补与publish共用的精确deployment-candidate目标，helper与三实参/删除守卫保持，新增实际通道定点检查。此为已确认目标遗漏，非推测另一个失败根因。
