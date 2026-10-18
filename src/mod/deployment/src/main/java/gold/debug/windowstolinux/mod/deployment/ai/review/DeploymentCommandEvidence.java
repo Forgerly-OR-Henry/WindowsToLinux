@@ -406,7 +406,10 @@ final class DeploymentCommandEvidence {
                     "directory", selection.directory(), "origin", selection.origin().name(),
                     "lexicalRelationToManagedRoot", selection.directory().equals(layout.toolchains()) ? "SAME"
                         : selection.directory().startsWith(layout.toolchains() + "/") ? "DESCENDANT" : "OUTSIDE",
-                    "source", selection.source(), "sha256", selection.sha256())).toList());
+                    "source", selection.source(), "sha256", selection.sha256(),
+                    "requirement", Map.of("declaration", selection.requirement().declaration(), "source", selection.requirement().source(),
+                        "purpose", selection.requirement().purpose().name(), "constraint", selection.requirement().constraint().name(),
+                        "version", selection.requirement().version().map(value -> value.text()).orElse("")))).toList());
         } finally {
             Arrays.fill(bytes, (byte) 0);
         }

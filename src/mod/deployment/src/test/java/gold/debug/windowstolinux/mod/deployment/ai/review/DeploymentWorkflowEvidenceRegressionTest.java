@@ -149,7 +149,7 @@ class DeploymentWorkflowEvidenceRegressionTest {
             scope.sourceCaptured(server, source, task);
             scope.archiveCaptured(source, archive, List.of(), task);
             scope.archiveCaptured(source, archive, List.of(), task);
-            assertFalse(scope.effectFacts(command(server.id(), server.id()), task).containsKey("sourceArchiveObservations"));
+            assertTrue(scope.effectFacts(command(server.id(), server.id()), task).containsKey("sourceArchiveObservations"));
             var intent = command(server.id(), server.id()).withSemantics(new ActionSemantics("deployment.build.run.v1",
                 Set.of(new ActionTarget(server.id(), "deployment-build", "/fixture/candidate"))));
             var evidence = (java.util.Map<?, ?>) scope.effectFacts(intent, task).get("sourceArchiveObservations");
@@ -166,12 +166,18 @@ class DeploymentWorkflowEvidenceRegressionTest {
             var upload = intent.withSemantics(new ActionSemantics("deployment.candidate.upload.v1",
                 Set.of(new ActionTarget(server.id(), "deployment-candidate", "/fixture/candidate/mutable/source.tar.gz"))));
             assertEquals(evidence, scope.effectFacts(upload, task).get("sourceArchiveObservations"));
+            for (String operation : List.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1",
+                "deployment.toolchain.verify.v1", "deployment.publication.snapshot.v1", "deployment.publication.publish.v1")) {
+                var current = intent.withSemantics(new ActionSemantics(operation, intent.semantics().orElseThrow().targets()));
+                assertEquals(evidence, scope.effectFacts(current, task).get("sourceArchiveObservations"), operation);
+            }
             assertFalse(entry.containsKey("commandGrant"));
             assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, List.of(), task(id)));
             assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, UUID.randomUUID(), "a".repeat(64), "project"), List.of(), task));
             assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, source.snapshot().id(), "c".repeat(64), "project"), List.of(), task));
             permission.close();
             assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, List.of(), task));
+            assertThrows(IllegalArgumentException.class, () -> scope.effectFacts(intent, task));
         }
     }
 

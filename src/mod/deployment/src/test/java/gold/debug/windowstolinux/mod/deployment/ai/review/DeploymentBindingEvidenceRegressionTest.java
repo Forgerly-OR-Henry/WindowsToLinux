@@ -44,6 +44,11 @@ class DeploymentBindingEvidenceRegressionTest {
             assertEquals(artifact, binding.at("/toolchains/0/sha256").asText());
             assertEquals(directory, binding.at("/toolchains/0/directory").asText());
             assertEquals("DESCENDANT", binding.at("/toolchains/0/lexicalRelationToManagedRoot").asText());
+            assertEquals("1.95", binding.at("/toolchains/0/requirement/declaration").asText());
+            assertEquals("Cargo.toml", binding.at("/toolchains/0/requirement/source").asText());
+            assertEquals("LANGUAGE_TARGET", binding.at("/toolchains/0/requirement/purpose").asText());
+            assertEquals("SERIES", binding.at("/toolchains/0/requirement/constraint").asText());
+            assertEquals("1.95", binding.at("/toolchains/0/requirement/version").asText());
             assertTrue(binding.path("bindingDigestMeaning").isTextual());
             assertFalse(binding.has("verifiedInstallation"));
         }

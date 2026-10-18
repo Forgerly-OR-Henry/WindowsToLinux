@@ -93,7 +93,7 @@ class DeploymentToolchainPreparationObservationRegressionTest {
     }
 
     @Test
-    void recentPreparationSetsAreBoundedAndNeverIncludedInUnrelatedEffects() throws Exception {
+    void recentPreparationSetsAreBoundedAndSharedByCurrentTaskReviews() throws Exception {
         try (var h = new Harness("VALID")) {
             var observer = (DeploymentCommandReview) h.scope.interaction();
             for (int index = 0; index < 33; index++) {
@@ -101,7 +101,9 @@ class DeploymentToolchainPreparationObservationRegressionTest {
                 observer.toolchainsPrepared(h.server, tools(requirement, DIRECTORY), h.fixture.task);
             }
             assertEquals(32, h.bindings().size());
-            assertFalse(h.scope.effectFacts(h.intent("deployment.candidate.capacity.v1"), h.fixture.task).containsKey("toolchainPreparationObservations"));
+            var observation = (Map<?, ?>) h.scope.effectFacts(h.intent("deployment.candidate.capacity.v1"), h.fixture.task)
+                .get("toolchainPreparationObservations");
+            assertEquals(h.bindings(), observation.get("bindings"));
         }
     }
 

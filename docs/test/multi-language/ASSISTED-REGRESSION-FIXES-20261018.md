@@ -289,3 +289,13 @@ observed-outcome-and-official-digest-unit-01因新增Codec.decode受检异常未
 
 - Rust-binding-review-02真实API-only审查通过，taskdf19d84e-d023-47ad-bad2-78d816615741/root ai-live-rust-binding-review-xbc7ksn6k，known4957=4824+133、cache2816/miss2008、reasoningUNKNOWN，4capUNKNOWN，无SSH/许可复用。两处修复相关5项定点通过，3Java格式化完成。下一步CLI21完整流程；该单项不等同整部署成功。
 - 当前已记录known3949839、765物理尝试（1输入/输出UNKNOWN）、188项能力验证用量UNKNOWN；usage-audit-07仍不覆盖后续新增，最终需要新的库对账。仍0/8。
+
+## CLI21：统一当前任务的审查上下文
+
+CLI21 prepare成功，bind仍有效DENY；理由已经变为缺少源码必需工具链与catalogRevision的对应证据，不再是官方校验值问题。原a0b1437f-8dec-453d-80cc-b7e457aeb746/root assisted-live-log-analyzer-xcq95v2zc经reconcile-21-01产品结清ENDED/FAILED、blockers空、无应用。JFR仅余原拒绝/关闭阻塞，没有UNKNOWN日志序列化二次异常；原DEPLOYMENT_EFFECT_OUTCOME已经正常记录。
+
+已定位真实交接缺口：Scope虽然保存完整原sourceToolchainRequirements，却只在prepare/upload/build/publish白名单提供归档，bind拿不到；准备回执也另有操作白名单。因此停止继续按单个操作加例外，统一在原任务作用域的每次审查提供已有来源、归档和准备观测。记录仍受原task对象/server/model/workflow句柄、不可替换及32项/文件名预算约束；关闭失效，过去观测不是当前安全结论或许可。不新增来源读取、命令或远端写入；STATIC不调用这些辅助适配，Agent编排不变。完整候选/文件/目标仍由本条原审批核对。
+
+绑定审查同时补实际canonical typed binding中已存在的requirement五字段（declaration/source/purpose/constraint/version），便于与同源声明对照；不修改绑定字节/摘要/服务器协议，不要求不同语义的源码约束与已审阅版本策略字符串盲目相等。shared-review-context-unit-01定点13项全部通过、0跳过：原来源关联/不可替换/关闭与跨scope边界5、原真实准备回执/变造/消费/容量与作用域7、绑定解码1；源码观测确实在bind/verify/snapshot等当前审查可见，准备历史在当前任务其他审查可见，均无grant字段。5Java格式化完成。
+
+当前累计known4042320、781物理（1输入/输出UNKNOWN）、192cap UNKNOWN；旧库audit07不覆盖后续新增，最终再对账。下一步CLI22完整流程，仍0/8。
