@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前6/8交付（全部3CLI、Task Board、File Transfer及Asset Lending），其余2网站串行验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前7/8交付（全部3CLI、Task Board、File Transfer、Asset Lending及CSV Inspector），最后Survey Scoring正在验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -540,3 +540,11 @@ Go/Node准备和绑定均真实成功；Go绑定审批output940/reasoning829。G
 2026-10-19 04:29（Asia/Singapore）交付；JUnit1通过0跳过，总20分56秒，源码沿用0c65225，没有为该项目继续修改生产程序。原aa472bb0-b320-4f74-993a-d56b01cebb98/root assisted-live-asset-lending-8tavet83s；应用wtl-assisted-asset-lending-8tavgcrso，asset-lending.json实际导出http://45.192.105.213:46120、RUNNING/自启DISABLED。
 
 产品实际准备.NET10.0.300及Node，后端EXIT0/TOOL=DOTNET_LOCKED、前端EXIT0/TOOL=NPM，配置暂存/发布/整应用健康/清理通过。业务创建分类及资产，借还经过submit/approve/checkout/return，确认closed，重启后再次读取仍closed；另经过产品启停、自启开关与最终交付START。AI_LIVE_PASS记录LANGUAGE15/APPROVAL56；不是跳过独立模型或执行服务器手工部署的结果。当前6/8，继续CSV与Survey，Agent部署仍暂停。
+
+## CSV Inspector 01：多语言后台任务、导出及工作进程持久化通过
+
+2026-10-19 04:53（Asia/Singapore）交付；JUnit1通过0跳过，总24分23秒，继续沿用0c65225的同一生产源码，首轮完整通过。原f4984e37-b83a-4106-8a82-a48c11fa3b6a/root assisted-live-csv-inspector-99cuv5z54；应用wtl-assisted-csv-inspector-99cuwmrww，csv-inspector.json实际导出http://45.192.105.213:46130、RUNNING/自启DISABLED。
+
+产品准备Python3.12.15及PHP8.3.35；工作进程EXIT0/TOOL=PIP_LOCKED、PHP组件EXIT0/TOOL=COMPOSER_LOCKED。配置暂存、发布、整应用健康与清理通过。真实报告任务完成，核验rows=3、issueCount=6、validRows=1；重启后工作进程PID不同、任务仍completed，并实际导出含issueCount的报告。产品启停、自启开关及最终START全部完成，未触发新的程序修复或服务器手工写入。
+
+AI_LIVE_PASS记录LANGUAGE10/APPROVAL56；其中一次发布审批实际reasoning20204但按原32768上限完整提交，未靠新提额或替换原结论继续。当前7/8，最后Survey Scoring仍待真实验收；不可提前称8/8或恢复Agent部署。
