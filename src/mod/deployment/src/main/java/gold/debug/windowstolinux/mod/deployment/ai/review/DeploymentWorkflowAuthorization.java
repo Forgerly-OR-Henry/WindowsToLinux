@@ -136,7 +136,7 @@ public final class DeploymentWorkflowAuthorization {
             return java.util.Map.of("task", task.id().toString(), "serverTargets", intent.serverIds(),
                 "modelRevision", intent.revision(), "approvalPolicy", policy, "rememberAuthorization", remember,
                 "frozenWorkflowRequest", request, "recovery", recovery, "hostHandoffOpened", true,
-                "meaning", "Original active host workflow handoff only; not per-command permission, resource ownership or a safety verdict");
+                "meaning", "Original active host workflow handoff only, not per-command permission, ownership or a safety verdict. modelRevision identifies the frozen AI configuration, not a deployment plan, source or candidate; it must not be compared to businessRevision or resource digests as the same object.");
         }
 
         @Override

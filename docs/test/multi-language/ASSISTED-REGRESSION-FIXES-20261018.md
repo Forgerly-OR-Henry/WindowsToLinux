@@ -131,6 +131,14 @@ CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build
 
 `fixed-effect-evidence-unit-01` 9项通过，0跳过：新增3项验证实际流程+源码事实仍需原精确宿主许可、DENY原文脱敏且0宿主申请、模型审查期间关闭交接即拒绝发许可；相关原作用域6项通过。没有运行旧失效构建夹具、Agent或全量测试。五个触及Java文件由既有格式器格式化，精确补丁继续以本轮首次修改前工作树为基线。
 
+## CLI06：模型配置修订与业务计划修订混淆
+
+固定效果修复提交 `0074d5c4` 后，CLI06在更早的candidate-create被拒绝，没有触达上传，不能声称上传问题已由真实部署验证。任务 `49a5ae18-71be-483f-bf94-630cac197d31`、root `assisted-live-log-analyzer-tsd0gdywk` 已 `reconcile-06-01` 产品对账 ENDED/FAILED、未发布。known129129（部署63047/审批66082），恢复新增2APP8381另计。
+
+拒绝原文把businessRevision与workflow.modelRevision要求相等，并认为预调用helper守卫没有验证work目录，所以缺目录守卫。两者不是同一种对象：前者是计划身份，后者是冻结AI配置身份。现有源码 `20-candidate-workspace.sh` 的 create_task_candidate→create_candidate→initialise_controlled_roots 以及 `17-managed-content.sh` 的 assert_storage_parent 在helper内部核对父链symlink/owner/write和现有根，再初始化受管根、排他创建候选和写任务标记；预调用代码守卫保护helper，不替代这些内部检查。只是补充真实源码绑定合同与身份域说明，没有修改helper或绕过检查。
+
+`candidate-guard-contract-unit-01` 源码固定身份/完整预调用守卫1项通过，原拒绝2参数因policy12305字符超过原12288失败；失败保留。压缩重复表述后，`unit-02` 只重跑这两项，均通过，未提高上限；已通过的源码测试不重复。压缩仍保留原Agent参数顺序、非root隔离、所有动态输入/初始化效果和独立许可规则，没有运行Agent验收。下一步仅重试失败CLI，仍无交付URL或CLI命令可宣称成功。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。
