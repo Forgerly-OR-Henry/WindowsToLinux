@@ -41,6 +41,7 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
                 if (!category.target().owner().equals(OWNER)) continue;
                 for (var record : runtime.logs().inspect(category.target().key()).records())
                     if (record.event().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
+                        || record.event().eventCode().equals("DEPLOYMENT_ASSISTED_REVIEW_DENIED")
                         || record.event().eventCode().equals("DEPLOYMENT_OPERATION_FAILURE"))
                         System.out.println("ASSISTED_REVIEW_DIAGNOSTIC " + record.event().eventCode() + " " + record.event().message());
             }

@@ -1,3 +1,50 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedApproval.java
+@@ -63,21 +63,36 @@
+         if (!revision.equals(context.ai().configurationRevision(AiPurpose.APPROVAL, task)))
+             throw denied(task, "DEPLOYMENT_ASSISTED_CONFIGURATION_CHANGED");
+         try {
++            var facts = new LinkedHashMap<String, Object>();
++            facts.put("operation", intent.semantics().map(ActionSemantics::operation).orElse(intent.type()));
++            facts.put("serverTargets", intent.serverIds());
++            facts.put("resourceTargets", intent.semantics().map(ActionSemantics::targets).orElse(Set.of()).stream()
++                .sorted(java.util.Comparator.comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
++                    .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
++                    .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
++            facts.put("businessRevision", intent.revision());
++            facts.put("businessRevisionMeaning", "Identity of the reviewed business state; not automatically the digest of every resource. Compare each digest to the expected value of that same object.");
++            facts.put("exactAction", intent.exactAction());
++            facts.put("authorizationPolicy", policy);
++            var scope = context instanceof DeploymentAssistedScope value ? value : null;
++            if (scope != null) facts.put("currentCommandEvidence", scope.effectFacts(intent, task));
+             var response = new DeploymentAiJson(context).ask(AiPurpose.APPROVAL,
+                 gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.INSTRUCTION
+                     + DeploymentSkillResources.text(DeploymentAssistedApproval.class, "fixed-effect-review.md"),
+-                Map.of("operation", intent.semantics().map(ActionSemantics::operation).orElse(intent.type()), "serverTargets", intent.serverIds(),
+-                    "resourceTargets", intent.semantics().map(ActionSemantics::targets).orElse(Set.of()).stream()
+-                        .sorted(java.util.Comparator.comparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::serverId)
+-                            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
+-                            .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList(),
+-                    "businessRevision", intent.revision(), "exactAction", intent.exactAction()), revision, task);
++                facts, revision, task);
+             var review = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentReviewDecision.parse(response);
+-            if (!review.decision().equals("APPROVE")) throw denied(task, "DEPLOYMENT_ASSISTED_REVIEW_DENIED");
++            if (!review.decision().equals("APPROVE")) {
++                gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.assistedReviewDenied(context, task, review.reason());
++                throw new ApiException(new Problem(ProblemCode.ACCESS_DENIED, "DEPLOYMENT_ASSISTED_REVIEW_DENIED",
++                    "Original fixed deployment review was denied", Map.of("task", task.id().toString(), "reviewReason", review.reason(),
++                    "requiresUserConfirmation", Boolean.toString(review.requiresUserConfirmation())), Optional.of(task.id())));
++            }
+             context.ai().configurationRevision(AiPurpose.APPROVAL, task);
++            if (scope != null) scope.effectFacts(intent, task);
+             var actual = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentAuthorizationPolicy.authorize(host,
+                 intent, Optional.empty(), task, policy, rememberAuthorization, review);
+             context.ai().configurationRevision(AiPurpose.APPROVAL, task);
++            if (scope != null) scope.effectFacts(intent, task);
+             return actual;
+         } catch (DeploymentAiJson.CapabilityOutcomeException outcome) {
+             return new OperationResult<>(outcome.outcome(), Optional.empty(), outcome.problem());
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java
@@ -158,7 +205,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,59 @@
+@@ -48,6 +48,64 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -195,6 +242,11 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    @Override
 +    public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
 +                                TaskContext supplied) throws ApiException {
++        return effectFacts(intent, supplied);
++    }
++
++    /** Supplies the same task-bound observations for fixed transfers and business effects. */
++    public Map<String, ?> effectFacts(ActionIntent intent, TaskContext supplied) throws ApiException {
 +        sameTask(supplied);
 +        verify();
 +        if (workflow == null) return Map.of();
@@ -751,7 +803,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/feedback/DeploymentDiagnostics.java
-@@ -138,6 +138,23 @@
+@@ -138,6 +138,29 @@
                  new DeploymentDiagnostics(context).event(task.id(), LogLevel.WARN, "DEPLOYMENT_AGENT_COMMAND_REVIEW_DENIED",
                      publicReviewReason(review), Optional.empty());
          }
@@ -760,6 +812,12 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    /** Preserves public independent command refusal in every deployment mode without changing its decision. / 各部署模式保留公开命令拒绝原因，不改变决定。 */
 +    public static void commandReviewDenied(ModContext context, TaskContext task, String reason) {
 +        new DeploymentDiagnostics(context).event(task.id(), LogLevel.WARN, "DEPLOYMENT_COMMAND_REVIEW_DENIED",
++            publicReviewReason(reason), Optional.empty());
++    }
++
++    /** Retains fixed-effect refusal without changing its decision or exposing protected data. */
++    public static void assistedReviewDenied(ModContext context, TaskContext task, String reason) {
++        new DeploymentDiagnostics(context).event(task.id(), LogLevel.WARN, "DEPLOYMENT_ASSISTED_REVIEW_DENIED",
 +            publicReviewReason(reason), Optional.empty());
 +    }
 +

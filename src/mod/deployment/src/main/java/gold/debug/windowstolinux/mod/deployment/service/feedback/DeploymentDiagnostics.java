@@ -146,6 +146,12 @@ public final class DeploymentDiagnostics {
             publicReviewReason(reason), Optional.empty());
     }
 
+    /** Retains fixed-effect refusal without changing its decision or exposing protected data. */
+    public static void assistedReviewDenied(ModContext context, TaskContext task, String reason) {
+        new DeploymentDiagnostics(context).event(task.id(), LogLevel.WARN, "DEPLOYMENT_ASSISTED_REVIEW_DENIED",
+            publicReviewReason(reason), Optional.empty());
+    }
+
     /** Retains the public cause before a graph conservatively becomes UNKNOWN. / 整图保守转为UNKNOWN前保留公开原因。 */
     public static void operationFailure(ModContext context, TaskContext task, Throwable failure) {
         String reason = failure.getClass().getSimpleName() + ": " + String.valueOf(failure.getMessage());

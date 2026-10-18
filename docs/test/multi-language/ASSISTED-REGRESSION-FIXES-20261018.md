@@ -123,6 +123,14 @@ CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build
 
 `publication-source-stage-unit-01` 编译成功，但选取的旧构建纠正方法6参数全在源码/表单前置报 `DEPLOYMENT_STATIC_REVIEW_INVALID`，未到本次发布阶段，不能计为通过。该夹具源码仍返回旧纯文本 AiResponse、依赖旧事实tools，而实际 NativeSelection 要求 finish=tool_calls及原生调用；这套夹具尚未适配当前原生协议。保留失败，不向生产增加纯文本兼容放宽，也不据此声称新发布字段已由该组验证。下一次真实流程验证该阶段。
 
+## CLI05：固定效果审批遗漏上下文与拒绝原文
+
+发布阶段说明提交 `90bf3fa6` 后，CLI05实际选择标准 build，候选创建/查询成功，在上传前固定效果独立审批 DENY。该次原文未被旧路径保存，不能补写具体拒绝原因。任务 `975d9c61-e395-431e-910e-fdc71e84dd82`、root `assisted-live-log-analyzer-tmo94y8ak` 已 `reconcile-05-01` 产品对账 ENDED/FAILED、未发布；本次known104301（部署31318/审批72983），恢复新增4APP16864另计，实际主日志及恢复用量均保留。
+
+检查发现前述上下文只接在完整SSH命令审批；上传走 `DeploymentAssistedApproval.approve`，仅有operation/targets/revision/exactAction，没有真实流程交接和后续源码选择，也丢弃DENY reason。现在固定效果路径复用相同原作用域事实，分别在审查前、模型返回后、宿主许可后校验；仍传原intent和空command给原宿主，确认要求/决定不变。独立拒绝以 `DEPLOYMENT_ASSISTED_REVIEW_DENIED` 脱敏日志及原问题保留reason，未请求宿主许可；不把目标摘要等同每个资源摘要。未提供源码归档内容给模型，也不创建额外服务器写入能力。
+
+`fixed-effect-evidence-unit-01` 9项通过，0跳过：新增3项验证实际流程+源码事实仍需原精确宿主许可、DENY原文脱敏且0宿主申请、模型审查期间关闭交接即拒绝发许可；相关原作用域6项通过。没有运行旧失效构建夹具、Agent或全量测试。五个触及Java文件由既有格式器格式化，精确补丁继续以本轮首次修改前工作树为基线。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。

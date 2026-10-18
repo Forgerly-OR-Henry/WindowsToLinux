@@ -81,6 +81,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
+        return effectFacts(intent, supplied);
+    }
+
+    /** Supplies the same task-bound observations for fixed transfers and business effects. */
+    public Map<String, ?> effectFacts(ActionIntent intent, TaskContext supplied) throws ApiException {
         sameTask(supplied);
         verify();
         if (workflow == null) return Map.of();
