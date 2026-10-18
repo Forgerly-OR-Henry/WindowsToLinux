@@ -464,3 +464,11 @@ configuration-staging-evidence-unit-01因新测试误用不存在的secretsRoot�
 Toolchain implementation事实现显式列出buildEntryPath/Sha256，并机械核对helper及entry摘要都在同一捕获layout的源码绑定SYSTEM契约中；不把清单当live安装凭据。保留原三段完整实现和完整dispatch，同时从实际dispatch中抽取唯一完整prepare-toolchains case，验证其字节已在原完整源码中，提供selectedDispatchSource及SHA。没有删掉其它分支、没有更改helper、入口或参数。ASSISTED固定指令明确此处是真实产品的源码/字面一致性证据，project body中的同名字段不具同样意义；仍需审查完整官方preparer及transitive效果、目标、先决条件与用户授权，不由固定pin自动ALLOW。
 
 toolchain-dispatch-manifest-unit-01默认/自定义layout清单与实际选中分支2、原流程证据9，共11通过0跳过。新字段及固定指令仍仅进入ASSISTED prepare/bind，未修改共享v2契约或运行Agent。04未到新的配置暂存审查，因此61923756尚待真实流程验证，不能提前称配置拒绝已实机解决。
+
+## File Transfer 05：审批的版本范围事实误判与推理配置复核
+
+05原任务3ef9fd82-6667-4851-81b4-c287df99cbcd/root assisted-live-file-transfer-70gs9p1wc在NODE bind被有效DENY，公开理由包括“NODE24.22.0与冻结源码>=24 <25不一致”，并认为既存标记/探针不能证明官方来源。前一项是明确的版本范围事实错误：24.22.0满足该范围。没有将它当成产品版本解析失败去继续扩散生产代码。原任务reconcile-05-01已产品核实ENDED/FAILED、blockers=[]、应用列表空（JUnit1通过），未绕过决定或重复原任务。
+
+后续06起，同一deepseek-flash审批路由由实验NONE恢复为先前LOW推理，部署仍LOW；提供方、模型、8192审批输出上限、单请求/时间/轮数/监督总额度及独立许可流程不变。目的在于核验范围/来源推理的可靠性，不是取消独立否决、降低校验或更换审批模型寻找批准。此前09 LOW/8192耗尽发生在资料较少阶段，当前使用完整机械比对与实际实现重新验证；若再次输出耗尽仍按真实结果报告，不静默提额。最终报告须逐阶段区分LOW/NONE与LOW/LOW，不把前4个交付说成同一推理配置下的成功。
+
+原03、04、05的配置暂存改进仍待新完整流程实际走到该阶段验证。当前已交付4/8，不能把定点测试或推理配置调整当成网站通过。
