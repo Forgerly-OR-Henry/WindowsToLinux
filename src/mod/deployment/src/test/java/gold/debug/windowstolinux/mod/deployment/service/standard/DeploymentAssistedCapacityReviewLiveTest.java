@@ -41,9 +41,21 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
         reviewWithoutRemoteDispatch("preparation");
     }
 
+    @Test
+    void reviewsHostProbeWithoutRemoteDispatch() throws Exception {
+        reviewWithoutRemoteDispatch("host-probe");
+    }
+
+    @Test
+    void reviewsRustPreparationWithTheProductDeploymentGoalWithoutRemoteDispatch() throws Exception {
+        reviewWithoutRemoteDispatch("rust-preparation");
+    }
+
     private void reviewWithoutRemoteDispatch(String kind) throws Exception {
         boolean binding = kind.equals("binding");
-        boolean preparation = kind.equals("preparation");
+        boolean rust = kind.equals("rust-preparation");
+        boolean preparation = kind.equals("preparation") || rust;
+        boolean hostProbe = kind.equals("host-probe");
         var enabled = DeploymentStaticLiveAcceptanceTest.class.getDeclaredField("aiEnabled");
         enabled.setAccessible(true);
         enabled.setBoolean(this, true);
@@ -62,20 +74,25 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                 String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
                 var server = new ServerId("static-live");
                 try (var authority = DeploymentWorkflowAuthorization.open(context, task, server, revision, "AUTOMATIC", true,
-                    preparation ? "Review the guarded Java 21 catalog prerequisite for the user's authorized task-board deployment, including permitted official download/install and SYSTEM reuse effects; no SSH dispatch"
+                    rust ? rustDeploymentGoal(server)
+                        : hostProbe ? "Review the exact host capability observation for the user's authorized task-board deployment on the selected server; no SSH dispatch"
+                        : preparation ? "Review the guarded Java 21 catalog prerequisite for the user's authorized task-board deployment, including permitted official download/install and SYSTEM reuse effects; no SSH dispatch"
                         : binding ? "Review the original task-board-12 binding bytes (matched to original SHA-256); no claim of current installation, no SSH dispatch"
                         : "Review a read-only filesystem capacity prerequisite on the selected server; no SSH dispatch");
-                     var request = new CommandRequest(preparation
+                     var request = new CommandRequest(hostProbe
+                         ? gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe.render()
+                         : preparation
                          ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
                          "'" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH
-                             + "' 'prepare-toolchains' 'prepare' 'JAVA' '21' '-' '300' '-'")
+                             + (rust ? "' 'prepare-toolchains' 'prepare' 'RUST' '1.85' '-' '1776' '-'"
+                             : "' 'prepare-toolchains' 'prepare' 'JAVA' '21' '-' '300' '-'"))
                          : binding ? originalBindingCommand()
                          : "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\nstat -f -c '%a %S' -- '/var/lib'\n",
-                         new byte[0], Duration.ofSeconds(preparation ? 315 : 20), preparation ? 65536 : 1024)) {
+                         new byte[0], Duration.ofSeconds(hostProbe ? 120 : rust ? 1791 : preparation ? 315 : 20), preparation || hostProbe ? 65536 : 1024)) {
                     var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
-                        preparation ? "deployment.toolchain.prepare.v1" : binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
-                        Set.of(new ActionTarget(server.id(), binding || preparation ? "deployment-build" : "deployment-workspace",
-                            binding || preparation ? gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original().toolchains() : "/var/lib"))));
+                        hostProbe ? "deployment.candidate.host-probe.v1" : preparation ? "deployment.toolchain.prepare.v1" : binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
+                        Set.of(new ActionTarget(server.id(), hostProbe ? "deployment-host" : binding || preparation ? "deployment-build" : "deployment-workspace",
+                            hostProbe ? server.id() : binding || preparation ? gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original().toolchains() : "/var/lib"))));
                     var result = DeploymentFixedCommandApproval.approveWithEvidence(context, context.interaction(), intent, request,
                         task, revision, "AUTOMATIC", true, (actual, command, supplied) -> java.util.Map.of(
                             "workflowAuthorization", DeploymentWorkflowAuthorization.reviewFacts(authority, supplied, actual)));
@@ -100,6 +117,14 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result::toString);
             System.out.println("ASSISTED_CAPACITY_REVIEW_PASS kind=" + kind + " task=" + handle.id() + " sshDispatches=0 state=" + root);
         }
+    }
+
+    private static String rustDeploymentGoal(ServerId server) throws Exception {
+        var formatter = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.publish.policy.DeploymentPublishPolicyContext.class
+            .getDeclaredMethod("workflowRequest", ServerId.class, String.class);
+        formatter.setAccessible(true);
+        return (String) formatter.invoke(null, server,
+            "Draft[application=log-analyzer-api-review, selectedSource=success-log-analyzer, cli/Cargo.toml rust-version=1.85]; API-only review, no SSH dispatch");
     }
 
     @Test

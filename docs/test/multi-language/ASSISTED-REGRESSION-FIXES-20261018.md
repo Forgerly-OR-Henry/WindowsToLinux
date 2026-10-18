@@ -13,6 +13,7 @@
 | `ai/review/DeploymentFixedCommandApproval.java`、`service/feedback/DeploymentDiagnostics.java` | 独立审批拒绝时，在各模式保留公开理由的脱敏记录，最多4096字符，不记录原始模型正文、命令或凭据 | **共享代码，Agent 也会获得该诊断。** 仍抛出原拒绝，不增加发送、不产生授权、不缓存拒绝。 |
 | `service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java` | 捕获内部异常并保守转 UNKNOWN 前，保存 DEPLOYMENT_OPERATION_FAILURE 的脱敏类型、原因和公开问题码 | 仅补诊断，不改变 UNKNOWN、对账、清理或发布逻辑；对 STATIC/ASSISTED 整图可见。 |
 | `ai/review/DeploymentCommandEvidence.java` | 把已执行的规范 Base64、严格 UTF-8、绑定类型往返检查显式列为 literalValidation；按当前捕获布局给出目录的 SAME/DESCENDANT/OUTSIDE 关系，区分同前缀兄弟路径 | **共享证据，Agent 后续需核对。** 仅描述字面编码与词法路径关系，不声明安装、归属或权限，不接受无效绑定；SYSTEM 目录可以在管理根之外，仍须审查原 helper 的保护检查。 |
+| 同一 `DeploymentCommandEvidence.java` 的 platformProbe | 仅对当前实现的 HOST/DOCKER/PODMAN 完整脚本和空stdin做机械匹配，给出SHA/字节数及字面环境/guard/argv说明。任何改动、追加命令、非空stdin、错误variant或其它程序都得不到此绑定 | **共享证据，Agent 后续需核对。** 没有改主机探测脚本；不证明实时程序可信、无副作用、归属或权限。容器探测仍可能初始化存储，必须完整独立审查。 |
 | `linux/helper/DeploymentHelperReviewContract.java`、资源 `ai/review/command-review.md` | 根据固定 helper 源码补齐工具链 prepare 的官方元数据、重定向白名单、摘要校验、归档边界、管理根、SYSTEM 复用和源码包依赖安装效果；明确 helper 本体安装不属于已有安装调用信任 | **共享审查合同，Agent 后续须核对。** 未改 helper、摘要、动态输入或授权；未来实际URL/摘要须在受保护解析后取得，不能预先捏造。源码包可能在主机安装依赖并编译，不能误称项目沙箱内执行。 |
 | `ai/review/DeploymentWorkflowAuthorization.java`、`DeploymentCurrentCommandEvidence.java`、`DeploymentFixedCommandApproval.java`、`service/standard/assisted/DeploymentAssistedScope.java`、`shared/deploy/publish/policy/DeploymentPublishPolicyContext.java` | 原先实际宿主流程作用域已打开，但审批材料只有策略名称，没有原目标。现在以实际宿主返回句柄的私有仅关闭包装提供当前任务对象/服务器绑定的原非秘密目标；冻结模型修订/策略也须匹配。普通与显式恢复绑定各自的新句柄；关闭即撤销事实，释放失败仍可重试原宿主释放 | **共享审批机制，Agent 后续须核对。** 不增加 App API，不建立全局授权表、不缓存许可、不持久化句柄。事实仅证明原流程交接，不证明目录归属、安全或当前命令权限；每条命令的独立审查和宿主授权保持。STATIC 不增加模型，Agent 编排未改。 |
 | 资源 `ai/review/command-review.md` | 澄清匹配已声明服务器/路径的固定只读容量查询不要求取得既有系统目录的应用所有权，也不要求目录内容摘要等同业务修订 | **Agent 也会使用的共享审查说明。** 仍检查精确目标与所有实际效果，不豁免写入、目标不符或不可信可执行内容。先通过真实 API-only 审查验证，未发送SSH。 |
@@ -79,6 +80,20 @@
 压缩涉及共享审查文字：保留原 Agent stdin 字节比较、原参数顺序、可信源码哈希、非root隔离、全部可达效果和独立许可规则。它是满足原有请求大小上限的表述收敛，不是 Agent 真机验证或已证明的提供方费用优化。相关 Agent 语义仍需后续按授权调试。
 
 `preparation-review-02` 真实 API-only 审查通过，Task `189c96c6-aa7f-44f3-8ac1-915f6199df64`，状态目录 `ai-live-preparation-review-rry7urfs0`。同一模型/LOW部署+NONE审批配置，输入3795、输出122，共3917 Token；cache128/miss3667，reasoning未报告，另4项能力验证未知。未连接/发送SSH，也未复用许可发命令。原真实部署13已对账结束后，第14次完整项目运行才开始；此处不声称第14次或八项目已通过。
+
+## 第14轮及首个CLI的后续证据
+
+第14轮已通过 JDK 准备/绑定，随后主机能力探测被独立模型拒绝。原任务 `934338e4-8f9f-41db-9ff3-0229e698dfb3` 已由产品对账 ENDED/FAILED、`DEPLOYMENT_GRAPH_PUBLISH_NOT_STARTED`，未发布；已知116174 Token（部署61716/审批54458），恢复新增3次APP共12586另计。
+
+拒绝理由称包管理器插件、动态任意Python以及heredoc/实际字节不可核对。直接检查当前源码与原定点用例可确认：现有脚本已清空继承环境、固定根工作目录、校验可选程序和父链，Composer传入全部禁插件/脚本/缓存参数，Python使用-I/-S/-B及venv --help。不能将模型的说法记为已证实漏洞，也不靠声明“安全”绕过审查。[Composer官方参数](https://getcomposer.org/doc/03-cli.md)、[Python官方参数](https://docs.python.org/3.13/using/cmdline.html)支持对应选项用途；这不等同于证明任意已安装程序可信。本轮只补充精确请求字节和字面参数证据，探测执行体保持原样。
+
+`platform-probe-evidence-unit-01` 新绑定5项、原隔离/归属/Python无启动钩子3项、原拒绝2参数，共10项通过，0跳过；使用本地Git Bash/Python及loopback夹具，无真实服务器写入或外部模型。`host-probe-review-01` 实际模型审查通过：Task `9a606510-7b74-465c-8399-43cbe58627b1`，输入9047/输出111=9158 Token、cache128/miss8919、reasoning未报告，4能力验证未知，没有SSH连接/发送。
+
+为先验证完整构建至交付路径，队列改为三个CLI后五个网站。首个 `log-analyzer-01` 在 Rust 准备被拒绝，原 `a18e8f7c-3ef1-4ccd-9bfd-ea83d424d253` 已产品对账 ENDED/FAILED、未发布；known71029（部署29281/审批41748），恢复2APP共8394另计。拒绝把1776秒误述为范围问题后又自行纠正，最终称源码 Draft 未表达工具链安装目标；还称安装为rustup，而固定源码实际使用带官方摘要验证的独立发行归档 install.sh，不能混淆。
+
+因此原流程交接现在明确表述：构建/发布所选应用，包含已审阅源码所需工具链/依赖/已声明数据库准备、必要受控安装、工作空间、隔离构建和健康发布；仍受原计划目标及既有资源决策策略约束，并完整保留原选择。不是新增服务器操作或扩大到无关安装；STATIC不打开该AI交接，单命令审批及宿主许可保持。此语义通过真实产品目标格式器进入API-only Rust审查；案例选择源码声明的1.85分支、1776秒，不声称与原失败命令字节相同或已确定实际安装版本。
+
+`rust-review-01` 实际模型审查通过，Task `12ed0d0d-10a1-403a-9b71-7c4cd70dca2d`，状态 `ai-live-rust-preparation-review-s7euj0bs8`；没有SSH连接/发送或许可复用。随后只重跑失败CLI，已经通过的定点组不再重跑，Agent编排和真机测试仍暂停。
 
 服务器写入始终由产品执行；本轮监督侧只启动验收和本地诊断，没有手工部署、手工修改服务或手工补业务数据。凭据不进入本记录、补丁或 Git。
 

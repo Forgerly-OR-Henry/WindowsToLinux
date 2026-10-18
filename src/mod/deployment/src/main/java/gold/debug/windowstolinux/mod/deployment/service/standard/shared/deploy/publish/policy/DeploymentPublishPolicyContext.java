@@ -105,7 +105,7 @@ public final class DeploymentPublishPolicyContext implements ModContext {
         var guarded = new DeploymentPublishPolicyContext(original, task, Optional.of(journal), routed, false, recoverySupport);
         try {
             if (assisted) {
-                guarded.permission = DeploymentWorkflowAuthorization.open(original, task, server, revision, approval, rememberAuthorization, request);
+                guarded.permission = DeploymentWorkflowAuthorization.open(original, task, server, revision, approval, rememberAuthorization, workflowRequest(server, request));
                 if (routed instanceof gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentCurrentCommandEvidence evidence)
                     evidence.workflowOpened(guarded.permission);
             }
@@ -114,6 +114,15 @@ public final class DeploymentPublishPolicyContext implements ModContext {
             journal.close();
             throw refused;
         }
+    }
+
+    /** Describes the requested deployment effects before the host handoff, retaining the exact original choices. */
+    private static String workflowRequest(ServerId server, String selectedInputs) {
+        return "Build and publish the selected application on server " + server.id() + ". "
+            + "This deployment includes the reviewed source's required toolchains, build/runtime dependencies and declared database prerequisites, "
+            + "including guarded installation when compatible reuse is unavailable; managed helper/workspace preparation; isolated builds; staging, health checks and publication. "
+            + "Targets and choices remain restricted to the reviewed plan; changes to existing resources retain the selected decision policy.\n"
+            + "Selected source/application inputs:\n" + selectedInputs;
     }
 
     /** Reads original retained facts without current preferences, model calls or a new handoff. / 不读取当前偏好、不调用模型、不新交接地读取原留存事实。

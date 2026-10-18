@@ -70,6 +70,7 @@ final class DeploymentCommandEvidence {
         facts.put("businessRevision", intent.revision());
         facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
         facts.put("exactAction", intent.exactAction());
+        platformProbe(operation, request).ifPresent(probe -> facts.put("platformProbe", probe));
         if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
             if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Isolation server identity missing");
             var probe = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe
@@ -273,6 +274,38 @@ final class DeploymentCommandEvidence {
                     "source", selection.source(), "sha256", selection.sha256())).toList());
         } finally {
             Arrays.fill(bytes, (byte) 0);
+        }
+    }
+
+    /** Describes only exact current product probe bytes, never observed executable trust or permission. */
+    private static java.util.Optional<Map<String, Object>> platformProbe(String operation, CommandRequest request) {
+        String variant = null;
+        if (operation.equals("deployment.candidate.host-probe.v1")
+            && request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe.render()))
+            variant = "HOST";
+        if (operation.equals("deployment.candidate.container-probe.v1"))
+            for (var engine : gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.ContainerEngineType.values())
+                if (request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityProbe.renderForContainer(engine)))
+                    variant = engine.name();
+        if (variant == null) return java.util.Optional.empty();
+        byte[] input = request.stdin();
+        try {
+            if (input.length != 0) return java.util.Optional.empty();
+        } finally {
+            Arrays.fill(input, (byte) 0);
+        }
+        byte[] script = request.script().getBytes(StandardCharsets.UTF_8);
+        try {
+            return java.util.Optional.of(Map.of("variant", variant, "comparison", "EXACT_PRODUCT_REQUEST_SCRIPT_AND_EMPTY_STDIN",
+                "scriptSha256", java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(script)),
+                "scriptBytes", script.length, "stdinBytes", 0,
+                "environment", Map.of("launcher", "/usr/bin/env -i", "workingDirectory", "/", "shellArguments", java.util.List.of("--noprofile", "--norc", "-s"), "homeAndXdgPaths", "/dev/null"),
+                "optionalCommandAdmission", "probe_command checks absolute executable, root ownership and non-writable original/resolved parent paths before invocation",
+                "python", Map.of("discoveryNamePattern", "^python[0-9]+[.][0-9]+$", "venvArguments", java.util.List.of("-I", "-S", "-B", "-m", "venv", "--help"), "pipArguments", java.util.List.of("-I", "-S", "-B", "-")),
+                "composerArguments", java.util.List.of("--no-plugins", "--no-scripts", "--no-cache", "--no-interaction", "--version"),
+                "meaning", "Exact request-byte comparison and literal guard/argument descriptions only; not live program trust, no-effects proof, ownership or authority. Review every reachable effect; container variants can initialize storage."));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 }
