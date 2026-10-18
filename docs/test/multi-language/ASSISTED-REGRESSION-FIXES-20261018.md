@@ -13,6 +13,8 @@
 | `ai/review/DeploymentFixedCommandApproval.java`、`service/feedback/DeploymentDiagnostics.java` | 独立审批拒绝时，在各模式保留公开理由的脱敏记录，最多4096字符，不记录原始模型正文、命令或凭据 | **共享代码，Agent 也会获得该诊断。** 仍抛出原拒绝，不增加发送、不产生授权、不缓存拒绝。 |
 | `service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java` | 捕获内部异常并保守转 UNKNOWN 前，保存 DEPLOYMENT_OPERATION_FAILURE 的脱敏类型、原因和公开问题码 | 仅补诊断，不改变 UNKNOWN、对账、清理或发布逻辑；对 STATIC/ASSISTED 整图可见。 |
 | `ai/review/DeploymentCommandEvidence.java` | 把已执行的规范 Base64、严格 UTF-8、绑定类型往返检查显式列为 literalValidation；按当前捕获布局给出目录的 SAME/DESCENDANT/OUTSIDE 关系，区分同前缀兄弟路径 | **共享证据，Agent 后续需核对。** 仅描述字面编码与词法路径关系，不声明安装、归属或权限，不接受无效绑定；SYSTEM 目录可以在管理根之外，仍须审查原 helper 的保护检查。 |
+| `linux/helper/DeploymentHelperReviewContract.java`、资源 `ai/review/command-review.md` | 根据固定 helper 源码补齐工具链 prepare 的官方元数据、重定向白名单、摘要校验、归档边界、管理根、SYSTEM 复用和源码包依赖安装效果；明确 helper 本体安装不属于已有安装调用信任 | **共享审查合同，Agent 后续须核对。** 未改 helper、摘要、动态输入或授权；未来实际URL/摘要须在受保护解析后取得，不能预先捏造。源码包可能在主机安装依赖并编译，不能误称项目沙箱内执行。 |
+| `ai/review/DeploymentWorkflowAuthorization.java`、`DeploymentCurrentCommandEvidence.java`、`DeploymentFixedCommandApproval.java`、`service/standard/assisted/DeploymentAssistedScope.java`、`shared/deploy/publish/policy/DeploymentPublishPolicyContext.java` | 原先实际宿主流程作用域已打开，但审批材料只有策略名称，没有原目标。现在以实际宿主返回句柄的私有仅关闭包装提供当前任务对象/服务器绑定的原非秘密目标；冻结模型修订/策略也须匹配。普通与显式恢复绑定各自的新句柄；关闭即撤销事实，释放失败仍可重试原宿主释放 | **共享审批机制，Agent 后续须核对。** 不增加 App API，不建立全局授权表、不缓存许可、不持久化句柄。事实仅证明原流程交接，不证明目录归属、安全或当前命令权限；每条命令的独立审查和宿主授权保持。STATIC 不增加模型，Agent 编排未改。 |
 | 资源 `ai/review/command-review.md` | 澄清匹配已声明服务器/路径的固定只读容量查询不要求取得既有系统目录的应用所有权，也不要求目录内容摘要等同业务修订 | **Agent 也会使用的共享审查说明。** 仍检查精确目标与所有实际效果，不豁免写入、目标不符或不可信可执行内容。先通过真实 API-only 审查验证，未发送SSH。 |
 | `DeploymentStaticRegressionLiveAcceptanceTest.java`、`DeploymentAssistedRegressionLiveAcceptanceTest.java` | 辅助验收复用原完整 ASSISTED 流程，部署后经产品 START/inspect/usage 导出实际入口 | 共享的仅是管理信息交付；不合并 STATIC/ASSISTED/AGENT 的生产编排。网站留作用户验收，CLI 按需运行。 |
 | `DeploymentSourceBatchRegressionTest.java`、`DeploymentAssistedAnalysisProtocolRegressionTest.java` | 覆盖整批错误回执、原预算、Schema 边界、已读证据枚举、缺字段/缺分页字段/多提交纠正 | 使用受控本地模型回包；不是 Agent 真机或真实提供方稳定性证据。 |
@@ -36,6 +38,7 @@
 | task-board-10 | LOW/NONE，通过工具链准备并选择build，随后 UNKNOWN | 产品 `task-board-reconcile-10-01` 对账最终 ENDED/FAILED、未发布；底层异常当时未暴露，不臆断原因。已知194580 Token，恢复用量另计。 |
 | task-board-11 | 只读容量查询被拒绝，随后 UNKNOWN | 日志与JFR证实公开拒绝理由为 /var/lib 与业务修订未提供应用归属/受控范围绑定。实际意图资源包含该服务器上的 deployment-workspace=/var/lib，脚本仅test/stat。产品原任务对账最终 ENDED/FAILED、未发布。 |
 | task-board-12 | 容量查询通过，工具链 bind 被拒绝，随后 UNKNOWN | 模型认为 `/toolchains/versions/java-…` 不在 `/toolchains` 之下，并认为无法校验规范编码。实际原请求464字符/347字节，编码及绑定结构已由程序校验。产品对账最终 ENDED/FAILED、未发布。原请求绑定 SHA-256 为 `bdfc64144fd5e5ae319a2036967c97f37c001b1c49623010cb88e249f7a920d7`；根据产品实际 TOOLCHAIN 行与确定性需求编码重建后摘要完全相同，可用于 API-only 原字节复核，不代表服务器当前安装状态。 |
+| task-board-13 | Java prepare 被拒绝，随后 UNKNOWN | 公开理由要求实际安装源、校验和、目录绑定和授权，认为 helper 守卫不足。产品对账最终 ENDED/FAILED、未发布；known109758 Token，恢复APP3次另计11815。原合同只有一句 prepare 效果概述，且“Installation is outside installed-call trust”可能造成 helper 本体安装与其内部工具链准备的歧义；扩充真实固定源码效果，不宣称已证实模型内部推理原因。 |
 
 第10轮起，验收程序仍配置同一 `deepseek-flash`，部署模型 LOW，独立审批模型 NONE，审批请求上限仍8192；各配置仍经产品能力验证。前九轮为 LOW/LOW。这里调整的是本轮产品保存的模型配置，没有修改 App 的默认配置或扩大输出额度。后续结果必须注明此区别，不能声称 LOW/LOW 已完成八项目验收；Agent 使用 LOW/8192 时仍可能遇到审批耗尽，本轮没有验证其恢复行为。
 
@@ -62,6 +65,20 @@
 本仓库开始时存在大量既有未提交重构。用户先允许指定未跟踪文件整体提交，随后明确“这里修改过程中修改的文件都保持提交”、以后不再询问；据此保留本轮触及文件的完整当前内容，其它未触及改动保留。AiJson、Diagnostics 等共享文件已有重构内容也不应误认为均由本轮引入；本轮实际增量以以下首次修改前快照的补丁为准。
 
 为区分本轮增量，额外保留 [精确修复补丁](ASSISTED-REGRESSION-20261018-fixes.patch)。其基线是本轮首次改动相应文件之前的工作树，而非 Git HEAD；不要对已修复工作树重复应用。原始 `.before` 快照和修复前后 SHA-256 位于本轮 evidence 的 `source-code-fixes.json`，可用于后续比对或精确恢复。恢复必须保留之后产生的用户改动，不应整文件回滚或撤销无关重构。
+
+首个本地修复提交：`d4cc018d9537e2790fffe441df9aa8f5c5d82850`，19个触及文件，未推送；该提交明确记载真机整体验收仍未通过，不能当作完成证明。后续新增修复继续补充本记录、基线补丁及本地提交。
+
+## 单条准备审查与流程目标证据
+
+`preparation-review-01` 实际提供方约2.7秒返回 DENY，公开理由为未提供安装效果的流程目标授权证据。夹具直接等待 completion，未观察作者抛出后的 UNKNOWN，因而显示5分钟超时。该隔离任务为 `a381a7b7-a6bf-46eb-917f-ab9053c91a43`，状态目录 `ai-live-preparation-review-rap49ou9w`；类内没有调用 SSH 能力，保留 UNKNOWN 审计记录，不将其描述为未确定远端安装。
+
+产品日志/账本只读检查恢复了实际 provider 请求：输入4211、输出140，共4351 Token，cache640/miss3571，reasoning未报告；4项能力验证未知。此请求按 generationId/number 去重计入 DIAGNOSTIC。首次只读入口使用 Runtime 关闭时因原未完结任务被拒，随后改为直接产品数据库/日志/账本只读检查并通过；未删除或改写原任务。夹具已改为记录失败原因并返回 FAILED，因其不含任何 SSH dispatch，不让单纯审查失败再造成无意义的5分钟等待。
+
+新增 `DeploymentWorkflowEvidenceRegressionTest` 4项通过：真实交接句柄的原目标、伪造句柄/同UUID替代任务对象/跨服务器资源拒绝、关闭后证据失效、释放失败仍重试同宿主句柄、辅助冻结策略不一致拒绝。原 `automaticHighRefusalNeverSendsOrCachesDenialAndDifferentLowProposalNeedsAnotherAiReview` 2参数场景最初因说明文字16749字符超过原12288上限失败；未提高上限，压缩重复表述后 `workflow-evidence-unit-04` 两项通过。原句柄/精确命令许可和独立模型审查没有被测试替身取代。
+
+压缩涉及共享审查文字：保留原 Agent stdin 字节比较、原参数顺序、可信源码哈希、非root隔离、全部可达效果和独立许可规则。它是满足原有请求大小上限的表述收敛，不是 Agent 真机验证或已证明的提供方费用优化。相关 Agent 语义仍需后续按授权调试。
+
+`preparation-review-02` 真实 API-only 审查通过，Task `189c96c6-aa7f-44f3-8ac1-915f6199df64`，状态目录 `ai-live-preparation-review-rry7urfs0`。同一模型/LOW部署+NONE审批配置，输入3795、输出122，共3917 Token；cache128/miss3667，reasoning未报告，另4项能力验证未知。未连接/发送SSH，也未复用许可发命令。原真实部署13已对账结束后，第14次完整项目运行才开始；此处不声称第14次或八项目已通过。
 
 服务器写入始终由产品执行；本轮监督侧只启动验收和本地诊断，没有手工部署、手工修改服务或手工补业务数据。凭据不进入本记录、补丁或 Git。
 

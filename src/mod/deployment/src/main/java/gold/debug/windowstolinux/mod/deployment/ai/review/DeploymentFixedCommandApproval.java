@@ -64,7 +64,14 @@ public final class DeploymentFixedCommandApproval {
      * @throws ApiException if exact evidence or independent review is unavailable / 精确依据或独立审核不可用时 */
     public static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent,
                                                          CommandRequest request, TaskContext task, String revision, String policy, boolean rememberAuthorization) throws ApiException {
-        return approve(context, host, intent, request, task, revision, policy, rememberAuthorization, new DeploymentAiJson(context));
+        return approveWithEvidence(context, host, intent, request, task, revision, policy, rememberAuthorization,
+            context instanceof DeploymentCurrentCommandEvidence evidence ? evidence : DeploymentCurrentCommandEvidence.NONE);
+    }
+
+    public static OperationResult<ApprovalGrant> approveWithEvidence(ModContext context, InteractionService host, ActionIntent intent,
+                                                                     CommandRequest request, TaskContext task, String revision, String policy,
+                                                                     boolean rememberAuthorization, DeploymentCurrentCommandEvidence evidence) throws ApiException {
+        return approve(context, host, intent, request, task, revision, policy, rememberAuthorization, new DeploymentAiJson(context), evidence);
     }
 
     static OperationResult<ApprovalGrant> approve(ModContext context, InteractionService host, ActionIntent intent,

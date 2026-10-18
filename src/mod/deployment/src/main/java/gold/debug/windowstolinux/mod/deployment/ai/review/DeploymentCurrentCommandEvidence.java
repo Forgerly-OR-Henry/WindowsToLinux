@@ -14,6 +14,10 @@ public interface DeploymentCurrentCommandEvidence {
 
     Map<String, ?> facts(ActionIntent intent, CommandRequest request, TaskContext task) throws ApiException;
 
+    /** Observes an actual fresh host workflow handle without creating or persisting authority. */
+    default void workflowOpened(gold.debug.windowstolinux.appapi.task.action.WorkflowGrant permission) {
+    }
+
     /** Fixed product-owned instructions; never derived from model input or observations, and never execution permission. */
     default String reviewInstructions() throws ApiException {
         return "";

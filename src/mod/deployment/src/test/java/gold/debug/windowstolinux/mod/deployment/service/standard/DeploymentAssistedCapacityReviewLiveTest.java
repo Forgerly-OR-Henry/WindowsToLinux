@@ -23,24 +23,30 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Reviews the actual capacity command through the real provider without any SSH dispatch. / 真实模型审查容量命令，不连接或发送SSH。 */
+/** Reviews fixed commands through the real provider without any SSH dispatch. / 真实模型审查固定命令，不连接或发送SSH。 */
 @EnabledIfSystemProperty(named = "managed.runtime.staticLive", matches = "true")
 class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAcceptanceTest {
     @Test
     void reviewsCapacityWithoutRemoteDispatch() throws Exception {
-        reviewWithoutRemoteDispatch(false);
+        reviewWithoutRemoteDispatch("capacity");
     }
 
     @Test
     void reviewsOriginalBindingWithoutRemoteDispatch() throws Exception {
-        reviewWithoutRemoteDispatch(true);
+        reviewWithoutRemoteDispatch("binding");
     }
 
-    private void reviewWithoutRemoteDispatch(boolean binding) throws Exception {
+    @Test
+    void reviewsJavaPreparationWithoutRemoteDispatch() throws Exception {
+        reviewWithoutRemoteDispatch("preparation");
+    }
+
+    private void reviewWithoutRemoteDispatch(String kind) throws Exception {
+        boolean binding = kind.equals("binding");
+        boolean preparation = kind.equals("preparation");
         var enabled = DeploymentStaticLiveAcceptanceTest.class.getDeclaredField("aiEnabled");
         enabled.setAccessible(true);
         enabled.setBoolean(this, true);
-        String kind = binding ? "binding" : "capacity";
         root = workspace().resolve("src/app/db/data/ai-live-" + kind + "-review-" + Long.toUnsignedString(System.nanoTime(), 36));
         enable();
         try (var runtime = open()) {
@@ -56,20 +62,35 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                 String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
                 var server = new ServerId("static-live");
                 try (var authority = DeploymentWorkflowAuthorization.open(context, task, server, revision, "AUTOMATIC", true,
-                    binding ? "Review the original task-board-12 binding bytes (matched to original SHA-256); no claim of current installation, no SSH dispatch"
+                    preparation ? "Review the guarded Java 21 catalog prerequisite for the user's authorized task-board deployment, including permitted official download/install and SYSTEM reuse effects; no SSH dispatch"
+                        : binding ? "Review the original task-board-12 binding bytes (matched to original SHA-256); no claim of current installation, no SSH dispatch"
                         : "Review a read-only filesystem capacity prerequisite on the selected server; no SSH dispatch");
-                     var request = new CommandRequest(binding ? originalBindingCommand()
+                     var request = new CommandRequest(preparation
+                         ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
+                         "'" + gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.PATH
+                             + "' 'prepare-toolchains' 'prepare' 'JAVA' '21' '-' '300' '-'")
+                         : binding ? originalBindingCommand()
                          : "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\nstat -f -c '%a %S' -- '/var/lib'\n",
-                         new byte[0], Duration.ofSeconds(20), 1024)) {
+                         new byte[0], Duration.ofSeconds(preparation ? 315 : 20), preparation ? 65536 : 1024)) {
                     var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
-                        binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
-                        Set.of(new ActionTarget(server.id(), binding ? "deployment-build" : "deployment-workspace",
-                            binding ? gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original().toolchains() : "/var/lib"))));
-                    var result = DeploymentFixedCommandApproval.approve(context, context.interaction(), intent, request,
-                        task, revision, "AUTOMATIC", true);
+                        preparation ? "deployment.toolchain.prepare.v1" : binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
+                        Set.of(new ActionTarget(server.id(), binding || preparation ? "deployment-build" : "deployment-workspace",
+                            binding || preparation ? gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original().toolchains() : "/var/lib"))));
+                    var result = DeploymentFixedCommandApproval.approveWithEvidence(context, context.interaction(), intent, request,
+                        task, revision, "AUTOMATIC", true, (actual, command, supplied) -> java.util.Map.of(
+                            "workflowAuthorization", DeploymentWorkflowAuthorization.reviewFacts(authority, supplied, actual)));
                     return new OperationResult<Void>(result.outcome(), Optional.empty(), result.problem());
+                } catch (Exception failure) {
+                    // No SSH capability is invoked by this fixture; a failed review is a known failed test, never a deployment effect.
+                    gold.debug.windowstolinux.mod.deployment.service.feedback.DeploymentDiagnostics.operationFailure(context, task, failure);
+                    var problem = failure instanceof gold.debug.windowstolinux.appapi.task.result.ApiException api ? api.problem()
+                        : new gold.debug.windowstolinux.appapi.task.result.Problem(
+                        gold.debug.windowstolinux.appapi.task.result.ProblemCode.INVALID_INPUT, "ASSISTED_REVIEW_FIXTURE_FAILURE",
+                        "The API-only review failed without SSH dispatch", java.util.Map.of("causeType", failure.getClass().getSimpleName()), Optional.empty());
+                    return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(problem));
                 }
             });
+            System.out.println("ASSISTED_API_REVIEW_TASK kind=" + kind + " task=" + handle.id() + " state=" + root);
             var result = handle.completion().toCompletableFuture().get(5, TimeUnit.MINUTES);
             for (var category : runtime.logs().inventory(false).categories())
                 for (var record : runtime.logs().inspect(category.target().key()).records())
@@ -78,6 +99,33 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                         System.out.println("ASSISTED_CAPACITY_REVIEW_DIAGNOSTIC " + record.event());
             assertEquals(TaskResult.SUCCEEDED, result.outcome(), result::toString);
             System.out.println("ASSISTED_CAPACITY_REVIEW_PASS kind=" + kind + " task=" + handle.id() + " sshDispatches=0 state=" + root);
+        }
+    }
+
+    @Test
+    void inspectsApiOnlyReviewWithoutDispatch() throws Exception {
+        root = java.nio.file.Path.of(System.getProperty("managed.live.originalState")).toRealPath();
+        assertTrue(root.startsWith(workspace().resolve("src/app/db/data").toRealPath()));
+        assertTrue(root.getFileName().toString().startsWith("ai-live-preparation-review-"));
+        var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+        var protection = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("currentUserProtection");
+        protection.setAccessible(true);
+        try (var database = gold.debug.windowstolinux.app.db.connect.PlatformDatabase.open(root.resolve("data"),
+            (gold.debug.windowstolinux.app.db.init.DatabaseProtection) protection.invoke(null))) {
+            System.out.println("ASSISTED_API_REVIEW_ORIGINAL " + new gold.debug.windowstolinux.app.db.task.TaskLedger(database).queries().snapshot(original));
+            var printCause = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("printOriginalCallCause", String.class);
+            printCause.setAccessible(true);
+            var logs = new gold.debug.windowstolinux.app.db.log.LogStore(database);
+            for (var target : logs.targets())
+                for (var event : logs.read(target)) {
+                    if (original.equals(event.taskId())) {
+                        System.out.println("ASSISTED_API_REVIEW_ORIGINAL_EVENT " + event.eventCode() + " " + event.message());
+                        if (event.eventCode().equals("DEPLOYMENT_AI_USAGE"))
+                            System.out.println("ASSISTED_API_REVIEW_USAGE details=Optional[" + event.details() + "]");
+                    }
+                    if (event.details() != null && event.details().contains("context.taskId=" + original))
+                        printCause.invoke(null, event.details());
+                }
         }
     }
 
