@@ -230,7 +230,9 @@ class DeploymentRuntimePathsTest {
         assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", "/srv/wtl/apps/demo"),
                 new ActionTarget(SERVER.id(), "deployment-configuration", LAYOUT.configurationRoot("demo") + "/" + "c".repeat(64) + "/systemd.env")),
             peer.commands.getFirst().intent().semantics().orElseThrow().targets());
-        assertTarget(peer.commands.get(1).intent(), "deployment-release", "/srv/wtl/apps/demo");
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", "/srv/wtl/apps/demo"),
+                new ActionTarget(SERVER.id(), "deployment-candidate", LAYOUT.candidateRoot("demo-" + "a".repeat(16)))),
+            peer.commands.get(1).intent().semantics().orElseThrow().targets());
         assertTrue(verifiedBody(peer.commands.get(1).script()).contains("'/srv/wtl/data/demo/databases/orders/orders.db'"));
         assertFalse(verifiedBody(peer.commands.get(1).script()).contains("/var/opt/windowstolinux"));
     }

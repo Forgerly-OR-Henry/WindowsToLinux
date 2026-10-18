@@ -216,3 +216,13 @@ source-archive-observation-unit-01原作用域/来源6项和新增归档2项，�
 补产品恢复缺口：新server-access占用带server-process.v1/bootId；Ledger在原任务/版本或真实依赖、前次任务boot、UNKNOWN/FINISHING下，仅处理所属CUSTOM、精确server-access-UUID和严格旧EXPLICIT/新进程证明；当前进程证明保留，畸形整事务回滚。释放的是消失进程的同步本地调用占用，不释放SERVER引用、工作流检查点或其它业务资源，也不写业务成功。TaskRuntime鉴权并刷新快照；ServerAccess接入原Mod直接恢复和服务恢复清理。共享平台变更会影响稍后Agent及其它Mod恢复，需依精确首次工作树补丁核对；未运行Agent。
 
 server-access-recovery-unit-01新Ledger2项、原真实ServerRef物理释放重试1项及上述失败格式用例1项共4通过；其余已通过4项没有重跑。七Java格式check通过。随后只启动产品reconcile-13-02，真实原任务ENDED/FAILED、blockers空、无应用，JUnit1通过；没有重放部署。五个平台/测试文件在本轮首次修改前另存.before，本轮增量并入精确补丁，按用户持续授权提交触及完整文件并保留其既有内容。
+
+## CLI14：编码工作负载缺少完整解码审查事实
+
+固定效果Schema/同步访问恢复提交 `0fb02470` 后，CLI14实际上传/校验、Rust+C++构建、配置暂存和snapshot均通过；publish-deployment DENY称Base64可执行载荷未完整解码，业务/工具绑定不明确。原 `5aecfdd9-d128-4139-98a3-71f790e2cb2c`、root `assisted-live-log-analyzer-vw1sfprx8` 经reconcile-14-01产品对账ENDED/FAILED、blockers空、无应用。known177391=66624+110767，恢复新增17234另计。
+
+核对WorkloadArguments及16-application-input.sh：实际是公开的非秘密application-v1/v2 NUL分隔字段，不是缺失的任意stdin脚本，包含全部入口/argv、verification/client/workers、端点/输入/伴随构建以及health；health-v1使用同一健康字段协议。新增review-only解码器严格canonical Base64/UTF8/终结NUL、完整计数结构/边界/无尾随字段，逐项展示原值及实际payload字节SHA；不把reviewedFlag或shape检查当安全/实时所有权/安装或授权。
+
+CommandEvidence仅对已知public publish字面前缀或完整application-health帧、空stdin解码，核对所属应用release目标及publish实际candidate目标。publish前缀以外完整原命令仍需独立审阅，没有用解码结果替代其余配置/秘密/工具/运行参数。受保护的配置/秘密载荷不进入解码器。PublishChannel新增真正candidate resourceTarget；ASSISTED只在publish同时提供同任务原archive/preparation观察以便比较同对象身份，非许可或实时状态证明。未改helper、工作负载编码或服务器执行体。共享review/PublishChannel的影响需在稍后Agent调试核对，不得据此豁免其命令或来源检查。
+
+workload-review-evidence-unit-01共29项通过0跳过：新协议/帧20项、原捕获layout发布目标1项、原来源关联1项、原准备观察7项；6Java格式check通过。新生产文件从不存在基线加入增量补丁；其余文件继续保留首次工作树.before及哈希。当前全局known3233405、636物理（1用量UNKNOWN）、152capUNKNOWN；audit05覆盖此前37root/602条，不覆盖CLI14，最终需更新。仍0/8交付。

@@ -5,6 +5,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -174,6 +175,8 @@ final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            if (Set.of("deployment.publication.publish.v1", "deployment.publication.health.v1").contains(operation))
+                workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
             if (operation.equals("deployment.publication.snapshot.v1"))
                 publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
             if (operation.equals("deployment.publication.config.v1"))
@@ -231,6 +234,38 @@ final class DeploymentCommandEvidence {
             result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
                 .receiptStatusEvidence(context, task, intent, request, layout));
         return java.util.Collections.unmodifiableMap(result);
+    }
+
+    private static java.util.Optional<Map<String, Object>> workload(String script, byte[] input, ActionIntent intent,
+                                                                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout)
+        throws CharacterCodingException {
+        if (input.length != 0) return java.util.Optional.empty();
+        String helper = java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ");
+        var publish = java.util.regex.Pattern.compile(helper
+            + "'(publish-deployment|publish-container)' '([a-z0-9][a-z0-9-]{0,62})' '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' '([a-f0-9]{64})' '([a-f0-9]{64})' 'identity-v2' '(SYSTEMD_STATIC|CONTAINER_NON_ROOT)' '([A-Za-z0-9+/=]{1,87384})'(?= )").matcher(script);
+        var health = java.util.regex.Pattern.compile(helper
+            + "'application-health' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '([A-Za-z0-9+/=]{1,87384})'\\z").matcher(script);
+        boolean publishing = intent.semantics().orElseThrow().operation().equals("deployment.publication.publish.v1");
+        if (publishing ? !publish.lookingAt() : !health.matches()) return java.util.Optional.empty();
+        String app = publishing ? publish.group(2) : health.group(1);
+        var result = new LinkedHashMap<String, Object>(DeploymentWorkloadReviewEvidence.decode(publishing ? publish.group(7) : health.group(3), !publishing));
+        var targets = intent.semantics().orElseThrow().targets();
+        if (intent.serverIds().size() != 1 || !targets.contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
+            intent.serverIds().getFirst(), "deployment-release", layout.applicationRoot(app))))
+            throw new IllegalArgumentException("Workload release resource differs");
+        result.put("application", app);
+        result.put("ownershipManifestSha256", publishing ? publish.group(5) : health.group(2));
+        if (publishing) {
+            String candidate = publish.group(3);
+            if (!candidate.startsWith(app + "-") || !targets.contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
+                intent.serverIds().getFirst(), "deployment-candidate", layout.candidateRoot(candidate))))
+                throw new IllegalArgumentException("Publication candidate resource differs");
+            result.put("candidate", candidate);
+            result.put("releaseSha256", publish.group(4));
+            result.put("identityPolicy", publish.group(6));
+            result.put("frameValidation", "LITERAL_PUBLICATION_PREFIX_ONLY_REMAINING_ARGUMENTS_REQUIRE_REVIEW");
+        } else result.put("frameValidation", "EXACT_APPLICATION_HEALTH_FRAME");
+        return java.util.Optional.of(Collections.unmodifiableMap(result));
     }
 
     /** Describes the exact public snapshot frame and its derived paths, not live state or permission. */

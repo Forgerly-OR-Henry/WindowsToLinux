@@ -111,13 +111,15 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
-@@ -755,7 +755,18 @@
+@@ -755,7 +755,20 @@
              .append(DeploymentBuildCommandChannel.shellQuote(verb));
          for (String value : arguments)
              script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
 -        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output));
 +        var targets = new java.util.HashSet<ActionTarget>();
 +        targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
++        if (operation.equals("deployment.publication.publish.v1"))
++            targets.add(new ActionTarget(server.id(), "deployment-candidate", unit.layout().candidateRoot(arguments.get(1))));
 +        if (operation.equals("deployment.publication.snapshot.v1"))
 +            targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),
 +                java.util.UUID.fromString(arguments.get(verb.endsWith("-attempt") ? 3 : 2)))));
@@ -131,7 +133,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Dispatches one exact fixed command through actual review. / 经真实审核发送一条精确固定命令。
-@@ -766,9 +777,14 @@
+@@ -766,9 +779,14 @@
       * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
      private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
                                                      CommandRequest request) throws ApiException {
@@ -466,10 +468,10 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +        var facts = new LinkedHashMap<String, Object>();
 +        facts.put("workflowAuthorization", evidence);
 +        if (source != null) facts.put("sourceSelection", source);
-+        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> value.operation().equals("deployment.build.run.v1")).orElse(false))
++        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> Set.of("deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
 +            facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
 +                "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
-+        if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1").contains(value.operation())).orElse(false))
++        if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
 +            facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
 +                "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));
 +        return Map.copyOf(facts);
@@ -585,7 +587,15 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentCommandEvidence.java
-@@ -70,45 +70,55 @@
+@@ -5,6 +5,7 @@
+ import java.nio.charset.CodingErrorAction;
+ import java.nio.charset.StandardCharsets;
+ import java.util.Arrays;
++import java.util.Collections;
+ import java.util.LinkedHashMap;
+ import java.util.Map;
+ import java.util.Set;
+@@ -70,45 +71,55 @@
          facts.put("businessRevision", intent.revision());
          facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
          facts.put("exactAction", intent.exactAction());
@@ -650,7 +660,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("publicationRecoveryContinuation", program);
          }
          if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION)) {
-@@ -116,15 +126,18 @@
+@@ -116,15 +127,18 @@
              var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.reviewFacts(request, layout);
              var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram
                  .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
@@ -672,7 +682,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("publicationRecoveryDiagnostic", program);
          }
          if (operation.startsWith(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.PREFIX)) {
-@@ -137,8 +150,12 @@
+@@ -137,8 +151,12 @@
                  throw new IllegalArgumentException("Recovery resource identity changed");
              facts.put("publicationRecoveryProgram", program);
          }
@@ -686,10 +696,12 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -157,6 +174,10 @@
+@@ -157,6 +175,12 @@
          }
          byte[] input = request.stdin();
          try {
++            if (Set.of("deployment.publication.publish.v1", "deployment.publication.health.v1").contains(operation))
++                workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
 +            if (operation.equals("deployment.publication.snapshot.v1"))
 +                publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
 +            if (operation.equals("deployment.publication.config.v1"))
@@ -697,7 +709,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                  String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-@@ -201,10 +222,80 @@
+@@ -201,10 +225,112 @@
                                       gold.debug.windowstolinux.appapi.task.run.TaskContext task)
          throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
          var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
@@ -710,6 +722,38 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
                  .receiptStatusEvidence(context, task, intent, request, layout));
          return java.util.Collections.unmodifiableMap(result);
++    }
++
++    private static java.util.Optional<Map<String, Object>> workload(String script, byte[] input, ActionIntent intent,
++                                                                    gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout)
++        throws CharacterCodingException {
++        if (input.length != 0) return java.util.Optional.empty();
++        String helper = java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ");
++        var publish = java.util.regex.Pattern.compile(helper
++            + "'(publish-deployment|publish-container)' '([a-z0-9][a-z0-9-]{0,62})' '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' '([a-f0-9]{64})' '([a-f0-9]{64})' 'identity-v2' '(SYSTEMD_STATIC|CONTAINER_NON_ROOT)' '([A-Za-z0-9+/=]{1,87384})'(?= )").matcher(script);
++        var health = java.util.regex.Pattern.compile(helper
++            + "'application-health' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '([A-Za-z0-9+/=]{1,87384})'\\z").matcher(script);
++        boolean publishing = intent.semantics().orElseThrow().operation().equals("deployment.publication.publish.v1");
++        if (publishing ? !publish.lookingAt() : !health.matches()) return java.util.Optional.empty();
++        String app = publishing ? publish.group(2) : health.group(1);
++        var result = new LinkedHashMap<String, Object>(DeploymentWorkloadReviewEvidence.decode(publishing ? publish.group(7) : health.group(3), !publishing));
++        var targets = intent.semantics().orElseThrow().targets();
++        if (intent.serverIds().size() != 1 || !targets.contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
++            intent.serverIds().getFirst(), "deployment-release", layout.applicationRoot(app))))
++            throw new IllegalArgumentException("Workload release resource differs");
++        result.put("application", app);
++        result.put("ownershipManifestSha256", publishing ? publish.group(5) : health.group(2));
++        if (publishing) {
++            String candidate = publish.group(3);
++            if (!candidate.startsWith(app + "-") || !targets.contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
++                intent.serverIds().getFirst(), "deployment-candidate", layout.candidateRoot(candidate))))
++                throw new IllegalArgumentException("Publication candidate resource differs");
++            result.put("candidate", candidate);
++            result.put("releaseSha256", publish.group(4));
++            result.put("identityPolicy", publish.group(6));
++            result.put("frameValidation", "LITERAL_PUBLICATION_PREFIX_ONLY_REMAINING_ARGUMENTS_REQUIRE_REVIEW");
++        } else result.put("frameValidation", "EXACT_APPLICATION_HEALTH_FRAME");
++        return java.util.Optional.of(Collections.unmodifiableMap(result));
 +    }
 +
 +    /** Describes the exact public snapshot frame and its derived paths, not live state or permission. */
@@ -778,7 +822,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
-@@ -216,7 +307,7 @@
+@@ -216,7 +342,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -787,7 +831,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +319,14 @@
+@@ -228,14 +354,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -804,7 +848,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +341,50 @@
+@@ -250,12 +376,50 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -1196,7 +1240,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var guard = new AtomicInteger();
          var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
          var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
-@@ -219,12 +226,44 @@
+@@ -219,12 +226,46 @@
          assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
              "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
          assertArrayEquals(configuration, peer.commands.getFirst().input());
@@ -1208,7 +1252,9 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", "/srv/wtl/apps/demo"),
 +                new ActionTarget(SERVER.id(), "deployment-configuration", LAYOUT.configurationRoot("demo") + "/" + "c".repeat(64) + "/systemd.env")),
 +            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
-+        assertTarget(peer.commands.get(1).intent(), "deployment-release", "/srv/wtl/apps/demo");
++        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", "/srv/wtl/apps/demo"),
++                new ActionTarget(SERVER.id(), "deployment-candidate", LAYOUT.candidateRoot("demo-" + "a".repeat(16)))),
++            peer.commands.get(1).intent().semantics().orElseThrow().targets());
          assertTrue(verifiedBody(peer.commands.get(1).script()).contains("'/srv/wtl/data/demo/databases/orders/orders.db'"));
          assertFalse(verifiedBody(peer.commands.get(1).script()).contains("/var/opt/windowstolinux"));
 +    }
@@ -1245,7 +1291,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      @Test
-@@ -296,10 +335,20 @@
+@@ -296,10 +337,20 @@
      /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
      private static FileSnapshot snapshot(Path directory) {
          return new FileSnapshot() {
@@ -1270,7 +1316,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          };
      }
  
-@@ -327,21 +376,28 @@
+@@ -327,21 +378,28 @@
          assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
      }
  
@@ -1549,3 +1595,147 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 +Source discovery and recipe review have already completed before this loop. prepare validates host/toolchains without uploading application sources; build uploads and verifies the frozen reviewed archive, then executes its reviewed recipe in the managed candidate. Source absence on the remote host before build is expected, not a missing host capability. Use the offered build tool for that work; do not rediscover local or remote project directories with supplement. Only actual prerequisite observations or standard-tool failure feedback can establish a necessary host capability gap; missing source-browsing tools in this publication-stage catalog cannot.
  Before relying on host prerequisites compare reviewed project needs with validated observations. inspect-host sees system PATH only: managed SDKs may not appear; empty observations are not proof of absence. Standard prepare installs declared runtime SDKs but not necessarily every build tool. supplement requires a concrete necessary capability missing from standard tools, an explanation, and full script review; inspect again after success before relying on it.
  Use only task-owned application resources and authorized host prerequisites. Never disclose/include credentials, change approval/receipt records or bypass source/candidate isolation. Confirmed nonzero exit is failure feedback; UNKNOWN stops without replay. Tool schemas and effects are in the catalog.
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkloadReviewEvidence.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkloadReviewEvidence.java
+--- /dev/null
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkloadReviewEvidence.java
+@@ -0,0 +1,140 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import java.nio.ByteBuffer;
++import java.nio.charset.*;
++import java.security.*;
++import java.util.*;
++
++/** Decodes only the public non-secret workload protocol for independent review; grants no authority. */
++final class DeploymentWorkloadReviewEvidence {
++    private final List<String> fields;
++
++    private int index;
++
++    private DeploymentWorkloadReviewEvidence(List<String> fields) {
++        this.fields = fields;
++    }
++
++    static Map<String, Object> decode(String encoded, boolean healthOnly) throws CharacterCodingException {
++        if (!encoded.matches("[A-Za-z0-9+/]{1,87384}={0,2}"))
++            throw new IllegalArgumentException("Invalid workload encoding");
++        byte[] bytes = Base64.getDecoder().decode(encoded);
++        try {
++            if (bytes.length == 0 || bytes.length > 65536 || bytes[bytes.length - 1] != 0
++                || !Base64.getEncoder().encodeToString(bytes).equals(encoded))
++                throw new IllegalArgumentException("Noncanonical workload frame");
++            String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
++                .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
++            var parsed = new DeploymentWorkloadReviewEvidence(List.of(text.substring(0, text.length() - 1).split("\\x00", -1)));
++            var result = new LinkedHashMap<String, Object>();
++            String version = parsed.field();
++            result.put("format", version);
++            if (healthOnly) {
++                if (!version.equals("health-v1")) throw new IllegalArgumentException("Unsupported health frame");
++            } else {
++                if (!Set.of("application-v1", "application-v2").contains(version))
++                    throw new IllegalArgumentException("Unsupported workload frame");
++                result.put("mode", parsed.field());
++                result.put("reviewedFlagLiteral", parsed.field());
++                result.put("workingDirectory", parsed.field());
++                result.put("buildDirectory", parsed.field());
++                result.put("command", parsed.command());
++                result.put("verification", parsed.optionalCommand());
++                result.put("expectedOutput", parsed.field());
++                result.put("client", parsed.optionalCommand());
++                result.put("endpoints", parsed.entries("id", "protocol", "bindAddress", "hostPort", "targetPort", "exposure", "accessUrl"));
++                result.put("inputs", parsed.entries("id", "hostPath", "accessPath"));
++                result.put("companions", parsed.entries("id", "sourcePath", "projectType", "artifactPath", "environment"));
++                var workers = new ArrayList<Map<String, Object>>();
++                if (version.equals("application-v2"))
++                    for (int count = parsed.number(0, 8); count > 0; count--)
++                        workers.add(Map.of("id", parsed.field(), "command", parsed.command()));
++                result.put("workers", List.copyOf(workers));
++            }
++            result.put("health", parsed.health());
++            if (parsed.index != parsed.fields.size()) throw new IllegalArgumentException("Trailing workload fields");
++            result.put("payloadBytes", bytes.length);
++            try {
++                result.put("payloadSha256", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
++            } catch (NoSuchAlgorithmException impossible) {
++                throw new IllegalStateException(impossible);
++            }
++            result.put("literalValidation", "CANONICAL_BASE64_STRICT_UTF8_COMPLETE_NUL_FIELD_STRUCTURE_ONLY");
++            result.put("meaning", "Complete decoded values of the exact non-secret workload argument; all entrypoints/argv, optional verification/client/workers, companions, endpoints and health are shown. This is typed data, not an omitted shell body; still review all executable arguments and reachable effects. reviewedFlagLiteral is input, not a safety verdict. Shape/byte consistency do not prove current installation, source trust, ownership or permission. The full surrounding command and its remaining arguments require independent review; protected configuration/secret payloads are not decoded.");
++            return Collections.unmodifiableMap(result);
++        } finally {
++            Arrays.fill(bytes, (byte) 0);
++        }
++    }
++
++    private String field() {
++        if (index >= fields.size()) throw new IllegalArgumentException("Truncated workload fields");
++        String value = fields.get(index++);
++        if (value.length() > 8192 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0)
++            throw new IllegalArgumentException("Invalid workload field");
++        return value;
++    }
++
++    private int number(int minimum, int maximum) {
++        String value = field();
++        if (!value.matches("[0-9]{1,5}")) throw new IllegalArgumentException("Invalid workload count");
++        int count = Integer.parseInt(value);
++        if (count < minimum || count > maximum) throw new IllegalArgumentException("Workload count outside bounds");
++        return count;
++    }
++
++    private Map<String, Object> command() {
++        String entrypoint = field();
++        var args = new ArrayList<String>();
++        for (int count = number(0, 64); count > 0; count--) {
++            String value = field();
++            if (value.length() > 4096) throw new IllegalArgumentException("Workload argument outside bounds");
++            args.add(value);
++        }
++        return Map.of("entrypoint", entrypoint, "arguments", List.copyOf(args));
++    }
++
++    private Map<String, Object> optionalCommand() {
++        return number(0, 1) == 0 ? Map.of("present", false) : Map.of("present", true, "command", command());
++    }
++
++    private List<Map<String, Object>> entries(String... names) {
++        var entries = new ArrayList<Map<String, Object>>();
++        for (int count = number(0, 32); count > 0; count--) {
++            var entry = new LinkedHashMap<String, Object>();
++            for (String name : names) entry.put(name, field());
++            entries.add(Map.copyOf(entry));
++        }
++        return List.copyOf(entries);
++    }
++
++    private Map<String, Object> health() {
++        var result = new LinkedHashMap<String, Object>();
++        String kind = field();
++        result.put("kind", kind);
++        result.put("timeoutSeconds", number(1, 300));
++        switch (kind) {
++            case "HTTP" -> {
++                result.put("endpoint", field());
++                result.put("expectedStatus", number(200, 399));
++            }
++            case "TCP" -> {
++                result.put("port", number(1, 65535));
++                result.put("stabilitySeconds", number(1, 300));
++            }
++            case "PROCESS" -> result.put("stabilitySeconds", number(1, (int) result.get("timeoutSeconds")));
++            case "COMMAND" -> {
++                result.put("command", command());
++                result.put("expectedOutput", field());
++            }
++            case "UDP" -> {
++                result.put("port", number(1, 65535));
++                result.put("requestHex", field());
++                result.put("responseHex", field());
++                result.put("probe", optionalCommand());
++            }
++            default -> throw new IllegalArgumentException("Unsupported workload health variant");
++        }
++        return Map.copyOf(result);
++    }
++}
