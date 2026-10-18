@@ -72,6 +72,22 @@ final class DeploymentCommandEvidence {
         facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
         facts.put("exactAction", intent.exactAction());
         platformProbe(operation, request).ifPresent(probe -> facts.put("platformProbe", probe));
+        if (operation.equals("deployment.candidate.capacity.v1")) {
+            byte[] input = request.stdin();
+            try {
+                if (input.length == 0 && request.script().equals(gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel.capacityScript(layout))) {
+                    String target = gold.debug.windowstolinux.mod.deployment.linux.publish.DeploymentCandidateChannel.capacityTarget(layout);
+                    if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().equals(Set.of(
+                        new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-workspace", target))))
+                        throw new IllegalArgumentException("Capacity observation resource differs");
+                    facts.put("capacityProbe", Map.of("comparison", "EXACT_PRODUCT_CAPACITY_SCRIPT_EMPTY_STDIN_AND_DECLARED_TARGET",
+                        "target", target, "scriptBytes", request.script().getBytes(StandardCharsets.UTF_8).length,
+                        "meaning", "Fixed OS test/stat filesystem-capacity observation, distinct from host/container platformProbe. Complete original script remains supplied for review. Original layout tests /var/lib existence/non-symlink and reads statfs; custom layouts check root ownership/non-symlink ancestry until an absent component, then statfs on the existing ancestor. No helper, project executable, installation, filesystem write or application ownership lookup is invoked. Literal request/target comparison only, not observed live capacity, OS binary trust, safety verdict or permission."));
+                }
+            } finally {
+                Arrays.fill(input, (byte) 0);
+            }
+        }
         if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe.OPERATION)) {
             if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Isolation server identity missing");
             var probe = gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe

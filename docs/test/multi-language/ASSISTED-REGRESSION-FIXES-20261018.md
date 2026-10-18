@@ -252,3 +252,13 @@ source-toolchain-requirement-unit-01新准备需求1项+直接受影响原归档
 新增完整字面参数映射：仅程序标准单引号/转义引号的完整调用经shellQuote回环完全相同后，依真实public标量次序列出每个参数的序号/原值/角色；包含app/candidate/release/owner、identity、恰好第7个原workload参数、configuration、计数秘密引用、十字段数据绑定、可选tools-v1以及全部运行dispatch尾参数。保留原始完整命令，不把参数分组当全部类型值/安全校验；未审运行参数、当前状态和权限仍由独立审查与helper控制。发布facts再明确派生releaseRoot/candidateRoot。process分派使用解码workload入口；编译型程序可不保留构建期编译器，所以运行期tools-v1可合法缺席，不能把缺省当丢失构建绑定。
 
 publication-argument-frame-unit-01仅运行受影响帧/边界及新增字面位置用例，共11项通过0跳过；无关已通过health/解码用例未重跑，3Java格式check通过。没有改helper执行或任何服务器参数。全局known3635080、708物理（1用量UNKNOWN）、164capUNKNOWN；audit06不覆盖CLI16/17，最终须更新。仍0/8交付。
+
+## CLI18：容量观察被误当成主机能力探测
+
+完整发布参数映射提交 `205f3379` 后，CLI18提前在capacity DENY，未验证publish映射。拒绝承认只读脚本安全，但错误要求platformProbe接口/guard。原 `e1b98aad-2bf8-4dbc-8dbd-ce8970cacdd6`、root `assisted-live-log-analyzer-wllsah204` 经reconcile-18-01产品对账ENDED/FAILED、blockers空、无应用；known64341=28901+35440，恢复2APP8589另计。
+
+原容量调用仅OS test/stat：默认路径是/var/lib存在/非symlink+statfs；捕获自定义layout则检查根与已存在祖先归属/非symlink，再statfs。它没有使用host/container capability probe或helper。提取原CandidateChannel.capacityScript/Target供原执行和review共同使用，字节/目标不变；capacityProbe仅在精确原脚本、空stdin和唯一完整匹配声明资源集合时给出，不声称live容量、OS二进制信任、安全或许可。改动/非空stdin不获该绑定，错误/额外资源直接拒绝。command-review压缩并明确两种探测分开审查，仍保留写入/逃逸/未可信执行等原规则及12288上限。
+
+capacity-interface-unit-01新事实7项、原自定义路径1项、原精确拒绝/预算2参数，共10项通过0跳过；3Java格式check通过。capacity-review-02真实API-only通过，Task `278bec94-b78c-4e54-85fc-13666bb215d9`、root `ai-live-capacity-review-wpza36hr0`，known3667=3553+114、cache512/miss3041、reasoningUNKNOWN，4capUNKNOWN；无SSH连接/发送且不复用许可。该通道首次修改前已保存.before，本轮增量单独入精确补丁；完整触及文件保留既有内容提交。
+
+全局截至该单项known3711677、722物理（1用量UNKNOWN）、172capUNKNOWN；usage-audit-07覆盖此前41root/708条全部对账无漏记，不覆盖CLI18/该单项，最终须更新。仍0/8交付。
