@@ -1,3 +1,16 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/DeploymentAssistedSinglePublishRunner.java
+@@ -157,6 +157,9 @@
+                         }));
+                     return tools;
+                 }, () -> Map.of("application", unit.id(), "plan", state.current.request().runtime().toString(),
++                    "reviewedSource", Map.of("archiveSha256", state.current.request().archive().sha256(),
++                        "buildTool", state.current.request().facts().buildTool().name(), "buildDirectory", state.current.request().facts().buildDirectory(),
++                        "handling", "Standard build uploads and verifies this frozen archive and executes the reviewed recipe; source discovery is already complete"),
+                     "prepared", state.prepared != null, "built", state.built != null,
+                     "restoredFailure", state.restoredFailure == null ? "" : state.restoredFailure.problem().orElseThrow().eventCode()));
+         }
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/contract/DeploymentStandardModeSupport.java
@@ -776,7 +789,15 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentStaticLiveAcceptanceTest.java
-@@ -8343,7 +8343,7 @@
+@@ -6086,6 +6086,7 @@
+                         + message.toolResult().map(tool -> tool.text().length()).orElse(0)).sum()
+                         + " nativeTools=" + value.tools().size() + " requiredTool=" + supervisedRequest.requiredToolName().orElse("AUTO")
+                         + " timeout=" + value.timeout());
++                    System.out.println("AI_LIVE_TOOL_CATALOG " + value.tools().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition::name).sorted().toList());
+                     System.out.println("AI_LIVE_CONTEXT_BYTES continuation=" + value.messages().stream().flatMap(m -> m.continuation().stream())
+                         .mapToLong(gold.debug.windowstolinux.appapi.ai.model.AiContinuation::payloadBytes).sum());
+                     var binding = evidence.path("decodedToolchainBinding");
+@@ -8343,7 +8344,7 @@
                      } else
                          assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
                      if (selectedMode != Mode.AGENT)
@@ -808,3 +829,11 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 +Trace initialization/dispatch/selected/transitive calls and payloads, including dynamic dispatch/eval/sourcing. Other branches matter only if reachable. Review statically, without requiring execution/SSH. Deny missing evidence or unenforced integrity/scope/privilege bounds.
 +Archived build/dependency scripts can execute inside a verified non-root task-owned candidate. Check enforced filesystem/privilege/service/resource/time limits, archive identity and launcher. Confined project execution is not host escape or grounds to disclose protected archives. Missing stdin, writable host tools, root project execution or uncontrolled host effects remain disallowed.
 +No approval by name/digest alone. Deny incomplete review, target drift, escape, uncontrolled payloads or unverified prerequisites/ownership. Protected data stays digest-bound; never request/disclose it.
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/assisted-deployment.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/assisted-deployment.md
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/assisted-deployment.md
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/assisted-deployment.md
+@@ -1,3 +1,4 @@
+ Choose each next action from the available standard-tool catalog. Prefer standard capabilities; prerequisites restrict availability, not your choice. Prepare all components before builds, build dependencies first, publish only verified complete output. Every actual command has independent approval.
++Source discovery and recipe review have already completed before this loop. prepare validates host/toolchains without uploading application sources; build uploads and verifies the frozen reviewed archive, then executes its reviewed recipe in the managed candidate. Source absence on the remote host before build is expected, not a missing host capability. Use the offered build tool for that work; do not rediscover local or remote project directories with supplement. Only actual prerequisite observations or standard-tool failure feedback can establish a necessary host capability gap; missing source-browsing tools in this publication-stage catalog cannot.
+ Before relying on host prerequisites compare reviewed project needs with validated observations. inspect-host sees system PATH only: managed SDKs may not appear; empty observations are not proof of absence. Standard prepare installs declared runtime SDKs but not necessarily every build tool. supplement requires a concrete necessary capability missing from standard tools, an explanation, and full script review; inspect again after success before relying on it.
+ Use only task-owned application resources and authorized host prerequisites. Never disclose/include credentials, change approval/receipt records or bypass source/candidate isolation. Confirmed nonzero exit is failure feedback; UNKNOWN stops without replay. Tool schemas and effects are in the catalog.

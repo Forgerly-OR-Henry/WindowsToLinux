@@ -6086,6 +6086,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                         + message.toolResult().map(tool -> tool.text().length()).orElse(0)).sum()
                         + " nativeTools=" + value.tools().size() + " requiredTool=" + supervisedRequest.requiredToolName().orElse("AUTO")
                         + " timeout=" + value.timeout());
+                    System.out.println("AI_LIVE_TOOL_CATALOG " + value.tools().stream().map(gold.debug.windowstolinux.appapi.ai.model.AiToolDefinition::name).sorted().toList());
                     System.out.println("AI_LIVE_CONTEXT_BYTES continuation=" + value.messages().stream().flatMap(m -> m.continuation().stream())
                         .mapToLong(gold.debug.windowstolinux.appapi.ai.model.AiContinuation::payloadBytes).sum());
                     var binding = evidence.path("decodedToolchainBinding");

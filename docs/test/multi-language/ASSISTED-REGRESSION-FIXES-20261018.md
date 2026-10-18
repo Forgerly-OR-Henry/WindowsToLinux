@@ -115,6 +115,14 @@
 
 `rust-review-02` API-only使用产品实际的未引用 prepare-toolchains 词及Rust1.95/1777参数，模型不再报告参数顺序问题，但因明确API-only场景缺现场工具链状态而DENY；该诊断已知FAILED，无SSH连接/发送，无未知远端效果。保留原失败和实际用量，不把前次不同参数的API审查通过泛化为本次通过，也不靠重试该诊断或放松审批求通过；下一步由真实完整流程验证新增字段。后续 Agent 调试需关注共享 CommandEvidence 的新增事实，但本轮没有 Agent 验证。
 
+## CLI04：发布阶段误提议重新发现源码
+
+CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build，反而以“缺源码发现能力”为由调用 supplement。独立模型拒绝该脚本：完整执行体中的工作空间恢复单元写入与其声明的源码发现目标不符。任务 `80bb6d87-c746-4774-b586-fdb0667471c6`、root `assisted-live-log-analyzer-tgbf57ylc` 已经 `reconcile-04-01` 产品对账 ENDED/FAILED、无应用；known137782（部署72014/审批65768），恢复新增2APP8357另计。原拒绝及脚本SHA/JFR过滤记录保留，不将恢复单元写入当成操作员手动行为，也不因为其是产品包装就自动豁免审核。
+
+真实标准 build 本来负责上传/校验冻结归档并执行已审阅配方；prepare只做上传前准备。原单项循环状态仅向模型展示runtime，缺少已完成源码审阅和build所含能力的明确上下文。因此补充ASSISTED专用阶段说明及单项实际归档SHA/buildTool/buildDirectory状态，说明上传前远端无源码符合流程，不能据此认定主机能力缺口；补充脚本仍须真实前置或失败证据，未知仍停机。没有更换标准构建、提供额外文件系统工具或修改 Agent 的策略/编排。测试监控追加仅工具名的catalog，便于后续区分“实际未提供”和“模型忽略”。
+
+`publication-source-stage-unit-01` 编译成功，但选取的旧构建纠正方法6参数全在源码/表单前置报 `DEPLOYMENT_STATIC_REVIEW_INVALID`，未到本次发布阶段，不能计为通过。该夹具源码仍返回旧纯文本 AiResponse、依赖旧事实tools，而实际 NativeSelection 要求 finish=tool_calls及原生调用；这套夹具尚未适配当前原生协议。保留失败，不向生产增加纯文本兼容放宽，也不据此声称新发布字段已由该组验证。下一次真实流程验证该阶段。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。
