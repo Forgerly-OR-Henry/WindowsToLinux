@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。当前仍在进行 ASSISTED 多语言真机验收，最终部署结果与 Token 汇总另见本轮验收报告；本记录不代表 Agent 已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。当前已按用户要求暂停 ASSISTED 多语言真机验收，保留CLI22原任务UNKNOWN；最终部署结果与 Token 汇总尚未达到完整交付条件；本记录不代表 Agent 已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -299,3 +299,15 @@ CLI21 prepare成功，bind仍有效DENY；理由已经变为缺少源码必需�
 绑定审查同时补实际canonical typed binding中已存在的requirement五字段（declaration/source/purpose/constraint/version），便于与同源声明对照；不修改绑定字节/摘要/服务器协议，不要求不同语义的源码约束与已审阅版本策略字符串盲目相等。shared-review-context-unit-01定点13项全部通过、0跳过：原来源关联/不可替换/关闭与跨scope边界5、原真实准备回执/变造/消费/容量与作用域7、绑定解码1；源码观测确实在bind/verify/snapshot等当前审查可见，准备历史在当前任务其他审查可见，均无grant字段。5Java格式化完成。
 
 当前累计known4042320、781物理（1输入/输出UNKNOWN）、192cap UNKNOWN；旧库audit07不覆盖后续新增，最终再对账。下一步CLI22完整流程，仍0/8。
+
+## 用户要求暂停（2026-10-18 21时本轮结束后）
+
+- 用户明确要求找合适时间暂停；当前所有本轮测试/恢复工具会话均已终止，不再启动部署、恢复或模型调用。
+- 最后源码提交bc2b7b7；本轮新增提交依次fcb5bb59（单结果审批原生工具）、7cff591d（UNKNOWN日志/官方摘要角色）、bc2b7b7（统一原任务观测/绑定需求）。验证分别18、5、13项定点通过，两个真实API-only通过；无全量或Agent真机验收。
+- CLI22原task247e2624-5971-4043-a27a-13619b6f4ffc，状态目录src/app/db/data/assisted-live-log-analyzer-xiiwrepk8。prepare/bind/upload/verify/实际Rust+C++构建/config/snapshot/publish/health/inspect/observe均推进，endMaintenance独立审查有效DENY，不能计完整成功。
+- 拒绝理由：application-maintenance end的应用/路径/两摘要与resourceTargets关系没有可验证说明。代码真实参数为end,app,ownerManifestSha256,deployment-releaseSha256,releaseSha256；不是用户猜测的发布目录参数。仅只读查看实现，尚未为此修改源码。
+- reconcile-22-01已结束但原task仍UNKNOWN，保留deployment-publication-policy和deployment-publication-remote检查点，业务结果须显式对账。恢复入口未结清；不得启动新任务重发发布，也不得手工改服务器/数据库或移除维护标记。下一次先排查该原任务恢复未结清原因及原固定maintenance调用的参数/真实资源目标，修程序后只恢复同一原任务；确认结果后再补该应用业务验收/管理同源入口导出。
+- 仍0/8完整ASSISTED交付，无可作为完整验收成功交付的地址。不能把CLI22实际发布或健康通过写成整项目完成。STATIC已由用户验收但旧服务器已重装。
+- 逐轮原始日志/XML、过滤JFR异常及精确源码补丁保留。本轮诊断JFR均已随验收JVM退出停止。最新token-summary在CLI21后为4042320 known /781物理（1输入/输出UNKNOWN）/192项能力验证用量UNKNOWN；暂停前将纳入CLI22与恢复生成新汇总，最终仍需新数据库用量对账。
+
+暂停汇总已刷新：已知提供方Token 4237072，物理生成尝试815（输入/输出用量UNKNOWN 1次），能力验证用量UNKNOWN 196项；包含失败、API-only及恢复。无新增模型/SSH调用，旧audit07不覆盖新增部分，完整最终对账留待恢复工作时执行。
