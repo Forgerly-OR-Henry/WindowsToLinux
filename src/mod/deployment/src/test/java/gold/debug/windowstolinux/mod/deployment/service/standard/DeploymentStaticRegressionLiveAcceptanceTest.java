@@ -31,7 +31,7 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
     void deploysWebsitesForManualAcceptance(String project) throws Exception {
         Path delivery = deliveryFile(project);
         deploysWebsitesThroughStaticEntry(project);
-        deliver(project, false, delivery);
+        deliver(project, false, delivery, "STATIC");
     }
 
     @ParameterizedTest
@@ -39,10 +39,10 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
     void deploysCliForManualAcceptance(String project) throws Exception {
         Path delivery = deliveryFile(project);
         deploysWebsitesThroughStaticEntry(project);
-        deliver(project, true, delivery);
+        deliver(project, true, delivery, "STATIC");
     }
 
-    private Path deliveryFile(String project) throws Exception {
+    final Path deliveryFile(String project) throws Exception {
         Path directory = Path.of(System.getProperty("managed.live.deliveryDirectory")).toRealPath();
         assertTrue(directory.startsWith(workspace().resolve(".ai-workspace/evidence").toRealPath()));
         assertTrue(project.matches("[a-z]+(?:-[a-z]+)*"));
@@ -51,7 +51,8 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
         return file;
     }
 
-    private void deliver(String project, boolean cli, Path delivery) throws Exception {
+    final void deliver(String project, boolean cli, Path delivery, String mode) throws Exception {
+        assertTrue(mode.equals("STATIC") || mode.equals("ASSISTED"));
         try (var runtime = open()) {
             start(runtime, true);
             var context = runtime.modContexts().get(OWNER).context();
@@ -59,7 +60,7 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
             var published = await(applications.list());
             assertEquals(1, published.size(), "The isolated state must contain the original publication only");
             var selected = await(applications.inspect(published.getFirst().application()));
-            assertTrue(selected.application().id().startsWith("wtl-static-" + project + "-"));
+            assertTrue(selected.application().id().startsWith("wtl-" + mode.toLowerCase(java.util.Locale.ROOT) + "-" + project + "-"));
             if (cli) {
                 assertEquals(ApplicationRunState.INSTALLED, selected.state());
                 assertEquals(ApplicationAutostartState.NOT_APPLICABLE, selected.autostart());
@@ -86,7 +87,7 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
             }
             var report = new LinkedHashMap<String, Object>();
             report.put("project", project);
-            report.put("mode", "STATIC");
+            report.put("mode", mode);
             report.put("stateDirectory", root.toString());
             report.put("application", usage.application().id());
             report.put("server", usage.application().server().id());
@@ -103,7 +104,7 @@ class DeploymentStaticRegressionLiveAcceptanceTest extends DeploymentStaticLiveA
                     "browser", endpoint.browser().map(Object::toString).orElse(""))).toList())).toList());
             Files.writeString(delivery, new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(report) + "\n",
                 StandardOpenOption.CREATE_NEW);
-            System.out.println("STATIC_MANUAL_DELIVERY " + project + " " + delivery + " state=" + usage.state());
+            System.out.println(mode + "_MANUAL_DELIVERY " + project + " " + delivery + " state=" + usage.state());
         }
     }
 
