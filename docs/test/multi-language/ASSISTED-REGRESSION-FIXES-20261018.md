@@ -165,6 +165,18 @@ CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build
 
 新增bindingDigestMeaning区分这些对象，源码绑定合同明确bind自身执行live校验后才封存。没有新增目录命名推导作为许可、没有把文字当安装回执。`binding-digest-domains-unit-01` 新Rust双身份1项、原完整源码守卫1项、原拒绝/预算2参数，共4项通过0跳过；审批上限12288保持。`rust-binding-review-01` 真实API-only通过，Task `01d892ab-6113-4fb8-87b4-8a475d8c5bc2`、root `ai-live-rust-binding-review-um7f2d67s`，没有SSH连接/发送或许可复用；使用代表性SERIES1.95/current目录版本帧，不声称与原失败MINIMUM/catalog版本帧逐字相同。
 
+## CLI10：真实准备回执未进入下一条绑定审查
+
+摘要身份修复提交 `4b2dbfbf` 后，CLI10仍在Rust bind DENY：明确声称没有本次工作流中的安装证据。实际程序刚收到成功prepare回执并完成类型/目录分支/要求校验，但每条审批是独立对话，下一条bind并没有该实际观测。原 `37caa49f-62bf-4791-8742-fcc9c617b16b`、root `assisted-live-log-analyzer-uone7q0tc` 已由日志自动定位的 `reconcile-10-01` 产品对账 ENDED/FAILED、无应用；known90501（部署41291/审批49210），恢复2APP8547另计。
+
+新增窄的准备观测端口：标准ToolchainSetup通过原完整回执与catalog/requirement校验后，在bind前交给原BuildCommandChannel；通道只匹配自己实际执行得到的完整exit0/未截断单行TOOLCHAIN回执，逐项字段一致后一次消费，再通知模式所属review。自定义Commands端口保持原接口/默认无观察；非ASSISTED使用默认空实现，不增加模型请求。没有缓存或传递命令许可，也没有修改任何服务器命令、SDK或helper执行体。
+
+ASSISTED作用域只记录原活动工作流、原任务对象、原服务器、冻结模型修订下的匹配整组摘要，最多保留32组；仅在bind/build审查携带。摘要对应实际将提交的规范工具链集合，recordedAt是本地记录时刻，不声称每个安装刚发生。事实明确是先前观测，缺少历史项不证明缺安装，后续bind仍做live标记/版本/摘要校验，仍逐命令独立批准并取得原宿主许可。关闭、跨任务/服务器或模型变化均拒绝观测；不把前一条成功转成后一条授权。
+
+`preparation-observation-unit-01` 原作用域6项+原通道3项通过；新7项因测试夹具误传非64位计划摘要，在构造阶段报错，未验证业务。修正夹具后unit-02只重跑新7项，全部通过：绑定审查前已可读匹配观测、失败/截断/畸形无观测、无实际回执/篡改字段/重复消费拒绝、跨作用域/关闭/模型变化拒绝、32组限额及不向无关效果提供观测。5个Java格式check通过。没有运行Agent或全量测试；新默认观察方法和共享通道检查的潜在Agent影响保留供稍后核对。
+
+只读usage-audit-03已审计32个已结束的实际目录、504条usage记录，与原stdout/恢复按generationId+number对账无额外或缺失记录。CLI10随后才结束，因此该审计不覆盖CLI10及后续任务，最终交付前仍须更新。CLI10结束时全局known2565796、521物理尝试（1用量UNKNOWN）、132能力验证任务UNKNOWN，恢复46次188170；Rust绑定API-only实际4769+137=4906，cache1664/miss3105、reasoningUNKNOWN。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。

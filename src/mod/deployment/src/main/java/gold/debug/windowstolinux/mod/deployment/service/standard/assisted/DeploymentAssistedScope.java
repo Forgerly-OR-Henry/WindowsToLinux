@@ -53,6 +53,22 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private volatile Map<String, Object> sourceSelection;
 
+    private final LinkedHashMap<String, Map<String, Object>> preparedToolchains = new LinkedHashMap<>();
+
+    private synchronized void toolchainsPrepared(ServerId server,
+                                                 gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                                 TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        verify();
+        if (workflow == null || tools.selections().isEmpty()) return;
+        validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, server));
+        String binding = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.identity(tools);
+        preparedToolchains.remove(binding);
+        if (preparedToolchains.size() == 32) preparedToolchains.remove(preparedToolchains.keySet().iterator().next());
+        preparedToolchains.put(binding, Map.of("bindingSha256", binding, "selectionCount", tools.selections().size(),
+            "recordedAt", java.time.Instant.now().toString(), "server", server.id(), "task", task.id().toString()));
+    }
+
     /** Records the actual post-picker frozen selection, not executable trust or a command grant. */
     public synchronized void sourceCaptured(ServerId server, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
                                             TaskContext supplied) throws ApiException {
@@ -85,14 +101,20 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     }
 
     /** Supplies the same task-bound observations for fixed transfers and business effects. */
-    public Map<String, ?> effectFacts(ActionIntent intent, TaskContext supplied) throws ApiException {
+    public synchronized Map<String, ?> effectFacts(ActionIntent intent, TaskContext supplied) throws ApiException {
         sameTask(supplied);
         verify();
         if (workflow == null) return Map.of();
         var evidence = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, intent);
         validateWorkflow(evidence);
         var source = sourceSelection;
-        return source == null ? Map.of("workflowAuthorization", evidence) : Map.of("workflowAuthorization", evidence, "sourceSelection", source);
+        var facts = new LinkedHashMap<String, Object>();
+        facts.put("workflowAuthorization", evidence);
+        if (source != null) facts.put("sourceSelection", source);
+        if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1").contains(value.operation())).orElse(false))
+            facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
+                "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));
+        return Map.copyOf(facts);
     }
 
     private void validateWorkflow(Map<String, Object> evidence) {
@@ -374,6 +396,13 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public InteractionService interaction() {
         return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
+            @Override
+            public void toolchainsPrepared(ServerId server,
+                                           gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                                           TaskContext supplied) throws ApiException {
+                DeploymentAssistedScope.this.toolchainsPrepared(server, tools, supplied);
+            }
+
             /** Reviews complete fixed command bytes before the exact host grant. / 精确宿主许可前审核完整固定命令字节。
              * @param intent original exact intent / 原精确意图
              * @param request complete actual request / 完整实际请求

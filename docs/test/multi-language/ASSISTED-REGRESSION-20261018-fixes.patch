@@ -1,3 +1,113 @@
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildCommandChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildCommandChannel.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildCommandChannel.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildCommandChannel.java
+@@ -59,6 +59,8 @@
+ 
+     private final DeploymentRemoteLayout layout;
+ 
++    private final java.util.ArrayDeque<String> preparationReceipts = new java.util.ArrayDeque<>();
++
+     /** Binds the original task, server and borrowed session; the caller closes the session. / 绑定原任务、服务器和借用会话；由调用方关闭会话。
+      * @param session original authenticated session / 原已认证会话
+      * @param interaction actual host review / 实际宿主审核
+@@ -141,11 +143,35 @@
+             .isPresent())
+             || javaHome == null || javaHome.length() > 2048)
+             throw new IllegalArgumentException("Invalid fixed toolchain preparation");
+-        return send("deployment.toolchain.prepare.v1", layout.toolchains(),
++        var observed = send("deployment.toolchain.prepare.v1", layout.toolchains(),
+             helper("prepare-toolchains",
+                 List.of("prepare", Objects.requireNonNull(ecosystem).name(), branch, exact,
+                     Integer.toString(seconds), javaHome)),
+             new byte[0], Duration.ofSeconds(seconds + 15L), 65536);
++        if (observed.outcome() == TaskResult.SUCCEEDED && observed.value().isPresent()) {
++            var receipt = observed.value().orElseThrow();
++            if (receipt.exitCode().equals(Optional.of(0)) && !receipt.truncated() && receipt.stdout().length() <= 8192
++                && receipt.stdout().startsWith("TOOLCHAIN=") && receipt.stdout().endsWith("\n")
++                && receipt.stdout().indexOf('\n') == receipt.stdout().length() - 1) {
++                if (preparationReceipts.size() == 32) preparationReceipts.removeFirst();
++                preparationReceipts.addLast(receipt.stdout());
++            }
++        }
++        return observed;
++    }
++
++    /** Matches validated typed selections to this channel's actual complete successful preparation receipts. */
++    public void toolchainsPrepared(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools) throws ApiException {
++        if (tools.selections().isEmpty()) return;
++        for (var selection : tools.selections()) {
++            String expected = "TOOLCHAIN=" + selection.requirement().ecosystem() + "|" + selection.version().text() + "|"
++                + selection.directory() + "|" + selection.origin() + "|" + selection.source() + "|" + selection.sha256() + "\n";
++            if (!preparationReceipts.contains(expected))
++                throw new IllegalArgumentException("Validated tools differ from this channel's observed successful preparation");
++        }
++        preparationReceipts.clear();
++        if (interaction instanceof gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview observer)
++            observer.toolchainsPrepared(server, tools, task);
+     }
+ 
+     /** Seals and re-probes the exact prepared binding. / 封存并回探精确已准备绑定。
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentCommandReview.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentCommandReview.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentCommandReview.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentCommandReview.java
+@@ -18,4 +18,10 @@
+      * @throws ApiException if original review cannot complete / 原审核无法完成时 */
+     OperationResult<ApprovalGrant> approveCommand(ActionIntent intent, CommandRequest request, TaskContext task)
+         throws ApiException;
++
++    /** Observes a validated preparation set matched to the channel's successful receipts, never a permission. */
++    default void toolchainsPrepared(gold.debug.windowstolinux.appapi.server.model.ServerId server,
++                                    gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
++                                    TaskContext task) throws ApiException {
++    }
+ }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/DeploymentToolchainSetup.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/DeploymentToolchainSetup.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/DeploymentToolchainSetup.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/toolchain/DeploymentToolchainSetup.java
+@@ -41,6 +41,13 @@
+     /** Fixed catalog used by planning and verification. / 规划与核验共用的固定目录。 */
+     private final DeploymentToolchainCatalog catalog;
+ 
++    @FunctionalInterface
++    private interface PreparedObserver {
++        void record(DeploymentResolvedToolchains tools) throws ApiException;
++    }
++
++    private final PreparedObserver preparedObserver;
++
+     /** Binds a single original remote task and catalog. / 绑定单一原远端任务与目录。
+      * @param commands original command channel / 原命令通道
+      * @param catalog reviewed supported releases / 已审阅支持发布 */
+@@ -56,14 +63,20 @@
+             public OperationResult<CommandResult> bind(String encoded) throws ApiException {
+                 return commands.bind(encoded);
+             }
+-        }, catalog);
++        }, catalog, commands::toolchainsPrepared);
+         Objects.requireNonNull(commands);
+     }
+ 
+     /** Selects effects without changing catalog or receipt validation. / 选择副作用实现，不改变目录或回执校验。 */
+     public DeploymentToolchainSetup(Commands commands, DeploymentToolchainCatalog catalog) {
++        this(commands, catalog, tools -> {
++        });
++    }
++
++    private DeploymentToolchainSetup(Commands commands, DeploymentToolchainCatalog catalog, PreparedObserver preparedObserver) {
+         this.commands = Objects.requireNonNull(commands);
+         this.catalog = Objects.requireNonNull(catalog);
++        this.preparedObserver = Objects.requireNonNull(preparedObserver);
+     }
+ 
+     /** Prepares one of at most two admitted branches and confirms its immutable binding. / 准备最多两个准入分支之一，并确认其不可变绑定。
+@@ -128,6 +141,7 @@
+         }
+         var set = new DeploymentResolvedToolchains(catalog.revision(), selections);
+         if (!selections.isEmpty()) {
++            preparedObserver.record(set);
+             String encoded = Base64.getEncoder()
+                 .encodeToString(DeploymentToolchainBindingCodec.encode(set).getBytes(StandardCharsets.UTF_8));
+             var bound = commands.bind(encoded);
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
@@ -241,7 +351,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,64 @@
+@@ -48,6 +48,86 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -249,6 +359,22 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    private volatile gold.debug.windowstolinux.appapi.task.action.WorkflowGrant workflow;
 +
 +    private volatile Map<String, Object> sourceSelection;
++
++    private final LinkedHashMap<String, Map<String, Object>> preparedToolchains = new LinkedHashMap<>();
++
++    private synchronized void toolchainsPrepared(ServerId server,
++                                                 gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
++                                                 TaskContext supplied) throws ApiException {
++        sameTask(supplied);
++        verify();
++        if (workflow == null || tools.selections().isEmpty()) return;
++        validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, server));
++        String binding = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.identity(tools);
++        preparedToolchains.remove(binding);
++        if (preparedToolchains.size() == 32) preparedToolchains.remove(preparedToolchains.keySet().iterator().next());
++        preparedToolchains.put(binding, Map.of("bindingSha256", binding, "selectionCount", tools.selections().size(),
++            "recordedAt", java.time.Instant.now().toString(), "server", server.id(), "task", task.id().toString()));
++    }
 +
 +    /** Records the actual post-picker frozen selection, not executable trust or a command grant. */
 +    public synchronized void sourceCaptured(ServerId server, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
@@ -282,14 +408,20 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    }
 +
 +    /** Supplies the same task-bound observations for fixed transfers and business effects. */
-+    public Map<String, ?> effectFacts(ActionIntent intent, TaskContext supplied) throws ApiException {
++    public synchronized Map<String, ?> effectFacts(ActionIntent intent, TaskContext supplied) throws ApiException {
 +        sameTask(supplied);
 +        verify();
 +        if (workflow == null) return Map.of();
 +        var evidence = gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(workflow, task, intent);
 +        validateWorkflow(evidence);
 +        var source = sourceSelection;
-+        return source == null ? Map.of("workflowAuthorization", evidence) : Map.of("workflowAuthorization", evidence, "sourceSelection", source);
++        var facts = new LinkedHashMap<String, Object>();
++        facts.put("workflowAuthorization", evidence);
++        if (source != null) facts.put("sourceSelection", source);
++        if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1").contains(value.operation())).orElse(false))
++            facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
++                "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));
++        return Map.copyOf(facts);
 +    }
 +
 +    private void validateWorkflow(Map<String, Object> evidence) {
@@ -306,6 +438,20 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
+@@ -316,6 +396,13 @@
+     @Override
+     public InteractionService interaction() {
+         return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
++            @Override
++            public void toolchainsPrepared(ServerId server,
++                                           gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
++                                           TaskContext supplied) throws ApiException {
++                DeploymentAssistedScope.this.toolchainsPrepared(server, tools, supplied);
++            }
++
+             /** Reviews complete fixed command bytes before the exact host grant. / 精确宿主许可前审核完整固定命令字节。
+              * @param intent original exact intent / 原精确意图
+              * @param request complete actual request / 完整实际请求
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/policy/DeploymentPublishPolicyContext.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/policy/DeploymentPublishPolicyContext.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/policy/DeploymentPublishPolicyContext.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/policy/DeploymentPublishPolicyContext.java
