@@ -135,6 +135,69 @@ class DeploymentWorkflowEvidenceRegressionTest {
         }
     }
 
+    @Test
+    void archiveObservationBindsTheActualOriginalSourceAndIncludedCompanionPaths() throws Exception {
+        var scope = sourceScope("model-revision");
+        var original = material(UUID.randomUUID(), "a".repeat(64));
+        var source = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture", original.snapshot(),
+            List.of("project/cli/Cargo.toml", "project/native/CMakeLists.txt", "outside/private.txt"), List.of());
+        var archive = archive(source, source.snapshot().id(), "a".repeat(64), "project");
+        assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task));
+        try (var permission = open(() -> {
+        })) {
+            scope.workflowOpened(permission);
+            scope.sourceCaptured(server, source, task);
+            scope.archiveCaptured(source, archive, task);
+            scope.archiveCaptured(source, archive, task);
+            assertFalse(scope.effectFacts(command(server.id(), server.id()), task).containsKey("sourceArchiveObservations"));
+            var intent = command(server.id(), server.id()).withSemantics(new ActionSemantics("deployment.build.run.v1",
+                Set.of(new ActionTarget(server.id(), "deployment-build", "/fixture/candidate"))));
+            var evidence = (java.util.Map<?, ?>) scope.effectFacts(intent, task).get("sourceArchiveObservations");
+            var entries = (List<?>) evidence.get("archives");
+            assertEquals(1, entries.size());
+            var entry = (java.util.Map<?, ?>) entries.getFirst();
+            assertEquals(source.snapshot().id().toString(), entry.get("originSnapshotId"));
+            assertEquals("a".repeat(64), entry.get("sourceManifestSha256"));
+            assertEquals("b".repeat(64), entry.get("archiveSha256"));
+            assertEquals(List.of("cli/Cargo.toml", "native/CMakeLists.txt"), entry.get("fileNames"));
+            assertEquals(2, entry.get("fileCount"));
+            assertEquals(false, entry.get("fileNamesTruncated"));
+            assertFalse(entry.containsKey("commandGrant"));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task(id)));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, UUID.randomUUID(), "a".repeat(64), "project"), task));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, source.snapshot().id(), "c".repeat(64), "project"), task));
+            permission.close();
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task));
+        }
+    }
+
+    @Test
+    void archiveFileNamesAreExplicitlyBoundedWithoutInventingACompleteListing() throws Exception {
+        var scope = sourceScope("model-revision");
+        var original = material(UUID.randomUUID(), "a".repeat(64));
+        var source = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture", original.snapshot(),
+            java.util.stream.IntStream.range(0, 80).mapToObj(i -> "file-" + i).toList(), List.of());
+        try (var permission = open(() -> {
+        })) {
+            scope.workflowOpened(permission);
+            scope.sourceCaptured(server, source, task);
+            scope.archiveCaptured(source, archive(source, source.snapshot().id(), "a".repeat(64), ""), task);
+            var intent = command(server.id(), server.id()).withSemantics(new ActionSemantics("deployment.build.run.v1",
+                Set.of(new ActionTarget(server.id(), "deployment-build", "/fixture/candidate"))));
+            var evidence = (java.util.Map<?, ?>) scope.effectFacts(intent, task).get("sourceArchiveObservations");
+            var entry = (java.util.Map<?, ?>) ((List<?>) evidence.get("archives")).getFirst();
+            assertEquals(80, entry.get("fileCount"));
+            assertEquals(64, ((List<?>) entry.get("fileNames")).size());
+            assertEquals(true, entry.get("fileNamesTruncated"));
+        }
+    }
+
+    private static gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive(
+        gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial source, UUID origin, String manifest, String root) {
+        return new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive(source.snapshot(), "b".repeat(64), 100, 200,
+            origin, manifest, root);
+    }
+
     private gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope sourceScope(String revision) {
         var ai = stub(gold.debug.windowstolinux.appapi.ai.AiService.class, (proxy, method, args) -> {
             assertEquals("configurationRevision", method.getName());

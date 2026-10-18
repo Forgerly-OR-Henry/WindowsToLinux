@@ -55,6 +55,45 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private final LinkedHashMap<String, Map<String, Object>> preparedToolchains = new LinkedHashMap<>();
 
+    private final LinkedHashMap<String, Map<String, Object>> sourceArchives = new LinkedHashMap<>();
+
+    /** Records the archiver's original-source association, never source trust or build permission. */
+    public synchronized void archiveCaptured(gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
+                                             gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive,
+                                             TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        verify();
+        var selected = sourceSelection;
+        if (selected == null || !archive.originSnapshotId().toString().equals(selected.get("snapshotId"))
+            || !archive.sourceManifestSha256().equals(selected.get("sourceRevision"))
+            || !material.snapshot().id().equals(archive.originSnapshotId())
+            || !material.snapshot().sha256().equals(archive.sourceManifestSha256()))
+            throw new IllegalArgumentException("Archive differs from the original captured source");
+        validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(
+            workflow, task, new ServerId(selected.get("server").toString())));
+        String prefix = archive.relativeRoot().isEmpty() ? "" : archive.relativeRoot() + "/";
+        var names = material.includedFiles().stream().filter(name -> name.startsWith(prefix))
+            .map(name -> name.substring(prefix.length())).sorted().toList();
+        var displayed = new java.util.ArrayList<String>();
+        int chars = 0;
+        for (String name : names) {
+            if (displayed.size() == 64 || chars + name.length() > 8192) break;
+            displayed.add(name);
+            chars += name.length();
+        }
+        Map<String, Object> observation = Map.of("originSnapshotId", archive.originSnapshotId().toString(),
+            "sourceManifestSha256", archive.sourceManifestSha256(), "archiveSha256", archive.sha256(),
+            "archiveBytes", archive.byteCount(), "relativeRoot", archive.relativeRoot(), "fileCount", names.size(),
+            "fileNames", List.copyOf(displayed), "fileNamesTruncated", displayed.size() != names.size());
+        String key = archive.relativeRoot() + "\n" + archive.sha256();
+        var previous = sourceArchives.get(key);
+        if (previous != null && !previous.equals(observation))
+            throw new IllegalStateException("Original archive association cannot be replaced");
+        if (previous == null && sourceArchives.size() == 32)
+            sourceArchives.remove(sourceArchives.keySet().iterator().next());
+        sourceArchives.put(key, observation);
+    }
+
     private synchronized void toolchainsPrepared(ServerId server,
                                                  gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
                                                  TaskContext supplied) throws ApiException {
@@ -111,6 +150,9 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var facts = new LinkedHashMap<String, Object>();
         facts.put("workflowAuthorization", evidence);
         if (source != null) facts.put("sourceSelection", source);
+        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> value.operation().equals("deployment.build.run.v1")).orElse(false))
+            facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
+                "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
         if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1").contains(value.operation())).orElse(false))
             facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
                 "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));

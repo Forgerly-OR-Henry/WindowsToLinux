@@ -196,3 +196,13 @@ snapshot-frame-unit-01新增帧边界7项、捕获layout的normal/attempt目标1
 预算边界补充：unit-02两项仍因policy12326>12288失败，继续仅压缩重复语义后，unit-03仅重跑这两项均通过。前述9项已通过检查没有重复执行。CLI11恢复新增4APP17232，全局截至CLI11known2760881、552物理生成（1用量UNKNOWN）、136cap用量UNKNOWN，恢复共50次205402；audit03尚未覆盖新增目录，最终须更新。
 
 - snapshot-review-01真实API-only通过，task2b61279d-6bfc-47a1-916c-48e1fd868c8a/root ai-live-snapshot-review-vhgconvgk，未连接或发送SSH，未复用审批；known4553=4421+132，cache1152/miss3269，reasoningUNKNOWN，4capUNKNOWN。六个Java格式检查中合同文件因换行需单独write，随后check通过；其余五个已通过。下一步CLI12完整流程，仍0/8。
+
+## CLI12：归档来源与伴随文件未传递到独立构建审查
+
+快照修复提交 `8dadddac` 后，CLI12在build-run提前DENY，未到快照阶段，不能称快照已在整流程通过。拒绝称native伴随组件未声明、构建脚本与25文件快照没有source-integrity关联。核对源码：SourceArchiver本来生成originSnapshotId/sourceManifestSha256/relativeRoot和压缩SHA，SafeBuildScriptEnvelope对实际压缩归档做SHA256校验后才解包；构建脚本由程序生成并独立审查，不是必须属于原源码清单的签名文件。但Scope当时只传原源码摘要/文件数，没有已生成归档的关联及文件名。
+
+原 `41ad16ea-e163-4a9c-b56a-e5dcc19a89e5`、root `assisted-live-log-analyzer-vifg7qq60` 已reconcile-12-01产品对账ENDED/FAILED，无发布；known131437=40528+90909，恢复新增另计。保留拒绝原文和过滤JFR，不将测试监控误用Agent识别schema的已捕获异常误判为业务根因。
+
+复用ASSISTED已有workspaceDemand阶段观察已创建归档，STATIC默认编排不变，不新增远端操作。Scope核对原Task对象、模型、活动workflow、原source snapshot ID/SHA，记录压缩归档SHA/长度、来源子树及有界文件名（最多64条/8192字符，明确截断/总数），历史最多32归档。仅build审查携带；同内容不同子树分别保留。记录发生在最终确认前，明确不是已批准计划、实时远端证明、安全裁决或许可；原归档校验、非root隔离和独立宿主批准继续执行。该修复仅ASSISTED观测路径，后续Agent仍不得据此跳过自身来源或命令审查。
+
+source-archive-observation-unit-01原作用域/来源6项和新增归档2项，共8项通过0跳过；三个Java格式check通过。CLI12恢复新增4APP17228，累计恢复54次222630；全局截至CLI12known2914099、579物理（1用量UNKNOWN）、144capUNKNOWN。usage-audit-04此前35root/553条全对账、无额外/缺失/不可读记录，但不覆盖CLI12，最终需再更新。
