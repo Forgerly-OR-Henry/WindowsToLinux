@@ -149,6 +149,14 @@ CLI04真实 Rust 准备和绑定均通过，之后主模型没有选标准 build
 
 `configuration-frame-unit-01` 11项通过、0跳过：新增帧边界8项，捕获自定义路径的配置/秘密目标2项，原暂存缓冲清理1项。既有路径测试按新增精确目标更新；该文件原有未跟踪内容依用户持续授权整体提交，本轮增量另入首次修改前补丁。共享PublishChannel和CommandEvidence会影响后续Agent的资源声明/审查事实，应在稍后Agent调试时核对；本轮仍未运行Agent。四个触及Java文件已格式化。
 
+## CLI08：高优先级合同与真实配置协议冲突
+
+配置帧修复提交 `ae366bd7` 后，CLI08仍在stage-config被拒绝，明确声称原五参数缺少任务/绑定参数。此次事实已解释不带task，但源码绑定的高优先级helper合同仍误写“stage-config/secret write task-bound protected frames”，两者冲突；原 `15-deployment-input.sh` 真实协议确实是应用范围的不可变五参数输入。现已纠正SYSTEM合同，列明两种实际参数顺序、配置可空/秘密非空和无task参数，仍由原宿主交接/精确许可约束实际任务。没有改helper、增加任务参数或绕过模型。仅压缩重复措辞保持预算，仍保留全部官方来源/校验/路径/隔离/独立许可条件。
+
+原任务 `a7d7640a-7359-4e0b-a515-99555a155e65`、实际root `assisted-live-log-analyzer-u672rphlk` 已 `reconcile-08-02` 产品对账 ENDED/FAILED、无应用；known168613（部署74245/审批94368），恢复新增4APP17097。第一次对账08-01再次误抄目录，NoSuchFileException发生在toRealPath、运行时打开前，无模型/SSH；保留失败并已向用户说明。监督侧改用 `reconcile-run.ps1` 解析原日志的唯一真实目录和任务ID、校验项目/工作区后启动产品，避免继续手工转抄。
+
+`configuration-contract-unit-01` 源码固定身份/完整守卫1项通过，原拒绝2参数因policy12289比原上限多1字符失败；压缩重复收尾后unit-02仅重跑失败2项，均通过。`configuration-review-01` 真实API-only空配置审查通过：Task `33732b43-c590-4668-b733-40021ab3dedb`，root `ai-live-configuration-review-ueh6k36yk`；使用实际构造的空DeploymentConfigSnapshot及真实五参数帧，没有SSH连接/发送或许可复用。该结果不等同整项目发布成功，下一步继续完整真实流程。失败记录与真实用量继续保留。
+
 绑定证据的新增4个参数场景覆盖捕获的自定义根、真正子目录、相同路径、相似前缀的外部目录，以及 SYSTEM 根外路径。连同原有完整版本/来源、构建绑定、非法字面和非规范 Base64 的4项，`binding-evidence-unit-01` 共8项通过。未运行该大类其它用例或 Agent 场景。
 
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。
