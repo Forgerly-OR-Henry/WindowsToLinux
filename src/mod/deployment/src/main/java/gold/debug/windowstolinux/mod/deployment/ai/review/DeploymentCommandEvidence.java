@@ -193,6 +193,13 @@ final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            if (operation.equals("deployment.build.run.v1") && invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
+                var collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.reviewFacts(invocation, input, layout);
+                if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().contains(
+                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-build", collector.get("candidateRoot").toString())))
+                    throw new IllegalArgumentException("Build collector candidate target differs");
+                facts.put("buildCollector", collector);
+            }
             if (installedHelper)
                 managedApplication(invocation, input, intent, layout).ifPresent(value -> facts.put("managedApplication", value));
             if (Set.of("deployment.publication.publish.v1", "deployment.publication.health.v1").contains(operation))
@@ -210,6 +217,9 @@ final class DeploymentCommandEvidence {
                     if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
                     else DeploymentCommandStaticGate.requireFixedAllowed(executable);
                 }
+                if (operation.equals("deployment.build.run.v1"))
+                    gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.bootstrapEvidence(executable)
+                        .ifPresent(value -> facts.put("candidateMavenBootstrap", value));
                 if (agentRun)
                     facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
                 facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");

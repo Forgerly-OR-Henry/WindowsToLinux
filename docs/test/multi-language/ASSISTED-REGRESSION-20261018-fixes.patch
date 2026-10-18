@@ -801,10 +801,17 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -157,6 +193,16 @@
+@@ -157,6 +193,23 @@
          }
          byte[] input = request.stdin();
          try {
++            if (operation.equals("deployment.build.run.v1") && invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
++                var collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.reviewFacts(invocation, input, layout);
++                if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().contains(
++                    new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-build", collector.get("candidateRoot").toString())))
++                    throw new IllegalArgumentException("Build collector candidate target differs");
++                facts.put("buildCollector", collector);
++            }
 +            if (installedHelper)
 +                managedApplication(invocation, input, intent, layout).ifPresent(value -> facts.put("managedApplication", value));
 +            if (Set.of("deployment.publication.publish.v1", "deployment.publication.health.v1").contains(operation))
@@ -818,7 +825,17 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                  String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-@@ -201,10 +247,168 @@
+@@ -164,6 +217,9 @@
+                     if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
+                     else DeploymentCommandStaticGate.requireFixedAllowed(executable);
+                 }
++                if (operation.equals("deployment.build.run.v1"))
++                    gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.bootstrapEvidence(executable)
++                        .ifPresent(value -> facts.put("candidateMavenBootstrap", value));
+                 if (agentRun)
+                     facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
+                 facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");
+@@ -201,10 +257,168 @@
                                       gold.debug.windowstolinux.appapi.task.run.TaskContext task)
          throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
          var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
@@ -987,7 +1004,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
-@@ -216,7 +420,7 @@
+@@ -216,7 +430,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -996,7 +1013,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +432,14 @@
+@@ -228,14 +442,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -1013,7 +1030,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +454,53 @@
+@@ -250,12 +464,53 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -1432,6 +1449,110 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          } catch (ApiException unavailable) {
              // The existing logger reports its storage issue; diagnostics do not alter the business result.
          }
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildOutputProtocol.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildOutputProtocol.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildOutputProtocol.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/build/DeploymentBuildOutputProtocol.java
+@@ -43,6 +43,13 @@
+     public static String script(DeploymentRemoteWorkspace workspace, long seconds, int processes, int memory,
+                                 long output, String engine, String inputSha256, String toolchainBinding,
+                                 List<List<String>> compatibilityGroups) {
++        return render(workspace.layout().helperPath(), workspace.applicationId(), workspace.candidateId(), seconds,
++            processes, memory, output, engine, inputSha256, toolchainBinding, compatibilityGroups);
++    }
++
++    private static String render(String helper, String application, String candidate, long seconds, int processes, int memory,
++                                 long output, String engine, String inputSha256, String toolchainBinding,
++                                 List<List<String>> compatibilityGroups) {
+         if (inputSha256 == null || !inputSha256.matches("[0-9a-f]{64}") || toolchainBinding == null
+             || !toolchainBinding.equals("-") && !toolchainBinding.matches("[A-Za-z0-9+/=]{8,87384}"))
+             throw new IllegalArgumentException("Invalid build input binding");
+@@ -177,9 +184,61 @@
+             """
+             .formatted(groups, inputSha256);
+         return "exec /usr/bin/python3 -I -c " + shellQuote(python) + " "
+-            + shellQuote(workspace.layout().helperPath()) + " build-run " + shellQuote(workspace.applicationId())
+-            + " " + shellQuote(workspace.candidateId()) + " " + seconds + " " + processes + " " + memory + " "
++            + shellQuote(helper) + " build-run " + shellQuote(application)
++            + " " + shellQuote(candidate) + " " + seconds + " " + processes + " " + memory + " "
+             + output + " " + shellQuote(engine) + " " + shellQuote(inputSha256) + " " + shellQuote(toolchainBinding);
++    }
++
++    /** Round-trips the complete collector against this producer and binds its exact executable stdin. */
++    public static java.util.Map<String, Object> reviewFacts(String script, byte[] input,
++                                                            gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) throws java.io.IOException {
++        var frame = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' build-run ")
++            + "'([a-z0-9][a-z0-9-]{0,62})' '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' ([0-9]+) ([0-9]+) ([0-9]+) ([0-9]+) '(ordinary|docker|podman)' '([a-f0-9]{64})' '([A-Za-z0-9+/=]+|-)'\\z").matcher(script);
++        String prefix = "exec /usr/bin/python3 -I -c ";
++        if (!frame.find() || !script.startsWith(prefix) || frame.start() <= prefix.length()
++            || script.charAt(frame.start() - 1) != ' ' || !frame.group(2).startsWith(frame.group(1) + "-"))
++            throw new IllegalArgumentException("Fixed build collector frame differs");
++        String quoted = script.substring(prefix.length(), frame.start() - 1);
++        if (quoted.length() < 2 || quoted.charAt(0) != '\'' || quoted.charAt(quoted.length() - 1) != '\'')
++            throw new IllegalArgumentException("Build collector Python literal missing");
++        String python = quoted.substring(1, quoted.length() - 1).replace("'\"'\"'", "'");
++        if (!shellQuote(python).equals(quoted))
++            throw new IllegalArgumentException("Build collector literal is not canonical");
++        var groupFrame = java.util.regex.Pattern.compile("(?m)^groups = (\\[[^\\r\\n]{0,16384}\\])$").matcher(python);
++        if (!groupFrame.find()) throw new IllegalArgumentException("Build collector compatibility frame missing");
++        String encoded = groupFrame.group(1).replaceAll("b'([A-Za-z0-9+/=]*)'", "\"$1\"");
++        var node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(encoded);
++        if (!node.isArray() || node.size() > 64)
++            throw new IllegalArgumentException("Build compatibility groups differ");
++        var groups = new java.util.ArrayList<List<String>>();
++        for (var group : node) {
++            if (!group.isArray() || group.size() > 64)
++                throw new IllegalArgumentException("Build compatibility group differs");
++            var markers = new java.util.ArrayList<String>();
++            for (var marker : group) {
++                if (!marker.isTextual()) throw new IllegalArgumentException("Build compatibility marker differs");
++                byte[] bytes = Base64.getDecoder().decode(marker.textValue());
++                if (!Base64.getEncoder().encodeToString(bytes).equals(marker.textValue()))
++                    throw new IllegalArgumentException("Build compatibility marker is not canonical");
++                markers.add(java.nio.charset.StandardCharsets.UTF_8.newDecoder()
++                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString());
++            }
++            groups.add(List.copyOf(markers));
++        }
++        String digest;
++        try {
++            digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(input));
++        } catch (java.security.NoSuchAlgorithmException impossible) {
++            throw new IllegalStateException(impossible);
++        }
++        if (input.length > 1048576 || !digest.equals(frame.group(8)) || !script.equals(render(layout.helperPath(), frame.group(1), frame.group(2),
++            Long.parseLong(frame.group(3)), Integer.parseInt(frame.group(4)), Integer.parseInt(frame.group(5)), Long.parseLong(frame.group(6)),
++            frame.group(7), digest, frame.group(9), groups)))
++            throw new IllegalArgumentException("Build collector bytes or input digest differ");
++        return java.util.Map.of("application", frame.group(1), "candidate", frame.group(2), "candidateRoot", layout.candidateRoot(frame.group(2)),
++            "seconds", Long.parseLong(frame.group(3)), "processes", Integer.parseInt(frame.group(4)), "memoryMiB", Integer.parseInt(frame.group(5)),
++            "maximumOutputBytes", Long.parseLong(frame.group(6)), "engine", frame.group(7), "inputSha256", digest,
++            "meaning", "Complete exact product collector regenerated from its literal arguments and compatibility phrases; stdin SHA256 matches. The Python process collects output and invokes this single hash-guarded helper build-run. The helper, not Python, dispatches executable stdin to its restricted build entry. Scope is only this application/candidate and decoded tool binding; other components' tools need not appear in this build. This proves request framing only, not live isolation, successful execution, safe project hooks or authority. Review the full executable stdin and actual helper guards.");
+     }
+ 
+     /** Parses only a complete fixed wrapper receipt; arbitrary build output never becomes a control field. / 仅解析完整固定包装器回执；任意构建输出不成为控制字段。
+diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/build/ecosystem/java/MavenBuildWriter.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/build/ecosystem/java/MavenBuildWriter.java
+--- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/build/ecosystem/java/MavenBuildWriter.java
++++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/deploy/build/ecosystem/java/MavenBuildWriter.java
+@@ -107,6 +107,19 @@
+             """;
+     }
+ 
++    /** Describes only an exact observed product bootstrap fragment; the enclosing script still requires full review. */
++    public static java.util.Optional<java.util.Map<String, Object>> bootstrapEvidence(String input) {
++        String fragment = prepareMaven();
++        if (!input.contains(fragment)) return java.util.Optional.empty();
++        var source = java.util.regex.Pattern.compile("https://repo[.]maven[.]apache[.]org/maven2/org/apache/maven/apache-maven/([0-9.]+)/apache-maven-\\1-bin[.]tar[.]gz").matcher(fragment);
++        var digest = java.util.regex.Pattern.compile("[a-f0-9]{128}").matcher(fragment);
++        if (!source.find() || !digest.find())
++            throw new IllegalStateException("Maven bootstrap evidence contract changed");
++        return java.util.Optional.of(java.util.Map.of("version", source.group(1), "url", source.group(),
++            "algorithm", "SHA512", "expectedArchiveDigest", digest.group(), "candidateLocalHome", "$mutable/home/.wtl-tools/apache-maven-" + source.group(1),
++            "meaning", "Exact complete MavenBuildWriter.prepareMaven fragment occurs in supplied executable stdin. Only when mvn is absent from the isolated build PATH: bounded HTTPS curl (32MiB,120s,retry2) downloads the product-pinned Maven archive into candidate mutable/home; SHA512 is verified before tar inspection. It limits 1024 members, permits only the fixed version prefix and safe components, rejects links/special types/duplicate files, then extracts without preserving owner/permissions into candidate-local home and checks bin/mvn. It makes no host-wide installation. This identifies that exact fragment only; separately review the full body's mutable binding, overrides and all other commands. It does not prove a live download, upstream metadata freshness, isolated execution or permission."));
++    }
++
+     /** Prepares a pinned Maven only when no executable is accessible to the isolated build identity. / 隔离构建身份无可执行Maven时才准备固定版本。
+      * @return bounded candidate-local preparation / 有界候选内准备 */
+     static String prepareMaven() {
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishTransaction.java
@@ -4191,6 +4312,108 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +                .withSemantics(new ActionSemantics("deployment.publication.publish.v1", Set.of(
 +                    new ActionTarget(server.id(), "deployment-release", unit.releaseRoot() + (mutation.equals("TARGET") ? ".other" : "")))));
 +            return DeploymentAssistedScope.publicationFacts(identity, mutation.equals("EMPTY") ? List.of() : List.of(commit), intent, request, task);
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentBuildCollectorEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentBuildCollectorEvidenceRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentBuildCollectorEvidenceRegressionTest.java
+@@ -0,0 +1,98 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.*;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace;
++import gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class DeploymentBuildCollectorEvidenceRegressionTest {
++    @ParameterizedTest
++    @ValueSource(booleans = {false, true})
++    void actualCollectorRoundTripsIncludingUnicodeCompatibilityAndBindsCurrentCandidate(boolean custom) throws Exception {
++        var facts = facts("VALID", custom);
++        assertEquals("backend", facts.at("/buildCollector/application").asText());
++        assertEquals(256, facts.at("/buildCollector/memoryMiB").asInt());
++        assertEquals("ordinary", facts.at("/buildCollector/engine").asText());
++        assertFalse(facts.path("buildCollector").has("verifiedIsolation"));
++        assertFalse(facts.path("buildCollector").has("commandGrant"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"STDIN", "PYTHON", "REPORT", "DIGEST", "APPLICATION", "TARGET", "UNGUARDED"})
++    void modifiedCollectorInputOrTargetNeverGetsProducerEvidence(String mutation) {
++        assertThrows(IllegalArgumentException.class, () -> facts(mutation, true));
++    }
++
++    @Test
++    void exactMavenFragmentDescribesPinnedCandidateLocalBootstrapWithoutTrustingOtherCommands() throws Exception {
++        String fragment = maven();
++        var facts = new ObjectMapper().valueToTree(MavenBuildWriter.bootstrapEvidence(fragment + "\nprintf extra\n").orElseThrow());
++        assertEquals("SHA512", facts.path("algorithm").asText());
++        assertEquals(128, facts.path("expectedArchiveDigest").asText().length());
++        assertTrue(facts.path("url").asText().startsWith("https://repo.maven.apache.org/"));
++        assertTrue(facts.path("candidateLocalHome").asText().startsWith("$mutable/home/"));
++        assertTrue(facts.path("meaning").asText().contains("full body's"));
++        assertFalse(facts.has("verifiedDownload"));
++        assertFalse(facts.has("commandGrant"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"URL", "DIGEST", "EXTRACTION"})
++    void changedMavenBootstrapCannotReceiveThePinnedFragmentDescription(String mutation) throws Exception {
++        String fragment = maven();
++        String changed = switch (mutation) {
++            case "URL" -> fragment.replace("repo.maven.apache.org", "foreign.invalid");
++            case "DIGEST" -> fragment.replace("831a8591", "831a8592");
++            case "EXTRACTION" -> fragment.replace("--strip-components=1", "--strip-components=0");
++            default -> throw new AssertionError();
++        };
++        assertNotEquals(fragment, changed);
++        assertTrue(MavenBuildWriter.bootstrapEvidence(changed).isEmpty());
++    }
++
++    private static String maven() throws Exception {
++        var method = MavenBuildWriter.class.getDeclaredMethod("prepareMaven");
++        method.setAccessible(true);
++        return (String) method.invoke(null);
++    }
++
++    private JsonNode facts(String mutation, boolean custom) throws Exception {
++        var layout = custom ? new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data")) : DeploymentRemoteLayout.original();
++        var workspace = new DeploymentRemoteWorkspace("backend", "a".repeat(64), layout);
++        byte[] input = "printf 'fixed build\\n'\n".getBytes(StandardCharsets.UTF_8);
++        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(input));
++        String script = DeploymentBuildOutputProtocol.script(workspace, 60, 16, 256, 8192, "ordinary", digest, "-",
++            List.of(List.of("BUILD_OK", "兼容 'phrase'")));
++        script = switch (mutation) {
++            case "PYTHON" -> script.replace("overlap = max", "overlap = min");
++            case "REPORT" -> script.replace("WTL_BUILD_REPORT=1", "WTL_BUILD_REPORT=2");
++            case "DIGEST" -> script.replace(digest, "b".repeat(64));
++            case "APPLICATION" -> script.replace("build-run 'backend'", "build-run 'foreign'");
++            default -> script;
++        };
++        if (mutation.equals("STDIN")) input = "printf changed\n".getBytes(StandardCharsets.UTF_8);
++        var server = new ServerId("fixture");
++        try (var request = new CommandRequest(mutation.equals("UNGUARDED") ? script : DeploymentManagedHelperBundle.verifiedCommand(script, layout),
++            input, Duration.ofSeconds(75), 65536)) {
++            var intent = RemoteActions.command(server, "b".repeat(64), request).withSemantics(new ActionSemantics(
++                "deployment.build.run.v1", Set.of(new ActionTarget(server.id(), "deployment-build", workspace.candidateRoot() + (mutation.equals("TARGET") ? ".other" : "")))));
++            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
 +        }
 +    }
 +}

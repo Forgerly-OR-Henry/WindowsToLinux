@@ -372,3 +372,18 @@ task2c5d5125-ceb9-4b7b-8672-394028a1300a/root assisted-live-task-board-3xouu1xpg
 新定点覆盖LIST引用拒绝→真正READ→仅真实引用建议，及重复空引用12轮耗尽仍无建议、原缺文件纠正/越界路径/范围版本拒绝/重复查询预算；验证中。AnalysisTest与source-analysis首次修改前快照已保存。此分析器仅ASSISTED；共享AiJson本轮未变更。
 
 analysis-citation-feedback-unit-01明确限定6项全部通过0跳过，2Java格式化完成；不是整个Analysis类或模块全套。source-analysis文本回读与原边界一致。下一轮Task Board16重新从原已结束失败后起新任务，不恢复旧计划。
+
+
+## Task Board 16：当前构建包装器与候选内 Maven 初始化
+
+原d33afb5c-dff6-4df8-935f-ab46c5b8d269/root assisted-live-task-board-42btmpops越过源码引用阶段，在后端build发送前有效DENY；理由是候选内Maven外部下载/解压执行与隔离边界不明，同时认为Node前端工具链未绑定。原完整构建体实际提供，不能称正文被截断。task-board-reconcile-16-01已由程序结清原图ENDED/FAILED、blockers空，无应用发布，不重放该原任务。
+
+核对MavenBuildWriter实际已有candidate/mutable/home固定Maven3.9.16、HTTPS下载32MiB/超时/重试、产品固定SHA512、解压成员数量/路径/类型/重复限制及候选内执行；未改下载、摘要、解压或构建命令。当前独立模型拿到完整Python采集器/完整stdin及全部组件来源，却缺乏精确说明哪个helper/candidate/工具集合属于此条后端构建。
+
+新增BuildOutputProtocol.reviewFacts：从完整标准collector读取有界字面frame及Base64兼容短语，不执行Python或shell；通过同一私有render完整重建并逐字节比较，stdin SHA256与声明candidate路径一致后才给当前app/candidate/engine/时间/进程/内存/输出上限事实。对应完整原命令和stdin仍交独立审批；隔离执行实际在pinned helper build-run/build-entry，不是外层Python。其它组件工具不要求塞进本组件binding，不代表工具已安装或源代码安全。原直接helper帧保持原审查路径，不冒充collector证据；Agent agent-run未改。
+
+MavenBuildWriter.bootstrapEvidence只识别真实prepareMaven完整片段，提取当前代码中的URL/版本/SHA512并说明实际候选内边界；变造片段不获该标记。有相同片段也不信任其余脚本、变量覆盖或外来命令，不证明live下载或批准执行。新API只描述，不更改原构建行为；未来Agent固定构建审批可能看到共享事实，保留本记录。
+
+build-collector-evidence-unit-01新事实/变造边界13项全部通过；所选既有2个本地shell行为检查因Windows无/bin/bash启动失败，整次Maven标失败，不能计为通过。未修改测试来隐藏环境缺失。另以修改前快照编译独立before类，与当前生产script在默认/自定义layout、3种engine、2种binding、3种兼容短语组合共36组逐字节比较全部一致，serverDispatches=0；这验证render提取不改变原远端命令，不能代替Linux实际执行检查。另选原审批单方法验证中。
+
+原审批完整输入/opaque/超限边界单方法1项通过0跳过，连同新事实13项为14项定点通过。4Java限定格式化后，初次compile生命周期因仓库test-support分类依赖无法解析而失败；改走原test生命周期、显式单类选择且skipTests，仅编译成功（未执行测试），之后before/current36组字节比较再次通过。2个/bin/bash本地检查仍是未验证项，未计通过。
