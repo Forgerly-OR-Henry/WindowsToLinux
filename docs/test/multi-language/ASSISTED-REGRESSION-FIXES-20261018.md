@@ -422,3 +422,13 @@ jdbc-recovery-unit-01：真实子JVM已提交一次业务写并遗留未关闭�
 原任务06972efc-52c6-4f37-8a93-399e78e67339/root assisted-live-task-board-5gfvz6pos经产品reconcile-19-01核实ENDED/SUCCEEDED、blockers=[]；没有重新构建或发布。其后原产品STOP/disable检查完成、JUnit1通过。新增deliversRecoveredAssistedTaskBoardForManualAcceptance仅组合既有verifiesRecoveredTaskBoardThroughProduct（真实业务持久化、START/STOP/RESTART、自启动与原成功归档验证）和既有管理同源deliver，不创建新部署。交付验证结果后续记录。原19 JFR仅预算拒绝及收尾占用异常；测试监控的Agent identify解析器异常已捕获，不是实际Agent部署或19失败根因。
 
 task-board-delivery-01真实验证1项通过0跳过（13分18秒），原成功归档、真实业务写入及重启后读取、START/STOP/RESTART、自启启停全部通过，阶段模型调用0。管理同源task-board.json已导出，application=wtl-assisted-task-board-5gfw0tg9s、前后端RUNNING、autostart=DISABLED，公开前端http://45.192.105.213:46100；交付入口已启动网站供人工验收，未重建原部署。当前ASSISTED4/8交付。该入口是验收组合变更，不改变生产部署或恢复路径。
+
+## File Transfer 01：SSH短暂失联与恢复查询的参数/路径证据
+
+原任务ff15636e-4f41-4757-b4fe-720e43441c26/root assisted-live-file-transfer-60rorlqtj在准备阶段CHANNEL_OPENING达到30000ms，sessionAuthenticated=true/sessionOpen=true、channelOpenConfirmed=false、inputState=NOT_STARTED，程序保留UNKNOWN并停止队列。reconcile-01-01真实返回DEPLOYMENT_GRAPH_RECOVERY_UNCONFIRMED/causeEvent=SSH_CONNECT_TIMEOUT，未强称已结清。监督侧一次固定指纹的只读SDK诊断仅ps、SDK工作归档大小、lslocks，退出0；独立TCP22也成功，没有安装/修改/删除/发信号。只能确认连接随后恢复，不能据此断定最初网络根因。
+
+reconcile-01-02连通后有效DENY，理由无法将publication-original-status中的应用/owner/task/candidate参数对应resourceTargets中的/opt发布路径。只读本地检查点仍为PREPARING和两项CANDIDATE_MAY_EXIST，未释放业务/来源占用；没有新部署。代码核对53-publication-observation.sh确认该查询从应用及task/operation派生发布、候选、原快照、维护标记路径，并读取系统单元状态/单位文件/quadlet；容器仅查询对应engine ps，不启动或清除状态。
+
+PublishChannel现在为原状态基础/attempt两种查询声明release、candidate、snapshot、application-locks四类真实观察目标。CommandEvidence仅在完整固定helper guard、空stdin、完整规范字面帧、canonical UUID、严格app+16hex候选、合法native:none/container:docker或podman组合及四目标完全对应时，补originalPublicationStatus事实；基础形态snapshot operation=task，attempt形态使用独立operation。release=none是发布身份尚未形成时的真实状态，不发明digest。没有改变远端脚本/helper pin，没有授权替代或复用有效DENY；缺失对象仍需实际查询，不要求预先存在或归属。
+
+original-status-evidence-unit-01初18项通过；随后候选前缀收紧到与helper require_candidate完全相同，新增demo-other前缀拒绝，unit-02只重跑受影响15项通过0跳过。最终19个唯一用例通过（帧17原有+新增1，实际发送目标1），重复执行不累加。覆盖默认/自定义layout、基础/attempt、native/container、none/明确release、四类目标/服务器/候选归属/后端/arity变造，以及stdin/额外参数/其它operation不得获标记；RuntimePaths用真实Channel捕获两次查询的四个目标及原guard。共享证据/精确目标修复将影响后续Agent同类查询输入，但没有恢复Agent验收。原任务下一次产品对账结果后续记录。

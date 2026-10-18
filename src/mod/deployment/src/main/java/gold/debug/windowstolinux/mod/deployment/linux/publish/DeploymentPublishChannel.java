@@ -757,6 +757,13 @@ public final class DeploymentPublishChannel {
             script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
         var targets = new java.util.HashSet<ActionTarget>();
         targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
+        if (verb.equals("publication-original-status") || verb.equals("publication-original-status-attempt")) {
+            boolean attempt = verb.endsWith("-attempt");
+            targets.add(new ActionTarget(server.id(), "deployment-candidate", unit.layout().candidateRoot(arguments.get(attempt ? 4 : 3))));
+            targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),
+                java.util.UUID.fromString(arguments.get(attempt ? 3 : 2)))));
+            targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
+        }
         if (verb.equals("application-maintenance"))
             targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
         if (verb.equals("retain"))

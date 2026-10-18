@@ -206,6 +206,8 @@ final class DeploymentCommandEvidence {
                 workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
             if (operation.equals("deployment.publication.snapshot.v1"))
                 publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
+            if (operation.equals("deployment.publication.original-status.v1"))
+                originalPublicationStatus(invocation, input, intent, layout).ifPresent(value -> facts.put("originalPublicationStatus", value));
             if (operation.equals("deployment.publication.maintenance-end.v1"))
                 publicationMaintenance(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationMaintenance", value));
             if (operation.equals("deployment.publication.config.v1"))
@@ -325,6 +327,48 @@ final class DeploymentCommandEvidence {
             "ownershipManifestSha256", match.group(3), "task", match.group(4), "derivedReleaseRoot", release,
             "possibleSnapshotRoot", snapshot, "literalValidation", "EXACT_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_PATHS_ONLY",
             "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
+    }
+
+    /** Maps the complete original-status frame to all derived observation targets, without asserting live results. */
+    private static java.util.Optional<Map<String, Object>> originalPublicationStatus(String script, byte[] input, ActionIntent intent,
+                                                                                     gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        String uuid = "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}";
+        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ")
+            + "'(publication-original-status(?:-attempt)?)' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '(" + uuid + ")'"
+            + "(?: '(" + uuid + ")')? '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' '(none|[a-f0-9]{64})' '(native|container)' '(none|docker|podman)'\\z").matcher(script);
+        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
+        boolean attempt = match.group(1).endsWith("-attempt");
+        String app = match.group(2), candidate = match.group(6), operation = attempt ? match.group(5) : match.group(4);
+        if (attempt != (match.group(5) != null) || !candidate.matches(java.util.regex.Pattern.quote(app) + "-[a-f0-9]{16}")
+            || !Set.of("native:none", "container:docker", "container:podman").contains(match.group(8) + ":" + match.group(9)))
+            throw new IllegalArgumentException("Original publication status arguments differ");
+        String releaseRoot = layout.applicationRoot(app), candidateRoot = layout.candidateRoot(candidate),
+            snapshotRoot = layout.snapshotRoot(app, java.util.UUID.fromString(operation)), locks = layout.applicationLockRoot(app);
+        if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Original status server required");
+        String server = intent.serverIds().getFirst();
+        if (!intent.semantics().orElseThrow().targets().containsAll(Set.of(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-release", releaseRoot),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-candidate", candidateRoot),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-snapshot", snapshotRoot),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-application-locks", locks))))
+            throw new IllegalArgumentException("Original publication status resource bindings differ");
+        var facts = new LinkedHashMap<String, Object>();
+        facts.put("verb", match.group(1));
+        facts.put("application", app);
+        facts.put("ownershipManifestSha256", match.group(3));
+        facts.put("task", match.group(4));
+        facts.put("operation", operation);
+        facts.put("candidate", candidate);
+        facts.put("expectedRelease", match.group(7));
+        facts.put("backend", match.group(8));
+        facts.put("engine", match.group(9));
+        facts.put("derivedReleaseRoot", releaseRoot);
+        facts.put("derivedCandidateRoot", candidateRoot);
+        facts.put("derivedSnapshotRoot", snapshotRoot);
+        facts.put("derivedApplicationLockRoot", locks);
+        facts.put("literalValidation", "COMPLETE_ORIGINAL_STATUS_FRAME_EMPTY_STDIN_AND_ALL_DERIVED_TARGETS");
+        facts.put("meaning", "Literal arguments are application, opaque ownership marker, original task, optional distinct operation, candidate, attempted release or none, backend and engine. The pinned helper derives all four declared paths from these arguments and captured layout; paths are not missing positional arguments. Base form uses task as snapshot operation. It reads current/releases and guarded ownership/parameters, original snapshot task/operation markers and old release, maintenance marker, candidate task marker, build-unit and application-unit status and unit-file/quadlet presence; container mode also queries the named engine's matching container. Missing state is a valid observation outcome, not a demand to own an absent application. It does not build, install, publish, rollback, start, stop or clear markers. Guards and semantic mapping are implementation facts to be checked when executed, not prior remote observations, ownership proof, safe-source verdict or authorization.");
+        return java.util.Optional.of(Collections.unmodifiableMap(facts));
     }
 
     /** Labels the common app/owner arguments of exact installed management calls and binds their derived targets. */

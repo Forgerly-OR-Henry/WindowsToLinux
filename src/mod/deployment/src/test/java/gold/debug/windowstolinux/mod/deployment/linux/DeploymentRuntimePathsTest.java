@@ -268,6 +268,26 @@ class DeploymentRuntimePathsTest {
     }
 
     @Test
+    void originalStatusDeclaresReleaseCandidateSnapshotAndMaintenanceObservationRoots() throws Exception {
+        var peer = new ControlledPeer(request -> "");
+        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
+        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
+        String candidate = "demo-" + "a".repeat(16);
+        var operation = java.util.UUID.randomUUID();
+        channel.originalStatus(unit, candidate, Optional.empty(), "native", "none");
+        channel.originalStatus(unit, candidate, Optional.empty(), "native", "none", operation);
+        assertEquals(2, peer.commands.size());
+        for (int i = 0; i < 2; i++) {
+            assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
+                    new ActionTarget(SERVER.id(), "deployment-candidate", LAYOUT.candidateRoot(candidate)),
+                    new ActionTarget(SERVER.id(), "deployment-snapshot", LAYOUT.snapshotRoot("demo", i == 0 ? peer.task.id() : operation)),
+                    new ActionTarget(SERVER.id(), "deployment-application-locks", LAYOUT.applicationLockRoot("demo"))),
+                peer.commands.get(i).intent().semantics().orElseThrow().targets());
+            assertGuard(peer.commands.get(i).script());
+        }
+    }
+
+    @Test
     void retentionDeclaresBothReleaseAndContainerCredentialCleanupRoots() throws Exception {
         var peer = new ControlledPeer(request -> "RETAINED=1\n");
         var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);

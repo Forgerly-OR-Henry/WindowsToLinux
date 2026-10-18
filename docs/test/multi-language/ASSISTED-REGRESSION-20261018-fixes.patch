@@ -147,13 +147,20 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
-@@ -755,7 +755,24 @@
+@@ -755,7 +755,31 @@
              .append(DeploymentBuildCommandChannel.shellQuote(verb));
          for (String value : arguments)
              script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
 -        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output));
 +        var targets = new java.util.HashSet<ActionTarget>();
 +        targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
++        if (verb.equals("publication-original-status") || verb.equals("publication-original-status-attempt")) {
++            boolean attempt = verb.endsWith("-attempt");
++            targets.add(new ActionTarget(server.id(), "deployment-candidate", unit.layout().candidateRoot(arguments.get(attempt ? 4 : 3))));
++            targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),
++                java.util.UUID.fromString(arguments.get(attempt ? 3 : 2)))));
++            targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
++        }
 +        if (verb.equals("application-maintenance"))
 +            targets.add(new ActionTarget(server.id(), "deployment-application-locks", unit.layout().applicationLockRoot(unit.id())));
 +        if (verb.equals("retain"))
@@ -173,7 +180,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Dispatches one exact fixed command through actual review. / 经真实审核发送一条精确固定命令。
-@@ -766,9 +783,14 @@
+@@ -766,9 +790,14 @@
       * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
      private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
                                                      CommandRequest request) throws ApiException {
@@ -877,7 +884,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -157,6 +193,23 @@
+@@ -157,6 +193,25 @@
          }
          byte[] input = request.stdin();
          try {
@@ -894,6 +901,8 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +                workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
 +            if (operation.equals("deployment.publication.snapshot.v1"))
 +                publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
++            if (operation.equals("deployment.publication.original-status.v1"))
++                originalPublicationStatus(invocation, input, intent, layout).ifPresent(value -> facts.put("originalPublicationStatus", value));
 +            if (operation.equals("deployment.publication.maintenance-end.v1"))
 +                publicationMaintenance(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationMaintenance", value));
 +            if (operation.equals("deployment.publication.config.v1"))
@@ -901,7 +910,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                  String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-@@ -164,6 +217,9 @@
+@@ -164,6 +219,9 @@
                      if (agentRun) DeploymentCommandStaticGate.requireAllowed(executable);
                      else DeploymentCommandStaticGate.requireFixedAllowed(executable);
                  }
@@ -911,7 +920,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
                  if (agentRun)
                      facts.put("agentExecutableInputBinding", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentAgentCommandInputBinding.facts(invocation, input, executable, layout));
                  facts.put("inputKind", patch ? "SOURCE_PATCH" : "EXECUTABLE_SCRIPT");
-@@ -201,10 +257,168 @@
+@@ -201,10 +259,210 @@
                                       gold.debug.windowstolinux.appapi.task.run.TaskContext task)
          throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
          var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
@@ -983,6 +992,48 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            "ownershipManifestSha256", match.group(3), "task", match.group(4), "derivedReleaseRoot", release,
 +            "possibleSnapshotRoot", snapshot, "literalValidation", "EXACT_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_PATHS_ONLY",
 +            "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
++    }
++
++    /** Maps the complete original-status frame to all derived observation targets, without asserting live results. */
++    private static java.util.Optional<Map<String, Object>> originalPublicationStatus(String script, byte[] input, ActionIntent intent,
++                                                                                     gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
++        String uuid = "[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}";
++        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ")
++            + "'(publication-original-status(?:-attempt)?)' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '(" + uuid + ")'"
++            + "(?: '(" + uuid + ")')? '([a-z0-9][a-z0-9-]{0,62}-[a-f0-9]{16})' '(none|[a-f0-9]{64})' '(native|container)' '(none|docker|podman)'\\z").matcher(script);
++        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
++        boolean attempt = match.group(1).endsWith("-attempt");
++        String app = match.group(2), candidate = match.group(6), operation = attempt ? match.group(5) : match.group(4);
++        if (attempt != (match.group(5) != null) || !candidate.matches(java.util.regex.Pattern.quote(app) + "-[a-f0-9]{16}")
++            || !Set.of("native:none", "container:docker", "container:podman").contains(match.group(8) + ":" + match.group(9)))
++            throw new IllegalArgumentException("Original publication status arguments differ");
++        String releaseRoot = layout.applicationRoot(app), candidateRoot = layout.candidateRoot(candidate),
++            snapshotRoot = layout.snapshotRoot(app, java.util.UUID.fromString(operation)), locks = layout.applicationLockRoot(app);
++        if (intent.serverIds().size() != 1) throw new IllegalArgumentException("Original status server required");
++        String server = intent.serverIds().getFirst();
++        if (!intent.semantics().orElseThrow().targets().containsAll(Set.of(
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-release", releaseRoot),
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-candidate", candidateRoot),
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-snapshot", snapshotRoot),
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server, "deployment-application-locks", locks))))
++            throw new IllegalArgumentException("Original publication status resource bindings differ");
++        var facts = new LinkedHashMap<String, Object>();
++        facts.put("verb", match.group(1));
++        facts.put("application", app);
++        facts.put("ownershipManifestSha256", match.group(3));
++        facts.put("task", match.group(4));
++        facts.put("operation", operation);
++        facts.put("candidate", candidate);
++        facts.put("expectedRelease", match.group(7));
++        facts.put("backend", match.group(8));
++        facts.put("engine", match.group(9));
++        facts.put("derivedReleaseRoot", releaseRoot);
++        facts.put("derivedCandidateRoot", candidateRoot);
++        facts.put("derivedSnapshotRoot", snapshotRoot);
++        facts.put("derivedApplicationLockRoot", locks);
++        facts.put("literalValidation", "COMPLETE_ORIGINAL_STATUS_FRAME_EMPTY_STDIN_AND_ALL_DERIVED_TARGETS");
++        facts.put("meaning", "Literal arguments are application, opaque ownership marker, original task, optional distinct operation, candidate, attempted release or none, backend and engine. The pinned helper derives all four declared paths from these arguments and captured layout; paths are not missing positional arguments. Base form uses task as snapshot operation. It reads current/releases and guarded ownership/parameters, original snapshot task/operation markers and old release, maintenance marker, candidate task marker, build-unit and application-unit status and unit-file/quadlet presence; container mode also queries the named engine's matching container. Missing state is a valid observation outcome, not a demand to own an absent application. It does not build, install, publish, rollback, start, stop or clear markers. Guards and semantic mapping are implementation facts to be checked when executed, not prior remote observations, ownership proof, safe-source verdict or authorization.");
++        return java.util.Optional.of(Collections.unmodifiableMap(facts));
 +    }
 +
 +    /** Labels the common app/owner arguments of exact installed management calls and binds their derived targets. */
@@ -1080,7 +1131,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
-@@ -216,7 +430,7 @@
+@@ -216,7 +474,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -1089,7 +1140,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +442,14 @@
+@@ -228,14 +486,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -1106,7 +1157,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +464,53 @@
+@@ -250,12 +508,53 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -3535,7 +3586,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var guard = new AtomicInteger();
          var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
          var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
-@@ -219,12 +226,83 @@
+@@ -219,12 +226,103 @@
          assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
              "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
          assertArrayEquals(configuration, peer.commands.getFirst().input());
@@ -3585,6 +3636,26 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +    }
 +
 +    @Test
++    void originalStatusDeclaresReleaseCandidateSnapshotAndMaintenanceObservationRoots() throws Exception {
++        var peer = new ControlledPeer(request -> "");
++        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
++        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
++        String candidate = "demo-" + "a".repeat(16);
++        var operation = java.util.UUID.randomUUID();
++        channel.originalStatus(unit, candidate, Optional.empty(), "native", "none");
++        channel.originalStatus(unit, candidate, Optional.empty(), "native", "none", operation);
++        assertEquals(2, peer.commands.size());
++        for (int i = 0; i < 2; i++) {
++            assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
++                    new ActionTarget(SERVER.id(), "deployment-candidate", LAYOUT.candidateRoot(candidate)),
++                    new ActionTarget(SERVER.id(), "deployment-snapshot", LAYOUT.snapshotRoot("demo", i == 0 ? peer.task.id() : operation)),
++                    new ActionTarget(SERVER.id(), "deployment-application-locks", LAYOUT.applicationLockRoot("demo"))),
++                peer.commands.get(i).intent().semantics().orElseThrow().targets());
++            assertGuard(peer.commands.get(i).script());
++        }
++    }
++
++    @Test
 +    void retentionDeclaresBothReleaseAndContainerCredentialCleanupRoots() throws Exception {
 +        var peer = new ControlledPeer(request -> "RETAINED=1\n");
 +        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
@@ -3623,7 +3694,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      @Test
-@@ -296,10 +374,20 @@
+@@ -296,10 +394,20 @@
      /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
      private static FileSnapshot snapshot(Path directory) {
          return new FileSnapshot() {
@@ -3648,7 +3719,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          };
      }
  
-@@ -327,21 +415,28 @@
+@@ -327,21 +435,28 @@
          assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
      }
  
@@ -4204,6 +4275,83 @@ diff --git a/src/app/service/src/test/java/gold/debug/windowstolinux/app/service
 +                });
 +                assertEquals(gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED, result(task).outcome());
 +            }
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentOriginalStatusFrameRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentOriginalStatusFrameRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentOriginalStatusFrameRegressionTest.java
+@@ -0,0 +1,73 @@
++package gold.debug.windowstolinux.mod.deployment.ai.review;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++import java.time.Duration;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.*;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++class DeploymentOriginalStatusFrameRegressionTest {
++    private final UUID task = UUID.fromString("12345678-1234-1234-1234-123456789abc");
++
++    private final UUID operation = UUID.fromString("87654321-4321-4321-4321-cba987654321");
++
++    @ParameterizedTest
++    @ValueSource(strings = {"ROOT", "ATTEMPT", "CONTAINER", "ATTEMPT_CONTAINER", "RELEASE", "DEFAULT"})
++    void bindsLiteralIdentityAndEveryDerivedObservationPath(String variant) throws Exception {
++        var facts = facts(variant).path("originalPublicationStatus");
++        assertEquals("demo", facts.path("application").asText());
++        assertEquals(task.toString(), facts.path("task").asText());
++        assertEquals(variant.startsWith("ATTEMPT") ? operation.toString() : task.toString(), facts.path("operation").asText());
++        assertEquals(variant.equals("RELEASE") ? "d".repeat(64) : "none", facts.path("expectedRelease").asText());
++        assertTrue(facts.path("derivedReleaseRoot").asText().endsWith("/demo"));
++        assertTrue(facts.path("derivedCandidateRoot").asText().endsWith("/demo-" + "a".repeat(16)));
++        assertTrue(facts.path("derivedSnapshotRoot").asText().contains(facts.path("operation").asText()));
++        assertFalse(facts.has("verifiedOwnership"));
++        assertFalse(facts.has("commandGrant"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"RELEASE_ROOT", "CANDIDATE_ROOT", "SNAPSHOT_ROOT", "LOCK_ROOT", "SERVER", "CANDIDATE_APP", "CANDIDATE_PREFIX", "BACKEND", "ATTEMPT_ARITY"})
++    void mismatchedTargetsAndArgumentRolesCannotBecomeStatusEvidence(String mutation) {
++        assertThrows(IllegalArgumentException.class, () -> facts(mutation));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"EXTRA", "STDIN", "OTHER_OPERATION"})
++    void alteredEnvelopeReceivesNoExactStatusEvidence(String mutation) throws Exception {
++        assertFalse(facts(mutation).has("originalPublicationStatus"));
++    }
++
++    private JsonNode facts(String variant) throws Exception {
++        var layout = variant.equals("DEFAULT") ? DeploymentRemoteLayout.original() : new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data"));
++        var server = new ServerId("fixture");
++        boolean attempt = variant.startsWith("ATTEMPT");
++        String candidate = (variant.equals("CANDIDATE_APP") ? "other" : variant.equals("CANDIDATE_PREFIX") ? "demo-other" : "demo") + "-" + "a".repeat(16);
++        String script = "'" + layout.helperPath() + "' 'publication-original-status" + (attempt ? "-attempt" : "")
++            + "' 'demo' '" + "c".repeat(64) + "' '" + task + "'"
++            + (attempt && !variant.equals("ATTEMPT_ARITY") ? " '" + operation + "'" : "")
++            + " '" + candidate + "' '" + (variant.equals("RELEASE") ? "d".repeat(64) : "none")
++            + "' '" + (variant.contains("CONTAINER") || variant.equals("BACKEND") ? "container" : "native")
++            + "' '" + (variant.contains("CONTAINER") ? "podman" : "none") + "'" + (variant.equals("EXTRA") ? " 'extra'" : "");
++        var targets = Set.of(new ActionTarget(server.id(), "deployment-release", layout.applicationRoot("demo") + (variant.equals("RELEASE_ROOT") ? ".other" : "")),
++            new ActionTarget(server.id(), "deployment-candidate", layout.candidateRoot("demo-" + "a".repeat(16)) + (variant.equals("CANDIDATE_ROOT") ? ".other" : "")),
++            new ActionTarget(server.id(), "deployment-snapshot", layout.snapshotRoot("demo", attempt ? operation : task) + (variant.equals("SNAPSHOT_ROOT") ? ".other" : "")),
++            new ActionTarget(server.id(), "deployment-application-locks", layout.applicationLockRoot("demo") + (variant.equals("LOCK_ROOT") ? ".other" : "")));
++        try (var request = new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script, layout),
++            variant.equals("STDIN") ? new byte[]{1} : new byte[0], Duration.ofSeconds(30), 4096)) {
++            var intent = RemoteActions.command(variant.equals("SERVER") ? new ServerId("foreign") : server, "b".repeat(64), request)
++                .withSemantics(new ActionSemantics(variant.equals("OTHER_OPERATION") ? "deployment.publication.observe.v1" : "deployment.publication.original-status.v1", targets));
++            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
 +        }
 +    }
 +}
