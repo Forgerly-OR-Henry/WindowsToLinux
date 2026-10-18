@@ -8126,14 +8126,23 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
 
     @Test
     void verifiesRecoveredTaskBoardThroughProduct() throws Exception {
+        verifyRecoveredWebsiteThroughProduct("task-board", true);
+    }
+
+    final void verifyRecoveredAssistedWebsite(String project) throws Exception {
+        assertTrue(websiteProjects().anyMatch(project::equals));
+        verifyRecoveredWebsiteThroughProduct(project, false);
+    }
+
+    private void verifyRecoveredWebsiteThroughProduct(String project, boolean allowTaskBoardDiagnostic) throws Exception {
         connectionOnly = false;
         aiEnabled = false;
         System.out.println("AI_LIVE_BUSINESS_POLICY modelRequests=FORBIDDEN_BEFORE_TRANSPORT newDeployment=NOT_REQUESTED");
         Path dataRoot = workspace().resolve("src/app/db/data").toRealPath();
         root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
-        agentMode = root.getFileName().toString().startsWith("agent-main-only-diagnostic-live-task-board-");
+        agentMode = allowTaskBoardDiagnostic && root.getFileName().toString().startsWith("agent-main-only-diagnostic-live-task-board-");
         assertTrue(root.startsWith(dataRoot)
-            && (root.getFileName().toString().startsWith("assisted-live-task-board-") || agentMode));
+            && (root.getFileName().toString().startsWith("assisted-live-" + project + "-") || agentMode));
         var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
         String application = System.getProperty("managed.live.originalApplication");
         assertNotNull(application);
@@ -8153,9 +8162,10 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
             var originalUsage = completed(applications.usageForCompletedTask(original), 2).orElseThrow();
             var app = originalUsage.application();
             assertEquals(application, app.id(), "Business acceptance must use the original task's complete application");
+            if (!agentMode) assertTrue(app.id().startsWith("wtl-assisted-" + project + "-"));
             String requestedWeb = System.getProperty("managed.live.originalWebUrl");
             if (!agentMode && requestedWeb == null)
-                requestedWeb = "http://" + System.getProperty("managed.ssh.host") + ":46100";
+                requestedWeb = "http://" + System.getProperty("managed.ssh.host") + ":" + standardWebsitePort(project);
             assertNotNull(requestedWeb, "Original Agent acceptance needs the original authorized publicUrl");
             var expectedWeb = java.net.URI.create(requestedWeb);
             assertEquals("http", expectedWeb.getScheme());
@@ -8166,9 +8176,9 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 completed(applications.lifecycle(completed(applications.inspect(app), 2), DeploymentLifecycleAction.START), 5);
                 completed(applications.lifecycle(completed(applications.inspect(app), 2), DeploymentLifecycleAction.ENABLE_AUTOSTART), 5);
                 assertEquals(ApplicationAutostartState.ENABLED, completed(applications.inspect(app), 2).autostart());
-                business("task-board", web.toString(), applications, app, runtime.modContexts().get(OWNER).context());
-                awaitBrowserAcceptance("task-board", web.toString(), app);
-                System.out.println("AI_LIVE_RECOVERED_PASS task-board originalTask=" + original + " application=" + app);
+                business(project, web.toString(), applications, app, runtime.modContexts().get(OWNER).context());
+                awaitBrowserAcceptance(project, web.toString(), app);
+                System.out.println("AI_LIVE_RECOVERED_PASS " + project + " originalTask=" + original + " application=" + app);
             } finally {
                 assertTrue(runtime.tasks().snapshots().stream().noneMatch(value -> value.state()
                     == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN), "Retain uncertainty before new cleanup");
@@ -8177,12 +8187,23 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                 var cleaned = completed(applications.inspect(app), 2);
                 assertEquals(ApplicationRunState.STOPPED, cleaned.state());
                 assertEquals(ApplicationAutostartState.DISABLED, cleaned.autostart());
-                System.out.println("STATIC_LIVE_CLEAN task-board " + app + " stopped/disabled");
+                System.out.println("STATIC_LIVE_CLEAN " + project + " " + app + " stopped/disabled");
             }
         } finally {
             assertEquals(0, modelCalls.get(), "Published application business acceptance must not call a model");
             System.out.println("AI_LIVE_BUSINESS_MODEL_CALLS scope=AFTER_RUNTIME_CLOSE attempts=" + modelCalls.get());
         }
+    }
+
+    private static int standardWebsitePort(String project) {
+        return switch (project) {
+            case "task-board" -> 46100;
+            case "file-transfer" -> 46110;
+            case "asset-lending" -> 46120;
+            case "csv-inspector" -> 46130;
+            case "survey-scoring" -> 46140;
+            default -> 0;
+        };
     }
 
     @ParameterizedTest
@@ -8529,14 +8550,7 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
         System.out.println("LIVE_DEPLOYMENT_WAIT_MINUTES " + deploymentWaitMinutes);
         System.out.println("STATIC_LIVE_STATE " + root + " application=" + id);
         String host = System.getProperty("managed.ssh.host");
-        int webPort = switch (project) {
-            case "task-board" -> 46100;
-            case "file-transfer" -> 46110;
-            case "asset-lending" -> 46120;
-            case "csv-inspector" -> 46130;
-            case "survey-scoring" -> 46140;
-            default -> 0;
-        };
+        int webPort = standardWebsitePort(project);
         if (selectedMode == Mode.AGENT && !cli && System.getProperty("managed.live.webPort") != null) {
             webPort = Integer.parseInt(System.getProperty("managed.live.webPort"));
             assertTrue(webPort >= 1 && webPort <= 65535, "The authorized public website port must be between 1 and 65535");

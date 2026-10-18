@@ -3237,7 +3237,99 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      @Test
      void reconcilesOriginalManagementQueryAndStopsItsApplicationThroughProduct() throws Exception {
          connectionOnly = false;
-@@ -8343,7 +8635,7 @@
+@@ -7834,14 +8126,23 @@
+ 
+     @Test
+     void verifiesRecoveredTaskBoardThroughProduct() throws Exception {
++        verifyRecoveredWebsiteThroughProduct("task-board", true);
++    }
++
++    final void verifyRecoveredAssistedWebsite(String project) throws Exception {
++        assertTrue(websiteProjects().anyMatch(project::equals));
++        verifyRecoveredWebsiteThroughProduct(project, false);
++    }
++
++    private void verifyRecoveredWebsiteThroughProduct(String project, boolean allowTaskBoardDiagnostic) throws Exception {
+         connectionOnly = false;
+         aiEnabled = false;
+         System.out.println("AI_LIVE_BUSINESS_POLICY modelRequests=FORBIDDEN_BEFORE_TRANSPORT newDeployment=NOT_REQUESTED");
+         Path dataRoot = workspace().resolve("src/app/db/data").toRealPath();
+         root = Path.of(System.getProperty("managed.live.originalState")).toRealPath();
+-        agentMode = root.getFileName().toString().startsWith("agent-main-only-diagnostic-live-task-board-");
++        agentMode = allowTaskBoardDiagnostic && root.getFileName().toString().startsWith("agent-main-only-diagnostic-live-task-board-");
+         assertTrue(root.startsWith(dataRoot)
+-            && (root.getFileName().toString().startsWith("assisted-live-task-board-") || agentMode));
++            && (root.getFileName().toString().startsWith("assisted-live-" + project + "-") || agentMode));
+         var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
+         String application = System.getProperty("managed.live.originalApplication");
+         assertNotNull(application);
+@@ -7861,9 +8162,10 @@
+             var originalUsage = completed(applications.usageForCompletedTask(original), 2).orElseThrow();
+             var app = originalUsage.application();
+             assertEquals(application, app.id(), "Business acceptance must use the original task's complete application");
++            if (!agentMode) assertTrue(app.id().startsWith("wtl-assisted-" + project + "-"));
+             String requestedWeb = System.getProperty("managed.live.originalWebUrl");
+             if (!agentMode && requestedWeb == null)
+-                requestedWeb = "http://" + System.getProperty("managed.ssh.host") + ":46100";
++                requestedWeb = "http://" + System.getProperty("managed.ssh.host") + ":" + standardWebsitePort(project);
+             assertNotNull(requestedWeb, "Original Agent acceptance needs the original authorized publicUrl");
+             var expectedWeb = java.net.URI.create(requestedWeb);
+             assertEquals("http", expectedWeb.getScheme());
+@@ -7874,9 +8176,9 @@
+                 completed(applications.lifecycle(completed(applications.inspect(app), 2), DeploymentLifecycleAction.START), 5);
+                 completed(applications.lifecycle(completed(applications.inspect(app), 2), DeploymentLifecycleAction.ENABLE_AUTOSTART), 5);
+                 assertEquals(ApplicationAutostartState.ENABLED, completed(applications.inspect(app), 2).autostart());
+-                business("task-board", web.toString(), applications, app, runtime.modContexts().get(OWNER).context());
+-                awaitBrowserAcceptance("task-board", web.toString(), app);
+-                System.out.println("AI_LIVE_RECOVERED_PASS task-board originalTask=" + original + " application=" + app);
++                business(project, web.toString(), applications, app, runtime.modContexts().get(OWNER).context());
++                awaitBrowserAcceptance(project, web.toString(), app);
++                System.out.println("AI_LIVE_RECOVERED_PASS " + project + " originalTask=" + original + " application=" + app);
+             } finally {
+                 assertTrue(runtime.tasks().snapshots().stream().noneMatch(value -> value.state()
+                     == gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN), "Retain uncertainty before new cleanup");
+@@ -7885,12 +8187,23 @@
+                 var cleaned = completed(applications.inspect(app), 2);
+                 assertEquals(ApplicationRunState.STOPPED, cleaned.state());
+                 assertEquals(ApplicationAutostartState.DISABLED, cleaned.autostart());
+-                System.out.println("STATIC_LIVE_CLEAN task-board " + app + " stopped/disabled");
++                System.out.println("STATIC_LIVE_CLEAN " + project + " " + app + " stopped/disabled");
+             }
+         } finally {
+             assertEquals(0, modelCalls.get(), "Published application business acceptance must not call a model");
+             System.out.println("AI_LIVE_BUSINESS_MODEL_CALLS scope=AFTER_RUNTIME_CLOSE attempts=" + modelCalls.get());
+         }
++    }
++
++    private static int standardWebsitePort(String project) {
++        return switch (project) {
++            case "task-board" -> 46100;
++            case "file-transfer" -> 46110;
++            case "asset-lending" -> 46120;
++            case "csv-inspector" -> 46130;
++            case "survey-scoring" -> 46140;
++            default -> 0;
++        };
+     }
+ 
+     @ParameterizedTest
+@@ -8237,14 +8550,7 @@
+         System.out.println("LIVE_DEPLOYMENT_WAIT_MINUTES " + deploymentWaitMinutes);
+         System.out.println("STATIC_LIVE_STATE " + root + " application=" + id);
+         String host = System.getProperty("managed.ssh.host");
+-        int webPort = switch (project) {
+-            case "task-board" -> 46100;
+-            case "file-transfer" -> 46110;
+-            case "asset-lending" -> 46120;
+-            case "csv-inspector" -> 46130;
+-            case "survey-scoring" -> 46140;
+-            default -> 0;
+-        };
++        int webPort = standardWebsitePort(project);
+         if (selectedMode == Mode.AGENT && !cli && System.getProperty("managed.live.webPort") != null) {
+             webPort = Integer.parseInt(System.getProperty("managed.live.webPort"));
+             assertTrue(webPort >= 1 && webPort <= 65535, "The authorized public website port must be between 1 and 65535");
+@@ -8343,7 +8649,7 @@
                      } else
                          assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
                      if (selectedMode != Mode.AGENT)
@@ -3246,7 +3338,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      if (!deploymentOnly)
                          System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
                              + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
-@@ -8361,7 +8653,7 @@
+@@ -8361,7 +8667,7 @@
              } finally {
                  try {
                      if (agentOriginalId != null) {
@@ -3255,7 +3347,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              printOriginalDiagnostics(runtime, agentOriginalId);
                          } catch (Exception unavailable) {
                              System.out.println("STATIC_LIVE_AGENT_DIAGNOSTIC_UNAVAILABLE " + unavailable.getClass().getSimpleName());
-@@ -8381,7 +8673,7 @@
+@@ -8381,7 +8687,7 @@
                      if (!uncertain.isEmpty()) {
                          System.out.println("AI_LIVE_RETAINED_UNCERTAINTY " + uncertain);
                      } else {
@@ -3264,7 +3356,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              for (var current : completed(applications.list(), 2)) {
                                  if (!current.application().id().equals(id)) continue;
                                  var selected = completed(applications.inspect(current.application()), 2);
-@@ -8417,7 +8709,7 @@
+@@ -8417,7 +8723,7 @@
                      acceptanceFailure.addSuppressed(closingFailure);
                  } finally {
                      if (isolation != null && agentWorkflow != null && agentWorkflow.isolationAdmission().isPresent()) {
@@ -3273,7 +3365,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              verifyRetainedIsolation(context, isolation, agentWorkflow);
                          } catch (Exception | AssertionError protectionFailure) {
                              phaseFailureRecorded = true;
-@@ -8450,8 +8742,8 @@
+@@ -8450,8 +8756,8 @@
      }
  
      private void verifyRetainedIsolation(ModContext context,
@@ -3284,7 +3376,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          requireIsolationPostcheckAllowed();
          var admission = workflow.isolationAdmission().orElseThrow();
          var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(policy);
-@@ -9007,20 +9299,20 @@
+@@ -9007,20 +9313,20 @@
              if (agentMode && !mainOnlyDiagnostic) {
                  fileTransferV2(web, applications, app, context);
              } else {
@@ -3319,7 +3411,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }
          } else if (project.equals("asset-lending")) {
              var category = post(web + "/api/categories", Map.of("name", "静态跨语言资产验证"));
-@@ -9103,17 +9395,20 @@
+@@ -9103,17 +9409,20 @@
          String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
          for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
          var before = get(upload);
@@ -3343,7 +3435,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
  
          var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
-@@ -9122,17 +9417,20 @@
+@@ -9122,17 +9431,20 @@
          var completionStart = new java.util.concurrent.CountDownLatch(1);
          com.fasterxml.jackson.databind.JsonNode first;
          try {
@@ -3371,7 +3463,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          }
          assertEquals(1, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
-@@ -9141,7 +9439,8 @@
+@@ -9141,7 +9453,8 @@
          String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
          for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
          var second = post(secondUpload + "/complete", Map.of());
@@ -3381,7 +3473,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9187,7 +9486,8 @@
+@@ -9187,7 +9500,8 @@
          assertEquals("failed", get(rejected).path("state").asText());
          var recovered = get(pending);
          assertEquals("receiving", recovered.path("state").asText());
@@ -3391,7 +3483,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9208,13 +9508,16 @@
+@@ -9208,13 +9522,16 @@
              var candidate = java.net.URI.create(value);
              return Objects.equals(candidate.getScheme(), expected.getScheme()) && Objects.equals(candidate.getHost(), expected.getHost())
                  && candidate.getPort() == expected.getPort();
@@ -3410,7 +3502,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      private static String byteSha256(byte[] bytes) throws java.security.NoSuchAlgorithmException {
-@@ -9223,7 +9526,8 @@
+@@ -9223,7 +9540,8 @@
  
      private static void assertFileTransferDownload(String web, String version, long bytes, String sha) throws Exception {
          byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
@@ -5218,7 +5310,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java
 --- /dev/null
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRegressionLiveAcceptanceTest.java
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,75 @@
 +package gold.debug.windowstolinux.mod.deployment.service.standard;
 +
 +import java.nio.file.Path;
@@ -5269,6 +5361,14 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +        Path delivery = deliveryFile("task-board");
 +        verifiesRecoveredTaskBoardThroughProduct();
 +        deliver("task-board", false, delivery, "ASSISTED");
++    }
++
++    @ParameterizedTest
++    @MethodSource("websiteProjects")
++    void deliversRecoveredAssistedWebsiteForManualAcceptance(String project) throws Exception {
++        Path delivery = deliveryFile(project);
++        verifyRecoveredAssistedWebsite(project);
++        deliver(project, false, delivery, "ASSISTED");
 +    }
 +
 +    private void captureDenials(Throwable original) {

@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前7/8交付（全部3CLI、Task Board、File Transfer、Asset Lending及CSV Inspector），最后Survey Scoring正在验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。ASSISTED八个项目已完成产品部署、业务与生命周期回归及管理同源信息导出；最终地址、CLI命令和提供方Token见[结果报告](ASSISTED-REGRESSION-RESULTS-20261019.md)。任务看板、日志分析及问卷评分经历原任务恢复，原失败记录保留。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -548,3 +548,23 @@ Go/Node准备和绑定均真实成功；Go绑定审批output940/reasoning829。G
 产品准备Python3.12.15及PHP8.3.35；工作进程EXIT0/TOOL=PIP_LOCKED、PHP组件EXIT0/TOOL=COMPOSER_LOCKED。配置暂存、发布、整应用健康与清理通过。真实报告任务完成，核验rows=3、issueCount=6、validRows=1；重启后工作进程PID不同、任务仍completed，并实际导出含issueCount的报告。产品启停、自启开关及最终START全部完成，未触发新的程序修复或服务器手工写入。
 
 AI_LIVE_PASS记录LANGUAGE10/APPROVAL56；其中一次发布审批实际reasoning20204但按原32768上限完整提交，未靠新提额或替换原结论继续。当前7/8，最后Survey Scoring仍待真实验收；不可提前称8/8或恢复Agent部署。
+
+## Survey Scoring 01：原生格式拒绝、原任务恢复与原应用交付
+
+原d12dd73e-d8b1-4e0e-93a1-a7b8feb5ecfd/root assisted-live-survey-scoring-9s1wh014s；应用wtl-assisted-survey-scoring-9s1wiodqo。程序实际准备Ruby3.3.12、Java21.0.12.1+1、Kotlin2.0.21、Node24.22.0及Python3.12.15，三组件EXIT0，分别为BUNDLER_LOCKED、GRADLE_KOTLIN_WRAPPER和NPM。工具链准备等待期间，survey-preparation-readonly-01通过固定指纹SDK只读ps/归档大小/锁，看到cc1占满约一核、当前python/make正在编译；该诊断exit0，没有写文件、安装、信号或代替程序收尾。
+
+首轮在最后frontend维护结束审批中断：generation2de80d1f-6aee-49b0-8b2c-b1df9bda1f06是API成功且有完整usage的finish=stop文本JSON，没有原生工具提交。DeploymentAiJson按既有规则拒绝，未将文本APPROVE作为许可，也未给缺少原生提交增加重试。该轮已知942714Token（LANGUAGE84964/APPROVAL857750），停点由真实日志/JFR确认，不能当成Token阈值或输出耗尽。三组件已发布，原任务保留UNKNOWN。
+
+reconcile-01-01由产品对同一原任务核实并完成收尾，2026-10-19 05:27（Asia/Singapore）归档ENDED/SUCCEEDED、blockers=[]，JUnit1通过0跳过。未重新构建、发布或操作数据库强改结果。随后为同一原应用增加通用恢复后网站验收入口：从原Task Board入口抽出项目参数，保留成功归档/owner/type/原应用身份/原地址/活动状态检查，新增ASSISTED项目命名前缀校验，禁止模型请求，复用原业务与生命周期逻辑。网站端口仅把原既有五项switch提为共享纯映射，数值不变；原Task Board及其Agent诊断入口保留，Agent未测试。生产协议、审批、预算均未修改。
+
+survey-scoring-delivery-01实际运行新入口，JUnit1通过0跳过，总15分25秒。Kotlin调用Ruby计分结果84.21，重启后再次读取仍包含84.21；产品START/RESTART/STOP、自启开关、最终START与管理导出通过，整个业务/管理阶段模型调用0。2026-10-19 05:46导出survey-scoring.json，http://45.192.105.213:46140，三个组件RUNNING/自启DISABLED。此项属于原任务恢复后完成验收，首轮失败没有改成一次无中断成功。
+
+## 最终审计与范围
+
+2026-10-19 05:48只读GET五个管理导出的网站入口，全部HTTP200且为HTML主页。usage-audit-25在所有测试退出后只读覆盖71个状态目录、1806条保留用量日志；按generation ID和attempt去重共1830个物理生成，已知输入10931901、输出890405，合计11822306Token。部署/分析3172081，独立审批8650225；缓存与推理子集不重复相加。3个物理请求用量未知、284项能力验证任务用量与物理请求数未知，均未补零。
+
+标准日志每类别最多100条（LogStore同时限制读取和持久保留），本次25个stdout物理尝试在当前保留日志未匹配，照原stdout字段全数计入，未漏计。另1条无trace逻辑记录已确认是Task Board19发送前预算拦截，原UNKNOWN元数据保留，不虚构物理请求或费用。全部已结束根已审计，未向正在运行的验收根打开数据库；提供方统计包含失败、恢复和API诊断，非单次成功成本。
+
+实际范围为八项目部署/业务/生命周期定点回归及直接相关编译/格式/单元检查。文件业务使用64KiB样本；两项Linux /bin/bash局部用例未在Windows运行；浏览器交互待用户验收。未执行全项目测试、Agent部署或Agent64MiB场景。共享AiJson AUTO、默认审批32768/600秒、UNKNOWN用量记录及既有恢复/源证据修改的Agent影响须在后续专项核验。所有服务器写入由产品执行，监督只启动程序、修改程序与只读排查；本地修改按授权提交，不推送。
+
+最终源码摘要的64个afterSha256均与当前文件一致。收尾确认本轮本地验收/诊断Java进程0；53个原始JFR在保留原日志及有关异常提取后删除，两个专用编译目录删除。清理清单保留文件SHA；57个小型复现辅助文件移至evidence/reproduction-tools并说明历史路径及禁止自动执行。所有修改前快照、Token账本、JUnit、管理导出和产品状态目录继续保留；五个交付网站按用户验收需求运行，未发服务器清理命令。

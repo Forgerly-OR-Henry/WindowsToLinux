@@ -50,6 +50,14 @@ class DeploymentAssistedRegressionLiveAcceptanceTest extends DeploymentStaticReg
         deliver("task-board", false, delivery, "ASSISTED");
     }
 
+    @ParameterizedTest
+    @MethodSource("websiteProjects")
+    void deliversRecoveredAssistedWebsiteForManualAcceptance(String project) throws Exception {
+        Path delivery = deliveryFile(project);
+        verifyRecoveredAssistedWebsite(project);
+        deliver(project, false, delivery, "ASSISTED");
+    }
+
     private void captureDenials(Throwable original) {
         try (var runtime = open()) {
             for (var category : runtime.logs().inventory(false).categories()) {

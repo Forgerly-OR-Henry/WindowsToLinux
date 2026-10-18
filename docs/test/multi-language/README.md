@@ -1,5 +1,7 @@
 # 多语言业务验收项目
 
+2026-10-19的ASSISTED部署回归已交付8/8；网址、CLI启动命令与提供方Token见[结果报告](ASSISTED-REGRESSION-RESULTS-20261019.md)，修改及Agent调试上下文见[修复记录](ASSISTED-REGRESSION-FIXES-20261018.md)。Agent部署保持暂停。
+
 测试过程文档位于本目录；原八项目源码位于 [多语言测试集](../../../test/multi-language/)。当前 Agent 结果与恢复待办见 [暂停记录](AGENT-CURRENT-STATUS.md)：完整成功 0/8，395 轮已构建发布，但外部 HTTP 业务未通过，按用户要求暂停等待重装。
 八个独立项目覆盖 12 种源码语言；每种组合仅一个成功样例。所有数据库均为嵌入式 SQLite，不安装数据库服务。Node.js 是 JavaScript/TypeScript 的运行时，不另外计作源码语言。
 
