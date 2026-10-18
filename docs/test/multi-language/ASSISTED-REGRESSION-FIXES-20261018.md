@@ -516,3 +516,13 @@ approval-deadline-and-unknown-usage-unit-01因PowerShell参数拆分失败，业
 最小修改仅ASSISTED Scope：完整实现展开只用于deployment.toolchain.prepare.v1；bind保留原源码绑定SYSTEM契约、精确命令及输入、decodedToolchainBinding全字段、原workflow与目标/源证据，不再携带无关完整安装器。fixed-effect-review明确prepare与bind路径的区别，继续要求原独立DENY、来源、先决条件和权限；不更改helper源码/pin/执行路径、共享契约v2、宿主授权、原生提交校验或资源上限。不以“已准备成功”自动批准绑定，不隐去动态执行内容，不改变STATIC或Agent事实。
 
 bind-fixed-contract-scope-unit-01共15项通过0跳过：实际Scope+共享证据10（新增真实guard/typed binding/workflow组合、低于32768字符且无执行能力、关闭workflow拒绝）、准备源码原2、编码/非字面/非规范拒绝3。完整准备实现仍按原pin逐段检查。后续必须观察真实绑定是否完整提交，并继续完成业务验收，不能把此定点结果当网站交付。
+
+## File Transfer 10：绑定已验证，构建固定隔离实现展开的同类问题
+
+10原5d98825c-5945-46ed-b8e4-826a9bedc268已知FAILED，产品清理候选后应用列表空，无UNKNOWN。两项工具链均已实际完成准备/绑定，Go绑定876c5dbc…与09相同：请求24444字节（09为98151）、44967ms/output9112/reasoning8998，原生结论后程序EXIT0；证明09绑定卡点已实机越过，不等同于最终网站通过。后续Go构建审批请求121373字节，144639ms/output32768全部推理，finish=length，未执行构建，整个10轮已知363949Token（含正常清理审批）。
+
+构建输入重复展开约10万字符的固定helper控制器与完整build-entry源码，包含其它分支；原SYSTEM v2契约本就绑定它们的独立pin，并要求完整外层guard、实际engine/argv/目标及全部动态stdin。最小调整仅移除ASSISTED的buildIsolationImplementation重复展开，按原源码契约审查固定隔离接口；completeExecutableInput全部原项目构建代码、collector完整往返与input digest、候选、归档全64位SHA、tool binding、原workflow和目标事实全部保留。currentBuildArchive说明同步引用实际提供的SYSTEM契约，避免再要求不存在的重复源码字段。
+
+fixed-effect-review明确ordinary与rootless例外不同、不宣称网络隔离、所有项目/依赖hooks和嵌套可执行数据仍须完整审查，安装/替换helper仍须完整installer/source；保留DENY、宿主授权、完整输入、原任务/服务器/模型路由和动态脚本不可信边界。未改helper/pin/隔离/权限/执行路径、共享v2契约或预算。源码展开辅助API及其摘要测试作为可复核诊断保留，但该大字段不再进入常规ASSISTED构建审批；STATIC和Agent事实未改变。是否解决本次构建推理耗尽，仍需11轮实际验证。
+
+build-fixed-contract-scope-unit-01共32项通过0跳过：Workflow11（新增实际Scope+共享证据组合，完整可执行body逐字保留、pin/原授权/源/候选保留，低于32768字符且无执行能力）、collector13（含body/target/摘要/外层guard损坏拒绝）、归档8（全摘要/候选/输入变更与歧义拒绝）。只验证原边界，没有调用模型/SSH，没有把测试通过当作构建或部署成功。

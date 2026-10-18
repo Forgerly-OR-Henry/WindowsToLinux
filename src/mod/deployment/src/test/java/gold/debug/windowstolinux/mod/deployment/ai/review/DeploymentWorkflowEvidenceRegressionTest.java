@@ -220,20 +220,57 @@ class DeploymentWorkflowEvidenceRegressionTest {
             var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "frozen", request)
                 .withSemantics(new ActionSemantics("deployment.toolchain.bind.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
             var facts = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request, layout));
-            facts.putAll(scope.facts(intent, request, task));
+            facts.put("currentCommandEvidence", scope.facts(intent, request, task));
             var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
             assertEquals("managed-helper-review.v2", json.path("platformContractRevision").asText());
             assertEquals("bind", json.path("toolchainSubcommand").asText());
             assertEquals("21.0.12.1+1", json.at("/decodedToolchainBinding/toolchains/0/version").asText());
             assertEquals(true, json.at("/decodedToolchainBinding/literalValidation/canonicalBase64").asBoolean());
-            assertEquals(id.toString(), json.at("/workflowAuthorization/task").asText());
+            assertEquals(id.toString(), json.at("/currentCommandEvidence/workflowAuthorization/task").asText());
             assertEquals(intent.exactAction(), json.path("exactAction").asText());
             assertEquals("EMPTY", json.path("inputKind").asText());
-            assertFalse(json.has("toolchainImplementation"));
+            assertFalse(json.path("currentCommandEvidence").has("toolchainImplementation"));
             assertFalse(json.has("commandGrant"));
             assertTrue(json.toString().length() < 32768);
             permission.close();
             assertThrows(IllegalArgumentException.class, () -> scope.facts(intent, request, task));
+        }
+    }
+
+    @Test
+    void buildPreservesTheWholeExecutableBodyCollectorSourceAndAuthorityUnderThePinnedIsolationContract() throws Exception {
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("fixture-build", "a".repeat(64), layout);
+        String body = "test \"$(sha256sum \"$archive\" | awk '{print $1}')\" = '" + "b".repeat(64)
+            + "'\nprintf 'project body remains untrusted and needs full review\\n'\n";
+        byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        String collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.script(
+            workspace, 60, 16, 256, 8192, "ordinary", digest, "-", List.of());
+        var scope = sourceScope("model-revision");
+        var source = material(UUID.randomUUID(), "a".repeat(64));
+        try (var permission = open(() -> {
+        }); var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
+            gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(collector, layout),
+            bytes, java.time.Duration.ofSeconds(75), 65536)) {
+            scope.workflowOpened(permission);
+            scope.sourceCaptured(server, source, task);
+            scope.archiveCaptured(source, archive(source, source.snapshot().id(), "a".repeat(64), ""), List.of(), task);
+            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "frozen", request)
+                .withSemantics(new ActionSemantics("deployment.build.run.v1", Set.of(new ActionTarget(server.id(), "deployment-build", workspace.candidateRoot()))));
+            var facts = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request, layout));
+            facts.put("currentCommandEvidence", scope.facts(intent, request, task));
+            var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+            assertEquals(body, json.path("completeExecutableInput").asText());
+            assertEquals("managed-helper-review.v2", json.path("platformContractRevision").asText());
+            assertEquals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildEntrySha256(layout),
+                json.path("installedBuildEntrySha256").asText());
+            assertEquals("b".repeat(64), json.at("/currentCommandEvidence/currentBuildArchive/expectedArchiveSha256").asText());
+            assertEquals(workspace.candidateRoot(), json.at("/buildCollector/candidateRoot").asText());
+            assertEquals(id.toString(), json.at("/currentCommandEvidence/workflowAuthorization/task").asText());
+            assertFalse(json.path("currentCommandEvidence").has("buildIsolationImplementation"));
+            assertFalse(json.has("commandGrant"));
+            assertTrue(json.toString().length() < 32768);
         }
     }
 
@@ -275,9 +312,16 @@ class DeploymentWorkflowEvidenceRegressionTest {
             assertEquals("configurationRevision", method.getName());
             return "model-revision";
         });
-        var context = stub(ModContext.class, (proxy, method, args) -> {
-            assertEquals("ai", method.getName());
-            return ai;
+        var tasks = stub(gold.debug.windowstolinux.appapi.task.TaskService.class, (proxy, method, args) -> {
+            assertEquals("findCheckpoint", method.getName());
+            assertSame(task, args[0]);
+            assertEquals("deployment.config.remote-layout.v1", args[1]);
+            return Optional.empty();
+        });
+        var context = stub(ModContext.class, (proxy, method, args) -> switch (method.getName()) {
+            case "ai" -> ai;
+            case "tasks" -> tasks;
+            default -> throw new AssertionError("No execution capability in the evidence fixture: " + method.getName());
         });
         return new gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope(context, task, revision, "AUTOMATIC", true);
     }

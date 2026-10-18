@@ -149,7 +149,6 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 .configurationStagingImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
         if (intent.semantics().filter(value -> value.operation().equals("deployment.build.run.v1")).isPresent()) {
             var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
-            facts.put("buildIsolationImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildIsolationImplementationFacts(layout));
             String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), layout);
             if (invocation.startsWith("exec /usr/bin/python3 -I -c ")) {
                 try {
@@ -201,7 +200,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             return Map.of("expectedArchiveSha256", expected, "sha256Characters", expected.length(), "archive", matched.getFirst(),
                 "candidate", collector.get("candidate"), "candidateRoot", collector.get("candidateRoot"),
                 "comparison", "ALL_64_SHA256_CHARACTERS_EQUAL_ONE_CAPTURED_ARCHIVE_AND_COLLECTOR_INPUT_DIGEST_MATCHES",
-                "meaning", "Full literal archive SHA256 in this exact executable stdin equals the captured compressed archive SHA256, without display abbreviation. The complete collector round-trip verifies this input digest and declared candidate. This is a literal source association, not proof that the shell guard or archive extraction has executed, that later code cannot override variables, that project code/hooks are safe, or that execution is authorized. Independently review the complete body and pinned build isolation implementation.");
+                "meaning", "Full literal archive SHA256 in this exact executable stdin equals the captured compressed archive SHA256, without display abbreviation. The complete collector round-trip verifies this input digest and declared candidate. This is a literal source association, not proof that the shell guard or archive extraction has executed, that later code cannot override variables, that project code/hooks are safe, or that execution is authorized. Independently review the complete body, exact arguments and source-bound SYSTEM build isolation contract.");
         } finally {
             Arrays.fill(input, (byte) 0);
         }
