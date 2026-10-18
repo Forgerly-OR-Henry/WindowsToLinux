@@ -174,6 +174,8 @@ final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            if (operation.equals("deployment.publication.snapshot.v1"))
+                publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
             if (operation.equals("deployment.publication.config.v1"))
                 stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
             if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
@@ -220,10 +222,33 @@ final class DeploymentCommandEvidence {
                                      gold.debug.windowstolinux.appapi.task.run.TaskContext task)
         throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
         var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
+        if (result.get("publicationSnapshot") instanceof Map<?, ?> snapshot) {
+            if (!task.id().toString().equals(snapshot.get("task")))
+                throw new IllegalArgumentException("Snapshot task differs from original review context");
+            result.put("snapshotTaskMatchesOriginalContext", true);
+        }
         if (intent.semantics().orElseThrow().operation().equals("deployment.model.command.status.v1"))
             result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
                 .receiptStatusEvidence(context, task, intent, request, layout));
         return java.util.Collections.unmodifiableMap(result);
+    }
+
+    /** Describes the exact public snapshot frame and its derived paths, not live state or permission. */
+    private static java.util.Optional<Map<String, Object>> publicationSnapshot(String script, byte[] input, ActionIntent intent,
+                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ")
+            + "'(snapshot-deployment|snapshot-container)' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})'\\z").matcher(script);
+        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
+        String release = layout.applicationRoot(match.group(2));
+        String snapshot = layout.snapshotRoot(match.group(2), java.util.UUID.fromString(match.group(4)));
+        if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().containsAll(Set.of(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-release", release),
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-snapshot", snapshot))))
+            throw new IllegalArgumentException("Snapshot derived resource bindings differ");
+        return java.util.Optional.of(Map.of("verb", match.group(1), "application", match.group(2),
+            "ownershipManifestSha256", match.group(3), "task", match.group(4), "derivedReleaseRoot", release,
+            "possibleSnapshotRoot", snapshot, "literalValidation", "EXACT_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_PATHS_ONLY",
+            "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
     }
 
     /** Binds the actual configuration frame without disclosing its data or asserting live ownership. */

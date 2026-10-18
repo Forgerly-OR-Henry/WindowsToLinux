@@ -111,13 +111,16 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 --- a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
 +++ b/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java
-@@ -755,7 +755,15 @@
+@@ -755,7 +755,18 @@
              .append(DeploymentBuildCommandChannel.shellQuote(verb));
          for (String value : arguments)
              script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
 -        return dispatch(operation, unit, new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand(script.toString(), unit.layout()), input, timeout, output));
 +        var targets = new java.util.HashSet<ActionTarget>();
 +        targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
++        if (operation.equals("deployment.publication.snapshot.v1"))
++            targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),
++                java.util.UUID.fromString(arguments.get(verb.endsWith("-attempt") ? 3 : 2)))));
 +        if (verb.equals("stage-config"))
 +            targets.add(new ActionTarget(server.id(), "deployment-configuration", unit.layout().configurationRoot(unit.id())
 +                + "/" + arguments.get(1) + "/" + arguments.get(2) + ".env"));
@@ -128,7 +131,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Dispatches one exact fixed command through actual review. / 经真实审核发送一条精确固定命令。
-@@ -766,9 +774,14 @@
+@@ -766,9 +777,14 @@
       * @throws ApiException if host admission rejects before dispatch / 宿主发送前准入拒绝时 */
      private OperationResult<CommandResult> dispatch(String operation, DeploymentUnitIdentity unit,
                                                      CommandRequest request) throws ApiException {
@@ -507,11 +510,11 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 -        agent-run uses nine exact parameters in order: application,candidate,task,source revision,seconds,max output,engine,script digest,encoded tool binding. It verifies source identity before and after the complete executable stdin, validates the exact prepared tool binding, and delegates nonroot isolation to build-entry. "-" is the explicit absence of catalog tools; it never authorizes another binding. agent-patch checks UTF8 text and revision-bound line edits, freezes the task copy and returns its tree digest; the client must match its local prediction before promoting a new snapshot.
 -        The helper management controller requires root and require_deployer accepts only SUDO_USER=root or the root default when SUDO_USER is unset or empty (except the two internal Podman CNI hooks). This is the management and candidate-owner identity. Project build/body execution separately uses the restricted non-root identity and build-entry checks described below; management root is not the project execution identity. It validates typed identifiers, digests, managed paths, ownership manifests and operation identity. Unknown verbs/arguments, changed identities and unsafe paths fail closed. Existing mutable business state is not proven merely by this contract; compare actual arguments, binding and resourceTargets. Initialization and argument-selected effects below are part of the invocation.
 -        Interface: managed-helper VERB literal arguments, with opaque framed data or full executable stdin where indicated. No implicit authorization by verb, operation label or hash.
-+        Independently pinned, locally checked source: only these implementations are platform code.
-+        Installed calls require the exact pre-invocation guard: root-owned non-symlink helper/parents, no group/world write, exact SHA256. Review commands before/after; no trust for later mutations/replacements, sourced code or other executables.
++        Only these locally checked, independently pinned sources are platform code.
++        Installed calls require the exact pre-invocation guard: root-owned non-symlink helper/parents, no group/world write, exact SHA256. Review commands before/after; no trust for mutations/replacements, sourced code or other executables.
 +        agent-run parameters, in order: application,candidate,task,source revision,seconds,max output,engine,script digest,encoded tool binding. It checks source before/after executable stdin, exact prepared binding and build-entry non-root isolation. "-" means no catalog tools, never another binding. agent-patch validates UTF8 revision-bound edits, freezes the task copy and returns its tree digest; promotion requires matching the client prediction.
 +        Management/candidate ownership requires root; require_deployer accepts SUDO_USER=root or root when unset/empty, except internal Podman CNI hooks. Projects run as restricted non-root. Validate typed ids/digests/paths/manifests/operations; reject unknowns/drift/unsafe paths. No mutable-state proof: match arguments/bindings/resourceTargets and review initialization/selected effects.
-+        Interface: managed-helper VERB literal arguments plus framed opaque data or executable stdin as specified. No label/hash grants permission.
++        Interface: managed-helper VERB literal args plus framed opaque data or specified executable stdin. Labels/hashes grant no permission.
          probe prints protocol only; candidate-query-task, retained-status, managed-current-status, managed-target-status, publication-original-status(-attempt), inspect-runtime and observe-deployment inspect the named managed state. application-health checks the named runtime. build-preflight checks actual prerequisites.
 -        candidate-create(-task), candidate-restore-create and workspace-recover create/recover task-owned candidates and ownership metadata. candidate-cleanup(-task) removes only the matched owned candidate; build-identity prepares its restricted build identity. build-stop stops the candidate's build; build-freeze seals its output. agent-open/read/patch/seal open, inspect, edit or seal that task-owned candidate; patch stdin is exact source-edit data, never shell evaluation.
 -        build-run and agent-run execute the complete supplied project build/body via checked build-entry with task/candidate, engine, binding, timeout and CPU/memory/output limits. The entry is root-owned, non-writable and hash-checked. Ordinary builds use non-root systemd filesystem/privilege isolation (ProtectSystem=strict, candidate writable paths, no capabilities, NoNewPrivileges); rootless container builds use the selected engine's required user-namespace configuration, not identical privilege flags. Project build hooks/dependencies execute within those enforced boundaries. Build entry validates candidate/input identity; the current executable stdin must still be supplied. This does not sandbox arbitrary SSH/model host commands.
@@ -520,14 +523,14 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 -        snapshot-* and backup-create create protected snapshots/artifacts; *-read/status inspect them; *-discard removes the matched artifact. publish-deployment/container stage and activate the exact application release, create maintenance/operation metadata and update its runtime/service/container/network bindings. rollback-* and retained activation reverse or switch the matched release; retain/finish-retained trim owned old releases. application-maintenance controls its maintenance lock. lifecycle-* start/stop/restart the named service/container or change autostart. app-run/client execute the named managed workload/client under its runtime identity; they are executable actions, not metadata queries.
 -        restore-* and handoff-* validate their bound application/task/operation then perform the named snapshot, file staging, database/application stop/start, activation, reconciliation, discard or cleanup step. Status/preflight inspect prerequisites; a supplied restore step can have host effects and must be reviewed with its exact arguments. Podman CNI forward/clear manage the exact engine network forwarding rules, never generic host access.
 -        Receipts, ownership checks and resource/time guards belong to this fixed code. Independently review all current dynamic commands/payloads, external prerequisites and user authorization. Installation is outside installed-call trust: review the complete actual installer and embedded bodies. Missing enforced boundaries or executable input require DENY.
-+        candidate-create(-task), candidate-restore-create and workspace-recover create/recover task-owned candidates/metadata. Inside the pinned helper, initialise_controlled_roots checks storage ancestry (symlink/owner/write), validates existing roots and initializes managed roots; task creation is exclusive and binds its task marker. candidate-cleanup(-task) removes only matched owned candidates. build-identity prepares restricted identity; build-stop stops its build; build-freeze seals output. agent-open/read/patch/seal operate on that candidate; patch stdin is source-edit data, never shell evaluation.
-+        build-run/agent-run execute full supplied build/body through root-owned, non-writable, hash-checked build-entry, bound to task/candidate/input/binding/engine and time/CPU/memory/output limits. Ordinary builds use non-root systemd isolation: ProtectSystem=strict, candidate writable paths, no capabilities, NoNewPrivileges. Rootless containers use engine-required user namespaces, not identical flags. Hooks/dependencies run within these bounds. Require complete executable stdin; arbitrary SSH/model host commands are not sandboxed by this.
++        candidate-create(-task), candidate-restore-create and workspace-recover create/recover task-owned candidates/metadata. Pinned initialise_controlled_roots checks ancestry symlink/owner/write, validates existing roots and initializes managed roots; task creation is exclusive and binds its task marker. candidate-cleanup(-task) removes only matched owned candidates. build-identity prepares restricted identity; build-stop stops its build; build-freeze seals output. agent-open/read/patch/seal operate on that candidate; patch stdin is source-edit data, never shell evaluation.
++        build-run/agent-run execute full build/body via root-owned, non-writable, hash-checked build-entry bound to task/candidate/input/binding/engine and time/CPU/memory/output limits. Ordinary builds use non-root systemd isolation: ProtectSystem=strict, candidate writable paths, no capabilities, NoNewPrivileges. Rootless containers use engine-required user namespaces, not identical flags. Hooks/dependencies run within these bounds. Require complete executable stdin; arbitrary SSH/model host commands are not sandboxed by this.
 +        prepare-toolchains bind/verify enforce canonical bindings, live directory/marker ownership, exact version/source/digest and SYSTEM rehashing before sealing; missing/drifted installations fail. Metadata probes do not imply project imports/hooks.
-+        prepare accepts typed ecosystem/catalog branch/exact-or-"-"/30..7200 seconds/guarded Java-or-"-", never caller URLs, destinations or scripts. Official stable resolvers: Adoptium Linux/x64/JDK/HotSpot/Eclipse package SHA256, Node index+SHASUMS256, Go metadata+SHA256, Microsoft .NET metadata+SHA512. HTTPS/redirects enforce fixed host allowlist/size limits; verify official digests before extraction. Archives reject traversal, external/cyclic links, devices, duplicates and expansion overflow. Version/digest directories under @wtl:helper-directory@/toolchains/versions enforce ancestor owner/non-write/symlink guards. Matching SYSTEM tools are exact-version probed/pinned/rehashed/wrapped with protected markers; otherwise install/probe/seal verified official artifacts. Python/PHP/Ruby can install fixed apt/dnf dependencies and run official configure/make/install; Rust can run verified install.sh. Review host prerequisites, arguments/targets, goal authority. URL/digest/origin resolve during preparation, never invent them; no arbitrary downloads.
-+        stage-config(app,configuration-id,format,payload-sha,bytes) allows empty data; stage-secret(app,id,revision,payload-sha,bytes) forbids it. Both stage app-scoped immutable data; neither has a task argument. native-db inspect/target/status inspect instances; start/install/prepare/initialize/resume can install packages, create/start services, initialize databases or resume matched operations. Database export/stage/read/discard handle bound artifacts; restore/commit/recover/discard-candidate stage, commit, recover or remove owned candidates.
-+        snapshot-*/backup-create make protected artifacts; *-read/status inspect and *-discard remove matched artifacts. publish-deployment/container stage/activate exact releases, maintenance/operation metadata and runtime/service/container/network bindings. rollback-*/retained activation restore/switch matched releases; retain/finish-retained trim owned old releases. application-maintenance controls its lock. lifecycle-* start/stop/restart service/container or set autostart. app-run/client execute managed workloads/clients under runtime identity, not metadata queries.
++        prepare takes ecosystem/catalog branch/exact-or-"-"/30..7200 seconds/guarded Java-or-"-", no caller URL/path/script. Official resolvers: Adoptium Linux/x64/JDK/HotSpot/Eclipse package SHA256, Node index+SHASUMS256, Go metadata+SHA256, Microsoft .NET metadata+SHA512. HTTPS/redirects enforce host allowlist/size caps; check official digests before extraction. Reject archive traversal, external/cyclic links, devices, duplicates and expansion overflow. Version/digest directories under @wtl:helper-directory@/toolchains/versions enforce ancestor owner/non-write/symlink guards. SYSTEM reuse requires exact-version probing/pinning/rehashing/protected wrappers/markers; otherwise install/probe/seal verified official artifacts. Python/PHP/Ruby can install fixed apt/dnf dependencies and run official configure/make/install; Rust can run verified install.sh. Review prerequisites/arguments/targets/goal authority. URL/digest/origin resolve during prepare; never invent them or allow arbitrary downloads.
++        stage-config(app,configuration-id,format,payload-sha,bytes) allows empty data; stage-secret(app,id,revision,payload-sha,bytes) forbids it. Both stage app-scoped immutable data; neither has a task argument. native-db inspect/target/status read instances; start/install/prepare/initialize/resume may install packages, create/start services, initialize databases or resume matched operations. Database export/stage/read/discard use bound artifacts; restore/commit/recover/discard-candidate operate on owned candidates.
++        snapshot-deployment/container(app,owner-manifest[,task]): derive release path; check ownership/absence. Absent: PREVIOUS=0; else capture protected prior runtime. snapshot-*/backup-create make protected artifacts; *-read/status inspect and *-discard remove matched artifacts. publish-deployment/container stage/activate exact releases, maintenance/operation metadata and runtime/service/container/network bindings. rollback-*/retained activation restore/switch matched releases; retain/finish-retained trim owned old releases. application-maintenance controls its lock. lifecycle-* start/stop/restart service/container or set autostart. app-run/client execute managed workloads/clients under runtime identity, not metadata queries.
 +        restore-*/handoff-* validate app/task/operation before the named snapshot, file staging, database/app stop/start, activation, reconciliation, discard or cleanup. Status/preflight inspect prerequisites; review exact supplied restore steps and host effects. Podman CNI forward/clear affect only exact engine forwarding rules.
-+        Fixed code enforces receipt/ownership/resource/time guards. Review dynamic input, prerequisites and user authority. Helper/build-entry installation/replacement requires full installer/embedded source, not installed-call trust. Deny missing boundaries/input.
++        Receipt/ownership/resource/time guards apply. Review input/prerequisites/user authority. Helper/build-entry installation/replacement requires full installer/embedded source, not installed-call trust. Deny missing boundaries/input.
          """;
  
      private static final String TEXT = DeploymentRemoteLayoutTemplate.render(TEMPLATE.formatted(HELPER_SHA, BUILD_SHA), DeploymentRemoteLayout.original());
@@ -635,19 +638,50 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -157,6 +174,8 @@
+@@ -157,6 +174,10 @@
          }
          byte[] input = request.stdin();
          try {
++            if (operation.equals("deployment.publication.snapshot.v1"))
++                publicationSnapshot(invocation, input, intent, layout).ifPresent(value -> facts.put("publicationSnapshot", value));
 +            if (operation.equals("deployment.publication.config.v1"))
 +                stagedConfiguration(invocation, input, intent, layout).ifPresent(value -> facts.put("stagedConfiguration", value));
              if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                  String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-@@ -207,6 +226,53 @@
+@@ -201,10 +222,80 @@
+                                      gold.debug.windowstolinux.appapi.task.run.TaskContext task)
+         throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
+         var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
++        if (result.get("publicationSnapshot") instanceof Map<?, ?> snapshot) {
++            if (!task.id().toString().equals(snapshot.get("task")))
++                throw new IllegalArgumentException("Snapshot task differs from original review context");
++            result.put("snapshotTaskMatchesOriginalContext", true);
++        }
+         if (intent.semantics().orElseThrow().operation().equals("deployment.model.command.status.v1"))
+             result.put("modelCommandReceiptStatus", gold.debug.windowstolinux.mod.deployment.linux.command.DeploymentModelCommandRunner
+                 .receiptStatusEvidence(context, task, intent, request, layout));
          return java.util.Collections.unmodifiableMap(result);
-     }
- 
++    }
++
++    /** Describes the exact public snapshot frame and its derived paths, not live state or permission. */
++    private static java.util.Optional<Map<String, Object>> publicationSnapshot(String script, byte[] input, ActionIntent intent,
++                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
++        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ")
++            + "'(snapshot-deployment|snapshot-container)' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})' '([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})'\\z").matcher(script);
++        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
++        String release = layout.applicationRoot(match.group(2));
++        String snapshot = layout.snapshotRoot(match.group(2), java.util.UUID.fromString(match.group(4)));
++        if (intent.serverIds().size() != 1 || !intent.semantics().orElseThrow().targets().containsAll(Set.of(
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-release", release),
++            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-snapshot", snapshot))))
++            throw new IllegalArgumentException("Snapshot derived resource bindings differ");
++        return java.util.Optional.of(Map.of("verb", match.group(1), "application", match.group(2),
++            "ownershipManifestSha256", match.group(3), "task", match.group(4), "derivedReleaseRoot", release,
++            "possibleSnapshotRoot", snapshot, "literalValidation", "EXACT_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_PATHS_ONLY",
++            "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
++    }
++
 +    /** Binds the actual configuration frame without disclosing its data or asserting live ownership. */
 +    private static java.util.Optional<Map<String, Object>> stagedConfiguration(String script, byte[] input, ActionIntent intent,
 +                                                                               gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
@@ -693,12 +727,10 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            "requestedExact", exact, "preparationTimeoutSeconds", seconds, "javaHome", match.group(5),
 +            "literalArgumentOrder", java.util.List.of("prepare", "ecosystem", "catalogBranch", "requestedExact", "preparationTimeoutSeconds", "javaHome"),
 +            "meaning", "Exact literal argument decoding only; branch and timeout are separate arguments. Official version/source/digest are resolved inside the pinned helper. Not live installation evidence, a safety verdict or a command grant."));
-+    }
-+
+     }
+ 
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
-      * @param script complete original reviewed executable script / 完整原已审阅可执行脚本
-      * @return decoded original toolchain binding evidence / 已解码原工具链绑定依据
-@@ -216,7 +282,7 @@
+@@ -216,7 +307,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -707,7 +739,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +294,14 @@
+@@ -228,14 +319,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -724,7 +756,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +316,50 @@
+@@ -250,12 +341,50 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -1116,7 +1148,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var guard = new AtomicInteger();
          var workspace = new DeploymentRemoteWorkspace("demo", ARCHIVE_SHA);
          var build = new DeploymentBuildCommandChannel(peer.session, peer, SERVER, peer.task, REVISION,
-@@ -219,12 +226,27 @@
+@@ -219,12 +226,44 @@
          assertEquals(TaskResult.SUCCEEDED, channel.publish(unit, facts, runtime(), resources, "c".repeat(64), Map.of(),
              "demo-" + "a".repeat(16), "d".repeat(64), "-", false).outcome());
          assertArrayEquals(configuration, peer.commands.getFirst().input());
@@ -1134,6 +1166,23 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +    }
 +
 +    @Test
++    void snapshotsDeclareCapturedReleaseAndExactRootOrAttemptSnapshotTargets() throws Exception {
++        var peer = new ControlledPeer(request -> "PREVIOUS=0\n");
++        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
++        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
++        assertEquals(TaskResult.SUCCEEDED, channel.snapshot(unit, runtime()).outcome());
++        var operation = java.util.UUID.randomUUID();
++        assertEquals(TaskResult.SUCCEEDED, channel.snapshot(unit, runtime(), operation, Optional.empty()).outcome());
++        for (int i = 0; i < 2; i++) {
++            var token = i == 0 ? peer.task.id() : operation;
++            assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
++                    new ActionTarget(SERVER.id(), "deployment-snapshot", LAYOUT.snapshotRoot("demo", token))),
++                peer.commands.get(i).intent().semantics().orElseThrow().targets());
++            assertGuard(peer.commands.get(i).script());
++        }
++    }
++
++    @Test
 +    void secretStagingDeclaresTheExactCapturedSecretRevisionDestination() throws Exception {
 +        var peer = new ControlledPeer(request -> "INPUT_STAGED=1\n");
 +        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
@@ -1148,7 +1197,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      @Test
-@@ -296,10 +318,20 @@
+@@ -296,10 +335,20 @@
      /** Only public immutable handle facts are stubbed; no platform lifecycle or archive validation is claimed. */
      private static FileSnapshot snapshot(Path directory) {
          return new FileSnapshot() {
@@ -1173,7 +1222,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          };
      }
  
-@@ -327,21 +359,28 @@
+@@ -327,21 +376,28 @@
          assertEquals(Set.of(new ActionTarget(SERVER.id(), kind, path)), intent.semantics().orElseThrow().targets());
      }
  

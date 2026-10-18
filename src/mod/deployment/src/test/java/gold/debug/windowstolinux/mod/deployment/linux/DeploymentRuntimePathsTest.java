@@ -236,6 +236,23 @@ class DeploymentRuntimePathsTest {
     }
 
     @Test
+    void snapshotsDeclareCapturedReleaseAndExactRootOrAttemptSnapshotTargets() throws Exception {
+        var peer = new ControlledPeer(request -> "PREVIOUS=0\n");
+        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
+        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
+        assertEquals(TaskResult.SUCCEEDED, channel.snapshot(unit, runtime()).outcome());
+        var operation = java.util.UUID.randomUUID();
+        assertEquals(TaskResult.SUCCEEDED, channel.snapshot(unit, runtime(), operation, Optional.empty()).outcome());
+        for (int i = 0; i < 2; i++) {
+            var token = i == 0 ? peer.task.id() : operation;
+            assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
+                    new ActionTarget(SERVER.id(), "deployment-snapshot", LAYOUT.snapshotRoot("demo", token))),
+                peer.commands.get(i).intent().semantics().orElseThrow().targets());
+            assertGuard(peer.commands.get(i).script());
+        }
+    }
+
+    @Test
     void secretStagingDeclaresTheExactCapturedSecretRevisionDestination() throws Exception {
         var peer = new ControlledPeer(request -> "INPUT_STAGED=1\n");
         var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);

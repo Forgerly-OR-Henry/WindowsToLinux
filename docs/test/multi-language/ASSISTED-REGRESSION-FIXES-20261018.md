@@ -182,3 +182,17 @@ ASSISTED作用域只记录原活动工作流、原任务对象、原服务器、
 `binding-review-01` 原字节真实模型 API-only 审查通过，Task `bb70eb96-6f56-43b3-a0b9-336ec6c34a1b`。输入4363、输出128，共4491 Token；cache384、miss3979，reasoning未报告，能力验证4项用量未知。没有连接/发送SSH，也没有将该许可复用于部署。此结果只验证该请求的一次独立审查，不等同于整项目成功或保证模型后续每次判断相同。
 
 `binding-review-01` 首次启动被自动审批审查拒绝，担心图片凭据及元数据外发。核对代码后证明：SSH密码仅进入本地产品 `saveServerProfile` 受保护存储，随后清零；模型请求仅序列化审查 facts，不含该凭据。绑定与原已授权流程的真实请求摘要一致，使用原配置提供方，且此测试没有 SSH 连接/发送。带上述证据提交原命令复审后获准，未采用间接执行绕过拒绝。
+
+## CLI11：快照公开参数与推导路径
+
+准备观测修复提交 `5aa691b6` 后，CLI11真实prepare/bind通过，绑定摘要d16b3b4efd86b4c33c5b3018bca667d4cb644712091d51c39f3f8089af4fb7ea；上传/校验、Rust+C++实际构建及普通配置两次暂存均通过。snapshot-deployment审批DENY称缺少release path参数，并将归属清单摘要当快照摘要。原任务 `6165504b-3074-4e35-8ffc-822495ecc701`、root `assisted-live-log-analyzer-v3d8i9gd4` 已reconcile-11-01产品对账ENDED/FAILED，无应用。部署已知72647、审批105206，共177853Token；恢复新增另计。
+
+直接核对55-publication-snapshot.sh：公开snapshot-deployment/container接受app、owner manifest和可选task；原程序发送完整3参数。发布路径来自捕获layout，并非缺参。helper先检查受控根及现有归属或缺席；缺席返回PREVIOUS=0不产生快照，有旧部署才捕获受保护运行状态。没有更改helper执行体。补充源码绑定合同说明，区分归属摘要与快照/业务/源码/模型身份。
+
+同时补足共享PublishChannel的实际snapshot resourceTarget，normal使用原task、attempt使用独立operation，保留release目标。CommandEvidence仅在空stdin/精确三参数字面帧匹配时推导并核对两个声明目标、交叉核对原TaskContext；不声称当前存在旧部署/已验证实时归属/安全或授权，附加参数和非空stdin不会获得该精确绑定。共享资源声明与合同可能影响稍后Agent审查，应依本节和精确补丁核对；本轮没有运行Agent。
+
+snapshot-frame-unit-01新增帧边界7项、捕获layout的normal/attempt目标1项、原helper源码身份1项均通过；原审批拒绝2参数因policy12389超过原12288上限失败。压缩重复措辞后仅重跑失败2项，结果待记。API-only代表性快照审查待确认，不可代替整部署。
+
+预算边界补充：unit-02两项仍因policy12326>12288失败，继续仅压缩重复语义后，unit-03仅重跑这两项均通过。前述9项已通过检查没有重复执行。CLI11恢复新增4APP17232，全局截至CLI11known2760881、552物理生成（1用量UNKNOWN）、136cap用量UNKNOWN，恢复共50次205402；audit03尚未覆盖新增目录，最终须更新。
+
+- snapshot-review-01真实API-only通过，task2b61279d-6bfc-47a1-916c-48e1fd868c8a/root ai-live-snapshot-review-vhgconvgk，未连接或发送SSH，未复用审批；known4553=4421+132，cache1152/miss3269，reasoningUNKNOWN，4capUNKNOWN。六个Java格式检查中合同文件因换行需单独write，随后check通过；其余五个已通过。下一步CLI12完整流程，仍0/8。

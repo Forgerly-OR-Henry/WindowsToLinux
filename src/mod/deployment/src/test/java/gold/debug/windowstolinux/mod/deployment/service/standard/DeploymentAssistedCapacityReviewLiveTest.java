@@ -61,6 +61,11 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
         reviewWithoutRemoteDispatch("rust-binding");
     }
 
+    @Test
+    void reviewsPublicationSnapshotWithoutRemoteDispatch() throws Exception {
+        reviewWithoutRemoteDispatch("snapshot");
+    }
+
     private void reviewWithoutRemoteDispatch(String kind) throws Exception {
         boolean rustBinding = kind.equals("rust-binding");
         boolean binding = kind.equals("binding") || rustBinding;
@@ -68,6 +73,7 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
         boolean preparation = kind.equals("preparation") || rust;
         boolean hostProbe = kind.equals("host-probe");
         boolean config = kind.equals("configuration");
+        boolean snapshot = kind.equals("snapshot");
         var configuration = gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot.create(
             "log-analyzer-api-review", 1, "deployment-1", java.time.Instant.EPOCH, List.of());
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
@@ -89,7 +95,10 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                 String revision = context.ai().configurationRevision(AiPurpose.LANGUAGE, task);
                 var server = new ServerId("static-live");
                 try (var authority = DeploymentWorkflowAuthorization.open(context, task, server, revision, "AUTOMATIC", true,
-                    config ? deploymentGoal(server, "Draft[application=" + configuration.applicationId() + ", normal configuration entries=0, configuration identity=" + configuration.sha256()
+                    snapshot ? deploymentGoal(server, "Draft[application=" + configuration.applicationId()
+                        + "]; review the original-task public snapshot frame and its captured release/snapshot targets before publication; ownership manifest=" + "c".repeat(64)
+                        + "; representative API-only request, no claim of prior deployment presence, no SSH dispatch")
+                        : config ? deploymentGoal(server, "Draft[application=" + configuration.applicationId() + ", normal configuration entries=0, configuration identity=" + configuration.sha256()
                         + "]; review ordinary empty configuration staging, not installation or runtime execution; API-only, no SSH dispatch")
                         : rustBinding ? deploymentGoal(server, "Draft[application=log-analyzer-api-review, selectedSource=success-log-analyzer, source Rust minimum=1.85, reviewed branch=1.95]; review canonical Rust 1.95 binding, including guarded marker/version verification before sealing; representative request, no SSH dispatch")
                         : rust ? rustDeploymentGoal(server)
@@ -97,7 +106,10 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                         : preparation ? "Review the guarded Java 21 catalog prerequisite for the user's authorized task-board deployment, including permitted official download/install and SYSTEM reuse effects; no SSH dispatch"
                         : binding ? "Review the original task-board-12 binding bytes (matched to original SHA-256); no claim of current installation, no SSH dispatch"
                         : "Review a read-only filesystem capacity prerequisite on the selected server; no SSH dispatch");
-                     var request = new CommandRequest(config
+                     var request = new CommandRequest(snapshot
+                         ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
+                         "'" + layout.helperPath() + "' 'snapshot-deployment' '" + configuration.applicationId() + "' '" + "c".repeat(64) + "' '" + task.id() + "'")
+                         : config
                          ? gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
                          "'" + layout.helperPath() + "' 'stage-config' '" + configuration.applicationId() + "' '" + configuration.sha256()
                              + "' 'systemd' 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' '0'")
@@ -112,8 +124,10 @@ class DeploymentAssistedCapacityReviewLiveTest extends DeploymentStaticLiveAccep
                          : "set -euo pipefail\ntest -d '/var/lib' && test ! -L '/var/lib'\nstat -f -c '%a %S' -- '/var/lib'\n",
                          new byte[0], Duration.ofSeconds(config ? 90 : hostProbe ? 120 : rust ? 1792 : preparation ? 315 : 20), preparation || hostProbe ? 65536 : 1024)) {
                     var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
-                        config ? "deployment.publication.config.v1" : hostProbe ? "deployment.candidate.host-probe.v1" : preparation ? "deployment.toolchain.prepare.v1" : binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
-                        config ? Set.of(new ActionTarget(server.id(), "deployment-configuration", layout.configurationRoot(configuration.applicationId()) + "/" + configuration.sha256() + "/systemd.env"),
+                        snapshot ? "deployment.publication.snapshot.v1" : config ? "deployment.publication.config.v1" : hostProbe ? "deployment.candidate.host-probe.v1" : preparation ? "deployment.toolchain.prepare.v1" : binding ? "deployment.toolchain.bind.v1" : "deployment.candidate.capacity.v1",
+                        snapshot ? Set.of(new ActionTarget(server.id(), "deployment-snapshot", layout.snapshotRoot(configuration.applicationId(), task.id())),
+                            new ActionTarget(server.id(), "deployment-release", layout.applicationRoot(configuration.applicationId())))
+                            : config ? Set.of(new ActionTarget(server.id(), "deployment-configuration", layout.configurationRoot(configuration.applicationId()) + "/" + configuration.sha256() + "/systemd.env"),
                             new ActionTarget(server.id(), "deployment-release", layout.applicationRoot(configuration.applicationId())))
                             : Set.of(new ActionTarget(server.id(), hostProbe ? "deployment-host" : binding || preparation ? "deployment-build" : "deployment-workspace",
                             hostProbe ? server.id() : binding || preparation ? layout.toolchains() : "/var/lib"))));

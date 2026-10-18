@@ -757,6 +757,9 @@ public final class DeploymentPublishChannel {
             script.append(' ').append(DeploymentBuildCommandChannel.shellQuote(value));
         var targets = new java.util.HashSet<ActionTarget>();
         targets.add(new ActionTarget(server.id(), "deployment-release", unit.releaseRoot()));
+        if (operation.equals("deployment.publication.snapshot.v1"))
+            targets.add(new ActionTarget(server.id(), "deployment-snapshot", unit.layout().snapshotRoot(unit.id(),
+                java.util.UUID.fromString(arguments.get(verb.endsWith("-attempt") ? 3 : 2)))));
         if (verb.equals("stage-config"))
             targets.add(new ActionTarget(server.id(), "deployment-configuration", unit.layout().configurationRoot(unit.id())
                 + "/" + arguments.get(1) + "/" + arguments.get(2) + ".env"));
