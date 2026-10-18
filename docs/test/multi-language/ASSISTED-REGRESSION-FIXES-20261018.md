@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前4/8交付（全部3CLI及Task Board），其余4网站串行验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前5/8交付（全部3CLI、Task Board及File Transfer），其余3网站串行验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -526,3 +526,11 @@ bind-fixed-contract-scope-unit-01共15项通过0跳过：实际Scope+共享证�
 fixed-effect-review明确ordinary与rootless例外不同、不宣称网络隔离、所有项目/依赖hooks和嵌套可执行数据仍须完整审查，安装/替换helper仍须完整installer/source；保留DENY、宿主授权、完整输入、原任务/服务器/模型路由和动态脚本不可信边界。未改helper/pin/隔离/权限/执行路径、共享v2契约或预算。源码展开辅助API及其摘要测试作为可复核诊断保留，但该大字段不再进入常规ASSISTED构建审批；STATIC和Agent事实未改变。是否解决本次构建推理耗尽，仍需11轮实际验证。
 
 build-fixed-contract-scope-unit-01共32项通过0跳过：Workflow11（新增实际Scope+共享证据组合，完整可执行body逐字保留、pin/原授权/源/候选保留，低于32768字符且无执行能力）、collector13（含body/target/摘要/外层guard损坏拒绝）、归档8（全摘要/候选/输入变更与歧义拒绝）。只验证原边界，没有调用模型/SSH，没有把测试通过当作构建或部署成功。
+
+## File Transfer 11：完整 ASSISTED 真机交付通过
+
+2026-10-19 04:08（Asia/Singapore）完成，JUnit1通过0跳过，总18分31秒。原任务c25a0a73-1bd0-40b4-b38a-4a8645753632/root assisted-live-file-transfer-8f3ty47a0；应用wtl-assisted-file-transfer-8f3tzmjzo，管理同源导出file-transfer.json，地址http://45.192.105.213:46110，两个组件RUNNING、自启DISABLED。全程由原产品执行，没有人工部署或服务器写入。
+
+Go/Node准备和绑定均真实成功；Go绑定审批output940/reasoning829。Go构建审批请求44121字节（10为121373）、20513ms/output3632/reasoning3520，原生结论后实际EXIT0/TOOL=GO_MODULE；前端也实际EXIT0/TOOL=NPM。动态构建body完整保留；原固定pin/原目标/独立审查均未替换。配置暂存的保护数据/固定receiver证据也在本轮真实取得完整结论，INPUT_STAGED=1，61923756对应卡点至此实机越过。随后发布、健康、保留、清理、业务及生命周期均通过。
+
+业务实际执行64KiB随机文件上传、下载逐字节比较、重启后再次逐字节比较；另验证产品启停/重启、自启开关与最终交付START。不能将它表述为Agent 64MiB场景或浏览器人工验收。AI_LIVE_PASS记录LANGUAGE18/APPROVAL56；传输AUTO时requiredApprovals=0只是wire requiredToolName计数，严格单原生结论和独立审批仍执行，不能解释为没有审批。最终总Token仍须以所有项目结束后的逐物理尝试审计为准。
