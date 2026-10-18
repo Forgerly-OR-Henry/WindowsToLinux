@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。CLI22原任务已由程序结清成功并导出管理同源启动信息，当前2/8交付，正顺序验证其余6项；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。CLI22原任务已由程序结清成功并导出管理同源启动信息，当前3/8交付（全部3CLI），正顺序验证5网站；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -359,3 +359,16 @@ CommandEvidence明确上述身份角色并补精确release目录；native publis
 original-publication-identity-unit-01中既有workflow边界9项通过；新测试夹具错误（Process稳定期为0、既有fixture release应为c而非d）导致整次失败。修正夹具后只重跑新提案9项与直接受影响字面帧3项，结果待记，不重跑已通过workflow组。
 
 original-publication-identity-unit-02相关12项通过0跳过，加unit01已通过的workflow9项，共21项定点通过；四Java限定格式化完成。literalCandidate仅来自当前命令，不声称来自持久提案；工作流/资源/来源另行绑定候选。原任务查询只读，不产生发送权限。
+
+原持久提案修复96cf9917后，Binary Inspector02完整真实流程1项通过，languageCalls=11/approvalCalls=26，publish/health/清理/产品管理与启动命令导出均通过；binary-inspector.json保留。当前3/8成功交付，后续仅5网站，无Agent真机测试。
+
+
+## Task Board 15：不合法源码引用的明确反馈
+
+task2c5d5125-ceb9-4b7b-8672-394028a1300a/root assisted-live-task-board-3xouu1xpg在技术建议阶段结束FAILED（DEPLOYMENT_STATIC_SOURCE_REJECTED），无应用发布、无UNKNOWN。原初始JFR过滤器未包含SecurityException，补只读提取后确认Analysis.advice抛Unobserved assisted source evidence；不能归因组件布局或未观测的字段。LIST只是导航，空/排除结果也不能支持建议，拒绝正确。
+
+实际请求只给observations，其中同时含导航与正文；Schema evidence只声明string，没有可用reference集合。补evidenceReferences精确列举当前实际非空READ/SEARCH引用，并把Schema evidence与field枚举约束到实际可用集合；无有效证据时ADVISE只能空suggestions+unresolved。不接受路径/LIST/凭空ID、不创造证据。仅这一类无效引用使用内部异常提供ADVICE_EVIDENCE_REJECTED并在原12业务轮内纠正，原方法全部检查成功后才返回建议、没有部分应用；越界路径/source.verify异常/未提供字段或不合法candidate仍严格拒绝，不把任何SecurityException一概吞掉。APP有效DENY不重试，原结构提交额度不增加。
+
+新定点覆盖LIST引用拒绝→真正READ→仅真实引用建议，及重复空引用12轮耗尽仍无建议、原缺文件纠正/越界路径/范围版本拒绝/重复查询预算；验证中。AnalysisTest与source-analysis首次修改前快照已保存。此分析器仅ASSISTED；共享AiJson本轮未变更。
+
+analysis-citation-feedback-unit-01明确限定6项全部通过0跳过，2Java格式化完成；不是整个Analysis类或模块全套。source-analysis文本回读与原边界一致。下一轮Task Board16重新从原已结束失败后起新任务，不恢复旧计划。

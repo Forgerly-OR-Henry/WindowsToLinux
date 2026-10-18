@@ -100,8 +100,9 @@ public final class DeploymentAssistedAnalysis {
             Map<String, Object> request = Map.of(
                 "sourceRevision", source.revision(), "facts", facts, "fields", offered.values().stream()
                     .map(f -> Map.of("id", f.id(), "value", f.value(), "choices", f.choices())).toList(),
-                "observations", List.copyOf(observations), "feedback", feedback, "remaining", 12 - decision);
-            JsonNode reply = ai.askStructured(AiPurpose.LANGUAGE, POLICY, request, revision, task, ACTION_SCHEMA,
+                "observations", List.copyOf(observations), "evidenceReferences", List.copyOf(evidence.keySet()),
+                "feedback", feedback, "remaining", 12 - decision);
+            JsonNode reply = ai.askStructured(AiPurpose.LANGUAGE, POLICY, request, revision, task, actionSchema(offered, evidence),
                 node -> {
                     try {
                         exact(node, Set.of("action", "sourceRevision", "arguments"));
@@ -129,7 +130,13 @@ public final class DeploymentAssistedAnalysis {
             if (action.equals("ADVISE")) {
                 exact(args, Set.of("suggestions", "summary", "unresolved"));
                 source.verify();
-                return advice(args, offered, evidence);
+                try {
+                    return advice(args, offered, evidence);
+                } catch (UnobservedEvidenceException rejected) {
+                    feedback = Map.of("code", "ADVICE_EVIDENCE_REJECTED", "message",
+                        "No suggestion was accepted. Cite exact evidenceReferences from nonempty READ/SEARCH only; LIST, empty or excluded results and file paths are not evidence IDs. Read actual source or leave fields unresolved.");
+                    continue;
+                }
             }
             if (!Set.of("LIST", "READ", "SEARCH").contains(action))
                 throw new SecurityException("Unsupported assisted source action");
@@ -200,7 +207,7 @@ public final class DeploymentAssistedAnalysis {
                 throw new SecurityException("Unsupported assisted source suggestion");
             for (JsonNode cite : cites) {
                 if (!cite.isTextual() || !evidence.containsKey(cite.textValue()))
-                    throw new SecurityException("Unobserved assisted source evidence");
+                    throw new UnobservedEvidenceException();
                 locations.put(cite.textValue(), evidence.get(cite.textValue()));
             }
             values.put(fieldId, value);
@@ -212,6 +219,28 @@ public final class DeploymentAssistedAnalysis {
             questions.add(item.textValue());
         }
         return new Advice(values, locations, DeploymentJsonFields.text(args, "summary", 2000), questions);
+    }
+
+    /** Advertises only actually observed source references; empty evidence permits unresolved-only advice. */
+    private static String actionSchema(Map<String, DeploymentReviewField> offered, Map<String, String> evidence) throws IOException {
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var schema = json.readTree(ACTION_SCHEMA);
+        var suggestions = (com.fasterxml.jackson.databind.node.ObjectNode) schema.at("/properties/arguments/oneOf/2/properties/suggestions");
+        if (evidence.isEmpty() || offered.isEmpty()) suggestions.put("maxItems", 0);
+        else {
+            var fields = (com.fasterxml.jackson.databind.node.ObjectNode) suggestions.at("/items/properties/field");
+            fields.set("enum", json.valueToTree(List.copyOf(offered.keySet())));
+            var references = (com.fasterxml.jackson.databind.node.ObjectNode) suggestions.at("/items/properties/evidence/items");
+            references.set("enum", json.valueToTree(List.copyOf(evidence.keySet())));
+        }
+        return schema.toString();
+    }
+
+    /** A rejected citation is corrigible inside the original decision budget, with no partial advice. */
+    private static final class UnobservedEvidenceException extends SecurityException {
+        private UnobservedEvidenceException() {
+            super("Unobserved assisted source evidence");
+        }
     }
 
     /** Reads a strict bounded integer. / 读取严格有界整数。
