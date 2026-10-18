@@ -69,6 +69,8 @@ final class DeploymentCommandEvidence {
             .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
             .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
         facts.put("businessRevision", intent.revision());
+        if (installedHelper)
+            facts.put("ownershipIdentityMeaning", "ownershipManifestSha256 is an opaque ownership marker identity, not a protocol requirement to hash a supplied content manifest. StandardUnitResolver mints a new unit with 32 random bytes or reuses its saved identity; helpers compare the exact marker token. It is not a built-file checksum or signature. Compare the original unit binding and helper ownership checks, not an invented manifest document.");
         facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
         facts.put("exactAction", intent.exactAction());
         platformProbe(operation, request).ifPresent(probe -> facts.put("platformProbe", probe));
@@ -286,7 +288,11 @@ final class DeploymentCommandEvidence {
             result.put("releaseSha256", publish.group(4));
             result.put("identityPolicy", publish.group(6));
             result.put("derivedReleaseRoot", layout.applicationRoot(app));
+            result.put("derivedReleaseDirectory", layout.applicationRoot(app) + "/releases/" + publish.group(4));
             result.put("derivedCandidateRoot", layout.candidateRoot(candidate));
+            result.put("releaseIdentityMeaning", "Release SHA names a version directory. The standard producer ReviewedReleaseIdentity hashes reviewed-release-v5 plus source archive SHA, build tool, configuration identity, secret revisions, file/database bindings, typed runtime and health, then binds exact prepared tools with reviewed-release-tools-v1 when present. This is a reviewed-input identity, not a SHA of compiled output bytes. originalPublication separately cross-checks the original stored proposal; source/archive/build evidence and helper live sealing checks have their own roles.");
+            if (publish.group(1).equals("publish-deployment"))
+                result.put("publicationFilesystemSemantics", "Pinned publish_deployment validates managed roots, typed runtime and current ownership/path. Same current release requires byte-identical saved runtime parameters; it may start a stopped DAEMON. Otherwise an existing target release is rejected if current link or unit exists. With neither present, only a root-owned target directory without an owner marker may be removed as a partial release, bounded to this exact derived path; all other existing targets fail. A new release copies the sealed candidate: assert_sealed_build stops remaining build activity, requires root-owned .sealed=sealed, correct workspace volume, read-only mutable mount and released builder identity; source rejects symlinks/special files. It copies into root-owned release, writes the exact ownership marker and runtime parameters, switches current, installs systemd unit, reloads and starts DAEMON or disables ON_DEMAND. These are actual code semantics, not observations or permission; review the partial-directory removal and runtime effects explicitly.");
             result.put("publicationFrame", publicationArguments.orElseThrow());
             result.put("frameValidation", "COMPLETE_CANONICAL_LITERAL_ARGUMENTS_PAYLOAD_AND_DECLARED_PATHS_ONLY");
         } else result.put("frameValidation", "EXACT_APPLICATION_HEALTH_FRAME");

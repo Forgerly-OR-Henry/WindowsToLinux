@@ -93,6 +93,11 @@ class DeploymentWorkloadReviewEvidenceRegressionTest {
     void originalLiteralFramesBindTheDecodedArgumentToDeclaredResources(String verb) throws Exception {
         var facts = frame(verb, "VALID");
         assertEquals("demo", facts.at("/workloadInput/application").asText());
+        assertTrue(facts.path("ownershipIdentityMeaning").asText().contains("32 random bytes"));
+        if (!verb.equals("application-health")) {
+            assertEquals("/opt/windowstolinux/apps/demo/releases/" + "c".repeat(64), facts.at("/workloadInput/derivedReleaseDirectory").asText());
+            assertTrue(facts.at("/workloadInput/releaseIdentityMeaning").asText().contains("not a SHA of compiled output"));
+        }
         assertEquals("b".repeat(64), facts.at("/workloadInput/ownershipManifestSha256").asText());
         assertEquals("bin/tool", facts.at(verb.equals("application-health") ? "/workloadInput/health/command/entrypoint" : "/workloadInput/command/entrypoint").asText());
         if (!verb.equals("application-health")) {

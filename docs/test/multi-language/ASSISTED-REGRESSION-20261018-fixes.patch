@@ -402,7 +402,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,134 @@
+@@ -48,6 +48,173 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -500,7 +500,46 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +    @Override
 +    public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
 +                                TaskContext supplied) throws ApiException {
-+        return effectFacts(intent, supplied);
++        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
++        if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {
++            try {
++                var store = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());
++                var record = store.findForTask(supplied).orElseThrow();
++                var proposal = store.publicationTemplate(record).orElseThrow();
++                facts.put("originalPublication", publicationFacts(record.identity(), proposal.units(), intent, request, supplied));
++            } catch (java.sql.SQLException unavailable) {
++                throw new ApiException(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PUBLICATION_REVIEW_EVIDENCE_UNAVAILABLE",
++                    "Original publication template could not be read", Map.of(), Optional.empty()));
++            }
++        }
++        return Map.copyOf(facts);
++    }
++
++    /** Cross-checks a literal publication with the original durable proposal, without claiming a completed remote effect. */
++    static Map<String, Object> publicationFacts(gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity identity,
++                                                List<gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitCommit> units,
++                                                ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
++                                                TaskContext task) {
++        if (!identity.taskId().equals(task.id()) || !intent.serverIds().equals(List.of(identity.server().id())) || units.size() > 32)
++            throw new IllegalArgumentException("Original publication task or server differs");
++        var matched = units.stream().filter(value -> value.unit().server().equals(identity.server())
++            && intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
++            identity.server().id(), "deployment-release", value.unit().releaseRoot()))).toList();
++        if (matched.size() != 1) throw new IllegalArgumentException("One original publication unit required");
++        var value = matched.getFirst();
++        var unit = value.unit();
++        String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), unit.layout());
++        var frame = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + unit.layout().helperPath() + "' ")
++            + "'(publish-deployment|publish-container)' " + java.util.regex.Pattern.quote("'" + unit.id() + "' ")
++            + "'(" + java.util.regex.Pattern.quote(unit.id()) + "-[a-f0-9]{16})' "
++            + java.util.regex.Pattern.quote("'" + value.release().sha256() + "' '" + unit.ownershipManifestSha256() + "' ")).matcher(invocation);
++        if (!frame.lookingAt())
++            throw new IllegalArgumentException("Publication differs from original release or ownership proposal");
++        return Map.of("task", task.id().toString(), "execution", identity.executionId().toString(), "server", identity.server().id(),
++            "workflowPlanSha256", identity.reviewedRevision(), "application", unit.id(), "literalCandidate", frame.group(2),
++            "releaseSha256", value.release().sha256(), "ownershipManifestSha256", unit.ownershipManifestSha256(),
++            "configurationSha256", value.configuration().sha256(),
++            "meaning", "Read from this original task's durable pre-dispatch typed publication proposal, produced after candidate build/freeze and snapshot. Literal application/release/ownership and declared release target match that stored proposal. literalCandidate only labels the command argument; separate resource/source evidence binds that candidate. This is intended identity and prior pipeline ordering, not proof of current candidate bytes, live ownership, successful publication, safety or authority; the pinned helper must still validate sealed candidate and actual filesystem state.");
 +    }
 +
 +    /** Supplies the same task-bound observations for fixed transfers and business effects. */
@@ -537,7 +576,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
-@@ -316,6 +444,13 @@
+@@ -316,6 +483,13 @@
      @Override
      public InteractionService interaction() {
          return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
@@ -641,8 +680,12 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  import java.util.LinkedHashMap;
  import java.util.Map;
  import java.util.Set;
-@@ -70,45 +71,71 @@
+@@ -68,47 +69,75 @@
+             .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::kind)
+             .thenComparing(gold.debug.windowstolinux.appapi.task.action.ActionTarget::id)).toList());
          facts.put("businessRevision", intent.revision());
++        if (installedHelper)
++            facts.put("ownershipIdentityMeaning", "ownershipManifestSha256 is an opaque ownership marker identity, not a protocol requirement to hash a supplied content manifest. StandardUnitResolver mints a new unit with 32 random bytes or reuses its saved identity; helpers compare the exact marker token. It is not a built-file checksum or signature. Compare the original unit binding and helper ownership checks, not an invented manifest document.");
          facts.put("businessRevisionMeaning", "Author-owned identity of the reviewed business state or workflow plan, captured independently of per-resource ownership manifests, releases, executable bodies and toolchain bindings. These identities describe different objects and are not required to be equal. Compare each digest to the same object's bound expected value and enforced code checks; this description does not verify a resource or waive any target/integrity check.");
          facts.put("exactAction", intent.exactAction());
 +        platformProbe(operation, request).ifPresent(probe -> facts.put("platformProbe", probe));
@@ -722,7 +765,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("publicationRecoveryContinuation", program);
          }
          if (operation.equals(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.OPERATION)) {
-@@ -116,15 +143,18 @@
+@@ -116,15 +145,18 @@
              var program = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram.reviewFacts(request, layout);
              var required = gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryPreflightProgram
                  .reviewedResourceTargets(request, layout, new gold.debug.windowstolinux.appapi.server.model.ServerId(intent.serverIds().getFirst()));
@@ -744,7 +787,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              facts.put("publicationRecoveryDiagnostic", program);
          }
          if (operation.startsWith(gold.debug.windowstolinux.mod.deployment.service.agent.recovery.DeploymentAgentPublicationRecoveryProgram.PREFIX)) {
-@@ -137,8 +167,12 @@
+@@ -137,8 +169,12 @@
                  throw new IllegalArgumentException("Recovery resource identity changed");
              facts.put("publicationRecoveryProgram", program);
          }
@@ -758,7 +801,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (operation.equals("deployment.build.run.v1"))
              buildBinding(invocation, layout).ifPresent(binding -> facts.put("decodedToolchainBinding", binding));
          if (operation.equals("deployment.helper.install.v1") || operation.equals("deployment.helper.install.tracked.v1")
-@@ -157,6 +191,16 @@
+@@ -157,6 +193,16 @@
          }
          byte[] input = request.stdin();
          try {
@@ -775,7 +818,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
              if (SCRIPT_INPUT.contains(operation) || agentRun || patch) {
                  String executable = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                      .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(input)).toString();
-@@ -201,10 +245,164 @@
+@@ -201,10 +247,168 @@
                                       gold.debug.windowstolinux.appapi.task.run.TaskContext task)
          throws java.io.IOException, gold.debug.windowstolinux.appapi.task.result.ApiException {
          var result = new LinkedHashMap<String, Object>(facts(intent, request, layout));
@@ -820,7 +863,11 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +            result.put("releaseSha256", publish.group(4));
 +            result.put("identityPolicy", publish.group(6));
 +            result.put("derivedReleaseRoot", layout.applicationRoot(app));
++            result.put("derivedReleaseDirectory", layout.applicationRoot(app) + "/releases/" + publish.group(4));
 +            result.put("derivedCandidateRoot", layout.candidateRoot(candidate));
++            result.put("releaseIdentityMeaning", "Release SHA names a version directory. The standard producer ReviewedReleaseIdentity hashes reviewed-release-v5 plus source archive SHA, build tool, configuration identity, secret revisions, file/database bindings, typed runtime and health, then binds exact prepared tools with reviewed-release-tools-v1 when present. This is a reviewed-input identity, not a SHA of compiled output bytes. originalPublication separately cross-checks the original stored proposal; source/archive/build evidence and helper live sealing checks have their own roles.");
++            if (publish.group(1).equals("publish-deployment"))
++                result.put("publicationFilesystemSemantics", "Pinned publish_deployment validates managed roots, typed runtime and current ownership/path. Same current release requires byte-identical saved runtime parameters; it may start a stopped DAEMON. Otherwise an existing target release is rejected if current link or unit exists. With neither present, only a root-owned target directory without an owner marker may be removed as a partial release, bounded to this exact derived path; all other existing targets fail. A new release copies the sealed candidate: assert_sealed_build stops remaining build activity, requires root-owned .sealed=sealed, correct workspace volume, read-only mutable mount and released builder identity; source rejects symlinks/special files. It copies into root-owned release, writes the exact ownership marker and runtime parameters, switches current, installs systemd unit, reloads and starts DAEMON or disables ON_DEMAND. These are actual code semantics, not observations or permission; review the partial-directory removal and runtime effects explicitly.");
 +            result.put("publicationFrame", publicationArguments.orElseThrow());
 +            result.put("frameValidation", "COMPLETE_CANONICAL_LITERAL_ARGUMENTS_PAYLOAD_AND_DECLARED_PATHS_ONLY");
 +        } else result.put("frameValidation", "EXACT_APPLICATION_HEALTH_FRAME");
@@ -940,7 +987,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Decodes the exact toolchain binding carried by a fixed command. / 解码固定命令携带的精确工具链绑定。
-@@ -216,7 +414,7 @@
+@@ -216,7 +420,7 @@
          if (!script.startsWith(prefix) || !script.endsWith("'"))
              throw new IllegalArgumentException("Toolchain binding command must use the exact literal protocol");
          String encoded = script.substring(prefix.length(), script.length() - 1);
@@ -949,7 +996,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      }
  
      /** Extracts the reviewed build binding from its exact command frame. / 从精确命令帧提取已审阅构建绑定。
-@@ -228,14 +426,14 @@
+@@ -228,14 +432,14 @@
              + "'[A-Za-z0-9._-]+' '[A-Za-z0-9._-]+' [0-9]+ [0-9]+ [0-9]+ [0-9]+ '(?:ordinary|docker|podman)' '[0-9a-f]{64}' '([A-Za-z0-9+/=]+|-)'$");
          var match = pattern.matcher(script);
          if (!match.find()) throw new IllegalArgumentException("Build command must use the exact bound input protocol");
@@ -966,7 +1013,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
          if (!encoded.matches("[A-Za-z0-9+/=]{8,87384}"))
              throw new IllegalArgumentException("Invalid toolchain binding encoding");
          byte[] bytes = java.util.Base64.getDecoder().decode(encoded);
-@@ -250,12 +448,53 @@
+@@ -250,12 +454,53 @@
                  throw new IllegalArgumentException("Toolchain binding is not canonical");
              return Map.of("encoding", "BASE64", "encodedCharacters", encoded.length(), "decodedBytes", bytes.length,
                  "catalogRevision", binding.catalogRevision(), "bindingSha256", DeploymentToolchainBindingCodec.identity(binding),
@@ -3936,6 +3983,80 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +            var intent = RemoteActions.command(server, "b".repeat(64), request).withSemantics(new ActionSemantics(
 +                "deployment.publication." + operation + ".v1", targets));
 +            return new ObjectMapper().valueToTree(DeploymentCommandEvidence.facts(intent, request, layout));
++        }
++    }
++}
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedPublicationEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedPublicationEvidenceRegressionTest.java
+--- /dev/null
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedPublicationEvidenceRegressionTest.java
+@@ -0,0 +1,70 @@
++package gold.debug.windowstolinux.mod.deployment.service.standard.assisted;
++
++import java.time.*;
++import java.util.*;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import gold.debug.windowstolinux.appapi.linux.action.RemoteActions;
++import gold.debug.windowstolinux.appapi.linux.command.CommandRequest;
++import gold.debug.windowstolinux.appapi.server.model.ServerId;
++import gold.debug.windowstolinux.appapi.task.action.*;
++import gold.debug.windowstolinux.appapi.task.run.TaskContext;
++import gold.debug.windowstolinux.mod.deployment.config.*;
++import gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity;
++import gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle;
++import gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.application.*;
++import gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.*;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import static org.junit.jupiter.api.Assertions.*;
++
++class DeploymentAssistedPublicationEvidenceRegressionTest {
++    @Test
++    void matchesOriginalDurableProposalWithoutClaimingRemoteContentOrPermission() throws Exception {
++        var facts = new ObjectMapper().valueToTree(facts("VALID"));
++        assertEquals("demo", facts.path("application").asText());
++        assertEquals("c".repeat(64), facts.path("ownershipManifestSha256").asText());
++        assertEquals("d".repeat(64), facts.path("releaseSha256").asText());
++        assertEquals("e".repeat(64), facts.path("workflowPlanSha256").asText());
++        assertFalse(facts.has("liveOwnership"));
++        assertFalse(facts.has("commandGrant"));
++    }
++
++    @ParameterizedTest
++    @ValueSource(strings = {"TASK", "SERVER", "TARGET", "OWNER", "RELEASE", "APPLICATION", "EMPTY", "UNGUARDED"})
++    void changedOriginalIdentityOrFrameCannotBecomeProposalEvidence(String mutation) {
++        assertThrows(IllegalArgumentException.class, () -> facts(mutation));
++    }
++
++    private Map<String, Object> facts(String mutation) throws Exception {
++        var server = new ServerId("fixture");
++        var layout = new DeploymentRemoteLayout(new DeploymentConfig.RemotePaths(
++            "/fixture/helper", "/fixture/apps", "/fixture/state", "/fixture/config", "/fixture/data"));
++        UUID original = UUID.randomUUID();
++        var task = (TaskContext) java.lang.reflect.Proxy.newProxyInstance(TaskContext.class.getClassLoader(),
++            new Class<?>[]{TaskContext.class}, (proxy, method, args) -> {
++                if (method.getName().equals("id")) return mutation.equals("TASK") ? UUID.randomUUID() : original;
++                throw new AssertionError(method.getName());
++            });
++        var unit = DeploymentUnitIdentity.forManaged("demo", server, "c".repeat(64), layout);
++        var runtime = new DeploymentUnitRuntimeConfig(new DeploymentHealthCheck.Process(10, 1), Optional.empty(),
++            DeploymentIdentityMode.SYSTEMD_STATIC, DeploymentWorkload.unspecified());
++        var commit = new DeploymentUnitCommit(unit, runtime, new DeploymentCurrentRelease("demo", "d".repeat(64), Instant.EPOCH),
++            DeploymentConfigSnapshot.create("demo", 1, "v1", Instant.EPOCH, List.of()), List.of());
++        var identity = new DeploymentExecutionIdentity(UUID.randomUUID(), original, Optional.empty(), "demo", server,
++            DeploymentExecutionIdentity.DeploymentExecutionMode.ASSISTED, "e".repeat(64));
++        String script = "'" + layout.helperPath() + "' 'publish-deployment' '" + (mutation.equals("APPLICATION") ? "other" : "demo")
++            + "' 'demo-" + "a".repeat(16) + "' '" + (mutation.equals("RELEASE") ? "f" : "d").repeat(64)
++            + "' '" + (mutation.equals("OWNER") ? "f" : "c").repeat(64) + "' 'identity-v2'";
++        try (var request = new CommandRequest(mutation.equals("UNGUARDED") ? script : DeploymentManagedHelperBundle.verifiedCommand(script, layout),
++            new byte[0], Duration.ofSeconds(30), 4096)) {
++            var intent = RemoteActions.command(mutation.equals("SERVER") ? new ServerId("other") : server, "b".repeat(64), request)
++                .withSemantics(new ActionSemantics("deployment.publication.publish.v1", Set.of(
++                    new ActionTarget(server.id(), "deployment-release", unit.releaseRoot() + (mutation.equals("TARGET") ? ".other" : "")))));
++            return DeploymentAssistedScope.publicationFacts(identity, mutation.equals("EMPTY") ? List.of() : List.of(commit), intent, request, task);
 +        }
 +    }
 +}

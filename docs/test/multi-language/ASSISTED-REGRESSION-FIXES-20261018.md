@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。CLI22原任务已由程序结清成功并导出管理同源启动信息，当前1/8交付，正顺序验证其余7项；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。CLI22原任务已由程序结清成功并导出管理同源启动信息，当前2/8交付，正顺序验证其余6项；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -342,3 +342,20 @@ delivery-03真实产品交付检查1项通过0跳过、41.69s；log-analyzer.jso
 managed-application-frame-unit-01限定10项通过0跳过（3种共同帧、资源/参数漂移与非空stdin/额外动作边界9项，真实PublishChannel保留target1项）；4Java限定格式化完成。接下来导出已成功原Directory Diff，再继续余下6项。
 
 共同管理帧修复本地提交ea7eebf5。Directory Diff原成功任务delivery-01检查1项通过0跳过、32.65s，管理启动命令已导出directory-diff.json，当前2/8。继续核对同一send资源分支还发现candidate-cleanup-task实际删除工作候选，却只声明发布应用；补与publish共用的精确deployment-candidate目标，helper与三实参/删除守卫保持，新增实际通道定点检查。此为已确认目标遗漏，非推测另一个失败根因。
+
+candidate-cleanup-target-unit-01单项通过0跳过，限定2Java格式化完成；候选目标修复本地提交b6814ea8。下一项Binary Inspector01执行中，不重部署已完成两项。
+
+
+## Binary Inspector 01：真实身份语义与原持久提案关联
+
+原taskc5e873ab-4815-4b15-8810-7d2da9179d48/root assisted-live-binary-inspector-3j2vo8eb8在publish下发前有效DENY；审批缺少release/owner与候选/清单内容的可核对依据，且不清楚已有release目录处理。binary-inspector-reconcile-01-01已由程序结清ENDED/FAILED、blockers空，未发布该应用，不重放此失败任务。
+
+直接源码确认：StandardUnitResolver对新unit使用SecureRandom的32字节owner，旧unit复用原值；ownershipManifestSha256虽如此命名，并不要求是某份内容清单的哈希。DeploymentReviewedReleaseIdentity以reviewed-release-v5散列源码归档/构建工具/配置/秘密引用修订/文件数据库绑定/runtime/health，再以reviewed-release-tools-v1绑定实际工具集合；它不是构建产物字节哈希。helper assert_sealed_build依停止构建、root-owned .sealed、正确卷/只读挂载和释放builder证明封存，不重新散列全部编译输出。禁止把这些不同身份冒充产物内容摘要。
+
+修复同时提供原始持久业务依据，而非只增加文字：AssistedScope在publish审查前读取本原task已经持久化的完整typed publicationTemplate，逐请求检查task/server、唯一声明release目标、完整guard及应用/release/owner字面前缀与原提案一致，再给独立审查originalPublication的execution/task/原workflowPlan/应用/候选/release/owner/configuration身份。SQL失败不伪造事实，变造本地拒绝；提案是发布前意图，不当live内容或发送许可。两种标准生产编排均在发送前写入此原提案，STATIC不调用辅助Scope。
+
+CommandEvidence明确上述身份角色并补精确release目录；native publish文件语义如实说明：相同current需参数逐字节一致；其它existing target在current或unit存在时拒绝；两者都无时只允许删除root-owned且无owner标记的精确partial目录；新发布仍执行实际sealed/source路径守卫、生成owner/参数、切current及systemd动作。没有宣称所有已有目录均拒绝，也不放宽任何目录守卫或审批。Agent共享CommandEvidence会得到身份说明；原提案Scope核对只影响ASSISTED，后续Agent仍需独立调试。
+
+original-publication-identity-unit-01中既有workflow边界9项通过；新测试夹具错误（Process稳定期为0、既有fixture release应为c而非d）导致整次失败。修正夹具后只重跑新提案9项与直接受影响字面帧3项，结果待记，不重跑已通过workflow组。
+
+original-publication-identity-unit-02相关12项通过0跳过，加unit01已通过的workflow9项，共21项定点通过；四Java限定格式化完成。literalCandidate仅来自当前命令，不声称来自持久提案；工作流/资源/来源另行绑定候选。原任务查询只读，不产生发送权限。

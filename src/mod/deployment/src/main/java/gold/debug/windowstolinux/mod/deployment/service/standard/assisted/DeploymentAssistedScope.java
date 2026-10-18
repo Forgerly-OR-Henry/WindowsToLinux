@@ -142,7 +142,46 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public Map<String, ?> facts(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
                                 TaskContext supplied) throws ApiException {
-        return effectFacts(intent, supplied);
+        var facts = new LinkedHashMap<String, Object>(effectFacts(intent, supplied));
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {
+            try {
+                var store = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());
+                var record = store.findForTask(supplied).orElseThrow();
+                var proposal = store.publicationTemplate(record).orElseThrow();
+                facts.put("originalPublication", publicationFacts(record.identity(), proposal.units(), intent, request, supplied));
+            } catch (java.sql.SQLException unavailable) {
+                throw new ApiException(new Problem(ProblemCode.IO_FAILURE, "DEPLOYMENT_PUBLICATION_REVIEW_EVIDENCE_UNAVAILABLE",
+                    "Original publication template could not be read", Map.of(), Optional.empty()));
+            }
+        }
+        return Map.copyOf(facts);
+    }
+
+    /** Cross-checks a literal publication with the original durable proposal, without claiming a completed remote effect. */
+    static Map<String, Object> publicationFacts(gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionIdentity identity,
+                                                List<gold.debug.windowstolinux.mod.deployment.service.core.model.application.DeploymentUnitCommit> units,
+                                                ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
+                                                TaskContext task) {
+        if (!identity.taskId().equals(task.id()) || !intent.serverIds().equals(List.of(identity.server().id())) || units.size() > 32)
+            throw new IllegalArgumentException("Original publication task or server differs");
+        var matched = units.stream().filter(value -> value.unit().server().equals(identity.server())
+            && intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(
+            identity.server().id(), "deployment-release", value.unit().releaseRoot()))).toList();
+        if (matched.size() != 1) throw new IllegalArgumentException("One original publication unit required");
+        var value = matched.getFirst();
+        var unit = value.unit();
+        String invocation = gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentHelperReviewContract.verifiedInvocation(request.script(), unit.layout());
+        var frame = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + unit.layout().helperPath() + "' ")
+            + "'(publish-deployment|publish-container)' " + java.util.regex.Pattern.quote("'" + unit.id() + "' ")
+            + "'(" + java.util.regex.Pattern.quote(unit.id()) + "-[a-f0-9]{16})' "
+            + java.util.regex.Pattern.quote("'" + value.release().sha256() + "' '" + unit.ownershipManifestSha256() + "' ")).matcher(invocation);
+        if (!frame.lookingAt())
+            throw new IllegalArgumentException("Publication differs from original release or ownership proposal");
+        return Map.of("task", task.id().toString(), "execution", identity.executionId().toString(), "server", identity.server().id(),
+            "workflowPlanSha256", identity.reviewedRevision(), "application", unit.id(), "literalCandidate", frame.group(2),
+            "releaseSha256", value.release().sha256(), "ownershipManifestSha256", unit.ownershipManifestSha256(),
+            "configurationSha256", value.configuration().sha256(),
+            "meaning", "Read from this original task's durable pre-dispatch typed publication proposal, produced after candidate build/freeze and snapshot. Literal application/release/ownership and declared release target match that stored proposal. literalCandidate only labels the command argument; separate resource/source evidence binds that candidate. This is intended identity and prior pipeline ordering, not proof of current candidate bytes, live ownership, successful publication, safety or authority; the pinned helper must still validate sealed candidate and actual filesystem state.");
     }
 
     /** Supplies the same task-bound observations for fixed transfers and business effects. */
