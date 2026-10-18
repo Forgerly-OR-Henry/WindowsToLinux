@@ -37,6 +37,8 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
     /** Exact author identity bound by the host. / 宿主绑定的精确作者身份。 */
     private final String owner;
 
+    private final String version;
+
     /** Bound business generation, absent for stateless Mods. / 绑定业务代次，无状态 Mod 不存在。 */
     private final Optional<SchemaIdentity> schema;
 
@@ -58,8 +60,10 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
         this.repository = Objects.requireNonNull(repository);
         this.ledger = new TaskLedger(database);
         this.owner = Objects.requireNonNull(owner);
+        this.version = Objects.requireNonNull(version);
         this.schema = Objects.requireNonNull(schema);
-        scope = new TaskCapabilityScope(database, tasks, owner, version, schema, "server-access-");
+        scope = new TaskCapabilityScope(database, tasks, owner, version, schema, "server-access-",
+            Optional.of(new gold.debug.windowstolinux.app.db.task.ResourceRecovery("server-process.v1", Map.of("bootId", database.bootId().toString()))));
     }
 
     /**
@@ -239,6 +243,7 @@ public final class PlatformServerAccess implements ServerService, AutoCloseable 
      */
     public void retryFinishedReleases(TaskContext task) throws ApiException {
         scope.retryFinishedReleases(task);
+        tasks.releasePreviousServerAccesses(task, owner, version);
     }
 
     /**

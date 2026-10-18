@@ -61,6 +61,33 @@ class DeploymentAssistedEffectEvidenceRegressionTest {
         }
     }
 
+    @Test
+    void fixedEffectsUseTheCompleteReviewSchemaAndOneExistingFormatCorrectionBeforeHostAuthority() throws Exception {
+        try (var h = new Harness()) {
+            h.fixture.nativeReply(new AiToolCall("malformed-approve", "submit_result", "{\"decision\":\"APPROVE\",\"reason\":\"incomplete\"}"));
+            h.reply("APPROVE", "Complete original effect", false);
+            assertEquals(TaskResult.SUCCEEDED, h.approve().outcome());
+            assertEquals(2, h.fixture.requests.size());
+            assertEquals(1, h.grants.get());
+            var schema = new ObjectMapper().readTree(h.fixture.requests.getFirst().tools().getFirst().inputSchema());
+            assertFalse(schema.path("additionalProperties").asBoolean(true));
+            assertEquals(3, schema.path("required").size());
+            assertTrue(h.fixture.requests.get(1).messages().stream().anyMatch(message -> message.toolResult()
+                .filter(result -> result.text().contains("SUBMISSION_REJECTED")).isPresent()));
+        }
+    }
+
+    @Test
+    void malformedDenialIsNeverRequeriedOrConvertedToAnApproval() throws Exception {
+        try (var h = new Harness()) {
+            h.fixture.nativeReply(new AiToolCall("malformed-deny", "submit_result", "{\"decision\":\"DENY\",\"reason\":\"incomplete\"}"));
+            var failure = assertThrows(ApiException.class, h::approve);
+            assertEquals("DEPLOYMENT_ASSISTED_REVIEW_INVALID", failure.problem().eventCode());
+            assertEquals(1, h.fixture.requests.size());
+            assertEquals(0, h.grants.get());
+        }
+    }
+
     private static final class Harness implements AutoCloseable {
         final NativeAiFixture fixture = new NativeAiFixture();
 

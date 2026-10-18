@@ -110,82 +110,67 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                                           String providerVersion, Optional<gold.debug.windowstolinux.appapi.db.schema.SchemaIdentity> schema,
                                           boolean recoveryOnly, DependencyAdmission resolver) throws ApiException {
             var execution = executions.get(context.id());
-            var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, providerVersion, schema);
-            var scope = new DependencyScope(context, facts);
             try {
-                if (ledger.queries().recoveryGraph(context.id()).isPresent()) {
-                    var admitted = ledger.dependencies().admitDependency(context.id(), caller, callerVersion, provider, providerVersion,
-                        schema, recoveryOnly, new TaskLedger.InitialClaims() {
-                            /** Resolves exact provider claims in the serialized admission transaction. / 在串行准入事务内解析精确提供方申请。
-                             * @param c serialized original platform connection / 串行原平台连接
-                             * @return verified original result / 已核验原结果
-                             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
-                             */
-                            @Override
-                            public List<TaskResource> resolve(java.sql.Connection c) throws SQLException {
-                                try {
-                                    return resolver.claims(c);
-                                } catch (ApiException rejected) {
-                                    throw new AdmissionRejectedException(rejected);
-                                }
+                var admitted = ledger.dependencies().admitDependency(context.id(), caller, callerVersion, provider, providerVersion,
+                    schema, recoveryOnly, new TaskLedger.InitialClaims() {
+                        /** Resolves exact provider claims in the serialized admission transaction. / 在串行准入事务内解析精确提供方申请。
+                         * @param c serialized original platform connection / 串行原平台连接
+                         * @return verified original result / 已核验原结果
+                         * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+                         */
+                        @Override
+                        public List<TaskResource> resolve(java.sql.Connection c) throws SQLException {
+                            try {
+                                return resolver.claims(c);
+                            } catch (ApiException rejected) {
+                                throw new AdmissionRejectedException(rejected);
                             }
+                        }
 
-                            /** Supplies exact original provider code and data closure. / 提供精确原提供方代码及数据闭包。
-                             * @param c serialized original platform connection / 串行原平台连接
-                             * @return verified original result / 已核验原结果
-                             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
-                             */
-                            @Override
-                            public Optional<TaskRecoveryGraph> recoveryGraph(java.sql.Connection c) throws SQLException {
-                                try {
-                                    return resolver.graph(c);
-                                } catch (ApiException rejected) {
-                                    throw new AdmissionRejectedException(rejected);
-                                }
+                        /** Supplies exact original provider code and data closure. / 提供精确原提供方代码及数据闭包。
+                         * @param c serialized original platform connection / 串行原平台连接
+                         * @return verified original result / 已核验原结果
+                         * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+                         */
+                        @Override
+                        public Optional<TaskRecoveryGraph> recoveryGraph(java.sql.Connection c) throws SQLException {
+                            try {
+                                return resolver.graph(c);
+                            } catch (ApiException rejected) {
+                                throw new AdmissionRejectedException(rejected);
                             }
+                        }
 
-                            /** Supplies the host-validated original caller declaration kind. / 提供宿主已校验的原调用方声明类别。
-                             * @param c serialized original platform connection / 串行原平台连接
-                             * @return verified original result / 已核验原结果
-                             * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
-                             */
-                            @Override
-                            public Optional<TaskRecoveryGraph.EdgeKind> dependencyKind(java.sql.Connection c) throws SQLException {
-                                try {
-                                    return resolver.kind(c);
-                                } catch (ApiException rejected) {
-                                    throw new AdmissionRejectedException(rejected);
-                                }
+                        /** Supplies the host-validated original caller declaration kind. / 提供宿主已校验的原调用方声明类别。
+                         * @param c serialized original platform connection / 串行原平台连接
+                         * @return verified original result / 已核验原结果
+                         * @throws SQLException if original identity or persistence cannot be verified / 无法核验原身份或持久化时
+                         */
+                        @Override
+                        public Optional<TaskRecoveryGraph.EdgeKind> dependencyKind(java.sql.Connection c) throws SQLException {
+                            try {
+                                return resolver.kind(c);
+                            } catch (ApiException rejected) {
+                                throw new AdmissionRejectedException(rejected);
                             }
-                        });
-                    facts = admitted.recovery();
-                    scope = new DependencyScope(context, facts);
-                    scope.leases = admitted.leases();
-                } else {
-                    scope.leases = ledger.dependencies().retainDependency(context.id(), facts, connection -> {
-                        try {
-                            return resolver.claims(connection);
-                        } catch (ApiException rejected) {
-                            throw new AdmissionRejectedException(rejected);
                         }
                     });
-                }
+                var facts = admitted.recovery();
+                var scope = new DependencyScope(context, facts);
+                scope.leases = admitted.leases();
                 dependencyScopes.put(facts.call(), scope);
+                return scope;
             } catch (AdmissionRejectedException rejected) {
-                dependencyScopes.remove(facts.call());
                 throw rejected.rejection;
             } catch (TaskLedger.DependencyBusyException busy) {
-                dependencyScopes.remove(facts.call());
                 throw TaskConclusion.error(ProblemCode.BUSY, "SERVICE_RESOURCE_BUSY",
                     "Provider resources are held by maintenance or another exclusive operation");
             } catch (SQLException failure) {
-                scope.active = false;
                 execution.uncertainEffect = true;
                 conclusion.uncertain(execution, "Dependency admission could not be confirmed");
                 throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_ADMISSION_PERSISTENCE",
                     "Dependency admission requires reconciliation");
             }
-            return scope;
         }
 
         /** Runs a retained adapter operation using the original task's credential scope. / 使用原任务凭据作用域运行已保留的适配操作。
@@ -241,6 +226,33 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                             dependencyStack.set(previous);
                     }
                 };
+            }
+        }
+
+        /** Verifies diagnostic attribution for an original owner or its retained exact provider release. / 为原所有者或保留的精确提供方发布核验诊断归属。
+         * @param taskId original task identity / 原任务身份
+         * @param owner diagnostic producer / 诊断生产方
+         * @param version actual producer release / 实际生产方发布
+         * @return whether the original task owns this producer / 原任务是否持有此生产方
+         * @throws ApiException if attribution cannot be read / 无法读取归属时 */
+        public boolean diagnosticOwner(UUID taskId, String owner, String version) throws ApiException {
+            synchronized (PlatformTaskRuntime.this) {
+                var execution = executions.get(taskId);
+                if (execution == null)
+                    return false;
+                if (execution.snapshot.ownerId().equals(owner) && execution.snapshot.ownerVersion().equals(version))
+                    return true;
+                if (dependencyScopes.values().stream().anyMatch(scope -> scope.context.id().equals(taskId)
+                    && scope.recovery.provider().equals(owner) && scope.recovery.version().equals(version)))
+                    return true;
+                try {
+                    return ledger.queries().dependencies(taskId).keySet().stream()
+                        .anyMatch(call -> call.provider().equals(owner) && call.version().equals(version));
+                } catch (SQLException invalid) {
+                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_LOG_OWNER",
+                        "Dependency diagnostic attribution cannot be verified");
+                }
+
             }
         }
 
@@ -386,6 +398,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     /** Owner-bound author facts retained on the original task ledger. / 保留在原任务账本上的所有者绑定作者依据。 */
     private final TaskAuthorCheckpoint authorCheckpoints;
 
+    /** Separate root-only recovery purpose over the same checkpoint storage. / 同一检查点存储中的独立根恢复用途。 */
+    private final TaskAuthorCheckpoint recoveryCheckpoints;
+
     /** Actual boot that owns newly created physical clients, including recovery clients. / 持有新物理客户端的实际启动代次，包括恢复客户端。 */
     private final UUID bootId;
 
@@ -458,6 +473,7 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         ledger = new TaskLedger(database);
         resourceObservation = new TaskResourceObservation(database);
         authorCheckpoints = new TaskAuthorCheckpoint(database);
+        recoveryCheckpoints = TaskAuthorCheckpoint.recovery(database);
         bootId = database.bootId();
         this.admission = Objects.requireNonNull(admission);
         this.security = Objects.requireNonNull(security);
@@ -832,6 +848,34 @@ public final class PlatformTaskRuntime implements AutoCloseable {
         }
     }
 
+    /** Reconciles only previous-process AI access and HTTP ownership after physical cleanup. / 物理收尾后仅核对前次进程AI访问及HTTP归属。
+     * @param context authentic original recovery / 真实原恢复
+     * @param owner exact capability owner / 精确能力所有者
+     * @param version original release / 原发布
+     * @throws ApiException if identity or durable release cannot be verified / 无法核验身份或持久释放时 */
+    public synchronized void releasePreviousAiResources(TaskContext context, String owner, String version) throws ApiException {
+        requireCleanup(context, owner, version);
+        try {
+            ledger.releasePreviousAiResources(context.id(), owner, version);
+            executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
+        } catch (SQLException failure) {
+            throw TaskConclusion.error(ProblemCode.IO_FAILURE, "AI_PREVIOUS_RELEASE",
+                "Previous AI process ownership could not be reconciled");
+        }
+    }
+
+    /** Reconciles vanished local synchronous server access without changing references or outcomes. */
+    public synchronized void releasePreviousServerAccesses(TaskContext context, String owner, String version) throws ApiException {
+        requireCleanup(context, owner, version);
+        try {
+            ledger.releasePreviousServerAccesses(context.id(), owner, version);
+            executions.get(context.id()).setSnapshot(ledger.queries().snapshot(context.id()));
+        } catch (SQLException failure) {
+            throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVER_ACCESS_PREVIOUS_RELEASE",
+                "Previous server-access process ownership could not be reconciled");
+        }
+    }
+
     /** Requires previous task SSH clients to be physically closed before file recovery. / 文件恢复前要求原任务其他 SSH 客户端已物理关闭。
      * @param context original task / 原任务
      * @param owner bound Mod / 绑定 Mod
@@ -900,30 +944,6 @@ public final class PlatformTaskRuntime implements AutoCloseable {
     public synchronized boolean reconciling(TaskContext context) throws ApiException {
         requireContext(context);
         return executions.get(context.id()).reconciling;
-    }
-
-    /** Verifies diagnostic attribution for an original owner or its retained exact provider release. / 为原所有者或保留的精确提供方发布核验诊断归属。
-     * @param taskId original task identity / 原任务身份
-     * @param owner diagnostic producer / 诊断生产方
-     * @param version actual producer release / 实际生产方发布
-     * @return whether the original task owns this producer / 原任务是否持有此生产方
-     * @throws ApiException if attribution cannot be read / 无法读取归属时 */
-    public synchronized boolean diagnosticOwner(UUID taskId, String owner, String version) throws ApiException {
-        var execution = executions.get(taskId);
-        if (execution == null)
-            return false;
-        if (execution.snapshot.ownerId().equals(owner) && execution.snapshot.ownerVersion().equals(version))
-            return true;
-        if (dependencyScopes.values().stream().anyMatch(scope -> scope.context.id().equals(taskId)
-            && scope.recovery.provider().equals(owner) && scope.recovery.version().equals(version)))
-            return true;
-        try {
-            return ledger.queries().dependencies(taskId).keySet().stream()
-                .anyMatch(call -> call.provider().equals(owner) && call.version().equals(version));
-        } catch (SQLException invalid) {
-            throw TaskConclusion.error(ProblemCode.IO_FAILURE, "SERVICE_LOG_OWNER",
-                "Dependency diagnostic attribution cannot be verified");
-        }
     }
 
     /** Reconciles returned dependency groups only after their actual provider resources are gone. / 实际提供方资源消失后才核对已返回依赖组。
@@ -1104,8 +1124,18 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                         result = task.finalization != null
                             ? new OperationResult<>(task.observed.outcome(), Optional.empty(),
                             task.observed.problem())
-                            : task.authorization.execute(
-                            () -> Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context)));
+                            : task.authorization.execute(() -> {
+                            synchronized (this) {
+                                task.recoveryScope = new Object();
+                            }
+                            try {
+                                return Objects.requireNonNull(recovery.reconcile(task.snapshot, task.context));
+                            } finally {
+                                synchronized (this) {
+                                    task.recoveryScope = null;
+                                }
+                            }
+                        });
                         if (task.finalization == null && result.outcome() != TaskResult.UNKNOWN)
                             closeDependencyResources(task.context, task.snapshot.ownerId(),
                                 task.snapshot.ownerVersion());
@@ -1528,7 +1558,63 @@ public final class PlatformTaskRuntime implements AutoCloseable {
             }
         }
 
-        /** Exact original-task author checkpoint handle. / 精确原任务作者检查点句柄。 */
+        /** Requires the real root and one current explicit reconciliation before every recovery operation.
+         * / 每次恢复操作均要求真实根所有者与同次当前显式核对。
+         * @param task authentic original context / 真实原上下文
+         * @param expectedScope optional original handle scope / 可选的原句柄作用域
+         * @return current host-only scope token / 当前仅宿主持有的作用域标识
+         * @throws ApiException if ownership, activation or callback lifetime differs / 归属、启用或回调生命周期不符时 */
+        private Object requireRecoveryCheckpoint(TaskContext task, Object expectedScope) throws ApiException {
+            if (revoked)
+                throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
+                    "The owning Mod activation has closed");
+            var original = requireCleanup(task, owner, version);
+            if (!original.ownerId().equals(owner) || !original.ownerVersion().equals(version)
+                || !dependencyStack.get().isEmpty())
+                throw TaskConclusion.error(ProblemCode.ACCESS_DENIED, "TASK_RECOVERY_CHECKPOINT_CALLER",
+                    "Recovery progress belongs only to the original root Mod release");
+            var execution = executions.get(original.id());
+            if (closing || !execution.reconciling || execution.recoveryScope == null
+                || expectedScope != null && expectedScope != execution.recoveryScope)
+                throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "TASK_RECOVERY_CHECKPOINT_SCOPE",
+                    "Recovery progress requires its current original reconciliation");
+            return execution.recoveryScope;
+        }
+
+        @Override
+        public TaskCheckpoint beginRecoveryCheckpoint(TaskContext task, String key, String initial) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                var scope = requireRecoveryCheckpoint(task, null);
+                try {
+                    var entry = recoveryCheckpoints.begin(task.id(), owner, version, key, initial);
+                    return new BoundCheckpoint(task, key, entry.lease(), scope);
+                } catch (TaskAuthorCheckpoint.RejectedException rejected) {
+                    throw TaskConclusion.error(ProblemCode.INVALID_INPUT, "TASK_RECOVERY_CHECKPOINT_INPUT", "Recovery checkpoint input is invalid");
+                } catch (SQLException failure) {
+                    reportUncertainEffect(task);
+                    throw TaskConclusion.error(ProblemCode.UNKNOWN, "TASK_RECOVERY_CHECKPOINT_BEGIN", "Recovery progress creation could not be confirmed");
+                }
+            }
+        }
+
+        @Override
+        public Optional<TaskCheckpoint> findRecoveryCheckpoint(TaskContext task, String key) throws ApiException {
+            if (javax.swing.SwingUtilities.isEventDispatchThread())
+                throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "SERVICE_WORKER", "Service calls require a worker");
+            synchronized (PlatformTaskRuntime.this) {
+                var scope = requireRecoveryCheckpoint(task, null);
+                try {
+                    return recoveryCheckpoints.find(task.id(), owner, version, key)
+                        .map(entry -> new BoundCheckpoint(task, key, entry.lease(), scope));
+                } catch (SQLException failure) {
+                    throw TaskConclusion.error(ProblemCode.IO_FAILURE, "TASK_RECOVERY_CHECKPOINT_READ", "Original recovery progress could not be read");
+                }
+            }
+        }
+
+        /** Exact original-task author or recovery checkpoint handle. / 精确原任务作者或恢复检查点句柄。 */
         private final class BoundCheckpoint implements TaskCheckpoint {
             /** Original authentic context. / 原真实上下文。 */
             private final TaskContext task;
@@ -1544,9 +1630,26 @@ public final class PlatformTaskRuntime implements AutoCloseable {
              * @param key owner-local key / 所有者内部键
              * @param lease original lease / 原占用 */
             private BoundCheckpoint(TaskContext task, String key, UUID lease) {
+                this(task, key, lease, null);
+            }
+
+            /** Null for author facts, otherwise confined to one reconciliation. / 作者依据为null，否则仅限同次核对。 */
+            private final Object recoveryScope;
+
+            /** Fixed host-selected purpose. / 固定的宿主所选用途。 */
+            private final TaskAuthorCheckpoint store;
+
+            private BoundCheckpoint(TaskContext task, String key, UUID lease, Object recoveryScope) {
                 this.task = task;
                 this.key = key;
                 this.lease = lease;
+                this.recoveryScope = recoveryScope;
+                this.store = recoveryScope == null ? authorCheckpoints : recoveryCheckpoints;
+            }
+
+            private void requireScope() throws ApiException {
+                if (recoveryScope == null) requireCleanup(task, owner, version);
+                else requireRecoveryCheckpoint(task, recoveryScope);
             }
 
             /** Reads original durable evidence. / 读取原持久依据。
@@ -1561,9 +1664,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     if (revoked)
                         throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
                             "The owning Mod activation has closed");
-                    requireCleanup(task, owner, version);
+                    requireScope();
                     try {
-                        var entry = authorCheckpoints.find(task.id(), owner, version, key).orElseThrow();
+                        var entry = store.find(task.id(), owner, version, key).orElseThrow();
                         if (!entry.lease().equals(lease))
                             throw new SQLException("Original checkpoint lease differs");
                         return entry.snapshot();
@@ -1588,9 +1691,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     if (revoked)
                         throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
                             "The owning Mod activation has closed");
-                    requireCleanup(task, owner, version);
+                    requireScope();
                     try {
-                        return authorCheckpoints.advance(task.id(), owner, version, key, lease, expected, next);
+                        return store.advance(task.id(), owner, version, key, lease, expected, next);
                     } catch (TaskAuthorCheckpoint.RejectedException rejected) {
                         throw TaskConclusion.error(ProblemCode.CONTRACT_VIOLATION, "TASK_CHECKPOINT_COMPARE",
                             "Original author checkpoint expected value differs");
@@ -1613,9 +1716,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
                     if (revoked)
                         throw TaskConclusion.error(ProblemCode.UNAVAILABLE, "MOD_TASK_BINDING_CLOSED",
                             "The owning Mod activation has closed");
-                    requireCleanup(task, owner, version);
+                    requireScope();
                     try {
-                        authorCheckpoints.release(task.id(), owner, version, key, lease);
+                        store.release(task.id(), owner, version, key, lease);
                     } catch (SQLException failure) {
                         reportUncertainEffect(task);
                         throw TaskConclusion.error(ProblemCode.UNKNOWN, "TASK_CHECKPOINT_RELEASE",
@@ -1683,6 +1786,9 @@ public final class PlatformTaskRuntime implements AutoCloseable {
 
         /** Whether explicit reconciliation currently owns this context. / 显式核对当前是否持有此上下文。 */
         private volatile boolean reconciling;
+
+        /** One host-only token while the explicit recovery callback actually runs. / 仅显式恢复回调实际运行期间有效的宿主标识。 */
+        private Object recoveryScope;
 
         /** Whether this execution observed an unreconciled external effect. / 此次执行是否观察到尚未核对的外部副作用。 */
         private boolean uncertainEffect;

@@ -86,7 +86,7 @@ public final class TaskLedger {
             throw new SQLException("Invalid task request");
         return locked(() -> {
             try (var connection = connections.open()) {
-                var ordered = orderedClaims(resolver.resolve(connection));
+                var ordered = TaskResourceAdmission.orderedClaims(resolver.resolve(connection));
                 var servers = ordered.stream().filter(r -> r.kind().equals("SERVER")).map(TaskResource::id)
                     .collect(java.util.stream.Collectors.toSet());
                 if (!servers.equals(new HashSet<>(request.serverIds())) || ordered.stream().noneMatch(
@@ -104,7 +104,7 @@ public final class TaskLedger {
                     }
                 }
                 String recovery = encode(graph.isPresent()
-                    ? Map.of("formatVersion", graph.get().legacy() ? 2 : 3, "initialClaims", ordered, "graph", graph.get().encode())
+                    ? Map.of("formatVersion", 3, "initialClaims", ordered, "graph", graph.get().encode())
                     : Map.of("formatVersion", 1, "initialClaims", ordered));
                 if (recovery.length() > 1024 * 1024)
                     throw new SQLException("Task recovery metadata is too large");
@@ -160,24 +160,6 @@ public final class TaskLedger {
 
     }
 
-    /** Sorts and rejects duplicate claims in the required global order. / 按要求的全局顺序排序并拒绝重复申请。
-     * @param claims complete claim set / 完整申请集合
-     * @return immutable ordered claims / 不可变有序申请
-     * @throws SQLException if a resource appears twice / 同一资源重复出现时
-     */
-    private static List<TaskResource> orderedClaims(List<TaskResource> claims) throws SQLException {
-        var keys = new HashSet<String>();
-        for (var r : claims)
-            if (!keys.add(r.kind() + "\0" + r.id()))
-                throw new SQLException("Duplicate task resource");
-        return claims.stream().sorted(Comparator.comparingInt((TaskResource r) -> switch (r.kind()) {
-            case "MOD" -> 0;
-            case "SCHEMA" -> 1;
-            case "SERVER" -> 2;
-            default -> 3;
-        }).thenComparing(TaskResource::id)).toList();
-    }
-
     /** Starts only when every persisted initial claim can be acquired together. / 仅在所有持久化初始申请可整体取得时启动。
      * @param taskId current-boot queued task / 当前启动会话的排队任务
      * @return true when all claims and RUNNING committed together / 全部申请与 RUNNING 一同提交时为真
@@ -199,7 +181,7 @@ public final class TaskLedger {
                     List<TaskResource> claims;
                     try {
                         var node = queries.admissionDocument(r.getString(3), r.getString(4), r.getString(5));
-                        claims = orderedClaims(
+                        claims = TaskResourceAdmission.orderedClaims(
                             Arrays.asList(json.treeToValue(node.required("initialClaims"), TaskResource[].class)));
                     } catch (java.io.IOException | IllegalArgumentException failure) {
                         throw new SQLException("Invalid task recovery material", failure);
@@ -208,7 +190,7 @@ public final class TaskLedger {
                         if (queries.conflicts(c, taskId, claim))
                             return false;
                     for (var claim : claims)
-                        insertLease(c, taskId, claim, ResourceRecovery.TASK_END);
+                        TaskResourceAdmission.insertLease(c, taskId, claim, ResourceRecovery.TASK_END);
                 }
                 setState(c, taskId, "RUNNING");
                 return true;
@@ -278,34 +260,9 @@ public final class TaskLedger {
                         }
                     }
                 }
-                return insertLease(c, taskId, resource, metadata);
+                return TaskResourceAdmission.insertLease(c, taskId, resource, metadata);
             }
         });
-    }
-
-    /** Inserts a claim within the already serialized transaction. / 在已串行化的事务内写入申请。
-     * @param c scoped platform connection / 作用域平台连接
-     * @param taskId owning task / 所属任务
-     * @param resource exact resource claim / 精确资源申请
-     * @param metadata validated release and recovery envelope / 已校验释放及恢复封套
-     * @return unique lease identity / 唯一占用身份
-     * @throws SQLException if persistence fails / 持久化失败时
-     */
-    private UUID insertLease(Connection c, UUID taskId, TaskResource resource, String metadata) throws SQLException {
-        UUID id = UUID.randomUUID();
-        try (var p = c.prepareStatement(
-            "INSERT INTO platform_task_resource(lease_id,task_id,resource_kind,resource_id,owner_id,access_mode,acquired_at,recovery_json) VALUES(?,?,?,?,?,?,?,?)")) {
-            p.setObject(1, id);
-            p.setObject(2, taskId);
-            p.setString(3, resource.kind());
-            p.setString(4, resource.id());
-            p.setString(5, resource.ownerId());
-            p.setString(6, resource.exclusive() ? "EXCLUSIVE" : "SHARED");
-            p.setLong(7, System.currentTimeMillis());
-            p.setString(8, metadata);
-            p.executeUpdate();
-        }
-        return id;
     }
 
     /** Returns exact FILE custody operations sharing this ledger's serialized transaction. / 返回共用此账本串行事务的精确 FILE 保管操作。
@@ -415,7 +372,7 @@ public final class TaskLedger {
                             if (r.next()) throw new SQLException("Material hold identity was already used");
                         }
                     }
-                    return insertLease(c, taskId, hold, activeHeader.encode());
+                    return TaskResourceAdmission.insertLease(c, taskId, hold, activeHeader.encode());
                 }
             });
         }
@@ -476,15 +433,15 @@ public final class TaskLedger {
                 try (var c = connections.open()) {
                     if (!Set.of("RUNNING", "CANCEL_REQUESTED", "UNKNOWN").contains(queries.state(c, taskId)))
                         throw new SQLException("Original task is not executing");
-                    var claims = orderedClaims(resolver.resolve(c));
-                    if (!claims.equals(orderedClaims(recovery.claims())))
+                    var claims = TaskResourceAdmission.orderedClaims(resolver.resolve(c));
+                    if (!claims.equals(TaskResourceAdmission.orderedClaims(recovery.claims())))
                         throw new SQLException("Provider admission differs from its loaded generation");
                     for (var claim : claims)
                         if (queries.conflicts(c, taskId, claim))
                             throw new DependencyBusyException();
                     var ids = new ArrayList<UUID>();
                     for (var claim : claims)
-                        ids.add(insertLease(c, taskId, claim, recovery.encode().encode()));
+                        ids.add(TaskResourceAdmission.insertLease(c, taskId, claim, recovery.encode().encode()));
                     return List.copyOf(ids);
                 }
             });
@@ -518,7 +475,7 @@ public final class TaskLedger {
                         p.setString(1, caller);
                         p.setString(2, callerVersion);
                         try (var r = p.executeQuery()) {
-                            if (!r.next() || !calling.digest().equals(r.getString(1)))
+                            if (!r.next())
                                 throw new SQLException("Original caller code is absent");
                         }
                     }
@@ -529,22 +486,17 @@ public final class TaskLedger {
                     var provided = proof.release(provider);
                     if (!proof.owner().equals(provider) || !provided.version().equals(version) || !provided.schema().equals(schema))
                         throw new SQLException("Actual provider identity differs");
-                    TaskRecoveryGraph next = original;
-                    if (original.legacy()) {
-                        if (kind != TaskRecoveryGraph.EdgeKind.REQUIRED || !original.release(provider).equals(provided))
-                            throw new SQLException("Legacy required dependency identity differs");
-                    } else {
-                        var edge = new TaskRecoveryGraph.Edge(caller, provider, kind);
-                        if (recoveryOnly && !original.edges().contains(edge))
-                            throw new SQLException("Recovery cannot introduce another optional provider");
-                        next = original.extend(caller, proof, kind);
-                        if (recoveryOnly && !next.equals(original))
-                            throw new SQLException("Original recovery graph changed");
-                    }
+                    var edge = new TaskRecoveryGraph.Edge(caller, provider, kind);
+                    if (recoveryOnly && !original.edges().contains(edge))
+                        throw new SQLException("Recovery cannot introduce another optional provider");
+                    TaskRecoveryGraph next = original.extend(caller, proof, kind);
+                    if (recoveryOnly && !next.equals(original))
+                        throw new SQLException("Original recovery graph changed");
                     var facts = new DependencyRecovery(bootId, UUID.randomUUID(), provider, version, schema,
                         caller, callerVersion, provided.digest());
-                    var claims = orderedClaims(resolver.resolve(c));
-                    if (!claims.equals(orderedClaims(facts.claims()))) throw new SQLException("Provider claims differ");
+                    var claims = TaskResourceAdmission.orderedClaims(resolver.resolve(c));
+                    if (!claims.equals(TaskResourceAdmission.orderedClaims(facts.claims())))
+                        throw new SQLException("Provider claims differ");
                     var existingPins = new HashSet<>(original.claims());
                     for (var pin : next.claims())
                         if (!existingPins.contains(pin) && queries.conflicts(c, taskId, pin))
@@ -554,10 +506,12 @@ public final class TaskLedger {
                     if (!next.equals(original)) {
                         extendOriginalDocument(c, taskId, next);
                         for (var pin : next.claims())
-                            if (!existingPins.contains(pin)) insertLease(c, taskId, pin, ResourceRecovery.TASK_END);
+                            if (!existingPins.contains(pin))
+                                TaskResourceAdmission.insertLease(c, taskId, pin, ResourceRecovery.TASK_END);
                     }
                     var ids = new ArrayList<UUID>();
-                    for (var claim : claims) ids.add(insertLease(c, taskId, claim, facts.encode().encode()));
+                    for (var claim : claims)
+                        ids.add(TaskResourceAdmission.insertLease(c, taskId, claim, facts.encode().encode()));
                     return new DependencyAdmission(facts, List.copyOf(ids));
                 } catch (IllegalArgumentException | NoSuchElementException invalid) {
                     throw new SQLException("Original dependency proof is invalid", invalid);
@@ -588,7 +542,7 @@ public final class TaskLedger {
             var allClaims = new ArrayList<>(next.claims());
             priorClaims.stream().filter(claim -> claim.kind().equals("SERVER")).forEach(allClaims::add);
             originalDocument.put("formatVersion", 3);
-            originalDocument.set("initialClaims", json.valueToTree(orderedClaims(allClaims)));
+            originalDocument.set("initialClaims", json.valueToTree(TaskResourceAdmission.orderedClaims(allClaims)));
             originalDocument.set("graph", json.valueToTree(next.encode()));
             String document = gold.debug.windowstolinux.app.db.task.metadata.TaskCancellationDocument.encode(originalDocument);
             if (document.length() > 1024 * 1024) throw new SQLException("Original graph is too large");
@@ -623,7 +577,7 @@ public final class TaskLedger {
                             }
                         }
                     }
-                    if (!orderedClaims(observed).equals(orderedClaims(recovery.claims())))
+                    if (!TaskResourceAdmission.orderedClaims(observed).equals(TaskResourceAdmission.orderedClaims(recovery.claims())))
                         throw new SQLException("Dependency release claims differ");
                     for (var id : leases)
                         try (var p = c.prepareStatement(
@@ -868,6 +822,126 @@ public final class TaskLedger {
                         p.setObject(3, taskId);
                         if (p.executeUpdate() != 1)
                             throw new SQLException("SSH connection lease changed");
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
+    /** Releases only disappeared AI process leases of the exact original owner. / 仅释放精确原所有者已消失的AI进程占用。
+     * @param taskId original task / 原任务
+     * @param owner authenticated capability owner / 已认证能力所有者
+     * @param version original release / 原发布
+     * @throws SQLException if process identity or ownership cannot be proved / 无法证明进程身份或归属时 */
+    public void releasePreviousAiResources(UUID taskId, String owner, String version) throws SQLException {
+        locked(() -> {
+            try (var c = connections.open()) {
+                try (var p = c.prepareStatement("SELECT boot_id,owner_id,owner_version,state FROM platform_task WHERE task_id=?")) {
+                    p.setObject(1, taskId);
+                    try (var row = p.executeQuery()) {
+                        if (!row.next() || ((!owner.equals(row.getString(2)) || !version.equals(row.getString(3)))
+                            && TaskLedgerQueries.readDependencies(c, taskId).keySet().stream().noneMatch(
+                            call -> call.provider().equals(owner) && call.version().equals(version))))
+                            throw new SQLException("Original AI recovery owner differs");
+                        if (bootId.equals(row.getObject(1, UUID.class))) return null;
+                        if (!Set.of("UNKNOWN", "FINISHING").contains(row.getString(4)))
+                            throw new SQLException("Previous AI task is not recoverable");
+                    }
+                }
+                var leases = new ArrayList<UUID>();
+                try (var p = c.prepareStatement("SELECT lease_id,resource_kind,resource_id,owner_id,recovery_json FROM platform_task_resource WHERE task_id=? AND released_at IS NULL")) {
+                    p.setObject(1, taskId);
+                    try (var rows = p.executeQuery()) {
+                        while (rows.next()) {
+                            String kind = rows.getString(2), id = rows.getString(3);
+                            String prefix = kind.equals("CUSTOM") ? "ai-access-" : kind.equals("CONNECTION") ? "ai-http-" : "";
+                            if (prefix.isEmpty() || !id.startsWith(prefix) || !owner.equals(rows.getString(4)))
+                                continue;
+                            try {
+                                if (!id.equals(prefix + UUID.fromString(id.substring(prefix.length()))))
+                                    throw new IllegalArgumentException("Noncanonical AI resource");
+                                String metadata = rows.getString(5);
+                                if (!ResourceRecovery.EXPLICIT.equals(metadata)) {
+                                    var facts = ResourceRecovery.decode(metadata);
+                                    if (!facts.protocol().equals("ai-process.v1") || !facts.fields().keySet().equals(Set.of("bootId", "kind"))
+                                        || !facts.fields().get("kind").equals(kind.equals("CUSTOM") ? "access" : "http"))
+                                        throw new SQLException("Unknown AI resource ownership");
+                                    String process = facts.fields().get("bootId");
+                                    UUID original = UUID.fromString(process);
+                                    if (!original.toString().equals(process))
+                                        throw new IllegalArgumentException("Noncanonical AI process");
+                                    if (bootId.equals(original)) continue;
+                                }
+                            } catch (IllegalArgumentException invalid) {
+                                throw new SQLException("Invalid AI process identity", invalid);
+                            }
+                            leases.add(rows.getObject(1, UUID.class));
+                        }
+                    }
+                }
+                try (var p = c.prepareStatement("UPDATE platform_task_resource SET released_at=? WHERE lease_id=? AND task_id=? AND released_at IS NULL")) {
+                    for (var lease : leases) {
+                        p.setLong(1, System.currentTimeMillis());
+                        p.setObject(2, lease);
+                        p.setObject(3, taskId);
+                        if (p.executeUpdate() != 1) throw new SQLException("AI process lease changed");
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
+    /** Releases only vanished synchronous server-access calls, never server references or business results. */
+    public void releasePreviousServerAccesses(UUID taskId, String owner, String version) throws SQLException {
+        locked(() -> {
+            try (var c = connections.open()) {
+                try (var p = c.prepareStatement("SELECT boot_id,owner_id,owner_version,state FROM platform_task WHERE task_id=?")) {
+                    p.setObject(1, taskId);
+                    try (var row = p.executeQuery()) {
+                        if (!row.next() || ((!owner.equals(row.getString(2)) || !version.equals(row.getString(3)))
+                            && TaskLedgerQueries.readDependencies(c, taskId).keySet().stream().noneMatch(
+                            call -> call.provider().equals(owner) && call.version().equals(version))))
+                            throw new SQLException("Original server-access recovery owner differs");
+                        if (bootId.equals(row.getObject(1, UUID.class))) return null;
+                        if (!Set.of("UNKNOWN", "FINISHING").contains(row.getString(4)))
+                            throw new SQLException("Previous server-access task is not recoverable");
+                    }
+                }
+                var leases = new ArrayList<UUID>();
+                try (var p = c.prepareStatement("SELECT lease_id,resource_id,recovery_json FROM platform_task_resource WHERE task_id=? AND resource_kind='CUSTOM' AND owner_id=? AND released_at IS NULL")) {
+                    p.setObject(1, taskId);
+                    p.setString(2, owner);
+                    try (var rows = p.executeQuery()) {
+                        while (rows.next()) {
+                            String id = rows.getString(2);
+                            if (!id.startsWith("server-access-")) continue;
+                            try {
+                                if (!id.equals("server-access-" + UUID.fromString(id.substring("server-access-".length()))))
+                                    throw new IllegalArgumentException("Noncanonical server-access resource");
+                                if (!ResourceRecovery.EXPLICIT.equals(rows.getString(3))) {
+                                    var facts = ResourceRecovery.decode(rows.getString(3));
+                                    String process = facts.fields().get("bootId");
+                                    UUID original = UUID.fromString(process);
+                                    if (!facts.protocol().equals("server-process.v1") || !facts.fields().keySet().equals(Set.of("bootId"))
+                                        || !original.toString().equals(process))
+                                        throw new IllegalArgumentException("Unknown server-access process proof");
+                                    if (bootId.equals(original)) continue;
+                                }
+                            } catch (IllegalArgumentException | NullPointerException invalid) {
+                                throw new SQLException("Invalid server-access process identity", invalid);
+                            }
+                            leases.add(rows.getObject(1, UUID.class));
+                        }
+                    }
+                }
+                try (var p = c.prepareStatement("UPDATE platform_task_resource SET released_at=? WHERE lease_id=? AND task_id=? AND released_at IS NULL")) {
+                    for (var lease : leases) {
+                        p.setLong(1, System.currentTimeMillis());
+                        p.setObject(2, lease);
+                        p.setObject(3, taskId);
+                        if (p.executeUpdate() != 1) throw new SQLException("Server-access process lease changed");
                     }
                 }
             }
@@ -1333,7 +1407,7 @@ public final class TaskLedger {
                         if (ResourceRecovery.TASK_END.equals(value) || ResourceRecovery.EXPLICIT.equals(value))
                             continue;
                         var decoded = ResourceRecovery.decode(value);
-                        if (!Set.of("service.v1", "service.v2").contains(decoded.protocol()))
+                        if (!decoded.protocol().startsWith("service."))
                             continue;
                         DependencyRecovery identity;
                         try {
@@ -1352,7 +1426,7 @@ public final class TaskLedger {
             for (var entry : groups.entrySet()) {
                 if (entry.getValue().size() != entry.getKey().claims().size())
                     throw new SQLException("Incomplete dependency claim group");
-                if (!orderedClaims(resources.get(entry.getKey())).equals(orderedClaims(entry.getKey().claims())))
+                if (!TaskResourceAdmission.orderedClaims(resources.get(entry.getKey())).equals(TaskResourceAdmission.orderedClaims(entry.getKey().claims())))
                     throw new SQLException("Dependency claim identity differs");
                 result.put(entry.getKey(), List.copyOf(entry.getValue()));
             }
@@ -1599,8 +1673,6 @@ public final class TaskLedger {
                 var node = gold.debug.windowstolinux.app.db.task.metadata.TaskCancellationDocument.parse(value);
                 if (node.path("formatVersion").intValue() != 1) {
                     var graph = TaskRecoveryGraph.decode(node.path("graph"));
-                    if (graph.legacy() != (node.path("formatVersion").intValue() == 2))
-                        throw new IllegalArgumentException("Original graph format cannot be downgraded");
                     graph.requireOwner(owner, version,
                         Arrays.asList(json.treeToValue(node.path("initialClaims"), TaskResource[].class)));
                 }

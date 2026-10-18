@@ -206,3 +206,13 @@ snapshot-frame-unit-01新增帧边界7项、捕获layout的normal/attempt目标1
 复用ASSISTED已有workspaceDemand阶段观察已创建归档，STATIC默认编排不变，不新增远端操作。Scope核对原Task对象、模型、活动workflow、原source snapshot ID/SHA，记录压缩归档SHA/长度、来源子树及有界文件名（最多64条/8192字符，明确截断/总数），历史最多32归档。仅build审查携带；同内容不同子树分别保留。记录发生在最终确认前，明确不是已批准计划、实时远端证明、安全裁决或许可；原归档校验、非root隔离和独立宿主批准继续执行。该修复仅ASSISTED观测路径，后续Agent仍不得据此跳过自身来源或命令审查。
 
 source-archive-observation-unit-01原作用域/来源6项和新增归档2项，共8项通过0跳过；三个Java格式check通过。CLI12恢复新增4APP17228，累计恢复54次222630；全局截至CLI12known2914099、579物理（1用量UNKNOWN）、144capUNKNOWN。usage-audit-04此前35root/553条全对账、无额外/缺失/不可读记录，但不覆盖CLI12，最终需再更新。
+
+## CLI13：固定效果原生Schema与前次进程访问占用
+
+归档关联提交 `e9793618` 后，CLI13在upload审查INVALID_INPUT提前失败，没有验证新build事实或快照。JFR确认Invalid independent review fields/Independent fixed-action review was invalid，不能说是模型有效DENY或推断其具体缺失字段。原fixed-effect使用AiJson.ask的宽泛additionalProperties对象，调用后才parse；现复用已有askCommand严格decision/requiresUserConfirmation/reason Schema及原一次格式纠正。畸形DENY不纠正、不变成APPROVE，任何有效批准后仍需原意图的宿主许可。fixed-effect-schema-unit-01共5项中4通过；新增格式纠正用例误从AiMessage.text读取TOOL结果导致唯一断言失败，生产纠正实际已成功。改为toolResult.text后仅重跑失败1项通过。
+
+原 `b70260f4-ccd3-42f1-9326-02b911bc56ad`、root `assisted-live-log-analyzer-vny0oewrk` 首次reconcile-13-01完成远端/引用恢复，仍UNKNOWN，剩server-access-fa260168-121f-41d9-9cbf-f17e6055d663。只读本地数据库证明是原boot的CUSTOM/EXPLICIT同步服务器访问占用，已重启且仍未released；原始占用泄漏触发未确证，过滤JFR未发现OwnedLease/PlatformServerAccess异常，不伪造其起因。没有手工UPDATE或服务器操作。
+
+补产品恢复缺口：新server-access占用带server-process.v1/bootId；Ledger在原任务/版本或真实依赖、前次任务boot、UNKNOWN/FINISHING下，仅处理所属CUSTOM、精确server-access-UUID和严格旧EXPLICIT/新进程证明；当前进程证明保留，畸形整事务回滚。释放的是消失进程的同步本地调用占用，不释放SERVER引用、工作流检查点或其它业务资源，也不写业务成功。TaskRuntime鉴权并刷新快照；ServerAccess接入原Mod直接恢复和服务恢复清理。共享平台变更会影响稍后Agent及其它Mod恢复，需依精确首次工作树补丁核对；未运行Agent。
+
+server-access-recovery-unit-01新Ledger2项、原真实ServerRef物理释放重试1项及上述失败格式用例1项共4通过；其余已通过4项没有重跑。七Java格式check通过。随后只启动产品reconcile-13-02，真实原任务ENDED/FAILED、blockers空、无应用，JUnit1通过；没有重放部署。五个平台/测试文件在本轮首次修改前另存.before，本轮增量并入精确补丁，按用户持续授权提交触及完整文件并保留其既有内容。

@@ -69,6 +69,9 @@ public final class PlatformModContext implements ContextLease {
     /** Complete context lease, present only after all capabilities were constructed. / 完整上下文占用，仅在全部能力构造完成后存在。 */
     private ModHostLease lease;
 
+    /** Original page and extension gate sealed before author stop. / 作者停止前封闭的原页面及扩展门禁。 */
+    private ModPageRegistry.PageScope pageScope;
+
     /** Whether preparation was attempted, forbidding accidental replay. / 是否已尝试准备，禁止意外重放。 */
     private boolean attempted;
 
@@ -107,20 +110,24 @@ public final class PlatformModContext implements ContextLease {
         runtime.tasks().blockOwner(identity.id(), "Mod context is preparing");
         if (schema.isPresent())
             new SchemaCoordinates(schema.get()).requireRegistered(runtime.persistence().database(), Set.of("READY"));
-        var pageScope = pages.begin(identity.id(), mode == ModLaunchMode.RECOVERY);
+        pageScope = pages.begin(identity.id(), mode == ModLaunchMode.RECOVERY, new ModUiAccess(loader));
         contributions.add(new OwnedContribution(pageScope::commit, pageScope));
         var services = runtime.services().bind(loader, schema, mode);
         contributions.add(services);
         var logs = own(runtime.logs(identity.id(), identity.version(), schema));
         var remote = own(runtime.remoteCapabilities(identity.id(), identity.version()));
-        services.bindRecoveryCleanup(remote::closeTaskResources);
         var servers = own(runtime.serverAccess(identity.id(), identity.version(), schema));
         var ai = own(runtime.ai(identity.id(), identity.version()));
+        services.bindRecoveryCleanup(task -> {
+            remote.closeTaskResources(task);
+            ai.closeTaskResources(task);
+            servers.retryFinishedReleases(task);
+        });
         var secrets = own(runtime.secrets(identity.id(), identity.version(), schema));
         var source = own(runtime.source(identity.id(), identity.version(), remote));
         var processes = own(runtime.processes(identity.id(), identity.version()));
         var tasks = new RecoveryTasks(
-            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote);
+            runtime.tasks().bind(identity.id(), identity.version(), mode == ModLaunchMode.RECOVERY), remote, ai, servers);
         ModDatabase database = schema.isPresent()
             ? own(new TaskModDatabase(runtime.persistence().database(), runtime.tasks(), schema.get()))
             : new StatelessDatabase();
@@ -191,9 +198,11 @@ public final class PlatformModContext implements ContextLease {
         lease.commit();
     }
 
-    /** Seals new task and dependency admission before lifecycle occupancy checks. / 生命周期占用检查前封闭新任务及依赖准入。 */
+    /** Seals new task, dependency and UI admission before lifecycle occupancy checks. / 生命周期占用检查前封闭新任务、依赖及界面准入。
+     * @throws Exception if the original UI gate cannot be sealed / 原界面门禁无法封闭时 */
     @Override
-    public synchronized void seal() {
+    public synchronized void seal() throws Exception {
+        if (pageScope != null) pageScope.seal();
         if (lease != null)
             lease.seal();
         else
@@ -290,8 +299,11 @@ public final class PlatformModContext implements ContextLease {
 
     /** Retains host-only physical cleanup before invoking a Mod's manual original-task recovery. / 调用Mod人工原任务恢复前执行仅宿主可做的物理收尾。
      * @param delegate original task capability / 原任务能力
-     * @param remote host-owned remote cleanup / 宿主持有的远端收尾 */
-    private record RecoveryTasks(TaskService delegate, PlatformModHost.Remote remote) implements TaskService {
+     * @param remote host-owned remote cleanup / 宿主持有的远端收尾
+     * @param ai host-owned original model cleanup / 宿主持有的原模型收尾 */
+    private record RecoveryTasks(TaskService delegate, PlatformModHost.Remote remote,
+                                 gold.debug.windowstolinux.app.service.ai.PlatformAiService ai,
+                                 gold.debug.windowstolinux.app.service.server.PlatformServerAccess servers) implements TaskService {
         /** Delegates original task admission unchanged. / 原样委托任务准入。
          * @param request exact task request / 精确任务请求
          * @param work author callback / 作者回调
@@ -362,6 +374,16 @@ public final class PlatformModContext implements ContextLease {
             return delegate.findCheckpoint(task, key);
         }
 
+        @Override
+        public TaskCheckpoint beginRecoveryCheckpoint(TaskContext task, String key, String initial) throws ApiException {
+            return delegate.beginRecoveryCheckpoint(task, key, initial);
+        }
+
+        @Override
+        public Optional<TaskCheckpoint> findRecoveryCheckpoint(TaskContext task, String key) throws ApiException {
+            return delegate.findRecoveryCheckpoint(task, key);
+        }
+
         /** Cleans only original host-owned connections before one explicit author callback. / 一次显式作者回调前仅清理原宿主连接。
          * @param taskType original owner-local task type / 原所属任务类型
          * @param recovery original author recovery / 原作者恢复
@@ -372,6 +394,8 @@ public final class PlatformModContext implements ContextLease {
             Objects.requireNonNull(recovery);
             return delegate.registerRecovery(taskType, (previous, task) -> {
                 remote.closeTaskResources(task);
+                ai.closeTaskResources(task);
+                servers.retryFinishedReleases(task);
                 return recovery.reconcile(previous, task);
             });
         }
