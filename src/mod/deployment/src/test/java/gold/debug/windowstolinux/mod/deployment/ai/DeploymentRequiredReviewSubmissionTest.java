@@ -50,7 +50,7 @@ class DeploymentRequiredReviewSubmissionTest {
         assertTrue(request.requiredToolName().isEmpty());
         assertEquals(AiPurpose.APPROVAL, request.purpose());
         assertFalse(request.jsonObjectResponse());
-        assertEquals(8192, request.maxOutputTokens().orElseThrow());
+        assertEquals(32768, request.maxOutputTokens().orElseThrow());
         assertEquals(1048576, request.maxRequestBytes());
         assertEquals(Duration.ofSeconds(120), request.timeout());
         assertEquals(JSON.valueToTree(facts("first")), JSON.readTree(request.messages().getLast().text()));
@@ -61,9 +61,10 @@ class DeploymentRequiredReviewSubmissionTest {
         assertEquals(List.of("APPROVE", "DENY"), JSON.convertValue(schema.at("/properties/decision/enum"), List.class));
         var encoded = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
             gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS).encode("deepseek-flash", request,
-            8192, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
+            32768, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
         var wire = JSON.readTree(encoded);
         assertEquals("auto", wire.path("tool_choice").asText());
+        assertEquals(32768, wire.path("max_tokens").asInt());
         assertEquals("low", wire.path("reasoning_effort").asText());
     }
 

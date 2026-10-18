@@ -43,7 +43,7 @@ class DeploymentConfigLoaderTest {
         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
         assertEquals(DeploymentConfig.Environment.original(), config.environment());
         assertEquals(new DeploymentConfig.View(750, 200), config.view());
-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600, 1),
+        assertEquals(new DeploymentConfig.Ai(32768, 65536, 32768, new DeploymentConfig.Requests(120, 120, 600, 1),
             new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
@@ -143,17 +143,17 @@ class DeploymentConfigLoaderTest {
         String yaml = bundledYaml();
         var config = parse(yaml.replace("deployment-max-output-tokens: 32768", "deployment-max-output-tokens: 4096")
             .replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 12288")
-            .replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2048"));
+            .replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 2048"));
         assertEquals(4096, config.ai().deploymentMaxOutputTokens());
         assertEquals(12288, config.ai().extendedDeploymentMaxOutputTokens());
         assertEquals(2048, config.ai().approvalMaxOutputTokens());
         for (String invalid : java.util.List.of(
-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 32769"),
-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 0"),
-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: '8192'"),
-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2147483648"),
+            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 32769"),
+            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 0"),
+            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: '8192'"),
+            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 2147483648"),
             yaml.replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 8191"),
-            yaml.replace("  approval-max-output-tokens: 8192\n", "")))
+            yaml.replace("  approval-max-output-tokens: 32768\n", "")))
             assertThrows(IOException.class, () -> parse(invalid));
     }
 

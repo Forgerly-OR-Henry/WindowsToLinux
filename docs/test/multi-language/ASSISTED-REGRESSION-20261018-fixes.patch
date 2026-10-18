@@ -2605,7 +2605,17 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      private static String inputDigest(String value) throws java.security.NoSuchAlgorithmException {
-@@ -6086,6 +6209,7 @@
+@@ -6061,7 +6184,8 @@
+                     if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+                         approvalCalls.incrementAndGet();
+                     if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
+-                        assertTrue(value.maxOutputTokens().orElseThrow() <= 8192, "Approval output request must not exceed deployment's 8192");
++                        assertTrue(value.maxOutputTokens().orElseThrow() <= gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().approvalMaxOutputTokens(),
++                            "Approval output request must remain within the configured deployment approval budget");
+                     var evidenceMessage = value.messages().stream().filter(message -> message.role() == gold.debug.windowstolinux.appapi.ai.model.AiRole.USER)
+                         .reduce((earlier, latest) -> latest).orElseThrow();
+                     var evidence = new com.fasterxml.jackson.databind.ObjectMapper().readTree(evidenceMessage.text());
+@@ -6086,6 +6210,7 @@
                          + message.toolResult().map(tool -> tool.text().length()).orElse(0)).sum()
                          + " nativeTools=" + value.tools().size() + " requiredTool=" + supervisedRequest.requiredToolName().orElse("AUTO")
                          + " timeout=" + value.timeout());
@@ -2613,7 +2623,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      System.out.println("AI_LIVE_CONTEXT_BYTES continuation=" + value.messages().stream().flatMap(m -> m.continuation().stream())
                          .mapToLong(gold.debug.windowstolinux.appapi.ai.model.AiContinuation::payloadBytes).sum());
                      var binding = evidence.path("decodedToolchainBinding");
-@@ -6188,11 +6312,12 @@
+@@ -6188,11 +6313,12 @@
                      (peer, operation, inputs) -> {
                          if (operation.getName().equals("execute") && agentMode && !mainOnlyDiagnostic
                              && Set.of(DeploymentApplicationsService.QUERY_TASK, DeploymentApplicationsService.ACTION_TASK)
@@ -2628,7 +2638,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              System.out.println("AGENT_MANAGEMENT_SEND task=" + remoteTask.id() + " grant=" + supplied.id()
                                  + " actionSha256=" + grant.actionSha256());
                          }
-@@ -6218,7 +6343,7 @@
+@@ -6218,7 +6344,7 @@
                  boolean management = agentMode && !mainOnlyDiagnostic && args != null
                      && args[args.length - 1] instanceof TaskContext supplied
                      && Set.of(DeploymentApplicationsService.QUERY_TASK, DeploymentApplicationsService.ACTION_TASK)
@@ -2637,7 +2647,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                  if (management && method.getName().equals("approve") && ((ActionIntent) args[0]).type().equals("platform.ssh.execute"))
                      throw new AssertionError("Management cannot fall back to unreviewed host approval");
                  String managementSha = null;
-@@ -6850,7 +6975,7 @@
+@@ -6850,7 +6976,7 @@
      }
  
      private static OperationResult<CommandResult> sdkMetadataCommand(gold.debug.windowstolinux.appapi.task.action.InteractionService interaction,
@@ -2646,7 +2656,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          OperationResult<gold.debug.windowstolinux.appapi.task.action.ApprovalGrant> review;
          try {
              review = gold.debug.windowstolinux.mod.deployment.linux.command.dispatch.DeploymentCommandReviewRouter.approve(
-@@ -6860,7 +6985,8 @@
+@@ -6860,7 +6986,8 @@
                  || !task.id().toString().equals(denied.problem().context().get("task"))) throw denied;
              return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(denied.problem()));
          }
@@ -2656,7 +2666,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          if (review.value().isEmpty()) return sdkMetadataUnknown();
          System.out.println("SDK_METADATA_SEND task=" + task.id() + " grant=" + review.value().orElseThrow().id() + " command=1");
          return session.execute(request, review.value().orElseThrow());
-@@ -6872,13 +6998,14 @@
+@@ -6872,13 +6999,14 @@
      }
  
      private static boolean sdkMetadataUnsentProof(TaskSnapshot previous, java.util.UUID task,
@@ -2673,7 +2683,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              var value = SDK_METADATA_JSON.readTree(checkpoint.payload());
              gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(value,
                  Set.of("version", "task", "server", "fingerprint", "modelRevision", "commands"));
-@@ -6894,13 +7021,16 @@
+@@ -6894,13 +7022,16 @@
                  && command.path("body").isTextual() && command.path("body").asText().equals("c6dba5ba7a7484dc924b89d4b9e679a6caee2982b96364f80c8c1f8e6062625b")
                  && command.path("seconds").isInt() && command.path("seconds").intValue() == 60
                  && command.path("phase").isTextual() && command.path("phase").asText().equals("INTENT");
@@ -2692,7 +2702,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var previous = new TaskSnapshot(task, OWNER, VERSION, "deployment-sdk-metadata-observation", gold.debug.windowstolinux.appapi.task.model.TaskState.UNKNOWN,
              Optional.empty(), "synthetic", java.time.Instant.EPOCH, Optional.empty(), List.of());
          var value = JSON.createObjectNode().put("version", 1).put("task", task.toString()).put("server", SERVER).put("fingerprint", fingerprint).put("modelRevision", revision);
-@@ -6921,7 +7051,8 @@
+@@ -6921,7 +7052,8 @@
          }
          command.put("phase", "INTENT").put("exit", "0");
          assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
@@ -2702,7 +2712,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertFalse(sdkMetadataUnsentProof(previous, task, new gold.debug.windowstolinux.appapi.task.recover.TaskCheckpoint.Snapshot(2, value.toString(), true), fingerprint, revision, true));
      }
  
-@@ -6936,13 +7067,22 @@
+@@ -6936,13 +7068,22 @@
          String fingerprint = Objects.requireNonNull(System.getProperty("managed.ssh.fingerprint"));
          try (var runtime = open()) {
              var pages = new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry(new gold.debug.windowstolinux.app.ui.mod.ModPageRegistry.PageHost() {
@@ -2730,7 +2740,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              var context = runtime.modContexts().get(OWNER).context();
              assertEquals(gold.debug.windowstolinux.appapi.mod.lifecycle.ModLaunchMode.RECOVERY, context.launchMode());
              try (var registration = context.tasks().registerRecovery("deployment-sdk-metadata-observation", (previous, task) -> {
-@@ -6955,12 +7095,15 @@
+@@ -6955,12 +7096,15 @@
                      return new OperationResult<Void>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
                          "SDK_METADATA_REVIEW_REFUSED_NOT_SENT", "Original released INTENT never crossed the persisted DISPATCHED boundary; this does not prove a grant was never issued",
                          Map.of("task", task.id().toString()), Optional.of(task.id()))));
@@ -2748,7 +2758,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }
          }
      }
-@@ -6968,20 +7111,29 @@
+@@ -6968,20 +7112,29 @@
      @Test
      @EnabledIf("isolatedSdkMetadataProtocol")
      void pureSdkMetadataCommandRequiresExactReviewAndPreservesUnknown() throws Exception {
@@ -2785,7 +2795,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              assertEquals("deployment.candidate.host-probe.v1", intent.semantics().orElseThrow().operation());
              assertEquals(2, intent.semantics().orElseThrow().targets().size());
              assertTrue(intent.semantics().orElseThrow().targets().contains(new gold.debug.windowstolinux.appapi.task.action.ActionTarget(server.id(), "task", id.toString())));
-@@ -6991,26 +7143,43 @@
+@@ -6991,26 +7144,43 @@
                  JSON.createObjectNode().put("operation", intent.semantics().orElseThrow().operation()).put("exactAction", intent.exactAction())).isEmpty());
              var interaction = (gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) Proxy.newProxyInstance(
                  getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview.class}, (proxy, method, args) -> {
@@ -2840,7 +2850,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          }
      }
  
-@@ -7022,7 +7191,11 @@
+@@ -7022,7 +7192,11 @@
          assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
          var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
          assertEquals(java.util.UUID.fromString("bc6fbab1-9106-48b6-bfd4-820ad0753906"), original);
@@ -2853,7 +2863,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          try (var runtime = open()) {
              start(runtime, true);
              var history = runtime.logs().inventory(false).categories().stream().filter(value -> value.target().owner().equals("app")
-@@ -7032,8 +7205,11 @@
+@@ -7032,8 +7206,11 @@
              var receipts = view.records().stream().filter(value -> value.event().taskId().filter(original::equals).isPresent()).toList();
              assertEquals(1, receipts.size());
              var receipt = receipts.getFirst();
@@ -2867,7 +2877,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              var archived = JSON.readTree(receipt.event().details().orElseThrow());
              assertEquals(DeploymentAgentWorkflow.TASK_TYPE, archived.path("taskType").asText());
              assertEquals("DEPLOYMENT_AGENT_PREFORMAL_RECONCILED", JSON.readTree(archived.path("result").asText()).path("problem").path("eventCode").asText());
-@@ -7041,14 +7217,18 @@
+@@ -7041,14 +7218,18 @@
              var observed = completed(context.tasks().<com.fasterxml.jackson.databind.JsonNode>submit(new gold.debug.windowstolinux.appapi.task.model.TaskRequest(
                  "deployment-sdk-metadata-observation", "SDK METADATA_ONLY; one pure observation command, no remote product setup or receipt writes", List.of(SERVER), true), task -> {
                  var conclusion = context.tasks().findArchived(original, task).orElseThrow();
@@ -2889,7 +2899,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                  String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
                  Path source = workspace().resolve("src/mod/deployment/src/test/resources/gold/debug/windowstolinux/mod/deployment/service/standard");
                  var selection = context.file().sources().selectDirectory(source, task);
-@@ -7067,10 +7247,17 @@
+@@ -7067,10 +7248,17 @@
                                      return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
                                          server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
                                  }
@@ -2911,7 +2921,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                                  public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
                                      return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(), "publicSourceSnapshotId", snapshot.id().toString());
                                  }
-@@ -7093,17 +7280,21 @@
+@@ -7093,17 +7281,21 @@
                                  return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(ProblemCode.IO_FAILURE,
                                      "SDK_METADATA_OBSERVATION_NONZERO", "The metadata observer reported a known nonzero exit", Map.of(), Optional.of(task.id()))));
                              var lines = value.stdout().lines().toList();
@@ -2936,7 +2946,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }), 20);
              assertEquals(1, reviewedActions.get(), "The sole pure observation command requires independent approval");
              System.out.println("SDK_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
-@@ -7118,7 +7309,11 @@
+@@ -7118,7 +7310,11 @@
          assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
          var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
          assertEquals(java.util.UUID.fromString("88f305d6-2fe6-4e9e-ad9f-927e5311c1cd"), original);
@@ -2949,7 +2959,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          try (var runtime = open()) {
              start(runtime, true);
              var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
-@@ -7126,11 +7321,14 @@
+@@ -7126,11 +7322,14 @@
                  "deployment-system-go-capacity-observation", "METADATA_ONLY: standard Go declarations and captured-root filesystem capacity; one pure command", List.of(SERVER), true), task -> {
                  var prior = context.tasks().findArchived(original, task).orElseThrow();
                  assertEquals("deployment-sdk-metadata-observation", prior.type());
@@ -2966,7 +2976,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                  String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
                  var selected = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
                      gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
-@@ -7158,11 +7356,18 @@
+@@ -7158,11 +7357,18 @@
                                      return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
                                          server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
                                  }
@@ -2990,7 +3000,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                                  public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
                                      return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(),
                                          "publicSourceSnapshotId", snapshot.id().toString(), "capturedLayoutSha256", layout.digest());
-@@ -7185,23 +7390,28 @@
+@@ -7185,23 +7391,28 @@
                                      reviewed.interaction(), intent, request, task);
                              } catch (ApiException denied) {
                                  if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
@@ -3024,7 +3034,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("SYSTEM_GO_CAPACITY_METADATA=".length()));
                              gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
                                  Set.of("schema", "mode", "status", "go", "capacities", "filesystemGroups", "sdkExecutions", "meaning"));
-@@ -7214,7 +7424,9 @@
+@@ -7214,7 +7425,9 @@
                              return success(metadata);
                          }
                      }
@@ -3035,7 +3045,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }), 20);
              assertEquals(1, reviewedActions.get(), "The sole pure Go/capacity command requires independent approval and a fresh exact grant");
              System.out.println("SYSTEM_GO_CAPACITY_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
-@@ -7229,7 +7441,11 @@
+@@ -7229,7 +7442,11 @@
          assertEquals(workspace().resolve("src/app/db/data/agent-live-file-transfer-6u33djqg4").toRealPath(), root);
          var original = java.util.UUID.fromString(System.getProperty("managed.live.originalTask"));
          assertEquals(java.util.UUID.fromString("05b481d0-fe1b-42bc-b4a6-4ca855f43b05"), original);
@@ -3048,7 +3058,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          try (var runtime = open()) {
              start(runtime, true);
              var context = monitored(runtime.modContexts().get(OWNER).context(), runtime.startup().config().ai());
-@@ -7237,11 +7453,14 @@
+@@ -7237,11 +7454,14 @@
                  "deployment-block-filesystem-layout-observation", "METADATA_ONLY: captured-state filesystem and root block topology/partition geometry; one pure command", List.of(SERVER), true), task -> {
                  var prior = context.tasks().findArchived(original, task).orElseThrow();
                  assertEquals("deployment-system-go-capacity-observation", prior.type());
@@ -3065,7 +3075,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                  String revision = context.ai().configurationRevision(gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE, task);
                  var selected = new gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout(
                      gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().paths());
-@@ -7269,11 +7488,18 @@
+@@ -7269,11 +7489,18 @@
                                      return new gold.debug.windowstolinux.mod.deployment.service.agent.review.DeploymentAgentApproval.Binding(
                                          server.id(), DeploymentAgentInputs.targetDigest(server, session), snapshot.sha256());
                                  }
@@ -3089,7 +3099,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                                  public Map<String, ?> identityRoles(Map<String, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceBrowser> sources) {
                                      return Map.of("sourceRole", "PUBLIC_OBSERVER_SOURCE", "publicSourceSnapshotSha256", snapshot.sha256(),
                                          "publicSourceSnapshotId", snapshot.id().toString(), "capturedLayoutSha256", layout.digest());
-@@ -7297,23 +7523,28 @@
+@@ -7297,23 +7524,28 @@
                                      reviewed.interaction(), intent, request, task);
                              } catch (ApiException denied) {
                                  if (denied.problem().code() != ProblemCode.ACCESS_DENIED || !denied.problem().eventCode().equals("DEPLOYMENT_COMMAND_REVIEW_DENIED")
@@ -3123,7 +3133,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              var metadata = SDK_METADATA_JSON.readTree(lines.getFirst().substring("BLOCK_FILESYSTEM_LAYOUT_METADATA=".length()));
                              gold.debug.windowstolinux.mod.deployment.db.document.DeploymentJsonDocument.fields(metadata,
                                  Set.of("schema", "mode", "status", "capturedStateRoot", "filesystem", "mount", "topology", "partitionTable", "sdkExecutions", "meaning"));
-@@ -7322,11 +7553,14 @@
+@@ -7322,11 +7554,14 @@
                                  || !metadata.path("capturedStateRoot").asText().equals(stateRoot) || !metadata.path("sdkExecutions").isInt()
                                  || metadata.path("sdkExecutions").intValue() != 0 || !metadata.path("filesystem").path("state").asText().equals("OBSERVED")
                                  || !metadata.path("filesystem").path("device").asText().equals("0x000000000000fd01")
@@ -3140,7 +3150,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }), 20);
              assertEquals(1, reviewedActions.get(), "One full script requires one independent native approval and fresh exact grant");
              System.out.println("BLOCK_FILESYSTEM_LAYOUT_METADATA_ONLY_RESULT " + JSON.writeValueAsString(observed));
-@@ -7460,10 +7694,35 @@
+@@ -7460,10 +7695,36 @@
                      }
                  }
                  if (retained) System.out.println("STATIC_LIVE_RETAINED " + ledger.queries().snapshot(original));
@@ -3162,7 +3172,8 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +                                    var metadata = gold.debug.windowstolinux.app.db.task.ResourceRecovery.decode(rows.getString(4));
 +                                    shape.set("fieldNames", JSON.valueToTree(new java.util.TreeSet<>(metadata.fields().keySet())));
 +                                    for (String field : List.of("bootId", "serverId"))
-+                                        if (metadata.fields().containsKey(field)) shape.put(field, metadata.fields().get(field));
++                                        if (metadata.fields().containsKey(field))
++                                            shape.put(field, metadata.fields().get(field));
 +                                }
 +                                System.out.println("STATIC_LIVE_RETAINED_RESOURCE " + shape);
 +                            }
@@ -3177,7 +3188,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                          "deployment-publication-unit-01", "deployment-publication-unit-02")) {
                          var saved = checkpoints.find(original, OWNER, "1.0.0", key);
                          if (saved.isEmpty()) continue;
-@@ -7721,6 +7980,37 @@
+@@ -7721,6 +7982,37 @@
          }
      }
  
@@ -3215,7 +3226,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      @Test
      void reconcilesOriginalManagementQueryAndStopsItsApplicationThroughProduct() throws Exception {
          connectionOnly = false;
-@@ -8343,7 +8633,7 @@
+@@ -8343,7 +8635,7 @@
                      } else
                          assertTrue(approvalCalls.get() > 0, "Real independent approval must call the selected model");
                      if (selectedMode != Mode.AGENT)
@@ -3224,7 +3235,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                      if (!deploymentOnly)
                          System.out.println((mainOnlyDiagnostic ? "MAIN_AGENT_ONLY_DIAGNOSTIC_PASS " : "AI_LIVE_PASS ") + project + " languageCalls=" + languageCalls.get() + " approvalCalls=" + approvalCalls.get()
                              + " requiredApprovals=" + requiredApprovals.get() + " mode=" + mode);
-@@ -8361,7 +8651,7 @@
+@@ -8361,7 +8653,7 @@
              } finally {
                  try {
                      if (agentOriginalId != null) {
@@ -3233,7 +3244,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              printOriginalDiagnostics(runtime, agentOriginalId);
                          } catch (Exception unavailable) {
                              System.out.println("STATIC_LIVE_AGENT_DIAGNOSTIC_UNAVAILABLE " + unavailable.getClass().getSimpleName());
-@@ -8381,7 +8671,7 @@
+@@ -8381,7 +8673,7 @@
                      if (!uncertain.isEmpty()) {
                          System.out.println("AI_LIVE_RETAINED_UNCERTAINTY " + uncertain);
                      } else {
@@ -3242,7 +3253,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              for (var current : completed(applications.list(), 2)) {
                                  if (!current.application().id().equals(id)) continue;
                                  var selected = completed(applications.inspect(current.application()), 2);
-@@ -8417,7 +8707,7 @@
+@@ -8417,7 +8709,7 @@
                      acceptanceFailure.addSuppressed(closingFailure);
                  } finally {
                      if (isolation != null && agentWorkflow != null && agentWorkflow.isolationAdmission().isPresent()) {
@@ -3251,7 +3262,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
                              verifyRetainedIsolation(context, isolation, agentWorkflow);
                          } catch (Exception | AssertionError protectionFailure) {
                              phaseFailureRecorded = true;
-@@ -8450,8 +8740,8 @@
+@@ -8450,8 +8742,8 @@
      }
  
      private void verifyRetainedIsolation(ModContext context,
@@ -3262,7 +3273,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          requireIsolationPostcheckAllowed();
          var admission = workflow.isolationAdmission().orElseThrow();
          var probe = new gold.debug.windowstolinux.mod.deployment.service.agent.isolation.DeploymentAgentIsolationProbe(policy);
-@@ -9007,20 +9297,20 @@
+@@ -9007,20 +9299,20 @@
              if (agentMode && !mainOnlyDiagnostic) {
                  fileTransferV2(web, applications, app, context);
              } else {
@@ -3297,7 +3308,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              }
          } else if (project.equals("asset-lending")) {
              var category = post(web + "/api/categories", Map.of("name", "静态跨语言资产验证"));
-@@ -9103,17 +9393,20 @@
+@@ -9103,17 +9395,20 @@
          String upload = fileTransferUpload(web, folder, "full-v2.bin", bytes, firstSha);
          for (int index = 0; index < 16; index++) fileTransferChunk(upload, index, bytes);
          var before = get(upload);
@@ -3321,7 +3332,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          for (int index = 16; index < 64; index++) fileTransferChunk(upload, index, bytes);
  
          var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
-@@ -9122,17 +9415,20 @@
+@@ -9122,17 +9417,20 @@
          var completionStart = new java.util.concurrent.CountDownLatch(1);
          com.fasterxml.jackson.databind.JsonNode first;
          try {
@@ -3349,7 +3360,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          }
          assertEquals(1, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
-@@ -9141,7 +9437,8 @@
+@@ -9141,7 +9439,8 @@
          String secondUpload = fileTransferUpload(web, folder, "full-v2.bin", bytes, secondSha);
          for (int index = 0; index < 64; index++) fileTransferChunk(secondUpload, index, bytes);
          var second = post(secondUpload + "/complete", Map.of());
@@ -3359,7 +3370,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9187,7 +9484,8 @@
+@@ -9187,7 +9486,8 @@
          assertEquals("failed", get(rejected).path("state").asText());
          var recovered = get(pending);
          assertEquals("receiving", recovered.path("state").asText());
@@ -3369,7 +3380,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(2, get(web + "/api/files/" + first.path("fileId").asText() + "/versions").size());
          assertFileTransferDownload(web, first.path("id").asText(), bytes.length, firstSha);
          assertFileTransferDownload(web, second.path("id").asText(), bytes.length, secondSha);
-@@ -9208,13 +9506,16 @@
+@@ -9208,13 +9508,16 @@
              var candidate = java.net.URI.create(value);
              return Objects.equals(candidate.getScheme(), expected.getScheme()) && Objects.equals(candidate.getHost(), expected.getHost())
                  && candidate.getPort() == expected.getPort();
@@ -3388,7 +3399,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      private static String byteSha256(byte[] bytes) throws java.security.NoSuchAlgorithmException {
-@@ -9223,7 +9524,8 @@
+@@ -9223,7 +9526,8 @@
  
      private static void assertFileTransferDownload(String web, String version, long bytes, String sha) throws Exception {
          byte[] downloaded = http(web + "/api/versions/" + version + "/download", "GET", null, "application/octet-stream");
@@ -3398,6 +3409,54 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      }
  
      private void restart(DeploymentApplicationsService applications, DeploymentApplicationId app) throws Exception {
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java
+@@ -43,7 +43,7 @@
+         assertEquals(new DeploymentConfig.Build(1800, 1024, 4096, 4194304, 4294967296L), config.build());
+         assertEquals(DeploymentConfig.Environment.original(), config.environment());
+         assertEquals(new DeploymentConfig.View(750, 200), config.view());
+-        assertEquals(new DeploymentConfig.Ai(32768, 65536, 8192, new DeploymentConfig.Requests(120, 120, 600, 1),
++        assertEquals(new DeploymentConfig.Ai(32768, 65536, 32768, new DeploymentConfig.Requests(120, 120, 600, 1),
+             new DeploymentConfig.Execution(4096, 256, 128, 512, 4096, 4096), new DeploymentConfig.History(24, 131072, 262144, 2, 8192)), config.ai());
+         assertEquals(new DeploymentConfig.RemotePaths("/usr/local/lib/windowstolinux",
+             "/opt/windowstolinux/apps", "/var/lib/windowstolinux", "/etc/opt/windowstolinux/apps",
+@@ -143,17 +143,17 @@
+         String yaml = bundledYaml();
+         var config = parse(yaml.replace("deployment-max-output-tokens: 32768", "deployment-max-output-tokens: 4096")
+             .replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 12288")
+-            .replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2048"));
++            .replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 2048"));
+         assertEquals(4096, config.ai().deploymentMaxOutputTokens());
+         assertEquals(12288, config.ai().extendedDeploymentMaxOutputTokens());
+         assertEquals(2048, config.ai().approvalMaxOutputTokens());
+         for (String invalid : java.util.List.of(
+-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 32769"),
+-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 0"),
+-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: '8192'"),
+-            yaml.replace("approval-max-output-tokens: 8192", "approval-max-output-tokens: 2147483648"),
++            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 32769"),
++            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 0"),
++            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: '8192'"),
++            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 2147483648"),
+             yaml.replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 8191"),
+-            yaml.replace("  approval-max-output-tokens: 8192\n", "")))
++            yaml.replace("  approval-max-output-tokens: 32768\n", "")))
+             assertThrows(IOException.class, () -> parse(invalid));
+     }
+ 
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedUsageAudit.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedUsageAudit.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedUsageAudit.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedUsageAudit.java
+@@ -30,7 +30,7 @@
+         if (!manifest.startsWith(evidence))
+             throw new IllegalArgumentException("Audit manifest is outside current evidence");
+         var sources = JSON.readTree(manifest.toFile());
+-        if (!sources.isArray() || sources.isEmpty() || sources.size() > 64)
++        if (!sources.isArray() || sources.isEmpty() || sources.size() > 128)
+             throw new IllegalArgumentException("Bounded explicit audit roots required");
+         var protectionFactory = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("currentUserProtection");
+         protectionFactory.setAccessible(true);
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/publish/single/DeploymentStandardSinglePublishRunnerTest.java
@@ -3657,7 +3716,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentRequiredReviewSubmissionTest.java
-@@ -47,18 +47,24 @@
+@@ -47,18 +47,25 @@
          assertEquals("DENY", result.path("decision").asText());
          assertEquals(1, fixture.requests.size());
          var request = fixture.requests.getFirst();
@@ -3665,7 +3724,8 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
 +        assertTrue(request.requiredToolName().isEmpty());
          assertEquals(AiPurpose.APPROVAL, request.purpose());
          assertFalse(request.jsonObjectResponse());
-         assertEquals(8192, request.maxOutputTokens().orElseThrow());
+-        assertEquals(8192, request.maxOutputTokens().orElseThrow());
++        assertEquals(32768, request.maxOutputTokens().orElseThrow());
          assertEquals(1048576, request.maxRequestBytes());
 -        assertEquals(Duration.ofSeconds(600), request.timeout());
 +        assertEquals(Duration.ofSeconds(120), request.timeout());
@@ -3677,14 +3737,15 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          assertEquals(List.of("APPROVE", "DENY"), JSON.convertValue(schema.at("/properties/decision/enum"), List.class));
 +        var encoded = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
 +            gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS).encode("deepseek-flash", request,
-+            8192, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
++            32768, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, Map.of());
 +        var wire = JSON.readTree(encoded);
 +        assertEquals("auto", wire.path("tool_choice").asText());
++        assertEquals(32768, wire.path("max_tokens").asInt());
 +        assertEquals("low", wire.path("reasoning_effort").asText());
      }
  
      @Test
-@@ -71,7 +77,7 @@
+@@ -71,7 +78,7 @@
                  fixture.task, DeploymentReviewDecision::malformed);
              assertEquals("DENY", result.path("decision").asText());
              var request = fixture.requests.getLast();
@@ -3693,7 +3754,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
              assertEquals(current, JSON.readTree(request.messages().getLast().text()).path("exactAction").asText());
          }
          assertEquals(2, fixture.requests.size());
-@@ -111,7 +117,7 @@
+@@ -111,7 +118,7 @@
      }
  
      @Test
@@ -3702,7 +3763,7 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
          var fixture = new NativeAiFixture();
          for (String id : List.of("invalid-first", "invalid-correction"))
              fixture.nativeReply(new AiToolCall(id, "submit_result", "{\"decision\":\"APPROVE\",\"requiresUserConfirmation\":false}"));
-@@ -212,7 +218,7 @@
+@@ -212,7 +219,7 @@
  
      private static void assertStopped(NativeAiFixture fixture, Boundary boundary, int expectedCalls) {
          assertEquals(expectedCalls, fixture.requests.size());
@@ -5468,3 +5529,15 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 +At currentCommandEvidence.toolchainImplementation, the product verifies each rendered source part against the complete locally pinned helper and lists both helper and build-entry digests from the same source-bound SYSTEM contract; these are literal/source consistency checks, not live installation or permission. selectedDispatchSource is the exact prepare-toolchains case, preserved inside the supplied full dispatch. Its prepare/bind/verify branch calls the official preparer, not build-entry or unrelated build/publish branches. Follow its complete preparer/transitive effects and actual arguments; do not demand a build-entry invocation proof for a branch that does not invoke it. Both artifact pins remain independently supplied by the common SYSTEM contract. Similar field names inside project bodies are not product evidence. Continue independent safety/goal/target review; none of these checks supplies an approval.
 +For exact guarded stage-config/stage-secret, inputKind=OPAQUE_BOUND_DATA is protected file data, distinct from missing executable stdin. configurationStagingImplementation supplies the actual pinned receiver, controlled-root setup and dispatch; review complete selected code and literal app/configuration-or-secret/format/revision/target/SHA/byte-count bindings, original goal write authority and filesystem effects. The receiver copies bounded bytes into an immutable root-only regular file without evaluating, sourcing or running that data. Do not request or disclose protected values. Later runtime consumption/activation requires a separate independent review; successful staging alone proves no application safety, live ownership or authorization.
 +For platform.sftp.upload, WTL-SFTP-1 binds the exact local/remote paths, SHA256 and maximum bytes to the consumed host grant. Platform transfer opens a regular local file without following links, checks identity/length and hashes its actual bytes against that approved digest before remote mutation; it rechecks the source, hashes the remote temporary file and verifies the final named result. These are enforced transfer semantics, not a claim that this future transfer has happened. Match the exact sourceArchiveObservations path/hash/byte identity when supplied. SourceArchiver originally hashes the compressed output and re-reads its frozen copy before publishing that association. Candidate upload separately checks the returned byte/hash/path receipt; the build pipeline independently queries task ownership and remote bytes/hash before executing the archive. An upload is data transfer, not execution of archive hooks; execution needs its own full review and isolation. Do not invent a requirement for an already transferred remote checksum before transfer. Changed sources/targets, missing authority, conflicting observations or unreviewed execution still fail.
+diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
+--- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
++++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml
+@@ -1,7 +1,7 @@
+ ai: # 部署 Mod 的模型运行资源；按类加载器读取快照，不热修改已冻结任务
+   deployment-max-output-tokens: 32768 # 普通部署请求输出预算，单位：token；须大于 0
+   extended-deployment-max-output-tokens: 65536 # 扩展部署请求输出预算，单位：token；不小于普通预算
+-  approval-max-output-tokens: 8192 # 独立审批请求输出预算，单位：token；不大于普通预算
++  approval-max-output-tokens: 32768 # 独立审批请求输出预算，单位：token；不大于普通预算
+   requests: # 每次模型请求的期限；超时不代表远端副作用已结清
+     deployment-timeout-seconds: 120 # 普通部署模型单次调用期限，单位：秒
+     approval-timeout-seconds: 120 # 独立审批模型单次调用期限，单位：秒

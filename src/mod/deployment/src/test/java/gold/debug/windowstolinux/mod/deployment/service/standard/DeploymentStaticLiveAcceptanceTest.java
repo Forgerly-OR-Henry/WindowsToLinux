@@ -6184,7 +6184,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                     if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
                         approvalCalls.incrementAndGet();
                     if (value.purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
-                        assertTrue(value.maxOutputTokens().orElseThrow() <= 8192, "Approval output request must not exceed deployment's 8192");
+                        assertTrue(value.maxOutputTokens().orElseThrow() <= gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigLoader.current().ai().approvalMaxOutputTokens(),
+                            "Approval output request must remain within the configured deployment approval budget");
                     var evidenceMessage = value.messages().stream().filter(message -> message.role() == gold.debug.windowstolinux.appapi.ai.model.AiRole.USER)
                         .reduce((earlier, latest) -> latest).orElseThrow();
                     var evidence = new com.fasterxml.jackson.databind.ObjectMapper().readTree(evidenceMessage.text());
@@ -7712,7 +7713,8 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                                     var metadata = gold.debug.windowstolinux.app.db.task.ResourceRecovery.decode(rows.getString(4));
                                     shape.set("fieldNames", JSON.valueToTree(new java.util.TreeSet<>(metadata.fields().keySet())));
                                     for (String field : List.of("bootId", "serverId"))
-                                        if (metadata.fields().containsKey(field)) shape.put(field, metadata.fields().get(field));
+                                        if (metadata.fields().containsKey(field))
+                                            shape.put(field, metadata.fields().get(field));
                                 }
                                 System.out.println("STATIC_LIVE_RETAINED_RESOURCE " + shape);
                             }

@@ -30,7 +30,7 @@ public final class DeploymentAssistedUsageAudit {
         if (!manifest.startsWith(evidence))
             throw new IllegalArgumentException("Audit manifest is outside current evidence");
         var sources = JSON.readTree(manifest.toFile());
-        if (!sources.isArray() || sources.isEmpty() || sources.size() > 64)
+        if (!sources.isArray() || sources.isEmpty() || sources.size() > 128)
             throw new IllegalArgumentException("Bounded explicit audit roots required");
         var protectionFactory = DeploymentStaticLiveAcceptanceTest.class.getDeclaredMethod("currentUserProtection");
         protectionFactory.setAccessible(true);

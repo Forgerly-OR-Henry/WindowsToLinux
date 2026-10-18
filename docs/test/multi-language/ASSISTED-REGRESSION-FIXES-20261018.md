@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。CLI22原任务已由程序结清成功并导出管理同源启动信息，当前3/8交付（全部3CLI），正顺序验证5网站；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。当前4/8交付（全部3CLI及Task Board），其余4网站串行验证；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -9,7 +9,7 @@
 | `ai/agent/DeploymentNativeSelection.java` | 原生读取工具补齐 offset/limit 上限；明确最多四调用；整批超限返回每个调用对应的错误回执，读取零文件；批量数量与剩余单工具预算协调，为结论保留机会；识别/校准提交补齐嵌套组件字段、类型和实际已读文件枚举 | 所在包含 agent 字样，但当前调用方是 ASSISTED 的 SourceComparison；不改变 Agent 自主循环或审批器。总识别 12 轮、校准 6 轮不增加。 |
 | `service/standard/assisted/DeploymentSourceComparison.java` | 消费超限批次时计入原有轮次并反馈；每轮提供实际 readPaths，列表或搜索元数据不能冒充已读正文 | 仅辅助来源比较；原组件归属、未读证据、冻结来源和人工未决选择规则保持。 |
 | `service/standard/assisted/DeploymentAssistedAnalysis.java` | 工具明确声明 action/sourceRevision/arguments，以及 LIST/READ/SEARCH/ADVISE 的子参数；解析前校验结构，不完整提交用原有纠正机制反馈 | 仅辅助技术建议；来源修订、真实证据、人工答案优先和确定性参数验证保持。12 次业务决策上限不增加。 |
-| `ai/DeploymentAiJson.java` | 新增 askStructured 复用原 submit；非审批的多提交整批拒绝，仅在原有两次提交机会内重交，不执行其中动作；LANGUAGE 保持 AUTO；早期曾为 LOW 审批移除 named tool_choice，CLI19 后将 APPROVAL 单结果恢复为显式 submit_result（审批配置须支持） | **共享代码，后续 Agent 须重点核对。** DeepSeek 思考模式不支持强制指定工具，但程序仍只接受合法的单次原生提交。普通多工具浏览不受影响。APPROVAL 多提交仍严格拒绝；不复用审批、不跳过独立模型或宿主授权。 |
+| `ai/DeploymentAiJson.java` | 新增 askStructured 复用原 submit；非审批的多提交整批拒绝，仅在原有两次提交机会内重交，不执行其中动作；当前所有 submit 传输使用 AUTO，逻辑仍强制单次完整原生提交。中途恢复 APP named tool 导致06的400，已在e5436040修复 | **共享代码，后续 Agent 须重点核对。** DeepSeek 思考模式不支持强制指定工具，但程序仍只接受合法的单次原生提交。普通多工具浏览不受影响。APPROVAL 多提交仍严格拒绝；不复用审批、不跳过独立模型或宿主授权。 |
 | `ai/review/DeploymentFixedCommandApproval.java`、`service/feedback/DeploymentDiagnostics.java` | 独立审批拒绝时，在各模式保留公开理由的脱敏记录，最多4096字符，不记录原始模型正文、命令或凭据 | **共享代码，Agent 也会获得该诊断。** 仍抛出原拒绝，不增加发送、不产生授权、不缓存拒绝。 |
 | `service/standard/shared/deploy/publish/graph/DeploymentStandardGraphPublishRunner.java` | 捕获内部异常并保守转 UNKNOWN 前，保存 DEPLOYMENT_OPERATION_FAILURE 的脱敏类型、原因和公开问题码 | 仅补诊断，不改变 UNKNOWN、对账、清理或发布逻辑；对 STATIC/ASSISTED 整图可见。 |
 | `ai/review/DeploymentCommandEvidence.java` | 把已执行的规范 Base64、严格 UTF-8、绑定类型往返检查显式列为 literalValidation；按当前捕获布局给出目录的 SAME/DESCENDANT/OUTSIDE 关系，区分同前缀兄弟路径 | **共享证据，Agent 后续需核对。** 仅描述字面编码与词法路径关系，不声明安装、归属或权限，不接受无效绑定；SYSTEM 目录可以在管理根之外，仍须审查原 helper 的保护检查。 |
@@ -484,3 +484,13 @@ toolchain-dispatch-manifest-unit-01默认/自定义layout清单与实际选中�
 approval-thinking-auto-unit-01共24项通过0跳过：RequiredReviewSubmission13、StructuredSubmission2、原流程证据9。正例使用真实ModelProtocolCodec编码LOW，验证reasoning_effort=low/tool_choice=auto；拒绝例确认0 host授权/0发送、原DENY原因和原请求/receipt保留。RequiredReviewSubmission旧正例的默认超时断言由600修正为实际未改的120秒，未修改生产超时。Native schema、目的、8192、1MiB、业务提交要求保留。
 
 Agent后续调试须注意：共享AiJson ask/askCommand的wire requiredToolName现在为空，原生提交逻辑仍必需。部分任务开始前已有的未跟踪ApprovalConversation及其它Agent/backup测试夹具仍断言named tool；本轮没有改写这些其它任务文件或运行Agent部署验收。其传输元数据期望需在相应专项中对齐AUTO，原拒绝/授权/完整输入/记忆边界不得削弱。本轮已覆盖standalone及retained conversation的有效/拒绝实际逻辑。
+
+## File Transfer 07：审批推理耗尽原8192输出额度
+
+07原372066f6-ffe6-4231-bf9e-d1072ebee0b1/root assisted-live-file-transfer-7d0xgvgpo已正常结束为FAILED，应用列表空、无UNKNOWN或待恢复副作用。LOW/AUTO真实请求兼容性通过，但Go工具链准备审批finish=length、output=8192且reasoning=8192，没有原生结论，产品按DEPLOYMENT_AI_OUTPUT_BUDGET_EXHAUSTED拒绝执行。该轮已知221148Token，不能称部署通过。
+
+将生产Mod的approval-max-output-tokens从8192改为32768，保持不超过当前普通部署预算32768；单请求120秒、工具/纠正轮数、单原生结构校验、有效DENY终态及独立授权均不变。这是明确提高单次审批最大成本，后续真实用量全数进入总账，不能声称节省。配置按类加载器快照，不改变旧任务的冻结配置。Git选择性纳入原普通预算32768这一必要依赖及本轮审批额度，保留同文件其余用户改动；精确修复补丁相对本轮实际工作树，仅含审批额度变化。共享默认也影响未来Agent/backup新任务，未在本轮运行其部署验收。
+
+approval-reasoning-budget-unit-01共26项通过0跳过：配置默认/严格额度2、RequiredReviewSubmission13、StructuredSubmission2、原流程证据9；真实codec校验LOW/AUTO及max_tokens32768，拒绝场景仍无host授权/发送。真机监督断言改为读取生产配置上限，不再硬编码8192。只读用量审计器明确目录上限64改128，独立编译后usage-audit-18真实覆盖64个已结束根，未发送模型或SSH请求。
+
+该审计已知8187908Token、1412个typed物理生成尝试；2个HTTP400物理尝试用量未知，256项能力验证用量未知，另1条无物理trace逻辑记录为Task Board19发送前预算拦截。未知不按0处理，最终仍需覆盖剩余项目后重审。08及其余三站尚待新配置的完整实机验收，配置暂存改进仍未提前宣称实机通过。

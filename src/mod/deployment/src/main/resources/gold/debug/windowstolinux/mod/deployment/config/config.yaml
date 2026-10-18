@@ -1,7 +1,7 @@
 ai:
-  deployment-max-output-tokens: 8192
+  deployment-max-output-tokens: 32768
   extended-deployment-max-output-tokens: 65536
-  approval-max-output-tokens: 8192
+  approval-max-output-tokens: 32768
 source:
   bytes: 2147483648
   entries: 100000
