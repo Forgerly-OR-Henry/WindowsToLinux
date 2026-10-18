@@ -236,3 +236,11 @@ workload-review-evidence-unit-01共29项通过0跳过：新协议/帧20项、原
 把已有sourceArchiveObservations也提供给upload，增加原归档snapshot ID和实际localArchivePath，以便对照本条transfer原参数；仅匹配原任务/来源关联，不声称未来传输已完成或授予权限。fixed-effect-review补已有平台校验语义与数据上传/后续执行区别，仍拒绝变更源/目标、冲突事实、缺权限或未审执行。Scope的路径访问仍走原snapshot句柄验证，不读取或解码秘密载荷。该说明属于ASSISTED，Agent后续不能自动继承执行豁免。
 
 upload-integrity-evidence-unit-01原归档/上传关联2项及精确宿主许可1项，共3通过0跳过；2Java格式check通过，合同文本已核对上述实际入口。当前全局known3366982、660物理（1用量UNKNOWN）、156capUNKNOWN；audit05尚不覆盖CLI14/15，最终更新。仍0/8交付。
+
+## CLI16：准备审查缺少确定性源码工具链声明
+
+上传关联提交 `bf195912` 后，CLI16提前在Rust prepare DENY，未到新upload或publish解码。拒绝称初始草稿git为空且没有manifest/required toolchain，无法确认Rust准备属于目标。原 `0820bf2b-7549-47f5-bed7-3b683a269cca`、root `assisted-live-log-analyzer-wa0jcfek8` 经reconcile-16-01产品对账ENDED/FAILED、blockers空、无应用。known83010=38728+44282，恢复另计。
+
+实际ProjectFacts已有从冻结源码得出的ToolchainRequirement（生态/声明/来源文件/用途/约束/版本），ToolchainSetup依原catalog和约束选择并验证真实版本；独立APP准备审查只收到初始化Draft和精确prepare字面参数，缺少这些原需求。因此复用既有workspaceDemand→archiveCaptured交接，把实际facts.toolchainRequirements同原archive关联保存；prepare也展示该观察，明确不等于初始URI/git、未来resolver结果或安装证明。原任务/源码/归档/模型/服务器检查及不可替换规则保留，未改catalog、选择、安装、命令或许可。
+
+source-toolchain-requirement-unit-01新准备需求1项+直接受影响原归档2项，共3项通过0跳过；3Java格式check通过。测试确认来源Cargo.toml/MINIMUM/1.85.0及原source SHA可见、同归档需求不能替换；只是验证字段/生命周期边界，不宣称服务器安装状态。全局截至CLI16known3458568、676物理（1用量UNKNOWN）、160capUNKNOWN；usage-audit-06覆盖此前39root/660记录，不覆盖CLI16，最终须更新。仍0/8交付。

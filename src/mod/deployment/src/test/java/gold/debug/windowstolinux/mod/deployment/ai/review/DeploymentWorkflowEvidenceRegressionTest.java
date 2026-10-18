@@ -142,13 +142,13 @@ class DeploymentWorkflowEvidenceRegressionTest {
         var source = new gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial("fixture", original.snapshot(),
             List.of("project/cli/Cargo.toml", "project/native/CMakeLists.txt", "outside/private.txt"), List.of());
         var archive = archive(source, source.snapshot().id(), "a".repeat(64), "project");
-        assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task));
+        assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, List.of(), task));
         try (var permission = open(() -> {
         })) {
             scope.workflowOpened(permission);
             scope.sourceCaptured(server, source, task);
-            scope.archiveCaptured(source, archive, task);
-            scope.archiveCaptured(source, archive, task);
+            scope.archiveCaptured(source, archive, List.of(), task);
+            scope.archiveCaptured(source, archive, List.of(), task);
             assertFalse(scope.effectFacts(command(server.id(), server.id()), task).containsKey("sourceArchiveObservations"));
             var intent = command(server.id(), server.id()).withSemantics(new ActionSemantics("deployment.build.run.v1",
                 Set.of(new ActionTarget(server.id(), "deployment-build", "/fixture/candidate"))));
@@ -167,11 +167,11 @@ class DeploymentWorkflowEvidenceRegressionTest {
                 Set.of(new ActionTarget(server.id(), "deployment-candidate", "/fixture/candidate/mutable/source.tar.gz"))));
             assertEquals(evidence, scope.effectFacts(upload, task).get("sourceArchiveObservations"));
             assertFalse(entry.containsKey("commandGrant"));
-            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task(id)));
-            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, UUID.randomUUID(), "a".repeat(64), "project"), task));
-            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, source.snapshot().id(), "c".repeat(64), "project"), task));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, List.of(), task(id)));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, UUID.randomUUID(), "a".repeat(64), "project"), List.of(), task));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive(source, source.snapshot().id(), "c".repeat(64), "project"), List.of(), task));
             permission.close();
-            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, task));
+            assertThrows(IllegalArgumentException.class, () -> scope.archiveCaptured(source, archive, List.of(), task));
         }
     }
 
@@ -185,7 +185,7 @@ class DeploymentWorkflowEvidenceRegressionTest {
         })) {
             scope.workflowOpened(permission);
             scope.sourceCaptured(server, source, task);
-            scope.archiveCaptured(source, archive(source, source.snapshot().id(), "a".repeat(64), ""), task);
+            scope.archiveCaptured(source, archive(source, source.snapshot().id(), "a".repeat(64), ""), List.of(), task);
             var intent = command(server.id(), server.id()).withSemantics(new ActionSemantics("deployment.build.run.v1",
                 Set.of(new ActionTarget(server.id(), "deployment-build", "/fixture/candidate"))));
             var evidence = (java.util.Map<?, ?>) scope.effectFacts(intent, task).get("sourceArchiveObservations");
@@ -193,6 +193,33 @@ class DeploymentWorkflowEvidenceRegressionTest {
             assertEquals(80, entry.get("fileCount"));
             assertEquals(64, ((List<?>) entry.get("fileNames")).size());
             assertEquals(true, entry.get("fileNamesTruncated"));
+        }
+    }
+
+    @Test
+    void preparationReceivesTheActualSourceRequirementWithItsOriginalArchiveAssociation() throws Exception {
+        var scope = sourceScope("model-revision");
+        var source = material(UUID.randomUUID(), "a".repeat(64));
+        var archive = archive(source, source.snapshot().id(), "a".repeat(64), "");
+        var rust = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainType.RUST;
+        var requirement = new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement(
+            rust, "1.85", "Cargo.toml",
+            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.PurposeType.LANGUAGE_TARGET,
+            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.ConstraintType.MINIMUM,
+            Optional.of(gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainVersion.parse(rust, "1.85.0").orElseThrow()));
+        try (var permission = open(() -> {
+        })) {
+            scope.workflowOpened(permission);
+            scope.sourceCaptured(server, source, task);
+            scope.archiveCaptured(source, archive, List.of(requirement), task);
+            var intent = command(server.id(), server.id()).withSemantics(new ActionSemantics("deployment.toolchain.prepare.v1",
+                Set.of(new ActionTarget(server.id(), "deployment-build", "/fixture/tools"))));
+            var facts = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(scope.effectFacts(intent, task));
+            assertEquals("a".repeat(64), facts.at("/sourceArchiveObservations/archives/0/sourceManifestSha256").asText());
+            assertEquals("Cargo.toml", facts.at("/sourceArchiveObservations/archives/0/sourceToolchainRequirements/0/source").asText());
+            assertEquals("MINIMUM", facts.at("/sourceArchiveObservations/archives/0/sourceToolchainRequirements/0/constraint").asText());
+            assertEquals("1.85.0", facts.at("/sourceArchiveObservations/archives/0/sourceToolchainRequirements/0/version").asText());
+            assertThrows(IllegalStateException.class, () -> scope.archiveCaptured(source, archive, List.of(), task));
         }
     }
 

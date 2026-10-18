@@ -131,7 +131,7 @@ public final class DeploymentAssistedWorkflow implements Entry {
                         gold.debug.windowstolinux.mod.deployment.service.core.model.project.DeploymentProjectFacts facts,
                         gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive, Answers answer,
                         long availableBytes, gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material, TaskContext task) throws Exception {
-                        ((DeploymentAssistedScope) capabilities).archiveCaptured(material, archive, task);
+                        ((DeploymentAssistedScope) capabilities).archiveCaptured(material, archive, facts.toolchainRequirements(), task);
                         if (answer.workspaceRequest().mode() == gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.Mode.EXPLICIT)
                             return answer.workspaceRequest();
                         try {

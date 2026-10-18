@@ -60,6 +60,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     /** Records the archiver's original-source association, never source trust or build permission. */
     public synchronized void archiveCaptured(gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
                                              gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive,
+                                             List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements,
                                              TaskContext supplied) throws ApiException {
         sameTask(supplied);
         verify();
@@ -81,18 +82,22 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             displayed.add(name);
             chars += name.length();
         }
-        Map<String, Object> observation = Map.of("originSnapshotId", archive.originSnapshotId().toString(),
+        var observation = new LinkedHashMap<String, Object>(Map.of("originSnapshotId", archive.originSnapshotId().toString(),
             "sourceManifestSha256", archive.sourceManifestSha256(), "archiveSha256", archive.sha256(),
             "archiveSnapshotId", archive.snapshot().id().toString(), "localArchivePath", archive.path().toString(),
             "archiveBytes", archive.byteCount(), "relativeRoot", archive.relativeRoot(), "fileCount", names.size(),
-            "fileNames", List.copyOf(displayed), "fileNamesTruncated", displayed.size() != names.size());
+            "fileNames", List.copyOf(displayed), "fileNamesTruncated", displayed.size() != names.size()));
+        observation.put("sourceToolchainRequirements", List.copyOf(requirements).stream().map(requirement -> Map.of(
+            "ecosystem", requirement.ecosystem().name(), "declaration", requirement.declaration(), "source", requirement.source(),
+            "purpose", requirement.purpose().name(), "constraint", requirement.constraint().name(),
+            "version", requirement.version().map(value -> value.text()).orElse(""))).toList());
         String key = archive.relativeRoot() + "\n" + archive.sha256();
         var previous = sourceArchives.get(key);
         if (previous != null && !previous.equals(observation))
             throw new IllegalStateException("Original archive association cannot be replaced");
         if (previous == null && sourceArchives.size() == 32)
             sourceArchives.remove(sourceArchives.keySet().iterator().next());
-        sourceArchives.put(key, observation);
+        sourceArchives.put(key, Map.copyOf(observation));
     }
 
     private synchronized void toolchainsPrepared(ServerId server,
@@ -151,9 +156,9 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var facts = new LinkedHashMap<String, Object>();
         facts.put("workflowAuthorization", evidence);
         if (source != null) facts.put("sourceSelection", source);
-        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> Set.of("deployment.candidate.upload.v1", "deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
+        if (!sourceArchives.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.candidate.upload.v1", "deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
             facts.put("sourceArchiveObservations", Map.of("archives", List.copyOf(sourceArchives.values()),
-                "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
+                "meaning", "Archiver-produced frozen source/subtree associations captured before final confirmation under this original task/server. sourceToolchainRequirements preserve the deterministic selected component declarations/constraints/source files, independent of the initial draft URI/git field; they are not a resolved future installer result or installation proof. Source manifest and compressed archive hashes identify different objects; match the build envelope's expected archive SHA to its association and declared candidate. Listed companion files belong to that archived subtree; file lists and recent history (32 archives) are explicitly bounded, not a complete content/safety review. The deterministic build body is separately reviewed, not required to be a file or signature of the source manifest. It verifies actual compressed archive bytes before extraction; project hooks still require non-root candidate isolation, complete executable input and fresh independent host permission. These observations do not prove live remote state, safe content or authorization."));
         if (!preparedToolchains.isEmpty() && intent.semantics().map(value -> Set.of("deployment.toolchain.bind.v1", "deployment.build.run.v1", "deployment.publication.publish.v1").contains(value.operation())).orElse(false))
             facts.put("toolchainPreparationObservations", Map.of("bindings", List.copyOf(preparedToolchains.values()),
                 "meaning", "Earlier complete successful preparation receipts under this original task/server, matched to every typed selection after standard catalog/requirement validation. bindingSha256 identifies that exact canonical set. Recent history is bounded to 32 sets; absence is not proof of missing installation. This is a prior observation, not current live state, a safety verdict or command permission; bind still validates live directories/markers/versions and SYSTEM hashes."));
