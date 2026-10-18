@@ -489,7 +489,7 @@ Agent后续调试须注意：共享AiJson ask/askCommand的wire requiredToolName
 
 07原372066f6-ffe6-4231-bf9e-d1072ebee0b1/root assisted-live-file-transfer-7d0xgvgpo已正常结束为FAILED，应用列表空、无UNKNOWN或待恢复副作用。LOW/AUTO真实请求兼容性通过，但Go工具链准备审批finish=length、output=8192且reasoning=8192，没有原生结论，产品按DEPLOYMENT_AI_OUTPUT_BUDGET_EXHAUSTED拒绝执行。该轮已知221148Token，不能称部署通过。
 
-将生产Mod的approval-max-output-tokens从8192改为32768，保持不超过当前普通部署预算32768；单请求120秒、工具/纠正轮数、单原生结构校验、有效DENY终态及独立授权均不变。这是明确提高单次审批最大成本，后续真实用量全数进入总账，不能声称节省。配置按类加载器快照，不改变旧任务的冻结配置。Git选择性纳入原普通预算32768这一必要依赖及本轮审批额度，保留同文件其余用户改动；精确修复补丁相对本轮实际工作树，仅含审批额度变化。共享默认也影响未来Agent/backup新任务，未在本轮运行其部署验收。
+将生产Mod的approval-max-output-tokens从8192改为32768，保持不超过当前普通部署预算32768；单请求120秒、工具/纠正轮数、单原生结构校验、有效DENY终态及独立授权均不变。这是明确提高单次审批最大成本，后续真实用量全数进入总账，不能声称节省。配置按类加载器读取快照，不改写旧任务检查点或历史调用；重启后的新AiJson按当前配置构造后续请求（包括原任务恢复阶段），不是重发旧请求。Git选择性纳入原普通预算32768这一必要依赖及本轮审批额度，保留同文件其余用户改动；精确修复补丁相对本轮实际工作树，仅含审批额度变化。共享默认也影响未来Agent/backup新任务，未在本轮运行其部署验收。
 
 approval-reasoning-budget-unit-01共26项通过0跳过：配置默认/严格额度2、RequiredReviewSubmission13、StructuredSubmission2、原流程证据9；真实codec校验LOW/AUTO及max_tokens32768，拒绝场景仍无host授权/发送。真机监督断言改为读取生产配置上限，不再硬编码8192。只读用量审计器明确目录上限64改128，独立编译后usage-audit-18真实覆盖64个已结束根，未发送模型或SSH请求。
 
@@ -499,10 +499,20 @@ approval-reasoning-budget-unit-01共26项通过0跳过：配置默认/严格额�
 
 08原6151eae6-9393-4dad-a3ca-d883d2dd0c80/root assisted-live-file-transfer-7p6qmu3jc在Go prepare取得完整原生审批（output24618/reasoning24501、104858ms），随后实际命令EXIT0并完成绑定，证明8192限制已越过。后续Node prepare在120000ms返回AI_TIMEOUT，generation518a8fdc-d5e7-4293-b5a7-ca4031fb780a用量未知。原任务保留UNKNOWN；reconcile-08-01产品核实ENDED/FAILED、blockers=[]，JUnit1通过后才准许新部署，未重放原准备命令。
 
-将approval-timeout-seconds从120提高到600，使用既有extended-timeout-seconds600作为有限上限，普通部署期限120及32768输出、纠正轮数/独立否决/授权保持。旧冻结任务不变；共享默认影响后续Agent/backup新任务，需专项核验，不能声称本轮已验证。HEAD配置尚未纳入用户已有requests节，本次选择性提交该节必需四字段（普通120/审批600/扩展600/原有generation-recovery-attempts1），不改变其余用户配置或引入新重试。ASSISTED没有因此取得Agent专属生成重试权限。
+将approval-timeout-seconds从120提高到600，使用既有extended-timeout-seconds600作为有限上限，普通部署期限120及32768输出、纠正轮数/独立否决/授权保持。不改写旧任务检查点及既有请求；新类加载器中构造的后续请求读取当前期限，共享默认也影响Agent/backup调用，需专项核验，不能声称本轮已验证。HEAD配置尚未纳入用户已有requests节，本次选择性提交该节必需四字段（普通120/审批600/扩展600/原有generation-recovery-attempts1），不改变其余用户配置或引入新重试。ASSISTED没有因此取得Agent专属生成重试权限。
 
 JFR另确认DeploymentAiCallMetrics.record把UNKNOWN填入LogEvent终态outcome，被真实LogRecordCodec拒绝，导致本次超时用量日志未落库。修复仅在日志终态字段省略UNKNOWN，details原outcome及typed生成UNKNOWN、缺失Token全部保留；原能力结果/异常原样返回。未更改宿主日志契约、未补零或吞掉原失败。该共享类及既有测试原未跟踪，按用户“修改文件保持提交”授权完整纳入；精确补丁仍只显示本轮相对实际.before的修改。
 
 approval-deadline-and-unknown-usage-unit-01因PowerShell参数拆分失败，业务测试0执行；改用参数数组后unit-02共22项通过0跳过：Metrics5（新增返回/抛出UNKNOWN均经真实编码/解码验证）、RequiredReviewSubmission13、StructuredSubmission2、配置默认及资源关系2。日志保持同一个原ApiException、调用1次且记录1次，未知不作终态。未运行Agent部署或全量测试。
 
 用量核对另发现Task Board19最早两次LANGUAGE生成（f3c61841-117f-45f1-8706-6c1d10fe4981、96ce1afe-6528-4896-bcc1-f3529df2919f）仅在原stdout有完整provider usage，当前保留日志未匹配到；以原输入1479+1850、输出76+202合计3607Token照实计入，不推算。08超时尝试也由stdout保留未知字段。最终报告须披露stdout与持久记录覆盖差异，不声称所有物理尝试均已在持久日志逐项复核。
+
+## File Transfer 09：绑定审查去除不选中的完整安装器展开
+
+09原ba3edd96-eb27-4adc-950c-f4445b857243已知FAILED，未进入发布或产生UNKNOWN，无待恢复原任务。Go prepare审批成功并实际执行EXIT0，后续Go bind在146426ms结束，output=32768/reasoning=32768、finish=length，触发原输出耗尽拒绝；该轮已知220241Token。600秒期限已排除120秒拦截，但提高额度并未保证模型能提交结论，因此不再继续放大资源。
+
+已确认的代码事实：此前新增toolchainImplementation同时附加到prepare和bind，每次约8万字符，包含完整解析下载、安装、restore分支与全部公开dispatch。bind自身只选择固定的已有安装核对/探针/不可变绑定路径。共享SYSTEM managed-helper-review.v2从开始就允许以完整守卫和独立源码pin描述固定产品接口，且明确bind检查canonical binding、live owner/marker/version/source/digest及SYSTEM rehash；动态参数、完整当前命令、编码和目标仍单独受审。不能把“与绑定无关的实现冗余”直接说成已证实的推理耗尽唯一原因，效果待下一轮实机核验。
+
+最小修改仅ASSISTED Scope：完整实现展开只用于deployment.toolchain.prepare.v1；bind保留原源码绑定SYSTEM契约、精确命令及输入、decodedToolchainBinding全字段、原workflow与目标/源证据，不再携带无关完整安装器。fixed-effect-review明确prepare与bind路径的区别，继续要求原独立DENY、来源、先决条件和权限；不更改helper源码/pin/执行路径、共享契约v2、宿主授权、原生提交校验或资源上限。不以“已准备成功”自动批准绑定，不隐去动态执行内容，不改变STATIC或Agent事实。
+
+bind-fixed-contract-scope-unit-01共15项通过0跳过：实际Scope+共享证据10（新增真实guard/typed binding/workflow组合、低于32768字符且无执行能力、关闭workflow拒绝）、准备源码原2、编码/非字面/非规范拒绝3。完整准备实现仍按原pin逐段检查。后续必须观察真实绑定是否完整提交，并继续完成业务验收，不能把此定点结果当网站交付。

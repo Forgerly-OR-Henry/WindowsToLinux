@@ -409,7 +409,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
      /** Actual owner capabilities. / 实际所属能力。 */
      private final ModContext original;
  
-@@ -48,6 +48,263 @@
+@@ -48,6 +48,262 @@
  
      /** Original immutable rememberAuthorization repetition. / 原不可变授权重复规则。 */
      private final boolean rememberAuthorization;
@@ -524,8 +524,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
 +                }
 +            }
 +        }
-+        if (intent.semantics().filter(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1")
-+            .contains(value.operation())).isPresent())
++        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent())
 +            facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
 +                .toolchainImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture
 +                    .originalTaskLayout(original.tasks(), supplied)));
@@ -673,7 +672,7 @@ diff --git a/src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/depl
  
      /** Logical language capability calls, shared by analysis and recovery. / 分析和恢复共用的逻辑语言能力调用次数。 */
      private final java.util.concurrent.atomic.AtomicInteger languageCalls = new java.util.concurrent.atomic.AtomicInteger();
-@@ -316,6 +573,13 @@
+@@ -316,6 +572,13 @@
      @Override
      public InteractionService interaction() {
          return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
@@ -3827,6 +3826,51 @@ diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/depl
      @Test
      void physicalUnknownUsageSurvivesSuccessfulRecoveryAndFailureWithoutInventingTotals() throws Exception {
          UUID generation = UUID.randomUUID();
+diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowEvidenceRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowEvidenceRegressionTest.java
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowEvidenceRegressionTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/review/DeploymentWorkflowEvidenceRegressionTest.java
+@@ -203,6 +203,41 @@
+     }
+ 
+     @Test
++    void bindKeepsExactGuardedInputsAndAuthorityWithoutAddingTheSeparateInstallerBody() throws Exception {
++        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
++        String payload = "WTL-TOOLS-1\tcurrent\nJAVA\tRUNTIME\tMjE=\tcG9tLnhtbA==\tSERIES\t21\t21.0.12.1+1\t"
++            + layout.toolchains() + "/versions/java-" + "a".repeat(64) + "\tMANAGED\t"
++            + java.util.Base64.getEncoder().encodeToString("https://example.test/official-jdk.tar.gz".getBytes(java.nio.charset.StandardCharsets.UTF_8))
++            + "\t" + "b".repeat(64) + "\n";
++        String encoded = java.util.Base64.getEncoder().encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
++        var scope = sourceScope("model-revision");
++        try (var permission = open(() -> {
++        }); var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
++            gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
++                "'" + layout.helperPath() + "' prepare-toolchains 'bind' '" + encoded + "'", layout),
++            new byte[0], java.time.Duration.ofSeconds(30), 8192)) {
++            scope.workflowOpened(permission);
++            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "frozen", request)
++                .withSemantics(new ActionSemantics("deployment.toolchain.bind.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
++            var facts = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request, layout));
++            facts.putAll(scope.facts(intent, request, task));
++            var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
++            assertEquals("managed-helper-review.v2", json.path("platformContractRevision").asText());
++            assertEquals("bind", json.path("toolchainSubcommand").asText());
++            assertEquals("21.0.12.1+1", json.at("/decodedToolchainBinding/toolchains/0/version").asText());
++            assertEquals(true, json.at("/decodedToolchainBinding/literalValidation/canonicalBase64").asBoolean());
++            assertEquals(id.toString(), json.at("/workflowAuthorization/task").asText());
++            assertEquals(intent.exactAction(), json.path("exactAction").asText());
++            assertEquals("EMPTY", json.path("inputKind").asText());
++            assertFalse(json.has("toolchainImplementation"));
++            assertFalse(json.has("commandGrant"));
++            assertTrue(json.toString().length() < 32768);
++            permission.close();
++            assertThrows(IllegalArgumentException.class, () -> scope.facts(intent, request, task));
++        }
++    }
++
++    @Test
+     void preparationReceivesTheActualSourceRequirementWithItsOriginalArchiveAssociation() throws Exception {
+         var scope = sourceScope("model-revision");
+         var source = material(UUID.randomUUID(), "a".repeat(64));
 diff --git a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java
 --- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java
 +++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentStructuredSubmissionRegressionTest.java
@@ -5579,9 +5623,10 @@ diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md
 --- a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md
 +++ b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md
-@@ -1 +1,4 @@
+@@ -1 +1,5 @@
  Review the exact registered fixed effect. serverTargets are saved server identities; resourceTargets are {serverId,kind,id}. Compare each object with its expected identity. Deny undisclosed commands/patches, source/target drift, secret disclosure or unverified prerequisites.
-+At currentCommandEvidence.toolchainImplementation, the product verifies each rendered source part against the complete locally pinned helper and lists both helper and build-entry digests from the same source-bound SYSTEM contract; these are literal/source consistency checks, not live installation or permission. selectedDispatchSource is the exact prepare-toolchains case, preserved inside the supplied full dispatch. Its prepare/bind/verify branch calls the official preparer, not build-entry or unrelated build/publish branches. Follow its complete preparer/transitive effects and actual arguments; do not demand a build-entry invocation proof for a branch that does not invoke it. Both artifact pins remain independently supplied by the common SYSTEM contract. Similar field names inside project bodies are not product evidence. Continue independent safety/goal/target review; none of these checks supplies an approval.
++For deployment.toolchain.prepare.v1, currentCommandEvidence.toolchainImplementation supplies the complete pinned official preparer, common guards and dispatch. The product compares the rendered parts to the locally pinned helper and lists both artifact digests from the same source-bound SYSTEM contract. These are literal/source checks, not live installation or permission. selectedDispatchSource is the exact prepare-toolchains case inside the full dispatch; it calls the official preparer, not build-entry. Follow preparation's selected/transitive effects, exact arguments, prerequisites and authority; reject missing boundaries or drift. Similar fields inside project bodies are not product evidence.
++For deployment.toolchain.bind.v1, review the guarded fixed bind interface under the independently source-bound SYSTEM helper contract, decodedToolchainBinding, complete current command/input, original workflow and target authority. Bind checks the existing installation/marker/version/source/digest and seals a binding; it does not select the separate download/install/restore branches. The extra complete resolver/installer source is supplied only for prepare. A binding, prior successful preparation or fixed artifact identity does not grant permission or prove future live checks will pass. Keep independent DENY for unsafe effects, missing authority, changed arguments or unenforced prerequisites.
 +For exact guarded stage-config/stage-secret, inputKind=OPAQUE_BOUND_DATA is protected file data, distinct from missing executable stdin. configurationStagingImplementation supplies the actual pinned receiver, controlled-root setup and dispatch; review complete selected code and literal app/configuration-or-secret/format/revision/target/SHA/byte-count bindings, original goal write authority and filesystem effects. The receiver copies bounded bytes into an immutable root-only regular file without evaluating, sourcing or running that data. Do not request or disclose protected values. Later runtime consumption/activation requires a separate independent review; successful staging alone proves no application safety, live ownership or authorization.
 +For platform.sftp.upload, WTL-SFTP-1 binds the exact local/remote paths, SHA256 and maximum bytes to the consumed host grant. Platform transfer opens a regular local file without following links, checks identity/length and hashes its actual bytes against that approved digest before remote mutation; it rechecks the source, hashes the remote temporary file and verifies the final named result. These are enforced transfer semantics, not a claim that this future transfer has happened. Match the exact sourceArchiveObservations path/hash/byte identity when supplied. SourceArchiver originally hashes the compressed output and re-reads its frozen copy before publishing that association. Candidate upload separately checks the returned byte/hash/path receipt; the build pipeline independently queries task ownership and remote bytes/hash before executing the archive. An upload is data transfer, not execution of archive hooks; execution needs its own full review and isolation. Do not invent a requirement for an already transferred remote checksum before transfer. Changed sources/targets, missing authority, conflicting observations or unreviewed execution still fail.
 diff --git a/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml b/src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml

@@ -203,6 +203,41 @@ class DeploymentWorkflowEvidenceRegressionTest {
     }
 
     @Test
+    void bindKeepsExactGuardedInputsAndAuthorityWithoutAddingTheSeparateInstallerBody() throws Exception {
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        String payload = "WTL-TOOLS-1\tcurrent\nJAVA\tRUNTIME\tMjE=\tcG9tLnhtbA==\tSERIES\t21\t21.0.12.1+1\t"
+            + layout.toolchains() + "/versions/java-" + "a".repeat(64) + "\tMANAGED\t"
+            + java.util.Base64.getEncoder().encodeToString("https://example.test/official-jdk.tar.gz".getBytes(java.nio.charset.StandardCharsets.UTF_8))
+            + "\t" + "b".repeat(64) + "\n";
+        String encoded = java.util.Base64.getEncoder().encodeToString(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var scope = sourceScope("model-revision");
+        try (var permission = open(() -> {
+        }); var request = new gold.debug.windowstolinux.appapi.linux.command.CommandRequest(
+            gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.verifiedCommand(
+                "'" + layout.helperPath() + "' prepare-toolchains 'bind' '" + encoded + "'", layout),
+            new byte[0], java.time.Duration.ofSeconds(30), 8192)) {
+            scope.workflowOpened(permission);
+            var intent = gold.debug.windowstolinux.appapi.linux.action.RemoteActions.command(server, "frozen", request)
+                .withSemantics(new ActionSemantics("deployment.toolchain.bind.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
+            var facts = new java.util.LinkedHashMap<String, Object>(DeploymentCommandEvidence.facts(intent, request, layout));
+            facts.putAll(scope.facts(intent, request, task));
+            var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
+            assertEquals("managed-helper-review.v2", json.path("platformContractRevision").asText());
+            assertEquals("bind", json.path("toolchainSubcommand").asText());
+            assertEquals("21.0.12.1+1", json.at("/decodedToolchainBinding/toolchains/0/version").asText());
+            assertEquals(true, json.at("/decodedToolchainBinding/literalValidation/canonicalBase64").asBoolean());
+            assertEquals(id.toString(), json.at("/workflowAuthorization/task").asText());
+            assertEquals(intent.exactAction(), json.path("exactAction").asText());
+            assertEquals("EMPTY", json.path("inputKind").asText());
+            assertFalse(json.has("toolchainImplementation"));
+            assertFalse(json.has("commandGrant"));
+            assertTrue(json.toString().length() < 32768);
+            permission.close();
+            assertThrows(IllegalArgumentException.class, () -> scope.facts(intent, request, task));
+        }
+    }
+
+    @Test
     void preparationReceivesTheActualSourceRequirementWithItsOriginalArchiveAssociation() throws Exception {
         var scope = sourceScope("model-revision");
         var source = material(UUID.randomUUID(), "a".repeat(64));

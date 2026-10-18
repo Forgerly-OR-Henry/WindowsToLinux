@@ -159,8 +159,7 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 }
             }
         }
-        if (intent.semantics().filter(value -> Set.of("deployment.toolchain.prepare.v1", "deployment.toolchain.bind.v1")
-            .contains(value.operation())).isPresent())
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent())
             facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
                 .toolchainImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture
                     .originalTaskLayout(original.tasks(), supplied)));
