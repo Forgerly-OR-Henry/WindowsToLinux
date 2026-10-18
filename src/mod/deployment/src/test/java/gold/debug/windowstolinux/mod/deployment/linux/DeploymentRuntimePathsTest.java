@@ -255,6 +255,18 @@ class DeploymentRuntimePathsTest {
     }
 
     @Test
+    void retentionDeclaresBothReleaseAndContainerCredentialCleanupRoots() throws Exception {
+        var peer = new ControlledPeer(request -> "RETAINED=1\n");
+        var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);
+        var channel = new DeploymentPublishChannel(peer.session, peer, SERVER, peer.task, REVISION, LAYOUT);
+        assertEquals(TaskResult.SUCCEEDED, channel.retain(unit).outcome());
+        assertEquals(Set.of(new ActionTarget(SERVER.id(), "deployment-release", unit.releaseRoot()),
+                new ActionTarget(SERVER.id(), "deployment-secret", LAYOUT.configurationRoot("demo") + "/.container-credentials")),
+            peer.commands.getFirst().intent().semantics().orElseThrow().targets());
+        assertGuard(peer.commands.getFirst().script());
+    }
+
+    @Test
     void maintenanceEndDeclaresActualApplicationLockDirectory() throws Exception {
         var peer = new ControlledPeer(request -> "MAINTENANCE=end\n");
         var unit = DeploymentUnitIdentity.forManaged("demo", SERVER, "b".repeat(64), LAYOUT);

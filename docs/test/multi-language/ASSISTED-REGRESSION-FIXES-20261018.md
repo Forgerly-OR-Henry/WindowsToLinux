@@ -1,6 +1,6 @@
 # 2026-10-18 ASSISTED 回归修复记录与 Agent 调试交接
 
-本记录由用户要求保留，供后续 Agent 调试追溯。当前已按用户要求暂停 ASSISTED 多语言真机验收，保留CLI22原任务UNKNOWN；最终部署结果与 Token 汇总尚未达到完整交付条件；本记录不代表 Agent 已恢复测试或已经通过。
+本记录由用户要求保留，供后续 Agent 调试追溯。用户已要求继续 ASSISTED 多语言真机验收。CLI22原任务已由程序结清成功并导出管理同源启动信息，当前1/8交付，正顺序验证其余7项；最终部署与Token汇总仍待全部完成。本记录不代表Agent已恢复测试或已经通过。
 
 ## 修改与边界
 
@@ -331,3 +331,12 @@ maintenance-recovery-unit-02两项隔离记账测试通过0跳过；合计23项�
 补恢复后的交付测试入口，核对正式已归档的原成功任务、同一应用与持久COMMAND健康期望，再复用现有product usage导出。delivery-01误从活跃snapshot找已结束任务、delivery-02误从未归档表读取，均在管理请求前失败，未变更原发布；delivery-03改读正式archived(task,owner,version)，继续验证管理与导出。没有为导出重建执行记录或重跑部署；原CLI业务检查同正常ASSISTED入口，以原成功COMMAND健康及期望输出为依据。
 
 delivery-03真实产品交付检查1项通过0跳过、41.69s；log-analyzer.json已导出同源管理启动命令，第一项ASSISTED完整交付成立。两Java限定格式化完成。恢复与交付管理调用将纳入usage-audit-08本地持久日志核对；任务归档正常保留，后续不再重部署该CLI。
+
+
+## Directory Diff 01：已发布后的保留清理参数与实际目标
+
+原task161164ad-1d4a-42ba-a12e-a4a84852a153/root assisted-live-directory-diff-3awq9ju74，来源/准备/上传/构建/发布/健康均通过，maintenance-end通过，但retain有效DENY；理由把两个实参当部署目录标识和业务摘要，要求与release/businessRevision绑定。真实接口只有app/ownerManifestSha256，二者应分别与派生应用目录/对应所有权核对。新记账已生效，发送前拒绝保留MAINTENANCE_ENDED；directory-diff-reconcile-01-01已由产品重新观察同一发布、实际保留数满足上限，无需发送retain，结清原任务ENDED/SUCCEEDED、blockers空。不删除拒绝、不重发布或用另一模型寻找批准。
+
+补这类固定管理入口的共同app/owner机械帧，覆盖retain/inspect-runtime/observe-deployment，完整精确字面调用、空stdin及派生应用资源匹配后才给出；保留原命令/所有权和业务修订角色差异，事实不等于live归属或授权。retain额外描述真实inventory/归属验证、当前+两个最新非当前版本保留，以及旧版本和对应容器凭据目录清理。核对源码时发现retain可能调用remove_container_secret_delivery，原target只含应用发布目录；现另声明捕获layout的configurationRoot(app)/.container-credentials，不暴露任何秘密值。无helper/命令/保留策略变化，独立新审批不省略；未来Agent固定发布通道会看到此资源，记录供后续调试。定点验证进行中。
+
+managed-application-frame-unit-01限定10项通过0跳过（3种共同帧、资源/参数漂移与非空stdin/额外动作边界9项，真实PublishChannel保留target1项）；4Java限定格式化完成。接下来导出已成功原Directory Diff，再继续余下6项。

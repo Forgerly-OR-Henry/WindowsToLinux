@@ -191,6 +191,8 @@ final class DeploymentCommandEvidence {
         }
         byte[] input = request.stdin();
         try {
+            if (installedHelper)
+                managedApplication(invocation, input, intent, layout).ifPresent(value -> facts.put("managedApplication", value));
             if (Set.of("deployment.publication.publish.v1", "deployment.publication.health.v1").contains(operation))
                 workload(invocation, input, intent, layout).ifPresent(value -> facts.put("workloadInput", value));
             if (operation.equals("deployment.publication.snapshot.v1"))
@@ -307,6 +309,34 @@ final class DeploymentCommandEvidence {
             "ownershipManifestSha256", match.group(3), "task", match.group(4), "derivedReleaseRoot", release,
             "possibleSnapshotRoot", snapshot, "literalValidation", "EXACT_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_PATHS_ONLY",
             "meaning", "Public snapshot-deployment/container accept application, ownership manifest digest and optional task; this exact frame includes the original task. Release path is derived, not a missing argument. The manifest digest identifies ownership, not snapshot content or business/source/model revision. The pinned helper validates managed roots and matching current ownership or absence: absent previous deployment returns PREVIOUS=0 without a snapshot; otherwise captures protected prior runtime state. These are code semantics, not proof of current presence, safety or permission."));
+    }
+
+    /** Labels the common app/owner arguments of exact installed management calls and binds their derived targets. */
+    private static java.util.Optional<Map<String, Object>> managedApplication(String script, byte[] input, ActionIntent intent,
+                                                                              gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout layout) {
+        var match = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote("'" + layout.helperPath() + "' ")
+            + "'(retain|inspect-runtime|observe-deployment)' '([a-z0-9][a-z0-9-]{0,62})' '([a-f0-9]{64})'\\z").matcher(script);
+        if (input.length != 0 || !match.matches()) return java.util.Optional.empty();
+        String release = layout.applicationRoot(match.group(2)), credentials = layout.configurationRoot(match.group(2)) + "/.container-credentials";
+        var targets = intent.semantics().orElseThrow().targets();
+        if (intent.serverIds().size() != 1 || !targets.contains(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-release", release))
+            || match.group(1).equals("retain") && !targets.contains(
+            new gold.debug.windowstolinux.appapi.task.action.ActionTarget(intent.serverIds().getFirst(), "deployment-secret", credentials)))
+            throw new IllegalArgumentException("Managed application resource bindings differ");
+        var result = new LinkedHashMap<String, Object>();
+        result.put("verb", match.group(1));
+        result.put("application", match.group(2));
+        result.put("ownershipManifestSha256", match.group(3));
+        result.put("derivedReleaseRoot", release);
+        result.put("literalValidation", "EXACT_APP_OWNER_FRAME_EMPTY_STDIN_AND_DECLARED_DERIVED_TARGETS_ONLY");
+        result.put("meaning", "The two public arguments are application id and ownership manifest SHA256, not a directory or business revision. The helper derives the application root from its captured layout and checks current release path and ownership. These digests identify different objects from businessRevision; match each object's binding, not equality across roles. Literal bindings and code semantics do not assert current state, safety or permission.");
+        if (match.group(1).equals("retain")) {
+            result.put("releaseInventoryRoot", release + "/releases");
+            result.put("containerCredentialRoot", credentials);
+            result.put("effects", "Pinned retain validates root-owned app/releases/current and manifest, inventories immediate release directories by descending mtime, validates each encountered release digest/directory/owner, keeps current and two newest noncurrent releases, removes older owned release directories and their matching digest-scoped .container-credentials deliveries using guarded one-filesystem removal. No supplied path is traversed as a release id; no build, publish, rollback or runtime start is requested. Actual inventory is checked during execution, not established by this description.");
+        }
+        return java.util.Optional.of(Collections.unmodifiableMap(result));
     }
 
     /** Binds the exact maintenance cleanup frame and actual lock paths without asserting live state or permission. */
