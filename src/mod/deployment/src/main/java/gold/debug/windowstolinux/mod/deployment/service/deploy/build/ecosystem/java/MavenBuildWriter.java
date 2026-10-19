@@ -110,14 +110,33 @@ public final class MavenBuildWriter implements DeploymentBuildWriter {
     /** Describes only an exact observed product bootstrap fragment; the enclosing script still requires full review. */
     public static java.util.Optional<java.util.Map<String, Object>> bootstrapEvidence(String input) {
         String fragment = prepareMaven();
-        if (!input.contains(fragment)) return java.util.Optional.empty();
+        int offset = input.indexOf(fragment);
+        if (offset < 0 || input.indexOf(fragment, offset + 1) >= 0) return java.util.Optional.empty();
+        byte[] fragmentBytes = fragment.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String fragmentSha;
+        try {
+            fragmentSha = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(fragmentBytes));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
         var source = java.util.regex.Pattern.compile("https://repo[.]maven[.]apache[.]org/maven2/org/apache/maven/apache-maven/([0-9.]+)/apache-maven-\\1-bin[.]tar[.]gz").matcher(fragment);
         var digest = java.util.regex.Pattern.compile("[a-f0-9]{128}").matcher(fragment);
         if (!source.find() || !digest.find())
             throw new IllegalStateException("Maven bootstrap evidence contract changed");
         return java.util.Optional.of(java.util.Map.of("version", source.group(1), "url", source.group(),
+            "fragmentSha256", fragmentSha, "utf8ByteOffset", input.substring(0, offset).getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
+            "utf8ByteLength", fragmentBytes.length,
             "algorithm", "SHA512", "expectedArchiveDigest", digest.group(), "candidateLocalHome", "$mutable/home/.wtl-tools/apache-maven-" + source.group(1),
-            "meaning", "Exact complete MavenBuildWriter.prepareMaven fragment occurs in supplied executable stdin. Only when mvn is absent from the isolated build PATH: bounded HTTPS curl (32MiB,120s,retry2) downloads the product-pinned Maven archive into candidate mutable/home; SHA512 is verified before tar inspection. It limits 1024 members, permits only the fixed version prefix and safe components, rejects links/special types/duplicate files, then extracts without preserving owner/permissions into candidate-local home and checks bin/mvn. It makes no host-wide installation. This identifies that exact fragment only; separately review the full body's mutable binding, overrides and all other commands. It does not prove a live download, upstream metadata freshness, isolated execution or permission."));
+            "meaning", "Exactly one complete MavenBuildWriter.prepareMaven fragment occurs at the stated zero-based UTF-8 byte offset and length in the supplied executable stdin; fragmentSha256 identifies only those bytes. Only when mvn is absent from the isolated build PATH: bounded HTTPS curl (32MiB,120s,retry2) downloads the product-pinned Maven archive into candidate mutable/home; SHA512 is verified before tar inspection. It limits 1024 members, permits only the fixed version prefix and safe components, rejects links/special types/duplicate files, then extracts without preserving owner/permissions into candidate-local home and checks bin/mvn. It makes no host-wide installation. This identifies that exact fragment only; separately review the full body's mutable binding, overrides and all other commands. It does not prove a live download, upstream metadata freshness, isolated execution or permission."));
+    }
+
+    /** Supplies a narrowly pinned fixed-fragment contract; no description for duplicate or modified input. */
+    public static java.util.Optional<String> bootstrapReviewInstructions(String input) {
+        var evidence = bootstrapEvidence(input);
+        if (evidence.isEmpty()) return java.util.Optional.empty();
+        if (!evidence.orElseThrow().get("fragmentSha256").equals("82b67576f1a0dbcf2ac8ecd7655532e0e6a33a822efc67379708a28fb7975b51"))
+            throw new IllegalStateException("Maven fragment review contract identity changed");
+        return java.util.Optional.of("Current Maven product fragment: the product compared the full UTF-8 executable stdin to exactly one independently pinned MavenBuildWriter.prepareMaven fragment (SHA256 82b67576f1a0dbcf2ac8ecd7655532e0e6a33a822efc67379708a28fb7975b51). candidateMavenBootstrap gives its zero-based byte offset/length and archive identity. Only these bytes are fixed product code: if the isolated build PATH has no mvn, bounded HTTPS curl downloads Maven 3.9.16 from repo.maven.apache.org into candidate mutable/home, checks the pinned SHA512, validates the tar member prefix/count/types/duplicates and extracts without preserving owner/permissions into candidate-local .wtl-tools, checks bin/mvn and adjusts PATH. Temporary archive/list files are removed on the successful branch; failure is not transactional rollback. No host-wide Maven install or completed live check is claimed. Review the actual mutable/PATH bindings, control flow and overrides around this range and every remaining executable byte, project/dependency hook, isolation interface and original authority. The fragment comparison is not trust for the whole script, a live download proof or execution permission. For this exact fixed range use these source-bound effects; manual rehashing or re-deriving unrelated installer branches is unnecessary. Deny any concrete unsafe/unbounded effect or missing required evidence; otherwise submit the concise native decision.");
     }
 
     /** Prepares a pinned Maven only when no executable is accessible to the isolated build identity. / 隔离构建身份无可执行Maven时才准备固定版本。

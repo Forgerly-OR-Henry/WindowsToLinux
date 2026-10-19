@@ -23,6 +23,11 @@ public interface DeploymentCurrentCommandEvidence {
         return "";
     }
 
+    /** Current request selects only product-owned instructions; defaults preserve other reviewers. */
+    default String reviewInstructions(ActionIntent intent, CommandRequest request, TaskContext task) throws ApiException {
+        return reviewInstructions();
+    }
+
     default void reviewed(ActionIntent intent, CommandRequest request, TaskContext task,
                           DeploymentReviewDecision decision) throws ApiException {
     }

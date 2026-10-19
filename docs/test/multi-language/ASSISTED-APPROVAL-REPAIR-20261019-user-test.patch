@@ -1,0 +1,11 @@
+--- a/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentCommandApprovalPolicyRuntimeTest.java
++++ b/src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentCommandApprovalPolicyRuntimeTest.java
+@@ -666,7 +666,7 @@
+                     var sent = JSON.readTree(exchange.getRequestBody());
+                     assertEquals("Bearer fixture-model-key", exchange.getRequestHeaders().getFirst("Authorization"));
+                     assertEquals("fixture/approval", sent.path("model").asText(), "Actual independent APPROVAL route must be used");
+-                    assertEquals(8192, sent.path("max_tokens").asInt(), "Deployment approval budget is independent of the legacy model editor value");
++                    assertEquals(32768, sent.path("max_tokens").asInt(), "Deployment approval budget is independent of the legacy model editor value");
+                     JsonNode actual = null;
+                     for (var part : sent.path("messages")) {
+                         if (!part.path("role").asText().equals("user")) continue;

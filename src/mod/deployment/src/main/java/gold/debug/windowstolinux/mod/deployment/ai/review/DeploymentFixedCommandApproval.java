@@ -123,7 +123,7 @@ public final class DeploymentFixedCommandApproval {
             currentEvidence.verify(intent, request, task);
             String instruction = model.responseInstructions()
                 + DeploymentSkillResources.text(DeploymentFixedCommandApproval.class, "command-review.md");
-            String supplement = currentEvidence.reviewInstructions();
+            String supplement = currentEvidence.reviewInstructions(intent, request, task);
             if (supplement == null) throw new IOException("Current review instructions are missing");
             if (!supplement.isEmpty()) {
                 if (!trustedInstructions)

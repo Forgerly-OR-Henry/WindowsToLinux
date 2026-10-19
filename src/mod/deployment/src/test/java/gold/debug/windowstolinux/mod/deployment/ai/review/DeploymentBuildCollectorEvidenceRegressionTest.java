@@ -41,8 +41,16 @@ class DeploymentBuildCollectorEvidenceRegressionTest {
     @Test
     void exactMavenFragmentDescribesPinnedCandidateLocalBootstrapWithoutTrustingOtherCommands() throws Exception {
         String fragment = maven();
-        var facts = new ObjectMapper().valueToTree(MavenBuildWriter.bootstrapEvidence(fragment + "\nprintf extra\n").orElseThrow());
+        var facts = new ObjectMapper().valueToTree(MavenBuildWriter.bootstrapEvidence("# 中文前缀\n" + fragment + "\nprintf extra\n").orElseThrow());
         assertEquals("SHA512", facts.path("algorithm").asText());
+        int offset = "# 中文前缀\n".getBytes(StandardCharsets.UTF_8).length;
+        assertEquals(offset, facts.path("utf8ByteOffset").asInt());
+        byte[] bytes = fragment.getBytes(StandardCharsets.UTF_8);
+        assertEquals(bytes.length, facts.path("utf8ByteLength").asInt());
+        assertEquals(HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)), facts.path("fragmentSha256").asText());
+        assertTrue(MavenBuildWriter.bootstrapEvidence(fragment + "\n" + fragment).isEmpty());
+        assertTrue(MavenBuildWriter.bootstrapReviewInstructions(fragment).orElseThrow().contains("independently pinned"));
+        assertTrue(MavenBuildWriter.bootstrapReviewInstructions(fragment + "\n" + fragment).isEmpty());
         assertEquals(128, facts.path("expectedArchiveDigest").asText().length());
         assertTrue(facts.path("url").asText().startsWith("https://repo.maven.apache.org/"));
         assertTrue(facts.path("candidateLocalHome").asText().startsWith("$mutable/home/"));
@@ -63,6 +71,7 @@ class DeploymentBuildCollectorEvidenceRegressionTest {
         };
         assertNotEquals(fragment, changed);
         assertTrue(MavenBuildWriter.bootstrapEvidence(changed).isEmpty());
+        assertTrue(MavenBuildWriter.bootstrapReviewInstructions(changed).isEmpty());
     }
 
     private static String maven() throws Exception {

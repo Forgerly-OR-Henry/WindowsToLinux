@@ -159,9 +159,8 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             }
         }
         if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent())
-            facts.put("toolchainImplementation", gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle
-                .toolchainImplementationFacts(gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture
-                    .originalTaskLayout(original.tasks(), supplied)));
+            facts.put("toolchainPreparationContract", DeploymentAssistedPreparationReview.facts(intent, request,
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
         if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {
             try {
                 var store = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());
@@ -174,6 +173,32 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             }
         }
         return Map.copyOf(facts);
+    }
+
+    @Override
+    public String reviewInstructions(ActionIntent intent, gold.debug.windowstolinux.appapi.linux.command.CommandRequest request,
+                                     TaskContext supplied) throws ApiException {
+        // Revalidate original authority before selecting any trusted current-action supplement.
+        facts(intent, request, supplied);
+        String instructions = gold.debug.windowstolinux.mod.deployment.ai.skill.DeploymentSkillResources.text(
+            DeploymentAssistedApproval.class, "fixed-effect-review.md");
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent())
+            instructions += "\n" + DeploymentAssistedPreparationReview.instructions(intent, request,
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.build.run.v1")).isPresent()) {
+            byte[] input = request.stdin();
+            try {
+                String executable = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(input)).toString();
+                instructions += gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter
+                    .bootstrapReviewInstructions(executable).map(value -> "\n" + value).orElse("");
+            } catch (java.nio.charset.CharacterCodingException invalid) {
+                throw new IllegalArgumentException("Build instructions require complete UTF-8 input", invalid);
+            } finally {
+                java.util.Arrays.fill(input, (byte) 0);
+            }
+        }
+        return instructions;
     }
 
     /** Compares the literal build archive guard and complete collector to one captured source association. */

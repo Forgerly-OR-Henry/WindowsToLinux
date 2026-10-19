@@ -241,8 +241,11 @@ class DeploymentWorkflowEvidenceRegressionTest {
     void buildPreservesTheWholeExecutableBodyCollectorSourceAndAuthorityUnderThePinnedIsolationContract() throws Exception {
         var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
         var workspace = new gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentRemoteWorkspace("fixture-build", "a".repeat(64), layout);
+        var prepareMaven = gold.debug.windowstolinux.mod.deployment.service.deploy.build.ecosystem.java.MavenBuildWriter.class.getDeclaredMethod("prepareMaven");
+        prepareMaven.setAccessible(true);
+        String fragment = (String) prepareMaven.invoke(null);
         String body = "test \"$(sha256sum \"$archive\" | awk '{print $1}')\" = '" + "b".repeat(64)
-            + "'\nprintf 'project body remains untrusted and needs full review\\n'\n";
+            + "'\n" + fragment + "\nprintf 'project body remains untrusted and needs full review\\n'\n";
         byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         String digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
         String collector = gold.debug.windowstolinux.mod.deployment.linux.build.DeploymentBuildOutputProtocol.script(
@@ -262,6 +265,9 @@ class DeploymentWorkflowEvidenceRegressionTest {
             facts.put("currentCommandEvidence", scope.facts(intent, request, task));
             var json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(facts);
             assertEquals(body, json.path("completeExecutableInput").asText());
+            assertArrayEquals(request.stdin(), json.path("completeExecutableInput").asText().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            assertTrue(json.has("candidateMavenBootstrap"));
+            assertTrue(scope.reviewInstructions(intent, request, task).contains("Current Maven product fragment:"));
             assertEquals("managed-helper-review.v2", json.path("platformContractRevision").asText());
             assertEquals(gold.debug.windowstolinux.mod.deployment.linux.helper.DeploymentManagedHelperBundle.buildEntrySha256(layout),
                 json.path("installedBuildEntrySha256").asText());
@@ -271,6 +277,63 @@ class DeploymentWorkflowEvidenceRegressionTest {
             assertFalse(json.path("currentCommandEvidence").has("buildIsolationImplementation"));
             assertFalse(json.has("commandGrant"));
             assertTrue(json.toString().length() < 32768);
+        }
+    }
+
+    @Test
+    void nodePreparationUsesProductionReviewWithin40KiBAndDenialCannotAuthorizeOrDispatch() throws Exception {
+        var fixture = new gold.debug.windowstolinux.mod.deployment.ai.NativeAiFixture();
+        fixture.configurationRevision = "model-revision";
+        fixture.nativeReply(new gold.debug.windowstolinux.appapi.ai.model.AiToolCall("native-denial", "submit_result",
+            "{\"decision\":\"DENY\",\"requiresUserConfirmation\":false,\"reason\":\"Controlled denial\"}"));
+        var authorizations = new AtomicInteger();
+        var interaction = stub(InteractionService.class, (proxy, method, args) -> {
+            if (method.getName().equals("openReviewedWorkflow"))
+                return new OperationResult<>(TaskResult.SUCCEEDED, Optional.of((WorkflowGrant) () -> {
+                }), Optional.empty());
+            authorizations.incrementAndGet();
+            throw new AssertionError("Denial cannot reach host grants: " + method.getName());
+        });
+        var ui = stub(gold.debug.windowstolinux.appapi.ui.UiService.class, (proxy, method, args) -> {
+            assertEquals("environment", method.getName());
+            return new gold.debug.windowstolinux.appapi.ui.page.UiEnvironment(java.util.Locale.ENGLISH, "LIGHT", false);
+        });
+        var context = stub(ModContext.class, (proxy, method, args) -> {
+            if (method.getName().equals("interaction")) return interaction;
+            if (method.getName().equals("ui")) return ui;
+            try {
+                return method.invoke(fixture.context, args);
+            } catch (java.lang.reflect.InvocationTargetException failure) {
+                throw failure.getCause();
+            }
+        });
+        var scope = new gold.debug.windowstolinux.mod.deployment.service.standard.assisted.DeploymentAssistedScope(
+            context, fixture.task, "model-revision", "AUTOMATIC", true);
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentRemoteLayout.original();
+        try (var permission = DeploymentWorkflowAuthorization.open(context, fixture.task, server, "model-revision", "AUTOMATIC", true,
+            "Deploy the selected survey-scoring application including official Node prerequisites on this server");
+             var request = DeploymentToolchainImplementationEvidenceRegressionTest.request(layout, "NODE", "22", "-", "-")) {
+            scope.workflowOpened(permission);
+            var intent = DeploymentToolchainImplementationEvidenceRegressionTest.intent(server, request, layout.toolchains());
+            var failure = assertThrows(ApiException.class, () -> ((gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview) scope.interaction()).approveCommand(intent, request, fixture.task));
+            assertEquals("DEPLOYMENT_COMMAND_REVIEW_DENIED", failure.problem().eventCode());
+            assertEquals(0, authorizations.get());
+            assertEquals(1, fixture.requests.size());
+            var call = fixture.requests.getFirst();
+            byte[] encoded = gold.debug.windowstolinux.app.ai.model.ModelProtocolCodec.forProtocol(
+                gold.debug.windowstolinux.app.ai.model.ModelProtocol.OPENAI_CHAT_COMPLETIONS).encode("deepseek-flash", call,
+                32768, gold.debug.windowstolinux.app.ai.model.ModelReasoningLevel.LOW, java.util.Map.of());
+            assertTrue(encoded.length <= 40 * 1024, "Actual encoded request bytes=" + encoded.length);
+            var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(call.messages().getLast().text());
+            assertEquals(intent.exactAction(), json.path("exactAction").asText());
+            assertEquals(fixture.task.id().toString(), json.at("/currentCommandEvidence/workflowAuthorization/task").asText());
+            assertTrue(json.path("currentCommandEvidence").has("toolchainPreparationContract"));
+            assertFalse(json.path("currentCommandEvidence").has("toolchainImplementation"));
+            assertTrue(call.messages().getFirst().text().contains("selected ecosystem NODE"));
+            permission.close();
+            assertThrows(IllegalArgumentException.class, () -> scope.facts(intent, request, fixture.task));
+            assertEquals(1, fixture.requests.size());
+            System.out.println("ASSISTED_NODE_ENCODED_REQUEST_BYTES=" + encoded.length);
         }
     }
 
