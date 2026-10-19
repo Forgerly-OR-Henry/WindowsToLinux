@@ -102,7 +102,7 @@ public final class DeploymentAssistedAnalysis {
                     .map(f -> Map.of("id", f.id(), "value", f.value(), "choices", f.choices())).toList(),
                 "observations", List.copyOf(observations), "evidenceReferences", List.copyOf(evidence.keySet()),
                 "feedback", feedback, "remaining", 12 - decision);
-            JsonNode reply = ai.askStructured(AiPurpose.LANGUAGE, POLICY, request, revision, task, actionSchema(offered, evidence),
+            JsonNode reply = ai.askStructured(AiPurpose.LANGUAGE, POLICY, request, revision, task, actionSchema(offered, evidence, source.revision()),
                 node -> {
                     try {
                         exact(node, Set.of("action", "sourceRevision", "arguments"));
@@ -222,9 +222,10 @@ public final class DeploymentAssistedAnalysis {
     }
 
     /** Advertises only actually observed source references; empty evidence permits unresolved-only advice. */
-    private static String actionSchema(Map<String, DeploymentReviewField> offered, Map<String, String> evidence) throws IOException {
+    private static String actionSchema(Map<String, DeploymentReviewField> offered, Map<String, String> evidence, String revision) throws IOException {
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         var schema = json.readTree(ACTION_SCHEMA);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) schema.at("/properties/sourceRevision")).putArray("enum").add(revision);
         var suggestions = (com.fasterxml.jackson.databind.node.ObjectNode) schema.at("/properties/arguments/oneOf/2/properties/suggestions");
         if (evidence.isEmpty() || offered.isEmpty()) suggestions.put("maxItems", 0);
         else {

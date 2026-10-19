@@ -57,6 +57,60 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private final LinkedHashMap<String, Map<String, Object>> sourceArchives = new LinkedHashMap<>();
 
+    private record ToolchainPlan(String identity, String server,
+                                 List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements,
+                                 Map<String, Object> evidence) {
+    }
+
+    private volatile ToolchainPlan toolchainPlan;
+
+    private synchronized void toolchainPreparationPlanned(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+        String expected, TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        verify();
+        toolchainPlan = null;
+        var request = plan.request();
+        var layout = gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied);
+        var rendered = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner()
+            .render(plan, supplied, layout);
+        if (rendered.outcome() != gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED
+            || !rendered.value().orElseThrow().reviewedPlanSha256().equals(expected))
+            throw new IllegalArgumentException("Runtime dependency plan binding changed");
+        var selected = sourceSelection;
+        if (selected == null || !request.server().id().equals(selected.get("server"))
+            || !request.material().snapshot().id().toString().equals(selected.get("snapshotId"))
+            || !request.archive().sourceManifestSha256().equals(selected.get("sourceRevision"))
+            || sourceArchives.values().stream().noneMatch(archive ->
+            request.archive().sha256().equals(archive.get("archiveSha256"))
+                && request.archive().relativeRoot().equals(archive.get("relativeRoot"))
+                && request.archive().originSnapshotId().toString().equals(archive.get("originSnapshotId"))
+                && request.archive().snapshot().id().toString().equals(archive.get("archiveSnapshotId"))
+                && request.archive().path().toString().equals(archive.get("localArchivePath"))
+                && Long.valueOf(request.archive().byteCount()).equals(archive.get("archiveBytes"))))
+            throw new IllegalArgumentException("Runtime dependency plan differs from captured source");
+        validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(
+            workflow, supplied, request.server()));
+        var requirements = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentProjectToolchainRequirements
+            .from(request.facts(), request.runtime());
+        var evidence = new LinkedHashMap<String, Object>();
+        evidence.put("reviewedPlanSha256", expected);
+        evidence.put("server", request.server().id());
+        evidence.put("application", request.facts().applicationId());
+        evidence.put("sourceManifestSha256", request.archive().sourceManifestSha256());
+        evidence.put("archiveSha256", request.archive().sha256());
+        evidence.put("relativeRoot", request.archive().relativeRoot());
+        evidence.put("runtimeKind", request.runtime().getClass().getSimpleName());
+        evidence.put("requirements", requirements.stream().map(requirement -> Map.of(
+            "ecosystem", requirement.ecosystem().name(), "version", requirement.version().map(value -> value.text()).orElse(""),
+            "constraint", requirement.constraint().name(), "source", requirement.source(),
+            "derivation", request.facts().toolchainRequirements().contains(requirement) ? "SOURCE_DECLARATION" : "REVIEWED_RUNTIME")).toList());
+        evidence.put("meaning", "Intended tool requirements derived by the same fixed product planner used for this source-bound reviewed runtime. Source declarations are separate and need not include product runtime dependencies. This is a planned dependency, not an installation observation or approval. Review original workflow authority and the exact current effects independently.");
+        if (request.runtime() instanceof gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.StaticSite)
+            evidence.put("runtimeDependencyReason", "This reviewed StaticSite uses the product managed Python 3.12 http.server to serve built assets; Node, when selected, builds those assets. Python is a fixed runtime requirement and need not be declared by package.json. The pinned helper static launch branch uses the prepared Python executable; this does not prove it is installed or authorize an effect.");
+        toolchainPlan = new ToolchainPlan(expected, request.server().id(), requirements, Map.copyOf(evidence));
+    }
+
     /** Records the archiver's original-source association, never source trust or build permission. */
     public synchronized void archiveCaptured(gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceMaterial material,
                                              gold.debug.windowstolinux.mod.deployment.file.DeploymentSourceArchive archive,
@@ -158,9 +212,29 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 }
             }
         }
-        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent())
-            facts.put("toolchainPreparationContract", DeploymentAssistedPreparationReview.facts(intent, request,
-                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied)));
+        if (intent.semantics().filter(value -> value.operation().equals("deployment.toolchain.prepare.v1")).isPresent()) {
+            var contract = DeploymentAssistedPreparationReview.facts(intent, request,
+                gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
+            facts.put("toolchainPreparationContract", contract);
+            var planned = toolchainPlan;
+            if (planned != null && planned.identity().equals(intent.revision())
+                && intent.serverIds().equals(List.of(planned.server()))) {
+                var arguments = (Map<?, ?>) contract.get("arguments");
+                boolean matched = planned.requirements().stream().anyMatch(requirement ->
+                    requirement.ecosystem().name().equals(arguments.get("ecosystem"))
+                        && gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults()
+                        .candidates(requirement).stream().anyMatch(branch -> {
+                            String exact = requirement.constraint() == gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement.ConstraintType.EXACT
+                                && requirement.version().isPresent() && !requirement.version().orElseThrow().preview()
+                                && requirement.version().orElseThrow().branch().equals(branch.version())
+                                ? requirement.version().orElseThrow().text() : "-";
+                            return branch.version().equals(arguments.get("catalogBranch")) && exact.equals(arguments.get("requestedExact"));
+                        }));
+                if (!matched)
+                    throw new IllegalArgumentException("Preparation differs from reviewed runtime requirements");
+                facts.put("currentToolchainPlan", planned.evidence());
+            }
+        }
         if (intent.semantics().filter(value -> value.operation().equals("deployment.publication.publish.v1")).isPresent()) {
             try {
                 var store = new gold.debug.windowstolinux.mod.deployment.db.execution.DeploymentExecutionStore(original.db());
@@ -596,6 +670,13 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
     @Override
     public InteractionService interaction() {
         return new gold.debug.windowstolinux.mod.deployment.linux.command.contract.DeploymentCommandReview() {
+            @Override
+            public void toolchainPreparationPlanned(
+                gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+                String identity, TaskContext supplied) throws ApiException {
+                DeploymentAssistedScope.this.toolchainPreparationPlanned(plan, identity, supplied);
+            }
+
             @Override
             public void toolchainsPrepared(ServerId server,
                                            gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,

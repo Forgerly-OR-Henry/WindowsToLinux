@@ -1,0 +1,102 @@
+{
+  "generatedBy": "Product management export; original payloads retained",
+  "applications": [
+    {
+      "project": "task-board",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-task-board-mzjg9nwxg",
+      "application": "wtl-assisted-task-board-mzjgb7b7w",
+      "server": "static-live",
+      "revisionSha256": "b9c5cc82c07bce6e03ca0dc20681a802788fee1856a6b525a43f8f27327d9e0a",
+      "ownershipSha256": "ea658156640af831ec8344750302ebdcf707676aedd6a16119c9b25016c63565",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T07:39:52.640389900Z",
+      "components": [
+        {
+          "endpoints": [
+            {
+              "browser": "http://45.192.105.213:46101",
+              "protocol": "http",
+              "value": "http://45.192.105.213:46101"
+            }
+          ],
+          "unitId": "wtl-assisted-task-board-mzjgb7b7w-backend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-task-board-mzjgb7b7w-backend start 28625064452c94f9ae268ab290e01d3de2f3ff5b0a9c19b25ada38bf80db1fed bd160fe66f83bfa0b54b8675fda3c6b0ef6c094e6a7687aa9a5c13eb8b37c243",
+          "id": "backend",
+          "workers": [],
+          "state": "RUNNING",
+          "mode": "DAEMON"
+        },
+        {
+          "endpoints": [
+            {
+              "browser": "http://45.192.105.213:46100",
+              "protocol": "http",
+              "value": "http://45.192.105.213:46100"
+            }
+          ],
+          "unitId": "wtl-assisted-task-board-mzjgb7b7w-frontend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-task-board-mzjgb7b7w-frontend start e9c9bc6886fc4f79c738005ace5a5dcb20df999e70c7286cb5e8f61dfa1ece14 4a277b860850769084e83dcd355b5477409b98fa8da9db76fd223bf78badbfd0",
+          "id": "frontend",
+          "workers": [],
+          "state": "RUNNING",
+          "mode": "DAEMON"
+        }
+      ]
+    },
+    {
+      "project": "survey-scoring",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-survey-scoring-pjwdf1s70",
+      "application": "wtl-assisted-survey-scoring-pjwdggjnw",
+      "server": "static-live",
+      "revisionSha256": "cfb98c3e8d44585f012f7894a6385f4bdc312f003e45e60bcf66aadd7c3d4be9",
+      "ownershipSha256": "1febe651e6a5e0670545c485cc0cf9ec77e831c6a07774cb7423f301a4c5a69b",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T09:42:55.570899900Z",
+      "components": [
+        {
+          "endpoints": [
+            {
+              "value": "http://45.192.105.213:46141",
+              "protocol": "http",
+              "browser": "http://45.192.105.213:46141"
+            }
+          ],
+          "mode": "DAEMON",
+          "state": "RUNNING",
+          "workers": [],
+          "id": "backend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-pjwdggjnw-backend start 8217d4072dde9f31a3dbe471eff8b8e33a527e8a48e817ad6628ef2c5887355c 73ac934c45c697e6bffdcf73c18c9ea6892d678c05013f261f1ee0ace6ccba32",
+          "unitId": "wtl-assisted-survey-scoring-pjwdggjnw-backend"
+        },
+        {
+          "endpoints": [
+            {
+              "value": "http://45.192.105.213:46140",
+              "protocol": "http",
+              "browser": "http://45.192.105.213:46140"
+            }
+          ],
+          "mode": "DAEMON",
+          "state": "RUNNING",
+          "workers": [],
+          "id": "frontend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-pjwdggjnw-frontend start b4fb140647cd47f150b418fae7146f4d0850f950998be2c838bc7f98c676fb92 77718bf1e3cb97270c1b501cd8362b65af184a0c21e5274e8ef17f49ade1dd41",
+          "unitId": "wtl-assisted-survey-scoring-pjwdggjnw-frontend"
+        },
+        {
+          "endpoints": [],
+          "mode": "DAEMON",
+          "state": "RUNNING",
+          "workers": [],
+          "id": "scorer",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-pjwdggjnw-scorer start a086bb7d0c21e234c8e407e4338547e3da4e068e8db70b44c713fca3bff32508 da65431ecec09449eecf209c189476c8394d41ea62e6501576a2ba3be0464059",
+          "unitId": "wtl-assisted-survey-scoring-pjwdggjnw-scorer"
+        }
+      ]
+    }
+  ]
+}

@@ -51,6 +51,8 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
 
     private final AtomicInteger sshAccesses = new AtomicInteger();
 
+    private boolean runtimePrerequisites;
+
     @ParameterizedTest
     @ValueSource(strings = {"task-board", "survey-scoring"})
     void reviewsThreeIndependentTasksWithoutSsh(String project) throws Exception {
@@ -74,7 +76,7 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
             var context = noRemoteContext(actual, project);
             for (int sample = 1; sample <= 3; sample++) {
                 var handle = context.tasks().submit(new TaskRequest("assisted-api-budget-" + project,
-                        "Independent API-only representative approval; no server command or deployment", List.of("static-live"), true),
+                        "Review a representative deployment command under its frozen deployment intent; this test harness cannot open Linux/SSH", List.of("static-live"), true),
                     task -> review(context, project, task));
                 System.out.println("ASSISTED_API_REVIEW_TASK kind=" + project + " sample=" + sample + " task=" + handle.id() + " state=" + root);
                 var result = handle.completion().toCompletableFuture().get(22, TimeUnit.MINUTES);
@@ -101,6 +103,12 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
         reviewsThreeIndependentTasksWithoutSsh("survey-scoring");
     }
 
+    @Test
+    void reviewsThreeStaticSiteRuntimeTasksWithoutSsh() throws Exception {
+        runtimePrerequisites = true;
+        reviewsThreeIndependentTasksWithoutSsh("survey-scoring");
+    }
+
     private OperationResult<Void> review(ModContext context, String project, TaskContext task) {
         var server = new ServerId("static-live");
         try {
@@ -108,7 +116,7 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
             var scope = new DeploymentAssistedScope(context, task, revision, "AUTOMATIC", true);
             var layout = DeploymentRemoteLayout.original();
             try (var authority = DeploymentWorkflowAuthorization.open(context, task, server, revision, "AUTOMATIC", true,
-                "Deploy selected " + project + " on the selected server, including official prerequisite resolution/download/digest checks/managed installation or guarded SYSTEM reuse, restricted non-root candidate build with dependency hooks and candidate-local Maven bootstrap. This fresh API-only representative review authorizes no remote dispatch; candidate and live prerequisite presence are not claimed; representative Java binding values come from the retained firstpass receipt, not a fresh preparation observation. The helper must recheck them if executed. No grant from this task may be reused by deployment.")) {
+                representativeWorkflow(project))) {
                 scope.workflowOpened(authority);
                 Path source = workspace().resolve("test/multi-language/success-" + project);
                 var rejections = new ArrayList<gold.debug.windowstolinux.mod.deployment.service.core.model.analysis.RejectionReason>();
@@ -123,6 +131,22 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
                     scope.archiveCaptured(material, archive, new gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.toolchain.ToolchainSpecChecker()
                         .inspect(material.snapshot().directory().resolve(archive.relativeRoot())), task);
                     String application = "wtl-api-" + project + "-" + task.id().toString().substring(0, 8);
+                    if (runtimePrerequisites) {
+                        var plan = staticSitePlan(material, archive, application, layout, server);
+                        String identity = gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.plan.ReviewedPlanIdentity.from(plan.request());
+                        ((DeploymentCommandReview) scope.interaction()).toolchainPreparationPlanned(plan, identity, task);
+                        for (String ecosystem : List.of("NODE", "PYTHON")) {
+                            try (var request = preparation(layout, ecosystem, ecosystem.equals("NODE") ? "24" : "3.12")) {
+                                var intent = RemoteActions.command(server, identity, request).withSemantics(new ActionSemantics(
+                                    "deployment.toolchain.prepare.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
+                                var result = ((DeploymentCommandReview) scope.interaction()).approveCommand(intent, request, task);
+                                System.out.println("ASSISTED_API_RUNTIME_PREPARATION task=" + task.id() + " ecosystem=" + ecosystem + " result=" + result.outcome());
+                                if (result.outcome() != TaskResult.SUCCEEDED)
+                                    return new OperationResult<>(result.outcome(), Optional.empty(), result.problem());
+                            }
+                        }
+                        return new OperationResult<>(TaskResult.SUCCEEDED, Optional.empty(), Optional.empty());
+                    }
                     try (var request = project.equals("task-board") ? maven(material, archive, application, layout, server) : node(layout)) {
                         var workspace = new DeploymentRemoteWorkspace(application, archive.sha256(), layout);
                         var intent = RemoteActions.command(server, revision, request).withSemantics(new ActionSemantics(
@@ -141,6 +165,11 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
             System.out.println("ASSISTED_API_REVIEW_FAILURE task=" + task.id() + " problem=" + problem + " cause=" + failure);
             return new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(problem));
         }
+    }
+
+    /** Models the deployment intent; the separate transport proxy enforces API-only execution. */
+    static String representativeWorkflow(String project) {
+        return "Deploy selected " + project + " on the selected server, including official prerequisite resolution/download/digest checks/managed installation or guarded SYSTEM reuse, restricted non-root candidate build with dependency hooks and candidate-local Maven bootstrap. Candidate and live prerequisite presence are not claimed; representative Java binding values come from the retained firstpass receipt, not a fresh preparation observation. The helper must recheck them if executed.";
     }
 
     static CommandRequest maven(DeploymentSourceMaterial material, DeploymentSourceArchive archive, String application,
@@ -186,11 +215,36 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
     }
 
     static CommandRequest node(DeploymentRemoteLayout layout) {
-        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath()
-            + "' prepare-toolchains 'prepare' 'NODE' '24' '-' '1777' '-'", layout), new byte[0], Duration.ofSeconds(1792), 65536);
+        return preparation(layout, "NODE", "24");
     }
 
-    private ModContext noRemoteContext(ModContext actual, String project) {
+    static CommandRequest preparation(DeploymentRemoteLayout layout, String ecosystem, String branch) {
+        return new CommandRequest(DeploymentManagedHelperBundle.verifiedCommand("'" + layout.helperPath()
+            + "' prepare-toolchains 'prepare' '" + ecosystem + "' '" + branch + "' '-' '1777' '-'", layout), new byte[0], Duration.ofSeconds(1792), 65536);
+    }
+
+    static gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan staticSitePlan(
+        DeploymentSourceMaterial material, DeploymentSourceArchive archive, String application, DeploymentRemoteLayout layout, ServerId server) throws java.io.IOException {
+        var facts = new DeploymentProjectFacts(material.snapshot().directory().resolve(archive.relativeRoot()), application,
+            DeploymentProjectKind.STATIC_SITE, DeploymentBuildToolType.NPM, List.of(), List.of(), List.of())
+            .withToolchains(new gold.debug.windowstolinux.mod.deployment.service.deploy.analyze.toolchain.ToolchainSpecChecker()
+                .inspect(material.snapshot().directory().resolve(archive.relativeRoot())));
+        var request = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest(
+            server, facts, material, archive,
+            gold.debug.windowstolinux.mod.deployment.service.core.config.DeploymentConfigSnapshot.create(application, 1, "api-only", java.time.Instant.EPOCH, List.of()),
+            List.of(), new gold.debug.windowstolinux.mod.deployment.service.core.model.resource.DeploymentResourceBindings(List.of(), Optional.of(List.of())),
+            new DeploymentRuntimeDefinition.StaticSite("dist", OptionalInt.of(24),
+                new DeploymentHealthCheck.Http(java.net.URI.create("http://127.0.0.1:46140/"), 200, 10)),
+            Optional.empty(), DeploymentConfigLoader.current().build().limits(),
+            new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentReviewConsent(application, server.id(),
+                material.snapshot().sha256(), archive.sha256(), java.time.Instant.EPOCH), false, true, layout);
+        return new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan(request, List.of(
+            gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.VERIFY_SOURCE_IDENTITY,
+            gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.CHECK_HEALTH,
+            gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.DeploymentPlanAction.ROLLBACK_ON_FAILURE));
+    }
+
+    ModContext noRemoteContext(ModContext actual, String project) {
         var ai = (AiService) Proxy.newProxyInstance(AiService.class.getClassLoader(), new Class<?>[]{AiService.class}, (proxy, method, args) -> {
             if (!method.getName().equals("call")) return invoke(method, actual.ai(), args);
             var request = Arrays.stream(args).filter(AiRequest.class::isInstance).map(AiRequest.class::cast).findFirst().orElseThrow();

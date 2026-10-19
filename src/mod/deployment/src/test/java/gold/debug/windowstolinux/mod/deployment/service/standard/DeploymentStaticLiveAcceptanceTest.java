@@ -6274,10 +6274,15 @@ class DeploymentStaticLiveAcceptanceTest extends DeploymentRuntimeFixture {
                                     var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElse(null);
                                     System.out.println(liveToolDiagnosticProjection(task == null ? null : task.id(), call, null));
                                 }
-                        for (var call : response.toolCalls())
-                            if (call.name().equals("identify")) identifyMetadata(request.orElseThrow(), call);
-                        if (request.orElseThrow().tools().stream().anyMatch(tool -> tool.name().equals("identify")))
+                        if (agentMode || mainOnlyDiagnostic)
+                            for (var call : response.toolCalls())
+                                if (call.name().equals("identify")) identifyMetadata(request.orElseThrow(), call);
+                        if ((agentMode || mainOnlyDiagnostic) && request.orElseThrow().tools().stream().anyMatch(tool -> tool.name().equals("identify")))
                             for (var call : response.toolCalls()) nativeParameterMetadata(call);
+                        if (!agentMode && request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.LANGUAGE)
+                            for (var call : response.toolCalls())
+                                if (call.name().equals("submit_result"))
+                                    System.out.println("AI_LIVE_SUBMISSION_SHAPE " + DeploymentLiveSubmissionShape.describe(call));
                         if (Boolean.getBoolean("managed.runtime.agentLive")
                             && request.orElseThrow().purpose() == gold.debug.windowstolinux.appapi.ai.model.AiPurpose.APPROVAL)
                             for (var call : response.toolCalls())

@@ -23,6 +23,24 @@ class DeploymentAssistedApprovalFixtureTest {
     Path root;
 
     @Test
+    void representativeIntentKeepsDeploymentEffectsWhileTransportIsIndependentlyUnavailable() {
+        String workflow = DeploymentAssistedApprovalBudgetLiveTest.representativeWorkflow("task-board");
+        assertTrue(workflow.startsWith("Deploy selected task-board"));
+        assertTrue(workflow.contains("restricted non-root candidate build"));
+        assertTrue(workflow.contains("not a fresh preparation observation"));
+        assertFalse(workflow.contains("authorizes no remote dispatch"));
+        var delegated = new java.util.concurrent.atomic.AtomicBoolean();
+        var actual = (gold.debug.windowstolinux.appapi.mod.ModContext) Proxy.newProxyInstance(
+            getClass().getClassLoader(), new Class<?>[]{gold.debug.windowstolinux.appapi.mod.ModContext.class}, (proxy, method, args) -> {
+                delegated.set(true);
+                throw new AssertionError("No underlying capability may be requested");
+            });
+        var isolated = new DeploymentAssistedApprovalBudgetLiveTest().noRemoteContext(actual, "task-board");
+        assertThrows(AssertionError.class, isolated::linux);
+        assertFalse(delegated.get());
+    }
+
+    @Test
     void mavenFixtureUsesProductionAssemblyNonemptyMarkersAndWholeInput() throws Exception {
         Path directory = root.toAbsolutePath();
         Files.createDirectories(directory.resolve("backend"));

@@ -42,6 +42,7 @@ class DeploymentAssistedAnalysisProtocolRegressionTest {
         var schema = new ObjectMapper().readTree(fixture.requests.getFirst().tools().getFirst().inputSchema());
         assertEquals(3, schema.path("required").size());
         assertEquals(4, schema.at("/properties/action/enum").size());
+        assertEquals(List.of(revision), new ObjectMapper().convertValue(schema.at("/properties/sourceRevision/enum"), List.class));
         assertEquals(3, schema.at("/properties/arguments/oneOf").size());
         assertTrue(fixture.requests.get(1).messages().stream().flatMap(message -> message.toolResult().stream())
             .anyMatch(receipt -> receipt.error() && receipt.text().contains("SUBMISSION_REJECTED")));

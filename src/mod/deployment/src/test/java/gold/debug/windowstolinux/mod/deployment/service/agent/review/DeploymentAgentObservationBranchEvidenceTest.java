@@ -18,7 +18,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class DeploymentAgentObservationBranchEvidenceTest {
     private static final int PINNED_PROTOCOL = 16;
-    private static final String PINNED_SHA256 = "90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d";
+
+    private static final String PINNED_SHA256 = "9a8faa704f43955e7f13ee69cf2f8ad665b744d856790b0ef92a13e838b90aba";
 
     @TempDir
     Path temporary;
@@ -86,7 +87,7 @@ class DeploymentAgentObservationBranchEvidenceTest {
         "inspect-runtime,PARAMETER_DRIFT,fixture-renderer-parameters,false"
     })
     void missingOrChangedExecutionFactsRejectBeforeObservationReceipts(String verb, String defect, String reason,
-                                                                     boolean reachesVerify) throws Exception {
+                                                                       boolean reachesVerify) throws Exception {
         var result = executeBranch(verb, defect);
         assertEquals(64, result.exit(), result.output() + result.trace());
         assertTrue(result.output().contains("MANAGED_HELPER_REJECT=" + reason + "\n"), result.output());

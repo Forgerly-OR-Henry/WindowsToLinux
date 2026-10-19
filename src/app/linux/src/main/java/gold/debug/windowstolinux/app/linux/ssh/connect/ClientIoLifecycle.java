@@ -147,7 +147,7 @@ final class ClientIoLifecycle extends AbstractIoServiceFactoryFactory {
          * @return connector without an unused default factory or protected executor / 不创建未使用默认工厂或执行器包装的连接器 */
         @Override
         public IoConnector createConnector(IoHandler handler) {
-            var connector = new Nio2Connector(null, manager, handler, group, resume) {
+            var connector = new Nio2Connector(null, manager, new SshReadDiagnostics(handler), group, resume) {
                 /** Uses the verified SSHD 2.14.0 extension point instead of its concrete factory field. / 使用已核实的 SSHD 2.14.0 扩展点，替代其具体工厂字段。
                  * @param properties original properties / 原属性
                  * @param actualHandler original handler / 原处理器

@@ -29,6 +29,9 @@ final class SshCommandExecution {
     /** Original operation deadline budget. / 原操作期限预算。 */
     private final long budget;
 
+    /** Sanitized transport observations for this one dispatch. / 本次发送的脱敏传输观测。 */
+    private final SshCommandDiagnostics diagnostics = new SshCommandDiagnostics();
+
     /** Physical SSH channel retained until actual closure. / 实际关闭前保留的物理 SSH 通道。 */
     private ClientChannel channel;
 
@@ -65,6 +68,7 @@ final class SshCommandExecution {
             if (cancellation.requested() || Thread.currentThread().isInterrupted())
                 return result(TaskResult.CANCELLED, ProblemCode.CANCELLED, "SSH_COMMAND_CANCELLED",
                     "SSH command was cancelled before dispatch", null);
+            diagnostics.attach(session);
             channel = session.createExecChannel(SshCommandFrame.COMMAND);
             channel.setOut(capture.stdout());
             channel.setErr(capture.stderr());
@@ -104,6 +108,7 @@ final class SshCommandExecution {
         } catch (java.util.concurrent.TimeoutException failure) {
             return unknown("SSH_COMMAND_TIMEOUT", "SSH command deadline expired before its effects could be confirmed");
         } catch (Exception failure) {
+            diagnostics.failure(failure);
             if (failure instanceof InterruptedIOException || failure instanceof InterruptedException)
                 Thread.currentThread().interrupt();
             return dispatched
@@ -149,8 +154,11 @@ final class SshCommandExecution {
      */
     private OperationResult<CommandResult> result(TaskResult outcome, ProblemCode code, String event, String message,
                                                   Integer exit) {
+        var diagnostic = new LinkedHashMap<String, String>();
+        diagnostics.appendTo(diagnostic);
+        diagnostic.put("channelPeerAssigned", Boolean.toString(channel != null && channel.getRecipient() >= 0));
         return new OperationResult<>(outcome, Optional.of(capture.snapshot(exit)),
-            Optional.of(new Problem(code, event, message, Map.of(), Optional.empty())));
+            Optional.of(new Problem(code, event, message, Map.copyOf(diagnostic), Optional.empty())));
     }
 
     /**
@@ -177,6 +185,7 @@ final class SshCommandExecution {
                 }
             }
             frame.close();
+            diagnostics.close();
             closed = true;
             return true;
         } finally {

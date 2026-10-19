@@ -24,4 +24,10 @@ public interface DeploymentCommandReview extends InteractionService {
                                     gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
                                     TaskContext task) throws ApiException {
     }
+
+    /** Observes intended dependencies of the source-bound reviewed plan, without granting permission. */
+    default void toolchainPreparationPlanned(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+        String reviewedPlanSha256, TaskContext task) throws ApiException {
+    }
 }

@@ -40,7 +40,7 @@ public final class DeploymentManagedHelperBundle {
     /**
      * Expected byte-for-byte helper bundle identity. / 预期的 helper 逐字节身份。
      */
-    public static final String EXPECTED_SHA256 = "90bacdd769a17245401ce8e426117bbcb87ba4362a46d9cee8129bcd9892859d";
+    public static final String EXPECTED_SHA256 = "9a8faa704f43955e7f13ee69cf2f8ad665b744d856790b0ef92a13e838b90aba";
 
     /**
      * ROOT.
