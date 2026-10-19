@@ -1,0 +1,63 @@
+[
+  {
+    "project": "asset-lending",
+    "mode": "ASSISTED",
+    "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-asset-lending-7jo1ikbiw",
+    "application": "wtl-assisted-asset-lending-7jo1k3m6s",
+    "server": "static-live",
+    "revisionSha256": "358581ced3687291aad1b48153778bf5dec23e3e226b52c889fb1b53de5d748b",
+    "ownershipSha256": "5725b5cb368350739abdf8bb8cf374607b3823d778189911e3c7e3b0cb881150",
+    "state": "RUNNING",
+    "autostart": "DISABLED",
+    "observedAt": "2026-10-19T17:24:42.370566100Z",
+    "components": [
+      {
+        "id": "backend",
+        "workers": [],
+        "state": "RUNNING",
+        "mode": "DAEMON",
+        "endpoints": [],
+        "unitId": "wtl-assisted-asset-lending-7jo1k3m6s-backend",
+        "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-asset-lending-7jo1k3m6s-backend start 37da80f9be1604954b2dc2dc0bcb99e3b10fe900969578129040eb5f97abb19c 9a1dfc178492b76c91fb5b8967bc1d7cde66cad8be216e8b2c61bea70bb7aa08"
+      },
+      {
+        "id": "web",
+        "workers": [],
+        "state": "RUNNING",
+        "mode": "DAEMON",
+        "endpoints": [
+          {
+            "protocol": "http",
+            "value": "http://45.192.105.213:46120",
+            "browser": "http://45.192.105.213:46120"
+          }
+        ],
+        "unitId": "wtl-assisted-asset-lending-7jo1k3m6s-web",
+        "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-asset-lending-7jo1k3m6s-web start b944aa183fff5c46a620f413429ecacb747d4424efa90b9d7360bdaee053fc01 d5388d55aa1131e983ca3aceffe69f47fb55fa1409056c9626c7482415989f92"
+      }
+    ]
+  },
+  {
+    "project": "binary-inspector",
+    "mode": "ASSISTED",
+    "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-binary-inspector-8tun3738o",
+    "application": "wtl-assisted-binary-inspector-8tun4unj4",
+    "server": "static-live",
+    "revisionSha256": "2f577d4e1972b9eee5392894ecce70586a3a283c96c13ea9f73e4a8da83c402f",
+    "ownershipSha256": "3cf0335d238f89435e2f1e10e580786a1728c86b004b28b6ea77028a81e0ea74",
+    "state": "INSTALLED",
+    "autostart": "NOT_APPLICABLE",
+    "observedAt": "2026-10-19T18:12:29.429834800Z",
+    "components": [
+      {
+        "mode": "ON_DEMAND",
+        "endpoints": [],
+        "unitId": "wtl-assisted-binary-inspector-8tun4unj4",
+        "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-binary-inspector-8tun4unj4 ed13711b212243de5101637a0ac07eff5c222428a76a39ce1699c34b5d13c1be --",
+        "id": "wtl-assisted-binary-inspector-8tun4unj4",
+        "workers": [],
+        "state": "INSTALLED"
+      }
+    ]
+  }
+]
