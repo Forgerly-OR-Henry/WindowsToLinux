@@ -272,7 +272,7 @@ public final class DeploymentManagedHelperBundle {
         String complete = renderScript(layout);
         var sources = new java.util.ArrayList<Map<String, Object>>();
         int characters = 0;
-        for (String fragment : List.of("00-protocol-foundation.sh", "input/15-deployment-input.sh",
+        for (String fragment : List.of("00-protocol-foundation.sh", "input/15-deployment-input.sh", "input/17-managed-content.sh",
             "workspace/20-candidate-workspace.sh", "70-command-dispatch.sh")) {
             String source = new String(assemble(DeploymentToolchainCatalog.defaults(), layout, List.of(fragment)), StandardCharsets.UTF_8);
             characters += source.length();

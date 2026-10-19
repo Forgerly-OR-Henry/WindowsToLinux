@@ -53,4 +53,16 @@ class DeploymentWorkspaceQuotaTest {
         assertEquals(6 * GIB, DeploymentWorkspaceQuota.hostCost(2 * GIB, GIB, DeploymentWorkspaceQuota.Cost.STANDARD));
         assertEquals(2 * GIB, DeploymentWorkspaceQuota.hostCost(2 * GIB, GIB, DeploymentWorkspaceQuota.Cost.AGENT));
     }
+
+    @Test
+    void graphReportsExactCapacityForThreeExplicitFourGiBBudgets() {
+        var inputs = List.of("backend", "frontend", "scorer").stream().map(id ->
+            new DeploymentWorkspaceQuota.Input(id, 1024, DeploymentWorkspaceQuota.UNIT,
+                DeploymentWorkspaceQuota.Request.explicit(4 * GIB))).toList();
+        long observed = 2002104L * 4096;
+        var refusal = assertThrows(DeploymentWorkspaceQuota.InsufficientCapacity.class,
+            () -> DeploymentWorkspaceQuota.select(inputs, observed, policy, DeploymentWorkspaceQuota.Cost.STANDARD));
+        assertEquals(observed, refusal.availableBytes());
+        assertEquals(13 * GIB, refusal.requiredBytes());
+    }
 }

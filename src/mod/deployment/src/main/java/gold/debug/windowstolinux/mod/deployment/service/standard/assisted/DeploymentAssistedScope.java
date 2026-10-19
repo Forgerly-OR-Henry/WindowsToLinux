@@ -57,6 +57,11 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
 
     private final LinkedHashMap<String, Map<String, Object>> sourceArchives = new LinkedHashMap<>();
 
+    /** Validated application-to-source associations, independent of source display names. / 经校验的应用与来源对应关系，独立于来源显示名称。 */
+    private final LinkedHashMap<String, Map<String, Object>> reviewedApplicationSources = new LinkedHashMap<>();
+
+    private final LinkedHashMap<String, Map<String, Object>> hostPrerequisites = new LinkedHashMap<>();
+
     private record ToolchainPlan(String identity, String server,
                                  List<gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.ToolchainRequirement> requirements,
                                  Map<String, Object> evidence) {
@@ -91,6 +96,17 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
             throw new IllegalArgumentException("Runtime dependency plan differs from captured source");
         validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(
             workflow, supplied, request.server()));
+        var association = Map.<String, Object>of("application", request.facts().applicationId(),
+            "server", request.server().id(), "task", supplied.id().toString(),
+            "originSnapshotId", request.archive().originSnapshotId().toString(),
+            "sourceManifestSha256", request.archive().sourceManifestSha256(),
+            "archiveSha256", request.archive().sha256(), "relativeRoot", request.archive().relativeRoot(),
+            "remoteLayoutSha256", request.layout().digest());
+        var prior = reviewedApplicationSources.get(request.facts().applicationId());
+        if (prior != null && !prior.equals(association))
+            throw new IllegalArgumentException("Reviewed application source association changed");
+        if (prior == null && reviewedApplicationSources.size() == 32)
+            throw new IllegalArgumentException("Reviewed application source bound exceeded");
         var requirements = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentProjectToolchainRequirements
             .from(request.facts(), request.runtime());
         var evidence = new LinkedHashMap<String, Object>();
@@ -109,6 +125,47 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         if (request.runtime() instanceof gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentRuntimeDefinition.StaticSite)
             evidence.put("runtimeDependencyReason", "This reviewed StaticSite uses the product managed Python 3.12 http.server to serve built assets; Node, when selected, builds those assets. Python is a fixed runtime requirement and need not be declared by package.json. The pinned helper static launch branch uses the prepared Python executable; this does not prove it is installed or authorize an effect.");
         toolchainPlan = new ToolchainPlan(expected, request.server().id(), requirements, Map.copyOf(evidence));
+        reviewedApplicationSources.put(request.facts().applicationId(), association);
+    }
+
+    private synchronized void hostPrerequisitesObserved(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+        String expected,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+        TaskContext supplied) throws ApiException {
+        sameTask(supplied);
+        verify();
+        var request = plan.request();
+        var current = toolchainPlan;
+        var association = reviewedApplicationSources.get(request.facts().applicationId());
+        var rendered = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.DeploymentStandardPlanner()
+            .render(plan, supplied, gold.debug.windowstolinux.mod.deployment.config.DeploymentConfigCapture.originalTaskLayout(original.tasks(), supplied));
+        if (current == null || !current.identity().equals(expected) || !current.server().equals(request.server().id())
+            || association == null || !association.get("archiveSha256").equals(request.archive().sha256())
+            || rendered.outcome() != gold.debug.windowstolinux.appapi.task.result.TaskResult.SUCCEEDED
+            || !rendered.value().orElseThrow().reviewedPlanSha256().equals(expected))
+            throw new IllegalArgumentException("Host prerequisite observation differs from reviewed plan");
+        validateWorkflow(gold.debug.windowstolinux.mod.deployment.ai.review.DeploymentWorkflowAuthorization.reviewFacts(
+            workflow, supplied, request.server()));
+        var result = gold.debug.windowstolinux.mod.deployment.service.deploy.support.runtime.DeploymentRuntimeCapabilityMatcher
+            .evaluate(host, request.facts(), request.runtime(), tools);
+        hostPrerequisites.remove(request.facts().applicationId());
+        if (!result.missingHostPrerequisite()
+            || gold.debug.windowstolinux.mod.deployment.service.deploy.support.DeploymentHostMatcher.evaluatePlatform(host).support()
+                != gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentHostCapabilityStatus.READY_FOR_RUNTIME_VALIDATION)
+            return;
+        var observation = new LinkedHashMap<String, Object>(association);
+        observation.put("reviewedPlanSha256", expected);
+        observation.put("requiredCapability", result.detail().orElseThrow());
+        observation.put("observedAt", java.time.Instant.now().toString());
+        observation.put("distro", host.distro().name());
+        observation.put("version", host.version());
+        observation.put("architecture", host.architecture());
+        observation.put("packageManager", host.packageManager());
+        observation.put("ecosystemToolVersions", host.ecosystemToolVersions());
+        observation.put("toolchainBindingSha256", gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainBindingCodec.identity(tools));
+        hostPrerequisites.put(request.facts().applicationId(), Map.copyOf(observation));
     }
 
     /** Records the archiver's original-source association, never source trust or build permission. */
@@ -343,6 +400,12 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
         var facts = new LinkedHashMap<String, Object>();
         facts.put("workflowAuthorization", evidence);
         if (source != null) facts.put("sourceSelection", source);
+        if (!hostPrerequisites.isEmpty())
+            facts.put("hostPrerequisiteObservations", Map.of("applications", List.copyOf(hostPrerequisites.values()),
+                "meaning", "Complete successful fixed host probes after catalog preparation in this original task, evaluated by the product against the exact reviewed runtime and resolved tools. These observations identify non-catalog host prerequisites and are separate from model-authored rationale. They are prior observations, not current live state, installation proof or permission. A supplement needs fresh independent review of its complete effects, source/version resolution and enforced postconditions; the original prepare must probe and validate again before any candidate upload."));
+        if (!reviewedApplicationSources.isEmpty())
+            facts.put("reviewedApplicationSources", Map.of("applications", List.copyOf(reviewedApplicationSources.values()),
+                "meaning", "Application identifiers from this original task's deterministically reviewed requests, matched to the captured original snapshot and exact component archive before preparation. Source display names and frozen logicalRootName label the selected source; they are not deployment application or component identifiers and need not equal them. Match each command application and resource target to its own reviewed association, source hashes, relative root, server and layout. These intended associations prove no live ownership, completed build, safe source or permission."));
         if (intent.type().equals("platform.sftp.upload") && intent.semantics()
             .filter(value -> value.operation().equals("deployment.candidate.upload.v1")).isPresent())
             facts.put("currentSourceArchiveTransfer", archiveTransferFacts(List.copyOf(sourceArchives.values()), intent,
@@ -675,6 +738,16 @@ public final class DeploymentAssistedScope implements ModContext, gold.debug.win
                 gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
                 String identity, TaskContext supplied) throws ApiException {
                 DeploymentAssistedScope.this.toolchainPreparationPlanned(plan, identity, supplied);
+            }
+
+            @Override
+            public void hostPrerequisitesObserved(
+                gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+                String identity,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
+                gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+                TaskContext supplied) throws ApiException {
+                DeploymentAssistedScope.this.hostPrerequisitesObserved(plan, identity, host, tools, supplied);
             }
 
             @Override

@@ -798,23 +798,40 @@ public final class DeploymentPublishChannel {
         try (request) {
             var intent = RemoteActions.command(server, planRevision, request).withSemantics(new ActionSemantics(
                 operation, targets));
-            var grant = DeploymentCommandReviewRouter.approve(interaction, intent, request, task);
-            if (grant.outcome() != TaskResult.SUCCEEDED)
-                return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
-            beforeSend.verify();
-            try {
-                var executed = session.execute(request, grant.value().orElseThrow());
-                if (executed.outcome() == TaskResult.CANCELLED
-                    || executed.outcome() == TaskResult.FAILED && executed.value().isEmpty())
+            for (int attempt = 0; ; attempt++) {
+                var grant = DeploymentCommandReviewRouter.approve(interaction, intent, request, task);
+                if (grant.outcome() != TaskResult.SUCCEEDED)
+                    return new OperationResult<>(grant.outcome(), Optional.empty(), grant.problem());
+                beforeSend.verify();
+                try {
+                    var executed = session.execute(request, grant.value().orElseThrow());
+                    // Only this fixed read may be observed again, with a new grant and no prior author payload.
+                    if (attempt == 0 && operation.equals("deployment.publication.inspect.v1")
+                        && !task.cancelToken().requested() && !Thread.currentThread().isInterrupted()
+                        && authorPayloadNotSent(executed)) continue;
+                    if (executed.outcome() == TaskResult.CANCELLED
+                        || executed.outcome() == TaskResult.FAILED && executed.value().isEmpty())
+                        return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
+                    return executed;
+                } catch (ApiException failure) {
+                    if (failure.problem().code() == ProblemCode.ACCESS_DENIED
+                        || failure.problem().code() == ProblemCode.INVALID_INPUT)
+                        throw failure;
                     return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
-                return executed;
-            } catch (ApiException failure) {
-                if (failure.problem().code() == ProblemCode.ACCESS_DENIED
-                    || failure.problem().code() == ProblemCode.INVALID_INPUT)
-                    throw failure;
-                return unknown("DEPLOYMENT_PUBLICATION_DISPATCH_UNCONFIRMED");
+                }
             }
         }
+    }
+
+    private static boolean authorPayloadNotSent(OperationResult<CommandResult> result) {
+        return result.outcome() == TaskResult.FAILED && result.problem().filter(problem -> {
+            var facts = problem.context();
+            return problem.code() == ProblemCode.IO_FAILURE && problem.eventCode().equals("SSH_COMMAND_AUTHOR_PAYLOAD_NOT_SENT")
+                && "CHANNEL_OPENING".equals(facts.get("commandPhase"))
+                && "NOT_STARTED".equals(facts.get("inputState")) && "false".equals(facts.get("inputSenderCreated"))
+                && "NOT_SENT".equals(facts.get("authorPayloadState"));
+        }).isPresent() && result.value().filter(value -> value.exitCode().isPresent() || value.truncated()
+            || !value.stdout().isEmpty() || !value.stderr().isEmpty()).isEmpty();
     }
 
     /** Checks original server identity. / 核对原服务器身份。

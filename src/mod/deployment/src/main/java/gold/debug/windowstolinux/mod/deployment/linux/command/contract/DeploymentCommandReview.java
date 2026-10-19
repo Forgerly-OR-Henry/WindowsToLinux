@@ -30,4 +30,13 @@ public interface DeploymentCommandReview extends InteractionService {
         gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
         String reviewedPlanSha256, TaskContext task) throws ApiException {
     }
+
+    /** Observes the complete post-preparation host probe; no permission or installation is implied. */
+    default void hostPrerequisitesObserved(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan,
+        String reviewedPlanSha256,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts host,
+        gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains tools,
+        TaskContext task) throws ApiException {
+    }
 }

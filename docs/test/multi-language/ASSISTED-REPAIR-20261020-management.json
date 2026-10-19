@@ -1,0 +1,453 @@
+{
+  "date": "2026-10-20",
+  "mode": "ASSISTED",
+  "basis": "Seven verification-01 passes at32k approval plus the separate verification-02 Survey pass at64k. Preserve original verification-01 Survey failure. These are not a single unchanged-config8/8 first round.",
+  "firstRepairRound": {
+    "passed": 7,
+    "total": 8,
+    "approvalMaximumOutputTokens": 32768
+  },
+  "additionalSurveyRound": {
+    "passed": 1,
+    "total": 1,
+    "approvalMaximumOutputTokens": 65536
+  },
+  "deliveryIndex": [
+    {
+      "project": "task-board",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-task-board-b6k6ekmr4",
+      "server": "static-live",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T20:14:34.245472100Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-task-board-b6k6d37rc",
+      "revisionSha256": "42571252e30075a84354081213944f7b2b60e81db4f8ae3330c8d3200be0167c",
+      "ownershipSha256": "c2fb16bf5c62e54693c2bc8f39f9964a569fb168aabb690c201d08231c51d76d",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "1067.252",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/task-board.json",
+      "webUrls": [
+        "http://45.192.105.213:46100"
+      ]
+    },
+    {
+      "project": "file-transfer",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-file-transfer-bk93wtu88",
+      "server": "static-live",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T20:29:08.703452800Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-file-transfer-bk93v9hdc",
+      "revisionSha256": "a33e4ade9b6b243159fedd5861b7a403073aeed10e5c9786a897d66a2f8649dd",
+      "ownershipSha256": "488d6c89e881abf2298666f9b6619651737eae3be1e4a103528209762c1a8af9",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "868.704",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/file-transfer.json",
+      "webUrls": [
+        "http://45.192.105.213:46110"
+      ]
+    },
+    {
+      "project": "asset-lending",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-asset-lending-bvesxpjv7",
+      "server": "static-live",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T20:45:10.637031100Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-asset-lending-bveswb148",
+      "revisionSha256": "3630f677a21e53c256ce21d19cb40d0f26260f335f7877368f1c7d3447d06ff7",
+      "ownershipSha256": "90307b1b9b00d56d8f74a1e393cd644d7044503f29d78be89ebdeb5c6d49cda0",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "956.252",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/asset-lending.json",
+      "webUrls": [
+        "http://45.192.105.213:46120"
+      ]
+    },
+    {
+      "project": "csv-inspector",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-csv-inspector-c7or8bjts",
+      "server": "static-live",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T21:01:59.816853Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-csv-inspector-c7or6m4en",
+      "revisionSha256": "118c567bf1bd0092fa261cd6a3b2a55efcf34fba24282de6723aa0e22c758b3b",
+      "ownershipSha256": "a8ea1beb5faf2816c7c3fd8a4d6be51dfed99521d94c27f94d2492109913b16a",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "1003.385",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/csv-inspector.json",
+      "webUrls": [
+        "http://45.192.105.213:46130"
+      ]
+    },
+    {
+      "project": "survey-scoring",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-survey-scoring-de3eeanz4",
+      "server": "static-live",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T22:05:45.069447300Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-survey-scoring-de3eckjxw",
+      "revisionSha256": "6ad00573b030194395c496813028775673180699d9d0646b99ea92b2dbbad70f",
+      "ownershipSha256": "9adb221c5212eecbdde9fd167822c528a234ce060952960ff9c0e70d24f1a250",
+      "phase": "verification-02",
+      "approvalMaximumOutputTokens": 65536,
+      "junitSeconds": "1505.466",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-02/survey-scoring.json",
+      "webUrls": [
+        "http://45.192.105.213:46140"
+      ]
+    },
+    {
+      "project": "log-analyzer",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-log-analyzer-aqh8g1w6o",
+      "server": "static-live",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-19T19:43:11.769068100Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-log-analyzer-aqh8efm9o",
+      "revisionSha256": "2fc32829408bd5f4115262b11924a3788d528fefc27a4516773fae888adaecd8",
+      "ownershipSha256": "2db619850e79ee404886cb6c3014334bd6cb9355b461bb4126f3ce484e0647bc",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "445.012",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/log-analyzer.json",
+      "commands": [
+        "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-log-analyzer-aqh8g1w6o 7b7c373fbc1734b9eee7abeec0cd8fbac4f3520a602a7e5a81fb3a696870ca39 --"
+      ]
+    },
+    {
+      "project": "directory-diff",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-directory-diff-ax4mhsk5g",
+      "server": "static-live",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-19T19:51:20.649793700Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-directory-diff-ax4mg9x94",
+      "revisionSha256": "3dd331fddd7f52643fcb49bfed78727b95e8b8d93dafe010662db60baa8d2ca3",
+      "ownershipSha256": "4cdd143e3d65b4017e7157e62c74d3f456d70b22a6b6f843b5aba2f4e5a3b376",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "412.795",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/directory-diff.json",
+      "commands": [
+        "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-directory-diff-ax4mhsk5g 7abbdb20c52ddeff644bc96479622138e9312a9bed85333d4d8857f2a0a3274c --"
+      ]
+    },
+    {
+      "project": "binary-inspector",
+      "mode": "ASSISTED",
+      "application": "wtl-assisted-binary-inspector-b2gvf9q64",
+      "server": "static-live",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-19T19:56:41.324279800Z",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-binary-inspector-b2gvdgbb4",
+      "revisionSha256": "f9cafc0c42aef699588df87554c3434b0f561c52b64c93309403ab302eca145b",
+      "ownershipSha256": "56eb3bbb3e4a66a8aa4c5606a01aff623b94d84ef33e259127f6fe23a19f7103",
+      "phase": "verification-01",
+      "approvalMaximumOutputTokens": 32768,
+      "junitSeconds": "315.017",
+      "sourceDelivery": ".ai-workspace/evidence/assisted-repair-20261020/verification-01/binary-inspector.json",
+      "commands": [
+        "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-binary-inspector-b2gvf9q64 94a7f51bd9cb255412d44762fc07e977d3d96f7ba3a2658614f10b79421f1023 --"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "project": "task-board",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-task-board-b6k6d37rc",
+      "application": "wtl-assisted-task-board-b6k6ekmr4",
+      "server": "static-live",
+      "revisionSha256": "42571252e30075a84354081213944f7b2b60e81db4f8ae3330c8d3200be0167c",
+      "ownershipSha256": "c2fb16bf5c62e54693c2bc8f39f9964a569fb168aabb690c201d08231c51d76d",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T20:14:34.245472100Z",
+      "components": [
+        {
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-task-board-b6k6ekmr4-backend start b8569b4a820d97a919cb51b4ec27df1c66ed110cc518a234ddecaabce9d5d515 64721f7d7b83511d221cb7b1ec14bd07d296b8f1a1418dea6460496795ebfec0",
+          "id": "backend",
+          "workers": [],
+          "state": "RUNNING",
+          "mode": "DAEMON",
+          "endpoints": [
+            {
+              "protocol": "http",
+              "value": "http://45.192.105.213:46101",
+              "browser": "http://45.192.105.213:46101"
+            }
+          ],
+          "unitId": "wtl-assisted-task-board-b6k6ekmr4-backend"
+        },
+        {
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-task-board-b6k6ekmr4-frontend start f67fefd221c2415a2007df2da39e0f522d69114a16146993a044cd971194b769 f1f6f9fe58bac238e8a8f3559926262f293b7d6428788a08d88ffc559c7be1a2",
+          "id": "frontend",
+          "workers": [],
+          "state": "RUNNING",
+          "mode": "DAEMON",
+          "endpoints": [
+            {
+              "protocol": "http",
+              "value": "http://45.192.105.213:46100",
+              "browser": "http://45.192.105.213:46100"
+            }
+          ],
+          "unitId": "wtl-assisted-task-board-b6k6ekmr4-frontend"
+        }
+      ]
+    },
+    {
+      "project": "file-transfer",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-file-transfer-bk93v9hdc",
+      "application": "wtl-assisted-file-transfer-bk93wtu88",
+      "server": "static-live",
+      "revisionSha256": "a33e4ade9b6b243159fedd5861b7a403073aeed10e5c9786a897d66a2f8649dd",
+      "ownershipSha256": "488d6c89e881abf2298666f9b6619651737eae3be1e4a103528209762c1a8af9",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T20:29:08.703452800Z",
+      "components": [
+        {
+          "state": "RUNNING",
+          "workers": [],
+          "id": "backend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-file-transfer-bk93wtu88-backend start 9c378e0f6cc90cd35e90473b0cc038869448cbdf2db97c67a85079e1fe9a2a06 8555aecab579101a98e5d6783b33d6a7139d474c467726ed0de25a3d121bcf9e",
+          "unitId": "wtl-assisted-file-transfer-bk93wtu88-backend",
+          "endpoints": [],
+          "mode": "DAEMON"
+        },
+        {
+          "state": "RUNNING",
+          "workers": [],
+          "id": "web",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-file-transfer-bk93wtu88-web start 6dc9334425680917c330466bff72b1b7a8947c3454bb173811361207ff1bf5d6 bd01b6fdc5af90604b962950483747d74de5c70deeb72a3be1a5538cace3707a",
+          "unitId": "wtl-assisted-file-transfer-bk93wtu88-web",
+          "endpoints": [
+            {
+              "browser": "http://45.192.105.213:46110",
+              "value": "http://45.192.105.213:46110",
+              "protocol": "http"
+            }
+          ],
+          "mode": "DAEMON"
+        }
+      ]
+    },
+    {
+      "project": "asset-lending",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-asset-lending-bveswb148",
+      "application": "wtl-assisted-asset-lending-bvesxpjv7",
+      "server": "static-live",
+      "revisionSha256": "3630f677a21e53c256ce21d19cb40d0f26260f335f7877368f1c7d3447d06ff7",
+      "ownershipSha256": "90307b1b9b00d56d8f74a1e393cd644d7044503f29d78be89ebdeb5c6d49cda0",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T20:45:10.637031100Z",
+      "components": [
+        {
+          "state": "RUNNING",
+          "mode": "DAEMON",
+          "endpoints": [],
+          "unitId": "wtl-assisted-asset-lending-bvesxpjv7-backend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-asset-lending-bvesxpjv7-backend start 3943b503c02e2f152772593793b89ebcc208c9f8f2329f4c04878efba6d8a093 a83185bf7498f184f393d77f6349721af44ca710b9eed985a8aa334aecceddb6",
+          "id": "backend",
+          "workers": []
+        },
+        {
+          "state": "RUNNING",
+          "mode": "DAEMON",
+          "endpoints": [
+            {
+              "protocol": "http",
+              "value": "http://45.192.105.213:46120",
+              "browser": "http://45.192.105.213:46120"
+            }
+          ],
+          "unitId": "wtl-assisted-asset-lending-bvesxpjv7-web",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-asset-lending-bvesxpjv7-web start 417cc92942b608ca19d3ac6b3e287aeeb7f430b88bc1bcd9748ef0105d11ada4 f0dd15fce7dcd03c67fd33326f4782891abf09c4c233e4d8c29779668bb9f49c",
+          "id": "web",
+          "workers": []
+        }
+      ]
+    },
+    {
+      "project": "csv-inspector",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-csv-inspector-c7or6m4en",
+      "application": "wtl-assisted-csv-inspector-c7or8bjts",
+      "server": "static-live",
+      "revisionSha256": "118c567bf1bd0092fa261cd6a3b2a55efcf34fba24282de6723aa0e22c758b3b",
+      "ownershipSha256": "a8ea1beb5faf2816c7c3fd8a4d6be51dfed99521d94c27f94d2492109913b16a",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T21:01:59.816853Z",
+      "components": [
+        {
+          "mode": "DAEMON",
+          "endpoints": [],
+          "unitId": "wtl-assisted-csv-inspector-c7or8bjts-analyzer",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-csv-inspector-c7or8bjts-analyzer start bc74df29c159ad4a1a21171c094f9b7653ba0703ae03543e3595f81c5fd55d80 7eb333604af85f2cfd777c41eb9ade8858c1f48318148dd7b0fd9c675597ead0",
+          "id": "analyzer",
+          "workers": [],
+          "state": "RUNNING"
+        },
+        {
+          "mode": "DAEMON",
+          "endpoints": [
+            {
+              "protocol": "http",
+              "value": "http://45.192.105.213:46130",
+              "browser": "http://45.192.105.213:46130"
+            }
+          ],
+          "unitId": "wtl-assisted-csv-inspector-c7or8bjts-web",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-csv-inspector-c7or8bjts-web start 4b960968a1f34eb96d1e256fc2af7ebc804f4d1a08fc753f4849bc2efbce9393 9d4710b745043c7400c7327f68b26f0a7cbe9e75f8cebf1aacd0d040feb07388",
+          "id": "web",
+          "workers": [
+            "queue"
+          ],
+          "state": "RUNNING"
+        }
+      ]
+    },
+    {
+      "project": "survey-scoring",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-survey-scoring-de3eckjxw",
+      "application": "wtl-assisted-survey-scoring-de3eeanz4",
+      "server": "static-live",
+      "revisionSha256": "6ad00573b030194395c496813028775673180699d9d0646b99ea92b2dbbad70f",
+      "ownershipSha256": "9adb221c5212eecbdde9fd167822c528a234ce060952960ff9c0e70d24f1a250",
+      "state": "RUNNING",
+      "autostart": "DISABLED",
+      "observedAt": "2026-10-19T22:05:45.069447300Z",
+      "components": [
+        {
+          "mode": "DAEMON",
+          "endpoints": [
+            {
+              "value": "http://45.192.105.213:46141",
+              "browser": "http://45.192.105.213:46141",
+              "protocol": "http"
+            }
+          ],
+          "unitId": "wtl-assisted-survey-scoring-de3eeanz4-backend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-de3eeanz4-backend start ae0232b9ae72e55a372a5141548e27f97866feed4700359ea9eac018fc685443 b405041c31cc553bc9275cd8cf70a637c812edd9f9f4158c337e6e976f36fabb",
+          "id": "backend",
+          "workers": [],
+          "state": "RUNNING"
+        },
+        {
+          "mode": "DAEMON",
+          "endpoints": [
+            {
+              "value": "http://45.192.105.213:46140",
+              "browser": "http://45.192.105.213:46140",
+              "protocol": "http"
+            }
+          ],
+          "unitId": "wtl-assisted-survey-scoring-de3eeanz4-frontend",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-de3eeanz4-frontend start f607b43fccfd871dc805828269ed99b475773a50136de74c172aa9b09804ce12 3dc7bc2a3108eebff7d81f3bb8f25855ccb147e25a2fa6c88bad6708b7705390",
+          "id": "frontend",
+          "workers": [],
+          "state": "RUNNING"
+        },
+        {
+          "mode": "DAEMON",
+          "endpoints": [],
+          "unitId": "wtl-assisted-survey-scoring-de3eeanz4-scorer",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper lifecycle-deployment wtl-assisted-survey-scoring-de3eeanz4-scorer start ddfb9194beee6937f69725c293def91e90bd6e56d758e46d83af4c83ae7b8a33 9433631e04ce318d5d5bf470a767885a8a0e343b0844648938a73ee9ba391eb9",
+          "id": "scorer",
+          "workers": [],
+          "state": "RUNNING"
+        }
+      ]
+    },
+    {
+      "project": "log-analyzer",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-log-analyzer-aqh8efm9o",
+      "application": "wtl-assisted-log-analyzer-aqh8g1w6o",
+      "server": "static-live",
+      "revisionSha256": "2fc32829408bd5f4115262b11924a3788d528fefc27a4516773fae888adaecd8",
+      "ownershipSha256": "2db619850e79ee404886cb6c3014334bd6cb9355b461bb4126f3ce484e0647bc",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-19T19:43:11.769068100Z",
+      "components": [
+        {
+          "mode": "ON_DEMAND",
+          "endpoints": [],
+          "unitId": "wtl-assisted-log-analyzer-aqh8g1w6o",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-log-analyzer-aqh8g1w6o 7b7c373fbc1734b9eee7abeec0cd8fbac4f3520a602a7e5a81fb3a696870ca39 --",
+          "id": "wtl-assisted-log-analyzer-aqh8g1w6o",
+          "workers": [],
+          "state": "INSTALLED"
+        }
+      ]
+    },
+    {
+      "project": "directory-diff",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-directory-diff-ax4mg9x94",
+      "application": "wtl-assisted-directory-diff-ax4mhsk5g",
+      "server": "static-live",
+      "revisionSha256": "3dd331fddd7f52643fcb49bfed78727b95e8b8d93dafe010662db60baa8d2ca3",
+      "ownershipSha256": "4cdd143e3d65b4017e7157e62c74d3f456d70b22a6b6f843b5aba2f4e5a3b376",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-19T19:51:20.649793700Z",
+      "components": [
+        {
+          "workers": [],
+          "state": "INSTALLED",
+          "mode": "ON_DEMAND",
+          "endpoints": [],
+          "unitId": "wtl-assisted-directory-diff-ax4mhsk5g",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-directory-diff-ax4mhsk5g 7abbdb20c52ddeff644bc96479622138e9312a9bed85333d4d8857f2a0a3274c --",
+          "id": "wtl-assisted-directory-diff-ax4mhsk5g"
+        }
+      ]
+    },
+    {
+      "project": "binary-inspector",
+      "mode": "ASSISTED",
+      "stateDirectory": "I:\\Program\\WindowsToLinux\\src\\app\\db\\data\\assisted-live-binary-inspector-b2gvdgbb4",
+      "application": "wtl-assisted-binary-inspector-b2gvf9q64",
+      "server": "static-live",
+      "revisionSha256": "f9cafc0c42aef699588df87554c3434b0f561c52b64c93309403ab302eca145b",
+      "ownershipSha256": "56eb3bbb3e4a66a8aa4c5606a01aff623b94d84ef33e259127f6fe23a19f7103",
+      "state": "INSTALLED",
+      "autostart": "NOT_APPLICABLE",
+      "observedAt": "2026-10-19T19:56:41.324279800Z",
+      "components": [
+        {
+          "unitId": "wtl-assisted-binary-inspector-b2gvf9q64",
+          "command": "sudo /usr/local/lib/windowstolinux/managed-helper app-run wtl-assisted-binary-inspector-b2gvf9q64 94a7f51bd9cb255412d44762fc07e977d3d96f7ba3a2658614f10b79421f1023 --",
+          "id": "wtl-assisted-binary-inspector-b2gvf9q64",
+          "workers": [],
+          "state": "INSTALLED",
+          "mode": "ON_DEMAND",
+          "endpoints": []
+        }
+      ]
+    }
+  ]
+}

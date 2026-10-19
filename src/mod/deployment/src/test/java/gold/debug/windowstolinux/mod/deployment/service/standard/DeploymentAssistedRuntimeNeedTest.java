@@ -30,7 +30,7 @@ class DeploymentAssistedRuntimeNeedTest {
     Path directory;
 
     @ParameterizedTest
-    @ValueSource(strings = {"VALID", "REVISION", "SERVER", "SOURCE", "ARCHIVE_HANDLE", "TASK", "WORKFLOW", "BRANCH", "ECOSYSTEM", "EXACT", "DENY"})
+    @ValueSource(strings = {"VALID", "REVISION", "SERVER", "SOURCE", "ARCHIVE_HANDLE", "TASK", "WORKFLOW", "BRANCH", "ECOSYSTEM", "EXACT", "DENY", "HOST_MISSING", "HOST_CLEARED", "HOST_REVISION", "HOST_TASK"})
     void runtimeNeedIsBoundToThePlanAndSourceWithoutRewritingSourceDeclarations(String mutation) throws Exception {
         Files.createDirectories(directory.resolve("frontend"));
         Files.writeString(directory.resolve("frontend/package.json"), "{\"engines\":{\"node\":\">=24 <25\"},\"scripts\":{\"build\":\"vite build\"}}");
@@ -72,8 +72,9 @@ class DeploymentAssistedRuntimeNeedTest {
             "AUTOMATIC", true, "Deploy selected survey including its reviewed runtime dependencies")) {
             scope.workflowOpened(permission);
             scope.sourceCaptured(server, material, fixture.task);
-            var plan = DeploymentAssistedApprovalBudgetLiveTest.staticSitePlan(material, archive, "wtl-survey", layout,
+            var initialPlan = DeploymentAssistedApprovalBudgetLiveTest.staticSitePlan(material, archive, "wtl-survey", layout,
                 mutation.equals("SERVER") ? new ServerId("other") : server);
+            var plan = mutation.startsWith("HOST_") ? companionPlan(initialPlan) : initialPlan;
             scope.archiveCaptured(material, archive, plan.request().facts().toolchainRequirements(), fixture.task);
             String identity = ReviewedPlanIdentity.from(plan.request());
             var observer = (DeploymentCommandReview) scope.interaction();
@@ -86,6 +87,31 @@ class DeploymentAssistedRuntimeNeedTest {
                     mutation.equals("TASK") ? new NativeAiFixture().task : fixture.task));
             } else {
                 observer.toolchainPreparationPlanned(plan, identity, fixture.task);
+                if (mutation.startsWith("HOST_")) {
+                    var tools = preparedTools(plan);
+                    if (mutation.equals("HOST_REVISION") || mutation.equals("HOST_TASK")) {
+                        assertThrows(IllegalArgumentException.class, () -> observer.hostPrerequisitesObserved(plan,
+                            mutation.equals("HOST_REVISION") ? "d".repeat(64) : identity,
+                            hostFacts(false), tools, mutation.equals("HOST_TASK") ? new NativeAiFixture().task : fixture.task));
+                    } else {
+                        observer.hostPrerequisitesObserved(plan, identity, hostFacts(false), tools, fixture.task);
+                        try (var command = DeploymentAssistedApprovalBudgetLiveTest.preparation(layout, "PYTHON", "3.12")) {
+                            var intent = RemoteActions.command(server, identity, command).withSemantics(new ActionSemantics(
+                                "deployment.toolchain.prepare.v1", Set.of(new ActionTarget(server.id(), "deployment-build", layout.toolchains()))));
+                            var observed = new ObjectMapper().valueToTree(scope.effectFacts(intent, fixture.task));
+                            assertEquals("wtl-survey", observed.at("/hostPrerequisiteObservations/applications/0/application").asText());
+                            assertTrue(observed.at("/hostPrerequisiteObservations/applications/0/requiredCapability").asText().contains("CMake 3.25"));
+                            assertEquals(identity, observed.at("/hostPrerequisiteObservations/applications/0/reviewedPlanSha256").asText());
+                            if (mutation.equals("HOST_CLEARED")) {
+                                observer.hostPrerequisitesObserved(plan, identity, hostFacts(true), tools, fixture.task);
+                                assertFalse(scope.effectFacts(intent, fixture.task).containsKey("hostPrerequisiteObservations"));
+                            }
+                        }
+                    }
+                    assertTrue(fixture.requests.isEmpty());
+                    assertEquals(0, grants.get());
+                    return;
+                }
                 String ecosystem = mutation.equals("ECOSYSTEM") ? "RUBY" : "PYTHON";
                 String branch = mutation.equals("ECOSYSTEM") ? "3.3" : mutation.equals("BRANCH") ? "3.13" : "3.12";
                 try (var request = DeploymentAssistedApprovalBudgetLiveTest.preparation(layout, ecosystem, branch)) {
@@ -102,6 +128,12 @@ class DeploymentAssistedRuntimeNeedTest {
                             var facts = new ObjectMapper().valueToTree(scope.facts(intent, complete, fixture.task));
                             assertEquals("StaticSite", facts.at("/currentToolchainPlan/runtimeKind").asText());
                             assertEquals(identity, facts.at("/currentToolchainPlan/reviewedPlanSha256").asText());
+                            var application = facts.at("/reviewedApplicationSources/applications/0");
+                            assertEquals("wtl-survey", application.path("application").asText());
+                            assertEquals("frontend", application.path("relativeRoot").asText());
+                            assertEquals("a".repeat(64), application.path("sourceManifestSha256").asText());
+                            assertEquals("b".repeat(64), application.path("archiveSha256").asText());
+                            assertEquals("survey", facts.at("/sourceSelection/displayName").asText());
                             assertTrue(facts.at("/currentToolchainPlan/runtimeDependencyReason").asText().contains("Python 3.12"));
                             var needs = facts.at("/currentToolchainPlan/requirements");
                             assertTrue(java.util.stream.StreamSupport.stream(needs.spliterator(), false)
@@ -124,6 +156,47 @@ class DeploymentAssistedRuntimeNeedTest {
             if (!mutation.equals("DENY")) assertTrue(fixture.requests.isEmpty());
             assertEquals(0, grants.get());
         }
+    }
+
+
+    private static gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan companionPlan(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan initial) {
+        var r = initial.request();
+        var w = r.runtime().workload();
+        var workload = new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentWorkload(
+            w.mode(), w.reviewed(), w.command(), w.workingDirectory(), w.endpoints(), w.verification(), w.expectedOutput(),
+            w.client(), w.inputs(), List.of(new gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCompanion(
+                "worker", "native", gold.debug.windowstolinux.mod.deployment.service.core.model.runtime.DeploymentCompanion.BuildType.CMAKE_SERVICE,
+                ".w2l/bin/worker", "NATIVE_HELPER")), w.buildDirectory(), w.workers());
+        var request = new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentRequest(
+            r.server(), r.facts(), r.material(), r.archive(), r.configuration(), r.secretReferences(), r.resources(),
+            r.runtime().withWorkload(workload), r.userAccessUrl(), r.limits(), r.review(), r.containerDaemonRiskAccepted(),
+            r.experimentalAdapterRiskAccepted(), r.layout());
+        return new gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan(request, initial.steps());
+    }
+
+    private static gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains preparedTools(
+        gold.debug.windowstolinux.mod.deployment.service.standard.shared.deploy.contract.ReviewedDeploymentPlan plan) {
+        var catalog = gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainCatalog.defaults();
+        var selections = gold.debug.windowstolinux.mod.deployment.service.deploy.toolchain.DeploymentProjectToolchainRequirements
+            .from(plan.request().facts(), plan.request().runtime()).stream().map(need ->
+                new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.Selection(need,
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentToolchainVersion.parse(need.ecosystem(),
+                        need.ecosystem().name().equals("NODE") ? "24.0.0" : "3.12.0").orElseThrow(),
+                    "/opt/fixture/" + need.ecosystem().name().toLowerCase(Locale.ROOT),
+                    gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains.OriginType.MANAGED,
+                    "fixture", "e".repeat(64))).toList();
+        return new gold.debug.windowstolinux.mod.deployment.service.core.model.toolchain.DeploymentResolvedToolchains(catalog.revision(), selections);
+    }
+
+    private static gold.debug.windowstolinux.mod.deployment.service.core.model.capability.DeploymentLinuxCapabilityFacts hostFacts(boolean ready) {
+        var values = new HashMap<String, String>(Map.of("DISTRO_ID", "ubuntu", "VERSION", "24.04", "ARCH", "x86_64",
+            "PACKAGE_MANAGER", "apt", "PACKAGE_ARCH", "amd64", "SYSTEMD", "1", "CPU_LEVEL", "x86-64-v1"));
+        if (ready) {
+            values.put("TOOL_CMAKE", "3.28.3");
+            values.put("TOOL_NINJA", "1.11.1");
+        }
+        return gold.debug.windowstolinux.mod.deployment.linux.probe.DeploymentPlatformCapabilityParser.fromValues(values, "fixture");
     }
 
     private FileSnapshot snapshot(AtomicReference<UUID> id, String sha) {

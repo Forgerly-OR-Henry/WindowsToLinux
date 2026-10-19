@@ -1,0 +1,177 @@
+{
+  "basisHead": "ed5bae4814c9d6d464e775352a66866ba0f8761e",
+  "verifiedAt": "2026-10-19T22:08:36.946307+00:00",
+  "basis": "Isolated task increments against preserved prior source snapshots and a separately timestamped documentation first-touch snapshot. 12 whole source/test files can be committed directly; 9 inseparable increments are delivered by exact patch. Live first round7/8 at32k, additional Survey-only pass at64k; final post-live change is API-only test assertion maintenance, not a redeployment.",
+  "directSourceFilesCount": 12,
+  "patchOnlyFilesCount": 9,
+  "patchSha256": "f5bd8a764a44ea0f76cbeb62af4e97a240b11fbbb25a1ae888e1677d86edbb58",
+  "sourceFreezeV1Sha256": "424eeeca928f683e432782d75afcbb0adea0026c616ec6c4a5c5eca8aaec3c9a",
+  "sourceFreezeV2Sha256": "04552d53c38f6016debb256208c287733afd768fd8111e3292cea65ccbde390a",
+  "finalSourceFreezeSha256": "322d7a21b2d1c0903290527000c8278b31539878ff5d59a4c2a05c11f8b0f581",
+  "postLiveFixtureChange": {
+    "changedAt": "2026-10-19T22:06:34.988028+00:00",
+    "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedApprovalBudgetLiveTest.java",
+    "beforeSha256": "3c6e85bc76f8fc51ac5c7714bb6e7e474d876c3fc4991ed3e0fd8c5aaf4f4f65",
+    "afterSha256": "f8727fa3e3961c6b89919e4aedfd92e621f1a9fbbab8830e2f90a9dd272f839e",
+    "meaning": "After complete live v2 source checks passed, align only API-only test proxy budget assertion to configured independent approval ceiling. No production or live-entry bytes changed; no live re-deployment is implied.",
+    "productionAndLiveEntryChanged": false
+  },
+  "documentationBaseline": {
+    "path": "docs/Config.md",
+    "capturedAt": "2026-10-19T22:04:28.995396+00:00",
+    "baselineSha256": "b4b618011eab31e183fa72b3d794aa510b31f13a9a1d22242a93483f4b00839b",
+    "afterSha256": "dc0a6c3988413cb9803d0e9d48814dc0fddc8431f4d20667b17dbb3f3c65f3fa",
+    "provenance": "First touch before this task edited the document; initial baseline-status already marks it modified. Not backdated as a task-start raw-byte snapshot.",
+    "changes": "Only approval output ceiling/range and the already-effective600-second deadline table row; existing user text and raw line endings preserved."
+  },
+  "files": [
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/command/contract/DeploymentCommandReview.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "96d0dff0cd0c70704143e608f813a84bd30b62dd32459c5230b01b313a2d24ea",
+      "currentSha256": "1ba7ac691ac0dc35e3080f6121c97f2932cc94ec056006c14b01b077178ce612",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentManagedHelperBundle.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "2be37924d979c7a544fd9123adda27ef47394ebfe34f8e1788aab98fdec72200",
+      "currentSha256": "8cc2083847ad00db1f571cb3584cd6fc3529c293b2d59dfe8d6e59e8e83d0a97",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannel.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "f446c18ba037dd195724c7de46757ed4d8993d11f316d1f83d11f3c0392a8a91",
+      "currentSha256": "90be3a62acda687b07a5d5f06d582240f7e1b57dd7a3b3d4dc341383f2cbf412",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/application/DeploymentApplicationRunner.java",
+      "kind": "PREEXISTING_UNTRACKED",
+      "baselineSha256": "de814be2321bf6de42b4039ed0960d55850ca4274993e5b7c562364da54fc205",
+      "currentSha256": "6f5c03a5abf620c91441cec02e048cffcfa5b861c04a2c933684f90fea586679",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/DeploymentAssistedScope.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "5fbd78a861f2f7c70ba9213c8ebcaeeea05e28813486935e3e864c141d4cc2d3",
+      "currentSha256": "a8bb510725dc51f1fd68bce00bde66770031c19c53afdc34741bac2c5041b0d0",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/DeploymentStandardWorkflow.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "6493e615c90970b22e9e8455155d77991e02add86dc3c1e583b14516b1f159a1",
+      "currentSha256": "cea096c97ebd9af847c868b94a4ce52a74c18960f1afe2eb346d2c060f7cdd0c",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/fixed-effect-review.md",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "ece3c83ee9c50c062fc3ff3f13eb37444bd72daa3b840116a8e01583b80c3dd5",
+      "currentSha256": "2f77b520806c5675d29694f1371c6a4b1caaa92fcc48b244fb903cbca0c054cc",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/service/standard/assisted/publish/preparation-gap.md",
+      "kind": "PREEXISTING_UNTRACKED",
+      "baselineSha256": "13e89286edb1dc7e0638a755ad0760f903c6a0333dfe17b02048ca2a3bff6639",
+      "currentSha256": "4b95d3fe86c1d93de1074ace9fda54e9afd13665a30338f5d50aa44c2f61157e",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/db/DeploymentApplicationLifecycleTest.java",
+      "kind": "TRACKED_MIXED_BASELINE",
+      "baselineSha256": "bbb1f5e62aa1b4410cd8b26f6ff8420f78155cb581a78f0654a19e8fa614fd35",
+      "currentSha256": "2f052190010ba5d3e4c46570e8094b582287e459ec8dfc3cd8c3b30eda4d4281",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/publish/DeploymentPublishChannelTest.java",
+      "kind": "PREEXISTING_UNTRACKED",
+      "baselineSha256": "2ea7c9ae36b4275b16950319cb3a7ce3d5752607a09976cff26a2fda50099393",
+      "currentSha256": "9592bc1e0f2263b6cbf61f88f11c9f571e4fced044441d45c19e2f61fbf13ddb",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedRuntimeNeedTest.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "8ed0f8c237918af364468f0330429482d896f4154c58977b34099dff7c5120a4",
+      "currentSha256": "ed39d75e294aedd5cb88e5a4fe4836e16a491f53fb0410241f02d23d68d8ff46",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/core/model/build/DeploymentWorkspaceQuota.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "72357e938e12591acb4189ebdd122a3ba552e6a7e8699b970c4037f4bbbeb21c",
+      "currentSha256": "9f2e661ca2d4f8da5c72b9f531695f24bfa55c2162d35d4e64e42c3f749a7a76",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/core/model/build/DeploymentWorkspaceQuotaTest.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "a7f48869b844ce501c90bfa0de80bf15a3a91923c2048c6a52d3357aca4c8691",
+      "currentSha256": "f6a6180bddefd1fd9fb5af3710a09409fb8837f9b91164a087f44269763168aa",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/service/standard/shared/deploy/build/DeploymentStandardCandidateRunner.java",
+      "kind": "PREEXISTING_UNTRACKED",
+      "baselineSha256": "f6036fc04ac10bc667a45bb0002c5b5bc03663b13f633cf4056ea46c06c742c6",
+      "currentSha256": "4518afcc2f4364c194f4b13a6e87d50993642f0e3164d36cb0af3d42c87b868e",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/linux/helper/DeploymentStagingReviewEvidenceTest.java",
+      "kind": "NEW_TASK_FILE",
+      "baselineSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "currentSha256": "abbcbad2b546100d68b7a7db429fbb568619306cb45f10caa88b2c966ada92bd",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/main/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfig.java",
+      "kind": "TRACKED_MIXED_BASELINE",
+      "baselineSha256": "9a60b7017e935595685a009a292d12c4eccb8c4928d53c657313501bda1f44b0",
+      "currentSha256": "a410d42eff4baa964d726df3f6fb4486e6a36986f9bd67023caa51e655578958",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml",
+      "kind": "TRACKED_MIXED_BASELINE",
+      "baselineSha256": "caf3135d85b984270e1b6546f6980d9dbd5855b65edb99fb506fc81b003d2936",
+      "currentSha256": "59cd19679a9eed211158677258bf5e29458dd6c5551f14e20bb0aa80ff37464d",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/config/DeploymentConfigLoaderTest.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "8ce72bd867f74d9415301026812223e74f2fd87cf4c1df3328a6a1dbf6a65b40",
+      "currentSha256": "6ce8ef6132f08ccdc20666837a70ce88ff961bc4360bbc5beb5370cd77e4cffd",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/ai/DeploymentAiJsonTest.java",
+      "kind": "PREEXISTING_UNTRACKED",
+      "baselineSha256": "0d47a7675b081f7e586e65e7a96bc32e8fb907761b3682808e21ffddac192951",
+      "currentSha256": "bda45df7510da832f7327bf9fcec31e3038f59b37c3149e8e37dcc80025d3a7f",
+      "delivery": "TASK_PATCH"
+    },
+    {
+      "path": "src/mod/deployment/src/test/java/gold/debug/windowstolinux/mod/deployment/service/standard/DeploymentAssistedApprovalBudgetLiveTest.java",
+      "kind": "TRACKED_TASK_ONLY",
+      "baselineSha256": "3c6e85bc76f8fc51ac5c7714bb6e7e474d876c3fc4991ed3e0fd8c5aaf4f4f65",
+      "currentSha256": "f8727fa3e3961c6b89919e4aedfd92e621f1a9fbbab8830e2f90a9dd272f839e",
+      "delivery": "SOURCE"
+    },
+    {
+      "path": "docs/Config.md",
+      "kind": "TRACKED_MIXED_BASELINE",
+      "baselineSha256": "b4b618011eab31e183fa72b3d794aa510b31f13a9a1d22242a93483f4b00839b",
+      "currentSha256": "dc0a6c3988413cb9803d0e9d48814dc0fddc8431f4d20667b17dbb3f3c65f3fa",
+      "delivery": "TASK_PATCH",
+      "baselineProvenance": "Timestamped first-touch before this task edited two rows; initial status was already modified. See config-document-first-touch-baseline.json; no task-start raw-byte claim."
+    }
+  ]
+}

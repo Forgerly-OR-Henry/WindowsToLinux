@@ -273,6 +273,12 @@ public final class DeploymentStandardWorkflow {
             return priorEffects(ioFailure("DEPLOYMENT_STATIC_DISCOVERY_UNAVAILABLE"), task);
         } catch (SecurityException sourceRejected) {
             return priorEffects(rejected("DEPLOYMENT_STATIC_SOURCE_REJECTED"), task);
+        } catch (gold.debug.windowstolinux.mod.deployment.service.core.model.build.DeploymentWorkspaceQuota.InsufficientCapacity capacity) {
+            return priorEffects(new OperationResult<>(TaskResult.FAILED, Optional.empty(), Optional.of(new Problem(
+                ProblemCode.INCOMPATIBLE, "DEPLOYMENT_WORKSPACE_HOST_INSUFFICIENT",
+                "Verified host space cannot satisfy all reviewed component budgets and the host reserve",
+                Map.of("availableBytes", Long.toString(capacity.availableBytes()),
+                    "requiredBytes", Long.toString(capacity.requiredBytes())), Optional.of(task.id())))), task);
         } catch (IllegalArgumentException invalid) {
             return priorEffects(rejected("DEPLOYMENT_STATIC_REVIEW_INVALID"), task);
         } finally {

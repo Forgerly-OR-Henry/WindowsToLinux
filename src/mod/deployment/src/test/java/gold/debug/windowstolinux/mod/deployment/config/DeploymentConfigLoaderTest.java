@@ -139,21 +139,24 @@ class DeploymentConfigLoaderTest {
     }
 
     @Test
-    void outputBudgetsAreStrictAndApprovalCannotExceedDeployment() throws Exception {
+    void outputBudgetsAreStrictAndApprovalCannotExceedExtendedDeployment() throws Exception {
         String yaml = bundledYaml();
+        var defaults = parse(yaml).ai();
+        assertEquals(32768, defaults.deploymentMaxOutputTokens());
+        assertEquals(65536, defaults.approvalMaxOutputTokens());
         var config = parse(yaml.replace("deployment-max-output-tokens: 32768", "deployment-max-output-tokens: 4096")
             .replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 12288")
-            .replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 2048"));
+            .replace("approval-max-output-tokens: 65536", "approval-max-output-tokens: 2048"));
         assertEquals(4096, config.ai().deploymentMaxOutputTokens());
         assertEquals(12288, config.ai().extendedDeploymentMaxOutputTokens());
         assertEquals(2048, config.ai().approvalMaxOutputTokens());
         for (String invalid : java.util.List.of(
-            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 32769"),
-            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 0"),
-            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: '8192'"),
-            yaml.replace("approval-max-output-tokens: 32768", "approval-max-output-tokens: 2147483648"),
+            yaml.replace("approval-max-output-tokens: 65536", "approval-max-output-tokens: 65537"),
+            yaml.replace("approval-max-output-tokens: 65536", "approval-max-output-tokens: 0"),
+            yaml.replace("approval-max-output-tokens: 65536", "approval-max-output-tokens: '8192'"),
+            yaml.replace("approval-max-output-tokens: 65536", "approval-max-output-tokens: 2147483648"),
             yaml.replace("extended-deployment-max-output-tokens: 65536", "extended-deployment-max-output-tokens: 8191"),
-            yaml.replace("  approval-max-output-tokens: 32768\n", "")))
+            yaml.replace("  approval-max-output-tokens: 65536\n", "")))
             assertThrows(IOException.class, () -> parse(invalid));
     }
 

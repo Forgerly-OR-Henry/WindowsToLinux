@@ -12,6 +12,22 @@ public final class DeploymentWorkspaceQuota {
 
     public enum Cost {STANDARD, AGENT}
 
+    /** Known capacity refusal with numeric evidence, without exposing reviewed form values. */
+    public static final class InsufficientCapacity extends IllegalArgumentException {
+        private final long availableBytes;
+        private final long requiredBytes;
+
+        private InsufficientCapacity(long availableBytes, long requiredBytes) {
+            super("WORKSPACE_HOST_INSUFFICIENT: availableBytes=" + availableBytes + " requiredBytes=" + requiredBytes);
+            this.availableBytes = availableBytes;
+            this.requiredBytes = requiredBytes;
+        }
+
+        public long availableBytes() { return availableBytes; }
+
+        public long requiredBytes() { return requiredBytes; }
+    }
+
     public record Policy(long maximumBytes, long reserveBytes) {
         public Policy {
             if (maximumBytes < UNIT || maximumBytes > MAXIMUM || reserveBytes < 1024L * 1024 * 1024
@@ -106,8 +122,7 @@ public final class DeploymentWorkspaceQuota {
         }
         long remaining = Math.subtractExact(available, policy.reserveBytes());
         if (remaining < reserved)
-            throw new IllegalArgumentException("WORKSPACE_HOST_INSUFFICIENT: availableBytes=" + available
-                + " requiredBytes=" + Math.addExact(reserved, policy.reserveBytes()));
+            throw new InsufficientCapacity(available, Math.addExact(reserved, policy.reserveBytes()));
         var result = new LinkedHashMap<String, Selection>();
         for (var input : ordered) {
             long min = minimum.get(input.id());

@@ -250,7 +250,7 @@ class DeploymentAssistedApprovalBudgetLiveTest extends DeploymentStaticLiveAccep
             var request = Arrays.stream(args).filter(AiRequest.class::isInstance).map(AiRequest.class::cast).findFirst().orElseThrow();
             var task = Arrays.stream(args).filter(TaskContext.class::isInstance).map(TaskContext.class::cast).findFirst().orElseThrow();
             assertEquals(AiPurpose.APPROVAL, request.purpose());
-            assertEquals(32768, request.maxOutputTokens().orElseThrow());
+            assertEquals(DeploymentConfigLoader.current().ai().approvalMaxOutputTokens(), request.maxOutputTokens().orElseThrow());
             assertEquals(Duration.ofSeconds(600), request.timeout());
             var result = (OperationResult<AiResponse>) invoke(method, actual.ai(), args);
             var attempts = result.value().map(AiResponse::generationAttempts).orElseGet(() -> result.problem().map(AiGenerationAttempt::fromProblem).orElse(List.of()));
