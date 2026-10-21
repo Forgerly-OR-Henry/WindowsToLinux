@@ -107,7 +107,7 @@ Git准备使用原平台进程和来源能力，在首个效果前持久化job�
 
 ## 当前平台数据库与安全
 
-`windowstolinux.mv.db`、当前Windows用户保护的`db-access.bin`和实例锁共同确定唯一H2引擎。只缺失配对一方、保护材料损坏、代次/结构/版本不符或已被其他实例占用时拒绝打开，不补建、清空或转换。当前DDL以[platform-v1.sql](../src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql)为准。
+`windowstolinux.mv.db`、当前Windows用户保护的`db-access.bin`和实例锁共同确定唯一H2引擎。只缺失配对一方、保护材料损坏、代次/结构/版本不符或已被其他实例占用时拒绝打开，不补建、清空或转换。当前DDL以[platform-v1.sql](../../src/app/db/src/main/resources/gold/debug/windowstolinux/app/db/schema/platform-v1.sql)为准。
 
 `PlatformDatabase`持有引擎、锁、保护材料及连接生命周期。`PlatformDatabaseInitializer`借用连接执行当前DDL、结构核验、启动标记、异常任务与Mod状态恢复以及首次偏好写入，不关闭或持有引擎资源。原事务、回滚和失败清理顺序保持；Mod Schema生命周期使用独立任务与操作作用域。
 
@@ -179,7 +179,7 @@ Mod 安装的账本、路径及清单核验，重装的原文件作用域与 VAL
 
 ### 验证边界
 
-仓库测试使用隔离临时数据库，覆盖结构、事务、密码/密文失败、锁定任务生命周期、配置修订、业务调用和可见 Swing 窗口。验证执行方法见 [1.1 开发文档](development/PHASE-1.1.md#engineering-workflow)。真实 Linux 和真实模型服务需要独立运行有条件的验收，不能由本地模拟或界面测试替代。
+仓库测试使用隔离临时数据库，覆盖结构、事务、密码/密文失败、锁定任务生命周期、配置修订、业务调用和可见 Swing 窗口。验证执行方法见 [1.1 开发文档](../development/PHASE-1.1.md#engineering-workflow)。真实 Linux 和真实模型服务需要独立运行有条件的验收，不能由本地模拟或界面测试替代。
 
 <a id="recovery-browser-privacy"></a>
 

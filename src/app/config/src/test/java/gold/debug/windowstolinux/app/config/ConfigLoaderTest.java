@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 class ConfigLoaderTest {
     static Path root() {
         Path path = Path.of("").toAbsolutePath();
-        while (path != null && !Files.isRegularFile(path.resolve("docs/Config.md"))) path = path.getParent();
+        while (path != null && !Files.isRegularFile(path.resolve("docs/reference/Config.md"))) path = path.getParent();
         if (path == null) throw new IllegalStateException("Project documentation root is unavailable");
         return path;
     }
@@ -200,7 +200,7 @@ class ConfigLoaderTest {
 
     @Test
     void guideTableCoversAllKeysAndExampleIsActuallyLoadable() throws Exception {
-        String guide = Files.readString(root().resolve("docs/Config.md")).replace("\r\n", "\n");
+        String guide = Files.readString(root().resolve("docs/reference/Config.md")).replace("\r\n", "\n");
         guide = guide.split("## 部署 Mod 固定参数", 2)[0];
         var matcher = Pattern.compile("(?m)^\\| `([^`]+)` \\|").matcher(guide);
         var keys = new HashSet<String>();

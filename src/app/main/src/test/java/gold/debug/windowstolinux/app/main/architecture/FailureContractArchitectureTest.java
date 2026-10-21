@@ -381,7 +381,7 @@ class FailureContractArchitectureTest {
     private static Path projectRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null && !(Files.isRegularFile(current.resolve("pom.xml"))
-            && Files.isRegularFile(current.resolve("docs/File.md")))) {
+            && Files.isRegularFile(current.resolve("docs/reference/File.md")))) {
             current = current.getParent();
         }
         if (current == null)

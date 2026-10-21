@@ -156,7 +156,7 @@ class DocumentStructureArchitectureTest {
     }
 
     private static String document() throws Exception {
-        return Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md"));
+        return Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md"));
     }
 
     private static Set<String> productionPackages() throws Exception {

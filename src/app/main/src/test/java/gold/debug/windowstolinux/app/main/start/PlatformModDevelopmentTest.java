@@ -90,7 +90,7 @@ class PlatformModDevelopmentTest {
         fixture.workspace();
         Path workspace = fixture.workspace;
         Path repository = Path.of("").toAbsolutePath();
-        while (!Files.isRegularFile(repository.resolve("docs/File.md")))
+        while (!Files.isRegularFile(repository.resolve("docs/reference/File.md")))
             repository = repository.getParent();
         write(workspace.resolve("pom.xml"), aggregate("workspace", "<module>src/mod</module>", ""));
         write(workspace.resolve("src/mod/pom.xml"), aggregate("mod", "", ""));

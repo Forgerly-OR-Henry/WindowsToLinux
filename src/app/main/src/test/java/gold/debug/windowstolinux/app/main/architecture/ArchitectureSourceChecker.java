@@ -236,7 +236,7 @@ final class ArchitectureSourceChecker {
 
     static Path projectRoot() {
         Path root = Path.of("").toAbsolutePath().normalize();
-        while (root != null && !Files.isRegularFile(root.resolve("docs/File.md")))
+        while (root != null && !Files.isRegularFile(root.resolve("docs/reference/File.md")))
             root = root.getParent();
         if (root == null)
             throw new IllegalStateException("Project root unavailable");

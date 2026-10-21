@@ -34,7 +34,7 @@ class FilesShellTest {
     void actualClassWorkspaceKeepsTwoLocationsAcrossNavigationAppearanceAndLockedInput() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
         Path workspace = Path.of("").toRealPath();
-        while (workspace != null && !Files.isRegularFile(workspace.resolve("docs/File.md")))
+        while (workspace != null && !Files.isRegularFile(workspace.resolve("docs/reference/File.md")))
             workspace = workspace.getParent();
         assertNotNull(workspace);
         final Path actualWorkspace = workspace;

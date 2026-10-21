@@ -3,7 +3,7 @@
 - 状态：本文描述 **1.1 已确认发布目标**；S1～S5 活动源码及 CLASS 本机适用合同已验证，完整根测试编译通过。按本次最终范围，S6 备份与迁移、S7 JAR/APP/SDK 正式发行及真实远端暂缓；本文发布布局仍是发行目标，不是已生成交付物。
 - 职责：维护 APP/JAR 交付物、发布目录、启动配置、更新边界和官网服务范围；源码模块、包和命名由 [File.md](File.md) 维护，三种模式的 Mod 加载规则见 [Mod 文档](Mod.md#loading-modes)。
 - 产品方向：WindowsToLinux 是在 Windows 上操作 Linux 的开放 APP 平台，主体提供界面、连接、AI、任务、安全和 Mod 管理；部署与备份由官方 Mod 提供。
-- [开发总纲](development/DEVELOPMENT.md) · [1.1 工程](development/PHASE-1.1.md) · [Mod 包格式](Mod.md)
+- [开发总纲](../development/DEVELOPMENT.md) · [1.1 工程](../development/PHASE-1.1.md) · [Mod 包格式](Mod.md)
 
 <a id="release-layout"></a>
 
@@ -91,7 +91,7 @@ app.mainclass=example.Main
 
 首次交付便携 APP 包和开发用 JAR 包：便携包包含 EXE、Java 运行环境、两个已解压的官方 Mod 和救援资源，普通使用无需官网账号。当前属于受控开发，本期终点为本地验收交付，不要求公开发布、签名或兼容历史公开 API。正式安装器、网站、在线商店和首次公开发布条件后置；本地包明确标记开发版本。作者示例和工具见 [Mod.md](Mod.md#developer-tooling)。
 
-构建步骤与发行物验收见 [1.1 开发文档](development/PHASE-1.1.md#packaging-steps)。
+构建步骤与发行物验收见 [1.1 开发文档](../development/PHASE-1.1.md#packaging-steps)。
 
 <a id="app-maintenance"></a>
 
@@ -107,7 +107,7 @@ app.mainclass=example.Main
 
 当前 1.3 S5 已接入完整目录、依赖选择和真实 HTTP 客户端，并通过本机受控服务与桌面验收。空商店地址保持不可用，不自动联网；配置地址通过传输规则后，用户查询才读取该服务的完整目录。配置与当前边界见 [Config.md](Config.md)，目录和包传输合同见 [Mod 客户端协议](Mod.md#store-catalog-protocol)。
 
-[1.3 期商店连同下载](development/PHASE-1.3.md#dependency-download)负责客户端完整本地验收，正式商店真实服务验证独立安排。下述官网投稿、审核及公开发布体系继续后置，不因客户端功能纳入 1.3 就视为整套服务已经交付。
+[1.3 期商店连同下载](../development/PHASE-1.3.md#dependency-download)负责客户端完整本地验收，正式商店真实服务验证独立安排。下述官网投稿、审核及公开发布体系继续后置，不因客户端功能纳入 1.3 就视为整套服务已经交付。
 
 - 官网提供软件介绍、教程、熟悉流程的教学演示和公开下载。演示使用示例数据，操作按钮不实际部署、备份或连接用户 Linux。
 - 下载者无需账号、邮箱或其他个人资料，下载后即可使用；不围绕下载建立用户画像、广告或营销联系。
@@ -124,7 +124,7 @@ app.mainclass=example.Main
 
 ### 8.1 构建身份与依赖
 
-本节描述尚待交付的发行装配，不能作为当前安装包或 SDK 已发布的证据。当前活动根 POM 的工程版本为 `0.1.0-SNAPSHOT`，平台 API 开发契约为 `1.0.0-dev.4`（1.3 可选服务、原任务依赖图、受管素材与审批流程授权）；阶段验收状态见 [1.3 执行计划](development/PHASE-1.3.md)。工程阶段编号不自动修改版本，备份 Mod 仍属后续范围。
+本节描述尚待交付的发行装配，不能作为当前安装包或 SDK 已发布的证据。当前活动根 POM 的工程版本为 `0.1.0-SNAPSHOT`，平台 API 开发契约为 `1.0.0-dev.4`（1.3 可选服务、原任务依赖图、受管素材与审批流程授权）；阶段验收状态见 [1.3 执行计划](../development/PHASE-1.3.md)。工程阶段编号不自动修改版本，备份 Mod 仍属后续范围。
 
 发行规格沿用 `gold.debug.windowstolinux` groupId，原规划工程开发版本为 `1.1.0-SNAPSHOT`，不是当前 POM 或公开版本承诺。平台 API 契约独立于 Maven 工程版本；规划中的两个官方 Mod 清单版本为 `1.1.0-dev.1`、schemaVersion 为 `1`，platformApiRange 为 `[1.0.0-dev.1,1.0.0)`，备份依赖部署的范围为 `[1.1.0-dev.1,1.1.0)`。正式发行前需核对实际声明和测试，不能由字符串相似推断兼容。
 
@@ -149,7 +149,7 @@ app.mainclass=example.Main
 
 作者使用独立 `wtlmod-author-parent` POM（同 groupId、同工程开发版本），包含 JDK 21 编译、资源处理、开发描述生成和 package 绑定；该 POM 不继承整个 APP reactor、不作为业务 Mod 运行依赖。作者通过 Maven provided 依赖平台 API，自行声明第三方依赖；同作者配套 JAR 在构建属性 `wtl.authorArtifacts` 中以完整 Maven 坐标列举，其余有效 runtime 依赖进入 lib。平台 API、H2、宿主依赖和 provided 的其他 Mod 不打入包，冲突在构建时失败。
 
-工具主类固定为 `gold.debug.windowstolinux.app.mod.dev.ModPackageTool`，归 app/mod 的开发描述生成职责，不新增 Maven 业务模块。当前只实现 describe，安装包读取和校验继续复用原安装能力；pack/verify 发行工具仍按原后置范围处理。`src/moddev` 通过独立聚合工程进行定向构建与测试，使用流程见 [ModDev 入口](../src/moddev/README.md)，阶段验收见 [1.3 S1](development/PHASE-1.3.md#mod-development-layout)。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
+工具主类固定为 `gold.debug.windowstolinux.app.mod.dev.ModPackageTool`，归 app/mod 的开发描述生成职责，不新增 Maven 业务模块。当前只实现 describe，安装包读取和校验继续复用原安装能力；pack/verify 发行工具仍按原后置范围处理。`src/moddev` 通过独立聚合工程进行定向构建与测试，使用流程见 [ModDev 入口](../../src/moddev/README.md)，阶段验收见 [1.3 S1](../development/PHASE-1.3.md#mod-development-layout)。工具运行依赖随 SDK 的 tool 目录提供，使用与 APP 相同的版本/摘要；它们是构建工具 classpath，不进入作者 Mod 的 main/lib。
 
 ```text
 java -cp "<SDK>/tool/*" gold.debug.windowstolinux.app.mod.dev.ModPackageTool describe --input <构建生成的输入JSON>

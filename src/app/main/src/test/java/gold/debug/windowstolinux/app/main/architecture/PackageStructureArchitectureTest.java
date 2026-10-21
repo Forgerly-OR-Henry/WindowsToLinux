@@ -475,7 +475,7 @@ class PackageStructureArchitectureTest {
                 .toList();
             assertTrue(periodNames.isEmpty(), () -> "production paths contain period names: " + periodNames);
         }
-        String structure = Files.readString(root.resolve("docs/File.md"));
+        String structure = Files.readString(root.resolve("docs/reference/File.md"));
         assertTrue(structure.contains("15 个 Maven 叶子模块"));
         for (String required : List.of("db/connect", "linux/sftp", "linux/ssh/recover", "service/ai", "appapi",
             "mod/deployment", "mod/git", "mod/files"))
@@ -1289,7 +1289,7 @@ class PackageStructureArchitectureTest {
                     .filter(target -> target.startsWith(prefix) && !target.equals(unit.packageName))
                     .ifPresent(target -> targets.add(target.substring(prefix.length())));
         }
-        String document = Files.readString(projectRoot().resolve("docs/File.md"));
+        String document = Files.readString(projectRoot().resolve("docs/reference/File.md"));
         String anchor = "<a id=\"appapi-package-dependencies\"></a>";
         assertEquals(1, document.split(Pattern.quote(anchor), -1).length - 1);
         var documented = new HashMap<String, Set<String>>();
@@ -1949,7 +1949,7 @@ class PackageStructureArchitectureTest {
     private static Path projectRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null && !(Files.isRegularFile(current.resolve("pom.xml"))
-            && Files.isRegularFile(current.resolve("docs/File.md")))) {
+            && Files.isRegularFile(current.resolve("docs/reference/File.md")))) {
             current = current.getParent();
         }
         if (current == null)

@@ -27,7 +27,7 @@
 
 当前活动源码采用 APP/appapi/Mod 结构；[1.2](PHASE-1.2.md) 已完成功能归包、统一文件 API、服务器检查失败到原目标救援，以及分别配置和验证的文件/实时音频转写及本机适用验收。数据库直接更新当前 H2 建库基准，指定开发库已完成实际首次设置及跨 JVM 重开，证据见 1.2 的 S5 验收记录。各阶段完成状态及本机、受控服务和真实环境的边界见 1.2 第 5、6 节；1.1 后置事项保持原范围。以下 0.x 说明与表格保留迁移前的产品基线，不作为当前平台入口已具备全部能力的证明。
 
-当前未发布开发阶段统一维护数据库 V1，直接调整完整建库基准；不随阶段增加迭代迁移版本。部署现行清单及结构均为 Schema 1，既有开发数据保留，调整使用隔离新库验证；发布后的通用迁移合同见 [Mod 数据版本](../Mod.md#schema-version)。
+当前未发布开发阶段统一维护数据库 V1，直接调整完整建库基准；不随阶段增加迭代迁移版本。部署现行清单及结构均为 Schema 1，既有开发数据保留，调整使用隔离新库验证；发布后的通用迁移合同见 [Mod 数据版本](../reference/Mod.md#schema-version)。
 
 0.x 实现是面向个人和小型自托管场景的部署管理工具。用户选择源码或 Git 版本并提供目标 Linux 服务器后，软件按所选模式使用标准分析或自主 Agent 推导部署方案，并完成连接检查、目标环境准备、源码传输、目标机构建、受管发布、健康检查和失败恢复。部署成功的内容进入“已部署应用”，可查看安装或运行状态；长期服务提供启动、停止、重启和自启动，一次性工具提供固定使用命令。
 
@@ -56,12 +56,12 @@
 | 1.2 APP 整体调整需求、规格与对应实施验收 | [1.2 开发文档](PHASE-1.2.md) |
 | 1.3 开工前窗口 P0、正式 S0～S6 执行步骤、功能规格与验收 | [1.3 执行计划](PHASE-1.3.md) |
 | 全软件助手、Mod 业务操作 API 与独立后期设计 | [APP 智能助手开发规划](APP-ASSISTANT-DEVELOPMENT.md) |
-| 当前模块与包、命名、分包及依赖方向 | [实际源码结构](../File.md#current-source-tree) · [现行分包规则](../File.md#package-rules) · [结构检查](../File.md#structure-checks) |
-| Mod 入口、第一层职责及后置规划 | [Mod 源码规范](../File.md#mod-source-layout) · [规划与历史边界](../File.md#planned-boundaries) |
-| Mod 开发、分发、加载、版本、数据库、迁移及用户操作 | [Mod.md](../Mod.md) |
-| APP/JAR 交付物、发布目录、启动配置及维护边界 | [APP.md](../APP.md) |
-| 当前运行数据、业务约束、数据库与安全机制 | [Runtime.md](../Runtime.md) |
-| 当前功能的用户操作入口 | [产品说明书](../PRODUCT-MANUAL.md) |
+| 当前模块与包、命名、分包及依赖方向 | [实际源码结构](../reference/File.md#current-source-tree) · [现行分包规则](../reference/File.md#package-rules) · [结构检查](../reference/File.md#structure-checks) |
+| Mod 入口、第一层职责及后置规划 | [Mod 源码规范](../reference/File.md#mod-source-layout) · [规划与历史边界](../reference/File.md#planned-boundaries) |
+| Mod 开发、分发、加载、版本、数据库、迁移及用户操作 | [Mod.md](../reference/Mod.md) |
+| APP/JAR 交付物、发布目录、启动配置及维护边界 | [APP.md](../reference/APP.md) |
+| 当前运行数据、业务约束、数据库与安全机制 | [Runtime.md](../reference/Runtime.md) |
+| 当前功能的用户操作入口 | [产品说明书](../reference/PRODUCT-MANUAL.md) |
 | 框架、接口、执行细节与验证状态 | [1.1 决策表](PHASE-1.1.md#review-decisions) |
 | 分阶段修改范围、验收、回退与后置工作 | [1.1 修改计划](PHASE-1.1.md#implementation) |
 
@@ -206,7 +206,7 @@
 - CentOS 系统准备通过独立且默认拒绝的确认框批准 SELinux 配置与重启，按服务器、启动和配置摘要校验后由产品执行；重连固定原主机指纹，完成标签与新 SSH 登录验证后才持久化 Enforcing。普通安装批准不扩大为系统变更授权，失败保留恢复状态。实现与当前实机进度见[0.4 期验收](PHASE-0.4.md#acceptance)。
 - 检查和备份散列只能证明内容是否变化，不能单独证明备份来自可信方。
 
-现行结构与职责：共享 `source` 负责源码快照，`backup` 负责应用数据归档，两者不混用；`linux` 只依赖 `model`，配置通过 deploy 的类型化投影进入远端契约。服务用例和 UI 仅依赖 Linux 窄契约，具体 SSHD 由启动模块装配。正式结构描述以实际代码校准后的[File.md](../File.md)维护，完整文件索引见[AllFile.md](../AllFile.md)。
+现行结构与职责：共享 `source` 负责源码快照，`backup` 负责应用数据归档，两者不混用；`linux` 只依赖 `model`，配置通过 deploy 的类型化投影进入远端契约。服务用例和 UI 仅依赖 Linux 窄契约，具体 SSHD 由启动模块装配。正式结构描述以实际代码校准后的[File.md](../reference/File.md)维护，完整文件索引见[AllFile.md](../reference/AllFile.md)。
 
 <a id="workflow"></a>
 
@@ -233,12 +233,12 @@
 
 | 文档 | 唯一维护的内容 |
 | --- | --- |
-| [Mod.md](../Mod.md) | Mod 开发、公开契约、分发格式、加载、版本、生命周期、Schema 与迁移规范；详细源码树和命名引用 File.md。 |
-| [APP.md](../APP.md) | APP/JAR 交付物、发布布局、启动配置、维护边界与官网服务范围。 |
-| [Runtime.md](../Runtime.md) | 当前运行目录、业务约定、数据库、凭据、安全和运行时验证边界。 |
-| [PRODUCT-MANUAL.md](../PRODUCT-MANUAL.md) | 产品手册：用户流程、操作入口、输入与反馈；机制细则引用 Runtime.md。 |
-| [File.md](../File.md) | 源码模块、包、文件结构、命名及依赖方向；当前结构与 1.1 目标分开。 |
-| [AllFile.md](../AllFile.md) | 独立保留的实际非测试生产文件索引，不收录尚未创建的目标文件。 |
+| [Mod.md](../reference/Mod.md) | Mod 开发、公开契约、分发格式、加载、版本、生命周期、Schema 与迁移规范；详细源码树和命名引用 File.md。 |
+| [APP.md](../reference/APP.md) | APP/JAR 交付物、发布布局、启动配置、维护边界与官网服务范围。 |
+| [Runtime.md](../reference/Runtime.md) | 当前运行目录、业务约定、数据库、凭据、安全和运行时验证边界。 |
+| [PRODUCT-MANUAL.md](../reference/PRODUCT-MANUAL.md) | 产品手册：用户流程、操作入口、输入与反馈；机制细则引用 Runtime.md。 |
+| [File.md](../reference/File.md) | 源码模块、包、文件结构、命名及依赖方向；当前结构与 1.1 目标分开。 |
+| [AllFile.md](../reference/AllFile.md) | 独立保留的实际非测试生产文件索引，不收录尚未创建的目标文件。 |
 | [APP-ASSISTANT-DEVELOPMENT.md](APP-ASSISTANT-DEVELOPMENT.md) | 全软件助手与 APP/Mod 业务操作 API 的后期讨论、需求、候选方案和待定边界；不纳入 1.3，不作为已实现合同。 |
 | 本总纲及各期文档 | 总纲维护导航与文档职责；1.3 维护后续开发需求、讨论结论、方案及待定边界；1.2 保留 APP 整体调整及对应实施验收；1.1 与各历史期保留各自范围、规格和证据。 |
 

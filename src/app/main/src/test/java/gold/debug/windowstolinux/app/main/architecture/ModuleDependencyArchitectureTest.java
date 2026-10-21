@@ -36,7 +36,7 @@ class ModuleDependencyArchitectureTest {
 
     @Test
     void productionDependenciesMatchDocumentationAndDirectPomDeclarations() throws Exception {
-        String document = Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md"));
+        String document = Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md"));
         var allowed = documentedDependencies(document);
         var declared = declaredDependencies();
         List<String> violations = pomViolations(allowed, declared);
@@ -55,7 +55,7 @@ class ModuleDependencyArchitectureTest {
     @Test
     void forbiddenPomDependenciesAndMissingDirectDependenciesCannotPass() throws Exception {
         var allowed = documentedDependencies(
-            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         var declared = new HashMap<>(declaredDependencies());
         declared.put("app/ui", Set.of("app/db"));
         assertFalse(pomViolations(allowed, declared).isEmpty());
@@ -70,7 +70,7 @@ class ModuleDependencyArchitectureTest {
     @Test
     void fullyQualifiedReferencesCannotBypassTheUiBoundary() throws Exception {
         var allowed = documentedDependencies(
-            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         var declared = declaredDependencies();
         var source = ArchitectureSourceChecker.snippets(Map.of("fixture.Refs", """
             package fixture;
@@ -107,7 +107,7 @@ class ModuleDependencyArchitectureTest {
     @Test
     void uiCanUseControlledRescueButCannotReachTransportBrowserOrHostPorts() throws Exception {
         var allowed = documentedDependencies(
-            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         var declared = declaredDependencies();
         assertEquals(List.of(), referenceViolations("app/ui", List.of(ROOT + "app.linux.ssh.recover.SshRecoverySession",
                 ROOT + "app.linux.ssh.recover.SshRecovery.Server", ROOT + "app.linux.ssh.recover.BrowserRecoverySnapshot.Action"),
@@ -120,7 +120,7 @@ class ModuleDependencyArchitectureTest {
 
     @Test
     void uiCannotInvokeAnyGroupedFileCapabilityDirectly() throws Exception {
-        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         var declared = declaredDependencies();
         for (var entry : Map.of("query.FileQueryService", "readFile(null, 1, null)",
             "action.FileActionService", "createFile(null, null)",
@@ -159,7 +159,7 @@ class ModuleDependencyArchitectureTest {
     @Test
     void modInternalFreedomCannotReachPlatformOrPrivateModImplementations() throws Exception {
         var allowed = documentedDependencies(
-            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+            Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         var declared = declaredDependencies();
         for (String reference : List.of(ROOT + "app.file.SourceWorkDirectory",
             ROOT + "app.db.connect.PlatformDatabase", ROOT + "mod.backup.service.PrivateBackup"))
@@ -172,7 +172,7 @@ class ModuleDependencyArchitectureTest {
 
     @Test
     void declaredModProviderPermitsOnlyItsExactExportedApi() throws Exception {
-        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         var declared = declaredDependencies();
         assertEquals(List.of(), referenceViolations("mod/deployment", List.of(ROOT + "mod.git.api.GitSourceService"), allowed, declared));
         for (String ref : List.of(ROOT + "mod.git.service.GitSourceProvider", ROOT + "mod.git.file.GitArchive",
@@ -209,7 +209,7 @@ class ModuleDependencyArchitectureTest {
         var screen = sources.stream().filter(source -> source.packageName().equals(ROOT + "app.ui.fixture"))
             .findFirst().orElseThrow();
         assertTrue(screen.references().contains(ROOT + "app.db.fixture.Storage.Row"));
-        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/File.md")));
+        var allowed = documentedDependencies(Files.readString(ArchitectureSourceChecker.projectRoot().resolve("docs/reference/File.md")));
         assertFalse(referenceViolations("app/ui", screen.references(), allowed, declaredDependencies()).isEmpty());
     }
 

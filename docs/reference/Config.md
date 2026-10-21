@@ -4,7 +4,7 @@
 
 ## 文件位置与模式覆盖
 
-配置源文件位于 [Config 模块资源目录](../src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml)：`src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml`。Maven 自动将它复制到模块构建输出并打入 Config JAR；三种模式均通过 classpath 读取 `/gold/debug/windowstolinux/app/config/config.yaml`，不读取程序根或工作目录中的同名文件。
+配置源文件位于 [Config 模块资源目录](../../src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml)：`src/app/config/src/main/resources/gold/debug/windowstolinux/app/config/config.yaml`。Maven 自动将它复制到模块构建输出并打入 Config JAR；三种模式均通过 classpath 读取 `/gold/debug/windowstolinux/app/config/config.yaml`，不读取程序根或工作目录中的同名文件。
 
 YAML 的资源位置不改变数据目录的相对路径基准：
 
@@ -87,7 +87,7 @@ YAML 的资源位置不改变数据目录的相对路径基准：
 
 CLASS 默认关闭自动加载，JAR/APP 固定装配并发现 Mod。只有 `class.mod.auto-load: false` 时只启动主 APP：不读取 Mod 源码、清单、配置、发行包或开发构建输出；不扫描、登记、校验、建立类加载器或调用 Mod 生命周期；不装配 Mod 专用服务和初始化查询；不挂载工作区、Mod 管理、Mod 设置、固定入口和商店；不要求 `wtl.workspace`。APP 的数据库结构检查、安全、任务、SSH、模型配置及日志仍正常初始化。CLASS 开启时只发现 `src/mod`，不扫描独立开发区 `src/moddev`；启动专用刷新为首次新身份选择本次唯一有效构建版本并启用，必要数据准备仍经明确审阅和下一适用启动。已有禁用、选中版本及待重启意图保留。JAR/APP 继续原安装和用户启用规则，不继承 CLASS 首次自动启用。
 
-商店沿此地址获取完整目录及包；真实客户端、选择清单和安装批次已通过 1.3 S5 本机验收，验收状态以 [该期记录](development/PHASE-1.3.md#dependency-download)为准。正式服务地址由用户明确填写，不预设已经上线；空地址不发起网络请求，连接失败可明确重试，不后台轮询。HTTP 仅用于精确数字回环地址的本机受控服务，`localhost`、其他 HTTP 主机及近似域名均拒绝；正式远端使用 HTTPS。包地址保持同源，不跟随重定向。CLASS 开启 Mod 时可以查询商店，仍不能安装发行包；安装不会自动启用或切换版本。
+商店沿此地址获取完整目录及包；真实客户端、选择清单和安装批次已通过 1.3 S5 本机验收，验收状态以 [该期记录](../development/PHASE-1.3.md#dependency-download)为准。正式服务地址由用户明确填写，不预设已经上线；空地址不发起网络请求，连接失败可明确重试，不后台轮询。HTTP 仅用于精确数字回环地址的本机受控服务，`localhost`、其他 HTTP 主机及近似域名均拒绝；正式远端使用 HTTPS。包地址保持同源，不跟随重定向。CLASS 开启 Mod 时可以查询商店，仍不能安装发行包；安装不会自动启用或切换版本。
 
 入口排序、窗口尺寸、居中、布局、安全与协议常量不属于 YAML。外观中的平台入口顺序和固定 Mod 入口顺序进入 DB，分别使用 `platform_navigation_order` 和 `mod_navigation_pins`；隐藏项保留位置，新项追加，设置按钮保持底部。平台恢复默认按代码顺序，Mod 恢复默认按 ownerId/pageId 排序，不取消固定。损坏偏好报错并保留原值。
 
@@ -145,7 +145,7 @@ app: {}
 
 ## 部署 Mod AI 输出额度
 
-源文件位于 [部署 Mod 配置资源](../src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml)。随包 YAML 经 Mod 自己的严格加载器读取，按类加载器保存一份不可变配置；不读取 APP Config 实现或外置同名文件。修改后重新构建、加载 Mod 生效。资源文件中的其他必需字段须保留；字段缺失、未知、重复、null、非整数或越界均拒绝加载。
+源文件位于 [部署 Mod 配置资源](../../src/mod/deployment/src/main/resources/gold/debug/windowstolinux/mod/deployment/config/config.yaml)。随包 YAML 经 Mod 自己的严格加载器读取，按类加载器保存一份不可变配置；不读取 APP Config 实现或外置同名文件。修改后重新构建、加载 Mod 生效。资源文件中的其他必需字段须保留；字段缺失、未知、重复、null、非整数或越界均拒绝加载。
 
 | 字段 | 默认值 | 约束 |
 |---|---|---|

@@ -199,7 +199,7 @@ class DesktopTextArchitectureTest {
     private static Path repositoryRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null && !(Files.isRegularFile(current.resolve("pom.xml"))
-            && Files.isRegularFile(current.resolve("docs/File.md")))) {
+            && Files.isRegularFile(current.resolve("docs/reference/File.md")))) {
             current = current.getParent();
         }
         assertNotNull(current, "repository root could not be located from the Maven test directory");

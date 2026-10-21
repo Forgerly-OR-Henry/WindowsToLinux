@@ -5,7 +5,7 @@
 > 更新日期：2026-10-05。
 > 定位：按“执行入口 → 窗口前置 → 正式阶段与交付物 → 功能规格 → 验收 → 开工核实”组织，供目标模式逐项实施；任务完成状态须由实际实现与验证更新。
 
-- [开发总纲](DEVELOPMENT.md) · [1.1 平台化改造](PHASE-1.1.md) · [1.2 APP 调整](PHASE-1.2.md) · [实际源码结构](../File.md#current-source-tree) · [Mod 开发规范](../Mod.md) · [运行约定](../Runtime.md)
+- [开发总纲](DEVELOPMENT.md) · [1.1 平台化改造](PHASE-1.1.md) · [1.2 APP 调整](PHASE-1.2.md) · [实际源码结构](../reference/File.md#current-source-tree) · [Mod 开发规范](../reference/Mod.md) · [运行约定](../reference/Runtime.md)
 - [范围与使用方式](#scope) · [首版界面优先级](#ui-first-delivery) · [本地完成门槛](#local-acceptance) · [目标模式执行入口](#goal-execution) · [P0 开工前窗口阶段](#mod-workspace) · [正式执行计划 S0～S6](#delivery) · [部署规格](#deployment-migration) · [Git 与依赖规格](#git-mod) · [ModDev 规格](#mod-development-layout) · [文件管理规格](#file-explorer) · [商店连同下载](#dependency-download) · [验收](#acceptance) · [后期工程](#deferred) · [按阶段核实](#pending)
 
 <a id="scope"></a>
@@ -355,11 +355,11 @@ Git 独立化和 ModDev 划分仍属于 1.3 正式开发，不暂缓。SQL/Swing
 
 ### 4.4 S0 逐项历史对照（2026-10-05）
 
-核对冻结历史源码、资源、产品说明与有效测试，形成以下 36 项功能及真实入口对照。冻结产品说明 SHA-256 为 `328F13ABA26BF75B346E006922EF6EBD5B5F86B2485E16E2D69F7530E4766A05`，冻结集合 2836 文件校验通过。详细只读审计证据保留于 `.ai-workspace/progress/phase13-evidence/history-deployment-audit.md`。
+核对冻结历史源码、资源、产品说明与有效测试，形成以下 36 项功能及真实入口对照。冻结产品说明 SHA-256 为 `328F13ABA26BF75B346E006922EF6EBD5B5F86B2485E16E2D69F7530E4766A05`，冻结集合 2836 文件校验通过。详细只读审计证据保留于 `.ai-workspace/evidence/phase13-evidence/history-deployment-audit.md`。
 
 本表保留S0历史依据，当前三列按S3实际源码、用户入口与有效验收刷新。36项本机适用验收已完成；各类与限定selector取各自最后有效结果组成合集，不声称一次全量运行，也不机械相加重复调用。历史源码、旧Schema检查或固定预览不能代替迁移后业务验证；架构适配保持现行APP/H2/公开API合同。
 
-证据根为 .ai-workspace/progress/phase13-evidence/；表内测试类名均指DT对应实际类，日志名按该根解释，source-ui-test-09.log未写子目录时指s3-platform/source-ui-test-09.log，targeted-05/06指s3-environment对应日志。33与36闭合原来源/发布/恢复；37实际222中218通过、4失败，原PreviousRunning/UnknownHealth各2由41原4复验全过，保留37/39失败日志。37窗口1个方法完整12真实Robot变体通过；39有效BundleIdentity2/Toolchain1/StandardCandidate11；41 HelperBehavior桥3实际分发native6/storage5/lifecycle6共17个Python方法，含真实publish/rollback；42于19:25:03终态exit0，9类59项与两Runner各遗漏12合计83全部通过，未以限定12项称全类通过。适用UI/模式/审批/环境/管理/恢复由各行原有效结果承接。
+证据根为 .ai-workspace/evidence/phase13-evidence/；表内测试类名均指DT对应实际类，日志名按该根解释，source-ui-test-09.log未写子目录时指s3-platform/source-ui-test-09.log，targeted-05/06指s3-environment对应日志。33与36闭合原来源/发布/恢复；37实际222中218通过、4失败，原PreviousRunning/UnknownHealth各2由41原4复验全过，保留37/39失败日志。37窗口1个方法完整12真实Robot变体通过；39有效BundleIdentity2/Toolchain1/StandardCandidate11；41 HelperBehavior桥3实际分发native6/storage5/lifecycle6共17个Python方法，含真实publish/rollback；42于19:25:03终态exit0，9类59项与两Runner各遗漏12合计83全部通过，未以限定12项称全类通过。适用UI/模式/审批/环境/管理/恢复由各行原有效结果承接。
 
 helper验证使用明确的OS/API seams模拟Windows不能提供的目录POSIX owner/mode、ACL/mount及外部engine/client；真实MSYS链接test-L/readlink/cat与实际Bash函数执行、source/release/current切换、参数身份和用户数据保留按当前行为验证。该结果不证明真实Linux权限、容器引擎或系统服务。真实Linux/外部模型/正式商店仍未验；S3验收当时S4开始实施、S5只有设计、S6未开始，当前阶段状态见第3节；既有失败和受控环境边界均保留。
 
@@ -393,7 +393,7 @@ helper验证使用明确的OS/API seams模拟Windows不能提供的目录POSIX o
 | HD-13 静态模式全程无AI | MAN §16.1；历史静态链无模型调用，包括失败分支 | 标准 `submit(...assisted=false...)`→`prepare` advice为空→静态 candidate/publish/recovery；实际 AI仅 assisted/agent路由 | **本机适用验收通过**。静态与辅助/自主审核路由隔离，静态恢复不调用AI | **本机适用验收通过**。s3-publication-assisted-33.log：`DeploymentStaticWorkflowTest`原10中9先过，s3-remaining-recovery-window-36.log仅复验原Git UNKNOWN 1并过；原单/多工作流与42原publisher反例补齐适用静态路径，不将36的1项写成全类10项。 验收场景保留：本轮36 DeploymentStaticWorkflowTest原Git UNKNOWN1已过；缺模型、候选/构建/发布/健康失败及恢复0AI已逐项验证，单未知分支不替代全链 |
 | HD-14 辅助分析补参、部署前检查、失败修正及有限重试 | MAN §16.1；HSVC `AssistedDeploymentBoundary`；只读冻结源码、证据绑定、参数校验/用户值优先、最多两次有效重试，未知不重放 | DeploymentStaticAssistance→D/service/standard/deploy/assistance/DeploymentAssistedScope/DeploymentAssistedAnalysis/DeploymentAssistedAdvisor；原构建/尝试预算；DeploymentPublishPolicyContext恢复原inner scope、模式/策略/模型事实 | **本机适用验收通过**。补参与有限纠错沿原任务，每条实际命令与完整stdin先静态后独立AI，UNKNOWN仅核对 | **本机适用验收通过**。s3-original-policy-32.log：`DeploymentAssistedBuildWorkflowTest`选中14；s3-publication-assisted-33.log：其余DeploymentAssistedBuildWorkflowTest 9、DeploymentAssistedHealthWorkflowTest 6、DeploymentAssistedWorkflowTest 3；s3-remaining-recovery-window-36.log：`DeploymentAssistedEnvironmentRecoveryRestartTest` 2。按方法范围组成有效合集，非单轮全量。 验收场景保留：本轮36 DeploymentAssistedEnvironmentRecoveryRestartTest 2已过；DeploymentAssistedBuildWorkflowTest、DeploymentAssistedHealthWorkflowTest、DeploymentAssistedWorkflowTest等已按适用范围验证有效修正/无变化/两次预算、人工继续、原策略恢复 |
 | HD-15 自主读取/搜索/分页、计划、命令、受保护源码补丁、发布全图健康 | MAN §16.1；HAG autonomous session、SourcePatchApproval；HSVC `AutonomousDeploymentUseCase` 交公共发布 | 自主页 `submitLocal/submitGit`→`DeploymentAgentWorkflow`→`DeploymentAgentSession`、`DeploymentAgentRemoteTools.read/command/patch/seal/deliver`→公共 graph publisher | **本机适用验收通过**。真实动态读取/规划/命令/补丁/全图交付；补丁只改任务Linux副本，原归档身份保留 | **本机适用验收通过**。s3-policy-integration-30.log：`DeploymentAgentWorkflowTest`原27中25先过；s3-policy-recovery-31.log的受影响12全部过，闭合原2失败；s3-policy-integration-27.log：`DeploymentAgentTargetAdmissionTest` 3；s3-coverage-closure-42.log：`DeploymentAgentPlanProtocolTest` 9。 验收场景保留：DT `DeploymentAgentWorkflowTest`、`DeploymentAgentPlanProtocolTest`、`DeploymentAgentTargetAdmissionTest`；不支持静态类型仍可读并规划、真实失败改命令、补丁前摘要、身份/修订变化使旧构建失效 |
-| HD-16 AI三审批策略：所有实际命令/脚本与源码补丁均需独立AI，人工模式再确认 | MAN §16.2；HDEP `approval/CommandApprovalAudit.before` 无条件逐段 `reviewer.review`→`DeploymentApprovalGate.admit`，再 `needsHuman`；HAG `SourcePatchApproval.approve` 同样无条件AI后逐行人工。现行 `docs/Mod.md:779/1250` 明确迁移不能削弱独立AI，平台授权与AI独立；现行PRODUCT-MANUAL:509仍保留固定工具命令要求 | D/ai/DeploymentFixedCommandApproval/DeploymentCommandReviewScope对实际完整命令/stdin先静态后独立APPROVAL AI；辅助DeploymentAssistedScope/自主DeploymentAgentQuestionScope经公开reviewedWorkflow/delegateWorkflow/approveRequired绑定原宿主范围；部署三值事务保存偏好 | **本机适用验收通过**。MANUAL=ONCE/GENERAL，AUTO=ONCE/GENERAL/FULL，FULL_CONTROL=GENERAL/FULL共7组合；只复用同类型同核实scope人工授权，AI不缓存。AUTO HIGH拒绝且原任务未取消时改不同LOW；FULL下HIGH零询问零发送，直接改不同LOW；全控允许双审通过HIGH。根/重要系统目录整体破坏静态拒绝0AI，普通具体目录删除送AI | **本机适用验收通过**。s3-policy-integration-27.log：`DeploymentCommandApprovalPolicyRuntimeTest`原18中17先过、`DeploymentAgentReviewTest` 6、偏好与UI；s3-policy-integration-29.log仅原installer/root denial 2复验过；s3-policy-integration-30.log与s3-policy-recovery-31.log闭合真实Agent HIGH→不同LOW、重复提案停止、原效果UNKNOWN；s3-policy-runtime-26.log保留真实宿主scope/清理有效结果。 验收场景保留：DT DeploymentCommandApprovalPolicyRuntimeTest、DeploymentAgentReviewTest、DeploymentAgentWorkflowTest与APP真实scope/loopback；七组合、完整脚本/秘密、每请求重审、不同LOW先静态后AI、无路径有界停止、灰项键鼠/程序拒选、撤权/精确清理，历史/Schema测试不能代验 |
+| HD-16 AI三审批策略：所有实际命令/脚本与源码补丁均需独立AI，人工模式再确认 | MAN §16.2；HDEP `approval/CommandApprovalAudit.before` 无条件逐段 `reviewer.review`→`DeploymentApprovalGate.admit`，再 `needsHuman`；HAG `SourcePatchApproval.approve` 同样无条件AI后逐行人工。现行 `docs/reference/Mod.md:779/1250` 明确迁移不能削弱独立AI，平台授权与AI独立；现行PRODUCT-MANUAL:509仍保留固定工具命令要求 | D/ai/DeploymentFixedCommandApproval/DeploymentCommandReviewScope对实际完整命令/stdin先静态后独立APPROVAL AI；辅助DeploymentAssistedScope/自主DeploymentAgentQuestionScope经公开reviewedWorkflow/delegateWorkflow/approveRequired绑定原宿主范围；部署三值事务保存偏好 | **本机适用验收通过**。MANUAL=ONCE/GENERAL，AUTO=ONCE/GENERAL/FULL，FULL_CONTROL=GENERAL/FULL共7组合；只复用同类型同核实scope人工授权，AI不缓存。AUTO HIGH拒绝且原任务未取消时改不同LOW；FULL下HIGH零询问零发送，直接改不同LOW；全控允许双审通过HIGH。根/重要系统目录整体破坏静态拒绝0AI，普通具体目录删除送AI | **本机适用验收通过**。s3-policy-integration-27.log：`DeploymentCommandApprovalPolicyRuntimeTest`原18中17先过、`DeploymentAgentReviewTest` 6、偏好与UI；s3-policy-integration-29.log仅原installer/root denial 2复验过；s3-policy-integration-30.log与s3-policy-recovery-31.log闭合真实Agent HIGH→不同LOW、重复提案停止、原效果UNKNOWN；s3-policy-runtime-26.log保留真实宿主scope/清理有效结果。 验收场景保留：DT DeploymentCommandApprovalPolicyRuntimeTest、DeploymentAgentReviewTest、DeploymentAgentWorkflowTest与APP真实scope/loopback；七组合、完整脚本/秘密、每请求重审、不同LOW先静态后AI、无路径有界停止、灰项键鼠/程序拒选、撤权/精确清理，历史/Schema测试不能代验 |
 | HD-17 暂停/恢复、模型顺序刷新/接替、事件/任务历史、原操作核对 | MAN §16.4；HUI `DeploymentTaskControls` 任务按钮/历史/inspect；HSVC `AutomaticDeploymentTaskService`、agent control/session | 自主页 `DeploymentAgentEvidencePanel` 提供 pause/resume/refreshModels/history/events/inspect→`DeploymentAgentPageService`→`DeploymentAgentControl`、`DeploymentAgentHistory`；恢复 `DeploymentAgentRecovery` | **本机适用验收通过**。业务ID/脱敏事件经平台任务观察，pause/resume/refresh/inspect与历史读分开，不自动续写旧Agent操作 | **本机适用验收通过**。s3-policy-integration-27.log：`DeploymentAgentControlTest` 3、`DeploymentAgentHistoryTest` 1；s3-policy-integration-29.log：`DeploymentAgentRecoveryRestartTest` 1；s3-policy-recovery-31.log：Agent受影响12，覆盖原核对/查询模型身份及恢复权限。 验收场景保留：DT `DeploymentAgentControlTest`、`DeploymentAgentHistoryTest`、`DeploymentAgentRecoveryRestartTest`；仅安全边界暂停、刷新明确采用新修订、原任务继续、未知命令只核对不重放、重开历史 |
 | HD-18 服务器选择、首次指纹、已保存服务器就地新增/清除/摘要 | MAN §2/5；HUI 来源右侧 ServerSelectionCard/ServerProfileDialog；历史首次主机人工信任、不一致拒绝 | 标准/自主 D/ui/DeploymentTargetControls明确服务器选择/清除/刷新/公开摘要；有限PlatformPageKind.SERVERS→APP所属页面/资料弹窗→返回原草稿；APP linux.connect负责首次信任与实际连接 | **本机适用验收通过**。刷新不隐式选中，公开摘要不泄秘密；资料/信任仍归APP，Mod不读私有资料 | **本机适用验收通过**。s3-policy-integration-29.log：`DeploymentSourceUiIntegrationTest` 2实际平台服务器/两用途模型编辑与返回；`DeploymentAgentPageTest`原1+补3见s3-platform/source-ui-test-09.log/s3-integration-repair-20.log；s3-platform/integration-test-18.log：`DeploymentStaticPageTest` 16。 验收场景保留：DT 页面测试+APP服务器/主机信任测试；无服务器→就地新增→返回可选；清除后刷新不自动选中；指纹改变0业务发送；UI遮罩不泄资料 |
 | HD-19 目标环境事实及支持拒绝 | MAN §5/9.5；历史 Linux能力事实与HostSupportEvaluator | `DeploymentPlatformCapabilityProbe/Parser`、`DeploymentCandidateChannel.hostFacts`→`DeploymentHostMatcher`；标准 candidate准备先核对发行版/CPU/安全/空间/运行时 | **本机适用验收通过**。事实由受管session取得；安全拒绝与环境第四页各有真实业务，不以资源文案替代流程 | **本机适用验收通过**。s3-completion-contracts-window-37.log：`DeploymentCandidateChannelTest` 3固定协议；s3-publish-problem-toolchain-39.log：`DeploymentStandardCandidateRunnerTest` 11。受控事实/拒绝与协议验证，不是实机SSH结果。 验收场景保留：DT candidate/platform matcher等测试；未支持系统/架构、安全态不满足、空间不足时无源码上传 |
@@ -459,7 +459,7 @@ Git 独立化属于 1.3 实施范围。本期将已有 Git 专用功能提取为
 - `deployment/service/core/DeploymentGitSourceFlow` 负责将 Git 来源接入部署项目保存、原发布任务和持久恢复。
 - APP 经公开 API 提供通用文件、工作目录、源码快照、进程、任务及资源生命周期能力；当前 APP 聚合中没有独立 Git 服务模块。
 
-当前 Git 实现的用途是部署源码取材。本文中的独立 Git Mod 和后续 Git 功能均为开发目标，尚不存在对应交付。实际源码树继续由 [File.md](../File.md#current-source-tree)维护，生产文件索引继续只记录已存在文件。
+当前 Git 实现的用途是部署源码取材。本文中的独立 Git Mod 和后续 Git 功能均为开发目标，尚不存在对应交付。实际源码树继续由 [File.md](../reference/File.md#current-source-tree)维护，生产文件索引继续只记录已存在文件。
 
 ### 5.3 职责划分
 
@@ -477,7 +477,7 @@ Git 独立化属于 1.3 实施范围。本期将已有 Git 专用功能提取为
 
 ### 5.4 协作与依赖边界
 
-优先复用现有[跨 Mod 服务机制](../Mod.md#public-api-spec)，通过声明依赖、公开导出和受管服务调用协作，不访问其他 Mod 的私有实现或数据表。具体合同以现行 Mod 规范和 `appapi.mod.service` 源码为准。
+优先复用现有[跨 Mod 服务机制](../reference/Mod.md#public-api-spec)，通过声明依赖、公开导出和受管服务调用协作，不访问其他 Mod 的私有实现或数据表。具体合同以现行 Mod 规范和 `appapi.mod.service` 源码为准。
 
 当前跨 Mod 调用要求同步完成相应工作，跨边界返回不可变结果或已登记的业务操作 ID，提供方的资源不能泄漏到调用外。因此，现有 Git 素材对象不能只改名后直接作为跨 Mod 返回值；本期按下述已确认方向落实源码交接、授权、持有和释放的精确接口。
 
@@ -518,7 +518,7 @@ Git 是部署的可选依赖：缺少 Git 只影响 Git 来源，本地源码的
 
 以下合同已于 2026-10-05 实施并完成 S2 本地验收，实际结果见第 9.8 节；本节版本描述保留该阶段的实施基线。
 
-清单依赖对象增加严格布尔 `optional`，省略为 `false`。只允许 `id`、`versionRange`、`optional`；空值、错误类型、未知字段、重复身份和自依赖继续拒绝。S2 验收时 APP API 为 `1.0.0-dev.3`，独立 Git 为 `1.0.0-dev.1`，部署为 `1.1.0-dev.2`，当时部署 Schema 为 3。后续开发按第 1.2 节确认的 V1 基准统一调整；当前版本以 [Mod 规范](../Mod.md#schema-version)和实际清单为准，helper 协议保持原合同。原未完成任务不能用改版程序冒充其原版本或摘要。
+清单依赖对象增加严格布尔 `optional`，省略为 `false`。只允许 `id`、`versionRange`、`optional`；空值、错误类型、未知字段、重复身份和自依赖继续拒绝。S2 验收时 APP API 为 `1.0.0-dev.3`，独立 Git 为 `1.0.0-dev.1`，部署为 `1.1.0-dev.2`，当时部署 Schema 为 3。后续开发按第 1.2 节确认的 V1 基准统一调整；当前版本以 [Mod 规范](../reference/Mod.md#schema-version)和实际清单为准，helper 协议保持原合同。原未完成任务不能用改版程序冒充其原版本或摘要。
 
 启动区分全部声明、有效启动边和失败传播边。必需依赖，以及已启用、版本兼容且通过基础校验的可选依赖，参加启动顺序与导出包核对；缺失、禁用、不兼容或启动失败的可选提供方只使对应功能不可用。有效边形成的循环仍拒绝环成员，公开包重叠仍拒绝消费方，不能按声明顺序静默舍弃冲突。只有真正启动成功的提供方才绑定原加载器和公开类型。禁用可选提供方不级联禁用消费方；已有实例的重绑定仍封闭新业务并等待重启，不引入热插拔。
 
@@ -566,7 +566,7 @@ ModDev 是与现有 `src/mod` 并列的源码工程分组，不是独立运行�
 
 ### 6.2 目标目录与使用流程
 
-当前使用 `src/moddev` 和既有 `src/mod`，完整实际结构由 [File.md](../File.md#current-source-tree)维护；区域用途如下：
+当前使用 `src/moddev` 和既有 `src/mod`，完整实际结构由 [File.md](../reference/File.md#current-source-tree)维护；区域用途如下：
 
 ```text
 src/
@@ -599,7 +599,7 @@ src/
 
 用户已确认：仅在明确开启开发调试自动加载的 CLASS 调试入口中，移入 `src/mod` 且按新位置完成有效构建的新项目自动发现，并在完成必要平台准备后自动启用、接入 APP；未开启时不扫描或自动启用。新项目指尚无已保存启用选择的身份，用户已有禁用选择、已选版本和待重启意图继续保留，不因移入、重新构建或重启被覆盖。
 
-自动接入仍核对身份、构建描述、宿主/API、依赖与 Schema 等现行条件。必须由用户确认的初始化、迁移或授权步骤继续走平台流程，未满足时显示待处理原因，不绕过确认或把尚未启动写成运行成功；无效、歧义或缺少必需依赖的项目不自动执行。首次调试启用选择可以自动建立，实际启动仍遵守现行启动/重启时机；需要先在界面完成准备的项目，准备完成后在下一次适用启动接入，不因此热加载。已保存版本不自动切换，新身份的首次版本按第 6.5 节唯一有效构建确定，配置填写见 [Config.md](../Config.md)。发行物 `mod/` 的安装、启用与版本选择合同保持原规则，不继承开发调试首次自动启用。
+自动接入仍核对身份、构建描述、宿主/API、依赖与 Schema 等现行条件。必须由用户确认的初始化、迁移或授权步骤继续走平台流程，未满足时显示待处理原因，不绕过确认或把尚未启动写成运行成功；无效、歧义或缺少必需依赖的项目不自动执行。首次调试启用选择可以自动建立，实际启动仍遵守现行启动/重启时机；需要先在界面完成准备的项目，准备完成后在下一次适用启动接入，不因此热加载。已保存版本不自动切换，新身份的首次版本按第 6.5 节唯一有效构建确定，配置填写见 [Config.md](../reference/Config.md)。发行物 `mod/` 的安装、启用与版本选择合同保持原规则，不继承开发调试首次自动启用。
 
 默认调试区保留现有部署项目，ModDev 是独立开发聚合入口，不添加占位业务。作者项目独立聚合自身主/从模块；移入后在 `src/mod/pom.xml` 登记本次参与集成的项目并重建。根全源码结构、格式与索引识别两个区域，根默认 reactor 不编译或执行 ModDev 的业务测试。首次版本与准备按下述合同执行。
 
@@ -711,7 +711,7 @@ CLASS 明确开启自动加载时，启动专用刷新才允许为首次出现�
 
 ### 8.1 当前基线与本期边界
 
-S5 已接入完整目录、真实 HTTP 客户端、全局依赖解析、选择确认和逐包安装；空来源保持明确不可用。安装流程不自动启用 Mod 或切换已有选择。当前行为见 [Mod 获取与管理](../Mod.md#package-acquisition)及 [目录协议](../Mod.md#store-catalog-protocol)。
+S5 已接入完整目录、真实 HTTP 客户端、全局依赖解析、选择确认和逐包安装；空来源保持明确不可用。安装流程不自动启用 Mod 或切换已有选择。当前行为见 [Mod 获取与管理](../reference/Mod.md#package-acquisition)及 [目录协议](../reference/Mod.md#store-catalog-protocol)。
 
 `ModStoreGateway.Release` 现持有完整严格清单、包路径、长度、摘要和依赖用途；解析始终使用完整目录，搜索只筛选本机展示。服务将实际已装 READY 与物理内容核验结果作为复用依据，不用列表文案替代安装事实。
 
@@ -730,7 +730,7 @@ S5 已接入完整目录、真实 HTTP 客户端、全局依赖解析、选择�
 
 - 下载前展示主 Mod、必需依赖、可选依赖及其用途、版本、已安装状态和获取来源，依据选择形成确定的清单；可选项默认不勾选；选中关系按消费方/提供方身份保留，更换消费方版本时重读真实范围，不能静默删除用户已选关系。
 - 版本解析同时满足参与清单的全部要求。冲突、循环或没有可获取的兼容版本时给出具体原因，不静默更换用户已选运行版本或下载不兼容版本。
-- 用户已确认需要获取依赖时默认推荐满足要求的最高可获取兼容版本，依赖下载清单默认采用该推荐版本；进入该依赖的详情或版本选择界面时优先定位并选中推荐版本，不跳到不符合要求的全局最新版本。例如商店已有 `2.0.0`，消费方精确要求 `1.9.0` 时推荐并选中 `1.9.0`；若声明允许一段范围，则在同时满足参与清单的全部依赖约束、宿主/API 和既有预发布准入规则的可获取版本中，优先推荐最高兼容候选。版本排序及精确/区间语法沿用 [Mod 身份与版本规范](../Mod.md#mod-identity-version)，不以字符串或发布时间代替版本比较。
+- 用户已确认需要获取依赖时默认推荐满足要求的最高可获取兼容版本，依赖下载清单默认采用该推荐版本；进入该依赖的详情或版本选择界面时优先定位并选中推荐版本，不跳到不符合要求的全局最新版本。例如商店已有 `2.0.0`，消费方精确要求 `1.9.0` 时推荐并选中 `1.9.0`；若声明允许一段范围，则在同时满足参与清单的全部依赖约束、宿主/API 和既有预发布准入规则的可获取版本中，优先推荐最高兼容候选。版本排序及精确/区间语法沿用 [Mod 身份与版本规范](../reference/Mod.md#mod-identity-version)，不以字符串或发布时间代替版本比较。
 - 最新版本超出要求但存在兼容旧版，不算无法解决的冲突；解析时继续寻找可行兼容方案，不能只尝试全局最新版。版本选择变化后重新解析其传递依赖，清单展示实际推荐版本及对应约束，并在下载前确认；用户手动选择不兼容版本时明确反馈，不继续下载。已安装兼容版本仍可按第 8.2 节复用，不仅为追求更高版本自动升级；已安装但不兼容的版本不能误当作依赖已满足，也不自动更改其运行选择。
 - 默认先寻找保留已核实安装版本的完整可行方案；只有无法满足完整约束时，按 Mod ID 稳定顺序放宽对应复用约束，再在需要获取的候选中按 SemVer 降序寻找全局可行解。主 Mod 和用户手动指定的精确版本保持固定，不自动退到其他版本。该跨分支默认优先级是本次可逆实施选择，尚未收到用户偏好答复；不增加“最多复用数”等数量评分，也不将局部贪心失败当作无解。
 - 用户已确认版本冲突在下载前解决：显示发生冲突的 Mod、要求该版本的依赖关系和不兼容范围，由用户取消相关可选项或调整拟获取版本；重新解析必需依赖、去重与版本约束，并重新确认有效清单后才开始下载。不能静默取消已选可选项，也不先下载冲突清单中的主 Mod 或部分分支；同一项同时承担必需依赖时不能将其当可选项直接移除。调整获取清单不自动改变已有启用或运行版本选择。
@@ -815,7 +815,7 @@ S0 已在本节建立本地验收矩阵，包含任务/功能、用例或真实�
 
 环境已核对：Windows 11 当前用户；Maven 3.9.12 使用 `E:\Program\Java\JDK21` 的 JDK 21.0.10；Git Bash 和 Python 3.12 解释器存在。`.mvn/archive/verify.py` 已通过 2836 个冻结文件的集合及 SHA-256 检查。所有运行使用隔离测试数据库与临时工作区，保持真实开发/生产数据库和原用户进程。JDK 回环临时目录按 README 仅设置于验证进程。
 
-以下为完整验收分组；“待执行”表示尚无本目标的有效通过结果。阶段实施后补入精确测试、实际界面入口、命令和证据；测试类名只列当前已存在入口，新场景须增加实际行为验证。证据统一保留于 `.ai-workspace/progress/phase13-evidence/`，正式结论仍以本表及所属规格为准。
+以下为完整验收分组；“待执行”表示尚无本目标的有效通过结果。阶段实施后补入精确测试、实际界面入口、命令和证据；测试类名只列当前已存在入口，新场景须增加实际行为验证。证据统一保留于 `.ai-workspace/evidence/phase13-evidence/`，正式结论仍以本表及所属规格为准。
 
 | 任务 / 功能 | 用例与预期实际结果 | 入口 / 环境 | 实际状态与证据 |
 | --- | --- | --- | --- |

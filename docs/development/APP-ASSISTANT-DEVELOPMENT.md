@@ -186,7 +186,7 @@ flowchart LR
 
 - [开发总纲](DEVELOPMENT.md)：各期导航与文档职责。
 - [1.3 执行计划](PHASE-1.3.md)：本专题不纳入该期，未来按实际完成结果承接窗口与业务能力。
-- [Mod 规范](../Mod.md)：现有公开契约、调用、生命周期及信任边界。
-- [APP 文档](../APP.md)与[源码结构规范](../File.md)：平台职责与实际模块边界；本文候选结构不提前记入实际索引。
+- [Mod 规范](../reference/Mod.md)：现有公开契约、调用、生命周期及信任边界。
+- [APP 文档](../reference/APP.md)与[源码结构规范](../reference/File.md)：平台职责与实际模块边界；本文候选结构不提前记入实际索引。
 - [OWASP Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)：最小功能与权限、执行端授权检查和高影响操作确认。
 - [OWASP AI Agent Security](https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html)：操作预览、精确授权绑定、结构化输出与重复执行保护。

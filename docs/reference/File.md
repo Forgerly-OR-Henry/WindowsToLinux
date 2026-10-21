@@ -1,6 +1,6 @@
 # WindowsToLinux 源码模块与包结构
 
-测试过程文档统一位于 [docs/test](test/README.md)，根目录 test 保存测试集。样例内部文档属于部署输入；当前 Agent 验收状态见 [暂停记录](test/multi-language/AGENT-CURRENT-STATUS.md)。
+测试过程文档统一位于 [docs/test](../test/README.md)，根目录 test 保存测试集。样例内部文档属于部署输入；当前 Agent 验收状态见 [暂停记录](../test/multi-language/AGENT-CURRENT-STATUS.md)。
 > **阅读入口：** [当前源码树](#current-source-tree) · [命名与归包](#package-rules) · [Mod 源码规范](#mod-source-layout) · [依赖方向](#module-dependencies) · [结构检查](#structure-checks) · [规划边界](#planned-boundaries)。
 
 ## 文档信息
@@ -10,7 +10,7 @@
 - 当前活动根聚合 `src/appapi`、`src/app`、`src/mod`，共有 15 个 Maven 叶子模块；`src/moddev` 是独立开发聚合区，不进入根默认构建或运行发现。平台装配在 `app/main`，Mod 公开合同在 `appapi`，部署业务在 `mod/deployment`，独立 Git 取材服务在 `mod/git`，独立可选文件管理在 `mod/files`。S0～S6 已完成本机适用验收与收尾；文件管理已完成独立作者验证、整体移入、新位置重建与真实 APP 接入验收。
 - APP 与平台自有 API 使用本文命名和分包规则；官方 deployment 采用已确认类名词表，第三方 Mod 的内部命名与组织由作者决定。
 - 本文只维护结构；[AllFile.md](AllFile.md)索引实际生产文件，[Mod.md](Mod.md)维护作者与加载合同，[Runtime.md](Runtime.md)维护运行行为、数据与安全，[APP.md](APP.md)维护发布布局和构建交付；[Config.md](Config.md) 是配置字段和填写方式的唯一集中说明。
-- 更新日期：2026-10-05。现行规则与本机交付见 [1.2 开发文档](development/PHASE-1.2.md#app-structure-rules)，开发区调整及本期验收见 [1.3 开发文档](development/PHASE-1.3.md)，历史改造与后置任务见 [1.1 开发文档](development/PHASE-1.1.md)。
+- 更新日期：2026-10-05。现行规则与本机交付见 [1.2 开发文档](../development/PHASE-1.2.md#app-structure-rules)，开发区调整及本期验收见 [1.3 开发文档](../development/PHASE-1.3.md)，历史改造与后置任务见 [1.1 开发文档](../development/PHASE-1.1.md)。
 
 ## 1. 当前源码结构
 
@@ -322,13 +322,13 @@ WindowsToLinux/                       # [聚合]     工程构建入口，统一
       └─ pom.xml                      # [构建文件] 独立开发聚合入口
 ```
 
-ModDev 的定向构建、验证与移入调试流程见 [独立开发入口](../src/moddev/README.md)。该区域的实际生产源码进入结构与文件索引，作者项目的单元测试仍由其独立 Maven 入口执行。
+ModDev 的定向构建、验证与移入调试流程见 [独立开发入口](../../src/moddev/README.md)。该区域的实际生产源码进入结构与文件索引，作者项目的单元测试仍由其独立 Maven 入口执行。
 
 ### 1.2 独立验收夹具
 
-根目录 `test` 保存不参与 WindowsToLinux Maven reactor 的独立验收夹具，分为 `single-language` 和 `multi-language`。单语言场景以 `success-` 或 `failure-` 标明预期部署结果，后接功能名称；多语言每种组合只保留一个完整成功样例。完整场景及用途见 [测试夹具说明](test/README.md)。
+根目录 `test` 保存不参与 WindowsToLinux Maven reactor 的独立验收夹具，分为 `single-language` 和 `multi-language`。单语言场景以 `success-` 或 `failure-` 标明预期部署结果，后接功能名称；多语言每种组合只保留一个完整成功样例。完整场景及用途见 [测试夹具说明](../test/README.md)。
 
-125 组源码项目均通过入口、配置、请求处理、业务和模型协作。C/C++ 的 `include` 放自定义头文件，`src` 的多个编译单元链接成一个目标；其余语言采用自身包/模块机制。包管理器样例的运行依赖和真实锁文件放在各自项目内。`src/app/main/src/test/python` 保存跨语言 HTTP、破坏输入和原生组件检查脚本；逐组合证据见 [验证记录](test/single-language/VERIFICATION.md)。
+125 组源码项目均通过入口、配置、请求处理、业务和模型协作。C/C++ 的 `include` 放自定义头文件，`src` 的多个编译单元链接成一个目标；其余语言采用自身包/模块机制。包管理器样例的运行依赖和真实锁文件放在各自项目内。`src/app/main/src/test/python` 保存跨语言 HTTP、破坏输入和原生组件检查脚本；逐组合证据见 [验证记录](../test/single-language/VERIFICATION.md)。
 
 ```text
 test/                                                                                # [目录]   独立验收夹具，不参与 Maven reactor
@@ -341,7 +341,7 @@ test/                                                                           
    └─ success-<function>/                                                            # [目录]   各项目的源码、依赖锁、样本及运行说明
 ```
 
-多语言项目包括五个网页和三个控制台工具。Java、Go、C#、PHP、Kotlin、Python 分别拥有项目内 SQLite，Rust/C/C++ 工具通过子进程 JSON 协议协作；不引入数据库服务。`src/app/main/src/test/python/polyglot_runner.py` 在隔离副本构建、分配回环端口并执行验收，`src/app/main/src/test/browser` 独立管理与仓库同版本的 Playwright 依赖。源码覆盖由 `MultiLanguageFixtureMatrixTest` 门禁检查；本地行为与 Linux 产品部署证据分开维护，见 [多语言验证记录](test/multi-language/VERIFICATION.md)。
+多语言项目包括五个网页和三个控制台工具。Java、Go、C#、PHP、Kotlin、Python 分别拥有项目内 SQLite，Rust/C/C++ 工具通过子进程 JSON 协议协作；不引入数据库服务。`src/app/main/src/test/python/polyglot_runner.py` 在隔离副本构建、分配回环端口并执行验收，`src/app/main/src/test/browser` 独立管理与仓库同版本的 Playwright 依赖。源码覆盖由 `MultiLanguageFixtureMatrixTest` 门禁检查；本地行为与 Linux 产品部署证据分开维护，见 [多语言验证记录](../test/multi-language/VERIFICATION.md)。
 
 ## 2. 命名规范
 
@@ -505,7 +505,7 @@ ServerId / SecretId 是资源标识；ServerRef / SecretRef 保存业务引用�
 
 已有分析阶段可读为 Facts → Evidence → Report → Decision → Plan → Result；这不是建立全部对象或包的要求。
 
-Registry、Parser、Deployment、Capability、Application、Profile、Snapshot、Identity、Transcript 保留。其他已确认调整包括 Publish、Match、Part、Secret、Finder、Spec、Setup、ActionLog；未讨论的单词保持现状。实际逐项改名见[类名调整清单](development/CLASS-RENAMES.md)。
+Registry、Parser、Deployment、Capability、Application、Profile、Snapshot、Identity、Transcript 保留。其他已确认调整包括 Publish、Match、Part、Secret、Finder、Spec、Setup、ActionLog；未讨论的单词保持现状。实际逐项改名见[类名调整清单](../development/CLASS-RENAMES.md)。
 
 ### 2.7 限定词、接口与实现
 
@@ -727,7 +727,7 @@ CLASS 调试预览经 `appapi.ui.UiService.registerPreview` 独立登记，受�
 
 `DeploymentReleaseSnapshot`、`DeploymentReleaseRecord`、`DeploymentReleaseIdentity` 保留完整运行图及配置/秘密引用；`DeploymentReleaseCodec` 管版本和内容摘要，Store 管历史与复用，Checker 只读核验跨记录一致性。`DeploymentJsonDocument` 共用严格 JSON 原语；`DeploymentUnitCommit` 仅为 db 写入输入，不使 model 依赖 config。
 
-页面只收集 Git、数据库和秘密引用输入；实际检查点、取材、源码/SQL 校验和发布在原后台任务完成。秘密输入只在独立创建任务准入后取得并按所有权清零，发布只消费已存修订。具体操作、格式、恢复和 UNKNOWN 规则统一见 [Mod 运行与能力合同](Mod.md#public-api-spec)、[运行约定](Runtime.md)及 [1.1 实施与验收](development/PHASE-1.1.md#review-decisions)。
+页面只收集 Git、数据库和秘密引用输入；实际检查点、取材、源码/SQL 校验和发布在原后台任务完成。秘密输入只在独立创建任务准入后取得并按所有权清零，发布只消费已存修订。具体操作、格式、恢复和 UNKNOWN 规则统一见 [Mod 运行与能力合同](Mod.md#public-api-spec)、[运行约定](Runtime.md)及 [1.1 实施与验收](../development/PHASE-1.1.md#review-decisions)。
 
 ### 3.4 配置、存储与秘密边界
 
@@ -856,7 +856,7 @@ com/example/windowstolinux/mod/backup/  # [包]     Mod 主模块的 Java 根包
 
 ### 4.5 资源、构建与物理会话装配
 
-生产资源位于所属模块的 Maven resources 内，路径与实际加载归属一致；Mod 包资源与运行后数据分开。`DeploymentManagedHelperBundle` 按显式清单和顺序组装；语言分派归 `fragments/ecosystem`，原生数据库归 `fragments/database`，其余基础、输入、发布、运行、备份及恢复片段按实际职责分组。纯路径迁移保留字节、顺序、协议与摘要；行为改变才同步身份与合同，历史资源核对见 [1.1 结构迁移证据](development/PHASE-1.1.md#structure-gates)。
+生产资源位于所属模块的 Maven resources 内，路径与实际加载归属一致；Mod 包资源与运行后数据分开。`DeploymentManagedHelperBundle` 按显式清单和顺序组装；语言分派归 `fragments/ecosystem`，原生数据库归 `fragments/database`，其余基础、输入、发布、运行、备份及恢复片段按实际职责分组。纯路径迁移保留字节、顺序、协议与摘要；行为改变才同步身份与合同，历史资源核对见 [1.1 结构迁移证据](../development/PHASE-1.1.md#structure-gates)。
 
 `DeploymentPublishEvidenceChannel` 负责原任务/独立操作证据及实际准入发送，`DeploymentPublishReceipt` 解析固定回执；不把协议解析和业务编排混在一起。CLASS/JAR loader、SSH 客户端、物理会话、通道、线程、进程及 JDBC 连接由实际所有者关闭并核对退出；发出停止请求或返回 close 不表示账本已清理。
 
@@ -977,7 +977,7 @@ core 共用纯值与窄端口，standard 和 agent 不反向依赖彼此；注�
 <a id="后续门禁衔接"></a>
 <a id="structure-checks"></a>
 
-本节汇总活动结构的检查范围；现行 Mod 规范见第 4.4 节，迁移及验收流程见 [1.1 开发文档](development/PHASE-1.1.md#structure-gates)。历史门禁不覆盖现行组织规则。
+本节汇总活动结构的检查范围；现行 Mod 规范见第 4.4 节，迁移及验收流程见 [1.1 开发文档](../development/PHASE-1.1.md#structure-gates)。历史门禁不覆盖现行组织规则。
 
 1. 普通 Maven 叶子模块的目录名使用一个英文单词；只有把具体实现从公共契约模块独立隔离时，才使用 `<contract>-<implementation>`，例如 `linux-sshd`。
 2. Java 类存在接口与实现不代表必须拆分 Maven 模块；只有具体实现需要独立依赖或装配时才建立连字符实现模块。`file` 当前不因归档格式拆分成独立模块，源码归档格式属于其内部职责。
@@ -1006,11 +1006,11 @@ core 共用纯值与窄端口，standard 和 agent 不反向依赖彼此；注�
 
 | 内容 | 当前边界与正文位置 |
 | --- | --- |
-| 冻结旧工程 | `history-src` 不参与活动 Maven、IDE 包树或生产发布，不改旧包声明；保存范围见 [1.1 归档](development/PHASE-1.1.md#archive)。 |
-| 备份、恢复和迁移 Mod | S6 暂缓，不建立空模块；已确认采用单主模块、根包 Mod 入口，跨 Mod 协作只依赖部署导出 API，不读私有表；任务见 [1.1 阶段计划](development/PHASE-1.1.md#implementation)。 |
-| 作者工具、SDK 和发行交付 | CLASS 描述构建已接线；pack/verify、SDK 和 APP/JAR 打包仍属于 S7，Windows 更新/卸载安全核心不代表独立发行执行器已交付；见 [APP 构建契约](APP.md#build-contract)及 [1.1 打包步骤](development/PHASE-1.1.md#packaging-steps)。 |
-| 官网与 Web | 后置官网、教程、下载和投稿，不接入 APP/Mod 的用户服务器执行链，也不挂空 Maven 模块；见 [1.1 网站范围](development/PHASE-1.1.md#website-service)。 |
-| 真实运行验收 | 本机、受控回包、真实 Linux、模型/语音提供方和云控制台分开记录；SSH Git 凭据与信任接线仍按现行证据保留未验证范围。见 [1.1 当前状态](development/PHASE-1.1.md)与 [1.2 开发文档](development/PHASE-1.2.md)。 |
+| 冻结旧工程 | `history-src` 不参与活动 Maven、IDE 包树或生产发布，不改旧包声明；保存范围见 [1.1 归档](../development/PHASE-1.1.md#archive)。 |
+| 备份、恢复和迁移 Mod | S6 暂缓，不建立空模块；已确认采用单主模块、根包 Mod 入口，跨 Mod 协作只依赖部署导出 API，不读私有表；任务见 [1.1 阶段计划](../development/PHASE-1.1.md#implementation)。 |
+| 作者工具、SDK 和发行交付 | CLASS 描述构建已接线；pack/verify、SDK 和 APP/JAR 打包仍属于 S7，Windows 更新/卸载安全核心不代表独立发行执行器已交付；见 [APP 构建契约](APP.md#build-contract)及 [1.1 打包步骤](../development/PHASE-1.1.md#packaging-steps)。 |
+| 官网与 Web | 后置官网、教程、下载和投稿，不接入 APP/Mod 的用户服务器执行链，也不挂空 Maven 模块；见 [1.1 网站范围](../development/PHASE-1.1.md#website-service)。 |
+| 真实运行验收 | 本机、受控回包、真实 Linux、模型/语音提供方和云控制台分开记录；SSH Git 凭据与信任接线仍按现行证据保留未验证范围。见 [1.1 当前状态](../development/PHASE-1.1.md)与 [1.2 开发文档](../development/PHASE-1.2.md)。 |
 
 运行数据根和目录行为统一见 [Runtime.md](Runtime.md#desktop-data)，发布/安装目录见 [APP.md](APP.md)，不在源码树重复维护。
 

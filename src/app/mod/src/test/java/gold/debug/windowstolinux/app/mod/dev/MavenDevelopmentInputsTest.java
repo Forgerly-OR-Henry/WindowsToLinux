@@ -136,7 +136,7 @@ class MavenDevelopmentInputsTest {
 
     Path reactor() throws Exception {
         Path repository = Path.of("").toAbsolutePath();
-        while (!Files.isRegularFile(repository.resolve("docs/File.md")))
+        while (!Files.isRegularFile(repository.resolve("docs/reference/File.md")))
             repository = repository.getParent();
         Path root = temporary.toRealPath().resolve("Maven 中文 & spaces");
         write(root.resolve("pom.xml"),

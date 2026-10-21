@@ -136,7 +136,7 @@ class PlatformClassWorkspacesIntegrationTest {
 
     private static Path workspace() throws Exception {
         Path path = Path.of("").toRealPath();
-        while (path != null && !Files.isRegularFile(path.resolve("docs/File.md"))) path = path.getParent();
+        while (path != null && !Files.isRegularFile(path.resolve("docs/reference/File.md"))) path = path.getParent();
         assertNotNull(path, "Actual reactor workspace is required");
         assertFalse(Files.exists(path.resolve("src/moddev/files")));
         return path;

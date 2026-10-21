@@ -41,7 +41,7 @@ WindowsToLinux/
    │  │  ├─ AppConfig.java  # 不可变启动配置及分组纯值
    │  │  ├─ ConfigLoader.java  # classpath 资源读取、严格四区 YAML 合并及字段校验
    │  │  └─ resources/  # 随 Config JAR 发布的资源
-   │  │     └─ config.yaml  # 通用与三模式启动配置，填写见 docs/Config.md
+   │  │     └─ config.yaml  # 通用与三模式启动配置，填写见 docs/reference/Config.md
    │  ├─ db/  # 平台 H2 数据存取与存储能力装配
    │  │  ├─ pom.xml  # Maven 模块与依赖声明
    │  │  ├─ PlatformStorage.java  # 在受保护 H2 引擎上装配平台所属配置仓库

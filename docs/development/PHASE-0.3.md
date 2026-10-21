@@ -23,7 +23,7 @@
 - 文档组织：按功能与模块维护，期数表示能力增量；整理日期：2026-09-19。
 - 状态：生态构建、多组件和多模型已接入；历史 helper v3 验收限定精确夹具。后续 v5/v7 回归及动态工具链增强归 0.4 期。
 - 依据：现行行为以当前代码和适用的运行证据为准；本期引入范围与后期调整分开说明。
-- [开发总纲](DEVELOPMENT.md) · [现行结构](../File.md) · [0.1 期](PHASE-0.1.md) · [0.2 期](PHASE-0.2.md) · [0.4 期](PHASE-0.4.md) · [0.5 期](PHASE-0.5.md) · [0.6 期](PHASE-0.6.md)
+- [开发总纲](DEVELOPMENT.md) · [现行结构](../reference/File.md) · [0.1 期](PHASE-0.1.md) · [0.2 期](PHASE-0.2.md) · [0.4 期](PHASE-0.4.md) · [0.5 期](PHASE-0.5.md) · [0.6 期](PHASE-0.6.md)
 
 - [1. 本期目标与承接关系](#goals)
 - [2. 模块增量总表](#modules)
@@ -285,7 +285,7 @@
 
 ### 3.6 分析与部署链职责
 
-**涉及模块与分工：** `shared/standard/analyze` 产出静态事实，`shared/deploy` 生成计划并组织事务，`shared/linux` 定义窄契约，`shared/linux-sshd` 实现受控构建与远程操作。现行包名、目标树和依赖图统一见[项目结构](../File.md)。
+**涉及模块与分工：** `shared/standard/analyze` 产出静态事实，`shared/deploy` 生成计划并组织事务，`shared/linux` 定义窄契约，`shared/linux-sshd` 实现受控构建与远程操作。现行包名、目标树和依赖图统一见[项目结构](../reference/File.md)。
 
 #### 语言与构建分析
 
@@ -372,7 +372,7 @@
 2. `PackageStructureArchitectureTest`，测试数量以本次报告为准。
 3. JDK 21 离线 `mvn.cmd -B -ntp -o verify`。
 4. 生产源码旧名称、旧 FQCN、旧路径和空目录扫描。
-5. `docs/AllFile.md` 非测试 `src/` 完整性与不区分大小写排序检查。
+5. `docs/reference/AllFile.md` 非测试 `src/` 完整性与不区分大小写排序检查。
 6. `git diff --check`，并确认 POM、数据库迁移、helper 内容和协议版本无非预期变化。
 
 2026-08-20 静态验收结果：
@@ -380,7 +380,7 @@
 - JDK 21 离线 `mvn.cmd -B -ntp -o verify` 完成全部 28 个模块：243 项测试、0 失败、0 错误、25 项条件跳过。跳过项均为真实服务器、真实操作系统或相关运行条件用例；其中 `EcosystemExtensionProductEntryAcceptanceTest` 在未提供服务器参数时按设计跳过。
 - `PackageStructureArchitectureTest` 12/12 通过；12 种变更架构的独立夹具矩阵和健康/503 变体实例化 3/3 通过。
 - 使用真实工具核验 npm `ci`、pnpm 10.15.1 frozen install、Yarn 4.9.2 immutable install，以及 Pipenv 2025.0.4、Poetry 2.1.3、uv 0.8.12 对 Python 3.12/3.11 锁文件的原生命令校验；JDK 21 对 Java 夹具完成真实编译与可执行 JAR 装配。Node 脚本与全部 14 个 Python 源文件完成语法检查。
-- `docs/AllFile.md` 与 480 个非测试维护文件逐文件计数一致，428 个生产 Java 文件和 13 个生产资源文件均无遗漏，206 个同级分组的不区分大小写顺序无异常。
+- `docs/reference/AllFile.md` 与 480 个非测试维护文件逐文件计数一致，428 个生产 Java 文件和 13 个生产资源文件均无遗漏，206 个同级分组的不区分大小写顺序无异常。
 - 生产源码中的旧构建 Renderer、`PYTHON_VENV`、旧路径和空生产目录均为 0；相对代码基线的 POM 与数据库迁移变更均为 0。
 - helper 继续使用协议 v3，逐字节摘要为 `339153b9ddd5073fb1c046f5d271dfd23e9e6ece62dfced18cc9a068022b41d8`；11 组发行版准备脚本快照已同步并通过。构建与 systemd 运行统一使用固定 `/usr/local/bin:/usr/bin:/bin` 工具查找边界。
 - `git diff --check` 通过。以上均为本地静态或工具级证据，不构成 Linux/systemd/SSH 真实运行支持证据。
