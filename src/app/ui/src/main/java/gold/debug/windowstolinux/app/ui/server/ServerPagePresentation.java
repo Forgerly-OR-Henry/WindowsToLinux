@@ -67,6 +67,9 @@ final class ServerPagePresentation extends JPanel {
     /** Selected connection metadata. / 所选连接元数据。 */
     private final ServerDetailsPane details;
 
+    /** Shared title/search height anchors the selected server identity. / 共用标题搜索区高度定位所选服务器身份。 */
+    private final JPanel inventoryHeader;
+
     /** Independent viewports keep the inventory header fixed. / 独立视口保持清单标题固定。 */
     private final JScrollPane detailScroll;
 
@@ -108,8 +111,10 @@ final class ServerPagePresentation extends JPanel {
         this.profiles = profiles;
         this.output = output;
         this.buttons = buttons;
+        inventoryHeader = components.transparent(new BorderLayout(8, 12));
+        inventoryHeader.setName("servers.inventory.header");
         var inventory = inventory(search);
-        details = new ServerDetailsPane(components, messages, actions(), records(), table::clearSelection);
+        details = new ServerDetailsPane(components, messages, inventoryHeader, actions(), records(), table::clearSelection);
         detailScroll = new JScrollPane(details, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
             JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         detailScroll.setName("servers.details.scroll");
@@ -227,7 +232,7 @@ final class ServerPagePresentation extends JPanel {
         var refresh = buttons.refresh();
         var inventory = components.transparent(new BorderLayout(0, 12));
         inventory.setName("servers.inventory");
-        var heading = components.transparent(new BorderLayout(8, 12));
+        var heading = components.transparent(new BorderLayout(0, 8));
         var titleRow = components.transparent(new BorderLayout(8, 0));
         messages.bind(inventoryTitle, "server.inventory");
         inventoryTitle.setFont(inventoryTitle.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(20f)));
@@ -237,15 +242,20 @@ final class ServerPagePresentation extends JPanel {
         count.setName("servers.count");
         titleRow.add(titleCopy, BorderLayout.CENTER);
         titleRow.add(add, BorderLayout.EAST);
-        heading.add(titleRow, BorderLayout.NORTH);
+        inventoryHeader.add(titleRow, BorderLayout.NORTH);
         var search = components.transparent(new BorderLayout(8, 0));
         search.add(query, BorderLayout.CENTER);
+        query.setBackground(Color.WHITE);
+        query.setForeground(new Color(0x1B1F27));
+        query.setCaretColor(new Color(0x1B1F27));
+        query.putClientProperty("FlatLaf.style", "placeholderForeground: #666B76");
         query.putClientProperty("JTextField.placeholderText", messages.text("server.search"));
         query.putClientProperty("JTextField.leadingIcon",
             gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon("action/search", 16,
-                () -> javax.swing.UIManager.getColor("Label.disabledForeground")));
+                () -> new Color(0x666B76)));
         search.add(refresh, BorderLayout.EAST);
-        heading.add(search, BorderLayout.CENTER);
+        inventoryHeader.add(search, BorderLayout.CENTER);
+        heading.add(inventoryHeader, BorderLayout.CENTER);
         feedback.setName("servers.feedback");
         heading.add(feedback, BorderLayout.SOUTH);
         inventory.add(heading, BorderLayout.NORTH);
@@ -384,28 +394,50 @@ final class ServerPagePresentation extends JPanel {
         var icon = new JLabel(gold.debug.windowstolinux.app.ui.control.DesktopIcons.icon("server/server", 30,
             () -> javax.swing.UIManager.getColor("Component.focusColor")));
         content.add(icon, BorderLayout.WEST);
-        var copy = components.transparent(new GridLayout(2, 1, 0, 6));
+        var copy = components.transparent(new GridBagLayout());
         var name = new JLabel(summary.profile().displayName());
+        name.setName("servers.card.name");
         name.putClientProperty("html.disable", true);
         name.setFont(name.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(16f)));
         var endpoint = new JLabel(ServerDetailsPane.endpoint(summary));
+        endpoint.setName("servers.card.endpoint");
         endpoint.putClientProperty("html.disable", true);
         endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, com.formdev.flatlaf.util.UIScale.scale(13)));
-        copy.add(name);
-        copy.add(endpoint);
-        content.add(copy, BorderLayout.CENTER);
-        var observed = components.transparent(new GridLayout(2, 1, 0, 6));
         var state = components.badge(ServerDetailsPane.status(summary, messages));
+        state.setName("servers.card.state");
+        state.setHorizontalAlignment(SwingConstants.CENTER);
+        state.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(3, 8, 3, 8));
         state.setForeground(ServerDetailsPane.statusColor(summary));
         boolean dark = com.formdev.flatlaf.FlatLaf.isLafDark();
         state.setBackground(summary.checkedAt().isEmpty() ? UIManager.getColor("Button.background")
             : summary.connected() ? new Color(dark ? 0x214B36 : 0xDCF6E8) : new Color(dark ? 0x572E32 : 0xFFE4E4));
-        observed.add(state);
         var checked = new JLabel(summary.checkedAt().map(value -> DateTimeFormatter.ofPattern("MM-dd HH:mm")
             .withZone(ZoneId.systemDefault()).format(value)).orElse("—"));
         checked.setForeground(javax.swing.UIManager.getColor("Label.disabledForeground"));
-        observed.add(checked);
-        content.add(observed, BorderLayout.EAST);
+        var cell = new GridBagConstraints();
+        cell.gridx = 0;
+        cell.gridy = 0;
+        cell.weightx = 1;
+        cell.fill = GridBagConstraints.HORIZONTAL;
+        copy.add(name, cell);
+        cell.gridx = 1;
+        cell.weightx = 0;
+        cell.fill = GridBagConstraints.NONE;
+        cell.anchor = GridBagConstraints.LINE_END;
+        cell.insets = com.formdev.flatlaf.util.UIScale.scale(new Insets(0, 12, 0, 0));
+        copy.add(state, cell);
+        cell.gridx = 0;
+        cell.gridy = 1;
+        cell.weightx = 1;
+        cell.fill = GridBagConstraints.HORIZONTAL;
+        cell.insets = com.formdev.flatlaf.util.UIScale.scale(new Insets(4, 0, 0, 0));
+        copy.add(endpoint, cell);
+        cell.gridx = 1;
+        cell.weightx = 0;
+        cell.fill = GridBagConstraints.NONE;
+        cell.insets = com.formdev.flatlaf.util.UIScale.scale(new Insets(4, 12, 0, 0));
+        copy.add(checked, cell);
+        content.add(copy, BorderLayout.CENTER);
         content.setToolTipText(summary.profile().displayName() + " · " + ServerDetailsPane.endpoint(summary)
             + " · " + ServerDetailsPane.status(summary, messages) + " · " + ServerDetailsPane.checkedAt(summary));
         return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(content, selected, null);

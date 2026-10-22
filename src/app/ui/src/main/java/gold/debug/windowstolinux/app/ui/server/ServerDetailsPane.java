@@ -26,26 +26,43 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
     /** Arranges selected metadata above existing operation and evidence controls. / 将所选元数据排列在已有操作与证据控件上方。
      * @param components themed factory / 主题工厂
      * @param messages safe localized captions / 安全本地化文案
+     * @param inventoryHeader aligned inventory title and search / 对齐的清单标题与搜索区
      * @param actions original actions / 原操作
      * @param records current authentication result / 当前认证结果
      * @param collapse clears the original selection / 清空原选择 */
     ServerDetailsPane(DesktopPartFactory components, PageMessagePresenter messages,
-                      JComponent actions, JComponent records, Runnable collapse) {
+                      JComponent inventoryHeader, JComponent actions, JComponent records, Runnable collapse) {
         super(new BorderLayout(0, UIScale.scale(20)));
         this.messages = messages;
         components.stylePage(this);
-        setBorder(BorderFactory.createCompoundBorder(null, new FlatEmptyBorder(16, 24, 16, 24)));
+        setBorder(new FlatEmptyBorder(0, 24, 16, 24));
         setName("servers.details");
         var upper = components.transparent(new BorderLayout(0, UIScale.scale(22)));
-        var heading = components.transparent(new BorderLayout(UIScale.scale(16), 0));
-        var copy = components.transparent(new GridLayout(2, 1, 0, UIScale.scale(6)));
+        var heading = new JPanel(new BorderLayout(UIScale.scale(16), 0)) {
+            /** Aligns identity controls with the inventory header at every scale. / 各缩放下将身份控件与清单标题区对齐。 */
+            @Override
+            public Dimension getPreferredSize() {
+                var size = super.getPreferredSize();
+                size.height = Math.max(size.height, inventoryHeader.getPreferredSize().height);
+                return size;
+            }
+        };
+        heading.setOpaque(false);
+        var copy = components.transparent(new GridBagLayout());
         title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(24f)));
         title.setName("servers.details.title");
         endpoint.setName("servers.details.endpoint");
         endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(13)));
         for (var label : new JLabel[]{title, endpoint}) label.putClientProperty("html.disable", true);
-        copy.add(title);
-        copy.add(endpoint);
+        var line = new GridBagConstraints();
+        line.gridx = 0;
+        line.gridy = 0;
+        line.weightx = 1;
+        line.fill = GridBagConstraints.HORIZONTAL;
+        copy.add(title, line);
+        line.gridy = 1;
+        line.insets = UIScale.scale(new Insets(4, 0, 0, 0));
+        copy.add(endpoint, line);
         var icon = new JLabel(DesktopIcons.icon("server/server", 32, () -> UIManager.getColor("Component.focusColor")));
         icon.setName("servers.details.icon");
         icon.setBorder(new FlatEmptyBorder(12, 10, 12, 10));

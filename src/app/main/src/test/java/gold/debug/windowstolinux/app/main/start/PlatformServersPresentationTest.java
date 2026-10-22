@@ -88,6 +88,8 @@ class PlatformServersPresentationTest {
                                 var collapse = named(pane, "servers.collapseDetails");
                                 var icon = named(pane, "servers.details.icon");
                                 assertEquals(centerY(icon, pane), centerY(collapse, pane), 1);
+                                assertEquals(centerY(named(pane, "servers.inventory.header"), pane), centerY(icon, pane), 1,
+                                    "Identity and collapse controls align with the title/search region");
                                 var authState = (JLabel) named(pane, "servers.auth.state");
                                 assertEquals("检查通过", authState.getText());
                                 assertTrue(authState.getForeground().getGreen() > authState.getForeground().getRed());
@@ -137,6 +139,7 @@ class PlatformServersPresentationTest {
                                 assertEquals(1, table.getRowCount());
                                 assertEquals("long-hostname", search.getText());
                                 assertEquals(listeners, document.getDocumentListeners().length);
+                                assertEquals(Color.WHITE, search.getBackground());
                                 assertEquals(com.formdev.flatlaf.util.UIScale.scale(20), pane.getInsets().left);
                                 assertTrue(((JLabel) named(pane, "servers.details.title")).getText().startsWith("演示服务器"));
                             }
@@ -197,6 +200,22 @@ class PlatformServersPresentationTest {
     }
 
     private static void assertInventoryAlignment(JComponent pane) {
+        assertEquals(Color.WHITE, named(pane, "servers.search").getBackground());
+        var table = (JTable) named(pane, "servers.table");
+        for (int row = 0; row < table.getRowCount(); row++) {
+            var card = (JComponent) table.prepareRenderer(table.getCellRenderer(row, 0), row, 0);
+            card.setSize(table.getColumnModel().getColumn(0).getWidth(), table.getRowHeight());
+            layout(card);
+            var title = named(card, "servers.card.name");
+            var endpoint = named(card, "servers.card.endpoint");
+            int gap = SwingUtilities.convertPoint(endpoint, 0, 0, card).y
+                - SwingUtilities.convertPoint(title, 0, title.getHeight(), card).y;
+            assertTrue(gap >= 0 && gap <= com.formdev.flatlaf.util.UIScale.scale(8),
+                () -> "Compact title/connection spacing: " + gap);
+            var badge = (JLabel) named(card, "servers.card.state");
+            assertEquals(SwingConstants.CENTER, badge.getHorizontalAlignment());
+            assertEquals(badge.getPreferredSize(), badge.getSize(), "State capsule keeps its natural size");
+        }
         var scroll = (JScrollPane) named(pane, "servers.inventory.scroll");
         var bar = scroll.getVerticalScrollBar();
         assertTrue(bar.isVisible(), "Inventory scrollbar is always visible");
