@@ -13,6 +13,7 @@ import javax.swing.table.DefaultTableModel;
 
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
+import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -212,6 +213,7 @@ class DesktopCardSelectionTest {
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setFixedCellHeight(90);
         list.setSize(300, 300);
+        if (reorder) new DesktopPartFactory(ThemePalette.light()).cardList(list, true);
         return list;
     }
 

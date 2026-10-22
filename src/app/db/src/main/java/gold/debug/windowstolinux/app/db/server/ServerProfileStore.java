@@ -33,12 +33,62 @@ public final class ServerProfileStore {
     public List<StoredServerProfile> listServerProfiles() throws SQLException {
         List<StoredServerProfile> profiles = new ArrayList<>();
         try (var c = connections.open();
-             var s = c.prepareStatement("SELECT * FROM server_profile ORDER BY server_profile_id");
+             var s = c.prepareStatement("SELECT * FROM server_profile ORDER BY display_order");
              var rows = s.executeQuery()) {
             while (rows.next())
                 profiles.add(read(rows));
         }
         return List.copyOf(profiles);
+    }
+
+    /** Saves a complete permutation only while the caller's ordered snapshot is still current. / 仅在调用方完整顺序快照仍有效时保存全量排列。
+     * @param expectedIds original complete order / 原完整顺序
+     * @param requestedIds requested complete order / 请求的完整顺序
+     * @throws SQLException if either snapshot is invalid or stale / 任一快照无效或过期时
+     */
+    public void reorderServerProfiles(List<String> expectedIds, List<String> requestedIds) throws SQLException {
+        if (expectedIds == null || requestedIds == null || expectedIds.stream().anyMatch(Objects::isNull)
+            || requestedIds.stream().anyMatch(Objects::isNull))
+            throw new SQLException("Server order requires two complete snapshots");
+        var expected = List.copyOf(expectedIds);
+        var requested = List.copyOf(requestedIds);
+        connections.transaction(() -> {
+            try (var connection = connections.open()) {
+                StoreConnections.lockPlatformState(connection);
+                var current = listServerProfiles().stream().map(StoredServerProfile::id).toList();
+                if (!current.equals(expected) || requested.size() != current.size()
+                    || !new HashSet<>(requested).equals(new HashSet<>(current)))
+                    throw new SQLException("Server order changed or is not a complete permutation");
+                long offset;
+                try (var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT COALESCE(MAX(display_order),-1)+CAST(1 AS BIGINT) FROM server_profile")) {
+                    rows.next();
+                    offset = rows.getLong(1);
+                }
+                if (offset + requested.size() > Integer.MAX_VALUE)
+                    throw new SQLException("Server display order exceeds its supported range");
+                try (var statement = connection.prepareStatement(
+                    "UPDATE server_profile SET display_order=? WHERE server_profile_id=?")) {
+                    writeOrder(statement, requested, offset);
+                    writeOrder(statement, requested, 0);
+                }
+            }
+        });
+    }
+
+    /** Writes one collision-free phase of the locked permutation. / 写入持锁排列的一个无冲突阶段。
+     * @param statement scoped update / 限定更新
+     * @param order complete order / 完整顺序
+     * @param offset phase base / 阶段基数
+     * @throws SQLException if a row disappears / 记录消失时
+     */
+    private static void writeOrder(PreparedStatement statement, List<String> order, long offset) throws SQLException {
+        for (int index = 0; index < order.size(); index++) {
+            statement.setLong(1, offset + index);
+            statement.setString(2, order.get(index));
+            if (statement.executeUpdate() != 1)
+                throw new SQLException("Server order could not be confirmed");
+        }
     }
 
     /** Saves an authenticated trust identity against an existing profile. / 为已有配置保存认证信任身份。
@@ -135,7 +185,7 @@ public final class ServerProfileStore {
                 }
                 String sql = prior.isPresent()
                     ? "UPDATE server_profile SET credential_id=?,host=?,ssh_port=?,username=?,display_name=? WHERE server_profile_id=?"
-                    : "INSERT INTO server_profile(credential_id,host,ssh_port,username,display_name,server_profile_id) VALUES(?,?,?,?,?,?)";
+                    : "INSERT INTO server_profile(credential_id,host,ssh_port,username,display_name,server_profile_id,display_order) VALUES(?,?,?,?,?,?,(SELECT COALESCE(MAX(display_order),-1)+1 FROM server_profile))";
                 try (var statement = c.prepareStatement(sql)) {
                     statement.setString(1, profile.credentialKey());
                     statement.setString(2, profile.host());

@@ -28,6 +28,7 @@ CREATE TABLE server_profile
     server_profile_id         CHARACTER VARYING NOT NULL PRIMARY KEY,
     credential_id             CHARACTER VARYING NOT NULL REFERENCES credential (credential_id),
     display_name              CHARACTER VARYING NOT NULL,
+    display_order             INTEGER           NOT NULL UNIQUE CHECK (display_order >= 0),
     host                      CHARACTER VARYING NOT NULL,
     ssh_port                  INTEGER           NOT NULL CHECK (ssh_port BETWEEN 1 AND 65535),
     username                  CHARACTER VARYING NOT NULL,

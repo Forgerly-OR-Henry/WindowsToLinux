@@ -1,0 +1,390 @@
+CREATE TABLE security_profile
+(
+    security_profile_id       INTEGER PRIMARY KEY CHECK (security_profile_id = 1),
+    is_encryption_enabled     INTEGER           NOT NULL DEFAULT 1 CHECK (is_encryption_enabled IN (0, 1)),
+    format_version            INTEGER           NOT NULL CHECK (format_version = 1),
+    key_derivation_algorithm  CHARACTER VARYING NOT NULL CHECK (key_derivation_algorithm = 'ARGON2ID_V1'),
+    key_derivation_salt       BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(key_derivation_salt)=16),
+    key_derivation_parameters CHARACTER VARYING NOT NULL,
+    password_verifier         CHARACTER VARYING NOT NULL,
+    key_wrap_algorithm        CHARACTER VARYING NOT NULL CHECK (key_wrap_algorithm = 'AES256_GCM_V1'),
+    key_wrap_nonce            BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(key_wrap_nonce)=12),
+    wrapped_data_key          BINARY LARGE OBJECT NOT NULL CHECK(OCTET_LENGTH(wrapped_data_key)=48)
+);
+CREATE TABLE credential
+(
+    credential_id       CHARACTER VARYING NOT NULL PRIMARY KEY,
+    security_profile_id INTEGER           NOT NULL DEFAULT 1 REFERENCES security_profile (security_profile_id) CHECK (security_profile_id = 1),
+    storage_format      CHARACTER VARYING NOT NULL CHECK (storage_format IN ('PLAIN_V1', 'AES256_GCM_V1')),
+    nonce               BINARY VARYING(12),
+    payload             BINARY LARGE OBJECT NOT NULL,
+    UNIQUE (security_profile_id, nonce),
+    CHECK ((storage_format = 'PLAIN_V1' AND nonce IS NULL AND OCTET_LENGTH(payload) > 0) OR
+           (storage_format = 'AES256_GCM_V1' AND nonce IS NOT NULL AND OCTET_LENGTH(nonce) = 12 AND
+            OCTET_LENGTH(payload) > 16))
+);
+CREATE TABLE server_profile
+(
+    server_profile_id         CHARACTER VARYING NOT NULL PRIMARY KEY,
+    credential_id             CHARACTER VARYING NOT NULL REFERENCES credential (credential_id),
+    display_name              CHARACTER VARYING NOT NULL,
+    host                      CHARACTER VARYING NOT NULL,
+    ssh_port                  INTEGER           NOT NULL CHECK (ssh_port BETWEEN 1 AND 65535),
+    username                  CHARACTER VARYING NOT NULL,
+    trusted_host              CHARACTER VARYING,
+    trusted_ssh_port          INTEGER CHECK (trusted_ssh_port BETWEEN 1 AND 65535),
+    host_key_format           CHARACTER VARYING CHECK (host_key_format = 'SSH_WIRE'),
+    host_key_sha256           CHARACTER VARYING,
+    last_operating_system     CHARACTER VARYING,
+    last_connection_succeeded INTEGER CHECK (last_connection_succeeded IN (0, 1)),
+    last_checked_at           BIGINT,
+    CHECK ((host_key_sha256 IS NULL AND host_key_format IS NULL AND trusted_host IS NULL AND
+            trusted_ssh_port IS NULL) OR
+           (host_key_sha256 IS NOT NULL AND host_key_format IS NOT NULL AND trusted_host IS NOT NULL AND
+            trusted_ssh_port IS NOT NULL))
+);
+CREATE TABLE ai_model
+(
+    model_id                         CHARACTER VARYING     NOT NULL PRIMARY KEY,
+    credential_id                    CHARACTER VARYING     NOT NULL REFERENCES credential (credential_id),
+    model_name                       CHARACTER VARYING     NOT NULL,
+    display_name                     CHARACTER VARYING     NOT NULL,
+    display_order                    INTEGER               NOT NULL UNIQUE CHECK (display_order >= 0),
+    configuration_revision           BIGINT                NOT NULL DEFAULT 1 CHECK (configuration_revision > 0),
+    endpoint_url                     CHARACTER VARYING     NOT NULL DEFAULT '',
+    is_language_enabled              INTEGER               NOT NULL DEFAULT 0 CHECK (is_language_enabled IN (0, 1)),
+    language_call_order              INTEGER UNIQUE CHECK (language_call_order >= 0),
+    text_verified_revision           BIGINT CHECK (text_verified_revision > 0),
+    text_state                       CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (text_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    text_reason                      CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    text_verified_at                 BIGINT,
+    is_approval_enabled              INTEGER               NOT NULL DEFAULT 0 CHECK (is_approval_enabled IN (0, 1)),
+    approval_call_order              INTEGER UNIQUE CHECK (approval_call_order >= 0),
+    is_vision_enabled                INTEGER               NOT NULL DEFAULT 0 CHECK (is_vision_enabled IN (0, 1)),
+    vision_call_order                INTEGER UNIQUE CHECK (vision_call_order >= 0),
+    vision_verified_revision         BIGINT CHECK (vision_verified_revision > 0),
+    vision_state                     CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (vision_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    vision_reason                    CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    vision_verified_at               BIGINT,
+    is_voice_enabled                 INTEGER               NOT NULL DEFAULT 0 CHECK (is_voice_enabled IN (0, 1)),
+    voice_call_order                 INTEGER UNIQUE CHECK (voice_call_order >= 0),
+    file_endpoint_url                CHARACTER VARYING     NOT NULL DEFAULT '',
+    voice_file_verified_revision     BIGINT CHECK (voice_file_verified_revision > 0),
+    voice_file_state                 CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_file_state IN ('UNVERIFIED', 'AVAILABLE', 'UNSUPPORTED', 'FAILED')),
+    voice_file_reason                CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    voice_file_verified_at           BIGINT,
+    realtime_endpoint_url            CHARACTER VARYING     NOT NULL DEFAULT '',
+    voice_realtime_verified_revision BIGINT CHECK (voice_realtime_verified_revision > 0),
+    voice_realtime_state             CHARACTER VARYING     NOT NULL DEFAULT 'UNVERIFIED' CHECK (voice_realtime_state IN
+                                                                                                ('UNVERIFIED',
+                                                                                                 'AVAILABLE',
+                                                                                                 'UNSUPPORTED',
+                                                                                                 'FAILED')),
+    voice_realtime_reason            CHARACTER VARYING(80) NOT NULL DEFAULT '',
+    voice_realtime_verified_at       BIGINT,
+    CHECK (endpoint_url <> '' OR file_endpoint_url <> '' OR realtime_endpoint_url <> ''),
+    CHECK ((text_verified_revision IS NULL) = (text_verified_at IS NULL)),
+    CHECK ((text_state = 'UNVERIFIED') = (text_verified_revision IS NULL)),
+    CHECK ((vision_verified_revision IS NULL) = (vision_verified_at IS NULL)),
+    CHECK ((vision_state = 'UNVERIFIED') = (vision_verified_revision IS NULL)),
+    CHECK ((voice_file_verified_revision IS NULL) = (voice_file_verified_at IS NULL)),
+    CHECK ((voice_file_state = 'UNVERIFIED') = (voice_file_verified_revision IS NULL)),
+    CHECK ((voice_realtime_verified_revision IS NULL) = (voice_realtime_verified_at IS NULL)),
+    CHECK ((voice_realtime_state = 'UNVERIFIED') = (voice_realtime_verified_revision IS NULL)),
+    CHECK (is_language_enabled = 0 OR language_call_order IS NOT NULL),
+    CHECK (is_approval_enabled = 0 OR approval_call_order IS NOT NULL),
+    CHECK (is_vision_enabled = 0 OR vision_call_order IS NOT NULL),
+    CHECK (is_voice_enabled = 0 OR voice_call_order IS NOT NULL)
+);
+CREATE TABLE browser_recovery_task
+(
+    task_id            CHARACTER VARYING NOT NULL PRIMARY KEY,
+    server_profile_id  CHARACTER VARYING NOT NULL,
+    operation_id       CHARACTER VARYING NOT NULL,
+    last_action_digest CHARACTER VARYING,
+    task_state         CHARACTER VARYING NOT NULL,
+    last_event_code    CHARACTER VARYING NOT NULL,
+    updated_at         BIGINT            NOT NULL
+);
+CREATE TABLE browser_recovery_event
+(
+    event_id      BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    task_id       CHARACTER VARYING NOT NULL REFERENCES browser_recovery_task (task_id),
+    event_code    CHARACTER VARYING NOT NULL,
+    action_digest CHARACTER VARYING,
+    task_state    CHARACTER VARYING NOT NULL,
+    created_at    BIGINT            NOT NULL
+);
+CREATE INDEX browser_recovery_event_task_index ON browser_recovery_event (task_id, event_id);
+CREATE TABLE desktop_preference
+(
+    preference_key   CHARACTER VARYING NOT NULL PRIMARY KEY,
+    preference_value CHARACTER VARYING NOT NULL
+);
+INSERT INTO desktop_preference(preference_key, preference_value)
+VALUES ('file_delete_ai_explanation', 'true');
+
+CREATE TABLE app_state
+(
+    singleton_id        INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    database_generation UUID        NOT NULL,
+    boot_id             UUID        NOT NULL,
+    intent_revision     BIGINT      NOT NULL DEFAULT 0 CHECK (intent_revision >= 0),
+    shutdown_state      VARCHAR(16) NOT NULL CHECK (shutdown_state IN ('STARTING', 'RUNNING', 'CLEAN', 'UNKNOWN')),
+    updated_at          BIGINT      NOT NULL
+);
+CREATE TABLE mod_registry
+(
+    mod_id                VARCHAR(512) PRIMARY KEY,
+    selected_version      VARCHAR(512),
+    selection_initialized BOOLEAN     NOT NULL DEFAULT FALSE,
+    enabled               BOOLEAN     NOT NULL DEFAULT FALSE,
+    revision              BIGINT      NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    disable_ack_revision  BIGINT,
+    last_boot_id          UUID,
+    actual_version        VARCHAR(512),
+    last_runtime_state    VARCHAR(16) NOT NULL DEFAULT 'STOPPED'
+        CHECK (last_runtime_state IN ('STOPPED', 'STARTING', 'RUNNING', 'STOPPING', 'FAILED', 'UNKNOWN')),
+    failure_code          VARCHAR(128),
+    failure_detail        CHARACTER LARGE OBJECT,
+    updated_at            BIGINT      NOT NULL,
+    CHECK (NOT enabled OR selected_version IS NOT NULL)
+);
+CREATE TABLE mod_version
+(
+    mod_id         VARCHAR(512)      NOT NULL REFERENCES mod_registry (mod_id),
+    version        VARCHAR(512)      NOT NULL,
+    schema_version VARCHAR(64),
+    install_path   CHARACTER VARYING NOT NULL,
+    origin_kind    VARCHAR(16)       NOT NULL CHECK (origin_kind IN ('LOCAL', 'BUNDLED', 'STORE', 'CLASS')),
+    manifest_json  CHARACTER LARGE OBJECT NOT NULL,
+    content_sha256 CHAR(64)          NOT NULL,
+    archive_sha256 CHAR(64),
+    state          VARCHAR(16)       NOT NULL CHECK (state IN ('READY', 'REINSTALLING', 'DELETE_PENDING')),
+    installed_at   BIGINT            NOT NULL,
+    PRIMARY KEY (mod_id, version),
+    CHECK (schema_version IS NULL OR REGEXP_LIKE(schema_version, '^[1-9][0-9]{0,63}$'))
+);
+ALTER TABLE mod_registry
+    ADD CONSTRAINT mod_selection_fk
+        FOREIGN KEY (mod_id, selected_version) REFERENCES mod_version (mod_id, version);
+CREATE TABLE mod_schema
+(
+    mod_id            VARCHAR(512) NOT NULL REFERENCES mod_registry (mod_id),
+    schema_version    VARCHAR(64)  NOT NULL CHECK (REGEXP_LIKE(schema_version, '^[1-9][0-9]{0,63}$')),
+    generation        UUID         NOT NULL UNIQUE,
+    physical_name     VARCHAR(133) NOT NULL UNIQUE,
+    database_user     VARCHAR(66)  NOT NULL UNIQUE,
+    ever_used         BOOLEAN      NOT NULL DEFAULT FALSE,
+    state             VARCHAR(20)  NOT NULL CHECK (state IN ('PREPARING', 'READY', 'FAILED', 'UNKNOWN', 'DELETE_PENDING')),
+    validation_digest CHAR(64),
+    validated_at      BIGINT,
+    created_at        BIGINT       NOT NULL,
+    PRIMARY KEY (mod_id, schema_version),
+    UNIQUE (mod_id, schema_version, generation),
+    CHECK (state <> 'READY' OR validated_at IS NOT NULL)
+);
+CREATE TABLE mod_operation
+(
+    operation_id          UUID PRIMARY KEY,
+    mod_id                VARCHAR(512) NOT NULL,
+    archive_log_id        CHAR(36)     NOT NULL UNIQUE,
+    target_generation     UUID,
+    source_version        VARCHAR(512),
+    source_schema_version VARCHAR(64),
+    target_version        VARCHAR(512),
+    target_schema_version VARCHAR(64),
+    operation_type        VARCHAR(24)  NOT NULL CHECK (operation_type IN
+                                                       ('INSTALL', 'REINSTALL', 'ENABLE', 'DISABLE', 'SWITCH',
+                                                        'DELETE_VERSION', 'DELETE_MOD', 'MIGRATE', 'RECONCILE')),
+    accepted_revision     BIGINT,
+    request_json          CHARACTER LARGE OBJECT NOT NULL,
+    recovery_json         CHARACTER LARGE OBJECT NOT NULL,
+    state                 VARCHAR(16)  NOT NULL CHECK (state IN
+                                                       ('REQUESTED', 'RUNNING', 'WAITING', 'FINISHING', 'UNKNOWN',
+                                                        'ENDED')),
+    phase                 VARCHAR(40)  NOT NULL,
+    outcome               VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED')),
+    failure_code          VARCHAR(128),
+    failure_detail        CHARACTER LARGE OBJECT,
+    created_at            BIGINT       NOT NULL,
+    updated_at            BIGINT       NOT NULL,
+    CHECK (state <> 'ENDED' OR outcome IS NOT NULL)
+);
+CREATE INDEX mod_operation_owner_state ON mod_operation (mod_id, state, created_at);
+CREATE TABLE mod_migration_step
+(
+    operation_id    UUID         NOT NULL REFERENCES mod_operation (operation_id),
+    step_number     INTEGER      NOT NULL CHECK (step_number >= 0),
+    from_version    VARCHAR(64)  NOT NULL,
+    to_version      VARCHAR(64)  NOT NULL,
+    migration_class VARCHAR(512) NOT NULL,
+    source_schema   VARCHAR(133) NOT NULL,
+    target_schema   VARCHAR(133) NOT NULL,
+    state           VARCHAR(16)  NOT NULL CHECK (state IN ('PENDING', 'RUNNING', 'COMPLETE', 'FAILED', 'UNKNOWN')),
+    failure_detail  CHARACTER LARGE OBJECT,
+    started_at      BIGINT,
+    ended_at        BIGINT,
+    PRIMARY KEY (operation_id, step_number)
+);
+CREATE TABLE platform_task
+(
+    task_id        UUID PRIMARY KEY,
+    owner_id       VARCHAR(512)      NOT NULL,
+    owner_version  VARCHAR(512)      NOT NULL,
+    boot_id        UUID              NOT NULL,
+    archive_log_id CHAR(36)          NOT NULL UNIQUE,
+    task_type      VARCHAR(128)      NOT NULL,
+    cancellable    BOOLEAN           NOT NULL,
+    request_json   CHARACTER LARGE OBJECT NOT NULL,
+    recovery_json  CHARACTER LARGE OBJECT NOT NULL,
+    progress_text  CHARACTER VARYING NOT NULL,
+    state          VARCHAR(20)       NOT NULL CHECK (state IN
+                                                     ('QUEUED', 'RUNNING', 'WAITING', 'CANCEL_REQUESTED', 'FINISHING',
+                                                      'UNKNOWN',
+                                                      'ENDED')),
+    outcome        VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED')),
+    result_json    CHARACTER LARGE OBJECT,
+    started_at     BIGINT            NOT NULL,
+    ended_at       BIGINT,
+    CHECK (state <> 'ENDED' OR (outcome IS NOT NULL AND ended_at IS NOT NULL))
+);
+CREATE INDEX platform_task_owner_state ON platform_task (owner_id, state, started_at);
+CREATE TABLE platform_task_resource
+(
+    lease_id      UUID PRIMARY KEY,
+    task_id       UUID              NOT NULL REFERENCES platform_task (task_id),
+    owner_id      VARCHAR(512)      NOT NULL,
+    resource_kind VARCHAR(24)       NOT NULL CHECK (resource_kind IN
+                                                    ('MOD', 'SCHEMA', 'SERVER', 'CONNECTION', 'PROCESS', 'FILE', 'PAGE',
+                                                     'CUSTOM')),
+    resource_id   CHARACTER VARYING NOT NULL,
+    access_mode   VARCHAR(12)       NOT NULL CHECK (access_mode IN ('SHARED', 'EXCLUSIVE')),
+    recovery_json CHARACTER LARGE OBJECT NOT NULL,
+    acquired_at   BIGINT            NOT NULL,
+    released_at   BIGINT
+);
+CREATE INDEX task_resource_active ON platform_task_resource (resource_kind, resource_id, released_at);
+CREATE INDEX task_resource_task ON platform_task_resource (task_id, released_at);
+CREATE TABLE mod_credential_reference
+(
+    reference_id      UUID PRIMARY KEY,
+    mod_id            VARCHAR(512)      NOT NULL,
+    schema_version    VARCHAR(64)       NOT NULL,
+    schema_generation UUID              NOT NULL,
+    business_key      VARCHAR(512)      NOT NULL,
+    credential_id     CHARACTER VARYING NOT NULL REFERENCES credential (credential_id),
+    purpose           VARCHAR(128)      NOT NULL,
+    state             VARCHAR(12)       NOT NULL CHECK (state IN ('RESERVED', 'ACTIVE', 'UNKNOWN')),
+    updated_at        BIGINT            NOT NULL,
+    UNIQUE (mod_id, schema_generation, credential_id, business_key),
+    FOREIGN KEY (mod_id, schema_version, schema_generation) REFERENCES mod_schema (mod_id, schema_version, generation)
+);
+CREATE INDEX credential_reference_resource ON mod_credential_reference (credential_id, state);
+CREATE TABLE mod_server_reference
+(
+    reference_id      UUID PRIMARY KEY,
+    mod_id            VARCHAR(512)      NOT NULL,
+    schema_version    VARCHAR(64)       NOT NULL,
+    schema_generation UUID              NOT NULL,
+    business_key      VARCHAR(512)      NOT NULL,
+    server_profile_id CHARACTER VARYING NOT NULL REFERENCES server_profile (server_profile_id),
+    state             VARCHAR(12)       NOT NULL CHECK (state IN ('RESERVED', 'ACTIVE', 'UNKNOWN')),
+    updated_at        BIGINT            NOT NULL,
+    UNIQUE (mod_id, schema_generation, server_profile_id, business_key),
+    FOREIGN KEY (mod_id, schema_version, schema_generation) REFERENCES mod_schema (mod_id, schema_version, generation)
+);
+CREATE INDEX server_reference_resource ON mod_server_reference (server_profile_id, state);
+CREATE TABLE app_schema_history
+(
+    schema_version INTEGER PRIMARY KEY CHECK (schema_version > 0),
+    script_sha256  CHAR(64)    NOT NULL,
+    state          VARCHAR(16) NOT NULL CHECK (state IN ('RUNNING', 'READY', 'FAILED', 'UNKNOWN')),
+    failure_detail CHARACTER LARGE OBJECT,
+    started_at     BIGINT      NOT NULL,
+    ended_at       BIGINT
+);
+CREATE TABLE log_category
+(
+    target_key        UUID PRIMARY KEY,
+    owner_id          VARCHAR(512) NOT NULL,
+    logical_schema    VARCHAR(133) NOT NULL,
+    schema_generation UUID         NOT NULL,
+    physical_schema   VARCHAR(133) NOT NULL,
+    category          VARCHAR(64)  NOT NULL CHECK (REGEXP_LIKE(category, '^[a-z0-9_]{1,64}$')),
+    target_table      VARCHAR(128) NOT NULL CHECK (REGEXP_LIKE(target_table, '^[a-z][a-z0-9_]*_log$')),
+    display_name      VARCHAR(256) NOT NULL,
+    format_version    INTEGER      NOT NULL CHECK (format_version = 1),
+    UNIQUE (owner_id, logical_schema, category)
+);
+
+CREATE TABLE runtime_log
+(
+    log_id         CHAR(36) PRIMARY KEY,
+    owner_id       VARCHAR(512)      NOT NULL,
+    category       VARCHAR(64)       NOT NULL CHECK (REGEXP_LIKE(category, '^[a-z0-9_]{1,64}$')),
+    subject_mod_id VARCHAR(512),
+    mod_version    VARCHAR(512),
+    task_id        UUID,
+    operation_id   UUID,
+    level          VARCHAR(8)        NOT NULL CHECK (level IN ('DEBUG', 'INFO', 'WARN', 'ERROR')),
+    event_code     VARCHAR(128)      NOT NULL,
+    message        CHARACTER VARYING NOT NULL,
+    details        CHARACTER LARGE OBJECT,
+    outcome        VARCHAR(16) CHECK (outcome IN ('SUCCEEDED', 'FAILED', 'CANCELLED')),
+    truncated      BOOLEAN           NOT NULL,
+    recorded_at    BIGINT            NOT NULL,
+    CHECK (OCTET_LENGTH(message) <= 2048)
+);
+CREATE INDEX runtime_log_order ON runtime_log (owner_id, category, recorded_at DESC, log_id DESC);
+
+CREATE TABLE file_link
+(
+    owner_id        VARCHAR(512)      NOT NULL,
+    host_id         VARCHAR(512)      NOT NULL,
+    link_path       VARCHAR(4096)     NOT NULL,
+    task_id         UUID              NOT NULL,
+    link_identity   CHARACTER VARYING NOT NULL,
+    link_target     VARCHAR(4096)     NOT NULL,
+    target_path     VARCHAR(4096),
+    target_identity CHARACTER VARYING,
+    byte_count      BIGINT            NOT NULL CHECK (byte_count >= 0),
+    last_state      VARCHAR(16)       NOT NULL CHECK (last_state IN ('CONFIRMED', 'UNVERIFIED')),
+    modified_at     BIGINT            NOT NULL,
+    updated_at      BIGINT            NOT NULL,
+    PRIMARY KEY (owner_id, host_id, link_path)
+);
+CREATE TABLE file_operation
+(
+    operation_id        UUID PRIMARY KEY,
+    parent_operation_id UUID REFERENCES file_operation (operation_id),
+    original_task_id    UUID,
+    task_id             UUID          NOT NULL,
+    owner_id            VARCHAR(512)  NOT NULL,
+    owner_version       VARCHAR(128)  NOT NULL,
+    operation_type      VARCHAR(40)   NOT NULL,
+    source_host         VARCHAR(512)  NOT NULL,
+    source_path         VARCHAR(4096) NOT NULL,
+    target_host         VARCHAR(512),
+    target_path         VARCHAR(4096),
+    plan_text           CHARACTER LARGE OBJECT NOT NULL,
+    phase               VARCHAR(40)   NOT NULL,
+    updated_at          BIGINT        NOT NULL,
+    CHECK ((target_host IS NULL) = (target_path IS NULL)),
+    CHECK ((parent_operation_id IS NULL) = (original_task_id IS NULL))
+);
+CREATE INDEX file_operation_owner_task ON file_operation (owner_id, task_id, updated_at);
+CREATE TABLE file_operation_step
+(
+    step_id      BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    operation_id UUID              NOT NULL REFERENCES file_operation (operation_id),
+    source_host  VARCHAR(512)      NOT NULL,
+    source_path  VARCHAR(4096)     NOT NULL,
+    target_host  VARCHAR(512),
+    target_path  VARCHAR(4096),
+    detail       CHARACTER VARYING NOT NULL,
+    phase        VARCHAR(40)       NOT NULL,
+    created_at   BIGINT            NOT NULL,
+    CHECK ((target_host IS NULL) = (target_path IS NULL))
+);
+CREATE INDEX file_operation_step_original ON file_operation_step (operation_id, step_id);

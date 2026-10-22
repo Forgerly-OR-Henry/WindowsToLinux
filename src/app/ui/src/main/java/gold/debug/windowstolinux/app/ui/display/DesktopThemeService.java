@@ -5,6 +5,7 @@ import java.awt.Font;
 import javax.swing.UIManager;
 
 import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLaf;
 import com.formdev.flatlaf.FlatLightLaf;
 
 /**
@@ -36,6 +37,10 @@ public final class DesktopThemeService {
      * @param scalePercent application zoom percentage / 应用缩放百分比 */
     public static void install(ThemeMode effectiveTheme, int scalePercent) {
         com.formdev.flatlaf.util.UIScale.setZoomFactor(1f);
+        FlatLaf.setPreferredFontFamily("Microsoft YaHei UI");
+        FlatLaf.setPreferredLightFontFamily("Microsoft YaHei UI");
+        FlatLaf.setPreferredSemiboldFontFamily("Microsoft YaHei UI");
+        FlatLaf.setPreferredMonospacedFontFamily("Microsoft YaHei UI");
         if (effectiveTheme == ThemeMode.DARK) {
             FlatDarkLaf.setup();
         } else {

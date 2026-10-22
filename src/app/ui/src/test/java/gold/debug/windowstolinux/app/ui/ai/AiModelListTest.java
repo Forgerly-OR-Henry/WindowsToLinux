@@ -44,77 +44,78 @@ class AiModelListTest {
 
     @Test
     void actualCardDraggingKeepsInventoryPersistenceSeparateFromPurposeDraft() throws Exception {
-        for (var theme : gold.debug.windowstolinux.app.ui.display.ThemeMode.values()) {
-            if (theme == gold.debug.windowstolinux.app.ui.display.ThemeMode.SYSTEM) continue;
-            var values = new AtomicReference<>(List.of(model("first", 0), model("second", 1), model("third", 2)));
-            var saved = new AtomicReference<>(List.of(new AiPurposeAssignment("first", true),
-                new AiPurposeAssignment("second", true), new AiPurposeAssignment("third", true)));
-            var saves = new AtomicInteger();
-            AiModelListAccess service = (AiModelListAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
-                new Class<?>[]{AiModelListAccess.class}, (proxy, method, args) -> switch (method.getName()) {
-                    case "listAiConfigurations" -> values.get();
-                    case "listAiPurpose" -> args[0] == AiPurposeType.APPROVAL ? saved.get() : List.of();
-                    case "reorderAiProviders" -> {
-                        var prior = values.get();
-                        values.set(((List<String>) args[0]).stream().map(id -> prior.stream()
-                            .filter(value -> value.profile().id().equals(id)).findFirst().orElseThrow()).toList());
-                        yield null;
-                    }
-                    case "saveAiPurpose" -> {
-                        saves.incrementAndGet();
-                        saved.set((List<AiPurposeAssignment>) args[1]);
-                        yield null;
-                    }
-                    default -> throw new AssertionError(method);
+        for (var theme : gold.debug.windowstolinux.app.ui.display.ThemeMode.values())
+            for (int scale : new int[]{100, 150}) {
+                if (theme == gold.debug.windowstolinux.app.ui.display.ThemeMode.SYSTEM) continue;
+                var values = new AtomicReference<>(List.of(model("first", 0), model("second", 1), model("third", 2)));
+                var saved = new AtomicReference<>(List.of(new AiPurposeAssignment("first", true),
+                    new AiPurposeAssignment("second", true), new AiPurposeAssignment("third", true)));
+                var saves = new AtomicInteger();
+                AiModelListAccess service = (AiModelListAccess) Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{AiModelListAccess.class}, (proxy, method, args) -> switch (method.getName()) {
+                        case "listAiConfigurations" -> values.get();
+                        case "listAiPurpose" -> args[0] == AiPurposeType.APPROVAL ? saved.get() : List.of();
+                        case "reorderAiProviders" -> {
+                            var prior = values.get();
+                            values.set(((List<String>) args[0]).stream().map(id -> prior.stream()
+                                .filter(value -> value.profile().id().equals(id)).findFirst().orElseThrow()).toList());
+                            yield null;
+                        }
+                        case "saveAiPurpose" -> {
+                            saves.incrementAndGet();
+                            saved.set((List<AiPurposeAssignment>) args[1]);
+                            yield null;
+                        }
+                        default -> throw new AssertionError(method);
+                    });
+                var frame = edt(() -> new JFrame());
+                var pane = edt(() -> {
+                    gold.debug.windowstolinux.app.ui.display.DesktopThemeService.install(theme, scale);
+                    var view = new AiModelListPane(service, new DesktopPartFactory(theme == gold.debug.windowstolinux.app.ui.display.ThemeMode.LIGHT
+                        ? ThemePalette.light() : ThemePalette.dark()), messages, ignored -> {
+                    });
+                    frame.setContentPane(view);
+                    frame.setSize(1000, 660);
+                    frame.setLocation(100, 80);
+                    frame.setAlwaysOnTop(true);
+                    frame.setVisible(true);
+                    view.refresh();
+                    return view;
                 });
-            var frame = edt(() -> new JFrame());
-            var pane = edt(() -> {
-                gold.debug.windowstolinux.app.ui.display.DesktopThemeService.install(theme, 100);
-                var view = new AiModelListPane(service, new DesktopPartFactory(theme == gold.debug.windowstolinux.app.ui.display.ThemeMode.LIGHT
-                    ? ThemePalette.light() : ThemePalette.dark()), messages, ignored -> {
-                });
-                frame.setContentPane(view);
-                frame.setSize(1000, 660);
-                frame.setLocation(100, 80);
-                frame.setAlwaysOnTop(true);
-                frame.setVisible(true);
-                view.refresh();
-                return view;
-            });
-            var robot = new Robot();
-            try {
-                idle();
-                JList<String> inventory = field(pane, "inventory", JList.class);
-                drag(robot, inventory, 0, inventory, 2, "inventory-" + theme);
-                idle();
-                assertEquals(List.of("second", "third", "first"), values.get().stream().map(value -> value.profile().id()).toList());
-                edt(() -> {
-                    pane.open(AiPurposeType.APPROVAL);
-                    frame.validate();
-                    return null;
-                });
-                JList<String> selected = field(pane, "selected", JList.class);
-                drag(robot, selected, 0, selected, 2, "purpose-" + theme);
-                assertEquals(List.of("second", "third", "first"), edt(() -> pane.capture().draft().stream().map(AiPurposeAssignment::profileId).toList()));
-                assertEquals(0, saves.get(), "Dragging purpose cards only edits the existing draft");
-                var before = edt(() -> pane.capture().draft());
-                drag(robot, inventory, 0, selected, 1, "cross-list-" + theme);
-                assertEquals(before, edt(() -> pane.capture().draft()), "Cards must not transfer between lists");
-                edt(() -> {
-                    button(pane, "ai.purpose.save").doClick();
-                    return null;
-                });
-                idle();
-                assertEquals(1, saves.get());
-                assertEquals(List.of("second", "third", "first"), saved.get().stream().map(AiPurposeAssignment::profileId).toList());
-            } finally {
-                edt(() -> {
-                    pane.close();
-                    frame.dispose();
-                    return null;
-                });
+                var robot = new Robot();
+                try {
+                    idle();
+                    JList<String> inventory = field(pane, "inventory", JList.class);
+                    drag(robot, inventory, 0, inventory, 2, "inventory-" + theme + "-" + scale);
+                    idle();
+                    assertEquals(List.of("second", "third", "first"), values.get().stream().map(value -> value.profile().id()).toList());
+                    edt(() -> {
+                        pane.open(AiPurposeType.APPROVAL);
+                        frame.validate();
+                        return null;
+                    });
+                    JList<String> selected = field(pane, "selected", JList.class);
+                    drag(robot, selected, 0, selected, 2, "purpose-" + theme + "-" + scale);
+                    assertEquals(List.of("second", "third", "first"), edt(() -> pane.capture().draft().stream().map(AiPurposeAssignment::profileId).toList()));
+                    assertEquals(0, saves.get(), "Dragging purpose cards only edits the existing draft");
+                    var before = edt(() -> pane.capture().draft());
+                    drag(robot, inventory, 0, selected, 1, "cross-list-" + theme + "-" + scale);
+                    assertEquals(before, edt(() -> pane.capture().draft()), "Cards must not transfer between lists");
+                    edt(() -> {
+                        button(pane, "ai.purpose.save").doClick();
+                        return null;
+                    });
+                    idle();
+                    assertEquals(1, saves.get());
+                    assertEquals(List.of("second", "third", "first"), saved.get().stream().map(AiPurposeAssignment::profileId).toList());
+                } finally {
+                    edt(() -> {
+                        pane.close();
+                        frame.dispose();
+                        return null;
+                    });
+                }
             }
-        }
     }
 
     private static void drag(Robot robot, JList<String> source, int from, JList<String> target, int to, String name) throws Exception {
@@ -150,8 +151,9 @@ class AiModelListTest {
     }
 
     private static Point cardCenter(JList<?> list, int index) {
-        var bounds = list.getCellBounds(index, index);
-        var point = new Point(bounds.x + Math.min(bounds.width / 2, 150), bounds.y + bounds.height / 2);
+        var bounds = ((gold.debug.windowstolinux.app.ui.control.DesktopCardList<?>) list).handleBounds(index);
+        assertFalse(bounds.isEmpty());
+        var point = new Point(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
         SwingUtilities.convertPointToScreen(point, list);
         return point;
     }

@@ -52,7 +52,7 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
         title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(24f)));
         title.setName("servers.details.title");
         endpoint.setName("servers.details.endpoint");
-        endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(13)));
+        endpoint.setFont(UIManager.getFont("Label.font").deriveFont(Font.PLAIN, UIScale.scale(14f)));
         for (var label : new JLabel[]{title, endpoint}) label.putClientProperty("html.disable", true);
         var line = new GridBagConstraints();
         line.gridx = 0;
@@ -118,7 +118,7 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
      * @param summary selected saved summary or none / 所选保存摘要或无选择 */
     void show(ServerSummary summary) {
         title.setFont(title.getFont().deriveFont(Font.BOLD, UIScale.scale(24f)));
-        endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, UIScale.scale(13)));
+        endpoint.setFont(UIManager.getFont("Label.font").deriveFont(Font.PLAIN, UIScale.scale(14f)));
         var profile = summary == null ? null : summary.profile();
         title.setText(profile == null ? messages.text("server.choose") : profile.displayName());
         title.setToolTipText(title.getText());

@@ -341,7 +341,6 @@ final class ServerPagePresentation extends JPanel {
         recordPane.add(recordHeading, BorderLayout.NORTH);
         output.setName("servers.output");
         output.setRows(3);
-        output.setFont(UIManager.getFont("Label.font"));
         output.setBorder(BorderFactory.createEmptyBorder());
         output.setLineWrap(true);
         output.setWrapStyleWord(true);
@@ -373,6 +372,7 @@ final class ServerPagePresentation extends JPanel {
             int model = table.convertRowIndexToModel(row);
             return serverCard(profiles.get().get(model), selected);
         });
+        components.cardList(table, true);
         var inventoryScroll = new JScrollPane(table);
         inventoryScroll.setName("servers.inventory.scroll");
         inventoryScroll.setPreferredSize(new Dimension(400, com.formdev.flatlaf.util.UIScale.scale(470)));
@@ -402,9 +402,12 @@ final class ServerPagePresentation extends JPanel {
         var endpoint = new JLabel(ServerDetailsPane.endpoint(summary));
         endpoint.setName("servers.card.endpoint");
         endpoint.putClientProperty("html.disable", true);
-        endpoint.setFont(new Font(Font.MONOSPACED, Font.PLAIN, com.formdev.flatlaf.util.UIScale.scale(13)));
+        endpoint.setFont(UIManager.getFont("Label.font").deriveFont(Font.PLAIN,
+            com.formdev.flatlaf.util.UIScale.scale(14f)));
         var state = components.badge(ServerDetailsPane.status(summary, messages));
         state.setName("servers.card.state");
+        state.setFont(UIManager.getFont("Label.font").deriveFont(Font.BOLD,
+            com.formdev.flatlaf.util.UIScale.scale(12f)));
         state.setHorizontalAlignment(SwingConstants.CENTER);
         state.setBorder(new com.formdev.flatlaf.ui.FlatEmptyBorder(3, 8, 3, 8));
         state.setForeground(ServerDetailsPane.statusColor(summary));
@@ -440,7 +443,7 @@ final class ServerPagePresentation extends JPanel {
         content.add(copy, BorderLayout.CENTER);
         content.setToolTipText(summary.profile().displayName() + " · " + ServerDetailsPane.endpoint(summary)
             + " · " + ServerDetailsPane.status(summary, messages) + " · " + ServerDetailsPane.checkedAt(summary));
-        return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(content, selected, null);
+        return content;
     }
 
     /** Updates actual metadata and exact record ownership. / 更新实际元数据及精确记录归属。
@@ -506,6 +509,5 @@ final class ServerPagePresentation extends JPanel {
             title.setFont(title.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
         recordState.setFont(recordState.getFont().deriveFont(Font.BOLD, com.formdev.flatlaf.util.UIScale.scale(18f)));
         table.setRowHeight(com.formdev.flatlaf.util.UIScale.scale(116));
-        output.setFont(UIManager.getFont("Label.font"));
     }
 }

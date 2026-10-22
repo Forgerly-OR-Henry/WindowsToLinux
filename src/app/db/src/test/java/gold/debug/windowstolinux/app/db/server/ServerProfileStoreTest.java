@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,6 +23,106 @@ class ServerProfileStoreTest {
 
     private final StoredServerProfile old = new StoredServerProfile("first", "example.test", 22, "tester",
         "ssh/first/password");
+
+    @Test
+    void reorderPersistsWithoutChangingProfilesTrustObservationsOrCredentialReferences() throws Exception {
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            PlatformStoreTestFixture.credential(db, old.credentialKey());
+            db.servers().saveServerProfile(old);
+            db.servers().saveServerProfile(new StoredServerProfile("a", "second.test", 22, "tester", old.credentialKey()));
+            db.servers().saveServer(new StoredServerIdentity(old.id(), old.host(), old.sshPort(), "SHA256:fixture"));
+            db.servers().recordObservation(old, true, "Ubuntu");
+            var observation = db.servers().observation(old.id());
+            var trust = db.servers().findServer(old.id());
+            assertEquals(List.of("first", "a"), ids(db.servers()));
+            db.servers().reorderServerProfiles(List.of("first", "a"), List.of("a", "first"));
+            assertEquals(observation, db.servers().observation(old.id()));
+            assertEquals(trust, db.servers().findServer(old.id()));
+            assertEquals(old, db.servers().findServerProfile(old.id()).orElseThrow());
+            assertEquals(List.of(old.credentialKey()), db.security().credentialIds());
+        }
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            assertEquals(List.of("a", "first"), ids(db.servers()));
+            db.servers().saveServerProfile(new StoredServerProfile(old.id(), old.host(), old.sshPort(), old.username(),
+                old.credentialKey(), "renamed"));
+            db.servers().saveServerProfile(new StoredServerProfile("b", "third.test", 22, "tester", old.credentialKey()));
+            assertEquals(List.of("a", "first", "b"), ids(db.servers()));
+            db.servers().deleteServerProfile("a");
+            db.servers().saveServerProfile(new StoredServerProfile("c", "fourth.test", 22, "tester", old.credentialKey()));
+            assertEquals(List.of("first", "b", "c"), ids(db.servers()));
+        }
+    }
+
+    @Test
+    void rejectsStaleIncompleteDuplicateAndForeignOrdersWithoutPartialWrites() throws Exception {
+        try (var db = PlatformStoreTestFixture.open(directory)) {
+            PlatformStoreTestFixture.credential(db, old.credentialKey());
+            db.servers().saveServerProfile(old);
+            db.servers().saveServerProfile(new StoredServerProfile("second", "second.test", 22, "tester", old.credentialKey()));
+            var expected = List.of("first", "second");
+            for (var requested : List.of(List.of("first"), List.of("second", "second"), List.of("second", "foreign"))) {
+                assertThrows(SQLException.class, () -> db.servers().reorderServerProfiles(expected, requested));
+                assertEquals(expected, ids(db.servers()));
+            }
+            db.servers().reorderServerProfiles(expected, List.of("second", "first"));
+            assertThrows(SQLException.class, () -> db.servers().reorderServerProfiles(expected, expected));
+            assertEquals(List.of("second", "first"), ids(db.servers()));
+            db.servers().saveServerProfile(new StoredServerProfile("third", "third.test", 22, "tester", old.credentialKey()));
+            assertThrows(SQLException.class,
+                () -> db.servers().reorderServerProfiles(List.of("second", "first"), expected));
+            assertEquals(List.of("second", "first", "third"), ids(db.servers()));
+        }
+    }
+
+    @Test
+    void sqlFailureAfterFirstTemporaryOrderWriteRollsBackRanksAndProfileAttributesAcrossReopen() throws Exception {
+        var second = new StoredServerProfile("second", "second.test", 2222, "other", old.credentialKey(), "Second server");
+        StoredServerObservation observation = null;
+        Optional<StoredServerIdentity> trust = Optional.empty();
+        for (int pass = 0; pass < 2; pass++) {
+            try (var db = PlatformStoreTestFixture.open(directory)) {
+                if (pass == 0) {
+                    PlatformStoreTestFixture.credential(db, old.credentialKey());
+                    db.servers().saveServerProfile(old);
+                    db.servers().saveServerProfile(second);
+                    db.servers().saveServer(new StoredServerIdentity(old.id(), old.host(), old.sshPort(), "SHA256:rollback"));
+                    db.servers().recordObservation(old, true, "Ubuntu");
+                    observation = db.servers().observation(old.id());
+                    trust = db.servers().findServer(old.id());
+                    try (var connection = db.database().openConnection(); var statement = connection.createStatement()) {
+                        statement.execute("ALTER TABLE server_profile ADD CONSTRAINT fixture_server_order_mid_phase CHECK(display_order<>3)");
+                        try {
+                            var failure = assertThrows(SQLException.class,
+                                () -> db.servers().reorderServerProfiles(List.of("first", "second"), List.of("second", "first")));
+                            assertEquals("23513", failure.getSQLState(), "The second temporary rank must hit the real CHECK constraint");
+                            assertTrue(failure.getMessage().toLowerCase(java.util.Locale.ROOT)
+                                .contains("fixture_server_order_mid_phase"), failure::getMessage);
+                        } finally {
+                            statement.execute("ALTER TABLE server_profile DROP CONSTRAINT fixture_server_order_mid_phase");
+                        }
+                    }
+                }
+                try (var connection = db.database().openConnection(); var statement = connection.createStatement();
+                     var rows = statement.executeQuery("SELECT server_profile_id,display_order FROM server_profile ORDER BY server_profile_id")) {
+                    assertTrue(rows.next());
+                    assertEquals("first", rows.getString(1));
+                    assertEquals(0, rows.getInt(2), "Rollback must restore the original numeric rank");
+                    assertTrue(rows.next());
+                    assertEquals("second", rows.getString(1));
+                    assertEquals(1, rows.getInt(2), "The first temporary UPDATE must not survive the failed transaction");
+                    assertFalse(rows.next());
+                }
+                assertEquals(List.of(old, second), db.servers().listServerProfiles());
+                assertEquals(observation, db.servers().observation(old.id()));
+                assertEquals(trust, db.servers().findServer(old.id()));
+                assertEquals(List.of(old.credentialKey()), db.security().credentialIds());
+            }
+        }
+    }
+
+    private static List<String> ids(ServerProfileStore store) throws SQLException {
+        return store.listServerProfiles().stream().map(StoredServerProfile::id).toList();
+    }
 
     @Test
     void preservesNamesChecksAndStableIdentityAcrossReopen() throws Exception {

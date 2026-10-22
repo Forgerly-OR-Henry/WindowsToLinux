@@ -1150,7 +1150,7 @@ core 共用纯值与窄端口，standard 和 agent 不反向依赖彼此；注�
 
 ### 6.3 其他表的正式列序与中文含义
 
-APP共23表，官方部署Mod共19表，共417字段；AI表见上节，其余41表如下。APP逻辑Schema为`app`，部署物理Schema由平台按所有者与V1分配，表名与列序不依赖运行代次。主键及联合键的顺序以SQL约束为准，平台标识在Mod私有表中可为逻辑引用，不虚构跨Schema外键。
+APP共23表，官方部署Mod共19表，共418字段；AI表见上节，其余41表如下。APP逻辑Schema为`app`，部署物理Schema由平台按所有者与V1分配，表名与列序不依赖运行代次。主键及联合键的顺序以SQL约束为准，平台标识在Mod私有表中可为逻辑引用，不虚构跨Schema外键。
 
 #### 主 APP
 
@@ -1186,16 +1186,17 @@ APP共23表，官方部署Mod共19表，共417字段；AI表见上节，其余41
 | 1 | `server_profile_id` | 平台服务器配置标识 |
 | 2 | `credential_id` | 平台凭据唯一标识 |
 | 3 | `display_name` | 用户可见的显示名称 |
-| 4 | `host` | 服务器主机地址 |
-| 5 | `ssh_port` | SSH连接端口 |
-| 6 | `username` | SSH登录用户名 |
-| 7 | `trusted_host` | 信任记录绑定的主机地址 |
-| 8 | `trusted_ssh_port` | 信任记录绑定的SSH端口 |
-| 9 | `host_key_format` | 主机公钥编码格式 |
-| 10 | `host_key_sha256` | 已信任主机公钥的SHA-256指纹 |
-| 11 | `last_operating_system` | 上次检测的操作系统 |
-| 12 | `last_connection_succeeded` | 上次连接是否成功 |
-| 13 | `last_checked_at` | 上次连接检查时间 |
+| 4 | `display_order` | 服务器清单的持久显示顺序，非负且唯一 |
+| 5 | `host` | 服务器主机地址 |
+| 6 | `ssh_port` | SSH连接端口 |
+| 7 | `username` | SSH登录用户名 |
+| 8 | `trusted_host` | 信任记录绑定的主机地址 |
+| 9 | `trusted_ssh_port` | 信任记录绑定的SSH端口 |
+| 10 | `host_key_format` | 主机公钥编码格式 |
+| 11 | `host_key_sha256` | 已信任主机公钥的SHA-256指纹 |
+| 12 | `last_operating_system` | 上次检测的操作系统 |
+| 13 | `last_connection_succeeded` | 上次连接是否成功 |
+| 14 | `last_checked_at` | 上次连接检查时间 |
 
 ##### `browser_recovery_task`
 

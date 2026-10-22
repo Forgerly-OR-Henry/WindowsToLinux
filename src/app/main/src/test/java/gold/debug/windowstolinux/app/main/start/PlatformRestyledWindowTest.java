@@ -63,6 +63,10 @@ class PlatformRestyledWindowTest {
                                 window.validate();
                                 assertEquals(scale / 100f, com.formdev.flatlaf.util.UIScale.getZoomFactor());
                                 assertEquals(Math.round(13 * scale / 100f), named(window, "appearance.theme").getFont().getSize());
+                                assertEquals(UIManager.getFont("Label.font").getFamily(),
+                                    named(window, "appearance.theme").getFont().getFamily());
+                                assertEquals(UIManager.getFont("Label.font").getFamily(),
+                                    named(window, "servers.search").getFont().getFamily());
                                 assertEquals(160, named(window, "platform.sidebar").getWidth());
                                 assertEquals(60, named(window, "platform.header").getHeight());
                                 assertEquals(30, named(window, "platform.statusBar").getHeight());

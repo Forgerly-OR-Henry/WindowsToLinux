@@ -69,9 +69,12 @@ public final class DesktopCardDragDiagnostics implements AutoCloseable {
 
     private Object field(String name) {
         try {
-            Field field = DesktopCardList.class.getDeclaredField(name);
+            Field controller = DesktopCardList.class.getDeclaredField("drag");
+            controller.setAccessible(true);
+            Object drag = controller.get(list);
+            Field field = DesktopCardDrag.class.getDeclaredField(name);
             field.setAccessible(true);
-            Object value = field.get(list);
+            Object value = field.get(drag);
             return "snapshot".equals(name) ? value == null ? "null" : "present" : value;
         } catch (ReflectiveOperationException failure) {
             return failure.getClass().getSimpleName();

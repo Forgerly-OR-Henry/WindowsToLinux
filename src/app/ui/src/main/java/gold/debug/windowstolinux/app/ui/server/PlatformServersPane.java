@@ -17,6 +17,7 @@ import gold.debug.windowstolinux.app.service.server.PlatformServerService;
 import gold.debug.windowstolinux.app.service.server.ServerProfile;
 import gold.debug.windowstolinux.app.service.server.ServerSummary;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopCardTableOrder;
 import gold.debug.windowstolinux.app.ui.error.PageMessagePresenter;
 import gold.debug.windowstolinux.app.ui.task.DesktopTaskRunner;
 import gold.debug.windowstolinux.appapi.task.model.TaskSnapshot;
@@ -83,6 +84,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
 
     /** Single selected saved server. / 单选已保存服务器。 */
     private final JTable table;
+
+    /** Handle-only visual ordering with the original table model. / 使用原表格模型的手柄排序。 */
+    private final DesktopCardTableOrder<String> order;
 
     /** Search and stable selection state belonging to this view. / 属于此视图的搜索与稳定选择状态。 */
     private final SelectionControls selection;
@@ -163,6 +167,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
         failedRescue = button("server.rescueFailedCheck", "servers.rescueFailedCheck", () -> rescue(checkBinding == null ? null : checkBinding.profile()));
         presentation = new ServerPagePresentation(components, messages, table, selection.search, () -> rows.values,
             checks, output, new ServerPagePresentation.Controls(add, edit, delete, refresh, check, rescue, more, cancel, reconcile, failedRescue));
+        order = components.cardOrder(table, this::visibleOrder, this::reorder, this::canReorder);
         table.getSelectionModel().addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) selection.remember();
             controls();
@@ -267,6 +272,40 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Reloads configuration on a worker, preserving the selected stable identity. / 在工作线程重新加载配置，保留所选稳定身份。 */
     private void refresh() {
         work(service::list, selection::replace);
+    }
+
+    /** Uses exact visible identities, never display text or retained row indexes. / 使用精确可见身份，不使用显示文本或保留行号。 */
+    private List<String> visibleOrder() {
+        var ids = new java.util.ArrayList<String>();
+        for (int row = 0; row < table.getRowCount(); row++)
+            ids.add(rows.values.get(table.convertRowIndexToModel(row)).profile().id());
+        return List.copyOf(ids);
+    }
+
+    /** Allows unfiltered manual order only under the original interaction gate. / 仅在原交互门禁下允许未筛选清单手动排序。 */
+    private boolean canReorder() {
+        return !view.closed && !view.locked && !view.busy && rows.values.size() > 1
+            && selection.search.getText().trim().isEmpty() && selection.sorter.getSortKeys().isEmpty()
+            && table.getRowCount() == rows.values.size();
+    }
+
+    /** Saves one completed drag and restores the authoritative order on failure. / 保存一次完成拖动，失败时重读权威顺序。 */
+    private void reorder(List<String> requested) {
+        if (!canReorder()) return;
+        var expected = visibleOrder();
+        if (expected.equals(requested)) return;
+        work(() -> {
+            service.reorderServerProfiles(expected, requested);
+            return service.list();
+        }, selection::replace, failure -> {
+            order.cancelInteraction();
+            String problem = messages.text("server.orderFailed", Map.of("detail", messages.safe(failure)));
+            work(service::list, values -> {
+                selection.replace(values);
+                presentation.feedback(problem + " " + messages.text("server.orderReloaded"));
+            }, reloadFailure -> presentation.feedback(problem + " " + messages.text("server.orderReloadFailed",
+                Map.of("detail", messages.safe(reloadFailure)))));
+        });
     }
 
     /** Confirms removal and delegates task, reference and credential ownership checks. / 确认删除并委派任务、引用及凭据归属检查。 */
@@ -385,6 +424,9 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Updates action availability without database or network calls. / 更新动作可用状态，不调用数据库或网络。 */
     private void controls() {
         boolean enabled = !view.closed && !view.locked && !view.busy;
+        if (order != null && !canReorder()) order.cancelInteraction();
+        table.setToolTipText(messages.text(selection.search.getText().trim().isEmpty()
+            && selection.sorter.getSortKeys().isEmpty() ? "server.orderHint" : "server.orderFiltered"));
         selection.search.setEnabled(enabled);
         add.setEnabled(enabled);
         refresh.setEnabled(enabled);
@@ -466,6 +508,11 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
      * @param <T> operation result type / 操作结果类型
      */
     private <T> void work(Callable<T> operation, Consumer<T> success) {
+        work(operation, success, failure -> presentation.feedback(messages.safe(failure)));
+    }
+
+    /** Keeps ordering recovery inside the same view-generation contract. / 将排序恢复保持在相同视图代数合同中。 */
+    private <T> void work(Callable<T> operation, Consumer<T> success, Consumer<Exception> failureHandler) {
         if (view.closed || view.locked || view.busy)
             return;
         view.busy = true;
@@ -482,7 +529,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
             if (view.closed || view.locked || view.epoch != generation || view.request != identity) return;
             view.busy = false;
             if (!view.closed && !view.locked)
-                presentation.feedback(messages.safe(failure));
+                failureHandler.accept(failure);
             controls();
         });
     }
@@ -490,6 +537,7 @@ public final class PlatformServersPane extends JPanel implements AutoCloseable {
     /** Stops view polling while accepted central tasks keep their original ownership. / 停止视图轮询，已接纳中央任务继续保持原归属。 */
     @Override
     public void close() {
+        order.close();
         presentation.closeExtensions();
         view.closed = true;
         view.epoch++;

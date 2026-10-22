@@ -206,6 +206,8 @@ class PlatformServersPresentationTest {
 
     private static void assertInventoryAlignment(JComponent pane) {
         assertEquals(Color.WHITE, named(pane, "servers.search").getBackground());
+        assertEquals(UIManager.getFont("Label.font").getFamily(), named(pane, "servers.output").getFont().getFamily());
+        assertEquals(com.formdev.flatlaf.util.UIScale.scale(12), named(pane, "servers.output").getFont().getSize());
         var table = (JTable) named(pane, "servers.table");
         for (int row = 0; row < table.getRowCount(); row++) {
             var card = (JComponent) table.prepareRenderer(table.getCellRenderer(row, 0), row, 0);
@@ -213,11 +215,15 @@ class PlatformServersPresentationTest {
             layout(card);
             var title = named(card, "servers.card.name");
             var endpoint = named(card, "servers.card.endpoint");
+            assertEquals(UIManager.getFont("Label.font").getFamily(), title.getFont().getFamily());
+            assertEquals(UIManager.getFont("Label.font").getFamily(), endpoint.getFont().getFamily());
+            assertEquals(com.formdev.flatlaf.util.UIScale.scale(14), endpoint.getFont().getSize());
             int gap = SwingUtilities.convertPoint(endpoint, 0, 0, card).y
                 - SwingUtilities.convertPoint(title, 0, title.getHeight(), card).y;
             assertTrue(gap >= 0 && gap <= com.formdev.flatlaf.util.UIScale.scale(8),
                 () -> "Compact title/connection spacing: " + gap);
             var badge = (JLabel) named(card, "servers.card.state");
+            assertEquals(com.formdev.flatlaf.util.UIScale.scale(12), badge.getFont().getSize());
             assertEquals(SwingConstants.CENTER, badge.getHorizontalAlignment());
             assertEquals(badge.getPreferredSize(), badge.getSize(), "State capsule keeps its natural size");
         }

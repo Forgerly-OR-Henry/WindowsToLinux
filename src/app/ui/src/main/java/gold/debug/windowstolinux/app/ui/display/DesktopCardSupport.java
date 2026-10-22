@@ -52,4 +52,31 @@ final class DesktopCardSupport {
         int gap = UIScale.scale(6);
         return point.y >= bounds.y + gap && point.y < bounds.y + bounds.height - gap ? row : -1;
     }
+
+    static boolean onHandle(JComponent view, int row, Point point) {
+        if (!DesktopListCard.isDraggable(view) || row < 0) return false;
+        Component content;
+        Rectangle bounds;
+        if (view instanceof JList<?> list) {
+            bounds = list.getCellBounds(row, row);
+            content = listRow(list, row);
+        } else {
+            var table = (JTable) view;
+            bounds = table.getCellRect(row, 0, true);
+            bounds.x = 0;
+            bounds.width = table.getWidth();
+            content = table.getCellRenderer(row, 0).getTableCellRendererComponent(table,
+                table.getValueAt(row, 0), table.isRowSelected(row), false, row, 0);
+        }
+        content = DesktopListCard.row(content, view instanceof JList<?> list ? list.isSelectedIndex(row)
+            : ((JTable) view).isRowSelected(row), true);
+        var handle = DesktopListCard.handleBounds(content, bounds.width, bounds.height);
+        handle.translate(bounds.x, bounds.y);
+        return handle.contains(point);
+    }
+
+    private static <E> Component listRow(JList<E> list, int row) {
+        return list.getCellRenderer().getListCellRendererComponent(list, list.getModel().getElementAt(row),
+            row, list.isSelectedIndex(row), false);
+    }
 }

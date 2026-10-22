@@ -16,6 +16,46 @@ import org.junit.jupiter.api.Test;
 
 class DesktopThemeServiceTest {
     @Test
+    void ordinaryAndTechnicalTextShareChineseUiFamilyAcrossThemesAndZoom() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                for (ThemeMode theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK})
+                    for (int zoom : new int[]{100, 150}) {
+                        DesktopThemeService.install(theme, zoom);
+                        assertEquals("Microsoft YaHei UI", com.formdev.flatlaf.FlatLaf.getPreferredFontFamily());
+                        var expected = UIManager.getFont("Label.font").getFamily(java.util.Locale.ROOT);
+                        boolean preferredInstalled = java.util.Arrays.stream(GraphicsEnvironment.getLocalGraphicsEnvironment()
+                                .getAvailableFontFamilyNames(java.util.Locale.ROOT))
+                            .anyMatch("Microsoft YaHei UI"::equalsIgnoreCase);
+                        if (preferredInstalled) assertEquals("Microsoft YaHei UI", expected);
+                        var root = new javax.swing.JPanel();
+                        var output = gold.debug.windowstolinux.app.ui.control.DesktopPartFactory.outputArea();
+                        var controls = new javax.swing.JComponent[]{new javax.swing.JLabel("服务器 SSH 认证 Aa09"),
+                            new javax.swing.JButton("检查 SSH"), new javax.swing.JTextField("服务器 192.0.2.1"),
+                            new javax.swing.JComboBox<>(new String[]{"服务器"}), new javax.swing.JList<>(new String[]{"服务器"}),
+                            new javax.swing.JTable(1, 1), new javax.swing.JMenu("菜单"), new javax.swing.JToolTip(), output};
+                        for (var control : controls) {
+                            root.add(control);
+                            assertEquals(expected, control.getFont().getFamily(java.util.Locale.ROOT));
+                            if (preferredInstalled)
+                                assertEquals(-1, control.getFont().canDisplayUpTo("服务器认证命令日志Aa09"));
+                        }
+                        assertEquals(com.formdev.flatlaf.util.UIScale.scale(13), controls[0].getFont().getSize());
+                        assertEquals(com.formdev.flatlaf.util.UIScale.scale(12), output.getFont().getSize());
+                        SwingUtilities.updateComponentTreeUI(root);
+                        new gold.debug.windowstolinux.app.ui.control.DesktopPartFactory(
+                            theme == ThemeMode.DARK ? ThemePalette.dark() : ThemePalette.light()).refreshTheme(root);
+                        for (var control : controls)
+                            assertEquals(expected, control.getFont().getFamily(java.util.Locale.ROOT));
+                        assertEquals(com.formdev.flatlaf.util.UIScale.scale(12), output.getFont().getSize());
+                    }
+            } finally {
+                DesktopThemeService.install(ThemeMode.LIGHT, 100);
+            }
+        });
+    }
+
+    @Test
     void wrappedDescriptionsStayInsideActualWidthAndGrowWhenNarrowed() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             DesktopThemeService.install(ThemeMode.LIGHT);

@@ -56,6 +56,9 @@ class PlatformPartInteractionMigrationTest {
                                 factory.addField(form, 1, 0, messages, "field.configurationEntries", trailing);
                                 var explanation = factory.informationCard(messages.text("field.sshPort"), messages.text("help.field.sshPort"));
                                 var root = factory.pagePanel();
+                                String family = UIManager.getFont("Label.font").getFamily();
+                                assertEquals(family, input.getFont().getFamily());
+                                assertEquals(family, help.getFont().getFamily());
                                 root.setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
                                 root.add(form, BorderLayout.NORTH);
                                 root.add(explanation, BorderLayout.CENTER);
@@ -71,6 +74,7 @@ class PlatformPartInteractionMigrationTest {
                                     for (var child : form.getComponents())
                                         if (child instanceof JLabel label) assertLabelFits(label);
                                     var detail = descendants(explanation).filter(JTextArea.class::isInstance).map(JTextArea.class::cast).findFirst().orElseThrow();
+                                    assertEquals(family, detail.getFont().getFamily());
                                     assertTrue(detail.getLineWrap());
                                     assertFalse(detail.isEditable());
                                     assertEquals(messages.text("help.field.sshPort"), detail.getText());

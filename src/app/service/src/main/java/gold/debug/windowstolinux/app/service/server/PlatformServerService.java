@@ -117,6 +117,18 @@ public final class PlatformServerService implements ServerProfileEditor, AutoClo
         return List.copyOf(summaries);
     }
 
+    /** Saves the full server order under the same settings authority as profile edits. / 使用配置编辑的同一授权保存完整服务器顺序。
+     * @param expectedIds original complete order / 原完整顺序
+     * @param requestedIds requested complete order / 请求的完整顺序
+     * @throws SQLException if the order is invalid or changed concurrently / 顺序无效或已并发变化时
+     */
+    public void reorderServerProfiles(List<String> expectedIds, List<String> requestedIds) throws SQLException {
+        worker();
+        try (var operation = security.enterOperation()) {
+            persistence.servers().reorderServerProfiles(expectedIds, requestedIds);
+        }
+    }
+
     /**
      * Saves settings and optional replacement credentials in one platform transaction. / 在同一平台事务内保存设置及可选替换凭据。
      * @param profile exact edited profile / 精确已编辑配置

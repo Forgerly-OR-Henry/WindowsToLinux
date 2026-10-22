@@ -380,7 +380,8 @@ WindowsToLinux/
    │  │  │  └─ PlatformModelsPane.java  # 常驻模型清单及明确的中断探测恢复
    │  │  ├─ control/  # 主题、布局、卡片与通用 Swing 控件
    │  │  │  ├─ DesktopButtonStyle.java  # 共用无外框的按钮圆角表面及悬停、按下反馈
-   │  │  │  ├─ DesktopCardList.java  # 卡片跟随鼠标及相邻行平滑让位，保留原排序回调
+   │  │  │  ├─ DesktopCardList.java  # 仅手柄起拖的卡片清单，复用共用预览与排序回调
+   │  │  │  ├─ DesktopCardTableOrder.java  # JTable卡片排序适配，拖动保留原选择
    │  │  │  ├─ DesktopIcons.java  # 跟随主题的内置 SVG 图标
    │  │  │  ├─ DesktopNavigationButton.java  # 固定侧栏图标，完整文案随折叠进度渐隐
    │  │  │  ├─ DesktopPartFactory.java  # 按所选桌面主题及共享视觉约定创建 Swing 控件
@@ -392,11 +393,12 @@ WindowsToLinux/
    │  │  │  └─ UiDebugPreviewHost.java  # 在宿主持有的对话框中挂载隔离作者预览
    │  │  ├─ display/  # 语言、主题和显示设置
    │  │  │  ├─ DesktopComboBoxUi.java  # 固定各下拉框显示后的宽度，保留 FlatLaf 输入及展开列表绘制
+   │  │  │  ├─ DesktopCardDrag.java  # 列表与表格共用的手柄拖拽、浮动预览、自动滚动和取消
    │  │  │  ├─ DesktopCardSelection.java  # 卡片点击切换及原生选择、拖拽手势协调
    │  │  │  ├─ DesktopCardSupport.java  # 卡片适用范围、命中边界及共用尺寸
    │  │  │  ├─ DesktopControlDefaults.java  # 统一全局控件形状、主题表面及交互状态
    │  │  │  ├─ DesktopDisplayConfig.java  # 在桌面设置页面选择的可持久化显示偏好
-   │  │  │  ├─ DesktopListCard.java  # 共用独立圆角列表卡片与选中竖条
+   │  │  │  ├─ DesktopListCard.java  # 共用圆角卡片、选中竖条及draggable手柄
    │  │  │  ├─ DesktopListUi.java  # 保留原模型与渲染器的对象列表绘制及行高缩放
    │  │  │  ├─ DesktopMotion.java  # 共用实际时间运动时钟及系统动画偏好
    │  │  │  ├─ DesktopSwitchIcon.java  # 普通复选组件的圆形滑块及鼠标键盘状态反馈

@@ -133,7 +133,7 @@ final class DesktopCardSelection extends MouseInputAdapter implements AutoClosea
         if (view.isEnabled() && DesktopCardSupport.isCardView(view) && SwingUtilities.isLeftMouseButton(event)
             && (event.getModifiersEx() & MODIFIERS) == 0) {
             int row = DesktopCardSupport.rowAt(view, event.getPoint());
-            if (row < 0) {
+            if (row < 0 || DesktopCardSupport.onHandle(view, row, event.getPoint())) {
                 ignoredPress = true;
                 return;
             }

@@ -59,6 +59,25 @@ class PlatformServerServiceTest {
     }
 
     @Test
+    void reorderRequiresSettingsAuthorityAndBothCompleteSnapshotsWithoutSubmittingTasks() throws Exception {
+        try (var runtime = PlatformRuntime.open(root, PlatformStartupTest.PROTECTION)) {
+            var service = setup(runtime);
+            service.saveServerProfile(profile("z", 22), "secret-z".toCharArray());
+            service.saveServerProfile(profile("a", 23), "secret-a".toCharArray());
+            assertEquals(List.of("z", "a"), service.list().stream().map(s -> s.profile().id()).toList());
+            service.reorderServerProfiles(List.of("z", "a"), List.of("a", "z"));
+            assertEquals(List.of("a", "z"), service.list().stream().map(s -> s.profile().id()).toList());
+            assertThrows(SQLException.class,
+                () -> service.reorderServerProfiles(List.of("z", "a"), List.of("z", "a")));
+            assertEquals("secret-z", secret(runtime, "ssh/z").orElseThrow());
+            assertEquals(0, count(runtime.persistence().database(), "SELECT COUNT(*) FROM platform_task"));
+            runtime.security().lock();
+            assertThrows(gold.debug.windowstolinux.app.service.error.ApplicationServiceException.class,
+                () -> service.reorderServerProfiles(List.of("a", "z"), List.of("z", "a")));
+        }
+    }
+
+    @Test
     void settingsDoNotConnectAndActualHostVersionChecksAuthenticationWithoutCommands() throws Exception {
         try (var remote = new PlatformRemoteCapabilitiesTest.Remote(root.resolve("ssh"));
              var runtime = PlatformRuntime.open(root.resolve("data"), PlatformStartupTest.PROTECTION)) {

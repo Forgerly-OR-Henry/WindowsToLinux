@@ -514,7 +514,7 @@ class ModVersionDeletionLedgerTest {
                 new byte[48], new byte[12], new byte[16]);
             sql(db, "INSERT INTO credential(credential_id,storage_format,payload,nonce) VALUES('shared','AES256_GCM_V1',?,?)",
                 new byte[20], new byte[12]);
-            sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name) VALUES('shared','shared','localhost',22,'fixture','fixture')");
+            sql(db, "INSERT INTO server_profile(server_profile_id,credential_id,host,ssh_port,username,display_name,display_order) VALUES('shared','shared','localhost',22,'fixture','fixture',0)");
             sql(db, "INSERT INTO mod_server_reference(reference_id,server_profile_id,mod_id,schema_version,schema_generation,business_key,state,updated_at) VALUES(?,'shared',?,'1',?,'record','UNKNOWN',1)",
                 UUID.randomUUID(), OWNER, data.generation());
             sql(db, "INSERT INTO mod_credential_reference(reference_id,credential_id,mod_id,schema_version,schema_generation,business_key,purpose,state,updated_at) VALUES(?,'shared',?,'1',?,'record','fixture','UNKNOWN',1)",

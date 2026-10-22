@@ -57,13 +57,24 @@ public final class DesktopPartFactory {
      * @param list original list / 原清单
      * @param ordered whether the list offers ordering / 清单是否支持排序 */
     public <T> void cardList(javax.swing.JList<T> list, boolean ordered) {
-        var renderer = gold.debug.windowstolinux.app.ui.display.DesktopListUi.originalRenderer(list);
-        list.setCellRenderer((view, value, index, selected, focused) -> {
-            Component content = renderer.getListCellRendererComponent(view, value, index, selected, focused);
-            return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(content, selected,
-                ordered ? DesktopIcons.icon("action/grip-vertical", 16,
-                    () -> javax.swing.UIManager.getColor("Label.disabledForeground")) : null);
-        });
+        list.putClientProperty(gold.debug.windowstolinux.app.ui.display.DesktopListCard.DRAGGABLE, ordered);
+        list.repaint();
+    }
+
+    /** Declares card presentation and handle capability without binding persistence. / 声明卡片及手柄能力，不绑定持久化。 */
+    public void cardList(javax.swing.JTable table, boolean ordered) {
+        table.putClientProperty("desktop.inventory.cards", true);
+        table.putClientProperty(gold.debug.windowstolinux.app.ui.display.DesktopListCard.DRAGGABLE, ordered);
+        gold.debug.windowstolinux.app.ui.display.DesktopTableUi.decorate(table);
+        table.repaint();
+    }
+
+    /** Binds a table's immutable identity order without enabling its handle. / 绑定表格不可变身份顺序，不自动开启手柄。 */
+    public <T> DesktopCardTableOrder<T> cardOrder(javax.swing.JTable table,
+                                                  java.util.function.Supplier<java.util.List<T>> currentOrder,
+                                                  java.util.function.Consumer<java.util.List<T>> reordered,
+                                                  java.util.function.BooleanSupplier admitted) {
+        return new DesktopCardTableOrder<>(table, currentOrder, reordered, admitted);
     }
 
     /** Builds a heading whose visible labels retain declared locale keys. / 创建可见标签保留声明语言键的标题。
@@ -157,7 +168,7 @@ public final class DesktopPartFactory {
             indicator.setForeground(javax.swing.UIManager.getColor("Component.focusColor"));
             card.add(indicator, BorderLayout.EAST);
         }
-        return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(card, selected, null);
+        return gold.debug.windowstolinux.app.ui.display.DesktopListCard.row(card, selected, false);
     }
 
     /**
@@ -422,7 +433,9 @@ public final class DesktopPartFactory {
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
         area.setMargin(new Insets(12, 12, 12, 12));
-        DesktopThemeBindings.font(area, new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        Font font = javax.swing.UIManager.getFont("defaultFont");
+        if (font == null) font = javax.swing.UIManager.getFont("Label.font");
+        DesktopThemeBindings.font(area, font.deriveFont(Font.PLAIN, 12f));
         return area;
     }
 

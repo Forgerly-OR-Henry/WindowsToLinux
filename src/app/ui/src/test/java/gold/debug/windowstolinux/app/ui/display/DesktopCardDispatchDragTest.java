@@ -15,18 +15,113 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 
 import com.formdev.flatlaf.util.UIScale;
 import gold.debug.windowstolinux.app.ui.control.DesktopCardList;
 import gold.debug.windowstolinux.app.ui.control.DesktopPartFactory;
+import gold.debug.windowstolinux.app.ui.control.DesktopCardTableOrder;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /** Exercises shown Swing handlers and rendering through component events, separately from OS/Robot delivery. / 通过组件事件验证已显示窗口的处理及绘制，与操作系统和 Robot 投递分开。 */
 class DesktopCardDispatchDragTest {
+    @Test
+    void tableHandlesPreserveEmptyOrExistingSelectionAndCancelOnFilteringWithoutReplacingModels() throws Exception {
+        assertFalse(GraphicsEnvironment.isHeadless());
+        for (var theme : new ThemeMode[]{ThemeMode.LIGHT, ThemeMode.DARK}) {
+            for (int scale : new int[]{100, 150}) {
+                TableFixture fixture = edt(() -> new TableFixture(theme, scale));
+                try {
+                    int mouseListeners = edt(() -> fixture.table.getMouseListeners().length);
+                    for (int selected : new int[]{-1, 2}) {
+                        edt(() -> {
+                            fixture.model.fireTableDataChanged();
+                            SwingUtilities.updateComponentTreeUI(fixture.frame);
+                            fixture.frame.validate();
+                            assertTrue(fixture.table.isShowing());
+                            assertSame(fixture.model, fixture.table.getModel());
+                            assertEquals(mouseListeners, fixture.table.getMouseListeners().length);
+                            if (selected < 0) fixture.table.clearSelection();
+                            else fixture.table.setRowSelectionInterval(selected, selected);
+                            return null;
+                        });
+                        var start = edt(() -> handleCenter(fixture.order.handleBounds(0)));
+                        var end = edt(() -> handleCenter(fixture.order.handleBounds(2)));
+                        int writes = fixture.writes.get();
+                        edt(() -> {
+                            dispatch(fixture.table, MouseEvent.MOUSE_PRESSED, start, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.BUTTON1);
+                            dispatch(fixture.table, MouseEvent.MOUSE_RELEASED, start, 0, MouseEvent.BUTTON1);
+                            assertEquals(selected, fixture.table.getSelectedRow(), "A short handle click must not open or close details");
+                            dispatch(fixture.table, MouseEvent.MOUSE_PRESSED, start, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.BUTTON1);
+                            return null;
+                        });
+                        for (int step = 1; step <= 10; step++) {
+                            int current = step;
+                            edt(() -> {
+                                var point = new Point(start.x, start.y + (end.y - start.y) * current / 10);
+                                dispatch(fixture.table, MouseEvent.MOUSE_DRAGGED, point, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.NOBUTTON);
+                                assertEquals(Boolean.TRUE, fixture.table.getClientProperty("desktop.cardDragActive"));
+                                assertEquals(selected, fixture.table.getSelectedRow());
+                                assertEquals(List.of("甲", "乙", "丙"), fixture.values());
+                                assertEquals(writes, fixture.writes.get());
+                                if (current == 5)
+                                    capture(fixture.frame, "table-" + theme + "-" + scale + "-selection-" + selected + "-drag");
+                                return null;
+                            });
+                            Thread.sleep(20);
+                        }
+                        edt(() -> {
+                            dispatch(fixture.table, MouseEvent.MOUSE_RELEASED, end, 0, MouseEvent.BUTTON1);
+                            assertEquals(writes + 1, fixture.writes.get());
+                            assertEquals(List.of("乙", "丙", "甲"), fixture.requested.get());
+                            assertEquals(List.of("甲", "乙", "丙"), fixture.values(), "The owner applies only confirmed persistence");
+                            assertEquals(selected, fixture.table.getSelectedRow());
+                            return null;
+                        });
+                    }
+                    edt(() -> {
+                        fixture.model.fireTableDataChanged();
+                        fixture.table.setRowSelectionInterval(2, 2);
+                        var start = handleCenter(fixture.order.handleBounds(0));
+                        var end = handleCenter(fixture.order.handleBounds(2));
+                        dispatch(fixture.table, MouseEvent.MOUSE_PRESSED, start, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.BUTTON1);
+                        dispatch(fixture.table, MouseEvent.MOUSE_DRAGGED, end, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.NOBUTTON);
+                        assertEquals(Boolean.TRUE, fixture.table.getClientProperty("desktop.cardDragActive"));
+                        fixture.sorter.setRowFilter(RowFilter.regexFilter("乙|丙"));
+                        assertNotEquals(Boolean.TRUE, fixture.table.getClientProperty("desktop.cardDragActive"));
+                        dispatch(fixture.table, MouseEvent.MOUSE_RELEASED, end, 0, MouseEvent.BUTTON1);
+                        assertEquals(2, fixture.writes.get());
+                        fixture.sorter.setRowFilter(null);
+                        fixture.admitted.set(false);
+                        fixture.table.setRowSelectionInterval(2, 2);
+                        start = handleCenter(fixture.order.handleBounds(0));
+                        dispatch(fixture.table, MouseEvent.MOUSE_PRESSED, start, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.BUTTON1);
+                        dispatch(fixture.table, MouseEvent.MOUSE_DRAGGED, end, InputEvent.BUTTON1_DOWN_MASK, MouseEvent.NOBUTTON);
+                        dispatch(fixture.table, MouseEvent.MOUSE_RELEASED, end, 0, MouseEvent.BUTTON1);
+                        assertEquals(2, fixture.table.getSelectedRow());
+                        assertEquals(2, fixture.writes.get());
+                        assertSame(fixture.model, fixture.table.getModel());
+                        return null;
+                    });
+                } finally {
+                    edt(() -> {
+                        int listeners = fixture.table.getMouseListeners().length;
+                        fixture.order.close();
+                        assertEquals(listeners - 1, fixture.table.getMouseListeners().length);
+                        fixture.frame.dispose();
+                        assertFalse(fixture.frame.isDisplayable());
+                        assertNotEquals(Boolean.TRUE, fixture.table.getClientProperty("desktop.cardDragActive"));
+                        return null;
+                    });
+                }
+            }
+        }
+    }
+
     @Test
     void shownCardsKeepSelectionAndConfirmedModelUntilReleaseAcrossThemeScaleAndUiReinstallation() throws Exception {
         assertFalse(GraphicsEnvironment.isHeadless());
@@ -139,7 +234,68 @@ class DesktopCardDispatchDragTest {
         }
     }
 
+    private static final class TableFixture {
+        private final javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(
+            new Object[][]{{"甲"}, {"乙"}, {"丙"}}, new Object[]{"服务器"}) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        private final JTable table;
+
+        private final javax.swing.table.TableRowSorter<javax.swing.table.DefaultTableModel> sorter;
+
+        private final AtomicInteger writes = new AtomicInteger();
+
+        private final AtomicReference<List<String>> requested = new AtomicReference<>();
+
+        private final AtomicBoolean admitted = new AtomicBoolean(true);
+
+        private final DesktopCardTableOrder<String> order;
+
+        private final JFrame frame;
+
+        private TableFixture(ThemeMode theme, int scale) {
+            DesktopThemeService.install(theme, scale);
+            table = new JTable(model);
+            table.setRowHeight(UIScale.scale(90));
+            table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            table.setTableHeader(null);
+            sorter = new javax.swing.table.TableRowSorter<>(model);
+            table.setRowSorter(sorter);
+            var parts = new DesktopPartFactory(ThemePalette.light());
+            order = parts.cardOrder(table, this::values, value -> {
+                requested.set(value);
+                writes.incrementAndGet();
+            }, admitted::get);
+            assertFalse(order.canReorder());
+            parts.cardList(table, true);
+            frame = new JFrame("Swing table cards: component events, OS input verified separately");
+            frame.add(new JScrollPane(table));
+            frame.setSize(UIScale.scale(620), UIScale.scale(420));
+            frame.setLocationRelativeTo(null);
+            frame.setVisible(true);
+            frame.validate();
+        }
+
+        private List<String> values() {
+            return java.util.stream.IntStream.range(0, model.getRowCount()).mapToObj(row -> (String) model.getValueAt(row, 0)).toList();
+        }
+    }
+
+    private static Point handleCenter(java.awt.Rectangle bounds) {
+        assertFalse(bounds.isEmpty());
+        return new Point(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    }
+
     private static Point center(JList<?> list, int row) {
+        if (list instanceof DesktopCardList<?> cards) {
+            var handle = cards.handleBounds(row);
+            assertFalse(handle.isEmpty());
+            return new Point(handle.x + handle.width / 2, handle.y + handle.height / 2);
+        }
         var bounds = list.getCellBounds(row, row);
         return new Point(Math.min(bounds.width / 2, UIScale.scale(100)), bounds.y + bounds.height / 2);
     }
