@@ -70,6 +70,7 @@ final class ServerDetailsPane extends JPanel implements Scrollable {
         heading.add(copy, BorderLayout.CENTER);
         var collapseButton = messages.bind(components.secondaryButton(""), "server.collapseDetails");
         collapseButton.setName("servers.collapseDetails");
+        collapseButton.setMargin(new Insets(8, 22, 8, 22));
         collapseButton.addActionListener(event -> collapse.run());
         var collapseGroup = components.transparent(new GridBagLayout());
         collapseGroup.add(collapseButton);

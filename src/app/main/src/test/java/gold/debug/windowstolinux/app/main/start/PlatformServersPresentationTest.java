@@ -86,6 +86,11 @@ class PlatformServersPresentationTest {
                                 assertTrue(named(pane, "servers.details.scroll").isVisible());
                                 assertInventoryAlignment(pane);
                                 var collapse = named(pane, "servers.collapseDetails");
+                                var checkButton = named(pane, "servers.check");
+                                assertEquals(checkButton.getHeight(), collapse.getHeight());
+                                assertTrue(Math.abs(checkButton.getWidth() - collapse.getWidth())
+                                        <= com.formdev.flatlaf.util.UIScale.scale(12),
+                                    () -> "Collapse " + collapse.getSize() + " / SSH " + checkButton.getSize());
                                 var icon = named(pane, "servers.details.icon");
                                 assertEquals(centerY(icon, pane), centerY(collapse, pane), 1);
                                 assertEquals(centerY(named(pane, "servers.inventory.header"), pane), centerY(icon, pane), 1,
